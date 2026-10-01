@@ -1,0 +1,23 @@
+# Edel OS container image: the smallest base, for running in Docker,
+# Podman or Kubernetes. Inside it, `apk` works as on Alpine.
+format = 1
+name = "edel-container"
+variant = "container"
+arch = "x86_64"
+files = ["files/common"]
+
+[alpine]
+branch = "v3.24"
+mirror = "https://dl-cdn.alpinelinux.org/alpine"
+repositories = ["main", "community"]
+
+[packages]
+install = [
+  "alpine-baselayout",
+  "alpine-keys",
+  "apk-tools",
+  "busybox",
+  "busybox-binsh",
+  "ca-certificates-bundle",
+  "musl-utils",
+]
