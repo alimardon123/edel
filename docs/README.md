@@ -1,0 +1,15 @@
+# Edel: architecture notes
+
+Start with the design principles, then the decisions in order. The principles govern every decision here, and each new write-up ends with a short principles check.
+
+| File | Topic | Status |
+|------|-------|--------|
+| [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) | Nine ranked principles with checkable rules, fewest-parts map | 1 to 5 confirmed, 6 to 9 proposed |
+| [ADR-001](ADR-001-base-and-shell.md) | First take: base and shell options | Superseded in part by 002 and 003 |
+| [ADR-002](ADR-002-own-desktop-shell.md) | Own desktop shell: compositor, presets, tiling, smoothness, title bars | Proposed |
+| [ADR-003](ADR-003-base-releases-app-compatibility.md) | Alpine soft fork, release model, apps decoupled from the base | Proposed |
+| [ADR-004](ADR-004-adaptive-apps.md) | One app on every device, adaptive layouts | Proposed |
+| [ADR-005](ADR-005-compatibility-promise.md) | 10 to 20 year compatibility promise, platform levels | Proposed |
+| [ADR-006](ADR-006-atomic-updates-and-replication.md) | Atomic updates with rollback, one file to replicate a machine | Proposed |
+| [ADR-007](ADR-007-immutability.md) | Immutable base with add-ons, unlocked mode and dev containers | Proposed |
+| [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
