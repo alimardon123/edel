@@ -1,0 +1,2 @@
+# <device>       <mount>  <type>  <options>      <dump> <pass>
+LABEL=edel-root  /        ext4    rw,relatime    0      0

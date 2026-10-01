@@ -1,0 +1,34 @@
+# Edel OS VM image: the base plus a kernel, init and SSH, for cloud and
+# local virtual machines.
+format = 1
+name = "edel-vm"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+files = ["files/common", "files/vm"]
+
+[alpine]
+branch = "v3.24"
+mirror = "https://dl-cdn.alpinelinux.org/alpine"
+repositories = ["main", "community"]
+
+[packages]
+install = [
+  "alpine-base",
+  "alpine-keys",
+  "busybox-binsh",
+  "ca-certificates-bundle",
+  "e2fsprogs",
+  "linux-virt",
+  "openssh-server",
+]
+
+[services]
+sysinit = ["devfs", "dmesg", "mdev", "hwdrivers"]
+boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
+default = ["sshd"]
+shutdown = ["mount-ro", "killprocs", "savecache"]
+
+[vm]
+kernel = "virt"
+size_mib = 1024
