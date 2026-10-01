@@ -1,2 +1,4 @@
-# <device>       <mount>  <type>  <options>      <dump> <pass>
-LABEL=edel-root  /        ext4    rw,relatime    0      0
+# The root filesystem is whichever A/B slot GRUB started (the kernel finds
+# it by UUID), so it has no fixed name here.
+# <device>  <mount>  <type>  <options>    <dump> <pass>
+/dev/root   /        ext4    rw,relatime  0      0

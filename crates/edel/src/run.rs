@@ -1,7 +1,8 @@
 //! Running external tools, with a dry-run mode that only prints them.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus, Stdio};
 
 use anyhow::{Context, Result, bail};
 
@@ -19,10 +20,29 @@ impl Runner {
         let status = cmd
             .status()
             .with_context(|| format!("starting {}", describe(cmd)))?;
-        if !status.success() {
-            bail!("{} failed with {status}", describe(cmd));
+        check(cmd, status)
+    }
+
+    /// Like [`Runner::run`], with `input` fed to the command's standard input.
+    pub fn run_with_input(&self, cmd: &mut Command, input: &str) -> Result<()> {
+        println!("+ {} <<'EOF'\n{input}EOF", describe(cmd));
+        if self.dry_run {
+            return Ok(());
         }
-        Ok(())
+        let mut child = cmd
+            .stdin(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("starting {}", describe(cmd)))?;
+        // Taking stdin out of the child closes it once written, so the
+        // command sees the end of its input.
+        child
+            .stdin
+            .take()
+            .context("no stdin")?
+            .write_all(input.as_bytes())
+            .with_context(|| format!("writing to {}", describe(cmd)))?;
+        let status = child.wait()?;
+        check(cmd, status)
     }
 
     /// Prints a step that edel performs itself rather than through a tool.
@@ -68,6 +88,13 @@ impl Drop for MountGuard<'_> {
             }
         }
     }
+}
+
+fn check(cmd: &Command, status: ExitStatus) -> Result<()> {
+    if !status.success() {
+        bail!("{} failed with {status}", describe(cmd));
+    }
+    Ok(())
 }
 
 /// Fails if anything is still mounted at or below `dir`. Deleting a directory
