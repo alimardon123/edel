@@ -1,14 +1,19 @@
 //! `edel image build`: turns an image definition into a container tarball or
-//! a VM root filesystem, using Alpine's own `apk` to install packages.
+//! a bootable A/B VM disk, using Alpine's own `apk` to install packages.
 
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Read;
+use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
+use crate::boot::{self, Layout};
 use crate::def::{ImageDef, Variant};
 use crate::run::{Runner, ensure_nothing_mounted_under};
+
+const MIB: u64 = 1024 * 1024;
 
 /// Where Alpine keeps its trusted package signing keys. The build host must
 /// be Alpine (or the alpine container) so these are present and trusted.
@@ -18,6 +23,10 @@ pub struct Build<'a> {
     pub def: &'a ImageDef,
     /// Directory holding the definition file; `files` paths are relative to it.
     pub def_dir: PathBuf,
+    /// More directories copied over the image after the definition's own,
+    /// for test images. Not part of the definition, so a release image can
+    /// never pick them up by accident.
+    pub extra_files: Vec<PathBuf>,
     pub out: PathBuf,
     pub runner: Runner,
 }
@@ -30,13 +39,14 @@ impl Build<'_> {
 
         self.prepare_root(&work, &root)?;
         self.install_packages(&root)?;
-        self.enable_services(&root)?;
+        // Our files first: some of them are services to enable.
         self.copy_files(&root)?;
+        self.enable_services(&root)?;
         self.configure(&root)?;
 
         match def.variant {
             Variant::Container => self.pack_container(&root),
-            Variant::Vm => self.pack_vm(&root),
+            Variant::Vm => self.pack_vm(&work, &root),
         }
     }
 
@@ -84,12 +94,17 @@ impl Build<'_> {
                 continue;
             }
             if !root.join("etc/init.d").join(service).exists() {
-                bail!("service {service} has no /etc/init.d/{service}; is its package installed?");
+                bail!(
+                    "service {service} has no /etc/init.d/{service}; \
+                     is its package installed or its file in a files directory?"
+                );
             }
             let dir = root.join("etc/runlevels").join(level);
             fs::create_dir_all(&dir)?;
             let link = dir.join(service);
-            if !link.exists() {
+            // symlink_metadata, not exists: the link points at a path inside
+            // the image, which exists() would look up on the build host.
+            if link.symlink_metadata().is_err() {
                 std::os::unix::fs::symlink(format!("/etc/init.d/{service}"), &link)
                     .with_context(|| format!("linking {}", link.display()))?;
             }
@@ -98,8 +113,8 @@ impl Build<'_> {
     }
 
     fn copy_files(&self, root: &Path) -> Result<()> {
-        for dir in &self.def.files {
-            let src = self.def_dir.join(dir);
+        let dirs = self.def.files.iter().map(|dir| self.def_dir.join(dir));
+        for src in dirs.chain(self.extra_files.iter().cloned()) {
             if !self.runner.dry_run && !src.is_dir() {
                 bail!("files directory {} does not exist", src.display());
             }
@@ -157,42 +172,164 @@ impl Build<'_> {
         Ok(())
     }
 
-    fn pack_vm(&self, root: &Path) -> Result<()> {
+    /// Writes the VM's two outputs: `<stem>.ext4`, one root slot, which is
+    /// also what an update installs; and `<stem>.img`, a bootable disk with
+    /// GRUB, slot A filled and slot B empty (see `boot.rs`).
+    fn pack_vm(&self, work: &Path, root: &Path) -> Result<()> {
         let vm = self
             .def
             .vm
             .as_ref()
             .context("vm image without a [vm] section")?;
         let stem = self.out.join(self.def.stem());
-        let disk = stem.with_extension("ext4");
-        let kernel = stem.with_extension("vmlinuz");
-        let initramfs = stem.with_extension("initramfs");
+        let update = stem.with_extension("ext4");
+        let disk = stem.with_extension("img");
+        let layout = Layout {
+            slot_mib: vm.slot_mib,
+        };
+
+        self.make_slot(root, &update, vm.slot_mib)?;
+        // Slot A gets a filesystem of its own rather than a copy of the
+        // update image: the kernel finds its root by filesystem UUID, so no
+        // two filesystems a machine can see may share one.
+        let slot_a = work.join("slot-a.ext4");
+        self.make_slot(root, &slot_a, vm.slot_mib)?;
+        let esp = work.join("esp.img");
+        self.make_esp(&work.join("esp"), &esp, &vm.kernel, &vm.cmdline)?;
 
         self.runner.step(&format!(
-            "copy the {} kernel and initramfs next to the disk image",
-            vm.kernel
+            "create a sparse {} MiB disk image",
+            layout.disk_mib()
         ));
-        self.runner
-            .step(&format!("create a sparse {} MiB disk image", vm.size_mib));
         if !self.runner.dry_run {
-            let boot = root.join("boot");
-            fs::copy(boot.join(format!("vmlinuz-{}", vm.kernel)), &kernel)
-                .context("copying the kernel; did the kernel package install?")?;
-            fs::copy(boot.join(format!("initramfs-{}", vm.kernel)), &initramfs)
-                .context("copying the initramfs; did mkinitfs run?")?;
-            let file = fs::File::create(&disk)?;
-            file.set_len(vm.size_mib * 1024 * 1024)?;
+            File::create(&disk)?.set_len(layout.disk_mib() * MIB)?;
+        }
+        self.runner.run_with_input(
+            Command::new("sfdisk").arg("--quiet").arg(&disk),
+            &layout.sfdisk_script(),
+        )?;
+        self.runner
+            .step("copy the EFI system partition and slot A into the disk");
+        if !self.runner.dry_run {
+            copy_sparse(&esp, &disk, layout.esp_start_mib() * MIB)?;
+            copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
+        }
+        println!("vm disk: {}", disk.display());
+        println!("update image: {}", update.display());
+        Ok(())
+    }
+
+    fn make_slot(&self, root: &Path, image: &Path, size_mib: u64) -> Result<()> {
+        self.runner.step(&format!(
+            "create a sparse {size_mib} MiB slot image {}",
+            image.display()
+        ));
+        if !self.runner.dry_run {
+            File::create(image)?.set_len(size_mib * MIB)?;
         }
         self.runner.run(
             Command::new("mkfs.ext4")
-                .args(["-q", "-F", "-L", "edel-root", "-d"])
+                .args(["-q", "-F", "-L", "edel", "-d"])
                 .arg(root)
-                .arg(&disk),
+                .arg(image),
+        )
+    }
+
+    /// Builds the EFI system partition: GRUB as the removable-disk boot
+    /// file, plus its config and environment block.
+    fn make_esp(&self, dir: &Path, esp: &Path, kernel: &str, cmdline: &str) -> Result<()> {
+        let (target, efi_name) = boot::efi_target(&self.def.arch)?;
+        let efi = dir.join(efi_name);
+        let cfg = dir.join("grub.cfg");
+        let env = dir.join("grubenv");
+
+        self.runner.step(&format!(
+            "write GRUB's config and environment block in {}",
+            dir.display()
+        ));
+        if !self.runner.dry_run {
+            fs::create_dir_all(dir)?;
+            fs::write(&cfg, boot::grub_cfg(kernel, cmdline))?;
+            fs::write(&env, boot::initial_grubenv())?;
+        }
+        self.runner.run(
+            Command::new("grub-mkimage")
+                .args(["-O", target, "-d"])
+                .arg(Path::new("/usr/lib/grub").join(target))
+                .args(["-p", boot::GRUB_PREFIX, "-o"])
+                .arg(&efi)
+                .args(boot::GRUB_MODULES),
         )?;
-        println!("vm disk: {}", disk.display());
-        println!("vm kernel: {}", kernel.display());
-        println!("vm initramfs: {}", initramfs.display());
-        Ok(())
+
+        self.runner.step(&format!(
+            "create a sparse {} MiB EFI system partition image",
+            boot::ESP_MIB
+        ));
+        if !self.runner.dry_run {
+            File::create(esp)?.set_len(boot::ESP_MIB * MIB)?;
+        }
+        self.runner.run(
+            Command::new("mkfs.vfat")
+                .args(["-F", "32", "-n", boot::ESP_LABEL])
+                .arg(esp),
+        )?;
+        // mtools writes into the FAT image directly, without mounting it.
+        let on_esp = |path: &str| format!("::{path}");
+        self.runner.run(
+            Command::new("mmd")
+                .arg("-i")
+                .arg(esp)
+                .args(["::/EFI", "::/EFI/BOOT"])
+                .arg(on_esp(boot::GRUB_PREFIX)),
+        )?;
+        self.runner.run(
+            Command::new("mcopy")
+                .arg("-i")
+                .arg(esp)
+                .arg(&efi)
+                .arg(on_esp(&format!("/EFI/BOOT/{efi_name}"))),
+        )?;
+        self.runner.run(
+            Command::new("mcopy")
+                .arg("-i")
+                .arg(esp)
+                .arg(&cfg)
+                .arg(&env)
+                .arg(on_esp(&format!("{}/", boot::GRUB_PREFIX))),
+        )
+    }
+}
+
+/// Copies `src` into `dst` starting `offset` bytes in, skipping blocks of
+/// zeros so sparse images stay sparse. That region of `dst` must already be
+/// zeros, as it is in a freshly created disk image.
+fn copy_sparse(src: &Path, dst: &Path, offset: u64) -> Result<()> {
+    let mut input = File::open(src).with_context(|| format!("opening {}", src.display()))?;
+    let output = OpenOptions::new()
+        .write(true)
+        .open(dst)
+        .with_context(|| format!("opening {}", dst.display()))?;
+    let mut block = vec![0u8; 64 * 1024];
+    let mut pos = offset;
+    loop {
+        let mut filled = 0;
+        while filled < block.len() {
+            let n = input.read(&mut block[filled..])?;
+            if n == 0 {
+                break;
+            }
+            filled += n;
+        }
+        if filled == 0 {
+            return Ok(());
+        }
+        let chunk = &block[..filled];
+        if chunk.iter().any(|&b| b != 0) {
+            output
+                .write_all_at(chunk, pos)
+                .with_context(|| format!("writing {}", dst.display()))?;
+        }
+        pos += filled as u64;
     }
 }
 
@@ -250,5 +387,29 @@ mod tests {
     #[test]
     fn fails_without_a_root_entry() {
         assert!(lock_root("bin:!::0:::::\n").is_err());
+    }
+
+    #[test]
+    fn copies_into_place_and_keeps_holes() {
+        let dir = std::env::temp_dir().join(format!("edel-copy-sparse-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("src");
+        let dst = dir.join("dst");
+
+        // 200 KiB: data, a 128 KiB hole, more data at an odd length.
+        let mut data = vec![0u8; 200 * 1024];
+        data[..10].copy_from_slice(b"first part");
+        data[196 * 1024..196 * 1024 + 4].copy_from_slice(b"last");
+        fs::write(&src, &data).unwrap();
+        File::create(&dst).unwrap().set_len(MIB).unwrap();
+
+        copy_sparse(&src, &dst, 4096).unwrap();
+
+        let out = fs::read(&dst).unwrap();
+        assert_eq!(out.len() as u64, MIB);
+        assert!(out[..4096].iter().all(|&b| b == 0));
+        assert_eq!(&out[4096..4096 + data.len()], &data[..]);
+        assert!(out[4096 + data.len()..].iter().all(|&b| b == 0));
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

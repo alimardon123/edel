@@ -32,6 +32,21 @@ Base updates, system add-ons (for example extra drivers or virtualization tools)
 - **ostree**, used by Fedora's atomic editions.
 - A **small updater of our own**, if both turn out heavier than the problem.
 
+**Spike result (2026-10-01).** RAUC is not packaged for Alpine stable: it is only in edge's `testing` repository (version 1.10.1, its test suite allowed to fail, no OpenRC service), and it brings glib, D-Bus and json-glib into the base. The A/B boot side was built and tested without it:
+
+- The VM disk is GPT with an EFI system partition (GRUB) and two root slots. Each slot holds a whole system, kernel included.
+- GRUB gives each slot three tries and counts them in its environment block, using RAUC's own variable names (`ORDER`, `<slot>_OK`, `<slot>_TRY`), so RAUC could still take over later.
+- An OpenRC service confirms the slot once the system is up. A slot that fails three times is passed over, and the slot that does start switches it off.
+- A small script, `edel-update`, writes the other slot, checks it against the image and gives it a fresh filesystem UUID (the kernel finds its root by UUID).
+- CI installs an update and starts it, then installs a broken one and checks that the machine falls back on its own.
+
+Which updater to keep (our own `edel update` or RAUC packaged by us) is still open. Known gaps:
+
+- **Hangs:** a slot that hangs instead of crashing never restarts, so it never falls back. A watchdog fixes this.
+- **Signing:** updates are checked against the image's checksum but not yet signed.
+- **Boot writes:** GRUB writes its try counter on every start, as RAUC's scheme does. Counting only after an update would write less often.
+- **Bootloader updates:** GRUB itself is not updated through the slots yet.
+
 ### 2. One readable file describes a whole machine
 
 A plain data file, not a programming language:
@@ -108,10 +123,12 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 
 ## Action Items
 
-1. [ ] Spike RAUC on an Alpine VM image with A/B slots and automatic fallback.
-2. [ ] Define version 1 of the system file format.
-3. [ ] Implement export, diff and apply against the VM image.
-4. [ ] Teach the installer to accept a system file.
+1. [x] Spike A/B slots with automatic fallback on an Alpine VM image (see the spike result above; RAUC itself is not packaged for Alpine stable).
+2. [ ] Choose the updater: our own `edel update`, or RAUC packaged in our repository.
+3. [ ] Sign updates, and add a watchdog so a hanging slot also falls back.
+4. [ ] Define version 1 of the system file format.
+5. [ ] Implement export, diff and apply against the VM image.
+6. [ ] Teach the installer to accept a system file.
 
 ## Sources
 

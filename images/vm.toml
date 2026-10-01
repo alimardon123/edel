@@ -1,11 +1,11 @@
 # Edel OS VM image: the base plus a kernel, init and SSH, for cloud and
-# local virtual machines.
+# local virtual machines. Builds a bootable disk with A/B update slots.
 format = 1
 name = "edel-vm"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-files = ["files/common", "files/vm"]
+files = ["files/common", "files/vm", "files/ab"]
 
 [alpine]
 branch = "v3.24"
@@ -26,9 +26,10 @@ install = [
 [services]
 sysinit = ["devfs", "dmesg", "mdev", "hwdrivers"]
 boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
-default = ["sshd"]
+default = ["sshd", "edel-boot-ok"]
 shutdown = ["mount-ro", "killprocs", "savecache"]
 
 [vm]
 kernel = "virt"
-size_mib = 1024
+slot_mib = 1024
+cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk"
