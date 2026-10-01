@@ -12,4 +12,11 @@ cargo build --release --locked
 for def in images/*.toml; do
 	./target/release/edel image build "$def" --out out
 done
+
+# This container runs as root. Hand the finished images back to whoever owns
+# the checkout, so the host can boot, read and delete them without root.
+# out/work stays root's: it holds the built root filesystems.
+owner=$(stat -c %u:%g .)
+chown "$owner" out
+find out -maxdepth 1 -type f -exec chown "$owner" {} \;
 ls -l out
