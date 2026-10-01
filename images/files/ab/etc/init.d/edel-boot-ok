@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Confirms the running A/B slot once the system has started, so GRUB keeps
+# starting it (ADR-006). If this never runs, GRUB tries the slot a few times
+# and then starts the other one.
+
+description="Confirm that this Edel OS slot starts"
+
+depend() {
+	after *
+}
+
+start() {
+	ebegin "Confirming that this Edel OS slot works"
+	/usr/sbin/edel-update mark-good
+	eend $?
+}
