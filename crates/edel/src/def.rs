@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
+use crate::boot;
+
 /// The only definition format this version of `edel` understands. Bump it on
 /// any breaking change and teach `edel` to migrate older files.
 pub const FORMAT: u32 = 1;
@@ -86,7 +88,12 @@ impl Services {
 pub struct Vm {
     /// Alpine kernel flavor; the `linux-<flavor>` package must be installed.
     pub kernel: String,
-    pub size_mib: u64,
+    /// Size of each of the two root slots on the disk (ADR-006).
+    pub slot_mib: u64,
+    /// Kernel arguments added to the ones the A/B boot needs, for example
+    /// the console to use.
+    #[serde(default)]
+    pub cmdline: String,
 }
 
 impl ImageDef {
@@ -137,9 +144,16 @@ impl ImageDef {
                         vm.kernel
                     );
                 }
-                if vm.size_mib < 64 {
-                    bail!("vm.size_mib must be at least 64");
+                if vm.slot_mib < 64 {
+                    bail!("vm.slot_mib must be at least 64");
                 }
+                if !boot::is_safe_cmdline(&vm.cmdline) {
+                    bail!(
+                        "vm.cmdline {:?} may only hold plain kernel arguments",
+                        vm.cmdline
+                    );
+                }
+                boot::efi_target(&self.arch)?;
             }
             (Variant::Container, None) => {}
         }
@@ -196,7 +210,8 @@ mod tests {
 
         [vm]
         kernel = "virt"
-        size_mib = 1024
+        slot_mib = 1024
+        cmdline = "console=ttyS0"
     "#;
 
     fn parse(text: &str) -> Result<ImageDef> {
@@ -243,6 +258,17 @@ mod tests {
             err.to_string()
                 .contains("linux-virt is not in packages.install")
         );
+    }
+
+    #[test]
+    fn rejects_kernel_arguments_grub_would_expand() {
+        let err = parse(&VM.replace("console=ttyS0", "init=$evil")).unwrap_err();
+        assert!(err.to_string().contains("plain kernel arguments"));
+    }
+
+    #[test]
+    fn rejects_a_vm_for_an_arch_without_efi_boot() {
+        assert!(parse(&VM.replace(r#"arch = "x86_64""#, r#"arch = "s390x""#)).is_err());
     }
 
     #[test]

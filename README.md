@@ -43,8 +43,8 @@ That produces, in `out/`:
 | File | What it is |
 |------|------------|
 | `edel-container-x86_64.tar.gz` | Container image; load it with `docker import` |
-| `edel-vm-x86_64.ext4` | VM root filesystem |
-| `edel-vm-x86_64.vmlinuz`, `.initramfs` | Kernel and initramfs to boot it |
+| `edel-vm-x86_64.img` | Bootable VM disk: UEFI, GRUB and two root slots, A and B |
+| `edel-vm-x86_64.ext4` | One root slot; installing it into a running VM is an update |
 
 To see every step without changing anything:
 
@@ -52,7 +52,28 @@ To see every step without changing anything:
 cargo run -- image build images/vm.toml --dry-run
 ```
 
-CI builds both images on every change, runs the container, boots the VM in QEMU until the Edel OS login prompt appears, and reports image sizes.
+To boot the VM disk (the firmware path differs between distributions):
+
+```sh
+qemu-system-x86_64 -machine q35,accel=kvm -m 512 -nographic \
+  -bios /usr/share/ovmf/OVMF.fd -snapshot \
+  -drive file=out/edel-vm-x86_64.img,format=raw,if=virtio
+```
+
+CI builds both images on every change, runs the container, boots the VM in QEMU until the Edel OS login prompt appears, tests updates and rollback (below), and reports image sizes.
+
+## Updates and rollback
+
+The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed:
+
+```sh
+edel-update install edel-vm-x86_64.ext4   # write the other slot and check it
+reboot                                    # the new slot starts
+```
+
+GRUB gives a newly installed slot three tries. Once the system has started, the `edel-boot-ok` service confirms the slot. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel-update status` shows both slots.
+
+CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot. `edel-update` is a small shell script for now; it becomes `edel update` once the updater choice in ADR-006 is settled.
 
 The VM image boots by handing QEMU the kernel directly. A bootable disk with a bootloader and A/B update slots comes next (ADR-006).
 
