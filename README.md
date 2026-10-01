@@ -75,8 +75,6 @@ GRUB gives a newly installed slot three tries. Once the system has started, the 
 
 CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot. `edel-update` is a small shell script for now; it becomes `edel update` once the updater choice in ADR-006 is settled.
 
-The VM image boots by handing QEMU the kernel directly. A bootable disk with a bootloader and A/B update slots comes next (ADR-006).
-
 ## License
 
 Edel OS is free software: you can share and change it under the [GNU General Public License](LICENSE), version 3 or (at your option) any later version.
