@@ -3,6 +3,7 @@
 //! Today it builds images. Updates, rollback, add-ons and system files
 //! (ADR-006, ADR-007) will live here too, so there is one tool to learn.
 
+mod boot;
 mod def;
 mod image;
 mod run;
@@ -40,6 +41,10 @@ enum ImageCommands {
         /// Directory for the finished images and the work area
         #[arg(long, default_value = "out")]
         out: PathBuf,
+        /// Another directory to copy over the image, after the definition's
+        /// own files; for test images. Can be given more than once.
+        #[arg(long = "files", value_name = "DIR")]
+        extra_files: Vec<PathBuf>,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -57,6 +62,7 @@ fn main() -> Result<()> {
             ImageCommands::Build {
                 definition,
                 out,
+                extra_files,
                 dry_run,
             } => {
                 let def = ImageDef::load(&definition)?;
@@ -72,6 +78,7 @@ fn main() -> Result<()> {
                 image::Build {
                     def: &def,
                     def_dir,
+                    extra_files,
                     out,
                     runner: Runner { dry_run },
                 }

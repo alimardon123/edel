@@ -1,0 +1,182 @@
+#!/bin/sh
+# edel-update: installs an Edel OS update into the A/B slot that is not
+# running, and confirms the running slot once it has started (ADR-006).
+#
+#   edel-update status          show both slots and which one is running
+#   edel-update install IMAGE   write IMAGE to the other slot; it starts next
+#   edel-update mark-good       confirm that the running slot works
+#
+# GRUB reads the same variables (ORDER, <slot>_OK, <slot>_TRY) from the EFI
+# system partition and counts boot attempts; boot.rs in the edel tool
+# describes the scheme. This is the spike version of `edel update`.
+set -eu
+
+ENV_FILE=EFI/edel/grubenv
+ENV_SIZE=1024
+ESP_DIR=/run/edel/esp
+
+die() {
+	echo "edel-update: $*" >&2
+	exit 1
+}
+
+# Sets disk, running and other from the mounted root filesystem rather than
+# from the kernel command line: the slot we write must never be the one in
+# use.
+find_slots() {
+	root_dev=$(mountpoint -d /) || die "cannot tell which device / is on"
+	root_sys=$(readlink -f "/sys/dev/block/$root_dev")
+	[ -r "$root_sys/partition" ] || die "/ is not on a disk partition"
+	disk=$(basename "$(dirname "$root_sys")")
+	case "$(cat "$root_sys/partition")" in
+	2) running=A other=B ;;
+	3) running=B other=A ;;
+	*) die "/ is not on slot A (partition 2) or slot B (partition 3)" ;;
+	esac
+}
+
+# Prints the device of partition $1 on our disk.
+partition() {
+	for p in /sys/class/block/"$disk"/"$disk"*; do
+		if [ "$(cat "$p/partition" 2>/dev/null)" = "$1" ]; then
+			echo "/dev/${p##*/}"
+			return
+		fi
+	done
+	die "$disk has no partition $1"
+}
+
+slot_dev() {
+	case "$1" in
+	A) partition 2 ;;
+	B) partition 3 ;;
+	esac
+}
+
+mount_esp() {
+	mkdir -p "$ESP_DIR"
+	if ! mountpoint -q "$ESP_DIR"; then
+		esp=$(partition 1)
+		# Name the character set: some kernels (Alpine's virt) default to
+		# utf8 for FAT but do not ship that module.
+		mount -t vfat -o noatime,iocharset=iso8859-1 "$esp" "$ESP_DIR" ||
+			die "cannot mount the EFI system partition $esp"
+		trap 'umount "$ESP_DIR"' EXIT
+	fi
+	[ -f "$ESP_DIR/$ENV_FILE" ] || die "the EFI system partition has no $ENV_FILE"
+}
+
+load_env() {
+	ORDER='' A_OK=0 A_TRY=0 B_OK=0 B_TRY=0
+	while IFS='=' read -r name value; do
+		case "$name" in
+		ORDER) ORDER=$value ;;
+		A_OK) A_OK=$value ;;
+		A_TRY) A_TRY=$value ;;
+		B_OK) B_OK=$value ;;
+		B_TRY) B_TRY=$value ;;
+		esac
+	done <"$ESP_DIR/$ENV_FILE"
+}
+
+# Writes the variables back in place, the way GRUB's save_env does, so the
+# file keeps its size and its place on the partition.
+save_env() {
+	tmp=/run/edel/grubenv.new
+	printf '# GRUB Environment Block\nORDER=%s\nA_OK=%s\nA_TRY=%s\nB_OK=%s\nB_TRY=%s\n' \
+		"$ORDER" "$A_OK" "$A_TRY" "$B_OK" "$B_TRY" >"$tmp"
+	size=$(wc -c <"$tmp")
+	[ "$size" -le "$ENV_SIZE" ] || die "the boot variables do not fit in $ENV_SIZE bytes"
+	head -c $((ENV_SIZE - size)) /dev/zero | tr '\000' '#' >>"$tmp"
+	dd if="$tmp" of="$ESP_DIR/$ENV_FILE" bs="$ENV_SIZE" count=1 conv=notrunc,fsync 2>/dev/null
+	rm -f "$tmp"
+}
+
+cmd_status() {
+	find_slots
+	mount_esp
+	load_env
+	echo "running: $running"
+	echo "order: $ORDER"
+	echo "A: ok=$A_OK try=$A_TRY $(slot_dev A)"
+	echo "B: ok=$B_OK try=$B_TRY $(slot_dev B)"
+}
+
+cmd_install() {
+	image=$1
+	[ -r "$image" ] || die "cannot read $image"
+	find_slots
+	target=$(slot_dev "$other")
+	[ "$(cat "/sys/class/block/${target#/dev/}/dev")" != "$root_dev" ] ||
+		die "slot $other holds the running system; not writing to it"
+	if [ -b "$image" ]; then
+		size=$(blockdev --getsize64 "$image")
+	else
+		size=$(stat -c %s "$image")
+	fi
+	room=$(blockdev --getsize64 "$target")
+	[ "$size" -le "$room" ] ||
+		die "$image ($size bytes) does not fit in slot $other ($room bytes)"
+
+	mount_esp
+	load_env
+	# Switch the slot off first, so it can never start half written.
+	eval "${other}_OK=0 ${other}_TRY=0"
+	save_env
+
+	echo "writing $image to slot $other ($target)"
+	dd if="$image" of="$target" bs=1M conv=fsync 2>/dev/null
+	# Drop cached blocks, so the check below reads what is on the disk.
+	blockdev --flushbufs "$target"
+	want=$(head -c "$size" "$image" | sha256sum)
+	got=$(head -c "$size" "$target" | sha256sum)
+	[ "$want" = "$got" ] ||
+		die "slot $other does not match $image after writing; it stays off"
+
+	# GRUB hands the kernel root=UUID=..., so the new slot needs a UUID of
+	# its own rather than the one of the image it came from.
+	e2fsck -fp "$target" >/dev/null </dev/null || [ $? -le 1 ] ||
+		die "slot $other has filesystem errors; it stays off"
+	tune2fs -U random "$target" >/dev/null </dev/null
+
+	ORDER="$other $running"
+	eval "${other}_OK=1 ${other}_TRY=0"
+	save_env
+	echo "slot $other is ready and starts next time." \
+		"If it fails to start, Edel OS goes back to slot $running on its own."
+}
+
+cmd_mark_good() {
+	find_slots
+	mount_esp
+	load_env
+	case "$ORDER" in
+	"$running"*) ;;
+	*)
+		if [ "${ORDER%% *}" = "$other" ]; then
+			# GRUB passed over the first slot, so it failed to start.
+			msg="slot $other did not start, so slot $running is running instead; switching slot $other off"
+			echo "edel-update: $msg"
+			logger -t edel-update "$msg" || true
+			eval "${other}_OK=0"
+		fi
+		ORDER="$running $other"
+		;;
+	esac
+	eval "${running}_OK=1 ${running}_TRY=0"
+	save_env
+	echo "edel-update: slot $running confirmed"
+}
+
+case "${1:-}" in
+status) cmd_status ;;
+install)
+	[ $# -eq 2 ] || die "usage: edel-update install IMAGE"
+	cmd_install "$2"
+	;;
+mark-good) cmd_mark_good ;;
+*)
+	echo "usage: edel-update status | install IMAGE | mark-good" >&2
+	exit 2
+	;;
+esac
