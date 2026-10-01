@@ -19,6 +19,7 @@ install = [
   "busybox-binsh",
   "ca-certificates-bundle",
   "e2fsprogs",
+  "e2fsprogs-extra",
   "linux-virt",
   "openssh-server",
 ]
