@@ -29,3 +29,7 @@ Start at the [docs index](docs/README.md). In short:
 - **Our own shell:** a small Rust compositor with floating and tiling, one-button layout presets and adaptive form factors ([ADR-002](docs/ADR-002-own-desktop-shell.md), [ADR-004](docs/ADR-004-adaptive-apps.md)).
 
 We write four parts (compositor, shell-ui, settings and the `edel` tool) and reuse everything else.
+
+## License
+
+Edel OS is free software: you can share and change it under the [GNU General Public License](LICENSE), version 3 or (at your option) any later version.
