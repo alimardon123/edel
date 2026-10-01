@@ -29,3 +29,29 @@ Start at the [docs index](docs/README.md). In short:
 - **Our own shell:** a small Rust compositor with floating and tiling, one-button layout presets and adaptive form factors ([ADR-002](docs/ADR-002-own-desktop-shell.md), [ADR-004](docs/ADR-004-adaptive-apps.md)).
 
 We write four parts (compositor, shell-ui, settings and the `edel` tool) and reuse everything else.
+
+## Building images
+
+Images are described by small TOML files in [`images/`](images/) and built by the `edel` tool, which uses Alpine's own `apk`. Building needs root on Alpine, so the easiest way is the Alpine container:
+
+```sh
+docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+```
+
+That produces, in `out/`:
+
+| File | What it is |
+|------|------------|
+| `edel-container-x86_64.tar.gz` | Container image; load it with `docker import` |
+| `edel-vm-x86_64.ext4` | VM root filesystem |
+| `edel-vm-x86_64.vmlinuz`, `.initramfs` | Kernel and initramfs to boot it |
+
+To see every step without changing anything:
+
+```sh
+cargo run -- image build images/vm.toml --dry-run
+```
+
+CI builds both images on every change, runs the container, boots the VM in QEMU until the Edel OS login prompt appears, and reports image sizes.
+
+The VM image boots by handing QEMU the kernel directly. A bootable disk with a bootloader and A/B update slots comes next (ADR-006).
