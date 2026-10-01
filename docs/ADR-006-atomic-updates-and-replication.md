@@ -40,7 +40,7 @@ Base updates, system add-ons (for example extra drivers or virtualization tools)
 - A small script, `edel-update`, writes the other slot, checks it against the image and gives it a fresh filesystem UUID (the kernel finds its root by UUID).
 - CI installs an update and starts it, then installs a broken one and checks that the machine falls back on its own.
 
-Which updater to keep (our own `edel update` or RAUC packaged by us) is still open. Known gaps:
+**Updater decision (2026-10-01):** we keep our own updater. `edel-update` becomes `edel update` in the edel tool, and RAUC is not packaged. Packaging RAUC would bring glib, D-Bus and json-glib into the base and leave us maintaining a package Alpine itself only carries in testing, while our updater only has to write a slot, check it and flip a few boot variables. Because GRUB uses RAUC's variable names, RAUC remains a fallback if our updater ever outgrows itself. Known gaps:
 
 - **Hangs:** a slot that hangs instead of crashing never restarts, so it never falls back. A watchdog fixes this.
 - **Signing:** updates are checked against the image's checksum but not yet signed.
@@ -124,7 +124,7 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 ## Action Items
 
 1. [x] Spike A/B slots with automatic fallback on an Alpine VM image (see the spike result above; RAUC itself is not packaged for Alpine stable).
-2. [ ] Choose the updater: our own `edel update`, or RAUC packaged in our repository.
+2. [x] Choose the updater: our own `edel update` (decided 2026-10-01; RAUC is not packaged).
 3. [ ] Sign updates, and add a watchdog so a hanging slot also falls back.
 4. [ ] Define version 1 of the system file format.
 5. [ ] Implement export, diff and apply against the VM image.
