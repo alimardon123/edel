@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Test only (roadmap M2.4): CI builds this into the install test image with
+# `edel image build --files ci/install-test/files`. In the background, so
+# the boot guard never waits on it, it runs the steps in
+# /usr/share/edel/ci/install-test.sh.
+
+description="Edel OS install test"
+command=/usr/share/edel/ci/install-test.sh
+command_background=yes
+pidfile=/run/edel-install-test.pid
+output_log=/dev/console
+error_log=/dev/console
+
+depend() {
+	after sshd edel-boot-ok
+}

@@ -18,6 +18,7 @@ install = [
   "alpine-keys",
   "busybox-binsh",
   "ca-certificates-bundle",
+  "dosfstools",
   "e2fsprogs",
   "e2fsprogs-extra",
   "libgcc",
