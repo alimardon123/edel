@@ -413,9 +413,17 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
     for note in &notes {
         println!("edel system: {note}");
     }
+    // One change that fails never stops the others (Reliable): each is
+    // reported, and apply fails at the end.
+    let mut failed = 0;
     for change in &changes {
-        execute(change, boot).with_context(|| format!("applying {change}"))?;
-        println!("edel system: {change}");
+        match execute(change, boot) {
+            Ok(()) => println!("edel system: {change}"),
+            Err(err) => {
+                failed += 1;
+                eprintln!("edel system: could not apply {change}: {err:#}");
+            }
+        }
     }
     let machine = Path::new(SYSTEM_FILE);
     if let Some(path) = file.filter(|f| *f != machine) {
@@ -427,6 +435,9 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
         );
     } else if changes.is_empty() {
         println!("edel system: nothing to change");
+    }
+    if failed > 0 {
+        bail!("{failed} of {} changes could not be applied", changes.len());
     }
     Ok(())
 }
