@@ -60,6 +60,9 @@ jobs:
       - name: Seed a machine from a system file and log in over ssh
         run: sh ci/system-test.sh
 
+      - name: Install onto a blank disk, then boot it
+        run: sh ci/install-test.sh
+
       - name: Update the VM, then fall back from a broken update
         run: sh ci/ab-test.sh
 

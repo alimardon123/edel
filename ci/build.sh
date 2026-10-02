@@ -46,6 +46,10 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 ./target/release/edel image build images/vm.toml --files "$seed" --out out/system-test
 
+# The install test image (roadmap M2.4): the VM image plus a test service
+# that installs onto a blank second disk.
+./target/release/edel image build images/vm.toml --files ci/install-test/files --out out/install-test
+
 # The A/B test image: the VM image plus the test steps that ci/ab-test.sh runs.
 # health_timeout 30 keeps the hang cases to minutes (roadmap M1.5).
 ./target/release/edel image build images/vm.toml --files ci/ab-test/files \
@@ -77,7 +81,7 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/keys out/system-test; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/install-test out/keys out/system-test; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

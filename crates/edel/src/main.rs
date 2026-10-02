@@ -10,6 +10,7 @@ mod def;
 mod grubenv;
 mod guard;
 mod image;
+mod installer;
 mod loader;
 mod machine;
 mod release;
@@ -53,6 +54,22 @@ enum Commands {
     Update {
         #[command(subcommand)]
         command: UpdateCommands,
+    },
+    /// Install Edel OS on another disk, erasing it: the running system
+    /// becomes slot A, and FILE the new machine's system file
+    Install {
+        /// The disk, such as /dev/sda
+        disk: String,
+        /// The system file the new machine starts with
+        #[arg(long, value_name = "FILE")]
+        system: PathBuf,
+        /// Show what would be erased and written, and change nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Erase the disk without asking, for unattended installs; without
+        /// it and without a terminal, install shows its plan and exits 3
+        #[arg(long)]
+        yes: bool,
     },
     /// Check the file that describes a whole machine (system.toml)
     System {
@@ -282,6 +299,12 @@ fn main() -> Result<()> {
             UpdateCommands::MarkGood => update::mark_good(),
             UpdateCommands::Rollback => update::rollback(),
         },
+        Commands::Install {
+            disk,
+            system,
+            dry_run,
+            yes,
+        } => installer::install(&disk, &system, dry_run, yes),
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
             SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),

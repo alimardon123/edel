@@ -15,6 +15,8 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 ## Layout
 
 - `lib.rs`: the library; `system.rs`: `system.toml` format 1, the key table `KEYS` (path, kind, supported), the structs, `read` (lenient: unknown keys and wrong values are dropped and reported), `check` (strict, also refuses keys not supported yet) and `read_on_machine` (a newer format reads `system.toml.v<N>` beside it, else fails).
+- `install.rs` (library): the install plan, `edel::install::Plan`: the target disk's model, size and partitions (`sda3: Windows (NTFS, 420 GB)`) and the layout to write; Settings' installer page shows the same plan (M6.6a).
+- `installer.rs`: `edel install DISK --system FILE` (M2.4): refuses the running disk, a mounted disk and a system file with any problem; shows the plan for `--dry-run`, before asking for the disk's name on a terminal, and before exit 3 with neither a terminal nor `--yes`; then partitions with `boot::Layout`, copies the running slot to slot A (`e2fsck -fp`, `tune2fs -U random`), writes the ESP from `/usr/lib/edel/boot` with an initial grubenv, and creates `edel-data` holding the system file. `TOOLS` lists the tools it runs; a test holds `images/vm.toml` to it.
 - `main.rs`: the clap derive CLI and its dispatch. Doc comments on variants and fields are the `--help` text: write them for users.
 - `def.rs`: image definitions (`ImageDef`, `FORMAT`, validation).
 - `image.rs`: `edel image build`; `Build::run` calls `prepare_root`, `install_packages`, `copy_files`, `enable_services`, `configure`, then `pack_container` or `pack_vm`.

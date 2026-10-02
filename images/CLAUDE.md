@@ -35,6 +35,5 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M2.4 adds `sfdisk`, `dosfstools` and `mtools` to `vm.toml`.
 - M3.3 moves `vm.toml` to `linux-lts`, adds `images/laptop.toml` and sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
 - Definitions stay strict in every format.

@@ -64,6 +64,11 @@ impl Disk {
         Ok(Path::new("/dev").join(&self.part(number)?.name))
     }
 
+    /// The partition the running system is on.
+    pub(crate) fn running_device(&self) -> Result<PathBuf> {
+        self.device(self.running.partition())
+    }
+
     /// The other slot's partition, refusing the one the system runs from.
     fn install_target(&self) -> Result<&Part> {
         let target = self.running.other();
