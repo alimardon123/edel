@@ -305,9 +305,10 @@ fn main() -> Result<()> {
             ImageCommands::Check { definition } => {
                 let def = ImageDef::load(&definition)?;
                 println!(
-                    "{}: ok ({} packages)",
+                    "{}: ok ({} features, {} packages)",
                     def.stem(),
-                    def.packages.install.len()
+                    def.features.len(),
+                    def.packages.len()
                 );
                 Ok(())
             }

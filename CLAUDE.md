@@ -82,14 +82,15 @@ When docs disagree, the newer ADR wins.
 | Path | What |
 |---|---|
 | `crates/edel/` | The only crate: the `edel` tool (`edel image`, `boot`, `release`, `update` and `system check`) and the library `edel::system`; `tests/keys.txt` lists every system file key |
-| `images/` | Image definitions (`container.toml`, `vm.toml`, `laptop.toml`) and the `files/` overlays copied into images |
-| `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and overlay) are test-only |
+| `images/` | Image definitions (`container.toml`, `vm.toml`, `laptop.toml`), format 2: each lists its features and holds image facts |
+| `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
+| `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-008, the AerynOS review, the roadmap; index in `docs/README.md` |
 | `.github/workflows/ci.yml` | The one workflow, "CI" |
 | `Cargo.toml`, `Cargo.lock` | Workspace with one member; the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
 
-The compositor, shell-ui and settings crates, `features/` and `packages/` do not exist yet. Create each only in the roadmap step that introduces it.
+The compositor, shell-ui and settings crates and `packages/` do not exist yet. Create each only in the roadmap step that introduces it.
 
 ## Commands
 

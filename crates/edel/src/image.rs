@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use edel::features;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 
@@ -97,6 +98,7 @@ impl Build<'_> {
         self.install_packages(&root)?;
         // Our files first: some of them are services to enable.
         self.copy_files(&root)?;
+        self.install_features(&root)?;
         if def.variant == Variant::Vm {
             self.install_edel(&root)?;
             self.install_keys(&root)?;
@@ -155,31 +157,27 @@ impl Build<'_> {
                 apk.arg("--update-cache");
             }
         }
-        self.runner
-            .run(apk.arg("add").args(&self.def.packages.install))?;
+        self.runner.run(apk.arg("add").args(&self.def.packages))?;
         if let Some(vm) = &self.def.vm {
             self.make_initramfs(root, &vm.kernel)?;
         }
         self.record_packages(root)
     }
 
-    /// Rebuilds the initramfs with the features every bootable image shares
-    /// (`boot::INITRAMFS_FEATURES`, roadmap M3.3a), and leaves them in
+    /// Rebuilds the initramfs with the mkinitfs features the image's
+    /// features name (`initramfs`, roadmap M4.0), and leaves them in
     /// `/etc/mkinitfs/mkinitfs.conf` for any later kernel install.
     fn make_initramfs(&self, root: &Path, flavor: &str) -> Result<()> {
+        let features = self.def.initramfs.join(" ");
         self.runner.step(&format!(
-            "rebuild /boot/initramfs-{flavor} with the features {}",
-            boot::INITRAMFS_FEATURES
+            "rebuild /boot/initramfs-{flavor} with the features {features}"
         ));
         if self.runner.dry_run {
             return Ok(());
         }
         let conf = root.join("etc/mkinitfs/mkinitfs.conf");
         fs::create_dir_all(conf.parent().unwrap_or(root))?;
-        fs::write(
-            &conf,
-            format!("features=\"{}\"\n", boot::INITRAMFS_FEATURES),
-        )?;
+        fs::write(&conf, format!("features=\"{features}\"\n"))?;
         let suffix = format!("-{flavor}");
         let mut kernels = Vec::new();
         for entry in fs::read_dir(root.join("lib/modules"))? {
@@ -259,8 +257,10 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// Copies each feature's `features/NAME/` over the root, in the order
+    /// the definition lists them, then the test directories of `--files`.
     fn copy_files(&self, root: &Path) -> Result<()> {
-        let dirs = self.def.files.iter().map(|dir| self.def_dir.join(dir));
+        let dirs = self.def.features.iter().filter_map(|f| f.files.clone());
         for src in dirs.chain(self.extra_files.iter().cloned()) {
             if !self.runner.dry_run && !src.is_dir() {
                 bail!("files directory {} does not exist", src.display());
@@ -331,24 +331,49 @@ impl Build<'_> {
     }
 
     /// The image facts for os-release (one standard file for them, roadmap
-    /// default row "Image facts"): the health keys, and the hostname that
-    /// `edel system apply` goes back to when the system file has none;
-    /// none for containers.
+    /// default row "Image facts"): the health keys, the switchable features
+    /// shipped off (M4.0), and the hostname that `edel system apply` goes
+    /// back to when the system file has none; none for containers.
     fn health_keys(&self) -> Option<String> {
-        let image = &self.def.image;
-        if image.health.is_empty() {
+        if self.def.health.is_empty() {
             return None;
         }
-        let timeout = self.health_timeout.unwrap_or(image.health_timeout);
+        let timeout = self.health_timeout.unwrap_or(self.def.image.health_timeout);
         let mut keys = format!(
             "EDEL_IMAGE=\"{}\"\nEDEL_HEALTH=\"{}\"\nEDEL_HEALTH_TIMEOUT={timeout}\n",
             self.def.stem(),
-            image.health.join(" ")
+            self.def.health.join(" ")
         );
+        if !self.def.off.is_empty() {
+            keys.push_str(&format!(
+                "EDEL_SERVICES_OFF=\"{}\"\n",
+                self.def.off.join(" ")
+            ));
+        }
         if let Some(hostname) = &self.def.hostname {
             keys.push_str(&format!("EDEL_HOSTNAME=\"{hostname}\"\n"));
         }
         Some(keys)
+    }
+
+    /// Copies each listed feature's file to `/usr/share/edel/features/`,
+    /// so the parts can ask what this machine has (ADR-008).
+    fn install_features(&self, root: &Path) -> Result<()> {
+        let names: Vec<&str> = self.def.features.iter().map(|f| f.name.as_str()).collect();
+        self.runner.step(&format!(
+            "copy the feature files of {} to {}",
+            names.join(", "),
+            features::DIR
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let dir = root.join(features::DIR.trim_start_matches('/'));
+        fs::create_dir_all(&dir)?;
+        for feature in &self.def.features {
+            fs::write(dir.join(format!("{}.toml", feature.name)), &feature.text)?;
+        }
+        Ok(())
     }
 
     fn configure(&self, root: &Path) -> Result<()> {
@@ -579,7 +604,8 @@ impl Build<'_> {
                 .copied()
                 .filter(|f| root.join("boot").join(f).is_file())
                 .collect();
-            let mut text = boot::grub_cfg(kernel, cmdline, &microcode);
+            let modules = self.def.modules.join(",");
+            let mut text = boot::grub_cfg(kernel, &modules, cmdline, &microcode);
             if let Some(tag) = &self.loader_tag {
                 // A test tag makes a loader that differs from the last one.
                 text += &format!("\n# loader tag: {tag}\n");

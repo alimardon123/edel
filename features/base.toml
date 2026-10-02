@@ -1,0 +1,9 @@
+# Every image starts here. features/base/ holds the identity: os-release
+# (the build adds the version and image facts), issue and motd.
+format = 1
+summary = "The Edel OS base every image starts from"
+why = "Every image needs Alpine's signing keys so apk trusts its packages, /bin/sh, and the certificates every https download is checked against."
+packages = ["alpine-keys", "busybox-binsh", "ca-certificates-bundle"]
+# The root's file system and the overlay /etc sits on (M1.4), loaded
+# before the root is looked for. An image without a kernel ignores them.
+modules = ["ext4", "overlay"]

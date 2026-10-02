@@ -320,19 +320,16 @@ mod tests {
     }
 
     #[test]
-    fn the_vm_image_has_every_tool_install_runs() {
-        let def: toml::Table = toml::from_str(include_str!("../../../images/vm.toml")).unwrap();
-        let packages: Vec<&str> = def["packages"]["install"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|p| p.as_str())
-            .collect();
-        for (tool, package) in TOOLS {
-            assert!(
-                packages.contains(package),
-                "{tool} needs {package} in images/vm.toml"
-            );
+    fn every_bootable_image_has_every_tool_install_runs() {
+        let images = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../images");
+        for name in ["vm", "laptop"] {
+            let def = crate::def::ImageDef::load(&images.join(format!("{name}.toml"))).unwrap();
+            for (tool, package) in TOOLS {
+                assert!(
+                    def.packages.iter().any(|p| p == package),
+                    "{tool} needs {package} in a feature of images/{name}.toml"
+                );
+            }
         }
     }
 }

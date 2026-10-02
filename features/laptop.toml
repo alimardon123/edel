@@ -1,0 +1,22 @@
+# Only the laptop image needs this (a feature named after its image); the
+# desktop image lists it too (M4.1).
+format = 1
+summary = "Real laptops: the long-term kernel, firmware for graphics and Wi-Fi, and CPU microcode"
+why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them, and CPU microcode, which GRUB loads before the initramfs (M3.3a)."
+packages = [
+  "linux-lts",
+  "amd-ucode",
+  "intel-ucode",
+  "linux-firmware-amdgpu",
+  "linux-firmware-ath10k",
+  "linux-firmware-ath11k",
+  "linux-firmware-i915",
+  "linux-firmware-intel",
+  "linux-firmware-mediatek",
+  "linux-firmware-radeon",
+  "linux-firmware-rtl_nic",
+  "linux-firmware-rtlwifi",
+  "linux-firmware-rtw88",
+  "linux-firmware-rtw89",
+  "linux-firmware-xe",
+]
