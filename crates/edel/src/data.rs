@@ -12,6 +12,8 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread::sleep;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 
@@ -224,6 +226,30 @@ fn bind_home_and_var() -> Result<()> {
     Ok(())
 }
 
+/// Grows the mounted file system on `dev` to fill its partition, online; it
+/// does nothing when the file system already fills it, and every boot runs
+/// it, so a growth that failed is finished on the next boot. Right after
+/// partx resized the partition one try has failed (CI, 2026-10-02), so it
+/// tries three times, a second apart, and prints resize2fs's own error.
+fn grow_file_system(dev: &Path) {
+    let mut why = String::new();
+    for attempt in 1..=3 {
+        match Command::new("resize2fs").arg(dev).output() {
+            Ok(out) if out.status.success() => return,
+            Ok(out) => {
+                why = String::from_utf8_lossy(&out.stderr)
+                    .trim()
+                    .replace('\n', "; ")
+            }
+            Err(err) => why = err.to_string(),
+        }
+        if attempt < 3 {
+            sleep(Duration::from_secs(1));
+        }
+    }
+    eprintln!("warning: could not grow the data file system: {why}");
+}
+
 /// Grows the data partition if the disk has room, mounts it at `/data` and
 /// grows its file system to fill it.
 pub fn mount_data() -> Result<()> {
@@ -250,14 +276,7 @@ pub fn mount_data() -> Result<()> {
             .arg(MOUNT_POINT))
         .with_context(|| format!("cannot mount {} at {MOUNT_POINT}", dev.display()))?;
     }
-    // Online resize: does nothing when the file system already fills it.
-    if let Err(err) = run(Command::new("resize2fs")
-        .arg(&dev)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null()))
-    {
-        eprintln!("warning: could not grow the data file system: {err:#}");
-    }
+    grow_file_system(&dev);
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
     overlay_etc()?;
