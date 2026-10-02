@@ -20,10 +20,15 @@ try() {
 		echo "$err" | tail -n 5 | sed 's/^/FLATPAK-TEST:   /'
 		return 1
 	fi
-	out=$(dbus-run-session -- flatpak run --command=sh "org.freedesktop.Platform//$1" \
-		-c 'echo hello from glibc' 2>&1 | tail -n 3)
-	say "runtime $1: $out ($(($(date +%s) - start)) s)"
-	echo "$out" | grep -q 'hello from glibc'
+	# One line per runtime: the shell's line, or the tail of the error.
+	if dbus-run-session -- flatpak run --command=sh "org.freedesktop.Platform//$1" \
+		-c 'echo hello from glibc' 2>/tmp/flatpak-run.err | grep -qx 'hello from glibc'; then
+		say "runtime $1: ran a shell, which printed hello from glibc ($(($(date +%s) - start)) s)"
+	else
+		say "runtime $1: installed but did not run"
+		tail -n 5 /tmp/flatpak-run.err | sed 's/^/FLATPAK-TEST:   /'
+		return 1
+	fi
 }
 
 if unshare -U true 2>/dev/null; then
