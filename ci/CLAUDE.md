@@ -1,6 +1,6 @@
 # CI scripts
 
-`.github/workflows/ci.yml` (workflow "CI") runs on every pull request and every push to `main`. Its two jobs run in parallel on `ubuntu-latest`: "Rust checks" (the cargo commands in the root CLAUDE.md) and "Build and boot images" (the scripts here). There is no toolchain pin; the images job caches `.cargo-home` and `target`, keyed on `Cargo.lock`.
+`.github/workflows/ci.yml` (workflow "CI") runs on every pull request and every push to `main`; a new push to a pull request cancels that pull request's older run. Its two jobs run in parallel on `ubuntu-latest`: "Rust checks" (the cargo commands in the root CLAUDE.md) and "Build and boot images" (the scripts here). There is no toolchain pin; the images job caches `.cargo-home` and `target`, keyed on `Cargo.lock`.
 
 | Script | What it does | Needs |
 |---|---|---|
