@@ -1,0 +1,9 @@
+# The supported releases (roadmap M3.4, docs/RELEASE.md): ci/upgrade-test.sh
+# (M3.5) updates the VM image of every entry to the build under test. Empty
+# until the first tagged release is published. An entry looks like:
+#
+#   [[releases]]
+#   version = "2026.10.1"
+#   platform_level = 0
+#   vm_image = "https://github.com/alimardon123/edel/releases/download/v2026.10.1/edel-vm-x86_64.img.gz"
+format = 1

@@ -74,7 +74,12 @@ enum Commands {
     },
     /// Print what an issue about this machine needs, as TOML: the release,
     /// kernel, boot time, memory in use, PCI devices and the kernel log
-    Report,
+    Report {
+        /// Write it to /EFI/edel/report.toml on the EFI system partition
+        /// instead, where any computer can read it from the disk or stick
+        #[arg(long)]
+        esp: bool,
+    },
     /// Check the file that describes a whole machine (system.toml)
     System {
         #[command(subcommand)]
@@ -149,6 +154,13 @@ enum ReleaseCommands {
         /// The channel, for example stable
         #[arg(long, default_value = "stable")]
         channel: String,
+        /// Name each image by its URL under this address instead of beside
+        /// the manifest, for a channel served apart from the images
+        #[arg(long, value_name = "URL")]
+        base_url: Option<String>,
+        /// Write release.toml here instead of beside the images
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
         /// The update images, all in one directory
         #[arg(required = true)]
         images: Vec<PathBuf>,
@@ -322,8 +334,17 @@ fn main() -> Result<()> {
             ReleaseCommands::Make {
                 version,
                 channel,
+                base_url,
+                out,
                 images,
-            } => release::make(&version, &channel, &images).map(|_| ()),
+            } => release::make(
+                &version,
+                &channel,
+                base_url.as_deref(),
+                out.as_deref(),
+                &images,
+            )
+            .map(|_| ()),
             ReleaseCommands::Sign { key, file } => release::sign(&key, &file),
             ReleaseCommands::Verify { keys, file } => release::verify(&keys, &file),
         },
@@ -344,7 +365,7 @@ fn main() -> Result<()> {
             dry_run,
             yes,
         } => installer::install(&disk, &system, dry_run, yes),
-        Commands::Report => report::report(),
+        Commands::Report { esp } => report::report(esp),
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
             SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),

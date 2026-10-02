@@ -34,8 +34,10 @@ boot out/boot-laptop.log out/edel-laptop-x86_64.img
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot-laptop.log &&
 	grep -q 'edel update: slot A confirmed' out/boot-laptop.log &&
 	grep -q 'edel-data: mounted /data' out/boot-laptop.log &&
-	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log; then
-	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts to the login prompt and was confirmed in ${waited}s"
+	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log &&
+	grep -q 'Writing the hardware report to the EFI system partition' out/boot-laptop.log &&
+	! grep -q 'Writing the hardware report.*!!' out/boot-laptop.log; then
+	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts to the login prompt, was confirmed and left its report in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
 	exit 1

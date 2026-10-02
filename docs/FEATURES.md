@@ -14,7 +14,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `ab-boot` | Two root slots, rollback, `/data`, the system file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-system; edel-boot-ok | vm, laptop |
 | `ssh` | Log in from another computer; switchable | `openssh-server` | sshd | vm; laptop ships it off |
 | `vm` | The small kernel for virtual machines | `linux-virt` | none | vm |
-| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | none | laptop |
+| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop |
 
 CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`.
 

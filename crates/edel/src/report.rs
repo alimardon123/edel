@@ -132,8 +132,9 @@ fn render(report: &Report) -> Result<String> {
     Ok(toml::to_string(report)?)
 }
 
-/// `edel report`.
-pub fn report() -> Result<()> {
+/// `edel report`, or with `esp` written to `/EFI/edel/report.toml` on the
+/// EFI system partition, where the laptop stick leaves it at every boot.
+pub fn report(esp: bool) -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let dmesg = Command::new("dmesg")
         .output()
@@ -154,7 +155,13 @@ pub fn report() -> Result<()> {
         dmesg,
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
     };
-    print!("{}", render(&report)?);
+    let text = render(&report)?;
+    if esp {
+        let path = crate::update::write_beside_grubenv("report.toml", &text)?;
+        println!("edel report: wrote {path} on the EFI system partition");
+    } else {
+        print!("{text}");
+    }
     Ok(())
 }
 
