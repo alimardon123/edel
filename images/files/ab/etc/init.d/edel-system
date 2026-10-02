@@ -13,6 +13,7 @@ depend() {
 
 start() {
 	ebegin "Applying the system file"
-	/usr/bin/edel system apply --boot
-	eend $?
+	# Test only (M2.5): broken on purpose, so the install and A/B tests
+	# must fail.
+	eend 1 "broken on purpose"
 }
