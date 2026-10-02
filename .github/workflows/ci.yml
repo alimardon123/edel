@@ -63,7 +63,7 @@ jobs:
       - name: Install onto a blank disk, then boot it
         run: sh ci/install-test.sh
 
-      - name: Update the VM, then fall back from a broken update
+      - name: Update the installed VM, then fall back from broken updates
         run: sh ci/ab-test.sh
 
       - name: Install and run a Flatpak runtime on the musl base
