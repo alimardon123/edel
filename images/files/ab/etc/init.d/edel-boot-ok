@@ -1,7 +1,9 @@
 #!/sbin/openrc-run
-# Confirms the running A/B slot once the system has started, so GRUB keeps
-# starting it (ADR-006). If this never runs, GRUB tries the slot a few times
-# and then starts the other one.
+# Tells the boot guard that the default runlevel was reached, the health
+# file named `default-runlevel` (ADR-006, roadmap M1.5), and waits for the
+# guard to confirm the slot, so the result shows before the login prompt.
+# If this never runs, the guard lets the watchdog restart the machine and
+# GRUB tries the slot a few times before starting the other one.
 
 description="Confirm that this Edel OS slot starts"
 
@@ -11,6 +13,14 @@ depend() {
 
 start() {
 	ebegin "Confirming that this Edel OS slot works"
-	/usr/bin/edel update mark-good
+	mkdir -p /run/edel
+	touch /run/edel/default-reached
+	i=0
+	while [ ! -s /run/edel/confirmed ] && [ "$i" -lt 30 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	cat /run/edel/confirmed 2>/dev/null
+	[ -s /run/edel/confirmed ]
 	eend $?
 }

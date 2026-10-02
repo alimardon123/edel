@@ -28,12 +28,16 @@ install = [
 ]
 
 [services]
-sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-data"]
+sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
 boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
 default = ["sshd", "edel-boot-ok"]
 shutdown = ["mount-ro", "killprocs", "savecache"]
 
+[image]
+# The boot guard confirms the slot once the default runlevel is reached.
+health = ["default-runlevel"]
+
 [vm]
 kernel = "virt"
 slot_mib = 1024
-cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk,overlay"
+cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk,overlay,i6300esb,softdog i6300esb.heartbeat=15 softdog.soft_margin=15"

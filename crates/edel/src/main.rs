@@ -8,6 +8,7 @@ mod boot;
 mod data;
 mod def;
 mod grubenv;
+mod guard;
 mod image;
 mod run;
 mod update;
@@ -50,6 +51,9 @@ enum Commands {
 enum BootCommands {
     /// Grow the data partition on first boot and mount it at /data
     MountData,
+    /// Watch this slot until it is healthy, then confirm it; a slot that
+    /// hangs is restarted by the watchdog and falls back
+    Guard,
 }
 
 #[derive(Subcommand)]
@@ -80,6 +84,10 @@ enum ImageCommands {
         /// own files; for test images. Can be given more than once.
         #[arg(long = "files", value_name = "DIR")]
         extra_files: Vec<PathBuf>,
+        /// Seconds the boot guard waits for health before the watchdog
+        /// restarts the machine, instead of the definition's; for test images
+        #[arg(long, value_name = "SECS")]
+        health_timeout: Option<u64>,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -98,6 +106,7 @@ fn main() -> Result<()> {
                 definition,
                 out,
                 extra_files,
+                health_timeout,
                 dry_run,
             } => {
                 let def = ImageDef::load(&definition)?;
@@ -114,6 +123,7 @@ fn main() -> Result<()> {
                     def: &def,
                     def_dir,
                     extra_files,
+                    health_timeout,
                     out,
                     runner: Runner { dry_run },
                 }
@@ -131,6 +141,7 @@ fn main() -> Result<()> {
         },
         Commands::Boot { command } => match command {
             BootCommands::MountData => data::mount_data(),
+            BootCommands::Guard => guard::guard(),
         },
         Commands::Update { command } => match command {
             UpdateCommands::Status => update::status(),

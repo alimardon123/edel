@@ -388,6 +388,15 @@ pub fn install(image: &Path) -> Result<()> {
 
 /// Confirms that the running slot works, so GRUB keeps starting it.
 pub fn mark_good() -> Result<()> {
+    for line in confirm_running()? {
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// Confirms the running slot and returns what happened, one line each.
+pub(crate) fn confirm_running() -> Result<Vec<String>> {
+    let mut lines = Vec::new();
     let _lock = Lock::take()?;
     let disk = Disk::find()?;
     let esp = Esp::mount(&disk)?;
@@ -397,15 +406,15 @@ pub fn mark_good() -> Result<()> {
             "slot {failed} did not start, so slot {} is running instead; switching slot {failed} off",
             disk.running
         );
-        println!("edel update: {msg}");
+        lines.push(format!("edel update: {msg}"));
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
         if let Err(err) = record_fallback(failed, disk.running) {
             eprintln!("warning: could not record the fallback: {err:#}");
         }
     }
     esp.save(&env)?;
-    println!("edel update: slot {} confirmed", disk.running);
-    Ok(())
+    lines.push(format!("edel update: slot {} confirmed", disk.running));
+    Ok(lines)
 }
 
 /// The fallback record shell-ui shows once (M5.9).

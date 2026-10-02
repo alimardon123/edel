@@ -16,7 +16,8 @@ for def in images/*.toml; do
 	./target/release/edel image build "$def" --out out
 done
 # The A/B test image: the VM image plus the test steps that ci/ab-test.sh runs.
-./target/release/edel image build images/vm.toml --files ci/ab-test/files --out out/ab-test
+# health_timeout 30 keeps the hang cases to minutes (roadmap M1.5).
+./target/release/edel image build images/vm.toml --files ci/ab-test/files --health-timeout 30 --out out/ab-test
 
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.

@@ -27,6 +27,8 @@ pub struct Build<'a> {
     /// for test images. Not part of the definition, so a release image can
     /// never pick them up by accident.
     pub extra_files: Vec<PathBuf>,
+    /// Another health timeout in seconds, for test images (M1.5).
+    pub health_timeout: Option<u64>,
     pub out: PathBuf,
     pub runner: Runner,
 }
@@ -148,10 +150,31 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// The health keys for os-release (one standard file for image
+    /// facts, roadmap default row "Image facts"); none for containers.
+    fn health_keys(&self) -> Option<String> {
+        let image = &self.def.image;
+        if image.health.is_empty() {
+            return None;
+        }
+        let timeout = self.health_timeout.unwrap_or(image.health_timeout);
+        Some(format!(
+            "EDEL_HEALTH=\"{}\"\nEDEL_HEALTH_TIMEOUT={timeout}\n",
+            image.health.join(" ")
+        ))
+    }
+
     fn configure(&self, root: &Path) -> Result<()> {
         // OS defaults live in /usr (stateless /etc, ADR-006); /etc only points at them.
         self.runner
             .step("point /etc/os-release at /usr/lib/os-release");
+        let health = self.health_keys();
+        if let Some(keys) = &health {
+            self.runner.step(&format!(
+                "add {} to /usr/lib/os-release",
+                keys.trim().replace('\n', " ")
+            ));
+        }
         self.runner.step("lock the root password");
         if let Some(hostname) = &self.def.hostname {
             self.runner.step(&format!("set the hostname to {hostname}"));
@@ -168,6 +191,14 @@ impl Build<'_> {
             fs::remove_file(&os_release)?;
         }
         std::os::unix::fs::symlink("../usr/lib/os-release", &os_release)?;
+        if let Some(keys) = &health {
+            let path = root.join("usr/lib/os-release");
+            let mut text = fs::read_to_string(&path)?;
+            if !text.ends_with('\n') {
+                text.push('\n');
+            }
+            fs::write(&path, text + keys)?;
+        }
 
         let shadow_path = root.join("etc/shadow");
         let shadow = fs::read_to_string(&shadow_path).context("reading /etc/shadow")?;
