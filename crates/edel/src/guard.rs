@@ -89,14 +89,16 @@ pub fn guard() -> Result<()> {
         }
         if healthy(&files) {
             // A healthy machine is never reset, even when confirming fails.
-            let lines = match update::confirm_running() {
+            let lines = match confirm_when_free(&mut watchdog) {
                 Ok(lines) => lines,
                 Err(err) => vec![format!("edel update: could not confirm this slot: {err:#}")],
             };
-            fs::write(CONFIRMED, lines.join("\n") + "\n")?;
             if let Some(mut dog) = watchdog.take() {
                 // The magic close: stop the watchdog instead of resetting.
                 let _ = dog.write_all(b"V");
+            }
+            if let Err(err) = fs::write(CONFIRMED, lines.join("\n") + "\n") {
+                eprintln!("warning: edel guard: could not write {CONFIRMED}: {err}");
             }
             return Ok(());
         }
@@ -108,6 +110,27 @@ pub fn guard() -> Result<()> {
             std::process::exit(1);
         }
         sleep(Duration::from_secs(1));
+    }
+}
+
+/// Confirms the slot, waiting while another updater holds the lock (an
+/// install started before the health files appeared) and petting the
+/// watchdog meanwhile: the machine is healthy, so it is never reset here.
+/// Gives up after 30 minutes.
+fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
+    let lock = Path::new("/run/edel/update.lock");
+    let start = Instant::now();
+    loop {
+        match update::confirm_running() {
+            Ok(lines) => return Ok(lines),
+            Err(_) if lock.exists() && start.elapsed() < Duration::from_secs(1800) => {
+                if let Some(dog) = watchdog.as_mut() {
+                    let _ = dog.write_all(b".");
+                }
+                sleep(Duration::from_secs(1));
+            }
+            Err(err) => return Err(err),
+        }
     }
 }
 

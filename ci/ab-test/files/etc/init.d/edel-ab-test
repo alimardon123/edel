@@ -8,8 +8,7 @@
 #      changed is refused. The update comes over HTTP from the host. Write markers into /home and
 #      /var, delete /var/lib/ci-new, change the hostname, note the ssh
 #      host key, add a user and drop a system user from this machine's
-#      /etc/passwd, then install the update (the disk with no partitions)
-#      into slot B.
+#      /etc/passwd, then install the update into slot B.
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
 #      from the slot, and so did /var/lib/ci-new; the shrunk update grew to

@@ -42,8 +42,10 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
 
 /// Replaces `dest` with `src` the careful way on FAT, where a rename is not
 /// guaranteed atomic: keep the old file as `.prev`, write `.new`, flush it,
-/// rename it over `dest` and flush the directory. `dest` exists at every
-/// moment, so a power cut leaves the old or the new file.
+/// rename it over `dest`, then flush the renamed file and the directory.
+/// With the partition mounted `dirsync` (`update::Esp`) the rename itself
+/// is written at once. `dest` exists at every moment, so a power cut leaves
+/// the old or the new file.
 pub fn swap_file(src: &Path, dest: &Path) -> Result<()> {
     if dest.exists() {
         fs::copy(dest, with_suffix(dest, ".prev"))?;
@@ -52,6 +54,7 @@ pub fn swap_file(src: &Path, dest: &Path) -> Result<()> {
     fs::copy(src, &new).with_context(|| format!("writing {}", new.display()))?;
     File::open(&new)?.sync_all()?;
     fs::rename(&new, dest).with_context(|| format!("replacing {}", dest.display()))?;
+    File::open(dest)?.sync_all()?;
     if let Some(dir) = dest.parent() {
         File::open(dir)?.sync_all()?;
     }

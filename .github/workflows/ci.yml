@@ -79,7 +79,7 @@ jobs:
 
       - name: Report package changes against the preview
         if: always()
-        run: sh ci/packages.sh >> "$GITHUB_STEP_SUMMARY"
+        run: sh ci/package-report.sh >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the container image and boot log
         if: always()

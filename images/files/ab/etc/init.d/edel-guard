@@ -3,8 +3,9 @@
 # guard` pets the hardware watchdog in the background until the health
 # files named by EDEL_HEALTH in /usr/lib/os-release exist, then confirms
 # the slot and exits. If they never appear, it stops petting, the watchdog
-# restarts the machine, and GRUB counts the try. Started early in sysinit,
-# so a hang anywhere after it falls back.
+# restarts the machine, and GRUB counts the try. Started first in sysinit,
+# before mdev and hwdrivers load drivers, so a hang anywhere after it
+# falls back; the watchdog driver comes from the initramfs (modules=).
 
 description="Watch this Edel OS slot until it is healthy"
 command=/usr/bin/edel
@@ -15,6 +16,6 @@ output_log=/dev/console
 error_log=/dev/console
 
 depend() {
-	after hwdrivers
-	before edel-data
+	after devfs
+	before mdev hwdrivers edel-data
 }

@@ -170,7 +170,14 @@ for s in $ORDER; do
 	fi
 done
 if [ -z "$slot" ]; then
-	# Every slot used its tries. Starting something beats stopping here.
+	# Every slot used its tries. Starting something beats stopping here:
+	# a slot that is OK first, then the first in ORDER.
+	for s in $ORDER; do
+		if [ -z "$slot" ]; then
+			if [ "$s" = "A" ]; then if [ "$A_OK" = "1" ]; then set slot="A"; fi; fi
+			if [ "$s" = "B" ]; then if [ "$B_OK" = "1" ]; then set slot="B"; fi; fi
+		fi
+	done
 	for s in $ORDER; do
 		if [ -z "$slot" ]; then set slot="$s"; fi
 	done
@@ -181,13 +188,14 @@ save_env -f "$prefix/grubenv" A_TRY B_TRY
 echo "Edel OS: starting slot $slot (A ok=$A_OK try=$A_TRY, B ok=$B_OK try=$B_TRY)"
 
 # Menu entries by number: GRUB 2.12 ignores an entry id in fallback. If the
-# slot's kernel cannot even be loaded, the other slot starts right away.
+# slot's kernel cannot even be loaded, the other slot starts right away,
+# but only when it is OK: a switched-off slot may be half written.
 if [ "$slot" = "B" ]; then
 	set default=1
-	set fallback=0
+	if [ "$A_OK" = "1" ]; then set fallback=0; fi
 else
 	set default=0
-	set fallback=1
+	if [ "$B_OK" = "1" ]; then set fallback=1; fi
 fi
 "#;
     let cmdline = format!("root=UUID=$uuid rootfstype=ext4 panic=10 {cmdline}");
@@ -272,6 +280,13 @@ mod tests {
         }
         assert!(!cfg.contains("\"$try\" = \"3\""));
         assert!(cfg.contains("save_env -f \"$prefix/grubenv\" A_TRY B_TRY"));
+        // GRUB falls back only to a slot that is OK, and when every slot
+        // used its tries it starts one that is OK first.
+        assert!(cfg.contains("if [ \"$A_OK\" = \"1\" ]; then set fallback=0; fi"));
+        assert!(cfg.contains("if [ \"$B_OK\" = \"1\" ]; then set fallback=1; fi"));
+        assert!(cfg.contains(
+            "if [ \"$s\" = \"A\" ]; then if [ \"$A_OK\" = \"1\" ]; then set slot=\"A\"; fi; fi"
+        ));
     }
 
     #[test]

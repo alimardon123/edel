@@ -24,6 +24,7 @@ start() {
 	# The version on serial, for the boot test (M3.1).
 	. /usr/lib/os-release
 	echo "$PRETTY_NAME, channel $EDEL_CHANNEL, loader $EDEL_LOADER_VERSION"
-	[ -s /run/edel/confirmed ]
+	# A slot the guard could not confirm is reported as a failure.
+	[ -s /run/edel/confirmed ] && ! grep -q 'could not confirm' /run/edel/confirmed
 	eend $?
 }
