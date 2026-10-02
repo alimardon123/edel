@@ -119,7 +119,7 @@ sh ci/sizes.sh
 - Cloud sessions before 2026-10-02 got HTTP 403 from `dl-cdn.alpinelinux.org`; on 2026-10-02 it answered 200. Test it with one request before assuming either way. If it is blocked, the image build, boot-test and ab-test run only in CI, so most **Done when:** checks are proven on the PR. Push, then read the result; a full CI run takes about 3 minutes.
 - The environment seen on 2026-10-02 also had no Docker daemon, no `/dev/kvm` and no `apk`. Check before relying on them.
 - `gh pr view` and other GraphQL `gh` commands failed. Use the GitHub MCP tools when the session has them, otherwise `gh api repos/alimardon123/edel/...` (REST), which worked.
-- Subagents (Agent or Workflow tools): tell them to work offline, because a web fetch parks them on a permission prompt. Drafting and synthesis agents run on Opus or Sonnet; judge, critique and review agents run on Fable or Opus (Alimardon's choice). Say which models ran.
+- Subagents (Agent or Workflow tools): tell them to work offline, because a web fetch parks them on a permission prompt. Drafting and synthesis agents run on Opus or Sonnet; judge, critique and review agents run on Opus only (Alimardon, 2026-10-02, replacing "Fable or Opus"). Say which models ran.
 - Claude has no hardware. Alimardon's trials on their laptops are the only hardware feedback and arrive as comments and `edel report` files.
 - The design docs live only in this repository's `docs/`; any other copy is stale.
 
@@ -133,7 +133,7 @@ sh ci/sizes.sh
 - Fix in the same PR every doc line the change makes false, these CLAUDE.md files included.
 - Lasting decisions go into the repo (an ADR, a default row, a plan log line), not only into chat. The next session sees only the repo.
 - **Merging:** every change goes through a PR. Claude may merge its own PR with a merge commit (not squash or rebase) once every check is green and the PR is mergeable. Your own PR means one a Claude session opened here; its body ends with the Claude Code attribution lines, whatever author GitHub shows. Never merge a PR Alimardon wrote. Never merge a red, pending or conflicted PR. If CI is red for a reason outside your change, do not merge; report it.
-- **Reviews (Alimardon, 2026-10-02):** move fast; CI is the check on each PR, with no review agents per PR. After every 5 merged roadmap steps, run one end-to-end workflow that reviews and tests everything those steps changed, and fix what it finds.
+- **Reviews (Alimardon, 2026-10-02):** move fast; CI is the check on each PR, with no review agents per PR. After every 5 finished milestones, or every 2 when they are big (M1 and M2 each count as big), run one end-to-end workflow, with Opus as the only reviewer, that reviews and tests everything those milestones changed, and fix what it finds. The first one covered M1.
 - **Waiting for CI:** after opening the PR, subscribe to its activity when the session offers that; the CI result then wakes the session. Otherwise read the PR's check runs with the GitHub MCP tools or `gh api` REST. Following your own PR is not a periodic run: rule 7 bans only runs that wake a session on a schedule. When the run finishes, put the measured results in a code PR's "**In CI:**" line, then merge and report.
 - **Stacked PRs:** once the lower PR merges, retarget the upper one to `main` before merging it. (#2 was merged into #1's branch after #1 had merged, so it never reached `main` and was re-landed as #4.)
 - A branch behind `main`: merge `origin/main` into it; do not rewrite a pushed branch.
