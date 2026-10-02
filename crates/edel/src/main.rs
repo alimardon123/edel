@@ -14,6 +14,7 @@ mod installer;
 mod loader;
 mod machine;
 mod release;
+mod report;
 mod run;
 mod update;
 
@@ -71,6 +72,9 @@ enum Commands {
         #[arg(long)]
         yes: bool,
     },
+    /// Print what an issue about this machine needs, as TOML: the release,
+    /// kernel, boot time, memory in use, PCI devices and the kernel log
+    Report,
     /// Check the file that describes a whole machine (system.toml)
     System {
         #[command(subcommand)]
@@ -230,8 +234,8 @@ enum ImageCommands {
         /// all install from one package index
         #[arg(long, value_name = "DIR")]
         apk_cache: Option<PathBuf>,
-        /// Skip the .gz copies of a VM image's disk and slot; for test
-        /// images nobody downloads
+        /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
+        /// update image, is always made); for test images
         #[arg(long)]
         no_compress: bool,
         /// Print every step without changing anything
@@ -339,6 +343,7 @@ fn main() -> Result<()> {
             dry_run,
             yes,
         } => installer::install(&disk, &system, dry_run, yes),
+        Commands::Report => report::report(),
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
             SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),

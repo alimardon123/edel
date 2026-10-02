@@ -45,5 +45,7 @@ health = ["default-runlevel"]
 # would be simpler; a VM image that doubles in size for drivers it never
 # loads is waste people see in every download and update (roadmap M3.3a).
 kernel = "virt"
-slot_mib = 1024
+# Every slot of a machine is 4096 MiB (docs/FORMATS.md, M3.3b): a VM
+# runs from this disk as it is, so it must take every later update.
+slot_mib = 4096
 cmdline = "console=ttyS0"

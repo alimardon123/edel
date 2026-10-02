@@ -9,7 +9,9 @@ set -eu
 
 target=out/install-target.img
 rm -f "$target"
-truncate -s 3G "$target"
+# Two 4096 MiB slots, the ESP and room for data (M3.3b). Zeros written to
+# it stay holes, so the copied slot costs the runner no disk.
+truncate -s 10G "$target"
 log=out/install-test.log
 fail() {
 	cat "$1"
@@ -20,7 +22,7 @@ fail() {
 run_vm "$log" 'INSTALL-TEST: (installed|FAIL)' "${INSTALL_TEST_TIMEOUT:-600}" -no-reboot \
 	-drive if=none,id=disk0,format=raw,file=out/install-test/edel-vm-x86_64.img,snapshot=on \
 	-device virtio-blk-pci,drive=disk0,bootindex=0 \
-	-drive if=none,id=disk1,format=raw,file="$target" \
+	-drive if=none,id=disk1,format=raw,file="$target",discard=unmap,detect-zeroes=unmap \
 	-device virtio-blk-pci,drive=disk1
 grep -q 'INSTALL-TEST: installed' "$log" || fail "$log" "the live image did not install"
 grep -q 'Install Edel OS on /dev/vdb' "$log" || fail "$log" "install showed no plan"

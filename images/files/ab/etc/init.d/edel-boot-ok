@@ -29,7 +29,10 @@ start() {
 	read -r up _ </proc/uptime
 	mem=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { print int((t - a) / 1024) }' /proc/meminfo)
 	root=$(df -Pm / | awk 'NR == 2 { print $3 }')
-	echo "Started in $up s, $mem MiB of memory in use, $root MiB used on the root"
+	started="Started in $up s, $mem MiB of memory in use, $root MiB used on the root"
+	echo "$started"
+	# edel report reads it (M3.3b).
+	echo "$started" >/run/edel/started
 	# A slot the guard could not confirm is reported as a failure.
 	[ -s /run/edel/confirmed ] && ! grep -q 'could not confirm' /run/edel/confirmed
 	eend $?

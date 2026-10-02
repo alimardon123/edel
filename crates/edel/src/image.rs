@@ -45,8 +45,8 @@ pub struct Build<'a> {
     /// An apk cache shared by every image of one run, so they all install
     /// from one package index (M3.1)
     pub apk_cache: Option<PathBuf>,
-    /// Whether to write the `.gz` copies releases publish; test images
-    /// nobody downloads skip them
+    /// Whether to write the disk's `.gz` copy releases publish; test
+    /// images nobody downloads skip it (the slot's `.gz` is always made)
     pub compress: bool,
     pub out: PathBuf,
     pub runner: Runner,
@@ -475,8 +475,9 @@ impl Build<'_> {
             copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
             copy_sparse(&data, &disk, layout.data_start_mib() * MIB)?;
         }
+        // The update image is small; the disk is the size of both slots.
+        self.gzip(&update)?;
         if self.compress {
-            self.gzip(&update)?;
             self.gzip(&disk)?;
         }
         println!("vm disk: {}", disk.display());

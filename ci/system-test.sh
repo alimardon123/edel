@@ -77,3 +77,16 @@ printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "unset lost future.k
 printf '%s\n' "$final" | grep -A1 -xF '# The person who runs CI' | grep -qxF '[users.ci]' ||
 	fail "unset lost the comment above [users.ci]"
 echo "PASS: diff empty after apply; set changed only the hostname; unset brought back edel; future.key and the comment kept"
+
+# M3.3b: edel report prints TOML a reader can parse, with this boot's line.
+ssh_root edel report >out/report.toml || fail "edel report failed"
+python3 -c '
+import sys, tomllib
+r = tomllib.load(open("out/report.toml", "rb"))
+assert r["format"] == 1 and r["version"] and r["kernel"], "release or kernel missing"
+assert r["started"].startswith("Started in "), "no boot line"
+assert r["pci"] and all(d["driver"] for d in r["pci"]), "no PCI devices"
+assert "Linux version" in r["dmesg"], "no kernel log"
+print("report:", r["version"], r["kernel"], len(r["pci"]), "PCI devices,", r["memory_in_use_mib"], "MiB in use")
+' || fail "edel report printed no valid report: $(head -c 400 out/report.toml)"
+echo "PASS: edel report printed the release, kernel, boot line, PCI devices and kernel log as TOML"

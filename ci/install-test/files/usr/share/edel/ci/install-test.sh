@@ -25,11 +25,21 @@ until edel update status | grep -q '^A: ok=1'; do
 	sleep 1
 done
 
+# A refused install writes nothing; any install writes the partition
+# tables at both ends first, so the first 64 MiB and the last 1 MiB show
+# a write without reading the whole 10 GiB disk.
+ends() {
+	sectors=$(cat /sys/block/vdb/size)
+	{
+		dd if=/dev/vdb bs=1M count=64 2>/dev/null
+		dd if=/dev/vdb bs=512 skip=$((sectors - 2048)) count=2048 2>/dev/null
+	} | sha256sum | cut -d' ' -f1
+}
 file=/usr/share/edel/ci/install.toml
-before=$(sha256sum /dev/vdb | cut -d' ' -f1)
+before=$(ends)
 edel install /dev/vdb --system "$file" </dev/null
 code=$?
-after=$(sha256sum /dev/vdb | cut -d' ' -f1)
+after=$(ends)
 if [ "$before" = "$after" ]; then
 	say "exit code $code without --yes, disk unchanged"
 else

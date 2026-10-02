@@ -100,7 +100,7 @@ ab_break_b() {
 
 # The update image is shrunk; installing it must grow it to the slot.
 slot_is_full() {
-	[ "$(df -m / | awk 'NR == 2 { print $2 }')" -gt 900 ]
+	[ "$(df -m / | awk 'NR == 2 { print $2 }')" -gt 3600 ]
 }
 
 ab_next() {

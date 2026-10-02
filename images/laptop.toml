@@ -57,6 +57,9 @@ health = ["default-runlevel"]
 
 [vm]
 kernel = "lts"
+# The stick a laptop boots and installs from keeps small slots, so it
+# fits a common 8 GB stick (about 7.45 GiB); `edel install` gives the
+# installed machine slots of 4096 MiB (docs/FORMATS.md, M3.3b).
 slot_mib = 1024
 # The screen and the serial port both show the kernel; the serial port,
 # listed last, also gets the boot messages, as the CI boot test reads them.
