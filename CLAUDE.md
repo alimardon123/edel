@@ -173,12 +173,12 @@ For docs, code comments, commits, PRs and replies:
 - Fixed terms: Edel OS, `edel`, **developer mode** (never "unlocked mode"), add-on (hyphenated, lowercase), the system file (`system.toml`), slot A and slot B, Settings (the app), the presets Classic, Mac-like, Windows-like, Tiling, Tablet and Phone.
 - Tables for options and comparisons; backticks for code, keys, paths and commands; ISO dates (2026-10-02). Numbers come from measurements; say when something is from memory.
 
-## Current state (2026-10-02, after PR #11)
+## Current state (2026-10-02, after PR #12)
 
 Check `git log`, the roadmap's ticked boxes and the open PRs and branches for anything newer: an earlier session may have left a step half done. Continue an open PR for the same step rather than opening a second one, and update this section in the PR that changes it.
 
-- On `main`: #1 the image builder and first images; #4 (re-landing #2) the A/B disk, GRUB boot counting and automatic fallback; #3 the license; #5 the roadmap; #6 customization levels and developer mode; #7 ADR-008; #8 the CLAUDE.md files; #9 the postmarketOS and AerynOS reviews; #10 M1.1, `edel update` in Rust; #11 M1.2, the `edel-data` partition. #5 to #9 changed only docs.
+- On `main`: #1 the image builder and first images; #4 (re-landing #2) the A/B disk, GRUB boot counting and automatic fallback; #3 the license; #5 the roadmap; #6 customization levels and developer mode; #7 ADR-008; #8 the CLAUDE.md files; #9 the postmarketOS and AerynOS reviews; #10 M1.1, `edel update` in Rust; #11 M1.2, the `edel-data` partition; #12 M1.3, `/home` and `/var` on it. #5 to #9 changed only docs.
 - The tool does `edel image build`, `edel image check` and `edel update status|install|mark-good|rollback` (M1.1, PR #10). VM images carry it as `/usr/bin/edel`.
-- Known gaps: a hanging slot never falls back (no watchdog), updates are unsigned, the bootloader is not updated through the slots, and there is no data partition, so an update today would erase `/home` and `/var`. M1 closes these. GRUB also writes its try counter at every boot; that stays on purpose (the "Decisions taken by default" row, Reliable over Efficient).
+- Known gaps: a hanging slot never falls back (no watchdog), updates are unsigned, the bootloader is not updated through the slots, and `/etc` changes do not survive an update yet. M1 closes these. GRUB also writes its try counter at every boot; that stays on purpose (the "Decisions taken by default" row, Reliable over Efficient).
 - Milestones: M1 to M3 (phase 1, now) finish the update path, the system file and installer, and the release train, about 19 PRs before the first compositor PR. Alimardon may pull M4 steps 1 to 4 ahead of M2 and M3 if they want something to look at sooner; do that only on their words. M4 to M8 (next) build the compositor; shell-ui, presets and Settings; apps and the basics; developer mode, add-ons and fleets; then the first public release. M9 (phones, arm64) and M10 (the compatibility promise) come later.
-- M1.1 and M1.2 are ticked. The next step is **M1.3**, persistent `/home` and `/var`. #9 reviewed postmarketOS (now Nura) and AerynOS and edited later steps.
+- M1.1 to M1.3 are ticked. The next step is **M1.4**, a read-only root with `/etc` changes on `/data`. #9 reviewed postmarketOS (now Nura) and AerynOS and edited later steps.

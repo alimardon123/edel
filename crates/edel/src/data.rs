@@ -2,11 +2,12 @@
 //! what outlives every update (roadmap M1.2). The `edel-data` service runs
 //! it in sysinit, before the boot runlevel writes to `/var`. On the first
 //! boot of a disk larger than the image, the partition grows to the end of
-//! the disk.
+//! the disk. Then `/home` and `/var` are bound onto it (M1.3), so updates
+//! and rollbacks keep people's files, logs and service state.
 
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
@@ -31,7 +32,7 @@ fn sectors(path: &Path) -> Result<u64> {
     Ok(text.trim().parse()?)
 }
 
-fn is_mounted(dir: &str) -> Result<bool> {
+pub(crate) fn is_mounted(dir: &str) -> Result<bool> {
     let mountinfo = fs::read_to_string("/proc/self/mountinfo")?;
     Ok(mountinfo
         .lines()
@@ -63,6 +64,69 @@ fn grow(disk: &Path) -> Result<()> {
     run(Command::new("partx")
         .args(["--update", "--nr", &DATA_PARTITION.to_string()])
         .arg(disk))
+}
+
+fn names(dir: &Path) -> Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+        names.push(entry?.file_name().to_string_lossy().into_owned());
+    }
+    names.sort();
+    Ok(names)
+}
+
+fn present(path: &Path) -> bool {
+    path.symlink_metadata().is_ok()
+}
+
+fn is_real_dir(path: &Path) -> bool {
+    path.symlink_metadata().is_ok_and(|m| m.is_dir())
+}
+
+/// Entries of the slot's `/var` that the data partition lacks, as paths
+/// relative to `/var`: top-level names, and names inside `lib` and `log`,
+/// where packages add their own directories. Copying them before the bind
+/// means an update that adds a directory under `/var` boots with it.
+fn missing_var_entries(slot: &Path, data: &Path) -> Result<Vec<PathBuf>> {
+    let mut missing = Vec::new();
+    for name in names(slot)? {
+        if !present(&data.join(&name)) {
+            missing.push(PathBuf::from(&name));
+        } else if (name == "lib" || name == "log") && is_real_dir(&slot.join(&name)) {
+            for child in names(&slot.join(&name))? {
+                if !present(&data.join(&name).join(&child)) {
+                    missing.push(Path::new(&name).join(child));
+                }
+            }
+        }
+    }
+    Ok(missing)
+}
+
+/// Tops up `/data/var` from the slot, then binds `/data/home` over `/home`
+/// and `/data/var` over `/var`.
+fn bind_home_and_var() -> Result<()> {
+    let data = Path::new(MOUNT_POINT);
+    for dir in ["home", "var", "edel"] {
+        fs::create_dir_all(data.join(dir))?;
+    }
+    if !is_mounted("/var")? {
+        for rel in missing_var_entries(Path::new("/var"), &data.join("var"))? {
+            let dest = data.join("var").join(&rel);
+            run(Command::new("cp")
+                .arg("-a")
+                .arg(Path::new("/var").join(&rel))
+                .arg(dest.parent().unwrap_or(data)))?;
+        }
+    }
+    for dir in ["/home", "/var"] {
+        if !is_mounted(dir)? {
+            let from = data.join(dir.trim_start_matches('/'));
+            run(Command::new("mount").arg("--bind").arg(&from).arg(dir))?;
+        }
+    }
+    println!("edel-data: /home and /var are on {MOUNT_POINT}");
+    Ok(())
 }
 
 /// Grows the data partition if the disk has room, mounts it at `/data` and
@@ -101,12 +165,30 @@ pub fn mount_data() -> Result<()> {
     }
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
-    Ok(())
+    bind_home_and_var()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tops_up_only_what_the_data_partition_lacks() {
+        let dir = std::env::temp_dir().join(format!("edel-var-top-up-{}", std::process::id()));
+        let (slot, data) = (dir.join("slot"), dir.join("data"));
+        for d in ["cache", "lib/apk", "lib/ci-new", "log/nginx", "empty"] {
+            fs::create_dir_all(slot.join(d)).unwrap();
+        }
+        std::os::unix::fs::symlink("/run", slot.join("run")).unwrap();
+        for d in ["cache", "lib/apk", "log"] {
+            fs::create_dir_all(data.join(d)).unwrap();
+        }
+        fs::write(data.join("lib/apk/changed-by-the-machine"), "kept").unwrap();
+        let missing = missing_var_entries(&slot, &data).unwrap();
+        let missing: Vec<_> = missing.iter().map(|p| p.to_str().unwrap()).collect();
+        assert_eq!(missing, ["empty", "lib/ci-new", "log/nginx", "run"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn grows_only_when_the_disk_has_room() {

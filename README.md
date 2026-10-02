@@ -64,7 +64,7 @@ CI builds both images on every change, runs the container, boots the VM in QEMU 
 
 ## Updates and rollback
 
-The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed:
+The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed. `/home` and `/var` live on the data partition, so updates and rollbacks keep people's files:
 
 ```sh
 edel update install edel-vm-x86_64.ext4   # write the other slot and check it

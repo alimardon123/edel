@@ -4,14 +4,16 @@
 # Each boot runs the next step of the test, then restarts the VM. The step
 # number lives on the EFI system partition, which both slots share.
 #
-#   1. Slot A runs. Install the update (the disk with no partitions) into
-#      slot B.
-#   2. Slot B runs and is confirmed. Roll back to slot A by command.
+#   1. Slot A runs. Write markers into /home and /var and delete
+#      /var/lib/ci-new, then install the update (the disk with no
+#      partitions) into slot B.
+#   2. Slot B runs and is confirmed. The markers survived, and
+#      /var/lib/ci-new came back from the slot. Roll back by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
-#      again: slot A runs, slot B is switched off, and a rollback to it is
-#      refused.
+#      again: slot A runs, slot B is switched off, a rollback to it is
+#      refused, the markers survived and the fallback was recorded.
 
 description="Edel OS A/B update test"
 
@@ -34,6 +36,16 @@ ab_expect() {
 	for line in "$@"; do
 		echo "$slots" | grep -q "^$line" || {
 			ab_end "FAIL: step $step expected \"$line\""
+			return 1
+		}
+	done
+}
+
+# ab_has PATH...: each PATH must exist; the markers live on /data.
+ab_has() {
+	for path in "$@"; do
+		[ -e "$path" ] || {
+			ab_end "FAIL: step $step expected $path"
 			return 1
 		}
 	done
@@ -65,16 +77,22 @@ start() {
 	case "$step" in
 	1)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
+		ab_has /var/lib/ci-new || return 0
+		echo marker >/home/ab-marker
+		echo marker >/var/ab-marker
+		rm -r /var/lib/ci-new
 		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
 		ab_next 2
 		;;
 	2)
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
+		ab_has /home/ab-marker /var/ab-marker /var/lib/ci-new || return 0
 		/usr/bin/edel update rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
 	3)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
+		ab_has /home/ab-marker /var/ab-marker || return 0
 		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
 		slot_b=$(echo "$slots" | sed -n 's/^B: .* //p')
 		mkdir -p /run/ab-test/slot
@@ -85,6 +103,11 @@ start() {
 		;;
 	4)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
+		ab_has /home/ab-marker /var/ab-marker /data/edel/last-fallback.toml || return 0
+		grep -q '^from = "B"' /data/edel/last-fallback.toml || {
+			ab_end "FAIL: step 4 expected the fallback from slot B to be recorded"
+			return 0
+		}
 		if /usr/bin/edel update rollback; then
 			ab_end "FAIL: step 4 rolled back to slot B, which is off"
 			return 0
