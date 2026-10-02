@@ -36,4 +36,4 @@ shutdown = ["mount-ro", "killprocs", "savecache"]
 [vm]
 kernel = "virt"
 slot_mib = 1024
-cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk"
+cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk,overlay"
