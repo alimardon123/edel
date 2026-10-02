@@ -1,7 +1,7 @@
 # ADR-008: Features, defaults and the way in
 
 **Status:** Proposed
-**Date:** 2026-10-02
+**Date:** 2026-10-02, amended 2026-10-02 (every action, not only every setting, in Settings and in `edel`)
 **Deciders:** Alimardon
 **Related:** ADR-002 (presets, no extension API; one line amended here), ADR-003 (same packages in every image), ADR-006 (system file), ADR-007 (customization levels, add-ons, developer mode), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
 
@@ -12,6 +12,8 @@ On 2026-10-02 Alimardon wrote three wishes:
 1. "I want to be able to easily and dynamically replace, change, add, renew or drop some features from the project." This is about us as maintainers: a feature of the OS or the shell should be something we can add, swap for another implementation, refresh or remove without surgery across the codebase.
 2. "Users should be able to have some flexibility too, with smart and really beautiful defaults."
 3. "Installation and the options part should be really easy and user-friendly, for the best user experience, so everybody gets smooth with it, whether in the UI or in the command line or any other method."
+
+Later the same day they added: "we should be able to [do the] same thing both GUI way and CLI way ... Everything will [be] supported same way at same level in both ways. So that we can support every user type/workload type." Section 4 now covers actions as well as settings.
 
 The obvious answer is a feature framework: a registry of features with dependencies, versions and hooks, runtime-loaded modules, and a schema that generates the Settings UI. We reject it. It would be a fifth part in all but name, ADR-002 (no extension API) and ADR-007 (no theme engine) already rule it out, and most of what it would do is already planned: image definitions, presets, the system file, add-ons, profiles, Settings pages and `edel system`. So this ADR asks a narrower question: **what is actually missing?**
 
@@ -97,6 +99,7 @@ The first out-of-box state; `docs/defaults.md` holds it once generated:
 ### 4. One way in, behind three doors
 
 - **Every level-1 key is reachable three ways:** a Settings row, `edel system get|set|unset`, and a line in the generated `docs/system-file.md`; a deliberately command-line-only key is listed with its reason. A cargo test over `crates/settings/src/rows.rs` enforces it (M6.11), so principle 5's "normal use never needs a terminal" is checked rather than remembered.
+- **Every action too, not only settings.** Each thing a person does to the system (check for and install updates, roll back, export, diff and apply the system file, add and drop add-ons, switch developer mode on, off or reset it, install to a disk, reset a setting) is one function in `edel` behind two doors: a Settings button and an `edel` command. Both use the same words, the same checks and the same result, and the button shows the command it runs. An action table next to `rows.rs` lists each action with its page and its command, and a cargo test fails when an action lacks either door (M6.11). So a desktop user, a server administrator, a fleet script and a phone user each meet every feature at the same level.
 - **Same words, same checks, same timing.** A bad value gives the same message in a Settings row, from `edel system set` and from `edel system check FILE` (with the file position in front); `KEY+=VALUE` and `KEY-=VALUE` edit lists. `set` and Settings apply at once; a hand edit applies at the next boot or `edel system apply`, and `edel system diff` lists what is pending.
 - **One question list,** in `edel::system`, rendered in this order by Settings, the terminal and the console first boot: language (it suggests keyboard and timezone), keyboard (applied live before any password is typed), name and password (or an ssh key on vm and server), disk; timezone prefilled; under More options hostname, preset (Classic), profile (none) and, from M8.2, encryption.
 - **One disk planner, and the one command that erases a disk shows what it will erase.** `edel install --list` prints every candidate disk (model, size, partitions with labels and filesystems such as `Windows (NTFS, 420 GB)`, removable, the boot medium marked); `edel install DISK --dry-run` prints the plan; a terminal run asks the person to type the disk's name; a run with neither a terminal nor `--yes` exits 3 (M2.4). Settings shows the same list and plan word for word; its Erase and install button stands for typing the name, and only then does it run `doas edel install DISK --system FILE --yes`.
@@ -161,6 +164,7 @@ Not built, and defended: a plugin or extension API; dependencies, versions or al
 7. [ ] Default apps kept (M6.2); question list, `--list`, the installer page (M6.6a); terminal, console first boot, https-only system files, serial helper, `docs/INSTALL.md` (M6.6b); basics rows by feature (M6.7); `[services]` by feature (M6.10); help table, `get`, `docs/defaults.md`, the defaults diff (M6.11).
 8. [ ] Add-ons as features, files moved under `/usr`, the skip rule (M7.2a); add-ons at the next boot (M7.2b); unattended install (M7.3); containers once (M7.4); profiles by name (M7.6); serial helper reused (M8.2); the `release/*` freeze (M8.5); Defaults reviewed (M8.7); platform as a feature (M10.1).
 9. [ ] List ADR-008 in `docs/README.md`; amend ADR-002's line on sharing presets and point ADR-007's add-on format item at feature files; add the boot-reader tie-break to `DESIGN-PRINCIPLES.md`.
+10. [ ] Every action behind a Settings button and an `edel` command, checked by the action table's test; a Roll back button on the Updates page (M5.8, M6.11).
 
 ## Principles check
 

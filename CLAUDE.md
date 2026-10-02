@@ -54,6 +54,7 @@ Ranked, from [docs/DESIGN-PRINCIPLES.md](docs/DESIGN-PRINCIPLES.md). When two co
 - Frequent releases, and 10 to 20 years of app compatibility.
 - Atomic updates with rollback.
 - One file that copies a system to other machines.
+- Added on 2026-10-02 (ADR-008, section 4): everything works the same way, at the same level, in the GUI and on the command line, so every kind of user and workload is served. Each setting is a Settings row, an `edel system` key and a line of the system file; each action is a Settings button and an `edel` command.
 - Added on 2026-10-02 (now ADR-008): maintainers can add, swap, renew or drop features easily; users get flexibility on top of "smart and really beautiful defaults"; installing and choosing options is easy "whether it in UI or in command line or any other method".
 
 When you propose a feature, say which customization level it is (ADR-007) and how it is added, swapped and removed: which files, one PR. Prefer a setting or a preset to a new mechanism. Never add a plugin system, a theme engine or an extension API. Treat the base (Alpine, apk, OpenRC, musl) and the disk layout with the most care, because they are hard to change. The four parts and the reused pieces are easy to change, because files and standard protocols are their boundaries.
