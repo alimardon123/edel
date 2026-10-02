@@ -11,6 +11,7 @@ mod grubenv;
 mod guard;
 mod image;
 mod loader;
+mod machine;
 mod release;
 mod run;
 mod update;
@@ -68,6 +69,19 @@ enum SystemCommands {
         /// The system file, for example /data/edel/system.toml
         file: PathBuf,
     },
+    /// Make this machine match a system file: hostname, users, their ssh
+    /// keys and developer mode. A given file becomes the machine's own
+    Apply {
+        /// The system file; without one, the machine's own
+        /// (/data/edel/system.toml), seeded first if it is missing
+        file: Option<PathBuf>,
+        /// Leave setting the running hostname to the hostname service; for
+        /// the edel-system boot service
+        #[arg(long)]
+        boot: bool,
+    },
+    /// Print this machine as a system file
+    Export,
 }
 
 #[derive(Subcommand)]
@@ -252,6 +266,8 @@ fn main() -> Result<()> {
         },
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
+            SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),
+            SystemCommands::Export => machine::export(),
         },
     }
 }

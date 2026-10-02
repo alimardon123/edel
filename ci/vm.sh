@@ -22,7 +22,9 @@ ovmf_vars=$(echo "$ovmf_code" | sed 's/CODE/VARS/')
 # run_vm LOG PATTERN TIMEOUT [QEMU ARGUMENTS...]
 # Boots a VM with its serial console written to LOG until PATTERN (an
 # extended regex) appears, QEMU exits, or TIMEOUT seconds pass. Sets found
-# to 1 if PATTERN appeared, and waited to the seconds it took.
+# to 1 if PATTERN appeared, and waited to the seconds it took. vm_net adds
+# options to the user network, such as ",hostfwd=tcp:127.0.0.1:2222-:22";
+# with keep_vm=1 a VM that showed PATTERN keeps running until stop_vm.
 run_vm() {
 	log=$1 pattern=$2 timeout_s=$3
 	shift 3
@@ -35,7 +37,7 @@ run_vm() {
 		-display none -monitor none -serial file:"$log" \
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$vars" \
-		-netdev user,id=net0 -device virtio-net-pci,netdev=net0,romfile= \
+		-netdev user,id=net0"${vm_net:-}" -device virtio-net-pci,netdev=net0,romfile= \
 		-device i6300esb -action watchdog=reset \
 		"$@" &
 	qemu=$!
@@ -54,6 +56,14 @@ run_vm() {
 	if [ "$found" = 0 ] && grep -qE "$pattern" "$log" 2>/dev/null; then
 		found=1
 	fi
+	if [ "${keep_vm:-0}" = 1 ] && [ "$found" = 1 ]; then
+		return 0
+	fi
+	stop_vm
+}
+
+# stop_vm: stops the VM run_vm started.
+stop_vm() {
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
 	rm -f "$vars"

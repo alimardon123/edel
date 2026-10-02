@@ -238,20 +238,22 @@ impl Drop for Esp {
     }
 }
 
-/// One updater at a time: two installs would write the same slot.
-struct Lock(PathBuf);
+/// One writer at a time: two installs would write the same slot, two
+/// applies the same account files. `name` names the lock file and `what`
+/// the command, for the message.
+pub(crate) struct Lock(PathBuf);
 
 impl Lock {
-    fn take() -> Result<Lock> {
+    pub(crate) fn take(name: &str, what: &str) -> Result<Lock> {
         fs::create_dir_all(RUN_DIR)?;
-        let path = Path::new(RUN_DIR).join("update.lock");
+        let path = Path::new(RUN_DIR).join(format!("{name}.lock"));
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(mut file) => {
                 writeln!(file, "{}", std::process::id())?;
                 Ok(Lock(path))
             }
             Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => bail!(
-                "another edel update is running; if none is, delete {}",
+                "another {what} is running; if none is, delete {}",
                 path.display()
             ),
             Err(err) => Err(err.into()),
@@ -321,7 +323,7 @@ pub fn status() -> Result<()> {
 /// start next. The image streams into the slot, decompressed on the way
 /// when it is gzipped, and grows to fill the slot.
 pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<()> {
-    let _lock = Lock::take()?;
+    let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
@@ -421,7 +423,7 @@ pub fn mark_good() -> Result<()> {
 /// Confirms the running slot and returns what happened, one line each.
 pub(crate) fn confirm_running() -> Result<Vec<String>> {
     let mut lines = Vec::new();
-    let _lock = Lock::take()?;
+    let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
@@ -476,7 +478,7 @@ fn record_fallback(from: Slot, to: Slot) -> Result<()> {
 
 /// Makes the other slot start at the next boot.
 pub fn rollback() -> Result<()> {
-    let _lock = Lock::take()?;
+    let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
