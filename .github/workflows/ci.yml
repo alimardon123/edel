@@ -79,9 +79,9 @@ jobs:
       - name: Install and run a Flatpak runtime on the musl base
         run: sh ci/flatpak-test.sh
 
-      - name: Report image sizes
+      - name: Check the budgets and report image sizes
         if: always()
-        run: sh ci/sizes.sh >> "$GITHUB_STEP_SUMMARY"
+        run: sh ci/sizes.sh
 
       - name: Report package changes against the preview
         if: always()

@@ -1,0 +1,18 @@
+# Budgets (roadmap M3.2): ci/sizes.sh fails the job when a measurement is
+# over its budget. The first values are the measurements of 2026-10-02 plus
+# 20 percent. Lowering a budget is a reviewed change; a budget is never
+# raised to make a pull request pass. Each key is one number.
+
+# The container image, out/edel-container-x86_64.tar.gz, in MiB.
+container_mib = 0
+
+# Used space on the VM's root (`df -Pm /` in the guest), in MiB.
+vm_root_mib = 0
+
+# Seconds from the kernel's start to the confirmed slot (`/proc/uptime`
+# when edel-boot-ok runs), median of three boots with KVM.
+vm_boot_seconds = 0
+
+# Memory in use at that moment (MemTotal minus MemAvailable), in MiB,
+# median of three boots with 512 MiB.
+vm_memory_mib = 0

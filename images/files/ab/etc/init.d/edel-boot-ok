@@ -24,6 +24,12 @@ start() {
 	# The version on serial, for the boot test (M3.1).
 	. /usr/lib/os-release
 	echo "$PRETTY_NAME, channel $EDEL_CHANNEL, loader $EDEL_LOADER_VERSION"
+	# Boot time, memory in use and root size at the moment the slot is
+	# confirmed, on serial for the budgets (M3.2).
+	read -r up _ </proc/uptime
+	mem=$(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { print int((t - a) / 1024) }' /proc/meminfo)
+	root=$(df -Pm / | awk 'NR == 2 { print $3 }')
+	echo "Started in $up s, $mem MiB of memory in use, $root MiB used on the root"
 	# A slot the guard could not confirm is reported as a failure.
 	[ -s /run/edel/confirmed ] && ! grep -q 'could not confirm' /run/edel/confirmed
 	eend $?
