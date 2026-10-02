@@ -26,6 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Keep the Rust build between runs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-home
+            target
+          key: alpine-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: alpine-cargo-
+
       - name: Build images inside Alpine 3.24
         run: docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
 

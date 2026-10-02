@@ -6,10 +6,12 @@
 #
 #   1. Slot A runs. Install the update (the disk with no partitions) into
 #      slot B.
-#   2. Slot B runs and is confirmed. Install the update into slot A, then
-#      break slot A's initramfs, the way a bad update could.
-#   3. Slot A panicked on each of its three tries, so GRUB started slot B
-#      again: slot B runs, and slot A is switched off.
+#   2. Slot B runs and is confirmed. Roll back to slot A by command.
+#   3. Slot A runs again. Install the update into slot B, then break slot
+#      B's initramfs, the way a bad update could.
+#   4. Slot B panicked on each of its three tries, so GRUB started slot A
+#      again: slot A runs, slot B is switched off, and a rollback to it is
+#      refused.
 
 description="Edel OS A/B update test"
 
@@ -27,7 +29,7 @@ ab_end() {
 	(sleep 1 && poweroff) &
 }
 
-# ab_expect LINE...: each LINE must start a line of `edel-update status`.
+# ab_expect LINE...: each LINE must start a line of `edel update status`.
 ab_expect() {
 	for line in "$@"; do
 		echo "$slots" | grep -q "^$line" || {
@@ -50,7 +52,7 @@ start() {
 	mkdir -p "$esp"
 	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" "$esp"
 	step=$(cat "$esp/ab-test-step" 2>/dev/null || echo 1)
-	slots=$(/usr/sbin/edel-update status)
+	slots=$(/usr/bin/edel update status)
 	ab_say "step $step"
 	echo "$slots"
 
@@ -63,21 +65,30 @@ start() {
 	case "$step" in
 	1)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
-		/usr/sbin/edel-update install "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
+		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
 		ab_next 2
 		;;
 	2)
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
-		/usr/sbin/edel-update install "$update" || { ab_end "FAIL: installing into slot A"; return 0; }
-		slot_a=$(echo "$slots" | sed -n 's/^A: .* //p')
-		mkdir -p /run/ab-test/slot
-		mount "$slot_a" /run/ab-test/slot
-		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-virt
-		umount /run/ab-test/slot
+		/usr/bin/edel update rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
 	3)
-		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=0 try=3" || return 0
+		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
+		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
+		slot_b=$(echo "$slots" | sed -n 's/^B: .* //p')
+		mkdir -p /run/ab-test/slot
+		mount "$slot_b" /run/ab-test/slot
+		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-virt
+		umount /run/ab-test/slot
+		ab_next 4
+		;;
+	4)
+		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
+		if /usr/bin/edel update rollback; then
+			ab_end "FAIL: step 4 rolled back to slot B, which is off"
+			return 0
+		fi
 		ab_end "PASS"
 		;;
 	*)

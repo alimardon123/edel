@@ -17,15 +17,15 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 ## Rules
 
-- A new package or service needs a written reason (principle 3) in the PR. Keep `e2fsprogs-extra` in `vm.toml`: it gives `edel-update` its `tune2fs`, and the A/B test failed without it.
+- A new package or service needs a written reason (principle 3) in the PR. Keep `e2fsprogs-extra` in `vm.toml`: it gives `edel update` its `tune2fs`, and the A/B test failed without it. Keep `libgcc` too: the `edel` that Alpine's cargo builds links against `libgcc_s.so.1`.
 - A service in `[services]` is linked into its runlevel and needs `/etc/init.d/NAME` from a package or an overlay, or the build fails. Release images enable services through `[services]`, never through committed runlevel links.
 - `files/` holds the overlays, copied over the image with `cp -R` in the order a definition lists them, after packages and before services. Copies are owned by root and keep their git mode, so commit scripts and init scripts as executable (100755; `git ls-files -s` shows it).
   - `common/` (both images): the identity. `usr/lib/os-release` is required (`NAME="Edel OS"`, `PRETTY_NAME="Edel OS 0.1 (development)"`); the build makes `/etc/os-release` a link to it. Also `etc/issue` and `etc/motd`.
   - `vm/`: `etc/fstab` (root is whichever slot GRUB started), `etc/inittab` (adds a getty on the serial console `ttyS0`), `etc/network/interfaces` (lo, and eth0 by DHCP).
-  - `ab/` (VM only): `usr/sbin/edel-update`, the busybox sh A/B updater (`status`, `install IMAGE`, `mark-good`), and the `edel-boot-ok` OpenRC service, which runs `edel-update mark-good` last in the default runlevel to confirm the slot. If it never runs, GRUB gives the slot three tries and then starts the other slot if that one is OK; if no slot is OK with tries left, it starts the first slot in ORDER anyway. M1.1 replaces the script with `edel update`.
+  - `ab/` (VM only): the `edel-boot-ok` OpenRC service, which runs `edel update mark-good` last in the default runlevel to confirm the slot. If it never runs, GRUB gives the slot three tries and then starts the other slot if that one is OK; if no slot is OK with tries left, it starts the first slot in ORDER anyway. `edel image build` copies itself to `/usr/bin/edel` in every VM image (the path M6.5's doas rule names).
 - ADR-006 aims for OS defaults under `/usr` and an `/etc` that holds only what an administrator changed. Today only `os-release` follows it; `etc/issue`, `motd`, `fstab`, `inittab`, `network/interfaces` and the init scripts still live in `/etc`. They move only in a roadmap step (M1.4 notes: "later, our own defaults move to `/usr`"), never as a side change.
 - The build locks root's password (`*`); access comes later from keys or the system file. Never ship a user or a default password (ADR-008).
-- CI greps text from here: `Welcome to Edel OS` (`etc/issue`), a `PRETTY_NAME` starting `Edel OS `, the hostname `edel` (`edel login:`) and the `edel-update` output. Change them only together with the `ci/` scripts.
+- CI greps text from here: `Welcome to Edel OS` (`etc/issue`), a `PRETTY_NAME` starting `Edel OS `, the hostname `edel` (`edel login:`) and the `edel update` output. Change them only together with the `ci/` scripts.
 - Test-only files and CI-only definitions never go here: they live under `ci/` and reach a test image through `--files` or a definition under `ci/`.
 - Shell code here is busybox POSIX sh: `#!/bin/sh` (or `#!/sbin/openrc-run`), `set -eu` in scripts, tabs.
 
@@ -33,7 +33,6 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M1.1: copies `target/release/edel` to `/usr/bin/edel` in the rootfs (the path M6.5's doas rule names); a dry run prints the copy and does not require the file. Deletes `files/ab/usr/sbin/edel-update`.
 - M1.2 adds `[vm] data_mib`; M1.4 mounts `/` read-only in `files/vm/etc/fstab`, puts `/tmp` on tmpfs and adds `overlay` to the kernel `modules=` in `cmdline`; M1.5 adds `[image] health` and `health_timeout` and adds `i6300esb` and `softdog` to `modules=`; M1.6 adds `[release] public_keys`; M2.4 adds `sfdisk`, `dosfstools` and `mtools` to `vm.toml`.
 - M3.3 moves `vm.toml` to `linux-lts`, adds `images/laptop.toml` and sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
 - Definitions stay strict in every format.

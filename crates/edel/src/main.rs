@@ -1,12 +1,15 @@
 //! `edel`: the Edel OS system tool.
 //!
-//! Today it builds images. Updates, rollback, add-ons and system files
-//! (ADR-006, ADR-007) will live here too, so there is one tool to learn.
+//! It builds images and updates and rolls back A/B slots. Add-ons and
+//! system files (ADR-006, ADR-007) will live here too, so there is one tool
+//! to learn.
 
 mod boot;
 mod def;
+mod grubenv;
 mod image;
 mod run;
+mod update;
 
 use std::path::PathBuf;
 
@@ -30,6 +33,26 @@ enum Commands {
         #[command(subcommand)]
         command: ImageCommands,
     },
+    /// Install updates into the A/B slots and roll back
+    Update {
+        #[command(subcommand)]
+        command: UpdateCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum UpdateCommands {
+    /// Show both slots and which one is running
+    Status,
+    /// Write a slot image to the slot that is not running; it starts next
+    Install {
+        /// The update: an .ext4 slot image or a block device holding one
+        image: PathBuf,
+    },
+    /// Confirm that the running slot works (run once the system is up)
+    MarkGood,
+    /// Start the other slot again at the next boot
+    Rollback,
 }
 
 #[derive(Subcommand)]
@@ -93,6 +116,12 @@ fn main() -> Result<()> {
                 );
                 Ok(())
             }
+        },
+        Commands::Update { command } => match command {
+            UpdateCommands::Status => update::status(),
+            UpdateCommands::Install { image } => update::install(&image),
+            UpdateCommands::MarkGood => update::mark_good(),
+            UpdateCommands::Rollback => update::rollback(),
         },
     }
 }

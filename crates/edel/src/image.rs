@@ -3,7 +3,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
-use std::os::unix::fs::FileExt;
+use std::os::unix::fs::{FileExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -41,6 +41,9 @@ impl Build<'_> {
         self.install_packages(&root)?;
         // Our files first: some of them are services to enable.
         self.copy_files(&root)?;
+        if def.variant == Variant::Vm {
+            self.install_edel(&root)?;
+        }
         self.enable_services(&root)?;
         self.configure(&root)?;
 
@@ -124,6 +127,22 @@ impl Build<'_> {
             self.runner
                 .run(Command::new("cp").arg("-R").arg(src.join(".")).arg(root))?;
         }
+        Ok(())
+    }
+
+    /// Copies the running `edel` into the image as `/usr/bin/edel`, the
+    /// updater of a bootable image. CI builds it inside `alpine:3.24`, so it
+    /// links against the image's musl.
+    fn install_edel(&self, root: &Path) -> Result<()> {
+        self.runner.step("copy this edel binary to /usr/bin/edel");
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let exe = std::env::current_exe().context("finding the running edel binary")?;
+        let dest = root.join("usr/bin/edel");
+        fs::create_dir_all(root.join("usr/bin"))?;
+        fs::copy(&exe, &dest).with_context(|| format!("copying {}", exe.display()))?;
+        fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
         Ok(())
     }
 
