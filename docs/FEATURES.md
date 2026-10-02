@@ -12,7 +12,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
 | `machine` | A booted machine: OpenRC, devices, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg, mdev, hwdrivers; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, laptop |
 | `ab-boot` | Two root slots, rollback, `/data`, the system file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-system; edel-boot-ok | vm, laptop |
-| `ssh` | Log in from another computer; switchable | `openssh-server` | sshd | vm; laptop ships it off |
+| `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; laptop ships it off |
 | `vm` | The small kernel for virtual machines | `linux-virt` | none | vm |
 | `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop |
 

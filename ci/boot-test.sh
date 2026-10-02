@@ -20,8 +20,10 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&
 	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot.log &&
-	grep -q 'Starting sshd' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, started sshd and was confirmed in ${waited}s"
+	grep -q 'Starting sshd' out/boot.log &&
+	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
+	! grep -q 'generating new host keys' out/boot.log; then
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
