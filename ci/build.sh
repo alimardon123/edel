@@ -21,21 +21,27 @@ rm -rf out/keys
 ./target/release/edel release keygen out/keys ci-1
 ./target/release/edel release keygen out/keys ci-2
 
-# The system test image (roadmap M2.2): the VM image with a seed system file
-# in its slot that names the machine and adds user ci, who logs in with a
-# fresh ssh key.
+# The system test image (roadmap M2.2, M2.3): the VM image with a seed
+# system file in its slot that names the machine and adds user ci, who logs
+# in with a fresh ssh key, as root does. The unknown key and the comment
+# must survive `edel system set` and `unset` byte for byte.
 seed=out/system-test/seed
 rm -rf "$seed"
 mkdir -p "$seed/usr/share/edel"
 ssh-keygen -q -t ed25519 -N '' -C ci@edel -f out/keys/ci-ssh
 cat >"$seed/usr/share/edel/system.toml" <<EOF
 format = 1
+future.key = 1
 
 [network]
 hostname = "ci-seeded"
 
+# The person who runs CI
 [users.ci]
 admin = true
+ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
+
+[users.root]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 ./target/release/edel image build images/vm.toml --files "$seed" --out out/system-test

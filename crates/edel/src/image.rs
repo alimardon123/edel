@@ -189,19 +189,25 @@ impl Build<'_> {
         Ok(())
     }
 
-    /// The health keys for os-release (one standard file for image
-    /// facts, roadmap default row "Image facts"); none for containers.
+    /// The image facts for os-release (one standard file for them, roadmap
+    /// default row "Image facts"): the health keys, and the hostname that
+    /// `edel system apply` goes back to when the system file has none;
+    /// none for containers.
     fn health_keys(&self) -> Option<String> {
         let image = &self.def.image;
         if image.health.is_empty() {
             return None;
         }
         let timeout = self.health_timeout.unwrap_or(image.health_timeout);
-        Some(format!(
+        let mut keys = format!(
             "EDEL_IMAGE=\"{}\"\nEDEL_HEALTH=\"{}\"\nEDEL_HEALTH_TIMEOUT={timeout}\n",
             self.def.stem(),
             image.health.join(" ")
-        ))
+        );
+        if let Some(hostname) = &self.def.hostname {
+            keys.push_str(&format!("EDEL_HOSTNAME=\"{hostname}\"\n"));
+        }
+        Some(keys)
     }
 
     fn configure(&self, root: &Path) -> Result<()> {

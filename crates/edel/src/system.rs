@@ -13,9 +13,10 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
+use toml_edit::DocumentMut;
 
 /// The system file format this release reads and writes. A key is never
 /// removed or renamed within a format: `tests/keys.txt` lists every key a
@@ -447,6 +448,119 @@ pub fn read_on_machine(path: &Path) -> Result<Read> {
     Ok(read)
 }
 
+/// The `format` of a system file's text.
+pub fn format(text: &str) -> Result<i64> {
+    let table: Table = toml::from_str(text).context("the file is not valid TOML")?;
+    format_of(&table)
+}
+
+/// `edel system set KEY=VALUE` on a file's text (ADR-008, writers): checks
+/// the key and value as strictly as `check`, then changes that one value in
+/// place, so comments, order and keys this release does not know survive
+/// byte for byte. VALUE is TOML when it reads as TOML (`true`, `2`,
+/// `["a"]`, `"x"`) and plain text otherwise, so `hostname=lab-1` works.
+pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
+    let path: Vec<&str> = key.split('.').collect();
+    let entry = known_key(key, &path)?;
+    let value = normalize(entry.kind, &value_from_arg(value)).map_err(|m| anyhow!("{key}: {m}"))?;
+    if !entry.supported {
+        bail!("{key}: not supported yet");
+    }
+    let new = toml_edit_value(&value)?;
+    let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
+    let (last, parents) = path.split_last().context("no key given")?;
+    let mut table = doc.as_table_mut();
+    for (i, part) in parents.iter().enumerate() {
+        let item = table.entry(part).or_insert_with(|| {
+            let mut new = toml_edit::Table::new();
+            // Only the table holding the key gets a [header].
+            new.set_implicit(i + 1 < parents.len());
+            toml_edit::Item::Table(new)
+        });
+        table = item.as_table_mut().with_context(|| {
+            format!(
+                "{} is not a table in the file; change {key} by hand",
+                path[..=i].join(".")
+            )
+        })?;
+    }
+    match table.get_mut(last).and_then(toml_edit::Item::as_value_mut) {
+        Some(old) => {
+            let decor = old.decor().clone();
+            *old = new;
+            *old.decor_mut() = decor;
+        }
+        None => {
+            table.insert(last, toml_edit::Item::Value(new));
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// `edel system unset KEY` on a file's text: removes the key, and tables
+/// left empty by it, so the release decides again (ADR-008). Every other
+/// byte stays. A key this release does not know can be removed too.
+pub fn unset(text: &str, key: &str) -> Result<String> {
+    let path: Vec<&str> = key.split('.').collect();
+    let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
+    if !remove_path(doc.as_table_mut(), &path)? {
+        bail!("{key} is not in the file");
+    }
+    Ok(doc.to_string())
+}
+
+fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
+    let [first, rest @ ..] = path else {
+        return Ok(false);
+    };
+    if rest.is_empty() {
+        return Ok(table.remove(first).is_some());
+    }
+    let Some(inner) = table.get_mut(first) else {
+        return Ok(false);
+    };
+    let inner = inner
+        .as_table_mut()
+        .with_context(|| format!("{first} is not a table in the file; change it by hand"))?;
+    let removed = remove_path(inner, rest)?;
+    if removed && inner.is_empty() {
+        table.remove(first);
+    }
+    Ok(removed)
+}
+
+/// The key table's entry for `path`, or why a writer refuses it.
+fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
+    let names: Vec<String> = path.iter().map(|p| p.to_string()).collect();
+    if path.first() == Some(&"users") && path.len() > 1 && !is_user_name(path[1]) {
+        bail!("{key}: {:?} is not a user name", path[1]);
+    }
+    KEYS.iter()
+        .find(|k| matches(k.path, &names, false))
+        .ok_or_else(|| anyhow!("{key}: unknown key; docs/system-file.md lists every key"))
+}
+
+fn value_from_arg(raw: &str) -> Value {
+    toml::from_str::<Table>(&format!("v = {raw}"))
+        .ok()
+        .and_then(|mut t| t.remove("v"))
+        .unwrap_or_else(|| Value::String(raw.to_string()))
+}
+
+fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
+    let mut table = Table::new();
+    table.insert("v".into(), value.clone());
+    let doc: DocumentMut = toml::to_string(&table)?.parse()?;
+    doc.get("v")
+        .and_then(toml_edit::Item::as_value)
+        .cloned()
+        .map(|mut v| {
+            v.decor_mut().clear();
+            v
+        })
+        .context("cannot write the value")
+}
+
 /// `system.toml.v1` for `system.toml` and format 1.
 pub fn versioned(path: &Path, format: i64) -> PathBuf {
     PathBuf::from(format!("{}.v{format}", path.display()))
@@ -742,6 +856,52 @@ font_size = 11
         assert!(shown.contains(&"users.ci.admin: expected true or false, not \"yes\"".into()));
         assert!(
             shown.contains(&"outputs.DP-1.transform: expected 0, 90, 180 or 270, not 45".into())
+        );
+    }
+
+    const EDITED: &str = "format = 1\nfuture.key = 1 # kept\n\n[network]\nhostname = \"ci-seeded\"  # mine\n\n# The person who runs CI\n[users.ci]\nadmin = true\n";
+
+    #[test]
+    fn set_changes_one_value_and_keeps_every_other_byte() {
+        let changed = set(EDITED, "network.hostname", "other").unwrap();
+        assert_eq!(changed, EDITED.replace("\"ci-seeded\"", "\"other\""));
+        let added = set(&changed, "users.ali.admin", "true").unwrap();
+        assert!(added.starts_with(&changed), "{added}");
+        assert!(added.ends_with("\n[users.ali]\nadmin = true\n"), "{added}");
+        let developer = set(EDITED, "system.developer", "false").unwrap();
+        assert!(
+            developer.ends_with("[system]\ndeveloper = false\n"),
+            "{developer}"
+        );
+    }
+
+    #[test]
+    fn set_refuses_what_check_refuses() {
+        let error = |key, value| set(EDITED, key, value).unwrap_err().to_string();
+        assert_eq!(
+            error("network.hostnme", "a"),
+            "network.hostnme: unknown key; docs/system-file.md lists every key"
+        );
+        assert!(error("users.ci.admin", "yes").contains("expected true or false"));
+        assert!(error("network.hostname", "not valid").contains("expected a hostname"));
+        assert_eq!(
+            error("appearance.color_scheme", "dark"),
+            "appearance.color_scheme: not supported yet"
+        );
+        assert!(error("users.Ali.admin", "true").contains("not a user name"));
+    }
+
+    #[test]
+    fn unset_removes_the_key_and_empty_tables() {
+        let unset_once = unset(EDITED, "network.hostname").unwrap();
+        assert_eq!(
+            unset_once,
+            "format = 1\nfuture.key = 1 # kept\n\n# The person who runs CI\n[users.ci]\nadmin = true\n"
+        );
+        assert!(unset(&unset_once, "network.hostname").is_err());
+        assert_eq!(
+            unset(EDITED, "future.key").unwrap(),
+            EDITED.replace("future.key = 1 # kept\n", "")
         );
     }
 

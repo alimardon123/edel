@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 
-One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, and `edel system export` prints the machine as one; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
+One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, `edel system diff [FILE]` shows what apply would change (exit 1 when anything would), `edel system set KEY=VALUE` and `unset KEY` change one key of the machine's file in place, and `edel system export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
 
 ```toml
 format = 1
@@ -18,7 +18,7 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 color_scheme = "dark"
 ```
 
-On the first boot, `edel system apply` seeds the file from the first of: a volume labelled `EDEL-SEED` holding `system.toml`, `/EFI/edel/system.toml` on the EFI system partition, and the slot's `/usr/share/edel/system.toml`. Without any, nothing is applied. The `edel-system` service applies it at every boot, before the hostname is set; `apply FILE` applies another file and makes it the machine's own.
+On the first boot, `edel system apply` seeds the file from the first of: a volume labelled `EDEL-SEED` holding `system.toml`, `/EFI/edel/system.toml` on the EFI system partition, and the slot's `/usr/share/edel/system.toml`. Without any, nothing is applied. The `edel-system` service applies it at every boot, before the hostname is set; `apply FILE` applies another file and makes it the machine's own. An absent key gets the release's value at the next apply: an absent `network.hostname` removes the machine's own `/etc/hostname`, so the slot's shows again.
 
 "From" names the roadmap step that first acts on the key. Until then `edel system check` refuses the key with "not supported yet" and the boot apply skips it and says so. `NAME` is any name: a user, an output, an action, a feature. A user name has up to 32 lowercase letters, digits, `-` and `_`, and starts with a letter or `_`.
 

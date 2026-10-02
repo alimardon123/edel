@@ -5,15 +5,18 @@
 //! the hostname, users, their ssh keys and developer mode. It adds and
 //! changes, and never deletes a user (ADR-006).
 
+use std::collections::BTreeMap;
+use std::fmt;
 use std::fs::{self, Permissions};
-use std::os::unix::fs::{MetadataExt, PermissionsExt, chown};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt, chown};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use edel::system::{self, SystemFile, User};
 
 use crate::boot::{ESP_LABEL, GRUB_PREFIX};
+use crate::release::os_release_value;
 use crate::update::{Lock, run};
 
 /// The machine's system file, on the data partition.
@@ -131,20 +134,258 @@ fn replace(path: &Path, text: &str) -> Result<()> {
     fs::rename(&new, path).with_context(|| format!("replacing {}", path.display()))
 }
 
-/// `edel system apply [FILE]`: applies the system file, by default the
-/// machine's own, which is seeded first when it is missing. A given FILE
-/// becomes the machine's file once applied, so the next boot keeps it.
-/// With `boot`, the `hostname` service, which runs next, sets the hostname.
-pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
-    let _lock = Lock::take("system", "edel system apply")?;
-    let machine = Path::new(SYSTEM_FILE);
-    let path = file.unwrap_or(machine);
+/// One change apply makes; `edel system diff` lists them without making them.
+#[derive(Debug, PartialEq)]
+enum Change {
+    /// Write `/etc/hostname`
+    Hostname(String),
+    /// The file names no hostname: drop this machine's copy of
+    /// `/etc/hostname`, so the slot's shows again (ADR-008, defaults)
+    HostnameDefault,
+    AddUser {
+        name: String,
+        shell: String,
+    },
+    Shell {
+        name: String,
+        shell: String,
+    },
+    /// adduser's `!` becomes `*`, so key logins work
+    Unlock(String),
+    AdminGroup,
+    Admin {
+        name: String,
+        on: bool,
+    },
+    Keys {
+        name: String,
+        keys: Vec<String>,
+    },
+    Developer(bool),
+}
+
+impl fmt::Display for Change {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Change::Hostname(h) => write!(f, "network.hostname: set to {h}"),
+            Change::HostnameDefault => write!(f, "network.hostname: back to the release's"),
+            Change::AddUser { name, shell } => write!(f, "users.{name}: add, with shell {shell}"),
+            Change::Shell { name, shell } => write!(f, "users.{name}.shell: set to {shell}"),
+            Change::Unlock(name) => write!(f, "users.{name}: allow key logins"),
+            Change::AdminGroup => write!(f, "group {ADMIN_GROUP}: add"),
+            Change::Admin { name, on } => {
+                write!(f, "users.{name}.admin: {}", if *on { "on" } else { "off" })
+            }
+            Change::Keys { name, keys } => {
+                write!(f, "users.{name}.ssh_keys: write {} keys", keys.len())
+            }
+            Change::Developer(on) => {
+                write!(f, "system.developer: {}", if *on { "on" } else { "off" })
+            }
+        }
+    }
+}
+
+/// What apply compares the file with, read from the machine.
+#[derive(Default)]
+struct Machine {
+    hostname: String,
+    /// Whether this machine has its own `/etc/hostname`
+    hostname_set: bool,
+    passwd: String,
+    group: String,
+    /// `None` when this user may not read it
+    shadow: Option<String>,
+    /// `~/.ssh/authorized_keys` of each named user that has one
+    keys: BTreeMap<String, String>,
+    developer: bool,
+}
+
+impl Machine {
+    fn read(file: &SystemFile) -> Result<Machine> {
+        let passwd = fs::read_to_string("/etc/passwd")?;
+        let mut keys = BTreeMap::new();
+        for account in accounts(&passwd) {
+            if file.users.contains_key(&account.name) {
+                let path = Path::new(&account.home).join(".ssh/authorized_keys");
+                if let Ok(text) = fs::read_to_string(path) {
+                    keys.insert(account.name, text);
+                }
+            }
+        }
+        Ok(Machine {
+            hostname: fs::read_to_string("/etc/hostname").unwrap_or_default(),
+            hostname_set: Path::new(ETC_UPPER).join("hostname").exists(),
+            passwd,
+            group: fs::read_to_string("/etc/group")?,
+            shadow: fs::read_to_string("/etc/shadow").ok(),
+            keys,
+            developer: Path::new(DEVELOPER_FLAG).exists(),
+        })
+    }
+}
+
+/// The changes that make `machine` match `file`, and notes on what is left
+/// alone. Pure, so diff and apply agree and tests need no machine.
+fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
+    let mut changes = Vec::new();
+    let mut notes = Vec::new();
+    match &file.network.hostname {
+        Some(h) if machine.hostname.trim() != h => changes.push(Change::Hostname(h.clone())),
+        None if machine.hostname_set => changes.push(Change::HostnameDefault),
+        _ => {}
+    }
+    let all = accounts(&machine.passwd);
+    let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
+    for (name, user) in &file.users {
+        let shell = user.shell.as_deref().unwrap_or(DEFAULT_SHELL).to_string();
+        let account = all.iter().find(|a| &a.name == name);
+        let is_admin =
+            members(&machine.group, ADMIN_GROUP).is_some_and(|m| m.iter().any(|m| m == name));
+        match account {
+            Some(account) if !is_person(account) => {
+                notes.push(format!("left users.{name} alone: it is a system account"));
+                continue;
+            }
+            Some(account) => {
+                if account.shell != shell {
+                    changes.push(Change::Shell {
+                        name: name.clone(),
+                        shell,
+                    });
+                }
+                if machine
+                    .shadow
+                    .as_deref()
+                    .and_then(|s| shadow_unlocked(s, name))
+                    .is_some()
+                {
+                    changes.push(Change::Unlock(name.clone()));
+                }
+            }
+            None => changes.push(Change::AddUser {
+                name: name.clone(),
+                shell,
+            }),
+        }
+        let admin = user.admin == Some(true);
+        if admin && !admin_group {
+            changes.push(Change::AdminGroup);
+            admin_group = true;
+        }
+        if admin != is_admin {
+            changes.push(Change::Admin {
+                name: name.clone(),
+                on: admin,
+            });
+        }
+        // Absent ssh_keys leaves the file alone: keys a person added by
+        // hand are theirs.
+        if let Some(keys) = &user.ssh_keys {
+            let keys: Vec<String> = keys.iter().filter(|k| !k.contains('\n')).cloned().collect();
+            if machine.keys.get(name) != Some(&keys_text(&keys)) {
+                changes.push(Change::Keys {
+                    name: name.clone(),
+                    keys,
+                });
+            }
+        }
+    }
+    let developer = file.system.developer == Some(true);
+    if developer != machine.developer {
+        changes.push(Change::Developer(developer));
+    }
+    (changes, notes)
+}
+
+fn keys_text(keys: &[String]) -> String {
+    keys.iter().map(|k| format!("{k}\n")).collect()
+}
+
+fn find_account(name: &str) -> Result<Account> {
+    accounts(&fs::read_to_string("/etc/passwd")?)
+        .into_iter()
+        .find(|a| a.name == name)
+        .with_context(|| format!("{name} is not in /etc/passwd"))
+}
+
+fn unlock(name: &str) -> Result<()> {
+    if let Some(text) = shadow_unlocked(&fs::read_to_string("/etc/shadow")?, name) {
+        replace(Path::new("/etc/shadow"), &text)?;
+    }
+    Ok(())
+}
+
+/// Makes one change. With `boot`, the `hostname` service, which runs
+/// next, sets the running hostname.
+fn execute(change: &Change, boot: bool) -> Result<()> {
+    match change {
+        Change::Hostname(h) => {
+            fs::write("/etc/hostname", format!("{h}\n"))?;
+            if !boot {
+                run(Command::new("hostname").arg(h))?;
+            }
+        }
+        Change::HostnameDefault => {
+            // The overlay's upper directory changes under it, which it
+            // tolerates; dropping cached names makes the slot's file show
+            // at once instead of at the next boot.
+            fs::remove_file(Path::new(ETC_UPPER).join("hostname"))?;
+            let _ = fs::write("/proc/sys/vm/drop_caches", "2");
+            let release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+            if let (false, Some(h)) = (boot, os_release_value(&release, "EDEL_HOSTNAME")) {
+                run(Command::new("hostname").arg(h))?;
+            }
+        }
+        Change::AddUser { name, shell } => {
+            run(Command::new("adduser").args(["-D", "-s", shell, name]))?;
+            unlock(name)?;
+        }
+        Change::Shell { name, shell } => {
+            if let Some(text) = passwd_with_shell(&fs::read_to_string("/etc/passwd")?, name, shell)
+            {
+                replace(Path::new("/etc/passwd"), &text)?;
+            }
+        }
+        Change::Unlock(name) => unlock(name)?,
+        Change::AdminGroup => run(Command::new("addgroup").args(["-S", ADMIN_GROUP]))?,
+        Change::Admin { name, on: true } => {
+            run(Command::new("addgroup").args([name, ADMIN_GROUP]))?
+        }
+        Change::Admin { name, on: false } => {
+            run(Command::new("delgroup").args([name, ADMIN_GROUP]))?
+        }
+        Change::Keys { name, keys } => {
+            let account = find_account(name)?;
+            let dir = Path::new(&account.home).join(".ssh");
+            let path = dir.join("authorized_keys");
+            fs::create_dir_all(&dir)?;
+            fs::write(&path, keys_text(keys))?;
+            for (p, mode) in [(&dir, 0o700), (&path, 0o600)] {
+                fs::set_permissions(p, Permissions::from_mode(mode))?;
+                chown(p, Some(account.uid), Some(account.gid))?;
+            }
+        }
+        Change::Developer(true) => {
+            let flag = Path::new(DEVELOPER_FLAG);
+            fs::create_dir_all(flag.parent().unwrap_or(Path::new("/")))?;
+            fs::write(flag, "")?;
+        }
+        Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+    }
+    Ok(())
+}
+
+/// The file to apply or diff, read leniently, with its problems and the
+/// keys this release skips printed first; `None` when there is none.
+fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<system::Read>> {
+    let path = file.unwrap_or(Path::new(SYSTEM_FILE));
     if file.is_none() && !path.exists() {
-        match seed(machine)? {
+        match seed_if_missing.then(|| seed(path)).transpose()?.flatten() {
             Some(from) => println!("edel system: seeded {SYSTEM_FILE} from {from}"),
             None => {
                 println!("edel system: no system file, so nothing to apply");
-                return Ok(());
+                return Ok(None);
             }
         }
     }
@@ -155,12 +396,36 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
     for key in &read.later {
         println!("edel system: skipped {key}: not supported yet");
     }
-    let changes = apply_file(&read.file, boot)?;
-    for change in &changes {
-        println!("edel system: {change}");
+    Ok(Some(read))
+}
+
+/// `edel system apply [FILE]`: applies the system file, by default the
+/// machine's own, which is seeded first when it is missing. A given FILE
+/// becomes the machine's file once applied, so the next boot keeps it.
+pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
+    let _lock = Lock::take("system", "edel system")?;
+    let Some(read) = load(file, true)? else {
+        return Ok(());
+    };
+    let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
+    for note in &notes {
+        println!("edel system: {note}");
     }
-    if file.is_some_and(|f| f != machine) {
-        fs::create_dir_all(Path::new(SYSTEM_FILE).parent().unwrap_or(Path::new("/")))?;
+    // One change that fails never stops the others (Reliable): each is
+    // reported, and apply fails at the end.
+    let mut failed = 0;
+    for change in &changes {
+        match execute(change, boot) {
+            Ok(()) => println!("edel system: {change}"),
+            Err(err) => {
+                failed += 1;
+                eprintln!("edel system: could not apply {change}: {err:#}");
+            }
+        }
+    }
+    let machine = Path::new(SYSTEM_FILE);
+    if let Some(path) = file.filter(|f| *f != machine) {
+        fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
         fs::copy(path, machine).with_context(|| format!("saving {SYSTEM_FILE}"))?;
         println!(
             "edel system: {} is now this machine's system file",
@@ -169,100 +434,85 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
     } else if changes.is_empty() {
         println!("edel system: nothing to change");
     }
+    if failed > 0 {
+        bail!("{failed} of {} changes could not be applied", changes.len());
+    }
     Ok(())
 }
 
-fn apply_file(file: &SystemFile, boot: bool) -> Result<Vec<String>> {
-    let mut changes = Vec::new();
-    if let Some(hostname) = &file.network.hostname {
-        let current = fs::read_to_string("/etc/hostname").unwrap_or_default();
-        if current.trim() != hostname {
-            fs::write("/etc/hostname", format!("{hostname}\n"))?;
-            changes.push(format!("hostname set to {hostname}"));
-        }
-        if !boot {
-            run(Command::new("hostname").arg(hostname))?;
-        }
+/// `edel system diff [FILE]`: what apply would change, one `change:` line
+/// each, changing nothing. Returns whether there is anything to change.
+pub fn diff(file: Option<&Path>) -> Result<bool> {
+    let Some(read) = load(file, false)? else {
+        return Ok(false);
+    };
+    let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
+    for note in &notes {
+        println!("edel system: {note}");
     }
-    for (name, user) in &file.users {
-        apply_user(name, user, &mut changes).with_context(|| format!("applying [users.{name}]"))?;
+    for change in &changes {
+        println!("change: {change}");
     }
-    let developer = file.system.developer == Some(true);
-    let flag = Path::new(DEVELOPER_FLAG);
-    if developer && !flag.exists() {
-        fs::create_dir_all(flag.parent().unwrap_or(Path::new("/")))?;
-        fs::write(flag, "")?;
-        changes.push("developer mode on".into());
-    } else if !developer && flag.exists() {
-        fs::remove_file(flag)?;
-        changes.push("developer mode off".into());
-    }
-    Ok(changes)
+    Ok(!changes.is_empty())
 }
 
-fn apply_user(name: &str, user: &User, changes: &mut Vec<String>) -> Result<()> {
-    let shell = user.shell.as_deref().unwrap_or(DEFAULT_SHELL);
-    let find = || -> Result<Option<Account>> {
-        Ok(accounts(&fs::read_to_string("/etc/passwd")?)
-            .into_iter()
-            .find(|a| a.name == name))
+/// Edits the machine's system file through `change`, or for a file in a
+/// newer format the `system.toml.v<N>` this release reads (ADR-008,
+/// writers). Never applies it.
+fn edit(what: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
+    let _lock = Lock::take("system", "edel system")?;
+    let machine = Path::new(SYSTEM_FILE);
+    let mut path = machine.to_path_buf();
+    let mut newer = None;
+    if let Ok(text) = fs::read_to_string(machine) {
+        let format = system::format(&text).with_context(|| format!("reading {SYSTEM_FILE}"))?;
+        if format > system::FORMAT {
+            path = system::versioned(machine, system::FORMAT);
+            newer = Some(format);
+        }
+    }
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(_) if newer.is_none() => format!("format = {}\n", system::FORMAT),
+        Err(_) => bail!(
+            "{SYSTEM_FILE} is format {}, newer than this release, and there is no {} beside it to change",
+            newer.unwrap_or_default(),
+            path.display()
+        ),
     };
-    let account = match find()? {
-        Some(account) if !is_person(&account) => {
-            changes.push(format!("left {name} alone: it is a system account"));
-            return Ok(());
-        }
-        Some(account) => account,
-        None => {
-            run(Command::new("adduser").args(["-D", "-s", shell, name]))?;
-            changes.push(format!("user {name} added"));
-            find()?.with_context(|| format!("adduser did not add {name}"))?
-        }
-    };
-    if let Some(text) = passwd_with_shell(&fs::read_to_string("/etc/passwd")?, name, shell) {
-        replace(Path::new("/etc/passwd"), &text)?;
-        changes.push(format!("{name}'s shell set to {shell}"));
+    let edited = change(&text)?;
+    for problem in system::read(&edited)?.problems {
+        println!("edel system: kept, not used by this release: {problem}");
     }
-    if let Some(text) = shadow_unlocked(&fs::read_to_string("/etc/shadow")?, name) {
-        replace(Path::new("/etc/shadow"), &text)?;
-    }
-
-    let admin = user.admin == Some(true);
-    let group = fs::read_to_string("/etc/group")?;
-    if admin && members(&group, ADMIN_GROUP).is_none() {
-        run(Command::new("addgroup").args(["-S", ADMIN_GROUP]))?;
-    }
-    let is_admin = members(&fs::read_to_string("/etc/group")?, ADMIN_GROUP)
-        .is_some_and(|m| m.iter().any(|m| m == name));
-    if admin && !is_admin {
-        run(Command::new("addgroup").args([name, ADMIN_GROUP]))?;
-        changes.push(format!("{name} is an admin"));
-    } else if !admin && is_admin {
-        run(Command::new("delgroup").args([name, ADMIN_GROUP]))?;
-        changes.push(format!("{name} is no longer an admin"));
-    }
-
-    // Absent ssh_keys leaves the file alone: keys a person added by hand
-    // are theirs.
-    if let Some(keys) = &user.ssh_keys {
-        let text: String = keys
-            .iter()
-            .filter(|k| !k.contains('\n'))
-            .map(|k| format!("{k}\n"))
-            .collect();
-        let dir = Path::new(&account.home).join(".ssh");
-        let path = dir.join("authorized_keys");
-        if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
-            fs::create_dir_all(&dir)?;
-            fs::write(&path, &text)?;
-            for (p, mode) in [(&dir, 0o700), (&path, 0o600)] {
-                fs::set_permissions(p, Permissions::from_mode(mode))?;
-                chown(p, Some(account.uid), Some(account.gid))?;
-            }
-            changes.push(format!("{name}'s ssh keys written"));
-        }
+    fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
+    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    fs::write(&new, &edited)?;
+    fs::File::open(&new)?.sync_all()?;
+    fs::rename(&new, &path).with_context(|| format!("replacing {}", path.display()))?;
+    println!(
+        "edel system: {what} in {}; edel system apply applies it",
+        path.display()
+    );
+    if let Some(format) = newer {
+        println!(
+            "edel system: {SYSTEM_FILE} is format {format}, so the change applies to this release only"
+        );
     }
     Ok(())
+}
+
+/// `edel system set KEY=VALUE`
+pub fn set(assignment: &str) -> Result<()> {
+    let (key, value) = assignment
+        .split_once('=')
+        .context("write KEY=VALUE, such as network.hostname=lab-1")?;
+    let (key, value) = (key.trim(), value.trim());
+    edit(&format!("set {key}"), |text| system::set(text, key, value))
+}
+
+/// `edel system unset KEY`
+pub fn unset(key: &str) -> Result<()> {
+    edit(&format!("removed {key}"), |text| system::unset(text, key))
 }
 
 /// Looks for a first system file: on a volume labelled EDEL-SEED, then on
@@ -347,7 +597,34 @@ pub fn export() -> Result<()> {
         Path::new(DEVELOPER_FLAG).exists(),
     );
     print!("{}", toml::to_string(&file)?);
+    let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
+    if !changed.is_empty() {
+        println!("\n# Files this machine changed in /etc, kept on /data and not described above:");
+        for line in changed {
+            println!("#   {line}");
+        }
+    }
     Ok(())
+}
+
+/// The files under the overlay's upper directory `dir`, named as they
+/// appear under `shown`; a whiteout is a file this machine removed.
+fn changed_files(dir: &Path, shown: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let (path, name) = (entry.path(), shown.join(entry.file_name()));
+        match entry.file_type() {
+            Ok(t) if t.is_dir() => found.extend(changed_files(&path, &name)),
+            Ok(t) if t.is_char_device() => found.push(format!("{} (removed)", name.display())),
+            Ok(_) => found.push(name.display().to_string()),
+            Err(_) => {}
+        }
+    }
+    found.sort();
+    found
 }
 
 /// Sets the keys apply owns in `file` from the machine: the hostname when
@@ -431,6 +708,66 @@ mod tests {
         assert_eq!(members(group, "admin").unwrap(), ["ci", "ali"]);
         assert_eq!(members(group, "ci").unwrap(), Vec::<String>::new());
         assert_eq!(members(group, "wheel"), None);
+    }
+
+    fn machine() -> Machine {
+        Machine {
+            hostname: "lab-1\n".into(),
+            hostname_set: true,
+            passwd: PASSWD.into(),
+            group: "admin:x:101:ci\n".into(),
+            shadow: Some("ci:*:1::::::\nali:!:1::::::\n".into()),
+            keys: BTreeMap::from([("ci".into(), "ssh-ed25519 AAAA ci@edel\n".into())]),
+            developer: false,
+        }
+    }
+
+    #[test]
+    fn a_machine_that_matches_needs_no_change() {
+        let file = system::read(
+            "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nadmin = true\nssh_keys = [\"ssh-ed25519 AAAA ci@edel\"]\n[users.sshd]\nadmin = true\n",
+        )
+        .unwrap()
+        .file;
+        let (changes, notes) = plan(&file, &machine());
+        assert_eq!(changes, []);
+        assert_eq!(notes, ["left users.sshd alone: it is a system account"]);
+    }
+
+    #[test]
+    fn plans_each_difference_once() {
+        let file = system::read(
+            "format = 1\n[system]\ndeveloper = true\n[users.ali]\nadmin = true\n[users.new]\nshell = \"/bin/ash\"\n",
+        )
+        .unwrap()
+        .file;
+        let (changes, _) = plan(&file, &machine());
+        let shown: Vec<String> = changes.iter().map(|c| c.to_string()).collect();
+        assert_eq!(
+            shown,
+            [
+                "network.hostname: back to the release's",
+                "users.ali.shell: set to /bin/sh",
+                "users.ali: allow key logins",
+                "users.ali.admin: on",
+                "users.new: add, with shell /bin/ash",
+                "system.developer: on",
+            ]
+        );
+    }
+
+    #[test]
+    fn lists_what_the_machine_changed_in_etc() {
+        let dir = std::env::temp_dir().join(format!("edel-changed-files-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("ssh")).unwrap();
+        fs::write(dir.join("hostname"), "x\n").unwrap();
+        fs::write(dir.join("ssh/ssh_host_ed25519_key"), "").unwrap();
+        assert_eq!(
+            changed_files(&dir, Path::new("/etc")),
+            ["/etc/hostname", "/etc/ssh/ssh_host_ed25519_key"]
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

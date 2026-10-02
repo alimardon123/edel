@@ -30,4 +30,5 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_ignored = "0.1"
 sha2 = { version = "0.11", optional = true }
 toml = "1.1.6"
+toml_edit = "0.25"
 ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }

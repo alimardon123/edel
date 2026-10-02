@@ -80,8 +80,26 @@ enum SystemCommands {
         #[arg(long)]
         boot: bool,
     },
-    /// Print this machine as a system file
+    /// Show what apply would change, changing nothing; exits 1 when
+    /// there is anything to change
+    Diff {
+        /// The system file; without one, the machine's own
+        file: Option<PathBuf>,
+    },
+    /// Print this machine as a system file, and the /etc files it changed
     Export,
+    /// Change one key in the machine's system file, keeping everything
+    /// else in it byte for byte; apply makes it take effect
+    Set {
+        /// KEY=VALUE, such as network.hostname=lab-1
+        assignment: String,
+    },
+    /// Remove one key from the machine's system file, so the release
+    /// decides it again; apply makes it take effect
+    Unset {
+        /// The key, such as network.hostname
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -267,7 +285,15 @@ fn main() -> Result<()> {
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
             SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),
+            SystemCommands::Diff { file } => {
+                if machine::diff(file.as_deref())? {
+                    std::process::exit(1);
+                }
+                Ok(())
+            }
             SystemCommands::Export => machine::export(),
+            SystemCommands::Set { assignment } => machine::set(&assignment),
+            SystemCommands::Unset { key } => machine::unset(&key),
         },
     }
 }
