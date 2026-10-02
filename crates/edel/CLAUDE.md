@@ -20,6 +20,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - `boot.rs`: the A/B disk layout and `grub.cfg`.
 - `grubenv.rs`: GRUB's 1024-byte environment block and the `Slot` type, shared by `boot.rs` and `update.rs`.
 - `update.rs`: `edel update status|install|mark-good|rollback`; pure transitions (`before_install`, `after_install`, `confirm`, `roll_back`) and slot discovery (`find_disk`, tested on a fake sysfs tree).
+- `data.rs`: `edel boot mount-data`, which grows the data partition on first boot and mounts it at `/data`.
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
 
 ## Conventions
@@ -34,7 +35,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 - In `edel image build`, and in any other command that has `--dry-run`, run every external tool through `Runner::run` or `Runner::run_with_input`; print work edel does itself with `Runner::step` and guard it with `if !self.runner.dry_run` or an early return. A dry run changes nothing and needs no root, Alpine or network. `Runner::run` captures no output and treats any non-zero exit as failure, so commands without a dry run, such as `edel update`, call tools with `std::process::Command` directly and check the exit status themselves.
 - Image builds use no loop devices and mount no images (`mkfs.ext4 -d`, `mkfs.vfat` with mtools, `sfdisk`, sparse copies at byte offsets). The only mounts are proc, sys and dev from `mount_kernel_fs`, undone by `MountGuard`. Never delete a work directory without `ensure_nothing_mounted_under`: a live bind of `/dev` inside it would delete the host's devices.
-- Disk layout: partition 1 is the EFI system partition (`EDEL-ESP`, 64 MiB), 2 is slot A, 3 is slot B; GRUB and the updater rely on it. M1.2 puts `edel-data` at 4. No two filesystems a machine can see may share a UUID: slot A gets its own mkfs, and a written slot gets `tune2fs -U random`.
+- Disk layout: partition 1 is the EFI system partition (`EDEL-ESP`, 64 MiB), 2 is slot A, 3 is slot B, 4 is `edel-data` (64 MiB in the image, grown with `sfdisk` and `partx` on first boot); GRUB and the updater rely on it. No two filesystems a machine can see may share a UUID: slot A gets its own mkfs, and a written slot gets `tune2fs -U random`.
 - The grubenv block is exactly 1024 bytes, rewritten in place, and keeps RAUC's names: `ORDER`, `A_OK`, `A_TRY`, `B_OK`, `B_TRY`. GRUB menu entries are numbered because GRUB 2.12 ignores an entry id in `fallback`. `vm.cmdline` is pasted into `grub.cfg`; keep it behind `boot::is_safe_cmdline`.
 
 ## Updater rules (M1.1 and every later updater step)

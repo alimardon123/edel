@@ -43,7 +43,7 @@ That produces, in `out/`:
 | File | What it is |
 |------|------------|
 | `edel-container-x86_64.tar.gz` | Container image; load it with `docker import` |
-| `edel-vm-x86_64.img` | Bootable VM disk: UEFI, GRUB and two root slots, A and B |
+| `edel-vm-x86_64.img` | Bootable VM disk: UEFI, GRUB, two root slots, A and B, and a data partition that grows to fill the disk |
 | `edel-vm-x86_64.ext4` | One root slot; installing it into a running VM is an update |
 
 To see every step without changing anything:
