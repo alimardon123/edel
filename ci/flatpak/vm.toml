@@ -42,4 +42,4 @@ health = ["default-runlevel"]
 [vm]
 kernel = "virt"
 slot_mib = 1024
-cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk,overlay,i6300esb,softdog i6300esb.heartbeat=15 softdog.soft_margin=15"
+cmdline = "console=ttyS0"

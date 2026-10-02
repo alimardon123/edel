@@ -119,9 +119,33 @@ impl Layout {
     }
 }
 
+/// Modules the initramfs loads before it looks for the root, the same for
+/// every image and kernel (roadmap M3.3a): the root's file system, the
+/// overlay for `/etc`, the watchdogs the guard can pet (QEMU's i6300esb,
+/// and softdog where the kernel has it) and the disks a slot can live on.
+/// Everything else loads by hardware ID; a module a kernel lacks is
+/// skipped.
+pub const MODULES: &str =
+    "ext4,overlay,i6300esb,softdog,virtio_pci,virtio_blk,nvme,ahci,sd_mod,usb-storage,uas,xhci_pci";
+
+/// Watchdog timeouts the guard relies on (roadmap M1.5).
+pub const WATCHDOG_ARGS: &str = "i6300esb.heartbeat=15 softdog.soft_margin=15";
+
+/// The mkinitfs features of every bootable image (roadmap M3.3a): disks on
+/// SATA, NVMe, SCSI, USB and virtio, ext4, and kernel mode setting so a
+/// laptop's screen comes up early.
+pub const INITRAMFS_FEATURES: &str = "ata base ext4 kms nvme scsi usb virtio";
+
+/// CPU microcode a slot may carry in `/boot` (intel-ucode, amd-ucode). GRUB
+/// loads each one present before the initramfs, so the kernel applies it
+/// at its very start.
+pub const MICROCODE: &[&str] = &["intel-ucode.img", "amd-ucode.img"];
+
 /// GRUB's config: picks a slot as described at the top of this module, and
-/// boots `kernel` (an Alpine kernel flavor) from it with `cmdline` added.
-pub fn grub_cfg(kernel: &str, cmdline: &str) -> String {
+/// boots `kernel` (an Alpine kernel flavor) from it with `MODULES`,
+/// `WATCHDOG_ARGS` and `cmdline` added, loading the `microcode` files
+/// (names in `/boot`, from `MICROCODE`) before the initramfs.
+pub fn grub_cfg(kernel: &str, cmdline: &str, microcode: &[&str]) -> String {
     let mut cfg = String::from(
         r#"# Edel OS A/B boot, written by `edel image build`. GRUB starts the
 # first slot in ORDER that is OK and has tries left, and counts the try;
@@ -198,8 +222,11 @@ else
 	if [ "$B_OK" = "1" ]; then set fallback=1; fi
 fi
 "#;
-    let cmdline = format!("root=UUID=$uuid rootfstype=ext4 panic=10 {cmdline}");
+    let cmdline = format!(
+        "root=UUID=$uuid rootfstype=ext4 panic=10 modules={MODULES} {WATCHDOG_ARGS} {cmdline}"
+    );
     let cmdline = cmdline.trim_end();
+    let early: String = microcode.iter().map(|f| format!("/boot/{f} ")).collect();
     for (name, partition) in SLOTS {
         cfg += &format!(
             r#"
@@ -208,7 +235,7 @@ menuentry "Edel OS, slot {name}" {{
 	set uuid=""
 	probe --set=uuid --fs-uuid "($disk,gpt{partition})"
 	linux /boot/vmlinuz-{kernel} {cmdline}
-	initrd /boot/initramfs-{kernel}
+	initrd {early}/boot/initramfs-{kernel}
 }}
 "#
         );
@@ -272,7 +299,7 @@ mod tests {
 
     #[test]
     fn grub_counts_every_try() {
-        let cfg = grub_cfg("virt", "console=ttyS0");
+        let cfg = grub_cfg("virt", "console=ttyS0", &[]);
         for (tried, next) in [(0, 1), (1, 2), (2, 3)] {
             assert!(cfg.contains(&format!(
                 "if [ \"$try\" = \"{tried}\" ]; then set next=\"{next}\"; fi"
@@ -291,13 +318,19 @@ mod tests {
 
     #[test]
     fn grub_boots_each_slot_by_its_own_uuid() {
-        let cfg = grub_cfg("virt", "console=ttyS0");
+        let cfg = grub_cfg("virt", "console=ttyS0", &[]);
         assert!(cfg.contains("menuentry \"Edel OS, slot B\" {"));
         assert!(cfg.contains("probe --set=uuid --fs-uuid \"($disk,gpt3)\""));
         assert!(cfg.contains(
-            "linux /boot/vmlinuz-virt root=UUID=$uuid rootfstype=ext4 panic=10 console=ttyS0\n"
+            "linux /boot/vmlinuz-virt root=UUID=$uuid rootfstype=ext4 panic=10 modules=ext4,overlay,"
         ));
+        assert!(cfg.contains(" softdog.soft_margin=15 console=ttyS0\n"));
         assert!(cfg.contains("initrd /boot/initramfs-virt\n"));
+        let laptop = grub_cfg("lts", "", MICROCODE);
+        assert!(
+            laptop
+                .contains("initrd /boot/intel-ucode.img /boot/amd-ucode.img /boot/initramfs-lts\n")
+        );
     }
 
     #[test]

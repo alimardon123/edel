@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 
-Every file format Edel OS owns has a top-level integer `format`, from 1. Writers and checkers are strict; readers on a machine are lenient, because an old slot reads files a newer release wrote and cannot be patched afterwards (ADR-008). This page grows with each format: the slot size rule arrives in M3.3.
+Every file format Edel OS owns has a top-level integer `format`, from 1. Writers and checkers are strict; readers on a machine are lenient, because an old slot reads files a newer release wrote and cannot be patched afterwards (ADR-008). This page grows with each format: the slot size rule arrives in M3.3b.
 
 ## `release.toml` (format 1, M1.6)
 

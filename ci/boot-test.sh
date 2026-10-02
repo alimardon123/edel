@@ -3,7 +3,8 @@
 # A) and waits for the Edel OS login prompt on the serial console. The disk
 # is opened in snapshot mode, so the tested image stays exactly as built.
 # Then boots a copy of the disk made 3 GiB larger and checks that the data
-# partition grew to fill it (roadmap M1.2).
+# partition grew to fill it (roadmap M1.2). Boots the laptop image the
+# same way in between (M3.3a).
 set -eu
 . ci/vm.sh
 
@@ -22,6 +23,20 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
+	exit 1
+fi
+
+# The laptop image (roadmap M3.3a): the same checks with linux-lts and its
+# firmware; a VM has none of the laptop's hardware, so this proves the
+# kernel, initramfs and slots, and Alimardon's laptops prove the drivers.
+boot out/boot-laptop.log out/edel-laptop-x86_64.img
+if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot-laptop.log &&
+	grep -q 'edel update: slot A confirmed' out/boot-laptop.log &&
+	grep -q 'edel-data: mounted /data' out/boot-laptop.log &&
+	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log; then
+	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts to the login prompt and was confirmed in ${waited}s"
+else
+	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
 	exit 1
 fi
 

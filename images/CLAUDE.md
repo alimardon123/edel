@@ -1,9 +1,10 @@
 # Image definitions
 
-An image definition is a TOML file here; `edel image build` turns it into an image. The schema and its checks are in `crates/edel/src/def.rs`, the build steps in `image.rs`. Two exist, both format 1, Alpine `v3.24` (`main` and `community`), `x86_64`:
+An image definition is a TOML file here; `edel image build` turns it into an image. The schema and its checks are in `crates/edel/src/def.rs`, the build steps in `image.rs`. Three exist, all format 1, Alpine `v3.24` (`main` and `community`), `x86_64`:
 
 - `container.toml`: `edel-container`, no hostname, no services, no `[vm]`; packed as `out/edel-container-x86_64.tar.gz` (load it with `docker import`).
 - `vm.toml`: `edel-vm`, hostname `edel`, kernel `virt`, `slot_mib = 1024`, serial console; packed as `out/edel-vm-x86_64.img` (GPT disk: EFI system partition, slot A filled, slot B empty, and a 64 MiB `edel-data` partition that grows to the end of the disk on first boot) and `out/edel-vm-x86_64.ext4` (one slot cut to its file system with `resize2fs -M`, the update image), each also as `.gz`.
+- `laptop.toml` (M3.3a): `edel-laptop`, the VM image with kernel `lts`, the firmware for most laptops' graphics and Wi-Fi (`linux-firmware-` `amdgpu`, `ath10k`, `ath11k`, `i915`, `intel`, `mediatek`, `radeon`, `rtl_nic`, `rtlwifi`, `rtw88`, `rtw89`, `xe`) and CPU microcode (`intel-ucode`, `amd-ucode`), `console=tty0 console=ttyS0,115200`; packed like the VM image as `out/edel-laptop-x86_64.img`, to be written to a USB stick. The VM keeps `virt`: `lts` installs 152 MiB against 49, more than the whole VM root (reason in `vm.toml`).
 
 Check a definition with `cargo run --quiet --locked -- image check images/vm.toml` (it prints `<name>-<arch>: ok (<n> packages)`); list its build steps with `cargo run -- image build images/vm.toml --dry-run`.
 
@@ -11,7 +12,7 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 - Top level: `format = 1`, `name`, `variant` (`"container"` or `"vm"`), `arch`, optional `hostname`, optional `files` (directories relative to the definition, copied in order). Outputs are named `<name>-<arch>`.
 - `[alpine]`: `branch`, `mirror`, `repositories` (not empty). `[packages]`: `install` (not empty). `[services]`: optional `sysinit`, `boot`, `default`, `shutdown` lists of OpenRC services.
-- `[vm]`, required for `vm` and forbidden for `container`: `kernel` (the Alpine kernel flavour; `linux-<kernel>` must be in `install`), `slot_mib` (at least 64), optional `cmdline`, optional `data_mib` (default 64, at least 16).
+- `[vm]`, required for `vm` and forbidden for `container`: `kernel` (the Alpine kernel flavour; `linux-<kernel>` must be in `install`), `slot_mib` (at least 64), optional `cmdline` (never `modules=`: the build adds `boot::MODULES`, `boot::WATCHDOG_ARGS` and loads any `/boot/intel-ucode.img` and `/boot/amd-ucode.img` before the initramfs, which it rebuilds with `boot::INITRAMFS_FEATURES`, M3.3a), optional `data_mib` (default 64, at least 16).
 - `[image]`, required for `vm`: `health` (names the boot guard waits for: `default-runlevel`, later `compositor`) and optional `health_timeout` (seconds, default 120, at least 10), written into os-release as `EDEL_HEALTH` and `EDEL_HEALTH_TIMEOUT`; `edel image build --health-timeout` overrides it for test images. Every slot carries its boot loader (GRUB binary, `grub.cfg`, `loader.toml`) in `/usr/lib/edel/boot/`; `--loader-tag` makes a test loader differ. Every image's os-release gets the build's `VERSION_ID` (`edel image build --version`, numbers joined by dots; without it the overlay's `0.1` stays), `EDEL_CHANNEL` (`--channel`, default `dev`), `EDEL_ARCH` and `EDEL_PLATFORM_LEVEL` (0 until M8.8), and the installed packages land in `/usr/share/edel/packages` and `out/<image>.packages` (M3.1). VM images also get `EDEL_LOADER_VERSION` and `EDEL_IMAGE="<name>-<arch>"`, the name `release.toml` lists their image under, and `EDEL_HOSTNAME`, the hostname `edel system apply` goes back to when the system file names none.
 - `[release]`, optional: `public_keys`, key files (relative to the definition) copied to `/usr/share/edel/keys/` in VM images; `edel image build --public-key FILE` adds more for test images. No definition names a key until the first preview (M3.4).
 - `name` and `hostname` use only a-z, 0-9 and `-` and do not start with `-`. `cmdline` is pasted into `grub.cfg`, so it may not contain `"`, `'`, `\`, `$`, `;`, `{`, `}`, `#` or a backtick.
@@ -35,5 +36,5 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M3.3 moves `vm.toml` to `linux-lts`, adds `images/laptop.toml` and sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
+- M3.3b sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
 - Definitions stay strict in every format.
