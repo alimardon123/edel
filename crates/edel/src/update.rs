@@ -399,9 +399,37 @@ pub fn mark_good() -> Result<()> {
         );
         println!("edel update: {msg}");
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
+        if let Err(err) = record_fallback(failed, disk.running) {
+            eprintln!("warning: could not record the fallback: {err:#}");
+        }
     }
     esp.save(&env)?;
     println!("edel update: slot {} confirmed", disk.running);
+    Ok(())
+}
+
+/// The fallback record shell-ui shows once (M5.9).
+fn fallback_record(from: Slot, to: Slot, date: &str) -> String {
+    format!("format = 1\nfrom = \"{from}\"\nto = \"{to}\"\ndate = {date}\n")
+}
+
+/// Writes `/data/edel/last-fallback.toml`, when the data partition is
+/// mounted (M1.3).
+fn record_fallback(from: Slot, to: Slot) -> Result<()> {
+    if !crate::data::is_mounted("/data")? {
+        return Ok(());
+    }
+    let date = Command::new("date")
+        .arg("-u")
+        .arg("+%Y-%m-%dT%H:%M:%SZ")
+        .output()
+        .context("starting date")?;
+    let date = String::from_utf8_lossy(&date.stdout).trim().to_string();
+    fs::create_dir_all("/data/edel")?;
+    fs::write(
+        "/data/edel/last-fallback.toml",
+        fallback_record(from, to, &date),
+    )?;
     Ok(())
 }
 
@@ -512,6 +540,15 @@ mod tests {
         assert_eq!(env.order(), [Slot::B, Slot::A]);
         assert!(env.ok(Slot::A) && env.ok(Slot::B));
         assert_eq!(env.tries(Slot::B), 0);
+    }
+
+    #[test]
+    fn records_a_fallback_as_toml() {
+        let record = fallback_record(Slot::B, Slot::A, "2026-10-02T18:00:00Z");
+        let value: toml::Value = toml::from_str(&record).unwrap();
+        assert_eq!(value["from"].as_str(), Some("B"));
+        assert_eq!(value["to"].as_str(), Some("A"));
+        assert_eq!(value["format"].as_integer(), Some(1));
     }
 
     #[test]

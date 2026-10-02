@@ -20,7 +20,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - `boot.rs`: the A/B disk layout and `grub.cfg`.
 - `grubenv.rs`: GRUB's 1024-byte environment block and the `Slot` type, shared by `boot.rs` and `update.rs`.
 - `update.rs`: `edel update status|install|mark-good|rollback`; pure transitions (`before_install`, `after_install`, `confirm`, `roll_back`) and slot discovery (`find_disk`, tested on a fake sysfs tree).
-- `data.rs`: `edel boot mount-data`, which grows the data partition on first boot and mounts it at `/data`.
+- `data.rs`: `edel boot mount-data`, which grows the data partition on first boot, mounts it at `/data` and binds `/home` and `/var` onto it after topping up `/data/var` from the slot.
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
 
 ## Conventions
@@ -43,7 +43,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - The running slot comes from the mounted root (partition 2 is A, 3 is B), never from the kernel command line, and the running slot is never written.
 - Install switches the target off (`<slot>_OK=0`) before writing it, checks the image's size against the slot, writes it, drops the cache (`blockdev --flushbufs`), checks the write by sha256, then runs `e2fsck -fp` and `tune2fs -U random`. `e2fsck -fp` exiting 0 or 1 is success.
 - IMAGE may be a block device (ab-test passes the second disk), so size it by seeking to its end (file metadata reports 0 for a device), and hash only the first <image size> bytes of the slot.
-- `mark-good` detects a fallback: when ORDER does not start with the running slot but with the other one, GRUB passed over that slot. It then logs `slot X did not start, so slot Y is running instead; switching slot X off` and sets `X_OK=0`. In every case it then sets ORDER to the running slot first, with `OK=1` and `TRY=0`. M1.3 records that fallback in `/data/edel/last-fallback.toml`.
+- `mark-good` detects a fallback: when ORDER does not start with the running slot but with the other one, GRUB passed over that slot. It then logs `slot X did not start, so slot Y is running instead; switching slot X off` and sets `X_OK=0`. In every case it then sets ORDER to the running slot first, with `OK=1` and `TRY=0`. It records that fallback in `/data/edel/last-fallback.toml` (format, from, to, date) for shell-ui to show once (M5.9).
 - One updater at a time: install, mark-good and rollback take `/run/edel/update.lock`. Mount the EFI system partition only while writing it, never in fstab, with `-o noatime,iocharset=iso8859-1` (the virt kernel lacks utf8 for FAT). Rewrite grubenv in place, as `dd ... bs=1024 count=1 conv=notrunc,fsync` does.
 
 ## Formats: strict for builders, lenient on machines
