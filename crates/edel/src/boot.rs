@@ -1,12 +1,13 @@
 //! The bootable A/B disk (ADR-006).
 //!
-//! Every VM image is a GPT disk with three partitions:
+//! Every VM image is a GPT disk with four partitions:
 //!
 //! | # | Name       | What                                            |
 //! |---|------------|-------------------------------------------------|
 //! | 1 | `EDEL-ESP` | EFI system partition: GRUB, its config and env  |
 //! | 2 | `edel-a`   | Root slot A                                     |
 //! | 3 | `edel-b`   | Root slot B, empty until the first update       |
+//! | 4 | `edel-data`| Data that outlives every update; grows on first boot |
 //!
 //! Each slot is a complete root filesystem, kernel included. An update is
 //! written to the slot that is not running; the running system is never
@@ -28,6 +29,10 @@ use crate::grubenv::Env;
 
 /// File system label of the EFI system partition.
 pub const ESP_LABEL: &str = "EDEL-ESP";
+/// GPT name and file system label of the data partition, partition 4.
+pub const DATA_LABEL: &str = "edel-data";
+/// The data partition's GPT partition number.
+pub const DATA_PARTITION: u32 = 4;
 /// Size of the EFI system partition. Holds GRUB (about 1 MiB) with room to
 /// grow; 64 MiB is close to the smallest FAT32 that firmware accepts.
 pub const ESP_MIB: u64 = 64;
@@ -66,6 +71,7 @@ pub fn efi_target(arch: &str) -> Result<(&'static str, &'static str)> {
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
     pub slot_mib: u64,
+    pub data_mib: u64,
 }
 
 impl Layout {
@@ -78,8 +84,14 @@ impl Layout {
         1 + ESP_MIB + index * self.slot_mib
     }
 
+    /// Start of the data partition, right after slot B, so the slots stay
+    /// partitions 2 and 3 and the data partition can grow to the end.
+    pub fn data_start_mib(&self) -> u64 {
+        self.slot_start_mib(SLOTS.len() as u64)
+    }
+
     pub fn disk_mib(&self) -> u64 {
-        self.slot_start_mib(SLOTS.len() as u64) + 1
+        self.data_start_mib() + self.data_mib + 1
     }
 
     /// The partition table, as a script for `sfdisk`.
@@ -98,6 +110,11 @@ impl Layout {
                 name.to_lowercase(),
             );
         }
+        script += &format!(
+            "start={}, size={}, type={LINUX_TYPE}, name=\"{DATA_LABEL}\"\n",
+            self.data_start_mib() * SECTORS_PER_MIB,
+            self.data_mib * SECTORS_PER_MIB,
+        );
         script
     }
 }
@@ -212,23 +229,37 @@ mod tests {
 
     #[test]
     fn lays_out_the_disk_without_overlaps() {
-        let layout = Layout { slot_mib: 1024 };
+        let layout = Layout {
+            slot_mib: 1024,
+            data_mib: 64,
+        };
         assert_eq!(layout.esp_start_mib(), 1);
         assert_eq!(layout.slot_start_mib(0), 65);
         assert_eq!(layout.slot_start_mib(1), 1089);
-        assert_eq!(layout.disk_mib(), 2114);
+        assert_eq!(layout.data_start_mib(), 2113);
+        assert_eq!(layout.disk_mib(), 2178);
     }
 
     #[test]
     fn writes_the_partition_table() {
-        let script = Layout { slot_mib: 512 }.sfdisk_script();
+        let script = Layout {
+            slot_mib: 512,
+            data_mib: 64,
+        }
+        .sfdisk_script();
         assert_eq!(
             script,
             "label: gpt\nunit: sectors\n\n\
              start=2048, size=131072, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name=\"EDEL-ESP\"\n\
              start=133120, size=1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-a\"\n\
-             start=1181696, size=1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-b\"\n"
+             start=1181696, size=1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-b\"\n\
+             start=2230272, size=131072, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-data\"\n"
         );
+        // Some phone bootloaders break on GPT names over 24 characters.
+        for line in script.lines().filter(|l| l.contains("name=")) {
+            let name = line.rsplit("name=").next().unwrap().trim_matches('"');
+            assert!(name.len() <= 24, "{name} is too long");
+        }
     }
 
     #[test]

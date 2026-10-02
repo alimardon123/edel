@@ -94,6 +94,14 @@ pub struct Vm {
     /// the console to use.
     #[serde(default)]
     pub cmdline: String,
+    /// Size of the data partition in the image (M1.2). It grows to the
+    /// end of the disk on first boot, so it only needs room for a start.
+    #[serde(default = "default_data_mib")]
+    pub data_mib: u64,
+}
+
+fn default_data_mib() -> u64 {
+    64
 }
 
 impl ImageDef {
@@ -146,6 +154,9 @@ impl ImageDef {
                 }
                 if vm.slot_mib < 64 {
                     bail!("vm.slot_mib must be at least 64");
+                }
+                if vm.data_mib < 16 {
+                    bail!("vm.data_mib must be at least 16");
                 }
                 if !boot::is_safe_cmdline(&vm.cmdline) {
                     bail!(

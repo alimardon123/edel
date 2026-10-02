@@ -138,6 +138,8 @@ impl Build<'_> {
         if self.runner.dry_run {
             return Ok(());
         }
+        // The data partition's mount point; / may be read-only at boot.
+        fs::create_dir_all(root.join("data"))?;
         let exe = std::env::current_exe().context("finding the running edel binary")?;
         let dest = root.join("usr/bin/edel");
         fs::create_dir_all(root.join("usr/bin"))?;
@@ -205,6 +207,7 @@ impl Build<'_> {
         let disk = stem.with_extension("img");
         let layout = Layout {
             slot_mib: vm.slot_mib,
+            data_mib: vm.data_mib,
         };
 
         self.make_slot(root, &update, vm.slot_mib)?;
@@ -213,6 +216,8 @@ impl Build<'_> {
         // two filesystems a machine can see may share one.
         let slot_a = work.join("slot-a.ext4");
         self.make_slot(root, &slot_a, vm.slot_mib)?;
+        let data = work.join("data.ext4");
+        self.make_data(&data, vm.data_mib)?;
         let esp = work.join("esp.img");
         self.make_esp(&work.join("esp"), &esp, &vm.kernel, &vm.cmdline)?;
 
@@ -228,10 +233,11 @@ impl Build<'_> {
             &layout.sfdisk_script(),
         )?;
         self.runner
-            .step("copy the EFI system partition and slot A into the disk");
+            .step("copy the EFI system partition, slot A and the data partition into the disk");
         if !self.runner.dry_run {
             copy_sparse(&esp, &disk, layout.esp_start_mib() * MIB)?;
             copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
+            copy_sparse(&data, &disk, layout.data_start_mib() * MIB)?;
         }
         println!("vm disk: {}", disk.display());
         println!("update image: {}", update.display());
@@ -250,6 +256,23 @@ impl Build<'_> {
             Command::new("mkfs.ext4")
                 .args(["-q", "-F", "-L", "edel", "-d"])
                 .arg(root)
+                .arg(image),
+        )
+    }
+
+    /// An empty ext4 data partition; it grows to the end of the disk on
+    /// first boot (`edel boot mount-data`).
+    fn make_data(&self, image: &Path, size_mib: u64) -> Result<()> {
+        self.runner.step(&format!(
+            "create a sparse {size_mib} MiB data partition image {}",
+            image.display()
+        ));
+        if !self.runner.dry_run {
+            File::create(image)?.set_len(size_mib * MIB)?;
+        }
+        self.runner.run(
+            Command::new("mkfs.ext4")
+                .args(["-q", "-F", "-L", boot::DATA_LABEL])
                 .arg(image),
         )
     }

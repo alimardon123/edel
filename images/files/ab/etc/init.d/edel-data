@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Mounts the data partition (partition 4, edel-data) at /data, growing it to
+# the end of the disk on first boot (roadmap M1.2). In sysinit, because
+# services in the boot runlevel already write to /var.
+
+description="Mount the Edel OS data partition"
+
+depend() {
+	after devfs mdev hwdrivers
+}
+
+start() {
+	ebegin "Mounting the Edel OS data partition"
+	/usr/bin/edel boot mount-data
+	eend $?
+}
