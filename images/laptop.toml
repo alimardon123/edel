@@ -6,7 +6,7 @@ name = "edel-laptop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-files = ["files/common", "files/vm", "files/ab"]
+files = ["files/common", "files/vm", "files/ab", "files/laptop"]
 
 [alpine]
 branch = "v3.24"
@@ -48,7 +48,8 @@ install = [
 [services]
 sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
 boot = ["modules", "sysctl", "edel-system", "hostname", "bootmisc", "syslog", "networking"]
-default = ["sshd", "edel-boot-ok"]
+# edel-report leaves the hardware report on the stick (M3.4).
+default = ["sshd", "edel-boot-ok", "edel-report"]
 shutdown = ["mount-ro", "killprocs", "savecache"]
 
 [image]

@@ -16,6 +16,8 @@ Start with the design principles, then the decisions in order. The principles go
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
 | [REVIEW-postmarketos.md](REVIEW-postmarketos.md) | What we can learn from postmarketOS (now Nura) and its immutable Duranium | Review |
 | [FORMATS.md](FORMATS.md) | Every file format edel owns: fields, signatures, leniency, the stepping-stone rule | Reference |
+| [RELEASE.md](RELEASE.md) | What CI publishes, what is kept forever, the release key and the steps that wait for Alimardon | Reference |
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |
 | [system-file.md](system-file.md) | Every key of `system.toml`, its values and the step that acts on it | Reference |
+| [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |

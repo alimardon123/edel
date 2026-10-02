@@ -235,7 +235,13 @@ fn open_image(location: &str) -> Result<Box<dyn Read>> {
 }
 
 /// `file` in the same directory as the manifest at `location`.
+/// Where an image named in a manifest at `location` is: `file` itself when
+/// it is a URL (a channel manifest pointing at a release's assets, M3.4),
+/// otherwise beside the manifest.
 fn beside(location: &str, file: &str) -> String {
+    if is_url(file) {
+        return file.to_string();
+    }
     match location.rfind('/') {
         Some(i) => format!("{}/{file}", &location[..i]),
         None => file.to_string(),
@@ -344,8 +350,20 @@ pub fn keygen(dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// `edel release make`: `release.toml` beside the images it lists.
-pub fn make(version: &str, channel: &str, images: &[PathBuf]) -> Result<PathBuf> {
+/// `edel release make`: `release.toml` beside the images it lists. With
+/// `base_url` the manifest names each image by its URL there instead, so
+/// it can be served from somewhere else (a channel, M3.4), and goes into
+/// `out_dir` when given.
+pub fn make(
+    version: &str,
+    channel: &str,
+    base_url: Option<&str>,
+    out_dir: Option<&Path>,
+    images: &[PathBuf],
+) -> Result<PathBuf> {
+    if let Some(url) = base_url.filter(|u| !is_url(u)) {
+        bail!("--base-url {url:?} is not an http(s) URL");
+    }
     let Some(dir) = images.first().and_then(|i| i.parent()) else {
         bail!("name at least one image");
     };
@@ -362,6 +380,10 @@ pub fn make(version: &str, channel: &str, images: &[PathBuf]) -> Result<PathBuf>
         let name = file.split('.').next().unwrap_or_default().to_string();
         let location = image.to_str().context("an image path must be UTF-8")?;
         let (sha256, size) = sha256_reader(&mut open_image(location)?)?;
+        let file = match base_url {
+            Some(url) => format!("{}/{file}", url.trim_end_matches('/')),
+            None => file,
+        };
         entries.push(ImageEntry {
             name,
             file,
@@ -381,7 +403,9 @@ pub fn make(version: &str, channel: &str, images: &[PathBuf]) -> Result<PathBuf>
         date,
         images: entries,
     };
-    let path = dir.join("release.toml");
+    let out = out_dir.unwrap_or(dir);
+    fs::create_dir_all(out)?;
+    let path = out.join("release.toml");
     fs::write(&path, toml::to_string(&manifest)?)?;
     println!("{}", path.display());
     Ok(path)
@@ -412,6 +436,25 @@ pub fn verify(keys: &Path, file: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finds_images_beside_the_manifest_or_at_their_url() {
+        assert_eq!(
+            beside(
+                "https://example.org/r/preview/release.toml",
+                "edel-vm-x86_64.ext4.gz"
+            ),
+            "https://example.org/r/preview/edel-vm-x86_64.ext4.gz"
+        );
+        assert_eq!(
+            beside(
+                "https://example.org/channels/stable/release.toml",
+                "https://example.org/r/v1/edel-vm-x86_64.ext4.gz"
+            ),
+            "https://example.org/r/v1/edel-vm-x86_64.ext4.gz"
+        );
+        assert_eq!(beside("/srv/release.toml", "a.ext4"), "/srv/a.ext4");
+    }
 
     const MANIFEST: &str = "format = 1\nversion = \"2026.10.2\"\nchannel = \"stable\"\n\n[[images]]\nname = \"edel-vm-x86_64\"\nfile = \"edel-vm-x86_64.ext4\"\nsha256 = \"ab\"\nsize = 2\n";
 

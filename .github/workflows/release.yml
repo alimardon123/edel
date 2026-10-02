@@ -1,0 +1,24 @@
+name: Release
+
+# When Alimardon publishes a draft release made from a v* tag, the stable
+# channel moves to it (roadmap M3.4, docs/RELEASE.md): ci/channel.sh copies
+# the release's channel.toml to channels/stable/ on gh-pages.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  channel:
+    name: Point the stable channel at the published release
+    if: startsWith(github.event.release.tag_name, 'v') && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy channel.toml to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: sh ci/channel.sh publish "$TAG"

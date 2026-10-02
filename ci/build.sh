@@ -87,11 +87,43 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 # service that installs and runs a Flathub runtime (roadmap M1.9).
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
+# The release (roadmap M3.4), made on every run so every PR proves it can be
+# made: out/release/ holds what a GitHub release publishes (the update
+# images and their release.toml, the disks, the container image and the
+# package lists), and out/channel/release.toml names the same update images
+# by their URL under the tag's release, for the stable channel. Both are
+# signed with the release key when CI has it (EDEL_RELEASE_KEY, the secret
+# half in hex) and checked against the committed public half in
+# images/keys/; otherwise with a throwaway key, and out/channel/signer says
+# which, so ci/release.sh never publishes a throwaway signature.
+tag=${EDEL_TAG:-v$version}
+rm -rf out/release out/channel
+mkdir -p out/release out/channel
+for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages; do
+	ln "$f" out/release/
+done
+if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
+	(umask 077 && printf '%s\n' "$EDEL_RELEASE_KEY" >out/keys/release.key)
+	key=out/keys/release.key keys=images/keys signer=release
+else
+	./target/release/edel release keygen out/keys ci-release
+	key=out/keys/ci-release.key keys=out/keys signer=throwaway
+fi
+./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" out/release/*.ext4.gz
+./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
+	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
+for manifest in out/release/release.toml out/channel/release.toml; do
+	./target/release/edel release sign --key "$key" "$manifest"
+	./target/release/edel release verify "$keys" "$manifest"
+done
+rm -f out/keys/release.key
+echo "$signer" >out/channel/signer
+
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/install-test out/keys out/system-test; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/flatpak out/install-test out/keys out/release out/system-test; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done
