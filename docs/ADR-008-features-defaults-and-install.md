@@ -155,8 +155,8 @@ Not built, and defended: a plugin or extension API; dependencies, versions or al
 
 ## Action Items
 
-1. [ ] `release.toml` readers ignore unknown fields; the stepping-stone rule in `docs/FORMATS.md` (M1.6).
-2. [ ] `edel::system`; strict checking and lenient boot reading of `system.toml` (keys, enum values, names), `system.toml.v<N>`, `keys.txt` (M2.1).
+1. [x] `release.toml` readers ignore unknown fields; the stepping-stone rule in `docs/FORMATS.md` (M1.6).
+2. [x] `edel::system`; strict checking and lenient boot reading of `system.toml` (keys, enum values, names), `system.toml.v<N>`, `keys.txt` (M2.1).
 3. [ ] `unset`, release defaults enforced by apply, writes with `toml_edit` (M2.3); one plan for dry run, confirmation and exit 3, test service in the background (M2.4).
 4. [ ] Feature files, image definitions format 2 with `off`, modules from features, `docs/FEATURES.md`, health from features (M4.0, M4.1, M4.8).
 5. [ ] The compositor links `edel::system`, role-named keys (M4.5); scale from the EDID (M4.6).

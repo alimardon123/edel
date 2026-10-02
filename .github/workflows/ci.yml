@@ -25,6 +25,10 @@ jobs:
       - run: cargo test --locked
       - name: Image definitions are valid
         run: for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
+      - name: The system file library builds without the command's dependencies
+        run: cargo build --locked --lib --no-default-features
+      - name: No system file key removed within a format
+        run: sh ci/keys-check.sh
 
   images:
     name: Build and boot images

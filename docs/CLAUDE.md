@@ -56,12 +56,12 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 Every new doc gets a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
 
-`FORMATS.md` exists since M1.6 and `SPIKE-flatpak.md` since M1.9; M2.1 adds the system-file rules and M3.3 the slot size. Docs the roadmap will add, each in its step: `system-file.md` (written in M2.1, generated from M6.11 on), `TRY-IT.md` and `RELEASE.md` (M3.4), `FEATURES.md` (M4.0), `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10).
+`FORMATS.md` exists since M1.6, `SPIKE-flatpak.md` since M1.9 and `system-file.md` since M2.1; M2.1 adds the system-file rules and M3.3 the slot size. Docs the roadmap will add, each in its step: `system-file.md` generated from M6.11 on, `TRY-IT.md` and `RELEASE.md` (M3.4), `FEATURES.md` (M4.0), `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10).
 
 ## Known inconsistencies: do not copy them
 
 - ADR-006 says applied settings make a new deployment and that the last few deployments stay in the boot menu; since ADR-008 settings apply at once on `/data`, and there are two slots plus `edel update rollback` (M1.1).
-- ADR-006's system file example uses `[extensions] add`; since ADR-008 it is `[addons] add`, and M2.1 renames the example. ADR-006's "from a USB stick or a URL" is now a path or an `https://` URL only.
+- ADR-006's "from a USB stick or a URL" is now a path or an `https://` URL only.
 - DESIGN-PRINCIPLES.md (edited by #6, #7 and #9) and ADR-007 (action item 1 edited by #7) do not show those edits on their Date lines.
 - Done but unticked: ADR-008 action item 9 (PR #7) and ADR-001 items 4 and 5. ADR-003 item 2 is done by PR #1 (both images built from Alpine v3.24, the VM booted in CI); item 1 is partly done (the image builder exists, our own overlay package repository does not).
 - Older ADRs say "behavior" and "colors"; new text uses British spelling.

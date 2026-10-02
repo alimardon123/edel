@@ -1,12 +1,12 @@
 # The `edel` tool
 
-The one command-line tool of Edel OS: a binary crate, the only member of the workspace. Edition 2024, `rust-version = "1.85"`, GPL-3.0-or-later, `publish = false`.
+The one command-line tool of Edel OS and the library `edel::system`: the only crate of the workspace. Edition 2024, `rust-version = "1.85"`, GPL-3.0-or-later, `publish = false`.
 
 ## What belongs here
 
 - Every system function lands here as a subcommand (`edel update`, `edel boot`, `edel release`, `edel system`, `edel install`), never as a separate tool: "one tool to learn" (`main.rs`). Add-ons, the live USB and fleet images are built by the same `edel image build`, not by a new builder.
 - Settings change only through `edel system set` and `unset`. Never add a per-domain verb that changes settings (no `edel addon add`), shell completion scripts, telemetry, runtime-loaded code or a plugin API (ADR-008).
-- M2.1 adds the library target `edel::system`, the one parser for system files. The compositor (M4.5), shell-ui (M5.1) and Settings (M5.6) link it, so it has no network or signing dependencies: those sit behind the binary's default `cli` feature (ADR-008). Keep the M1.6 and M1.7 crates (`ed25519-dalek`, `ureq`, `flate2`) out of code the library will need.
+- The library target (`lib.rs`, today only `edel::system`) is the one parser for system files. The compositor (M4.5), shell-ui (M5.1) and Settings (M5.6) link it, so it has no network or signing dependencies: `clap`, `ed25519-dalek`, `flate2`, `sha2` and `ureq` are optional and sit behind the binary's default `cli` feature (ADR-008). CI builds the library with `--no-default-features`; code the library needs never uses them.
 
 ## Fast checks
 
@@ -14,6 +14,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Layout
 
+- `lib.rs`: the library; `system.rs`: `system.toml` format 1, the key table `KEYS` (path, kind, supported), the structs, `read` (lenient: unknown keys and wrong values are dropped and reported), `check` (strict, also refuses keys not supported yet) and `read_on_machine` (a newer format reads `system.toml.v<N>` beside it, else fails).
 - `main.rs`: the clap derive CLI and its dispatch. Doc comments on variants and fields are the `--help` text: write them for users.
 - `def.rs`: image definitions (`ImageDef`, `FORMAT`, validation).
 - `image.rs`: `edel image build`; `Build::run` calls `prepare_root`, `install_packages`, `copy_files`, `enable_services`, `configure`, then `pack_container` or `pack_vm`.
@@ -28,7 +29,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Conventions
 
-- Today the dependencies are `anyhow`, `clap`, `ed25519-dalek`, `flate2`, `serde`, `sha2`, `toml` and `ureq` (rustls with ring, webpki roots), with no dev-dependencies. The roadmap names the next ones. Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
+- Today the dependencies are `anyhow`, `serde`, `serde_ignored` and `toml` for the library, and `clap`, `ed25519-dalek`, `flate2`, `sha2` and `ureq` (rustls with ring, webpki roots) for the command, with no dev-dependencies. The roadmap names the next ones. Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
 - Release binaries are built by Alpine 3.24's `cargo` package inside `ci/build.sh` (musl), not only by the runner's Rust. Code must build with both. Crates the roadmap marks "check in CI" (the `ed25519-dalek` musl build in M1.6, rustls with the ring provider in M1.7, `serde_ignored` in M2.1) are proven by that step's first CI run.
 - Errors: `anyhow` only, no custom error types. Return `Result`, fail with `bail!`, add `.context(...)` or `.with_context(...)`. Messages are lower case, have no final period, quote values with `{:?}` and say what to do: "the image has no /usr/lib/os-release; add one to the files directories". Progress goes to stdout with `println!`; non-fatal problems go to stderr as `warning: ...`.
 - No `unwrap` outside tests; the one `expect` (in `boot.rs`) says why it cannot fail. No `unsafe`, no `#[allow]`, no lint config: CI's `clippy -D warnings` and `fmt --check` are the rules.
@@ -65,6 +66,6 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Tests
 
-- Unit tests close each file: `#[cfg(test)] mod tests { use super::*; ... }`. Names are sentences in snake_case: `rejects_unknown_fields`, `grub_counts_every_try`. There is no `tests/` directory yet.
+- Unit tests close each file: `#[cfg(test)] mod tests { use super::*; ... }`. Names are sentences in snake_case: `rejects_unknown_fields`, `grub_counts_every_try`. `tests/` holds only `keys.txt`, the append-only list of system file keys that `system.rs` tests read; there are no integration tests.
 - Put logic in small pure functions that take text and numbers, so tests need no root, disk, Alpine or network; what needs Alpine, root or a VM is proven by the `ci/` scripts in CI. `def.rs` tests parse a `const VM: &str` and vary it with `.replace(...)`.
 - A test that needs files works under `std::env::temp_dir()` in a directory named after that test and the process id (`edel-copy-sparse-<pid>` in `copies_into_place_and_keeps_holes`), because cargo runs tests in parallel threads of one process, and removes it afterwards.
