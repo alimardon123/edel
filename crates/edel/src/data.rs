@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -119,10 +119,33 @@ const ACCOUNT_FILES: [&str; 3] = ["passwd", "group", "shadow"];
 /// is missing.
 fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
     let name = |line: &str| line.split(':').next().unwrap_or_default().to_string();
+    // passwd (7 fields) and group (4) give the id in field 3; in shadow
+    // (9) that field is a date.
+    let id = |line: &str| {
+        let fields: Vec<&str> = line.split(':').collect();
+        matches!(fields.len(), 4 | 7)
+            .then(|| fields[2])
+            .filter(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()))
+            .map(String::from)
+    };
     let known: std::collections::HashSet<String> = machine.lines().map(name).collect();
+    let taken: std::collections::HashSet<String> = machine.lines().filter_map(id).collect();
     let missing: Vec<&str> = slot
         .lines()
         .filter(|l| !l.is_empty() && !known.contains(&name(l)))
+        .filter(|l| {
+            // Alpine hands out system ids per build, so a slot's new
+            // account may carry an id this machine already gave someone
+            // else; adding it would make two names share one id.
+            let clash = id(l).is_some_and(|i| taken.contains(&i));
+            if clash {
+                eprintln!(
+                    "warning: edel-data: not adding {:?}: its id is already used here",
+                    name(l)
+                );
+            }
+            !clash
+        })
         .collect();
     if missing.is_empty() {
         return None;
@@ -136,6 +159,23 @@ fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
         merged.push('\n');
     }
     Some(merged)
+}
+
+/// Replaces an account file through a new file and a rename in the same
+/// directory, keeping its mode and owner (`shadow` stays 0640
+/// root:shadow), so a power cut leaves the old or the new file.
+fn replace_keeping_mode(path: &Path, text: &str) -> Result<()> {
+    let meta = fs::metadata(path)?;
+    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    fs::write(&new, text)?;
+    fs::set_permissions(&new, meta.permissions())?;
+    std::os::unix::fs::chown(&new, Some(meta.uid()), Some(meta.gid()))?;
+    fs::File::open(&new)?.sync_all()?;
+    fs::rename(&new, path)?;
+    if let Some(dir) = path.parent() {
+        fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 /// Mounts an overlay on `/etc`: the slot's `/etc` below, this machine's
@@ -157,7 +197,7 @@ fn overlay_etc() -> Result<()> {
         };
         let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default();
         if let Some(merged) = merge_accounts(&slot, &machine) {
-            fs::write(&machine_path, merged)?;
+            replace_keeping_mode(&machine_path, &merged)?;
             println!("edel-data: added the slot's new entries to /etc/{file}");
         }
     }
@@ -226,14 +266,43 @@ fn bind_home_and_var() -> Result<()> {
     Ok(())
 }
 
+/// Makes sure the node `dev` exists. Right after partx resized partition 4
+/// its `/dev` node has been missing for seconds (CI, 2026-10-02: resize2fs
+/// said "No such file or directory while opening /dev/vda4"), so this
+/// waits a second, asks mdev to scan, waits two more and then makes the
+/// node itself from the numbers sysfs gives, readable by root only.
+fn ensure_node(dev: &Path) {
+    for tick in 0..30 {
+        if dev.exists() {
+            return;
+        }
+        if tick == 10 {
+            let _ = Command::new("mdev").arg("-s").status();
+        }
+        sleep(Duration::from_millis(100));
+    }
+    let numbers = dev.file_name().and_then(|name| {
+        fs::read_to_string(Path::new("/sys/class/block").join(name).join("dev")).ok()
+    });
+    if let Some((major, minor)) = numbers.as_deref().and_then(|n| n.trim().split_once(':')) {
+        eprintln!("edel-data: {} was missing; making it", dev.display());
+        let _ = Command::new("mknod")
+            .args(["-m", "600"])
+            .arg(dev)
+            .args(["b", major, minor])
+            .status();
+    }
+}
+
 /// Grows the mounted file system on `dev` to fill its partition, online; it
 /// does nothing when the file system already fills it, and every boot runs
-/// it, so a growth that failed is finished on the next boot. Right after
-/// partx resized the partition one try has failed (CI, 2026-10-02), so it
-/// tries three times, a second apart, and prints resize2fs's own error.
+/// it, so a growth that failed is finished on the next boot. It tries three
+/// times, a second apart, each time after `ensure_node`, and prints
+/// resize2fs's own error if all fail.
 fn grow_file_system(dev: &Path) {
     let mut why = String::new();
     for attempt in 1..=3 {
+        ensure_node(dev);
         match Command::new("resize2fs").arg(dev).output() {
             Ok(out) if out.status.success() => return,
             Ok(out) => {
@@ -270,6 +339,7 @@ pub fn mount_data() -> Result<()> {
         }
     }
     if !is_mounted(MOUNT_POINT)? {
+        ensure_node(&dev);
         run(Command::new("mount")
             .args(["-t", "ext4", "-o", "noatime"])
             .arg(&dev)
@@ -279,9 +349,20 @@ pub fn mount_data() -> Result<()> {
     grow_file_system(&dev);
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
-    overlay_etc()?;
-    bind_home_and_var()?;
-    tmp_on_tmpfs()
+    // Each step runs even when one before it failed: a failed /etc overlay
+    // must not also leave /home, /var and /tmp off /data.
+    let mut first_error = None;
+    for (step, result) in [
+        ("/etc", overlay_etc()),
+        ("/home, /var and /root", bind_home_and_var()),
+        ("/tmp", tmp_on_tmpfs()),
+    ] {
+        if let Err(err) = result {
+            eprintln!("edel-data: {step}: {err:#}");
+            first_error.get_or_insert(err);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
 }
 
 #[cfg(test)]
@@ -322,5 +403,23 @@ mod tests {
         assert!(!should_grow(4_460_544, 4_327_424, 131_072));
         // The same image on a disk 2 GiB larger.
         assert!(should_grow(4_460_544 + 4_194_304, 4_327_424, 131_072));
+    }
+
+    #[test]
+    fn never_adds_an_account_whose_id_is_taken() {
+        let machine = "root:x:0:0::/root:/bin/sh\nali:x:1000:1000::/home/ali:/bin/sh\nsshd:x:22:22::/dev/null:/sbin/nologin\n";
+        let slot = "root:x:0:0::/root:/bin/sh\nsshd:x:22:22::/dev/null:/sbin/nologin\nnew:x:22:22::/:/sbin/nologin\nalso:x:23:23::/:/sbin/nologin\n";
+        let merged = merge_accounts(slot, machine).unwrap();
+        assert!(!merged.contains("new:x:22"));
+        assert!(merged.ends_with("also:x:23:23::/:/sbin/nologin\n"));
+        // shadow lines carry a date there, which many accounts share.
+        let shadow = merge_accounts(
+            "a:*:19000:0:99999:7:::\nb:!:19000:0:99999:7:::\n",
+            "a:*:19000:0:99999:7:::\n",
+        );
+        assert_eq!(
+            shadow.unwrap(),
+            "a:*:19000:0:99999:7:::\nb:!:19000:0:99999:7:::\n"
+        );
     }
 }

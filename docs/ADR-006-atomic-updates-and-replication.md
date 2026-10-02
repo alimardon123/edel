@@ -127,7 +127,7 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 
 1. [x] Spike A/B slots with automatic fallback on an Alpine VM image (see the spike result above; RAUC itself is not packaged for Alpine stable).
 2. [x] Choose the updater: our own `edel update` (decided 2026-10-01; RAUC is not packaged).
-3. [ ] Sign updates, and add a watchdog so a hanging slot also falls back.
+3. [x] Sign updates, and add a watchdog so a hanging slot also falls back (M1.5 and M1.6, PRs #15 and #16).
 4. [ ] Define version 1 of the system file format.
 5. [ ] Implement export, diff and apply against the VM image.
 6. [ ] Teach the installer to accept a system file.

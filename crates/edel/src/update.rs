@@ -160,7 +160,17 @@ fn after_install(env: &mut Env, target: Slot) {
 /// off and returned.
 fn confirm(env: &mut Env, running: Slot) -> Option<Slot> {
     let other = running.other();
-    let passed_over = env.order().first() == Some(&other);
+    let first = env.order().first() == Some(&other);
+    // GRUB counts a try before it starts a slot, so an OK slot first in
+    // ORDER that has no try yet was installed or rolled back to during this
+    // boot: it is pending, not failed, and keeps its place.
+    if first && env.ok(other) && env.tries(other) == 0 {
+        env.set_slot(running, true, 0);
+        return None;
+    }
+    // An OK slot first in ORDER that used a try was passed over; one that
+    // is off was an install that never finished, not a failed boot.
+    let passed_over = first && env.ok(other);
     if passed_over {
         env.set_slot(other, false, env.tries(other));
     }
@@ -188,26 +198,25 @@ struct Esp {
 }
 
 impl Esp {
+    /// Mounts the EFI system partition on a directory of this process's
+    /// own, so a status that ends never unmounts it under a confirmation
+    /// still writing (the kernel shares one FAT superblock between mounts).
     fn mount(disk: &Disk) -> Result<Esp> {
-        let dir = Path::new(RUN_DIR).join("esp");
+        let dir = Path::new(RUN_DIR).join(format!("esp.{}", std::process::id()));
         fs::create_dir_all(&dir)?;
-        let mountinfo = fs::read_to_string("/proc/self/mountinfo")?;
-        let already = mountinfo
-            .lines()
-            .any(|l| l.split_whitespace().nth(4) == dir.to_str());
-        if !already {
-            let dev = disk.device(1)?;
-            // Name the character set: Alpine's virt kernel defaults to utf8
-            // for FAT but does not ship that module.
-            run(Command::new("mount")
-                .args(["-t", "vfat", "-o", "noatime,iocharset=iso8859-1"])
-                .arg(&dev)
-                .arg(&dir))
-            .with_context(|| format!("cannot mount the EFI system partition {}", dev.display()))?;
-        }
+        let dev = disk.device(1)?;
+        // Name the character set: Alpine's virt kernel defaults to utf8 for
+        // FAT but does not ship that module. dirsync writes every directory
+        // change at once, so a rename in the loader swap never leaves an
+        // entry pointing at freed clusters after a power cut (M1.8).
+        run(Command::new("mount")
+            .args(["-t", "vfat", "-o", "noatime,dirsync,iocharset=iso8859-1"])
+            .arg(&dev)
+            .arg(&dir))
+        .with_context(|| format!("cannot mount the EFI system partition {}", dev.display()))?;
         let esp = Esp {
             dir,
-            mounted_here: !already,
+            mounted_here: true,
         };
         if !esp.env_path().is_file() {
             bail!("the EFI system partition has no {ENV_FILE}");
@@ -240,6 +249,7 @@ impl Drop for Esp {
     fn drop(&mut self) {
         if self.mounted_here {
             let _ = Command::new("umount").arg(&self.dir).status();
+            let _ = fs::remove_dir(&self.dir);
         }
     }
 }
@@ -253,17 +263,42 @@ impl Lock {
     pub(crate) fn take(name: &str, what: &str) -> Result<Lock> {
         fs::create_dir_all(RUN_DIR)?;
         let path = Path::new(RUN_DIR).join(format!("{name}.lock"));
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut file) => {
-                writeln!(file, "{}", std::process::id())?;
-                Ok(Lock(path))
+        for _ in 0..2 {
+            match OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(mut file) => {
+                    writeln!(file, "{}", std::process::id())?;
+                    return Ok(Lock(path));
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if !is_stale(&path) {
+                        bail!(
+                            "another {what} is running; if none is, delete {}",
+                            path.display()
+                        );
+                    }
+                    // A process killed mid-install leaves its lock behind;
+                    // the kernel no longer knows its pid.
+                    fs::remove_file(&path)?;
+                }
+                Err(err) => return Err(err.into()),
             }
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => bail!(
-                "another {what} is running; if none is, delete {}",
-                path.display()
-            ),
-            Err(err) => Err(err.into()),
         }
+        bail!("cannot take {}", path.display())
+    }
+}
+
+/// A lock whose pid no longer runs. A lock with no pid yet is only stale
+/// once it is a few seconds old, since its holder writes the pid right
+/// after creating it.
+fn is_stale(path: &Path) -> bool {
+    match fs::read_to_string(path)
+        .ok()
+        .and_then(|t| t.trim().parse::<u32>().ok())
+    {
+        Some(pid) => !Path::new("/proc").join(pid.to_string()).exists(),
+        None => fs::metadata(path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 5)),
     }
 }
 
@@ -368,10 +403,14 @@ pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<
         bail!("the image ({size} bytes) does not fit in slot {slot} ({room} bytes)");
     }
 
-    let esp = Esp::mount(&disk)?;
-    let mut env = esp.load()?;
-    before_install(&mut env, slot);
-    esp.save(&env)?;
+    // The EFI system partition is mounted only while it is written: here,
+    // and again once the slot is checked. The lock keeps others out between.
+    {
+        let esp = Esp::mount(&disk)?;
+        let mut env = esp.load()?;
+        before_install(&mut env, slot);
+        esp.save(&env)?;
+    }
 
     println!("writing {location} to slot {slot} ({})", target.display());
     let mut dst = OpenOptions::new()
@@ -413,6 +452,8 @@ pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<
         .arg(&target)
         .stdout(Stdio::null()))?;
 
+    let esp = Esp::mount(&disk)?;
+    let mut env = esp.load()?;
     after_install(&mut env, slot);
     esp.save(&env)?;
     println!(
@@ -602,6 +643,27 @@ mod tests {
         assert_eq!(env.order(), [Slot::A, Slot::B]);
         assert!(env.ok(Slot::A) && !env.ok(Slot::B));
         assert_eq!((env.tries(Slot::A), env.tries(Slot::B)), (0, 3));
+    }
+
+    #[test]
+    fn confirming_keeps_a_pending_install() {
+        let mut env = Env::initial();
+        after_install(&mut env, Slot::B);
+        assert_eq!(confirm(&mut env, Slot::A), None);
+        assert_eq!(env.order(), [Slot::B, Slot::A]);
+        assert!(env.ok(Slot::A) && env.ok(Slot::B));
+        // The same holds for a rollback asked for during this boot.
+        let mut env = Env::parse("ORDER=A B\nA_OK=1\nA_TRY=0\nB_OK=1\nB_TRY=0\n").unwrap();
+        roll_back(&mut env, Slot::A).unwrap();
+        assert_eq!(confirm(&mut env, Slot::A), None);
+        assert_eq!(env.order(), [Slot::B, Slot::A]);
+    }
+
+    #[test]
+    fn an_unfinished_install_is_not_a_fallback() {
+        let mut env = Env::parse("ORDER=B A\nA_OK=1\nA_TRY=1\nB_OK=0\nB_TRY=0\n").unwrap();
+        assert_eq!(confirm(&mut env, Slot::A), None);
+        assert_eq!(env.order(), [Slot::A, Slot::B]);
     }
 
     #[test]

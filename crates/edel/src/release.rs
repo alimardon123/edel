@@ -15,6 +15,7 @@ use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
@@ -189,10 +190,22 @@ fn local_path(location: &str) -> &str {
     location.strip_prefix("file://").unwrap_or(location)
 }
 
+/// The HTTP client: a mirror that does not answer fails the download
+/// instead of hanging it (the image body itself may take as long as it
+/// takes).
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(30)))
+        .timeout_recv_response(Some(Duration::from_secs(60)))
+        .build()
+        .into()
+}
+
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = ureq::get(location)
+        let mut response = agent()
+            .get(location)
             .call()
             .with_context(|| format!("downloading {location}"))?;
         Ok(response.body_mut().read_to_vec()?)
@@ -205,7 +218,8 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = ureq::get(location)
+        let response = agent()
+            .get(location)
             .call()
             .with_context(|| format!("downloading {location}"))?;
         Box::new(response.into_body().into_reader())

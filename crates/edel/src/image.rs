@@ -262,6 +262,14 @@ impl Build<'_> {
             .chain(self.extra_keys.iter().cloned())
             .collect();
         for key in &keys {
+            // A secret key is 32 bytes of hex too; only the name tells
+            // them apart, so a slot never carries NAME.key by mistake.
+            if key.extension().is_none_or(|e| e != "pub") {
+                bail!(
+                    "{} is not a *.pub file; images carry only public keys, and NAME.key is the secret",
+                    key.display()
+                );
+            }
             self.runner.step(&format!(
                 "copy the public key {} to /usr/share/edel/keys/",
                 key.display()
