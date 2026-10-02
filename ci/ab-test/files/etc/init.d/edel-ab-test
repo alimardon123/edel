@@ -20,11 +20,15 @@
 #      again: slot A runs, slot B is switched off, a rollback to it is
 #      refused, the markers survived and the fallback was recorded.
 #      Install the update into slot B again with a service that hangs.
-#   5. (hang) The guard let the watchdog restart slot B three times, so
-#      slot A runs and slot B is off. Install it again with a service that
-#      freezes the kernel with panic reboots switched off.
+#   5. (hang) The guard let the watchdog restart slot B, so slot A runs
+#      and slot B is off. Install it again with a service that freezes the
+#      kernel with panic reboots switched off.
 #   6. (freeze) Only the hardware watchdog can restart a frozen kernel:
 #      slot A runs again and slot B is off.
+#
+# Step 4 proves GRUB's count of three tries. The hang and freeze cases
+# start slot B at its last try, so each proves its own way of failing a
+# try in one boot instead of three (about 170 s less CI per run).
 
 description="Edel OS A/B update test"
 
@@ -77,10 +81,14 @@ root_is_ro() {
 		! touch /usr/ab-test-write 2>/dev/null
 }
 
-# ab_break_b NAME COMMAND: install the update into slot B again and add a
-# service there whose start runs COMMAND in the default runlevel.
+# ab_break_b NAME COMMAND: install the update into slot B again, at its
+# last try, and add a service there whose start runs COMMAND in the
+# default runlevel.
 ab_break_b() {
 	/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
+	# The same length, so the 1024-byte block stays whole.
+	sed -i 's/^B_TRY=0$/B_TRY=2/' "$esp/EFI/edel/grubenv"
+	grep -q '^B_TRY=2$' "$esp/EFI/edel/grubenv" || { ab_end "FAIL: setting slot B's last try for $1"; return 1; }
 	slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 	mkdir -p /run/ab-test/slot
 	mount "$slot_b" /run/ab-test/slot

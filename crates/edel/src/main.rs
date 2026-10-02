@@ -230,6 +230,10 @@ enum ImageCommands {
         /// all install from one package index
         #[arg(long, value_name = "DIR")]
         apk_cache: Option<PathBuf>,
+        /// Skip the .gz copies of a VM image's disk and slot; for test
+        /// images nobody downloads
+        #[arg(long)]
+        no_compress: bool,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -254,6 +258,7 @@ fn main() -> Result<()> {
                 version,
                 channel,
                 apk_cache,
+                no_compress,
                 dry_run,
             } => {
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
@@ -287,6 +292,7 @@ fn main() -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    compress: !no_compress,
                     out,
                     runner: Runner { dry_run },
                 }
