@@ -112,7 +112,7 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 | Configuration format | TOML (presets, system file, shell settings), versioned from version 1 |
 | How users get apps | Flatpak, plus installable web apps |
 | How servers get apps | Containers |
-| Base packages | apk, used only to build images; users never see it |
+| Base packages | apk, used to build images; people meet it only inside the container image and in developer mode (ADR-007) |
 | How the system changes | New deployment with automatic rollback |
 | How the base is extended | Signed add-ons (ADR-007) |
 | UI toolkit for our apps | GTK4 |
