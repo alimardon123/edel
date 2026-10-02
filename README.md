@@ -67,7 +67,7 @@ CI builds both images on every change, runs the container, boots the VM in QEMU 
 The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed. The system itself is read-only; `/home`, `/var` and every change to `/etc` live on the data partition, so updates and rollbacks keep people's files and settings:
 
 ```sh
-edel update install edel-vm-x86_64.ext4   # write the other slot and check it
+edel update install release.toml         # check its signature, write the other slot
 reboot                                    # the new slot starts
 edel update rollback                      # if you want the previous system back
 reboot

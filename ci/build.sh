@@ -15,15 +15,37 @@ cargo build --release --locked
 for def in images/*.toml; do
 	./target/release/edel image build "$def" --out out
 done
+# Two throwaway signing keys, new on every run; the real keys arrive with
+# the first preview (roadmap M3.4).
+rm -rf out/keys
+./target/release/edel release keygen out/keys ci-1
+./target/release/edel release keygen out/keys ci-2
+
 # The A/B test image: the VM image plus the test steps that ci/ab-test.sh runs.
 # health_timeout 30 keeps the hang cases to minutes (roadmap M1.5).
-./target/release/edel image build images/vm.toml --files ci/ab-test/files --health-timeout 30 --out out/ab-test
+./target/release/edel image build images/vm.toml --files ci/ab-test/files \
+	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
+	--out out/ab-test
+
+# The update the A/B test installs: a disk holding a signed release.toml, its
+# image, and bad.toml, the same manifest with one byte changed (roadmap M1.6).
+update=out/ab-test/update
+rm -rf "$update" "$update.img"
+mkdir -p "$update"
+ln out/ab-test/edel-vm-x86_64.ext4 "$update/"
+./target/release/edel release make --version 0.1.1 --channel ci "$update/edel-vm-x86_64.ext4"
+./target/release/edel release sign --key out/keys/ci-1.key "$update/release.toml"
+sed 's/^channel = "ci"$/channel = "cj"/' "$update/release.toml" >"$update/bad.toml"
+cp "$update/release.toml.sig" "$update/bad.toml.sig"
+truncate -s 1400M "$update.img"
+mkfs.ext4 -q -F -L edel-update -d "$update" "$update.img"
+rm -r "$update"
 
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test; do
+for dir in out out/ab-test out/keys; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

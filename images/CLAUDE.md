@@ -12,7 +12,8 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 - Top level: `format = 1`, `name`, `variant` (`"container"` or `"vm"`), `arch`, optional `hostname`, optional `files` (directories relative to the definition, copied in order). Outputs are named `<name>-<arch>`.
 - `[alpine]`: `branch`, `mirror`, `repositories` (not empty). `[packages]`: `install` (not empty). `[services]`: optional `sysinit`, `boot`, `default`, `shutdown` lists of OpenRC services.
 - `[vm]`, required for `vm` and forbidden for `container`: `kernel` (the Alpine kernel flavour; `linux-<kernel>` must be in `install`), `slot_mib` (at least 64), optional `cmdline`, optional `data_mib` (default 64, at least 16).
-- `[image]`, required for `vm`: `health` (names the boot guard waits for: `default-runlevel`, later `compositor`) and optional `health_timeout` (seconds, default 120, at least 10), written into os-release as `EDEL_HEALTH` and `EDEL_HEALTH_TIMEOUT`; `edel image build --health-timeout` overrides it for test images.
+- `[image]`, required for `vm`: `health` (names the boot guard waits for: `default-runlevel`, later `compositor`) and optional `health_timeout` (seconds, default 120, at least 10), written into os-release as `EDEL_HEALTH` and `EDEL_HEALTH_TIMEOUT`; `edel image build --health-timeout` overrides it for test images. VM images also get `EDEL_IMAGE="<name>-<arch>"`, the name `release.toml` lists their image under.
+- `[release]`, optional: `public_keys`, key files (relative to the definition) copied to `/usr/share/edel/keys/` in VM images; `edel image build --public-key FILE` adds more for test images. No definition names a key until the first preview (M3.4).
 - `name` and `hostname` use only a-z, 0-9 and `-` and do not start with `-`. `cmdline` is pasted into `grub.cfg`, so it may not contain `"`, `'`, `\`, `$`, `;`, `{`, `}`, `#` or a backtick.
 - The code accepts `aarch64` for a VM, but no aarch64 definition exists until M9 and CI builds only `x86_64`.
 
@@ -34,6 +35,6 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M1.6 adds `[release] public_keys`; M2.4 adds `sfdisk`, `dosfstools` and `mtools` to `vm.toml`.
+- M2.4 adds `sfdisk`, `dosfstools` and `mtools` to `vm.toml`.
 - M3.3 moves `vm.toml` to `linux-lts`, adds `images/laptop.toml` and sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
 - Definitions stay strict in every format.

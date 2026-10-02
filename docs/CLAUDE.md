@@ -56,7 +56,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 Every new doc gets a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
 
-Docs the roadmap will add, each in its step: `FORMATS.md` (M1.6; M2.1 adds the system-file rules, M3.3 the slot size), `SPIKE-flatpak.md` (M1.9), `system-file.md` (written in M2.1, generated from M6.11 on), `TRY-IT.md` and `RELEASE.md` (M3.4), `FEATURES.md` (M4.0), `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10).
+`FORMATS.md` exists since M1.6; M2.1 adds the system-file rules and M3.3 the slot size. Docs the roadmap will add, each in its step: `SPIKE-flatpak.md` (M1.9), `system-file.md` (written in M2.1, generated from M6.11 on), `TRY-IT.md` and `RELEASE.md` (M3.4), `FEATURES.md` (M4.0), `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10).
 
 ## Known inconsistencies: do not copy them
 

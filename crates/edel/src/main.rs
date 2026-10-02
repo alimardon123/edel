@@ -10,6 +10,7 @@ mod def;
 mod grubenv;
 mod guard;
 mod image;
+mod release;
 mod run;
 mod update;
 
@@ -40,6 +41,11 @@ enum Commands {
         #[command(subcommand)]
         command: BootCommands,
     },
+    /// Make, sign and check release manifests
+    Release {
+        #[command(subcommand)]
+        command: ReleaseCommands,
+    },
     /// Install updates into the A/B slots and roll back
     Update {
         #[command(subcommand)]
@@ -57,13 +63,58 @@ enum BootCommands {
 }
 
 #[derive(Subcommand)]
+enum ReleaseCommands {
+    /// Make a new signing key pair, NAME.key (secret) and NAME.pub
+    Keygen {
+        /// Directory for the two files
+        dir: PathBuf,
+        /// Name of the key, for example edel-1
+        name: String,
+    },
+    /// Write release.toml beside the images it lists
+    Make {
+        /// The release's version, for example 2026.10.1
+        #[arg(long)]
+        version: String,
+        /// The channel, for example stable
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// The update images, all in one directory
+        #[arg(required = true)]
+        images: Vec<PathBuf>,
+    },
+    /// Sign a file with a secret key, writing FILE.sig
+    Sign {
+        /// The secret key file (NAME.key)
+        #[arg(long)]
+        key: PathBuf,
+        file: PathBuf,
+    },
+    /// Check FILE.sig against public keys
+    Verify {
+        /// Directory of public keys (*.pub)
+        #[arg(long, default_value = release::KEYS_DIR)]
+        keys: PathBuf,
+        file: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
 enum UpdateCommands {
     /// Show both slots and which one is running
     Status,
-    /// Write a slot image to the slot that is not running; it starts next
+    /// Install a signed release into the slot that is not running; it
+    /// starts next
     Install {
-        /// The update: an .ext4 slot image or a block device holding one
-        image: PathBuf,
+        /// The release's release.toml (its .sig and image beside it), or
+        /// with --unsigned a slot image or a block device holding one
+        path: PathBuf,
+        /// Install even when the release is not newer than this system
+        #[arg(long)]
+        allow_downgrade: bool,
+        /// Install a slot image without a signed release.toml (for testing)
+        #[arg(long)]
+        unsigned: bool,
     },
     /// Confirm that the running slot works (run once the system is up)
     MarkGood,
@@ -88,6 +139,10 @@ enum ImageCommands {
         /// restarts the machine, instead of the definition's; for test images
         #[arg(long, value_name = "SECS")]
         health_timeout: Option<u64>,
+        /// Another public key that may sign updates, after the definition's
+        /// own; for test images. Can be given more than once.
+        #[arg(long = "public-key", value_name = "FILE")]
+        public_keys: Vec<PathBuf>,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -107,6 +162,7 @@ fn main() -> Result<()> {
                 out,
                 extra_files,
                 health_timeout,
+                public_keys,
                 dry_run,
             } => {
                 let def = ImageDef::load(&definition)?;
@@ -124,6 +180,7 @@ fn main() -> Result<()> {
                     def_dir,
                     extra_files,
                     health_timeout,
+                    extra_keys: public_keys,
                     out,
                     runner: Runner { dry_run },
                 }
@@ -143,9 +200,23 @@ fn main() -> Result<()> {
             BootCommands::MountData => data::mount_data(),
             BootCommands::Guard => guard::guard(),
         },
+        Commands::Release { command } => match command {
+            ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),
+            ReleaseCommands::Make {
+                version,
+                channel,
+                images,
+            } => release::make(&version, &channel, &images).map(|_| ()),
+            ReleaseCommands::Sign { key, file } => release::sign(&key, &file),
+            ReleaseCommands::Verify { keys, file } => release::verify(&keys, &file),
+        },
         Commands::Update { command } => match command {
             UpdateCommands::Status => update::status(),
-            UpdateCommands::Install { image } => update::install(&image),
+            UpdateCommands::Install {
+                path,
+                allow_downgrade,
+                unsigned,
+            } => update::install(&path, allow_downgrade, unsigned),
             UpdateCommands::MarkGood => update::mark_good(),
             UpdateCommands::Rollback => update::rollback(),
         },

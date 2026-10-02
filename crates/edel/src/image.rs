@@ -29,6 +29,8 @@ pub struct Build<'a> {
     pub extra_files: Vec<PathBuf>,
     /// Another health timeout in seconds, for test images (M1.5).
     pub health_timeout: Option<u64>,
+    /// More public keys for updates, for test images (M1.6).
+    pub extra_keys: Vec<PathBuf>,
     pub out: PathBuf,
     pub runner: Runner,
 }
@@ -45,6 +47,7 @@ impl Build<'_> {
         self.copy_files(&root)?;
         if def.variant == Variant::Vm {
             self.install_edel(&root)?;
+            self.install_keys(&root)?;
         }
         self.enable_services(&root)?;
         self.configure(&root)?;
@@ -150,6 +153,36 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// Copies the public keys that may sign updates to
+    /// `/usr/share/edel/keys/`, checking that each one is a key.
+    fn install_keys(&self, root: &Path) -> Result<()> {
+        let keys: Vec<PathBuf> = self
+            .def
+            .release
+            .public_keys
+            .iter()
+            .map(|k| self.def_dir.join(k))
+            .chain(self.extra_keys.iter().cloned())
+            .collect();
+        for key in &keys {
+            self.runner.step(&format!(
+                "copy the public key {} to /usr/share/edel/keys/",
+                key.display()
+            ));
+        }
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let dir = root.join("usr/share/edel/keys");
+        fs::create_dir_all(&dir)?;
+        for key in &keys {
+            crate::release::read_public_key(key)?;
+            let name = key.file_name().context("a key file needs a name")?;
+            fs::copy(key, dir.join(name)).with_context(|| format!("copying {}", key.display()))?;
+        }
+        Ok(())
+    }
+
     /// The health keys for os-release (one standard file for image
     /// facts, roadmap default row "Image facts"); none for containers.
     fn health_keys(&self) -> Option<String> {
@@ -159,7 +192,8 @@ impl Build<'_> {
         }
         let timeout = self.health_timeout.unwrap_or(image.health_timeout);
         Some(format!(
-            "EDEL_HEALTH=\"{}\"\nEDEL_HEALTH_TIMEOUT={timeout}\n",
+            "EDEL_IMAGE=\"{}\"\nEDEL_HEALTH=\"{}\"\nEDEL_HEALTH_TIMEOUT={timeout}\n",
+            self.def.stem(),
             image.health.join(" ")
         ))
     }
