@@ -42,7 +42,7 @@ The file that describes a whole machine, `/data/edel/system.toml`; [system-file.
 - **Keys not acted on yet** are parsed, so adding them later is not a format bump. `edel system check` refuses them with "not supported yet"; the boot apply skips them and says so.
 - **A key is never removed or renamed within a format.** `crates/edel/tests/keys.txt` lists every key, append only; a cargo test fails when the key table lacks one, and `ci/keys-check.sh` fails a change that deletes a line without bumping `FORMAT`. A dropped key stays parsed and is reported as no longer used; an unavoidable rename reads both names.
 - **Names this release lacks** (a preset, profile, add-on or feature) are values like any other: the checker refuses them, a reader on a machine uses the default and reports it, and boot never fails over one.
-- **Writers** (`edel system set` and `unset` from M2.3, Settings) edit the file in place with `toml_edit`, so comments, order and keys this slot does not know survive.
+- **Writers** (`edel system set` and `unset` since M2.3, Settings later) edit the file in place with `toml_edit`, so comments, order and keys this slot does not know survive.
 
 ## `loader.toml` (format 1, M1.8)
 

@@ -1,9 +1,11 @@
 #!/bin/sh
-# Roadmap M2.2: boots the system test image, whose slot carries a seed
-# system file (made by ci/build.sh) that names the machine ci-seeded and
-# adds user ci with a fresh ssh key. Passes when the first boot reaches the
-# login prompt under that hostname and ci logs in over ssh and exports the
-# machine as a system file.
+# Roadmap M2.2 and M2.3: boots the system test image, whose slot carries a
+# seed system file (made by ci/build.sh) that names the machine ci-seeded
+# and adds user ci with a fresh ssh key. Passes when the first boot reaches
+# the login prompt under that hostname, ci logs in over ssh and exports the
+# machine, and then, as root: diff is empty after apply, set changes exactly
+# the hostname, and unset plus apply brings the image's hostname back, with
+# an unknown key and a comment kept byte for byte.
 set -eu
 . ci/vm.sh
 
@@ -20,9 +22,18 @@ if [ "$found" != 1 ]; then
 	exit 1
 fi
 
-ssh_ci() {
-	ssh -i out/keys/ci-ssh -p 2222 -o BatchMode=yes -o ConnectTimeout=10 \
-		-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ci@127.0.0.1 "$@"
+ssh_as() {
+	who=$1
+	shift
+	ssh -i out/keys/ci-ssh -p 2222 -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR \
+		-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$who@127.0.0.1" "$@"
+}
+ssh_ci() { ssh_as ci "$@"; }
+ssh_root() { ssh_as root "$@"; }
+fail() {
+	cat "$log"
+	echo "FAIL: $*"
+	exit 1
 }
 tries=0
 until ssh_ci edel system export >out/system-export.toml 2>out/ssh.log; do
@@ -40,6 +51,29 @@ if grep -qx 'hostname = "ci-seeded"' out/system-export.toml &&
 	grep -qx 'admin = true' out/system-export.toml; then
 	echo "PASS: seeded on first boot as ci-seeded; ci logged in with its key and exported the machine (${waited}s to the login prompt)"
 else
-	echo "FAIL: the export lacks the seeded hostname or the admin user ci"
-	exit 1
+	fail "the export lacks the seeded hostname or the admin user ci"
 fi
+
+# M2.3, as root.
+without_hostname() { printf '%s\n' "$1" | grep -v '^hostname = '; }
+before=$(ssh_root cat /data/edel/system.toml)
+ssh_root edel system apply || fail "edel system apply failed"
+ssh_root edel system diff >out/system-diff.log || fail "diff is not empty after apply: $(cat out/system-diff.log)"
+ssh_root edel system set network.hostname=other || fail "edel system set failed"
+after=$(ssh_root cat /data/edel/system.toml)
+printf '%s\n' "$after" | grep -qx 'hostname = "other"' || fail "set did not write the hostname"
+[ "$(without_hostname "$before")" = "$(without_hostname "$after")" ] || fail "set changed more than the hostname line"
+if ssh_root edel system diff >out/system-diff.log; then
+	fail "diff after set exited 0"
+fi
+[ "$(grep -c '^change: ' out/system-diff.log)" = 1 ] &&
+	grep -qx 'change: network.hostname: set to other' out/system-diff.log ||
+	fail "diff after set is not exactly the hostname: $(cat out/system-diff.log)"
+ssh_root edel system unset network.hostname || fail "edel system unset failed"
+ssh_root edel system apply || fail "edel system apply after unset failed"
+[ "$(ssh_root hostname)" = edel ] || fail "the hostname did not go back to the image's"
+final=$(ssh_root cat /data/edel/system.toml)
+printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "unset lost future.key"
+printf '%s\n' "$final" | grep -A1 -xF '# The person who runs CI' | grep -qxF '[users.ci]' ||
+	fail "unset lost the comment above [users.ci]"
+echo "PASS: diff empty after apply; set changed only the hostname; unset brought back edel; future.key and the comment kept"
