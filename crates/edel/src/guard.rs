@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
+use crate::release::os_release_value;
 use crate::update;
 
 /// Health names an image may list in `[image] health`, and the file under
@@ -32,14 +33,6 @@ const CONFIRMED: &str = "/run/edel/confirmed";
 /// Whether `name` is a health name edel knows.
 pub fn is_health_name(name: &str) -> bool {
     SENTINELS.iter().any(|(n, _)| *n == name)
-}
-
-/// The value of `key` in an os-release file, without quotes.
-fn os_release_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let (k, v) = line.split_once('=')?;
-        (k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
-    })
 }
 
 /// The health files to wait for and the timeout, from os-release; `run` is

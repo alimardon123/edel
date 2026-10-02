@@ -33,6 +33,17 @@ pub struct ImageDef {
     /// Facts about the image written into its os-release.
     #[serde(default)]
     pub image: ImageFacts,
+    #[serde(default)]
+    pub release: ReleaseKeys,
+}
+
+/// `[release]`: public key files (relative to the definition) that may sign
+/// this image's updates, copied to `/usr/share/edel/keys/` (M1.6).
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseKeys {
+    #[serde(default)]
+    pub public_keys: Vec<PathBuf>,
 }
 
 /// `[image]`: what `edel boot guard` waits for before it confirms a slot

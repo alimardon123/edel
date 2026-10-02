@@ -315,10 +315,18 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
-/// Writes `image` (a file or a block device) to the slot that is not
-/// running and makes it start next.
-pub fn install(image: &Path) -> Result<()> {
+/// Installs the signed release at `path` (or, with `unsigned`, the slot
+/// image or block device at `path`) into the slot that is not running and
+/// makes it start next.
+pub fn install(path: &Path, allow_downgrade: bool, unsigned: bool) -> Result<()> {
     let _lock = Lock::take()?;
+    let image = if unsigned {
+        eprintln!("warning: installing an unsigned image; nothing checked where it came from");
+        path.to_path_buf()
+    } else {
+        crate::release::checked_image(path, allow_downgrade)?
+    };
+    let image = image.as_path();
     let disk = Disk::find()?;
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
