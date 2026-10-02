@@ -12,8 +12,19 @@ export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen sfdisk tar
 
 cargo build --release --locked
+# Every image of this run carries the run's version (EDEL_VERSION, from
+# ci.yml; 0.1 when built by hand) and installs from one package index in a
+# shared apk cache (roadmap M3.1). build VERSION ARGS...
+version=${EDEL_VERSION:-0.1}
+rm -rf out/apk-cache
+build() {
+	build_version=$1
+	shift
+	./target/release/edel image build --version "$build_version" --channel "${EDEL_CHANNEL:-ci}" \
+		--apk-cache out/apk-cache "$@"
+}
 for def in images/*.toml; do
-	./target/release/edel image build "$def" --out out
+	build "$version" "$def" --out out
 done
 # Two throwaway signing keys, new on every run; the real keys arrive with
 # the first preview (roadmap M3.4).
@@ -44,18 +55,18 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 [users.root]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
-./target/release/edel image build images/vm.toml --files "$seed" --out out/system-test
+build "$version" images/vm.toml --files "$seed" --out out/system-test
 
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
 # keeps the hang cases to minutes (roadmap M1.5).
-./target/release/edel image build images/vm.toml --files ci/ab-test/files --files ci/install-test/files \
+build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
-./target/release/edel image build images/vm.toml --files ci/ab-test/files \
+build "$version.1" images/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--loader-tag ci --out out/ab-test-update
 
@@ -66,14 +77,14 @@ update=out/ab-test/update
 rm -rf "$update"
 mkdir -p "$update"
 ln out/ab-test-update/edel-vm-x86_64.ext4.gz "$update/"
-./target/release/edel release make --version 0.1.1 --channel ci "$update/edel-vm-x86_64.ext4.gz"
+./target/release/edel release make --version "$version.1" --channel ci "$update/edel-vm-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key "$update/release.toml"
 sed 's/^channel = "ci"$/channel = "cj"/' "$update/release.toml" >"$update/bad.toml"
 cp "$update/release.toml.sig" "$update/bad.toml.sig"
 
 # The Flatpak spike image: the VM image plus dbus, flatpak and a test
 # service that installs and runs a Flathub runtime (roadmap M1.9).
-./target/release/edel image build ci/flatpak/vm.toml --out out/flatpak
+build "$version" ci/flatpak/vm.toml --out out/flatpak
 
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.

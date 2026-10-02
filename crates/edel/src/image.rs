@@ -37,8 +37,51 @@ pub struct Build<'a> {
     /// A tag written into grub.cfg so the loader differs, for test images
     /// (M1.8).
     pub loader_tag: Option<String>,
+    /// The release version (`YYYY.MM.N`) written into os-release (M3.1);
+    /// without one the overlay's development version stays
+    pub version: Option<String>,
+    /// The channel written into os-release, such as `preview` (M3.1)
+    pub channel: String,
+    /// An apk cache shared by every image of one run, so they all install
+    /// from one package index (M3.1)
+    pub apk_cache: Option<PathBuf>,
     pub out: PathBuf,
     pub runner: Runner,
+}
+
+/// The platform level images promise (ADR-005, M8.8): 0 until level 1
+/// exists.
+pub const PLATFORM_LEVEL: u32 = 0;
+
+/// `os-release` with the build's version and channel (M3.1): the version
+/// replaces `VERSION_ID`, `VERSION` and `PRETTY_NAME` when given, and
+/// `EDEL_CHANNEL`, `EDEL_ARCH` and `EDEL_PLATFORM_LEVEL` are added.
+pub fn with_version(os_release: &str, version: Option<&str>, channel: &str, arch: &str) -> String {
+    let mut out = String::new();
+    for line in os_release.lines() {
+        let key = line.split('=').next().unwrap_or_default();
+        let replaced = match (key, version) {
+            ("VERSION_ID", Some(v)) => format!("VERSION_ID={v}"),
+            ("VERSION", Some(v)) => format!("VERSION=\"{v} ({channel})\""),
+            ("PRETTY_NAME", Some(v)) => format!("PRETTY_NAME=\"Edel OS {v}\""),
+            _ => line.to_string(),
+        };
+        out.push_str(&replaced);
+        out.push('\n');
+    }
+    out.push_str(&format!(
+        "EDEL_CHANNEL=\"{channel}\"\nEDEL_ARCH=\"{arch}\"\nEDEL_PLATFORM_LEVEL={PLATFORM_LEVEL}\n"
+    ));
+    out
+}
+
+/// `YYYY.MM.N` and the like: numbers joined by dots, as
+/// `release::compare_versions` orders them.
+pub fn is_version(version: &str) -> bool {
+    !version.is_empty()
+        && version
+            .split('.')
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 impl Build<'_> {
@@ -90,14 +133,62 @@ impl Build<'_> {
         // Package scripts (for example the one that builds the initramfs)
         // run inside the new root and need proc, sys and dev there.
         let _mounts = self.runner.mount_kernel_fs(root)?;
-        self.runner.run(
-            Command::new("apk")
-                .arg("--root")
-                .arg(root)
-                .args(["--arch", &self.def.arch])
-                .args(["--initdb", "--update-cache", "--no-progress", "add"])
-                .args(&self.def.packages.install),
-        )
+        let mut apk = Command::new("apk");
+        apk.arg("--root").arg(root).args(["--arch", &self.def.arch]);
+        apk.args(["--initdb", "--no-progress"]);
+        // With a shared cache, only the first image of a run fetches the
+        // index; the others install from the same one.
+        match &self.apk_cache {
+            Some(cache) if has_index(cache) => {
+                apk.arg("--cache-dir").arg(cache);
+            }
+            Some(cache) => {
+                if !self.runner.dry_run {
+                    fs::create_dir_all(cache)?;
+                }
+                apk.arg("--cache-dir").arg(cache).arg("--update-cache");
+            }
+            None => {
+                apk.arg("--update-cache");
+            }
+        }
+        self.runner
+            .run(apk.arg("add").args(&self.def.packages.install))?;
+        self.record_packages(root)
+    }
+
+    /// Writes the installed packages, one `name-version` a line, into the
+    /// image (`/usr/share/edel/packages`) and beside it
+    /// (`out/<image>.packages`), so every release says what is inside it.
+    fn record_packages(&self, root: &Path) -> Result<()> {
+        let beside = self.out.join(format!("{}.packages", self.def.stem()));
+        self.runner.step(&format!(
+            "record the installed packages in /usr/share/edel/packages and {}",
+            beside.display()
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let out = Command::new("apk")
+            .arg("--root")
+            .arg(root)
+            .args(["info", "-v"])
+            .output()
+            .context("starting apk info")?;
+        if !out.status.success() {
+            bail!(
+                "apk info -v failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        let mut packages: Vec<&str> = std::str::from_utf8(&out.stdout)?.lines().collect();
+        packages.sort_unstable();
+        let text: String = packages.iter().map(|p| format!("{p}\n")).collect();
+        let inside = root.join("usr/share/edel/packages");
+        fs::create_dir_all(inside.parent().unwrap_or(root))?;
+        fs::write(&inside, &text)?;
+        fs::write(&beside, &text)?;
+        Ok(())
     }
 
     fn enable_services(&self, root: &Path) -> Result<()> {
@@ -221,6 +312,11 @@ impl Build<'_> {
                 keys.trim().replace('\n', " ")
             ));
         }
+        self.runner.step(&format!(
+            "write version {}, channel {} and platform level {PLATFORM_LEVEL} into /usr/lib/os-release",
+            self.version.as_deref().unwrap_or("of the overlay"),
+            self.channel
+        ));
         self.runner.step("lock the root password");
         if let Some(hostname) = &self.def.hostname {
             self.runner.step(&format!("set the hostname to {hostname}"));
@@ -237,14 +333,17 @@ impl Build<'_> {
             fs::remove_file(&os_release)?;
         }
         std::os::unix::fs::symlink("../usr/lib/os-release", &os_release)?;
+        let path = root.join("usr/lib/os-release");
+        let mut text = with_version(
+            &fs::read_to_string(&path)?,
+            self.version.as_deref(),
+            &self.channel,
+            &self.def.arch,
+        );
         if let Some(keys) = &health {
-            let path = root.join("usr/lib/os-release");
-            let mut text = fs::read_to_string(&path)?;
-            if !text.ends_with('\n') {
-                text.push('\n');
-            }
-            fs::write(&path, text + keys)?;
+            text += keys;
         }
+        fs::write(&path, text)?;
 
         let shadow_path = root.join("etc/shadow");
         let shadow = fs::read_to_string(&shadow_path).context("reading /etc/shadow")?;
@@ -452,6 +551,12 @@ impl Build<'_> {
         for file in [efi_name, "grub.cfg", "loader.toml"] {
             fs::copy(dir.join(file), slot_dir.join(file))?;
         }
+        // The slot says which loader it carries (M3.1).
+        let os_release = root.join("usr/lib/os-release");
+        let loader = crate::release::os_release_value(&version, "version").unwrap_or_default();
+        let text =
+            fs::read_to_string(&os_release)? + &format!("EDEL_LOADER_VERSION=\"{loader}\"\n");
+        fs::write(&os_release, text)?;
         Ok(())
     }
 
@@ -580,6 +685,15 @@ fn lock_root(shadow: &str) -> Result<String> {
     Ok(out)
 }
 
+/// Whether an apk cache already holds a package index.
+fn has_index(cache: &Path) -> bool {
+    fs::read_dir(cache).is_ok_and(|entries| {
+        entries
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("APKINDEX."))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,5 +761,41 @@ mod tests {
         assert_eq!(&out[4096..4096 + data.len()], &data[..]);
         assert!(out[4096 + data.len()..].iter().all(|&b| b == 0));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn writes_the_version_into_os_release() {
+        let os = "NAME=\"Edel OS\"\nVERSION_ID=0.1\nVERSION=\"0.1 (development)\"\nPRETTY_NAME=\"Edel OS 0.1 (development)\"\n";
+        let text = with_version(os, Some("2026.10.57"), "preview", "x86_64");
+        assert!(text.contains("\nVERSION_ID=2026.10.57\n"));
+        assert!(text.contains("\nVERSION=\"2026.10.57 (preview)\"\n"));
+        assert!(text.contains("\nPRETTY_NAME=\"Edel OS 2026.10.57\"\n"));
+        assert!(
+            text.ends_with(
+                "EDEL_CHANNEL=\"preview\"\nEDEL_ARCH=\"x86_64\"\nEDEL_PLATFORM_LEVEL=0\n"
+            )
+        );
+        let dev = with_version(os, None, "dev", "x86_64");
+        assert!(dev.starts_with(os), "{dev}");
+    }
+
+    #[test]
+    fn versions_are_numbers_joined_by_dots() {
+        assert!(is_version("2026.10.57") && is_version("0.1.1"));
+        assert!(
+            !is_version("")
+                && !is_version("2026.10.")
+                && !is_version("v2026.10.1")
+                && !is_version("2026.10.1-rc1")
+        );
+        use std::cmp::Ordering;
+        assert_eq!(
+            crate::release::compare_versions("2026.10.57.1", "2026.10.57"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            crate::release::compare_versions("2026.09.99", "2026.10.1"),
+            Ordering::Less
+        );
     }
 }
