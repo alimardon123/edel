@@ -100,7 +100,7 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 |------|--------------|
 | **compositor** | Windows, floating and tiling, form factors, effects, title bars |
 | **shell-ui** | Panel, dock, launcher, switcher, notifications, quick settings, lock screen |
-| **settings** | The settings app, including layout presets, add-ons, unlocked mode and one-button export/apply of the whole system |
+| **settings** | The settings app, including layout presets, appearance, shortcuts, behaviour, add-ons, developer mode and one-button export/apply of the whole system |
 | **edel** (command-line tool) | Updates and rollback, add-ons, system file export/diff/apply, format migrations, and building images in CI |
 
 **One of each, everywhere:**
