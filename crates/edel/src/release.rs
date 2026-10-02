@@ -18,6 +18,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -39,7 +40,8 @@ pub struct Manifest {
     pub images: Vec<ImageEntry>,
 }
 
-/// One image of a release.
+/// One image of a release. `sha256` and `size` are those of the image as
+/// it lands in the slot, after a `.gz` file is decompressed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageEntry {
     /// The image's name, as in `EDEL_IMAGE` (`edel-vm-x86_64`).
@@ -179,13 +181,59 @@ fn pick_image<'a>(
         })
 }
 
-fn sha256_file(path: &Path) -> Result<(String, u64)> {
-    let mut file = File::open(path).with_context(|| format!("reading {}", path.display()))?;
+fn is_url(location: &str) -> bool {
+    location.starts_with("http://") || location.starts_with("https://")
+}
+
+fn local_path(location: &str) -> &str {
+    location.strip_prefix("file://").unwrap_or(location)
+}
+
+/// Reads a small file (a manifest or a signature) from a path or a URL.
+fn fetch(location: &str) -> Result<Vec<u8>> {
+    if is_url(location) {
+        let mut response = ureq::get(location)
+            .call()
+            .with_context(|| format!("downloading {location}"))?;
+        Ok(response.body_mut().read_to_vec()?)
+    } else {
+        let path = local_path(location);
+        fs::read(path).with_context(|| format!("reading {path}"))
+    }
+}
+
+/// Opens an image for streaming, decompressing a `.gz` file on the way.
+fn open_image(location: &str) -> Result<Box<dyn Read>> {
+    let raw: Box<dyn Read> = if is_url(location) {
+        let response = ureq::get(location)
+            .call()
+            .with_context(|| format!("downloading {location}"))?;
+        Box::new(response.into_body().into_reader())
+    } else {
+        let path = local_path(location);
+        Box::new(File::open(path).with_context(|| format!("reading {path}"))?)
+    };
+    Ok(if location.ends_with(".gz") {
+        Box::new(GzDecoder::new(raw))
+    } else {
+        raw
+    })
+}
+
+/// `file` in the same directory as the manifest at `location`.
+fn beside(location: &str, file: &str) -> String {
+    match location.rfind('/') {
+        Some(i) => format!("{}/{file}", &location[..i]),
+        None => file.to_string(),
+    }
+}
+
+fn sha256_reader(reader: &mut dyn Read) -> Result<(String, u64)> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     let mut size = 0u64;
     loop {
-        let n = file.read(&mut buf)?;
+        let n = reader.read(&mut buf)?;
         if n == 0 {
             break;
         }
@@ -195,42 +243,67 @@ fn sha256_file(path: &Path) -> Result<(String, u64)> {
     Ok((to_hex(&hasher.finalize()), size))
 }
 
+/// The manifest at `location` (a path or an http(s) URL), after its
+/// signature is checked against the keys this image carries.
+fn verified_manifest(location: &str) -> Result<Manifest> {
+    let bytes = fetch(location)?;
+    let sig = fetch(&format!("{location}.sig"))
+        .context("refused: signature: cannot read the .sig file beside release.toml")?;
+    verify_bytes(
+        &bytes,
+        &String::from_utf8_lossy(&sig),
+        &load_keys(Path::new(KEYS_DIR))?,
+    )?;
+    parse_manifest(&String::from_utf8_lossy(&bytes))
+}
+
+/// A checked release, ready to stream into a slot. `sha256` and `size`
+/// describe the uncompressed image, which is what lands on the disk.
+pub struct Checked {
+    pub sha256: Vec<u8>,
+    pub size: u64,
+    pub reader: Box<dyn Read>,
+}
+
+/// Checks the release at `location` with this image's keys and opens the
+/// image for this machine.
+pub fn open_checked(location: &str, allow_downgrade: bool) -> Result<Checked> {
+    let manifest = verified_manifest(location)?;
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE")
+        .context("this system's /usr/lib/os-release has no EDEL_IMAGE")?;
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let entry = pick_image(&manifest, &image, &running, allow_downgrade)?;
+    let sha256 = from_hex(&entry.sha256).context("release.toml has a bad sha256")?;
+    println!("release {}: signature checked", manifest.version);
+    Ok(Checked {
+        sha256,
+        size: entry.size,
+        reader: open_image(&beside(location, &entry.file))?,
+    })
+}
+
+/// `edel update check`: the running version and the one at `location`.
+pub fn check(location: &str) -> Result<()> {
+    let manifest = verified_manifest(location)?;
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let newer = compare_versions(&manifest.version, &running) == Ordering::Greater;
+    println!("running: {running}");
+    println!(
+        "available: {} ({})",
+        manifest.version,
+        if newer { "newer" } else { "not newer" }
+    );
+    Ok(())
+}
+
 /// The value of `key` in an os-release text, without quotes.
 pub fn os_release_value(text: &str, key: &str) -> Option<String> {
     text.lines().find_map(|line| {
         let (k, v) = line.split_once('=')?;
         (k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
     })
-}
-
-/// Checks `release.toml` at `manifest_path` with the keys in this image
-/// and returns the image file to install.
-pub fn checked_image(manifest_path: &Path, allow_downgrade: bool) -> Result<PathBuf> {
-    let bytes =
-        fs::read(manifest_path).with_context(|| format!("reading {}", manifest_path.display()))?;
-    let sig_path = PathBuf::from(format!("{}.sig", manifest_path.display()));
-    let sig = fs::read_to_string(&sig_path)
-        .with_context(|| format!("refused: signature: cannot read {}", sig_path.display()))?;
-    verify_bytes(&bytes, &sig, &load_keys(Path::new(KEYS_DIR))?)?;
-    let manifest = parse_manifest(&String::from_utf8_lossy(&bytes))?;
-    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let image = os_release_value(&os_release, "EDEL_IMAGE")
-        .context("this system's /usr/lib/os-release has no EDEL_IMAGE")?;
-    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
-    let entry = pick_image(&manifest, &image, &running, allow_downgrade)?;
-    let file = manifest_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join(&entry.file);
-    let (sha256, size) = sha256_file(&file)?;
-    if size != entry.size || sha256 != entry.sha256 {
-        bail!(
-            "refused: sha256: {} does not match release.toml",
-            file.display()
-        );
-    }
-    println!("release {}: signature and sha256 checked", manifest.version);
-    Ok(file)
 }
 
 /// `edel release keygen`: a new key pair, `NAME.key` (secret, mode 0600)
@@ -273,7 +346,8 @@ pub fn make(version: &str, channel: &str, images: &[PathBuf]) -> Result<PathBuf>
             .to_string_lossy()
             .into_owned();
         let name = file.split('.').next().unwrap_or_default().to_string();
-        let (sha256, size) = sha256_file(image)?;
+        let location = image.to_str().context("an image path must be UTF-8")?;
+        let (sha256, size) = sha256_reader(&mut open_image(location)?)?;
         entries.push(ImageEntry {
             name,
             file,
@@ -379,6 +453,39 @@ mod tests {
         assert_eq!(compare_versions("2026.10.2", "2026.9.9"), Ordering::Greater);
         assert_eq!(compare_versions("0.1.1", "0.1"), Ordering::Greater);
         assert_eq!(compare_versions("0.1.0", "0.1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn finds_the_image_beside_the_manifest() {
+        assert_eq!(
+            beside("http://10.0.2.2:8000/release.toml", "a.ext4.gz"),
+            "http://10.0.2.2:8000/a.ext4.gz"
+        );
+        assert_eq!(
+            beside("/media/usb/release.toml", "a.ext4"),
+            "/media/usb/a.ext4"
+        );
+        assert_eq!(beside("release.toml", "a.ext4"), "a.ext4");
+    }
+
+    #[test]
+    fn hashes_a_gzipped_image_as_it_lands_in_the_slot() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("edel-gz-hash-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (raw, gz) = (dir.join("img.ext4"), dir.join("img.ext4.gz"));
+        fs::write(&raw, b"slot contents").unwrap();
+        let mut enc = flate2::write::GzEncoder::new(
+            File::create(&gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        enc.write_all(b"slot contents").unwrap();
+        enc.finish().unwrap();
+        let plain = sha256_reader(&mut open_image(raw.to_str().unwrap()).unwrap()).unwrap();
+        let packed = sha256_reader(&mut open_image(gz.to_str().unwrap()).unwrap()).unwrap();
+        assert_eq!(plain, packed);
+        assert_eq!(plain.1, 13);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

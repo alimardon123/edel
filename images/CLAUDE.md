@@ -3,7 +3,7 @@
 An image definition is a TOML file here; `edel image build` turns it into an image. The schema and its checks are in `crates/edel/src/def.rs`, the build steps in `image.rs`. Two exist, both format 1, Alpine `v3.24` (`main` and `community`), `x86_64`:
 
 - `container.toml`: `edel-container`, no hostname, no services, no `[vm]`; packed as `out/edel-container-x86_64.tar.gz` (load it with `docker import`).
-- `vm.toml`: `edel-vm`, hostname `edel`, kernel `virt`, `slot_mib = 1024`, serial console; packed as `out/edel-vm-x86_64.img` (GPT disk: EFI system partition, slot A filled, slot B empty, and a 64 MiB `edel-data` partition that grows to the end of the disk on first boot) and `out/edel-vm-x86_64.ext4` (one slot, which is also the update image).
+- `vm.toml`: `edel-vm`, hostname `edel`, kernel `virt`, `slot_mib = 1024`, serial console; packed as `out/edel-vm-x86_64.img` (GPT disk: EFI system partition, slot A filled, slot B empty, and a 64 MiB `edel-data` partition that grows to the end of the disk on first boot) and `out/edel-vm-x86_64.ext4` (one slot cut to its file system with `resize2fs -M`, the update image), each also as `.gz`.
 
 Check a definition with `cargo run --quiet --locked -- image check images/vm.toml` (it prints `<name>-<arch>: ok (<n> packages)`); list its build steps with `cargo run -- image build images/vm.toml --dry-run`.
 
