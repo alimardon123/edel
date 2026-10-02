@@ -12,7 +12,7 @@ run_vm "$log" 'edel login:' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
 
 cat "$log"
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' "$log" &&
-	grep -q 'edel-update: slot A confirmed' "$log"; then
+	grep -q 'edel update: slot A confirmed' "$log"; then
 	echo "PASS: slot A booted to the Edel OS login prompt and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot to the Edel OS login prompt"

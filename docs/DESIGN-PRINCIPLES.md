@@ -118,4 +118,4 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 | UI toolkit for our apps | GTK4 |
 | Look | One design token set |
 
-**Everything else is reused, not written:** Linux kernel, Alpine's musl and OpenRC base, Mesa graphics drivers, PipeWire (audio), NetworkManager, BlueZ (Bluetooth), UPower (battery), greetd (login), Flatpak, desktop portals, and an established A/B updater if the spike in ADR-006 works out.
+**Everything else is reused, not written:** Linux kernel, Alpine's musl and OpenRC base, Mesa graphics drivers, PipeWire (audio), NetworkManager, BlueZ (Bluetooth), UPower (battery), greetd (login), Flatpak, and desktop portals. The A/B updater is our own `edel update`, because no established one is packaged for Alpine stable (ADR-006).

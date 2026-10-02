@@ -18,11 +18,13 @@
 //! yet). These are the names RAUC's GRUB backend uses, so RAUC could manage
 //! the slots later without changing the disk. On every boot GRUB picks the
 //! first slot in `ORDER` that is OK and has tries left, and counts the
-//! attempt. Once the system is up, `edel-update mark-good` resets the count.
+//! attempt. Once the system is up, `edel update mark-good` resets the count.
 //! A slot that fails [`TRIES`] times in a row is passed over, and the next
 //! slot boots instead.
 
 use anyhow::{Result, bail};
+
+use crate::grubenv::Env;
 
 /// File system label of the EFI system partition.
 pub const ESP_LABEL: &str = "EDEL-ESP";
@@ -34,8 +36,6 @@ pub const GRUB_PREFIX: &str = "/EFI/edel";
 /// Boot attempts a slot gets before GRUB moves on to the next one. More
 /// than one, so a single power cut during boot does not undo an update.
 pub const TRIES: u32 = 3;
-/// GRUB's environment block is always exactly this many bytes.
-const GRUBENV_SIZE: usize = 1024;
 
 /// GRUB modules built into the EFI binary. Nothing is loaded at boot time,
 /// so the EFI system partition holds only three files.
@@ -108,7 +108,7 @@ pub fn grub_cfg(kernel: &str, cmdline: &str) -> String {
     let mut cfg = String::from(
         r#"# Edel OS A/B boot, written by `edel image build`. GRUB starts the
 # first slot in ORDER that is OK and has tries left, and counts the try;
-# `edel-update mark-good` resets the count once the system is up.
+# `edel update mark-good` resets the count once the system is up.
 
 serial --unit=0 --speed=115200
 terminal_input console serial
@@ -193,31 +193,9 @@ menuentry "Edel OS, slot {name}" {{
 
 /// GRUB's environment block for a new disk: slot A boots, slot B is empty.
 pub fn initial_grubenv() -> String {
-    grubenv(&[
-        ("ORDER", "A B"),
-        ("A_OK", "1"),
-        ("A_TRY", "0"),
-        ("B_OK", "0"),
-        ("B_TRY", "0"),
-    ])
-    .expect("the initial variables fit in the block")
-}
-
-/// A GRUB environment block: a header, `name=value` lines, and `#` padding
-/// up to exactly 1024 bytes.
-fn grubenv(vars: &[(&str, &str)]) -> Result<String> {
-    let mut env = String::from("# GRUB Environment Block\n");
-    for (name, value) in vars {
-        env += &format!("{name}={value}\n");
-    }
-    let Some(padding) = GRUBENV_SIZE.checked_sub(env.len()) else {
-        bail!(
-            "GRUB variables take {} bytes, more than {GRUBENV_SIZE}",
-            env.len()
-        );
-    };
-    env += &"#".repeat(padding);
-    Ok(env)
+    Env::initial()
+        .render()
+        .expect("the initial variables fit in the block")
 }
 
 /// Whether `cmdline` can go into the GRUB config as it is: printable ASCII
@@ -251,21 +229,6 @@ mod tests {
              start=133120, size=1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-a\"\n\
              start=1181696, size=1048576, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=\"edel-b\"\n"
         );
-    }
-
-    #[test]
-    fn grubenv_is_exactly_one_block() {
-        let env = initial_grubenv();
-        assert_eq!(env.len(), 1024);
-        assert!(env.starts_with("# GRUB Environment Block\nORDER=A B\nA_OK=1\nA_TRY=0\n"));
-        assert!(env.contains("B_OK=0\nB_TRY=0\n#"));
-        assert!(env.ends_with('#'));
-    }
-
-    #[test]
-    fn grubenv_refuses_to_overflow() {
-        let long = "x".repeat(1024);
-        assert!(grubenv(&[("ORDER", &long)]).is_err());
     }
 
     #[test]

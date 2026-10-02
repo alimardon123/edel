@@ -67,13 +67,15 @@ CI builds both images on every change, runs the container, boots the VM in QEMU 
 The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed:
 
 ```sh
-edel-update install edel-vm-x86_64.ext4   # write the other slot and check it
+edel update install edel-vm-x86_64.ext4   # write the other slot and check it
 reboot                                    # the new slot starts
+edel update rollback                      # if you want the previous system back
+reboot
 ```
 
-GRUB gives a newly installed slot three tries. Once the system has started, the `edel-boot-ok` service confirms the slot. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel-update status` shows both slots.
+GRUB gives a newly installed slot three tries. Once the system has started, the `edel-boot-ok` service confirms the slot. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel update status` shows both slots, and `edel update rollback` starts the other slot again at the next boot.
 
-CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot. `edel-update` is a small shell script for now; it becomes `edel update` once the updater choice in ADR-006 is settled.
+CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot, with a rollback by command in between.
 
 ## License
 

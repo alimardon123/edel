@@ -1,12 +1,12 @@
 # CI scripts
 
-`.github/workflows/ci.yml` (workflow "CI") runs on every pull request and every push to `main`. Its two jobs run in parallel on `ubuntu-latest`: "Rust checks" (the cargo commands in the root CLAUDE.md) and "Build and boot images" (the scripts here). There is no toolchain pin and no cache yet.
+`.github/workflows/ci.yml` (workflow "CI") runs on every pull request and every push to `main`. Its two jobs run in parallel on `ubuntu-latest`: "Rust checks" (the cargo commands in the root CLAUDE.md) and "Build and boot images" (the scripts here). There is no toolchain pin; the images job caches `.cargo-home` and `target`, keyed on `Cargo.lock`.
 
 | Script | What it does | Needs |
 |---|---|---|
 | `build.sh` | Installs the build tools (`apk add --no-cache cargo dosfstools e2fsprogs grub grub-efi mtools sfdisk tar`; add any new build-time tool to this line in the same PR), runs `cargo build --release --locked`, builds every `images/*.toml` into `out/` and the A/B test image into `out/ab-test/` (`--files ci/ab-test/files`), then hands the finished files back to the checkout's owner | Root in the privileged `alpine:3.24` container (the `docker run` line in the root CLAUDE.md), the Alpine mirrors and crates.io |
 | `container-test.sh` | Imports `out/edel-container-x86_64.tar.gz` as `edel:ci` and checks for lines starting `Edel OS ` and `apk-tools ` | A Docker daemon, a real build |
-| `boot-test.sh` | Boots `out/edel-vm-x86_64.img` through OVMF and GRUB; passes on `edel login:`, `Welcome to Edel OS` and `edel-update: slot A confirmed`; log in `out/boot.log` | QEMU and OVMF; KVM if present |
+| `boot-test.sh` | Boots `out/edel-vm-x86_64.img` through OVMF and GRUB; passes on `edel login:`, `Welcome to Edel OS` and `edel update: slot A confirmed`; log in `out/boot.log` | QEMU and OVMF; KVM if present |
 | `ab-test.sh` | Boots the `out/ab-test/` disk with its `.ext4` as a second disk and waits for `AB-TEST: PASS` or `AB-TEST: FAIL`; log in `out/ab-test.log` | QEMU and OVMF; KVM if present |
 | `vm.sh` | Sourced, not run: picks KVM when `/dev/kvm` is writable, else TCG; finds OVMF; defines `run_vm LOG PATTERN TIMEOUT [QEMU ARGS]`, which sets `found` and `waited` | |
 | `sizes.sh` | Prints the `### Image sizes` table for the run summary (CI runs it even after a failure); always exits 0 | `sudo` to measure the root-owned `out/work/` |
@@ -18,14 +18,14 @@
 - Write POSIX sh that both busybox (`build.sh` runs in Alpine) and dash (the tests run on the Ubuntu runner) accept: `#!/bin/sh`, `set -eu`, tabs, quoted expansions, no bashisms, a header comment saying what the script does and why.
 - Never run `build.sh` outside the `alpine:3.24` container: it needs apk, root and the host keys in `/etc/apk/keys`.
 - VM tests open disks with `-snapshot`, so the images stay as built. `ab-test.sh` leaves out `-no-reboot` because the VM restarts between steps.
-- The A/B steps run inside the VM from the OpenRC service `ab-test/files/etc/init.d/edel-ab-test` (a committed runlevel link enables it; it needs `edel-boot-ok`). It keeps its step number in `ab-test-step` on the EFI system partition and finds the update as the virtio disk with no partition 1. Step 1 installs into slot B, step 2 installs into slot A and breaks its initramfs, step 3 expects `A: ok=0 try=3` and prints `AB-TEST: PASS`. A mismatch prints `AB-TEST: FAIL: step N expected "LINE"` and powers off.
+- The A/B steps run inside the VM from the OpenRC service `ab-test/files/etc/init.d/edel-ab-test` (a committed runlevel link enables it; it needs `edel-boot-ok`). It keeps its step number in `ab-test-step` on the EFI system partition and finds the update as the virtio disk with no partition 1. Step 1 installs into slot B, step 2 rolls back to slot A by command, step 3 installs into slot B again and breaks its initramfs, step 4 expects `B: ok=0 try=3`, checks that a rollback to slot B is refused and prints `AB-TEST: PASS`. A mismatch prints `AB-TEST: FAIL: step N expected "LINE"` and powers off.
 - A new VM case follows the same pattern: a test-only service inside the image and a serial line the host script waits for.
 - Test-only files live under `ci/`, never in `images/`. They reach an image through `edel image build --files DIR`, or, when a test needs other packages or definition keys, through a CI-only definition or feature file under `ci/` (`ci/flatpak/vm.toml` in M1.9, `ci/features/ci-hello.toml` in M7.2a; M1.5's ab-test image sets `health_timeout = 30`). Release definitions never point into `ci/`.
-- The tests grep exact strings: serial markers, `edel-update status` lines, `/etc/issue`, `PRETTY_NAME`, the `edel` hostname. Change a string and its grep in the same PR.
+- The tests grep exact strings: serial markers, `edel update status` lines, `/etc/issue`, `PRETTY_NAME`, the `edel` hostname. Change a string and its grep in the same PR.
 - Timeouts: `BOOT_TIMEOUT` (300 s) and `AB_TEST_TIMEOUT` (900 s). With KVM the VM reaches the login prompt in about 8 s and the A/B test takes about 75 s. No timing is recorded without KVM.
 - CI keeps only `out/*.tar.gz` and `out/*.log` (artifact `edel-images`); the VM disks are not uploaded, so a VM test cannot be rerun from CI outputs. On a failure, read the job log: the tests print the serial log.
 - After a real build, `out/work/` and `out/ab-test/work/` stay owned by root; a local container run also leaves `target/` owned by root. Deleting them needs root.
 
 ## Coming changes
 
-The roadmap changes these scripts in M1.1 (cargo cache; the A/B test service calls `edel update` and gains a rollback step), M1.5 (watchdog device), M1.7 (an HTTP server for updates) and M3.2 (size budgets), and adds `flatpak-test.sh` (M1.9), `system-test.sh` (M2.2), `install-test.sh` (M2.4) and `upgrade-test.sh` (M3.5). Make each change only in its step, and take the details from the step itself, not from here.
+The roadmap changes these scripts in M1.5 (watchdog device), M1.7 (an HTTP server for updates) and M3.2 (size budgets), and adds `flatpak-test.sh` (M1.9), `system-test.sh` (M2.2), `install-test.sh` (M2.4) and `upgrade-test.sh` (M3.5). Make each change only in its step, and take the details from the step itself, not from here.

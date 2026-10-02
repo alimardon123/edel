@@ -11,6 +11,6 @@ depend() {
 
 start() {
 	ebegin "Confirming that this Edel OS slot works"
-	/usr/sbin/edel-update mark-good
+	/usr/bin/edel update mark-good
 	eend $?
 }

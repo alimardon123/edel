@@ -17,12 +17,14 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - `main.rs`: the clap derive CLI and its dispatch. Doc comments on variants and fields are the `--help` text: write them for users.
 - `def.rs`: image definitions (`ImageDef`, `FORMAT`, validation).
 - `image.rs`: `edel image build`; `Build::run` calls `prepare_root`, `install_packages`, `copy_files`, `enable_services`, `configure`, then `pack_container` or `pack_vm`.
-- `boot.rs`: the A/B disk layout, `grub.cfg` and the grubenv block.
+- `boot.rs`: the A/B disk layout and `grub.cfg`.
+- `grubenv.rs`: GRUB's 1024-byte environment block and the `Slot` type, shared by `boot.rs` and `update.rs`.
+- `update.rs`: `edel update status|install|mark-good|rollback`; pure transitions (`before_install`, `after_install`, `confirm`, `roll_back`) and slot discovery (`find_disk`, tested on a fake sysfs tree).
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
 
 ## Conventions
 
-- Today the dependencies are `anyhow`, `clap`, `serde` and `toml`, with no dev-dependencies. The roadmap names the next ones (`sha2` in M1.1). Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
+- Today the dependencies are `anyhow`, `clap`, `serde`, `toml` and `sha2`, with no dev-dependencies. The roadmap names the next ones. Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
 - Release binaries are built by Alpine 3.24's `cargo` package inside `ci/build.sh` (musl), not only by the runner's Rust. Code must build with both. Crates the roadmap marks "check in CI" (the `ed25519-dalek` musl build in M1.6, rustls with the ring provider in M1.7, `serde_ignored` in M2.1) are proven by that step's first CI run.
 - Errors: `anyhow` only, no custom error types. Return `Result`, fail with `bail!`, add `.context(...)` or `.with_context(...)`. Messages are lower case, have no final period, quote values with `{:?}` and say what to do: "the image has no /usr/lib/os-release; add one to the files directories". Progress goes to stdout with `println!`; non-fatal problems go to stderr as `warning: ...`.
 - No `unwrap` outside tests; the one `expect` (in `boot.rs`) says why it cannot fail. No `unsafe`, no `#[allow]`, no lint config: CI's `clippy -D warnings` and `fmt --check` are the rules.
@@ -39,9 +41,9 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 - The running slot comes from the mounted root (partition 2 is A, 3 is B), never from the kernel command line, and the running slot is never written.
 - Install switches the target off (`<slot>_OK=0`) before writing it, checks the image's size against the slot, writes it, drops the cache (`blockdev --flushbufs`), checks the write by sha256, then runs `e2fsck -fp` and `tune2fs -U random`. `e2fsck -fp` exiting 0 or 1 is success.
-- IMAGE may be a block device (ab-test passes the second disk), so size it as the script does with `blockdev --getsize64` (file metadata reports 0 for a device), and hash only the first <image size> bytes of the slot.
+- IMAGE may be a block device (ab-test passes the second disk), so size it by seeking to its end (file metadata reports 0 for a device), and hash only the first <image size> bytes of the slot.
 - `mark-good` detects a fallback: when ORDER does not start with the running slot but with the other one, GRUB passed over that slot. It then logs `slot X did not start, so slot Y is running instead; switching slot X off` and sets `X_OK=0`. In every case it then sets ORDER to the running slot first, with `OK=1` and `TRY=0`. M1.3 records that fallback in `/data/edel/last-fallback.toml`.
-- Mount the EFI system partition with `-o noatime,iocharset=iso8859-1` (the virt kernel lacks utf8 for FAT). Rewrite grubenv in place, as `dd ... bs=1024 count=1 conv=notrunc,fsync` does.
+- One updater at a time: install, mark-good and rollback take `/run/edel/update.lock`. Mount the EFI system partition only while writing it, never in fstab, with `-o noatime,iocharset=iso8859-1` (the virt kernel lacks utf8 for FAT). Rewrite grubenv in place, as `dd ... bs=1024 count=1 conv=notrunc,fsync` does.
 
 ## Formats: strict for builders, lenient on machines
 
@@ -62,9 +64,3 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - Unit tests close each file: `#[cfg(test)] mod tests { use super::*; ... }`. Names are sentences in snake_case: `rejects_unknown_fields`, `grub_counts_every_try`. There is no `tests/` directory yet.
 - Put logic in small pure functions that take text and numbers, so tests need no root, disk, Alpine or network; what needs Alpine, root or a VM is proven by the `ci/` scripts in CI. `def.rs` tests parse a `const VM: &str` and vary it with `.replace(...)`.
 - A test that needs files works under `std::env::temp_dir()` in a directory named after that test and the process id (`edel-copy-sparse-<pid>` in `copies_into_place_and_keeps_holes`), because cargo runs tests in parallel threads of one process, and removes it afterwards.
-
-## M1.1: replacing `edel-update`
-
-- Read `images/files/ab/usr/sbin/edel-update` first; it holds the details behind the updater rules above.
-- CI reads its output. `ci/boot-test.sh` greps `edel-update: slot A confirmed`. `ci/ab-test/files/etc/init.d/edel-ab-test` calls `/usr/sbin/edel-update` and matches `status` lines by prefix (`running: A`, `order: B A`, `B: ok=1 try=0`, `A: ok=0 try=3`), and step 2 takes slot A's device from the end of the `A:` line. Keep these lines, or change `ci/` in the same PR.
-- `ci/build.sh` already runs `cargo build --release --locked` inside `alpine:3.24` before building images, so the musl `target/release/edel` exists when `edel image build` copies it into the rootfs (to `/usr/bin/edel`, see images/CLAUDE.md). Alpine's cargo links it dynamically against musl, and it probably also needs `libgcc_s.so.1` (package `libgcc`; from memory, check in CI). If boot-test shows a missing shared library, add the package to `vm.toml` with its one-paragraph reason.
