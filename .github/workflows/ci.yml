@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
 
 permissions:
@@ -46,11 +47,33 @@ jobs:
           restore-keys: alpine-cargo-
 
       - name: Number this build
-        # YYYY.MM.N, with N the run number, so later runs are newer (M3.1).
-        run: echo "EDEL_VERSION=$(date -u +%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+        # YYYY.MM.N, with N the run number, so later runs are newer (M3.1);
+        # a v* tag is its own version. The channel and the tag a release
+        # would go to (M3.4): a pull request checks the tag path, main
+        # makes the preview, a tag makes a stable release.
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "EDEL_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "EDEL_CHANNEL=stable" >> "$GITHUB_ENV"
+            echo "EDEL_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            version=$(date -u +%Y.%m).$GITHUB_RUN_NUMBER
+            echo "EDEL_VERSION=$version" >> "$GITHUB_ENV"
+            if [ "$GITHUB_EVENT_NAME" = push ]; then
+              echo "EDEL_CHANNEL=preview" >> "$GITHUB_ENV"
+              echo "EDEL_TAG=preview" >> "$GITHUB_ENV"
+            else
+              echo "EDEL_CHANNEL=ci" >> "$GITHUB_ENV"
+              echo "EDEL_TAG=v$version" >> "$GITHUB_ENV"
+            fi
+          fi
 
       - name: Build images inside Alpine 3.24
-        run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+        env:
+          # Empty until Alimardon adds the secret (docs/RELEASE.md); then
+          # the release is signed with it instead of a throwaway key.
+          EDEL_RELEASE_KEY: ${{ secrets.EDEL_RELEASE_KEY }}
+        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
 
       - name: Test the container image
         run: sh ci/container-test.sh
@@ -72,6 +95,20 @@ jobs:
         # flatpak-test; ci/vm-tests.sh says why they can share the runner.
         run: sh ci/vm-tests.sh
 
+      - name: Check the release, and show what would be published
+        run: |
+          sh ci/release.sh dry-run preview
+          case "$EDEL_TAG" in v*) sh ci/release.sh dry-run "$EDEL_TAG" && sh ci/channel.sh dry-run "$EDEL_TAG" ;; esac
+
+      - name: Keep the release for the publish job
+        if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: edel-release
+          path: |
+            out/release
+            out/channel
+
       - name: Check the budgets and report image sizes
         if: always()
         run: sh ci/sizes.sh
@@ -90,3 +127,24 @@ jobs:
             out/*.tar.gz
             out/*.log
             out/*.packages
+
+  # Publishes what the images job built and tested (M3.4): the preview on
+  # every merge to main, a draft release for a v* tag. Off until Alimardon
+  # sets the repository variable EDEL_PUBLISH to yes (docs/RELEASE.md).
+  publish:
+    name: Publish the release
+    needs: [rust, images]
+    if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: edel-release
+          path: out
+      - name: Upload to the preview, or to a draft release for a tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/release.sh publish "${{ github.ref_type == 'tag' && github.ref_name || 'preview' }}"
