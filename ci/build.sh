@@ -44,11 +44,15 @@ ln out/ab-test-update/edel-vm-x86_64.ext4.gz "$update/"
 sed 's/^channel = "ci"$/channel = "cj"/' "$update/release.toml" >"$update/bad.toml"
 cp "$update/release.toml.sig" "$update/bad.toml.sig"
 
+# The Flatpak spike image: the VM image plus dbus, flatpak and a test
+# service that installs and runs a Flathub runtime (roadmap M1.9).
+./target/release/edel image build ci/flatpak/vm.toml --out out/flatpak
+
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/keys; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/keys; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

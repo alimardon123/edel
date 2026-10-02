@@ -56,6 +56,9 @@ jobs:
       - name: Update the VM, then fall back from a broken update
         run: sh ci/ab-test.sh
 
+      - name: Install and run a Flatpak runtime on the musl base
+        run: sh ci/flatpak-test.sh
+
       - name: Report image sizes
         if: always()
         run: sh ci/sizes.sh >> "$GITHUB_STEP_SUMMARY"
