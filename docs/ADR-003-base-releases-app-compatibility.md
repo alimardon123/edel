@@ -1,7 +1,7 @@
 # ADR-003: Base fork, release model and long-term app compatibility
 
 **Status:** Proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-02 (a seed volume instead of cloud-init, roadmap M2.2)
 **Deciders:** Alimardon
 **Supersedes:** the base decision in ADR-001 (postmarketOS downstream). postmarketOS stays the source for phone device ports later.
 
@@ -47,7 +47,7 @@ The base image holds only: kernel, firmware, drivers, musl user-space, system se
                /        |          |          \
      Container     Server/VM     Desktop       Phone
      (minirootfs)  (+ ssh,       (+ shell,     (+ desktop,
-                    cloud-init)   Flatpak)      modem stack,
+                    seed file)    Flatpak)      modem stack,
                                                 device ports)
 ```
 

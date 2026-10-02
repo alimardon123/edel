@@ -1,7 +1,7 @@
 # ADR-002: Build our own lightweight desktop shell
 
 **Status:** Proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-02 (sharing presets, ADR-008; power-profiles-daemon dropped, roadmap M7.8)
 **Deciders:** Alimardon
 **Supersedes:** the shell decision in ADR-001 (COSMIC vs Plasma spike)
 
@@ -38,7 +38,7 @@ Build our own shell as **two long-running processes plus one settings app**:
 |  - input, outputs, scaling, animations, XWayland          |
 +----------------------------------------------------------+
 |  Reused system services: PipeWire, NetworkManager,       |
-|  BlueZ, UPower, power-profiles-daemon, greetd, portals    |
+|  BlueZ, UPower, greetd, portals    |
 +----------------------------------------------------------+
 ```
 

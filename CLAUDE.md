@@ -115,7 +115,7 @@ sh ci/sizes.sh
 
 ## Environment
 
-- Cloud sessions so far got HTTP 403 from `dl-cdn.alpinelinux.org`, even after Alimardon allowed the mirror. Test it with one request before assuming either way. If it is blocked, the image build, boot-test and ab-test run only in CI, so most **Done when:** checks are proven on the PR. Push, then read the result; a full CI run takes about 3 minutes.
+- Cloud sessions before 2026-10-02 got HTTP 403 from `dl-cdn.alpinelinux.org`; on 2026-10-02 it answered 200. Test it with one request before assuming either way. If it is blocked, the image build, boot-test and ab-test run only in CI, so most **Done when:** checks are proven on the PR. Push, then read the result; a full CI run takes about 3 minutes.
 - The environment seen on 2026-10-02 also had no Docker daemon, no `/dev/kvm` and no `apk`. Check before relying on them.
 - `gh pr view` and other GraphQL `gh` commands failed. Use the GitHub MCP tools when the session has them, otherwise `gh api repos/alimardon123/edel/...` (REST), which worked.
 - Subagents (Agent or Workflow tools): tell them to work offline, because a web fetch parks them on a permission prompt. Drafting and synthesis agents run on Opus or Sonnet; judge, critique and review agents run on Fable or Opus (Alimardon's choice). Say which models ran.
