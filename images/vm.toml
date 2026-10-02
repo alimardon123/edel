@@ -39,6 +39,11 @@ shutdown = ["mount-ro", "killprocs", "savecache"]
 health = ["default-runlevel"]
 
 [vm]
+# linux-virt, not linux-lts as on the laptop: lts installs 152 MiB against
+# virt's 49 (Alpine v3.24 package index, 2026-10-02), more than the whole
+# 91 MiB root, and a VM needs none of its hardware drivers. One kernel
+# would be simpler; a VM image that doubles in size for drivers it never
+# loads is waste people see in every download and update (roadmap M3.3a).
 kernel = "virt"
 slot_mib = 1024
-cmdline = "console=ttyS0 modules=ext4,virtio_pci,virtio_blk,overlay,i6300esb,softdog i6300esb.heartbeat=15 softdog.soft_margin=15"
+cmdline = "console=ttyS0"

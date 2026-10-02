@@ -130,7 +130,8 @@ pub struct Vm {
     /// Size of each of the two root slots on the disk (ADR-006).
     pub slot_mib: u64,
     /// Kernel arguments added to the ones the A/B boot needs, for example
-    /// the console to use.
+    /// the console to use. `modules=` is not one of them: `edel image
+    /// build` owns that list (`boot::MODULES`).
     #[serde(default)]
     pub cmdline: String,
     /// Size of the data partition in the image (M1.2). It grows to the
@@ -205,6 +206,15 @@ impl ImageDef {
                 }
                 if vm.data_mib < 16 {
                     bail!("vm.data_mib must be at least 16");
+                }
+                if vm
+                    .cmdline
+                    .split_whitespace()
+                    .any(|a| a.starts_with("modules="))
+                {
+                    bail!(
+                        "vm.cmdline must not set modules=; edel image build adds the one list every image uses"
+                    );
                 }
                 if !boot::is_safe_cmdline(&vm.cmdline) {
                     bail!(
@@ -330,6 +340,12 @@ mod tests {
             err.to_string()
                 .contains("linux-virt is not in packages.install")
         );
+    }
+
+    #[test]
+    fn leaves_the_module_list_to_the_builder() {
+        let err = parse(&VM.replace("console=ttyS0", "console=ttyS0 modules=ext4")).unwrap_err();
+        assert!(err.to_string().contains("must not set modules="));
     }
 
     #[test]

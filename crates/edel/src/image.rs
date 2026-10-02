@@ -154,7 +154,46 @@ impl Build<'_> {
         }
         self.runner
             .run(apk.arg("add").args(&self.def.packages.install))?;
+        if let Some(vm) = &self.def.vm {
+            self.make_initramfs(root, &vm.kernel)?;
+        }
         self.record_packages(root)
+    }
+
+    /// Rebuilds the initramfs with the features every bootable image shares
+    /// (`boot::INITRAMFS_FEATURES`, roadmap M3.3a), and leaves them in
+    /// `/etc/mkinitfs/mkinitfs.conf` for any later kernel install.
+    fn make_initramfs(&self, root: &Path, flavor: &str) -> Result<()> {
+        self.runner.step(&format!(
+            "rebuild /boot/initramfs-{flavor} with the features {}",
+            boot::INITRAMFS_FEATURES
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let conf = root.join("etc/mkinitfs/mkinitfs.conf");
+        fs::create_dir_all(conf.parent().unwrap_or(root))?;
+        fs::write(
+            &conf,
+            format!("features=\"{}\"\n", boot::INITRAMFS_FEATURES),
+        )?;
+        let suffix = format!("-{flavor}");
+        let mut kernels = Vec::new();
+        for entry in fs::read_dir(root.join("lib/modules"))? {
+            let name = entry?.file_name().to_string_lossy().into_owned();
+            if name.ends_with(&suffix) {
+                kernels.push(name);
+            }
+        }
+        let [kernel] = kernels.as_slice() else {
+            bail!("expected one {flavor} kernel in /lib/modules, found {kernels:?}");
+        };
+        self.runner.run(Command::new("chroot").arg(root).args([
+            "mkinitfs",
+            "-o",
+            &format!("/boot/initramfs-{flavor}"),
+            kernel,
+        ]))
     }
 
     /// Writes the installed packages, one `name-version` a line, into the
@@ -529,7 +568,12 @@ impl Build<'_> {
         ));
         if !self.runner.dry_run {
             fs::create_dir_all(dir)?;
-            let mut text = boot::grub_cfg(kernel, cmdline);
+            let microcode: Vec<&str> = boot::MICROCODE
+                .iter()
+                .copied()
+                .filter(|f| root.join("boot").join(f).is_file())
+                .collect();
+            let mut text = boot::grub_cfg(kernel, cmdline, &microcode);
             if let Some(tag) = &self.loader_tag {
                 // A test tag makes a loader that differs from the last one.
                 text += &format!("\n# loader tag: {tag}\n");

@@ -36,7 +36,7 @@ postmarketOS's image-based variant, for testers since 2026-03-17: weekly edge im
 | 4 | Two add-ons must not ship the same file; combined trigger files cannot be stacked | M7.2a |
 | 5 | U-Boot as UEFI boots a GPT inside `userdata` on the OnePlus 6 (SDM845), so GRUB for arm64 may keep our try counter | M9.7 |
 | 6 | A touch device needs a touch passphrase prompt (unl0kr is in postmarketOS's repository, not in Alpine 3.24) | M8.2, M9 |
-| 7 | Required kernel options live in a small TOML file with a reason each, checked in CI | M3.3 |
+| 7 | Required kernel options live in a small TOML file with a reason each, checked in CI | M3.3a |
 | 8 | Forks get a `9999` version, versioned `provides`, a "Forked from Alpine to ..." header and a CI test; missing packages go to Alpine first | the first step that creates `packages/` |
 | 9 | Fixes reach a release branch with `git cherry-pick -x`, never squashed | M8.5 |
 

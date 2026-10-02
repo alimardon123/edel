@@ -1,0 +1,50 @@
+# Kernel options our steps rely on (roadmap M3.3a). ci/initramfs-check.sh
+# fails when the kernel of a bootable image lacks one, built in (y) or as a
+# module (m). `kernels` limits an option to some Alpine kernel flavours;
+# without it, every kernel must have it. Add the option with the step that
+# starts relying on it, as postmarketOS does.
+
+[BLK_DEV_INITRD]
+reason = "Alpine boots through an initramfs"
+
+[EFI_PARTITION]
+reason = "the disk is GPT: ESP, slot A, slot B, data (M1.2)"
+
+[DEVTMPFS]
+reason = "mdev and the boot services expect /dev on devtmpfs"
+
+[EXT4_FS]
+reason = "the slots and the data partition are ext4"
+
+[VFAT_FS]
+reason = "edel update writes GRUB's environment block on the FAT ESP (M1.1)"
+
+[OVERLAY_FS]
+reason = "/etc is an overlay with its upper layer on /data (M1.4)"
+
+[TMPFS]
+reason = "/run and /tmp are tmpfs on a read-only root (M1.4)"
+
+[WATCHDOG]
+reason = "the boot guard restarts a hanging slot through a watchdog (M1.5)"
+
+[I6300ESB_WDT]
+reason = "QEMU's watchdog, which the A/B test's hang cases use (M1.5)"
+
+[SOFT_WATCHDOG]
+reason = "the guard's fallback where no hardware watchdog driver loads (M1.5)"
+kernels = ["lts"]
+
+[ITCO_WDT]
+reason = "the hardware watchdog of Intel laptops (M1.5)"
+kernels = ["lts"]
+
+[SP5100_TCO]
+reason = "the hardware watchdog of AMD laptops (M1.5)"
+kernels = ["lts"]
+
+[BLK_DEV_NVME]
+reason = "most laptop disks are NVMe"
+
+[USB_STORAGE]
+reason = "the laptop image boots from a USB stick (M3.4)"

@@ -62,7 +62,10 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install QEMU and UEFI firmware
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf cpio zstd
+
+      - name: Check the kernels and the initramfs of the bootable images
+        run: sh ci/initramfs-check.sh
 
       - name: Boot the VM image
         run: sh ci/boot-test.sh
