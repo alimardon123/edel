@@ -112,8 +112,10 @@ if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
 	(umask 077 && printf '%s\n' "$EDEL_RELEASE_KEY" >out/keys/release.key)
 	key=out/keys/release.key keys=images/keys signer=release
 else
-	./target/release/edel release keygen out/keys ci-release
-	key=out/keys/ci-release.key keys=out/keys signer=throwaway
+	# Its own directory: verify reads every *.pub in it, and out/keys also
+	# holds the test keys and an ssh key.
+	./target/release/edel release keygen out/keys/throwaway ci-release
+	key=out/keys/throwaway/ci-release.key keys=out/keys/throwaway signer=throwaway
 fi
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" out/release/*.ext4.gz
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
