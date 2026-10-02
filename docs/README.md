@@ -12,5 +12,6 @@ Start with the design principles, then the decisions in order. The principles go
 | [ADR-005](ADR-005-compatibility-promise.md) | 10 to 20 year compatibility promise, platform levels | Proposed |
 | [ADR-006](ADR-006-atomic-updates-and-replication.md) | Atomic updates with rollback, one file to replicate a machine | Proposed |
 | [ADR-007](ADR-007-immutability.md) | Immutable base, three customization levels, add-ons, developer mode and dev containers | Proposed |
+| [ADR-008](ADR-008-features-defaults-and-install.md) | Features as one file each, files read across releases, defaults as the absence of a key, one way in from Settings, the terminal or a file | Proposed |
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |
