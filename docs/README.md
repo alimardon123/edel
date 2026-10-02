@@ -13,3 +13,4 @@ Start with the design principles, then the decisions in order. The principles go
 | [ADR-006](ADR-006-atomic-updates-and-replication.md) | Atomic updates with rollback, one file to replicate a machine | Proposed |
 | [ADR-007](ADR-007-immutability.md) | Immutable base with add-ons, unlocked mode and dev containers | Proposed |
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
+| [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |
