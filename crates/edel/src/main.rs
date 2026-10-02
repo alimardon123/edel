@@ -219,6 +219,17 @@ enum ImageCommands {
         /// untagged build; for test images
         #[arg(long, value_name = "TAG")]
         loader_tag: Option<String>,
+        /// The release version written into the image, such as 2026.10.3;
+        /// without it the image keeps its development version
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+        /// The channel written into the image, such as preview or stable
+        #[arg(long, default_value = "dev")]
+        channel: String,
+        /// An apk cache to share between the images of one build, so they
+        /// all install from one package index
+        #[arg(long, value_name = "DIR")]
+        apk_cache: Option<PathBuf>,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -240,8 +251,14 @@ fn main() -> Result<()> {
                 health_timeout,
                 public_keys,
                 loader_tag,
+                version,
+                channel,
+                apk_cache,
                 dry_run,
             } => {
+                if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
+                    anyhow::bail!("version {v:?} is not numbers joined by dots, such as 2026.10.3");
+                }
                 let def = ImageDef::load(&definition)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
                 // apk and mount get absolute paths, so nothing depends on
@@ -252,6 +269,14 @@ fn main() -> Result<()> {
                     std::fs::create_dir_all(&out)?;
                     std::fs::canonicalize(&out)?
                 };
+                // apk opens a relative cache directory inside the new root.
+                let apk_cache = match apk_cache {
+                    Some(cache) if !dry_run => {
+                        std::fs::create_dir_all(&cache)?;
+                        Some(std::fs::canonicalize(&cache)?)
+                    }
+                    other => other,
+                };
                 image::Build {
                     def: &def,
                     def_dir,
@@ -259,6 +284,9 @@ fn main() -> Result<()> {
                     health_timeout,
                     extra_keys: public_keys,
                     loader_tag,
+                    version,
+                    channel,
+                    apk_cache,
                     out,
                     runner: Runner { dry_run },
                 }

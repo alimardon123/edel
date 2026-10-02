@@ -21,6 +21,9 @@ start() {
 		i=$((i + 1))
 	done
 	cat /run/edel/confirmed 2>/dev/null
+	# The version on serial, for the boot test (M3.1).
+	. /usr/lib/os-release
+	echo "$PRETTY_NAME, channel $EDEL_CHANNEL, loader $EDEL_LOADER_VERSION"
 	[ -s /run/edel/confirmed ]
 	eend $?
 }

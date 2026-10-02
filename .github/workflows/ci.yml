@@ -45,8 +45,12 @@ jobs:
           key: alpine-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: alpine-cargo-
 
+      - name: Number this build
+        # YYYY.MM.N, with N the run number, so later runs are newer (M3.1).
+        run: echo "EDEL_VERSION=$(date -u +%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
       - name: Build images inside Alpine 3.24
-        run: docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+        run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
 
       - name: Test the container image
         run: sh ci/container-test.sh
@@ -79,6 +83,10 @@ jobs:
         if: always()
         run: sh ci/sizes.sh >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report package changes against the preview
+        if: always()
+        run: sh ci/packages.sh >> "$GITHUB_STEP_SUMMARY"
+
       - name: Keep the container image and boot log
         if: always()
         uses: actions/upload-artifact@v4
@@ -88,3 +96,4 @@ jobs:
           path: |
             out/*.tar.gz
             out/*.log
+            out/*.packages

@@ -18,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 
 use crate::grubenv::{Env, Slot};
+use crate::release::os_release_value;
 
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
 const RUN_DIR: &str = "/run/edel";
@@ -312,14 +313,36 @@ pub fn status() -> Result<()> {
     println!("running: {}", disk.running);
     println!("order: {}", env.get("ORDER").unwrap_or_default());
     for slot in [Slot::A, Slot::B] {
+        let device = disk.device(slot.partition())?;
+        let os_release = if slot == disk.running {
+            fs::read_to_string("/usr/lib/os-release").ok()
+        } else {
+            slot_os_release(&device)
+        };
+        let version = os_release
+            .and_then(|text| os_release_value(&text, "VERSION_ID"))
+            .unwrap_or_else(|| "empty".into());
         println!(
-            "{slot}: ok={} try={} {}",
+            "{slot}: ok={} try={} {} {version}",
             u8::from(env.ok(slot)),
             env.tries(slot),
-            disk.device(slot.partition())?.display()
+            device.display()
         );
     }
     Ok(())
+}
+
+/// The os-release of the slot on `device`, read with debugfs, so the slot
+/// that is not running is never mounted (M3.1).
+fn slot_os_release(device: &Path) -> Option<String> {
+    let out = Command::new("debugfs")
+        .args(["-R", "cat /usr/lib/os-release"])
+        .arg(device)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    (out.status.success() && text.contains("VERSION_ID=")).then_some(text)
 }
 
 /// Installs the signed release whose `release.toml` is at `location`, a
