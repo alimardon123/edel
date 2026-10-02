@@ -413,9 +413,17 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
     for note in &notes {
         println!("edel system: {note}");
     }
+    // One change that fails never stops the others (Reliable): each is
+    // reported, and apply fails at the end.
+    let mut failed = 0;
     for change in &changes {
-        execute(change, boot).with_context(|| format!("applying {change}"))?;
-        println!("edel system: {change}");
+        match execute(change, boot) {
+            Ok(()) => println!("edel system: {change}"),
+            Err(err) => {
+                failed += 1;
+                eprintln!("edel system: could not apply {change}: {err:#}");
+            }
+        }
     }
     let machine = Path::new(SYSTEM_FILE);
     if let Some(path) = file.filter(|f| *f != machine) {
@@ -427,6 +435,9 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
         );
     } else if changes.is_empty() {
         println!("edel system: nothing to change");
+    }
+    if failed > 0 {
+        bail!("{failed} of {} changes could not be applied", changes.len());
     }
     Ok(())
 }
@@ -514,13 +525,13 @@ pub fn unset(key: &str) -> Result<()> {
 fn seed(target: &Path) -> Result<Option<String>> {
     let esp_file = format!("{}/system.toml", GRUB_PREFIX.trim_start_matches('/'));
     let mut found = find_by_label(SEED_LABEL)
-        .and_then(|device| read_from(&device, "system.toml"))
+        .and_then(|device| read_from(&device, "system.toml", None))
         .map(|text| (text, format!("the {SEED_LABEL} volume")));
     if found.is_none() {
         found = Disk::find()
             .and_then(|disk| disk.device(ESP_PARTITION))
             .ok()
-            .and_then(|device| read_from(&device, &esp_file))
+            .and_then(|device| read_from(&device, &esp_file, Some("vfat")))
             .map(|text| (text, "the EFI system partition".to_string()));
     }
     if found.is_none() {
@@ -547,21 +558,26 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
 }
 
 /// The text of `inner` on `device`, mounted read-only for as long as it
-/// takes to read it.
-fn read_from(device: &Path, inner: &str) -> Option<String> {
+/// takes to read it. `fs` names the file system when it is known: early
+/// in boot the FAT driver is not loaded yet, so mount cannot guess it.
+fn read_from(device: &Path, inner: &str, fs: Option<&str>) -> Option<String> {
     let dir = Path::new("/run/edel/seed");
     fs::create_dir_all(dir).ok()?;
     // FAT needs a charset the virt kernel has; other file systems refuse
     // the option, so they get a second try without it.
-    let mount = |options: &str| {
+    let mount = |kind: &str, options: &str| {
         Command::new("mount")
-            .args(["-o", options])
+            .args(["-t", kind, "-o", options])
             .arg(device)
             .arg(dir)
             .status()
             .is_ok_and(|s| s.success())
     };
-    if !mount("ro,iocharset=iso8859-1") && !mount("ro") {
+    let mounted = match fs {
+        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
+        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
+    };
+    if !mounted {
         eprintln!(
             "warning: cannot mount {} to look for a system file",
             device.display()
