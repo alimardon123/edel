@@ -63,6 +63,9 @@ jobs:
       - name: Boot the VM image
         run: sh ci/boot-test.sh
 
+      - name: Seed a machine from a system file and log in over ssh
+        run: sh ci/system-test.sh
+
       - name: Update the VM, then fall back from a broken update
         run: sh ci/ab-test.sh
 

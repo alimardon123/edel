@@ -41,6 +41,8 @@ pub enum Kind {
     OneOf(&'static [&'static str]),
     /// One of these whole numbers
     WholeOf(&'static [i64]),
+    /// A hostname: letters, digits and hyphens, up to 63
+    Hostname,
 }
 
 /// One key of the system file. `*` in a path stands for any name, such as a
@@ -94,7 +96,7 @@ pub const KEYS: &[Key] = &[
     now("users.*.admin", Kind::Flag),
     now("users.*.ssh_keys", Kind::Texts),
     now("users.*.shell", Kind::Text),
-    now("network.hostname", Kind::Text),
+    now("network.hostname", Kind::Hostname),
     later("locale.language", Kind::Text),
     later("locale.keyboard", Kind::Text),
     later("locale.timezone", Kind::Text),
@@ -191,6 +193,30 @@ pub struct SystemFile {
     pub apps: Apps,
     #[serde(default, skip_serializing_if = "is_default")]
     pub addons: Addons,
+}
+
+impl Default for SystemFile {
+    /// A file in this release's format with every key absent.
+    fn default() -> Self {
+        SystemFile {
+            format: FORMAT,
+            system: System::default(),
+            users: BTreeMap::new(),
+            network: Network::default(),
+            locale: Locale::default(),
+            shell: Shell::default(),
+            outputs: BTreeMap::new(),
+            appearance: Appearance::default(),
+            shortcuts: BTreeMap::new(),
+            defaults: Defaults::default(),
+            startup: Startup::default(),
+            power: Power::default(),
+            services: BTreeMap::new(),
+            updates: Updates::default(),
+            apps: Apps::default(),
+            addons: Addons::default(),
+        }
+    }
 }
 
 fn is_default<T: Default + PartialEq>(value: &T) -> bool {
@@ -470,6 +496,11 @@ fn clean(
         let shown = path.join(".");
         if at.is_empty() && name == "format" {
             kept.insert(name.clone(), value.clone());
+        } else if at == ["users"] && !is_user_name(name) {
+            problems.push(Problem {
+                key: shown,
+                message: "not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _".into(),
+            });
         } else if let Some(key) = KEYS.iter().find(|k| matches(k.path, &path, false)) {
             match normalize(key.kind, value) {
                 Ok(value) => {
@@ -553,7 +584,25 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             let allowed: Vec<&str> = allowed.iter().map(String::as_str).collect();
             fail(&or_list(&allowed))
         }
+        (Kind::Hostname, Value::String(s)) if is_hostname(s) => Ok(value.clone()),
+        (Kind::Hostname, _) => fail("a hostname: letters, digits and hyphens, up to 63"),
     }
+}
+
+/// A single DNS label, as `hostname` and `/etc/hostname` take it.
+pub fn is_hostname(name: &str) -> bool {
+    (1..=63).contains(&name.len())
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// A name busybox `adduser` accepts and every tool handles.
+pub fn is_user_name(name: &str) -> bool {
+    let mut bytes = name.bytes();
+    matches!(bytes.next(), Some(b'a'..=b'z' | b'_'))
+        && name.len() <= 32
+        && bytes.all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_' | b'-'))
 }
 
 /// "light, dark or auto"
@@ -587,6 +636,7 @@ mod tests {
             Kind::Pair => Value::Array(vec![Value::Integer(0), Value::Integer(-1)]),
             Kind::OneOf(allowed) => Value::String(allowed[0].into()),
             Kind::WholeOf(allowed) => Value::Integer(allowed[0]),
+            Kind::Hostname => Value::String("x".into()),
         }
     }
 
@@ -693,6 +743,19 @@ font_size = 11
         assert!(
             shown.contains(&"outputs.DP-1.transform: expected 0, 90, 180 or 270, not 45".into())
         );
+    }
+
+    #[test]
+    fn hostnames_and_user_names_are_checked() {
+        let read = read(
+            "format = 1\n[network]\nhostname = \"not valid\"\n[users.Ali]\nadmin = true\n[users.ali-2]\nadmin = true\n",
+        )
+        .unwrap();
+        assert_eq!(read.file.network.hostname, None);
+        assert_eq!(read.file.users.keys().collect::<Vec<_>>(), ["ali-2"]);
+        let keys: Vec<&str> = read.problems.iter().map(|p| p.key.as_str()).collect();
+        assert_eq!(keys, ["network.hostname", "users.Ali"]);
+        assert!(is_hostname("lab-1") && !is_hostname("-lab") && !is_hostname(""));
     }
 
     #[test]

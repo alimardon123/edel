@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# Applies the machine's system file, /data/edel/system.toml, at every boot,
+# seeding it on the first (roadmap M2.2): the hostname, users, their ssh
+# keys and developer mode. Before hostname, so the machine boots with the
+# hostname the file names; /data is mounted in sysinit by edel-data.
+
+description="Apply the Edel OS system file"
+
+depend() {
+	need localmount
+	before hostname
+}
+
+start() {
+	ebegin "Applying the system file"
+	/usr/bin/edel system apply --boot
+	eend $?
+}

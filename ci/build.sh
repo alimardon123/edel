@@ -9,7 +9,7 @@ set -eu
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools sfdisk tar
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen sfdisk tar
 
 cargo build --release --locked
 for def in images/*.toml; do
@@ -20,6 +20,25 @@ done
 rm -rf out/keys
 ./target/release/edel release keygen out/keys ci-1
 ./target/release/edel release keygen out/keys ci-2
+
+# The system test image (roadmap M2.2): the VM image with a seed system file
+# in its slot that names the machine and adds user ci, who logs in with a
+# fresh ssh key.
+seed=out/system-test/seed
+rm -rf "$seed"
+mkdir -p "$seed/usr/share/edel"
+ssh-keygen -q -t ed25519 -N '' -C ci@edel -f out/keys/ci-ssh
+cat >"$seed/usr/share/edel/system.toml" <<EOF
+format = 1
+
+[network]
+hostname = "ci-seeded"
+
+[users.ci]
+admin = true
+ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
+EOF
+./target/release/edel image build images/vm.toml --files "$seed" --out out/system-test
 
 # The A/B test image: the VM image plus the test steps that ci/ab-test.sh runs.
 # health_timeout 30 keeps the hang cases to minutes (roadmap M1.5).
@@ -52,7 +71,7 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/keys; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out/keys out/system-test; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

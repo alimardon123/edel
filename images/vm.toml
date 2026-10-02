@@ -29,7 +29,7 @@ install = [
 
 [services]
 sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
-boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
+boot = ["modules", "sysctl", "edel-system", "hostname", "bootmisc", "syslog", "networking"]
 default = ["sshd", "edel-boot-ok"]
 shutdown = ["mount-ro", "killprocs", "savecache"]
 

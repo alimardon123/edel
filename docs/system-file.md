@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 
-One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
+One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, and `edel system export` prints the machine as one; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
 
 ```toml
 format = 1
@@ -18,7 +18,9 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 color_scheme = "dark"
 ```
 
-"From" names the roadmap step that first acts on the key. Until then `edel system check` refuses the key with "not supported yet" and the boot apply skips it and says so. `NAME` is any name: a user, an output, an action, a feature.
+On the first boot, `edel system apply` seeds the file from the first of: a volume labelled `EDEL-SEED` holding `system.toml`, `/EFI/edel/system.toml` on the EFI system partition, and the slot's `/usr/share/edel/system.toml`. Without any, nothing is applied. The `edel-system` service applies it at every boot, before the hostname is set; `apply FILE` applies another file and makes it the machine's own.
+
+"From" names the roadmap step that first acts on the key. Until then `edel system check` refuses the key with "not supported yet" and the boot apply skips it and says so. `NAME` is any name: a user, an output, an action, a feature. A user name has up to 32 lowercase letters, digits, `-` and `_`, and starts with a letter or `_`.
 
 ## `[system]`
 
@@ -34,15 +36,15 @@ color_scheme = "dark"
 
 | Key | Value | From |
 |---|---|---|
-| `users.*.admin` | `true` or `false`: member of the `admin` group | M2.2 |
-| `users.*.ssh_keys` | list of public keys for `~/.ssh/authorized_keys` | M2.2 |
-| `users.*.shell` | text, a login shell such as `"/bin/sh"` | M2.2 |
+| `users.*.admin` | `true` or `false`: member of the `admin` group; absent is `false` | M2.2 |
+| `users.*.ssh_keys` | list of public keys for `~/.ssh/authorized_keys`; absent leaves the file as it is | M2.2 |
+| `users.*.shell` | text, a login shell; absent is `/bin/sh` | M2.2 |
 
 ## `[network]` and `[locale]`
 
 | Key | Value | From |
 |---|---|---|
-| `network.hostname` | text | M2.2 |
+| `network.hostname` | a hostname: letters, digits and hyphens, up to 63 | M2.2 |
 | `locale.language` | text, such as `"en_GB"` | M6.6a |
 | `locale.keyboard` | text, an XKB layout such as `"us"` | M6.6a |
 | `locale.timezone` | text, such as `"Europe/London"` | M6.6a |
