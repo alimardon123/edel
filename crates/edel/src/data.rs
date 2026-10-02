@@ -2,8 +2,10 @@
 //! what outlives every update (roadmap M1.2). The `edel-data` service runs
 //! it in sysinit, before the boot runlevel writes to `/var`. On the first
 //! boot of a disk larger than the image, the partition grows to the end of
-//! the disk. Then `/home` and `/var` are bound onto it (M1.3), so updates
-//! and rollbacks keep people's files, logs and service state.
+//! the disk. Then `/etc` gets an overlay whose upper layer is on it
+//! (M1.4), `/home` and `/var` are bound onto it (M1.3) and `/tmp` becomes a
+//! tmpfs, so the slot itself stays read-only while updates and rollbacks
+//! keep people's files, settings, logs and service state.
 
 use std::fs;
 use std::io::Write;
@@ -103,6 +105,89 @@ fn missing_var_entries(slot: &Path, data: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
+/// Account files a machine copies into its own `/etc` once a person or a
+/// package adds a user.
+const ACCOUNT_FILES: [&str; 3] = ["passwd", "group", "shadow"];
+
+/// Lines of the slot's account file (`slot`) whose name, the first field,
+/// is missing from the machine's copy (`machine`): users and groups a
+/// newer slot adds, which the machine's own copy would otherwise hide.
+/// Returns the machine's file with them appended, or `None` when nothing
+/// is missing.
+fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
+    let name = |line: &str| line.split(':').next().unwrap_or_default().to_string();
+    let known: std::collections::HashSet<String> = machine.lines().map(name).collect();
+    let missing: Vec<&str> = slot
+        .lines()
+        .filter(|l| !l.is_empty() && !known.contains(&name(l)))
+        .collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let mut merged = machine.to_string();
+    if !merged.is_empty() && !merged.ends_with('\n') {
+        merged.push('\n');
+    }
+    for line in missing {
+        merged.push_str(line);
+        merged.push('\n');
+    }
+    Some(merged)
+}
+
+/// Mounts an overlay on `/etc`: the slot's `/etc` below, this machine's
+/// changes above on `/data`, so the upper directory is exactly what this
+/// machine changed (stateless /etc, ADR-006). Before that, adds the system
+/// users and groups the slot has but the machine's copies lack.
+fn overlay_etc() -> Result<()> {
+    if is_mounted("/etc")? {
+        return Ok(());
+    }
+    let data = Path::new(MOUNT_POINT);
+    let (upper, work) = (data.join("etc/upper"), data.join("etc/work"));
+    fs::create_dir_all(&upper)?;
+    fs::create_dir_all(&work)?;
+    for file in ACCOUNT_FILES {
+        let machine_path = upper.join(file);
+        let Ok(machine) = fs::read_to_string(&machine_path) else {
+            continue;
+        };
+        let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default();
+        if let Some(merged) = merge_accounts(&slot, &machine) {
+            fs::write(&machine_path, merged)?;
+            println!("edel-data: added the slot's new entries to /etc/{file}");
+        }
+    }
+    let _ = Command::new("modprobe").arg("overlay").status();
+    run(Command::new("mount")
+        .args(["-t", "overlay", "overlay", "-o"])
+        .arg(format!(
+            "lowerdir=/etc,upperdir={},workdir={}",
+            upper.display(),
+            work.display()
+        ))
+        .arg("/etc"))
+    .context("cannot mount the /etc overlay")?;
+    println!("edel-data: /etc changes are kept on {MOUNT_POINT}");
+    Ok(())
+}
+
+/// `/tmp` in memory: the root is read-only, and Alpine does not do this by
+/// default.
+fn tmp_on_tmpfs() -> Result<()> {
+    if is_mounted("/tmp")? {
+        return Ok(());
+    }
+    run(Command::new("mount").args([
+        "-t",
+        "tmpfs",
+        "-o",
+        "mode=1777,nosuid,nodev",
+        "tmpfs",
+        "/tmp",
+    ]))
+}
+
 /// Tops up `/data/var` from the slot, then binds `/data/home` over `/home`
 /// and `/data/var` over `/var`.
 fn bind_home_and_var() -> Result<()> {
@@ -165,7 +250,9 @@ pub fn mount_data() -> Result<()> {
     }
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
-    bind_home_and_var()
+    overlay_etc()?;
+    bind_home_and_var()?;
+    tmp_on_tmpfs()
 }
 
 #[cfg(test)]
@@ -188,6 +275,15 @@ mod tests {
         let missing: Vec<_> = missing.iter().map(|p| p.to_str().unwrap()).collect();
         assert_eq!(missing, ["empty", "lib/ci-new", "log/nginx", "run"]);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn adds_users_a_newer_slot_brings() {
+        let slot = "root:x:0:0::/root:/bin/sh\nsshd:x:22:22::/dev/null:/sbin/nologin\nnew:x:90:90::/:/sbin/nologin\n";
+        let machine = "root:x:0:0::/root:/bin/sh\nsshd:x:22:22::/dev/null:/sbin/nologin\nali:x:1000:1000::/home/ali:/bin/sh";
+        let merged = merge_accounts(slot, machine).unwrap();
+        assert_eq!(merged, format!("{machine}\nnew:x:90:90::/:/sbin/nologin\n"));
+        assert_eq!(merge_accounts(slot, &merged), None);
     }
 
     #[test]

@@ -4,11 +4,14 @@
 # Each boot runs the next step of the test, then restarts the VM. The step
 # number lives on the EFI system partition, which both slots share.
 #
-#   1. Slot A runs. Write markers into /home and /var and delete
-#      /var/lib/ci-new, then install the update (the disk with no
-#      partitions) into slot B.
-#   2. Slot B runs and is confirmed. The markers survived, and
-#      /var/lib/ci-new came back from the slot. Roll back by command.
+#   1. Slot A runs with a read-only root. Write markers into /home and
+#      /var, delete /var/lib/ci-new, change the hostname, note the ssh
+#      host key, add a user and drop a system user from this machine's
+#      /etc/passwd, then install the update (the disk with no partitions)
+#      into slot B.
+#   2. Slot B runs and is confirmed. The markers, the hostname, the host
+#      key and the new user survived, the dropped system user came back
+#      from the slot, and so did /var/lib/ci-new. Roll back by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
@@ -51,6 +54,21 @@ ab_has() {
 	done
 }
 
+# ab_check MESSAGE COMMAND...: COMMAND must succeed.
+ab_check() {
+	msg=$1
+	shift
+	"$@" || {
+		ab_end "FAIL: step $step expected $msg"
+		return 1
+	}
+}
+
+root_is_ro() {
+	awk '$2 == "/" { opts = $4 } END { exit !(opts ~ /^ro(,|$)/) }' /proc/mounts &&
+		! touch /usr/ab-test-write 2>/dev/null
+}
+
 ab_next() {
 	echo "$1" >"$esp/ab-test-step"
 	sync
@@ -78,15 +96,26 @@ start() {
 	1)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
 		ab_has /var/lib/ci-new || return 0
+		ab_check "a read-only root" root_is_ro || return 0
 		echo marker >/home/ab-marker
 		echo marker >/var/ab-marker
 		rm -r /var/lib/ci-new
+		echo ab-host >/etc/hostname
+		cp /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey
+		adduser -D abuser
+		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped
+		sed -i "/^$(cat /data/ab-dropped):/d" /etc/passwd
 		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
 		ab_next 2
 		;;
 	2)
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker /var/lib/ci-new || return 0
+		ab_check "a read-only root" root_is_ro || return 0
+		ab_check "hostname ab-host" grep -qx ab-host /etc/hostname || return 0
+		ab_check "the same ssh host key" cmp -s /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey || return 0
+		ab_check "user abuser" grep -q '^abuser:' /etc/passwd || return 0
+		ab_check "system user $(cat /data/ab-dropped) back" grep -q "^$(cat /data/ab-dropped):" /etc/passwd || return 0
 		/usr/bin/edel update rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;

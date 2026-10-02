@@ -176,6 +176,13 @@ impl Build<'_> {
         if let Some(hostname) = &self.def.hostname {
             fs::write(root.join("etc/hostname"), format!("{hostname}\n"))?;
         }
+        // Machine identity is made on the machine, never shipped in a slot.
+        for file in ["machine-id", "passwd-", "group-", "shadow-"] {
+            let path = root.join("etc").join(file);
+            if path.symlink_metadata().is_ok() {
+                fs::remove_file(&path)?;
+            }
+        }
         Ok(())
     }
 
