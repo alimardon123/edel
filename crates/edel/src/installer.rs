@@ -1,6 +1,7 @@
 //! `edel install DISK --system FILE` (roadmap M2.4): makes a blank or old
 //! disk an Edel OS machine. It lays out the disk as images are laid out
-//! (`boot.rs`), copies the running slot into slot A with a fresh UUID,
+//! (`boot.rs`) with slots of `SLOT_MIB` (M3.3b), copies the running slot
+//! into slot A, grows its file system to the slot and gives it a fresh UUID,
 //! writes the EFI system partition from the slot's own boot loader with an
 //! initial environment block, and creates the data partition holding the
 //! system file. It never writes the disk it runs from. The plan it shows is
@@ -14,7 +15,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use edel::install::{Disk, Partition, Plan, parse_blkid};
+use edel::install::{Disk, Partition, Plan, SLOT_MIB, parse_blkid};
 use edel::system;
 
 use crate::boot::{self, DATA_LABEL, ESP_LABEL, GRUB_PREFIX, Layout};
@@ -30,6 +31,7 @@ pub const TOOLS: &[(&str, &str)] = &[
     ("mkfs.ext4", "e2fsprogs"),
     ("e2fsck", "e2fsprogs"),
     ("tune2fs", "e2fsprogs"),
+    ("resize2fs", "e2fsprogs-extra"),
 ];
 
 const MIB: u64 = 1024 * 1024;
@@ -145,11 +147,11 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let slot_mib =
+    let running_mib =
         read_number(&Path::new("/sys/class/block").join(&slot_name).join("size"))? * 512 / MIB;
     let plan = Plan {
         disk: describe(name)?,
-        slot_mib,
+        slot_mib: SLOT_MIB.max(running_mib),
         system_file: system_file.display().to_string(),
     };
     plan.check()?;
@@ -180,7 +182,7 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
         );
     }
     let _lock = Lock::take("install", "edel install")?;
-    write(&plan, &slot, system_file)
+    write(&plan, &slot, running_mib, system_file)
 }
 
 /// Waits for the kernel's device node of a new partition; after a second
@@ -215,7 +217,9 @@ impl Drop for Mounted {
     }
 }
 
-fn write(plan: &Plan, slot: &Path, system_file: &Path) -> Result<()> {
+/// Writes the disk: `running_mib` MiB of the running slot become the start
+/// of slot A, whose file system then grows to fill it.
+fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Result<()> {
     let name = &plan.disk.name;
     let disk = Path::new("/dev").join(name);
     let part = |n: u32| Path::new("/dev").join(partition_name(name, n));
@@ -246,12 +250,15 @@ fn write(plan: &Plan, slot: &Path, system_file: &Path) -> Result<()> {
     println!("edel install: copying the running system into slot A");
     let mut from = File::open(slot).with_context(|| format!("reading {}", slot.display()))?;
     let mut to = fs::OpenOptions::new().write(true).open(part(2))?;
-    io::copy(&mut io::Read::take(&mut from, plan.slot_mib * MIB), &mut to)?;
+    io::copy(&mut io::Read::take(&mut from, running_mib * MIB), &mut to)?;
     to.sync_all()?;
     drop(to);
     let status = Command::new("e2fsck").arg("-fp").arg(part(2)).status()?;
     if !matches!(status.code(), Some(0 | 1)) {
         bail!("e2fsck found errors in the copied slot ({status})");
+    }
+    if plan.slot_mib > running_mib {
+        run(Command::new("resize2fs").arg(part(2)))?;
     }
     run(Command::new("tune2fs").args(["-U", "random"]).arg(part(2)))?;
 

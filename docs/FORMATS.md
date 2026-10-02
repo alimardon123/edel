@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 
-Every file format Edel OS owns has a top-level integer `format`, from 1. Writers and checkers are strict; readers on a machine are lenient, because an old slot reads files a newer release wrote and cannot be patched afterwards (ADR-008). This page grows with each format: the slot size rule arrives in M3.3b.
+Every file format Edel OS owns has a top-level integer `format`, from 1. Writers and checkers are strict; readers on a machine are lenient, because an old slot reads files a newer release wrote and cannot be patched afterwards (ADR-008). This page grows with each format; the disk layout, which no format number can change on a machine already installed, is at the end.
 
 ## `release.toml` (format 1, M1.6)
 
@@ -47,3 +47,12 @@ The file that describes a whole machine, `/data/edel/system.toml`; [system-file.
 ## `loader.toml` (format 1, M1.8)
 
 `format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel update mark-good` installs that slot's loader when the versions differ.
+
+## The disk layout (M1.2, slot size M3.3b)
+
+A machine's disk is GPT: partition 1 is the EFI system partition (64 MiB, label `EDEL-ESP`), 2 and 3 are slot A and slot B, and 4 is the data partition (label `edel-data`), which takes the rest. An update can replace everything inside a slot, but never the layout, so it is decided once:
+
+- Every slot of an installed machine is 4096 MiB (`edel::install::SLOT_MIB`), whatever it was installed from, and the VM image's slots are too, because a VM runs from that disk as it is. A machine installed from the first preview must be able to take every later update.
+- An update image is the slot's file system shrunk to its contents (`resize2fs -M`); `edel update install` writes it into the other slot and grows it to fill the slot. So a release may grow until its files fill 4096 MiB, and no release may need more.
+- The laptop image, a stick to try Edel OS and install it from, keeps 1024 MiB slots so it fits a common 8 GB stick (about 7.45 GiB); `edel install` copies its running slot into a 4096 MiB slot and grows it.
+- Changing the slot size later means moving every installed machine's data partition, so it waits for a format change of the disk itself, with a migration in `edel update`.

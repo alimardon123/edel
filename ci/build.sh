@@ -69,7 +69,7 @@ build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 build "$version.1" images/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--loader-tag ci --out out/ab-test-update
+	--loader-tag ci --no-compress --out out/ab-test-update
 
 # The update the A/B test downloads over HTTP (ci/ab-test.sh serves this
 # directory): a signed release.toml, the shrunk and gzipped image, and

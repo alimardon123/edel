@@ -14,6 +14,11 @@ const MIB: u64 = 1024 * 1024;
 pub const ESP_MIB: u64 = 64;
 /// The smallest data partition worth installing with.
 pub const MIN_DATA_MIB: u64 = 256;
+/// Each slot of an installed machine, whatever the medium it was installed
+/// from: a machine installed from a preview must take every later update,
+/// so slots are sized for the base's growth, not today's (roadmap M3.3b,
+/// `docs/FORMATS.md`).
+pub const SLOT_MIB: u64 = 4096;
 
 /// A partition already on the target disk.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,7 +46,7 @@ pub struct Disk {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
     pub disk: Disk,
-    /// Each slot's size: the running slot's
+    /// Each slot's size, `SLOT_MIB`
     pub slot_mib: u64,
     /// The system file the new machine starts with
     pub system_file: String,
@@ -177,7 +182,7 @@ mod tests {
                 bytes: 500_107_862_016,
                 partitions,
             },
-            slot_mib: 4096,
+            slot_mib: SLOT_MIB,
             system_file: "/run/media/system.toml".into(),
         }
     }

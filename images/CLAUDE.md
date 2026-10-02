@@ -3,8 +3,8 @@
 An image definition is a TOML file here; `edel image build` turns it into an image. The schema and its checks are in `crates/edel/src/def.rs`, the build steps in `image.rs`. Three exist, all format 1, Alpine `v3.24` (`main` and `community`), `x86_64`:
 
 - `container.toml`: `edel-container`, no hostname, no services, no `[vm]`; packed as `out/edel-container-x86_64.tar.gz` (load it with `docker import`).
-- `vm.toml`: `edel-vm`, hostname `edel`, kernel `virt`, `slot_mib = 1024`, serial console; packed as `out/edel-vm-x86_64.img` (GPT disk: EFI system partition, slot A filled, slot B empty, and a 64 MiB `edel-data` partition that grows to the end of the disk on first boot) and `out/edel-vm-x86_64.ext4` (one slot cut to its file system with `resize2fs -M`, the update image), each also as `.gz`.
-- `laptop.toml` (M3.3a): `edel-laptop`, the VM image with kernel `lts`, the firmware for most laptops' graphics and Wi-Fi (`linux-firmware-` `amdgpu`, `ath10k`, `ath11k`, `i915`, `intel`, `mediatek`, `radeon`, `rtl_nic`, `rtlwifi`, `rtw88`, `rtw89`, `xe`) and CPU microcode (`intel-ucode`, `amd-ucode`), `console=tty0 console=ttyS0,115200`; packed like the VM image as `out/edel-laptop-x86_64.img`, to be written to a USB stick. The VM keeps `virt`: `lts` installs 152 MiB against 49, more than the whole VM root (reason in `vm.toml`).
+- `vm.toml`: `edel-vm`, hostname `edel`, kernel `virt`, `slot_mib = 4096` (M3.3b, the slot size of every installed machine, `docs/FORMATS.md`), serial console; packed as `out/edel-vm-x86_64.img` (GPT disk: EFI system partition, slot A filled, slot B empty, and a 64 MiB `edel-data` partition that grows to the end of the disk on first boot) and `out/edel-vm-x86_64.ext4` (one slot cut to its file system with `resize2fs -M`, the update image), each also as `.gz`.
+- `laptop.toml` (M3.3a): `edel-laptop`, the VM image with kernel `lts`, the firmware for most laptops' graphics and Wi-Fi (`linux-firmware-` `amdgpu`, `ath10k`, `ath11k`, `i915`, `intel`, `mediatek`, `radeon`, `rtl_nic`, `rtlwifi`, `rtw88`, `rtw89`, `xe`) and CPU microcode (`intel-ucode`, `amd-ucode`), `console=tty0 console=ttyS0,115200`, `slot_mib = 1024` so it fits a common 8 GB stick (`edel install` gives the machine 4096 MiB slots); packed like the VM image as `out/edel-laptop-x86_64.img`, to be written to a USB stick. The VM keeps `virt`: `lts` installs 152 MiB against 49, more than the whole VM root (reason in `vm.toml`).
 
 Check a definition with `cargo run --quiet --locked -- image check images/vm.toml` (it prints `<name>-<arch>: ok (<n> packages)`); list its build steps with `cargo run -- image build images/vm.toml --dry-run`.
 
@@ -36,5 +36,5 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M3.3b sets `slot_mib = 4096` for every bootable image. M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
+M4.0 moves definitions to format 2, which list features and image facts only (ADR-008).
 - Definitions stay strict in every format.
