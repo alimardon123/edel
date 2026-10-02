@@ -6,7 +6,7 @@
 # Each key is one number.
 
 # The container image, out/edel-container-x86_64.tar.gz, in MiB.
-container_mib = 7.8
+container_mib = 3.9
 
 # Used space on the VM's root (`df -Pm /` in the guest), in MiB.
 vm_root_mib = 110
