@@ -23,6 +23,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - `data.rs`: `edel boot mount-data`, which grows the data partition on first boot, mounts it at `/data` and overlays `/etc` (merging new system users first), binds `/home` and `/var` onto it after topping up `/data/var` from the slot, and mounts `/tmp` as tmpfs.
 - `guard.rs`: `edel boot guard`, which pets the watchdog until the health files in `EDEL_HEALTH` exist, then confirms the slot and stops the watchdog with the magic close, or lets it reset the machine after `EDEL_HEALTH_TIMEOUT`.
 - `release.rs`: `release.toml` (format 1, read leniently), ed25519 keys and signatures, `edel release keygen|make|sign|verify`, and `checked_image`, which `edel update install` calls before writing a slot.
+- `loader.rs`: the boot loader riding along (M1.8): `loader.toml`, `swap_file` (`.prev`, `.new`, rename) and `update_esp`, which `mark-good` calls once the slot is confirmed.
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
 
 ## Conventions

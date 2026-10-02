@@ -10,6 +10,7 @@ mod def;
 mod grubenv;
 mod guard;
 mod image;
+mod loader;
 mod release;
 mod run;
 mod update;
@@ -149,6 +150,10 @@ enum ImageCommands {
         /// own; for test images. Can be given more than once.
         #[arg(long = "public-key", value_name = "FILE")]
         public_keys: Vec<PathBuf>,
+        /// A tag written into grub.cfg so the boot loader differs from an
+        /// untagged build; for test images
+        #[arg(long, value_name = "TAG")]
+        loader_tag: Option<String>,
         /// Print every step without changing anything
         #[arg(long)]
         dry_run: bool,
@@ -169,6 +174,7 @@ fn main() -> Result<()> {
                 extra_files,
                 health_timeout,
                 public_keys,
+                loader_tag,
                 dry_run,
             } => {
                 let def = ImageDef::load(&definition)?;
@@ -187,6 +193,7 @@ fn main() -> Result<()> {
                     extra_files,
                     health_timeout,
                     extra_keys: public_keys,
+                    loader_tag,
                     out,
                     runner: Runner { dry_run },
                 }
