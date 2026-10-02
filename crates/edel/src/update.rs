@@ -265,7 +265,7 @@ impl Drop for Lock {
     }
 }
 
-fn run(cmd: &mut Command) -> Result<()> {
+pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let status = cmd
         .stdin(Stdio::null())
         .status()

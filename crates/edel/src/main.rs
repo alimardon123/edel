@@ -5,6 +5,7 @@
 //! to learn.
 
 mod boot;
+mod data;
 mod def;
 mod grubenv;
 mod image;
@@ -33,11 +34,22 @@ enum Commands {
         #[command(subcommand)]
         command: ImageCommands,
     },
+    /// Steps the boot services run
+    Boot {
+        #[command(subcommand)]
+        command: BootCommands,
+    },
     /// Install updates into the A/B slots and roll back
     Update {
         #[command(subcommand)]
         command: UpdateCommands,
     },
+}
+
+#[derive(Subcommand)]
+enum BootCommands {
+    /// Grow the data partition on first boot and mount it at /data
+    MountData,
 }
 
 #[derive(Subcommand)]
@@ -116,6 +128,9 @@ fn main() -> Result<()> {
                 );
                 Ok(())
             }
+        },
+        Commands::Boot { command } => match command {
+            BootCommands::MountData => data::mount_data(),
         },
         Commands::Update { command } => match command {
             UpdateCommands::Status => update::status(),

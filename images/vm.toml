@@ -23,10 +23,12 @@ install = [
   "libgcc",
   "linux-virt",
   "openssh-server",
+  "partx",
+  "sfdisk",
 ]
 
 [services]
-sysinit = ["devfs", "dmesg", "mdev", "hwdrivers"]
+sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-data"]
 boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
 default = ["sshd", "edel-boot-ok"]
 shutdown = ["mount-ro", "killprocs", "savecache"]
