@@ -1,8 +1,8 @@
 //! `edel`: the Edel OS system tool.
 //!
-//! It builds images and updates and rolls back A/B slots. Add-ons and
-//! system files (ADR-006, ADR-007) will live here too, so there is one tool
-//! to learn.
+//! It builds images, updates and rolls back A/B slots and checks system
+//! files. Add-ons (ADR-007) will live here too, so there is one tool to
+//! learn. The system file parser is the library half (`edel::system`).
 
 mod boot;
 mod data;
@@ -17,8 +17,9 @@ mod update;
 
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use edel::system;
 
 use crate::def::ImageDef;
 use crate::run::Runner;
@@ -51,6 +52,21 @@ enum Commands {
     Update {
         #[command(subcommand)]
         command: UpdateCommands,
+    },
+    /// Check the file that describes a whole machine (system.toml)
+    System {
+        #[command(subcommand)]
+        command: SystemCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum SystemCommands {
+    /// Check a system file strictly: every unknown key, value or format,
+    /// and every key this release does not act on yet, is refused
+    Check {
+        /// The system file, for example /data/edel/system.toml
+        file: PathBuf,
     },
 }
 
@@ -234,5 +250,24 @@ fn main() -> Result<()> {
             UpdateCommands::MarkGood => update::mark_good(),
             UpdateCommands::Rollback => update::rollback(),
         },
+        Commands::System { command } => match command {
+            SystemCommands::Check { file } => check_system_file(&file),
+        },
     }
+}
+
+/// `edel system check FILE`: prints one line per problem and fails when
+/// there is any (ADR-008, section 2).
+fn check_system_file(file: &std::path::Path) -> Result<()> {
+    let text =
+        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    let problems = system::check(&text).with_context(|| format!("checking {}", file.display()))?;
+    if problems.is_empty() {
+        println!("{}: ok", file.display());
+        return Ok(());
+    }
+    for problem in &problems {
+        println!("{problem}");
+    }
+    bail!("{} has {} problems", file.display(), problems.len())
 }

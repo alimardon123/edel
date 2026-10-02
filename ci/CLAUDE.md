@@ -10,6 +10,7 @@
 | `ab-test.sh` | Serves `out/ab-test/update/` over HTTP on port 8000 (the VM reaches it as `10.0.2.2`), boots the `out/ab-test/` disk and waits for `AB-TEST: PASS` or `AB-TEST: FAIL`; logs in `out/ab-test.log` and `out/http.log` | QEMU and OVMF; KVM if present |
 | `flatpak-test.sh` | Boots a copy of `out/flatpak/edel-flatpak-x86_64.img` made 6 GiB larger, with 2 GiB of memory; its test service adds Flathub as user `ci`, installs the newest and the oldest `org.freedesktop.Platform`, runs a shell from each and prints `FLATPAK-TEST:` lines; passes on `FLATPAK-TEST: PASS` (the newest runtime ran); log in `out/flatpak-test.log` | QEMU and OVMF, KVM if present, and Flathub |
 | `vm.sh` | Sourced, not run: picks KVM when `/dev/kvm` is writable, else TCG; finds OVMF; adds an `i6300esb` watchdog with `-action watchdog=reset`; defines `run_vm LOG PATTERN TIMEOUT [QEMU ARGS]`, which sets `found` and `waited` | |
+| `keys-check.sh` | Fails when a line of `crates/edel/tests/keys.txt` was deleted, compared with `main`, without a bump of `FORMAT` in `system.rs` ("Rust checks" runs it) | git and `origin` |
 | `sizes.sh` | Prints the `### Image sizes` table for the run summary (CI runs it even after a failure); always exits 0 | `sudo` to measure the root-owned `out/work/` |
 
 ## Rules

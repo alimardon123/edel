@@ -27,8 +27,13 @@ pub fn loader_toml(efi: &[u8], cfg: &[u8]) -> String {
     format!("format = 1\nversion = \"{version}\"\n")
 }
 
+/// The version in a `loader.toml`, if it is a format this edel reads.
 fn version_in(path: &Path) -> Option<String> {
-    os_release_value(&fs::read_to_string(path).ok()?, "version")
+    let text = fs::read_to_string(path).ok()?;
+    if os_release_value(&text, "format")? != "1" {
+        return None;
+    }
+    os_release_value(&text, "version")
 }
 
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {

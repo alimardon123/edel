@@ -52,6 +52,8 @@ Base updates, system add-ons (for example extra drivers or virtualization tools)
 A plain data file, not a programming language:
 
 ```toml
+format = 1
+
 [system]
 channel  = "stable"      # later: "lts"
 version  = "2027.1"      # optional pin; omit to follow the channel
@@ -68,7 +70,7 @@ flatpak = [
   "com.valvesoftware.Steam",
 ]
 
-[extensions]             # system-level add-ons
+[addons]                 # signed add-ons (ADR-007)
 add = ["virtualization"]
 
 [users.ali]
