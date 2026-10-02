@@ -67,20 +67,10 @@ jobs:
       - name: Check the kernels and the initramfs of the bootable images
         run: sh ci/initramfs-check.sh
 
-      - name: Boot the VM image
-        run: sh ci/boot-test.sh
-
-      - name: Seed a machine from a system file and log in over ssh
-        run: sh ci/system-test.sh
-
-      - name: Install onto a blank disk, then boot it
-        run: sh ci/install-test.sh
-
-      - name: Update the installed VM, then fall back from broken updates
-        run: sh ci/ab-test.sh
-
-      - name: Install and run a Flatpak runtime on the musl base
-        run: sh ci/flatpak-test.sh
+      - name: Run the VM tests, installed-disk lane and other lane at once
+        # install-test then ab-test, beside boot-test, system-test and
+        # flatpak-test; ci/vm-tests.sh says why they can share the runner.
+        run: sh ci/vm-tests.sh
 
       - name: Check the budgets and report image sizes
         if: always()

@@ -14,7 +14,8 @@ apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtoo
 cargo build --release --locked
 # Every image of this run carries the run's version (EDEL_VERSION, from
 # ci.yml; 0.1 when built by hand) and installs from one package index in a
-# shared apk cache (roadmap M3.1). build VERSION ARGS...
+# shared apk cache (roadmap M3.1). Test images that no step downloads are
+# built with --no-compress. build VERSION ARGS...
 version=${EDEL_VERSION:-0.1}
 rm -rf out/apk-cache
 build() {
@@ -55,7 +56,7 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 [users.root]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
-build "$version" images/vm.toml --files "$seed" --out out/system-test
+build "$version" images/vm.toml --files "$seed" --no-compress --out out/system-test
 
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
@@ -63,7 +64,7 @@ build "$version" images/vm.toml --files "$seed" --out out/system-test
 # keeps the hang cases to minutes (roadmap M1.5).
 build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--out out/install-test
+	--no-compress --out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 build "$version.1" images/vm.toml --files ci/ab-test/files \
@@ -84,7 +85,7 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 
 # The Flatpak spike image: the VM image plus dbus, flatpak and a test
 # service that installs and runs a Flathub runtime (roadmap M1.9).
-build "$version" ci/flatpak/vm.toml --out out/flatpak
+build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.
