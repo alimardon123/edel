@@ -103,6 +103,12 @@ for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages; do
 	ln "$f" out/release/
 done
 if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
+	ls images/keys/*.pub >/dev/null 2>&1 || {
+		echo "FAIL: EDEL_RELEASE_KEY is set but images/keys/ has no .pub to check it with (docs/RELEASE.md, step 1)"
+		exit 1
+	}
+	# The secret never outlives this script, even when signing fails.
+	trap 'rm -f out/keys/release.key' EXIT
 	(umask 077 && printf '%s\n' "$EDEL_RELEASE_KEY" >out/keys/release.key)
 	key=out/keys/release.key keys=images/keys signer=release
 else
@@ -114,7 +120,7 @@ fi
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
 for manifest in out/release/release.toml out/channel/release.toml; do
 	./target/release/edel release sign --key "$key" "$manifest"
-	./target/release/edel release verify "$keys" "$manifest"
+	./target/release/edel release verify --keys "$keys" "$manifest"
 done
 rm -f out/keys/release.key
 echo "$signer" >out/channel/signer
