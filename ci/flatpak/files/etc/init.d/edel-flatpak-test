@@ -1,9 +1,10 @@
 #!/sbin/openrc-run
-# Test only (roadmap M1.9): CI builds this into ci/flatpak/vm.toml. As a
-# normal user, with `flatpak --user` as every later app install will be, it
-# adds Flathub, installs the newest and the oldest org.freedesktop.Platform
-# runtime Flathub still serves, and runs a shell from each: glibc programs
-# on the musl base. It also reports what docs/SPIKE-flatpak.md records.
+# Test only (roadmap M1.9): CI builds this into ci/flatpak/vm.toml. It
+# reports user namespaces and polkit, then runs
+# /usr/share/edel/ci/flatpak-steps.sh as a normal user, with `flatpak
+# --user` as every later app install will be: the newest and the oldest
+# org.freedesktop.Platform runtime Flathub serves, each running a shell,
+# glibc programs on the musl base. PASS means the newest one ran.
 
 description="Edel OS Flatpak spike"
 
@@ -20,30 +21,9 @@ start() {
 	say "polkit packages pulled in: $(apk info -R flatpak 2>/dev/null | grep -i polkit | tr '\n' ' ')"
 	say "polkitd running: $(pgrep polkitd >/dev/null && echo yes || echo no)"
 	adduser -D ci
-	su ci -s /bin/sh -c '
-		if unshare -U true 2>/dev/null; then echo "FLATPAK-TEST: unprivileged user namespaces: yes"
-		else echo "FLATPAK-TEST: unprivileged user namespaces: no"; fi
-		flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || exit 1
-		branches=$(flatpak --user remote-ls --runtime --all --columns=application,branch flathub |
-			awk "\$1 == \"org.freedesktop.Platform\" && \$2 ~ /^[0-9]+\\.[0-9]+\$/ { print \$2 }" |
-			sort -u -t. -k1,1n -k2,2n)
-		echo "FLATPAK-TEST: org.freedesktop.Platform branches on Flathub:" $branches
-		newest=$(echo "$branches" | tail -n 1)
-		oldest=$(echo "$branches" | head -n 1)
-		for b in $newest $oldest; do
-			start=$(date +%s)
-			if flatpak --user install -y --noninteractive flathub "org.freedesktop.Platform//$b" >/dev/null 2>&1; then
-				out=$(dbus-run-session -- flatpak run --command=sh "org.freedesktop.Platform//$b" -c "echo hello from glibc" 2>&1)
-				echo "FLATPAK-TEST: runtime $b: $out ($(( $(date +%s) - start )) s)"
-			else
-				echo "FLATPAK-TEST: runtime $b: install failed"
-			fi
-		done
-		echo "FLATPAK-TEST: installed size $(du -sh ~/.local/share/flatpak | cut -f1)"
-		echo "$newest" >/tmp/newest
-	'
-	newest=$(cat /tmp/newest 2>/dev/null)
-	if [ -n "$newest" ] && su ci -s /bin/sh -c "dbus-run-session -- flatpak run --command=sh org.freedesktop.Platform//$newest -c \"echo hello from glibc\"" 2>/dev/null | grep -q "hello from glibc"; then
+	rm -f /tmp/flatpak-newest
+	su ci -s /bin/sh -c /usr/share/edel/ci/flatpak-steps.sh
+	if grep -qx ok /tmp/flatpak-newest 2>/dev/null; then
 		say "PASS"
 	else
 		say "FAIL: the newest runtime did not run"

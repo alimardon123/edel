@@ -9,6 +9,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -192,6 +193,15 @@ fn tmp_on_tmpfs() -> Result<()> {
 /// and `/data/var` over `/var`.
 fn bind_home_and_var() -> Result<()> {
     let data = Path::new(MOUNT_POINT);
+    // root's home is on the read-only slot too; its first copy on /data
+    // starts from the slot's, private to root.
+    if !data.join("root").exists() {
+        fs::create_dir_all(data.join("root"))?;
+        fs::set_permissions(data.join("root"), fs::Permissions::from_mode(0o700))?;
+        run(Command::new("cp")
+            .args(["-a", "/root/."])
+            .arg(data.join("root")))?;
+    }
     for dir in ["home", "var", "edel"] {
         fs::create_dir_all(data.join(dir))?;
     }
@@ -204,13 +214,13 @@ fn bind_home_and_var() -> Result<()> {
                 .arg(dest.parent().unwrap_or(data)))?;
         }
     }
-    for dir in ["/home", "/var"] {
+    for dir in ["/home", "/var", "/root"] {
         if !is_mounted(dir)? {
             let from = data.join(dir.trim_start_matches('/'));
             run(Command::new("mount").arg("--bind").arg(&from).arg(dir))?;
         }
     }
-    println!("edel-data: /home and /var are on {MOUNT_POINT}");
+    println!("edel-data: /home, /var and /root are on {MOUNT_POINT}");
     Ok(())
 }
 

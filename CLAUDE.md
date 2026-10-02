@@ -106,7 +106,7 @@ sh ci/keys-check.sh
 
 `cargo run -- image build images/vm.toml --dry-run` prints every build step and needs no root, Alpine or network.
 
-CI's "Build and boot images" job runs the real build and the VM tests. They need a Docker daemon that allows `--privileged`, the Alpine mirrors and crates.io, QEMU and OVMF, and KVM to be quick ([ci/CLAUDE.md](ci/CLAUDE.md)):
+CI's "Build and boot images" job runs the real build and the VM tests. They need a Docker daemon that allows `--privileged`, the Alpine mirrors and crates.io, Flathub for the Flatpak test, QEMU and OVMF, and KVM to be quick ([ci/CLAUDE.md](ci/CLAUDE.md)):
 
 ```sh
 docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
@@ -115,6 +115,7 @@ sh ci/boot-test.sh
 sh ci/system-test.sh
 sh ci/install-test.sh
 sh ci/ab-test.sh
+sh ci/flatpak-test.sh
 sh ci/sizes.sh
 ```
 
