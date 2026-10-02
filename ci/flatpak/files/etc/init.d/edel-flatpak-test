@@ -1,0 +1,32 @@
+#!/sbin/openrc-run
+# Test only (roadmap M1.9): CI builds this into ci/flatpak/vm.toml. It
+# reports user namespaces and polkit, then runs
+# /usr/share/edel/ci/flatpak-steps.sh as a normal user, with `flatpak
+# --user` as every later app install will be: the newest and the oldest
+# org.freedesktop.Platform runtime Flathub serves, each running a shell,
+# glibc programs on the musl base. PASS means the newest one ran.
+
+description="Edel OS Flatpak spike"
+
+depend() {
+	need edel-boot-ok
+}
+
+say() {
+	echo "FLATPAK-TEST: $*"
+}
+
+start() {
+	say "max_user_namespaces=$(cat /proc/sys/user/max_user_namespaces)"
+	say "polkit packages pulled in: $(apk info -R flatpak 2>/dev/null | grep -i polkit | tr '\n' ' ')"
+	say "polkitd running: $(pgrep polkitd >/dev/null && echo yes || echo no)"
+	adduser -D ci
+	rm -f /tmp/flatpak-newest
+	su ci -s /bin/sh -c /usr/share/edel/ci/flatpak-steps.sh
+	if grep -qx ok /tmp/flatpak-newest 2>/dev/null; then
+		say "PASS"
+	else
+		say "FAIL: the newest runtime did not run"
+	fi
+	return 0
+}
