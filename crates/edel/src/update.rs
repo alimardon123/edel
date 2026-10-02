@@ -38,14 +38,16 @@ struct Part {
 /// than the kernel command line: the slot we write must never be the one
 /// in use.
 #[derive(Debug)]
-struct Disk {
+pub(crate) struct Disk {
+    /// Kernel name of the whole disk, such as `vda`.
+    pub(crate) name: String,
     running: Slot,
     root_dev: String,
     parts: Vec<Part>,
 }
 
 impl Disk {
-    fn find() -> Result<Disk> {
+    pub(crate) fn find() -> Result<Disk> {
         let mountinfo =
             fs::read_to_string("/proc/self/mountinfo").context("reading /proc/self/mountinfo")?;
         find_disk(&mountinfo, Path::new("/sys"))
@@ -58,7 +60,7 @@ impl Disk {
             .with_context(|| format!("the system disk has no partition {number}"))
     }
 
-    fn device(&self, number: u32) -> Result<PathBuf> {
+    pub(crate) fn device(&self, number: u32) -> Result<PathBuf> {
         Ok(Path::new("/dev").join(&self.part(number)?.name))
     }
 
@@ -124,6 +126,11 @@ fn find_disk(mountinfo: &str, sys: &Path) -> Result<Disk> {
     }
     parts.sort_by_key(|p| p.number);
     Ok(Disk {
+        name: disk_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned(),
         running,
         root_dev,
         parts,
@@ -450,6 +457,7 @@ mod tests {
         let sys = sysfs("finds-slot", 3);
         let disk = find_disk(&mountinfo(3), &sys).unwrap();
         assert_eq!(disk.running, Slot::B);
+        assert_eq!(disk.name, "vda");
         assert_eq!(disk.root_dev, "254:3");
         assert_eq!(disk.parts.len(), 3);
         assert_eq!(disk.install_target().unwrap().name, "vda2");
