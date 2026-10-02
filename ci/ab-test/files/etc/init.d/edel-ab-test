@@ -81,7 +81,7 @@ root_is_ro() {
 # service there whose start runs COMMAND in the default runlevel.
 ab_break_b() {
 	/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
-	slot_b=$(echo "$slots" | sed -n 's/^B: .* //p')
+	slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 	mkdir -p /run/ab-test/slot
 	mount "$slot_b" /run/ab-test/slot
 	printf '#!/sbin/openrc-run\nstart() {\n\t%s\n}\n' "$2" >/run/ab-test/slot/etc/init.d/ab-$1
@@ -168,7 +168,7 @@ start() {
 		ab_has /home/ab-marker /var/ab-marker || return 0
 		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
 		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
-		slot_b=$(echo "$slots" | sed -n 's/^B: .* //p')
+		slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 		mkdir -p /run/ab-test/slot
 		mount "$slot_b" /run/ab-test/slot
 		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-virt
