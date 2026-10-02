@@ -1,0 +1,5 @@
+# Only the container image needs this (a feature named after its image).
+format = 1
+summary = "The container image: busybox and apk, with no kernel or init"
+why = "A container runs on its host's kernel and init, so it needs only the base layout, busybox, apk to add packages, and musl's ldd and getconf."
+packages = ["alpine-baselayout", "apk-tools", "busybox", "musl-utils"]

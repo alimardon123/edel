@@ -1,43 +1,16 @@
 # CI only (roadmap M1.9): the VM image plus Flatpak, to check that glibc
 # runtimes from Flathub run on the musl base. Release images never use it.
-format = 1
+format = 2
 name = "edel-flatpak"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-files = ["../../images/files/common", "../../images/files/vm", "../../images/files/ab", "files"]
+features = ["base", "machine", "ab-boot", "ssh", "vm", "flatpak-test"]
 
 [alpine]
 branch = "v3.24"
 mirror = "https://dl-cdn.alpinelinux.org/alpine"
 repositories = ["main", "community"]
-
-[packages]
-install = [
-  "alpine-base",
-  "alpine-keys",
-  "busybox-binsh",
-  "ca-certificates-bundle",
-  "dbus",
-  "e2fsprogs",
-  "e2fsprogs-extra",
-  "flatpak",
-  "libgcc",
-  "linux-virt",
-  "openssh-server",
-  "partx",
-  "sfdisk",
-]
-
-[services]
-sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
-boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
-default = ["sshd", "edel-boot-ok", "edel-flatpak-test"]
-shutdown = ["mount-ro", "killprocs", "savecache"]
-
-[image]
-# The boot guard confirms the slot once the default runlevel is reached.
-health = ["default-runlevel"]
 
 [vm]
 kernel = "virt"

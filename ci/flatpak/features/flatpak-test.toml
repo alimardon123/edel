@@ -1,0 +1,9 @@
+# CI only (roadmap M1.9). features/flatpak-test/ holds the test service and
+# the steps it runs as user ci.
+format = 1
+summary = "CI only: install and run Flathub runtimes on the musl base"
+why = "The Flatpak spike needs flatpak and the dbus it talks over; the test service installs the newest and oldest org.freedesktop.Platform and reports."
+packages = ["dbus", "flatpak"]
+
+[services]
+default = ["edel-flatpak-test"]

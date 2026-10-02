@@ -1,15 +1,17 @@
 //! `edel report` (roadmap M3.3b): what a person pastes into an issue when
-//! Edel OS misbehaves on their hardware. The release and kernel, the boot
-//! time and memory in use when the slot was confirmed (the line
-//! `edel-boot-ok` printed), the memory in use now, every PCI device with
-//! its driver, and the kernel log, as TOML on standard output. Everything
-//! comes from `/proc`, `/sys` and busybox's `dmesg`, so no tool is added.
+//! Edel OS misbehaves on their hardware. The release and kernel, the
+//! features the image is made of (M4.0), the boot time and memory in use
+//! when the slot was confirmed (the line `edel-boot-ok` printed), the
+//! memory in use now, every PCI device with its driver, and the kernel log,
+//! as TOML on standard output. Everything comes from `/proc`, `/sys`,
+//! `/usr/share/edel/features` and busybox's `dmesg`, so no tool is added.
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
+use edel::features;
 use serde::Serialize;
 
 use crate::release::os_release_value;
@@ -26,6 +28,10 @@ struct Report {
     format: u32,
     version: String,
     kernel: String,
+    /// The features in `/usr/share/edel/features/`, by name.
+    features: Vec<String>,
+    /// What reading them skipped, such as a field this edel does not know.
+    feature_notes: Vec<String>,
     /// `Started in N s, M MiB of memory in use, R MiB used on the root`
     started: String,
     memory_in_use_mib: u64,
@@ -76,6 +82,38 @@ fn pci_devices(devices: &Path) -> Vec<Pci> {
     found
 }
 
+/// The features in `dir`, read the way a machine reads them (leniently),
+/// and a note for each thing skipped.
+fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>) {
+    let mut names = Vec::new();
+    let mut notes = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return (names, notes);
+    };
+    let mut files: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
+    files.sort();
+    for path in files {
+        let Some(name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(".toml"))
+        else {
+            continue;
+        };
+        match fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|text| features::read(&text))
+        {
+            Ok((_, skipped)) => {
+                names.push(name.to_string());
+                notes.extend(skipped.into_iter().map(|n| format!("{name}: {n}")));
+            }
+            Err(err) => notes.push(format!("{name}: not read: {err:#}")),
+        }
+    }
+    (names, notes)
+}
+
 /// MemTotal minus MemAvailable from `/proc/meminfo`, in MiB.
 fn memory_in_use_mib(meminfo: &str) -> Option<u64> {
     let field = |name: &str| {
@@ -102,10 +140,13 @@ pub fn report(esp: bool) -> Result<()> {
         .output()
         .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
         .unwrap_or_default();
+    let (names, notes) = installed_features(Path::new(features::DIR));
     let report = Report {
         format: FORMAT,
         version: os_release_value(&os_release, "VERSION_ID").unwrap_or_default(),
         kernel: read_trimmed(Path::new("/proc/sys/kernel/osrelease")),
+        features: names,
+        feature_notes: notes,
         started: read_trimmed(Path::new(STARTED)),
         memory_in_use_mib: memory_in_use_mib(
             &fs::read_to_string("/proc/meminfo").unwrap_or_default(),
@@ -153,6 +194,22 @@ mod tests {
     }
 
     #[test]
+    fn lists_features_and_notes_what_it_skipped() {
+        let dir = std::env::temp_dir().join(format!("edel-report-features-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let ssh = "format = 1\nsummary = \"ssh\"\nwhy = \"w\"\npackages = [\"openssh-server\"]\n";
+        fs::write(dir.join("ssh.toml"), format!("{ssh}shiny = true\n")).unwrap();
+        fs::write(dir.join("base.toml"), "format = 1\nsummary = \"base\"\n").unwrap();
+        fs::write(dir.join("broken.toml"), "format = [").unwrap();
+        let (names, notes) = installed_features(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names, ["base", "ssh"]);
+        assert_eq!(notes[1], "ssh: unknown field shiny ignored");
+        assert!(notes[0].starts_with("broken: not read"), "{notes:?}");
+    }
+
+    #[test]
     fn counts_memory_in_use() {
         let meminfo = "MemTotal:  512000 kB\nMemFree: 100 kB\nMemAvailable:  450560 kB\n";
         assert_eq!(memory_in_use_mib(meminfo), Some(60));
@@ -165,6 +222,8 @@ mod tests {
             format: FORMAT,
             version: "2026.10.90".into(),
             kernel: "6.18.54-0-lts".into(),
+            features: vec!["base".into(), "ssh".into()],
+            feature_notes: vec![],
             started: "Started in 6.78 s, 60 MiB of memory in use, 91 MiB used on the root".into(),
             memory_in_use_mib: 61,
             dmesg: "[    0.000000] Linux version 6.18.54\n[    1.0] a \"quoted\" line\n".into(),

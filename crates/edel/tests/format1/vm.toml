@@ -1,0 +1,51 @@
+# Edel OS VM image: the base plus a kernel, init and SSH, for cloud and
+# local virtual machines. Builds a bootable disk with A/B update slots.
+format = 1
+name = "edel-vm"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+files = ["files/common", "files/vm", "files/ab"]
+
+[alpine]
+branch = "v3.24"
+mirror = "https://dl-cdn.alpinelinux.org/alpine"
+repositories = ["main", "community"]
+
+[packages]
+install = [
+  "alpine-base",
+  "alpine-keys",
+  "busybox-binsh",
+  "ca-certificates-bundle",
+  "dosfstools",
+  "e2fsprogs",
+  "e2fsprogs-extra",
+  "libgcc",
+  "linux-virt",
+  "openssh-server",
+  "partx",
+  "sfdisk",
+]
+
+[services]
+sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
+boot = ["modules", "sysctl", "edel-system", "hostname", "bootmisc", "syslog", "networking"]
+default = ["sshd", "edel-boot-ok"]
+shutdown = ["mount-ro", "killprocs", "savecache"]
+
+[image]
+# The boot guard confirms the slot once the default runlevel is reached.
+health = ["default-runlevel"]
+
+[vm]
+# linux-virt, not linux-lts as on the laptop: lts installs 152 MiB against
+# virt's 49 (Alpine v3.24 package index, 2026-10-02), more than the whole
+# 91 MiB root, and a VM needs none of its hardware drivers. One kernel
+# would be simpler; a VM image that doubles in size for drivers it never
+# loads is waste people see in every download and update (roadmap M3.3a).
+kernel = "virt"
+# Every slot of a machine is 4096 MiB (docs/FORMATS.md, M3.3b): a VM
+# runs from this disk as it is, so it must take every later update.
+slot_mib = 4096
+cmdline = "console=ttyS0"

@@ -1,0 +1,8 @@
+format = 1
+summary = "Log in from another computer with ssh"
+why = "Servers and virtual machines are run from afar, and ssh is how; switchable, so an image for people at the machine ships it off (ADR-008)."
+packages = ["openssh-server"]
+switchable = true
+
+[services]
+default = ["sshd"]

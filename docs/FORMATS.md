@@ -44,6 +44,10 @@ The file that describes a whole machine, `/data/edel/system.toml`; [system-file.
 - **Names this release lacks** (a preset, profile, add-on or feature) are values like any other: the checker refuses them, a reader on a machine uses the default and reports it, and boot never fails over one.
 - **Writers** (`edel system set` and `unset` since M2.3, Settings later) edit the file in place with `toml_edit`, so comments, order and keys this slot does not know survive.
 
+## Feature files (format 1) and image definitions (format 2), M4.0
+
+`features/NAME.toml` and `images/*.toml` are described in [FEATURES.md](FEATURES.md). Both live in this repository, so a format bump converts every file in the same PR, and `edel image build` and `image check` refuse an unknown field or format. Feature files also ship in every image as `/usr/share/edel/features/NAME.toml`, and readers on a machine read those leniently: an unknown field is skipped and noted (`edel report` lists the notes), and a newer `format` is read for what it holds and noted.
+
 ## `loader.toml` (format 1, M1.8)
 
 `format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel update mark-good` installs that slot's loader when the versions differ.

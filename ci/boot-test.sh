@@ -19,8 +19,9 @@ boot out/boot.log out/edel-vm-x86_64.img
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&
-	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data and was confirmed in ${waited}s"
+	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot.log &&
+	grep -q 'Starting sshd' out/boot.log; then
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, started sshd and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
@@ -41,6 +42,13 @@ else
 	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
 	exit 1
 fi
+# The laptop lists ssh in off (M4.0): openssh-server is installed, sshd
+# is not started.
+if grep -q 'Starting sshd' out/boot-laptop.log; then
+	echo "FAIL: the laptop image started sshd, but laptop.toml ships ssh off"
+	exit 1
+fi
+echo "PASS: the laptop image shipped ssh off; sshd did not start"
 
 grown=out/grown.img
 cp --sparse=always out/edel-vm-x86_64.img "$grown"
