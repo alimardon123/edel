@@ -105,6 +105,12 @@ ab_next() {
 }
 
 start() {
+	# A second disk means this is the install test's live boot (M2.5): the
+	# steps run on the disk it installs.
+	if [ -b /dev/vdb ]; then
+		ab_say "skipped: the install test's live boot"
+		return 0
+	fi
 	esp=/run/ab-test/esp
 	mkdir -p "$esp"
 	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" "$esp"
@@ -135,7 +141,7 @@ start() {
 		echo marker >/home/ab-marker
 		echo marker >/var/ab-marker
 		rm -r /var/lib/ci-new
-		echo ab-host >/etc/hostname
+		/usr/bin/edel system set network.hostname=ab-host && /usr/bin/edel system apply
 		cp /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey
 		adduser -D abuser
 		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped

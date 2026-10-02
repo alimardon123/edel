@@ -15,9 +15,9 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use edel::system::{self, SystemFile, User};
 
-use crate::boot::{ESP_LABEL, GRUB_PREFIX};
+use crate::boot::GRUB_PREFIX;
 use crate::release::os_release_value;
-use crate::update::{Lock, run};
+use crate::update::{Disk, Lock, run};
 
 /// The machine's system file, on the data partition.
 pub const SYSTEM_FILE: &str = "/data/edel/system.toml";
@@ -27,6 +27,8 @@ const DEVELOPER_FLAG: &str = "/data/edel/developer";
 const ETC_UPPER: &str = "/data/etc/upper";
 /// A volume with this label holding `system.toml` seeds a first boot.
 const SEED_LABEL: &str = "EDEL-SEED";
+/// The EFI system partition's number on the running disk.
+const ESP_PARTITION: u32 = 1;
 /// The slot's own seed, used when no volume holds one.
 const SLOT_SEED: &str = "/usr/share/edel/system.toml";
 /// The login shell of a user whose entry names none.
@@ -516,21 +518,26 @@ pub fn unset(key: &str) -> Result<()> {
 }
 
 /// Looks for a first system file: on a volume labelled EDEL-SEED, then on
-/// the EFI system partition, then in the slot. Copies the first one found
-/// to `target` and says where it came from.
+/// this disk's EFI system partition, then in the slot. Copies the first one
+/// found to `target` and says where it came from. The partition is found
+/// from the running disk, not by label: an installer stick and the disk it
+/// installed both have an EDEL-ESP.
 fn seed(target: &Path) -> Result<Option<String>> {
     let esp_file = format!("{}/system.toml", GRUB_PREFIX.trim_start_matches('/'));
-    let mut found = None;
-    for (label, inner) in [(SEED_LABEL, "system.toml"), (ESP_LABEL, esp_file.as_str())] {
-        if let Some(text) = from_volume(label, inner) {
-            found = Some((text, format!("the {label} volume")));
-            break;
-        }
+    let mut found = find_by_label(SEED_LABEL)
+        .and_then(|device| read_from(&device, "system.toml", None))
+        .map(|text| (text, format!("the {SEED_LABEL} volume")));
+    if found.is_none() {
+        found = Disk::find()
+            .and_then(|disk| disk.device(ESP_PARTITION))
+            .ok()
+            .and_then(|device| read_from(&device, &esp_file, Some("vfat")))
+            .map(|text| (text, "the EFI system partition".to_string()));
     }
     if found.is_none() {
-        if let Ok(text) = fs::read_to_string(SLOT_SEED) {
-            found = Some((text, SLOT_SEED.to_string()));
-        }
+        found = fs::read_to_string(SLOT_SEED)
+            .ok()
+            .map(|text| (text, SLOT_SEED.to_string()));
     }
     let Some((text, from)) = found else {
         return Ok(None);
@@ -540,30 +547,41 @@ fn seed(target: &Path) -> Result<Option<String>> {
     Ok(Some(from))
 }
 
-/// The text of `inner` on the volume labelled `label`, mounted read-only
-/// for as long as it takes to read it.
-fn from_volume(label: &str, inner: &str) -> Option<String> {
+/// The device of the file system labelled `label`, if one is attached.
+fn find_by_label(label: &str) -> Option<PathBuf> {
     let out = Command::new("findfs")
         .arg(format!("LABEL={label}"))
         .output()
         .ok()?;
-    if !out.status.success() {
-        return None;
-    }
     let device = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (out.status.success() && !device.is_empty()).then(|| PathBuf::from(device))
+}
+
+/// The text of `inner` on `device`, mounted read-only for as long as it
+/// takes to read it. `fs` names the file system when it is known: early
+/// in boot the FAT driver is not loaded yet, so mount cannot guess it.
+fn read_from(device: &Path, inner: &str, fs: Option<&str>) -> Option<String> {
     let dir = Path::new("/run/edel/seed");
     fs::create_dir_all(dir).ok()?;
     // FAT needs a charset the virt kernel has; other file systems refuse
     // the option, so they get a second try without it.
-    let mount = |options: &str| {
+    let mount = |kind: &str, options: &str| {
         Command::new("mount")
-            .args(["-o", options, &device])
+            .args(["-t", kind, "-o", options])
+            .arg(device)
             .arg(dir)
             .status()
             .is_ok_and(|s| s.success())
     };
-    if !mount("ro,iocharset=iso8859-1") && !mount("ro") {
-        eprintln!("warning: cannot mount {device} ({label}) to look for a system file");
+    let mounted = match fs {
+        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
+        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
+    };
+    if !mounted {
+        eprintln!(
+            "warning: cannot mount {} to look for a system file",
+            device.display()
+        );
         return None;
     }
     let text = fs::read_to_string(dir.join(inner)).ok();

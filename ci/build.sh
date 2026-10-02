@@ -46,15 +46,13 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 ./target/release/edel image build images/vm.toml --files "$seed" --out out/system-test
 
-# The install test image (roadmap M2.4): the VM image plus a test service
-# that installs onto a blank second disk.
-./target/release/edel image build images/vm.toml --files ci/install-test/files --out out/install-test
-
-# The A/B test image: the VM image plus the test steps that ci/ab-test.sh runs.
-# health_timeout 30 keeps the hang cases to minutes (roadmap M1.5).
-./target/release/edel image build images/vm.toml --files ci/ab-test/files \
+# The install test image (roadmap M2.4, M2.5): the VM image plus a test
+# service that installs onto a blank second disk, and the A/B test steps,
+# which run on the disk it installs (ci/ab-test.sh). health_timeout 30
+# keeps the hang cases to minutes (roadmap M1.5).
+./target/release/edel image build images/vm.toml --files ci/ab-test/files --files ci/install-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--out out/ab-test
+	--out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 ./target/release/edel image build images/vm.toml --files ci/ab-test/files \
@@ -85,4 +83,4 @@ for dir in out out/ab-test out/ab-test/update out/ab-test-update out/flatpak out
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done
-ls -ls out out/ab-test
+ls -ls out out/install-test
