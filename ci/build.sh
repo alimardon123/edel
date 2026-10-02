@@ -9,7 +9,7 @@ set -eu
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
-apk add --no-cache cargo dosfstools e2fsprogs grub grub-efi mtools sfdisk tar
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools sfdisk tar
 
 cargo build --release --locked
 for def in images/*.toml; do
