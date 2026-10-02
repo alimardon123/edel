@@ -73,7 +73,7 @@ edel update rollback                      # if you want the previous system back
 reboot
 ```
 
-GRUB gives a newly installed slot three tries. Once the system has started, the boot guard confirms the slot; if it hangs instead, a hardware watchdog restarts the machine and the try counts. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel update status` shows both slots, and `edel update rollback` starts the other slot again at the next boot.
+Each slot carries its own boot loader, installed only once the slot is confirmed. GRUB gives a newly installed slot three tries. Once the system has started, the boot guard confirms the slot; if it hangs instead, a hardware watchdog restarts the machine and the try counts. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel update status` shows both slots, and `edel update rollback` starts the other slot again at the next boot.
 
 CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot, with a rollback by command in between.
 

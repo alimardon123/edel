@@ -13,7 +13,8 @@
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
 #      from the slot, and so did /var/lib/ci-new; the shrunk update grew to
-#      fill the slot. Roll back by command.
+#      fill the slot, and its tagged boot loader replaced slot A's on the
+#      ESP once the slot was confirmed. Roll back by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
@@ -120,6 +121,8 @@ start() {
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
 		ab_has /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
+		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
+		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
 		if refused=$(/usr/bin/edel update install http://10.0.2.2:8000/bad.toml 2>&1); then
 			ab_end "FAIL: step 1 installed a tampered release.toml"
 			return 0
@@ -145,6 +148,9 @@ start() {
 		ab_has /home/ab-marker /var/ab-marker /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
 		ab_check "a slot grown to its full size" slot_is_full || return 0
+		ab_check "slot B's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
+		ab_check "a boot loader that differs from slot A's" sh -c '! cmp -s /data/ab-loader-a /usr/lib/edel/boot/loader.toml' || return 0
+		ab_check "the previous boot loader kept" test -e "$esp/EFI/BOOT/BOOTX64.EFI.prev" || return 0
 		ab_check "hostname ab-host" grep -qx ab-host /etc/hostname || return 0
 		ab_check "the same ssh host key" cmp -s /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey || return 0
 		ab_check "user abuser" grep -q '^abuser:' /etc/passwd || return 0
@@ -155,6 +161,7 @@ start() {
 	3)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker || return 0
+		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
 		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
 		slot_b=$(echo "$slots" | sed -n 's/^B: .* //p')
 		mkdir -p /run/ab-test/slot

@@ -28,3 +28,7 @@ size = 187695104
 - **Reading:** unknown fields are ignored; the signature still covers them. Only an unknown `format` is refused, naming the format.
 - **The stepping-stone rule:** a breaking change publishes the new format under a new file name and keeps `release.toml` pointing at a release whose `edel` reads both formats. A machine two formats behind installs that stepping stone, then the newer release at its next check, with no extra command from the person (AerynOS users rerun theirs by hand).
 - **Keys today:** until the first preview (M3.4) no image carries a real key. CI makes two throwaway keys on every run and bakes them into its test images with `edel image build --public-key`. The real key goes into the `EDEL_RELEASE_KEY` secret, which waits for Alimardon.
+
+## `loader.toml` (format 1, M1.8)
+
+`format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel update mark-good` installs that slot's loader when the versions differ.

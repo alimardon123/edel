@@ -438,6 +438,14 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     }
     esp.save(&env)?;
     lines.push(format!("edel update: slot {} confirmed", disk.running));
+    // Only a confirmed slot may change the boot loader (M1.8).
+    match crate::boot::efi_target(std::env::consts::ARCH).and_then(|(_, efi)| {
+        crate::loader::update_esp(&esp.dir, Path::new(crate::loader::SLOT_DIR), efi)
+    }) {
+        Ok(Some(line)) => lines.push(line),
+        Ok(None) => {}
+        Err(err) => lines.push(format!("warning: the boot loader was not updated: {err:#}")),
+    }
     Ok(lines)
 }
 

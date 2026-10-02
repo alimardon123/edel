@@ -34,6 +34,9 @@ pub struct Build<'a> {
     pub health_timeout: Option<u64>,
     /// More public keys for updates, for test images (M1.6).
     pub extra_keys: Vec<PathBuf>,
+    /// A tag written into grub.cfg so the loader differs, for test images
+    /// (M1.8).
+    pub loader_tag: Option<String>,
     pub out: PathBuf,
     pub runner: Runner,
 }
@@ -285,6 +288,8 @@ impl Build<'_> {
             data_mib: vm.data_mib,
         };
 
+        let loader = work.join("esp");
+        self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
         self.make_slot(root, &update, vm.slot_mib)?;
         self.shrink(&update)?;
         // Slot A gets a filesystem of its own rather than a copy of the
@@ -295,7 +300,7 @@ impl Build<'_> {
         let data = work.join("data.ext4");
         self.make_data(&data, vm.data_mib)?;
         let esp = work.join("esp.img");
-        self.make_esp(&work.join("esp"), &esp, &vm.kernel, &vm.cmdline)?;
+        self.make_esp(&loader, &esp)?;
 
         self.runner.step(&format!(
             "create a sparse {} MiB disk image",
@@ -395,7 +400,11 @@ impl Build<'_> {
 
     /// Builds the EFI system partition: GRUB as the removable-disk boot
     /// file, plus its config and environment block.
-    fn make_esp(&self, dir: &Path, esp: &Path, kernel: &str, cmdline: &str) -> Result<()> {
+    /// Builds the boot loader in `dir` (GRUB as the removable-disk boot
+    /// file, its config, its environment block and `loader.toml`) and puts
+    /// a copy into the slot's `/usr/lib/edel/boot/`, so an update carries
+    /// its loader and installs it once the slot is confirmed (M1.8).
+    fn make_loader(&self, dir: &Path, root: &Path, kernel: &str, cmdline: &str) -> Result<()> {
         let (target, efi_name) = boot::efi_target(&self.def.arch)?;
         let efi = dir.join(efi_name);
         let cfg = dir.join("grub.cfg");
@@ -407,7 +416,12 @@ impl Build<'_> {
         ));
         if !self.runner.dry_run {
             fs::create_dir_all(dir)?;
-            fs::write(&cfg, boot::grub_cfg(kernel, cmdline))?;
+            let mut text = boot::grub_cfg(kernel, cmdline);
+            if let Some(tag) = &self.loader_tag {
+                // A test tag makes a loader that differs from the last one.
+                text += &format!("\n# loader tag: {tag}\n");
+            }
+            fs::write(&cfg, text)?;
             fs::write(&env, boot::initial_grubenv())?;
         }
         self.runner.run(
@@ -418,6 +432,30 @@ impl Build<'_> {
                 .arg(&efi)
                 .args(boot::GRUB_MODULES),
         )?;
+        let slot_dir = root.join(crate::loader::SLOT_DIR.trim_start_matches('/'));
+        self.runner.step(&format!(
+            "write loader.toml and copy the loader to {}",
+            crate::loader::SLOT_DIR
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let version = crate::loader::loader_toml(&fs::read(&efi)?, &fs::read(&cfg)?);
+        fs::write(dir.join("loader.toml"), &version)?;
+        fs::create_dir_all(&slot_dir)?;
+        for file in [efi_name, "grub.cfg", "loader.toml"] {
+            fs::copy(dir.join(file), slot_dir.join(file))?;
+        }
+        Ok(())
+    }
+
+    /// Builds the EFI system partition image from the loader in `dir`.
+    fn make_esp(&self, dir: &Path, esp: &Path) -> Result<()> {
+        let (_, efi_name) = boot::efi_target(&self.def.arch)?;
+        let efi = dir.join(efi_name);
+        let cfg = dir.join("grub.cfg");
+        let env = dir.join("grubenv");
+        let version = dir.join("loader.toml");
 
         self.runner.step(&format!(
             "create a sparse {} MiB EFI system partition image",
@@ -453,6 +491,7 @@ impl Build<'_> {
                 .arg(esp)
                 .arg(&cfg)
                 .arg(&env)
+                .arg(&version)
                 .arg(on_esp(&format!("{}/", boot::GRUB_PREFIX))),
         )
     }
