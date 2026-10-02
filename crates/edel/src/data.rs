@@ -266,14 +266,43 @@ fn bind_home_and_var() -> Result<()> {
     Ok(())
 }
 
+/// Makes sure the node `dev` exists. Right after partx resized partition 4
+/// its `/dev` node has been missing for seconds (CI, 2026-10-02: resize2fs
+/// said "No such file or directory while opening /dev/vda4"), so this
+/// waits a second, asks mdev to scan, waits two more and then makes the
+/// node itself from the numbers sysfs gives, readable by root only.
+fn ensure_node(dev: &Path) {
+    for tick in 0..30 {
+        if dev.exists() {
+            return;
+        }
+        if tick == 10 {
+            let _ = Command::new("mdev").arg("-s").status();
+        }
+        sleep(Duration::from_millis(100));
+    }
+    let numbers = dev.file_name().and_then(|name| {
+        fs::read_to_string(Path::new("/sys/class/block").join(name).join("dev")).ok()
+    });
+    if let Some((major, minor)) = numbers.as_deref().and_then(|n| n.trim().split_once(':')) {
+        eprintln!("edel-data: {} was missing; making it", dev.display());
+        let _ = Command::new("mknod")
+            .args(["-m", "600"])
+            .arg(dev)
+            .args(["b", major, minor])
+            .status();
+    }
+}
+
 /// Grows the mounted file system on `dev` to fill its partition, online; it
 /// does nothing when the file system already fills it, and every boot runs
-/// it, so a growth that failed is finished on the next boot. Right after
-/// partx resized the partition one try has failed (CI, 2026-10-02), so it
-/// tries three times, a second apart, and prints resize2fs's own error.
+/// it, so a growth that failed is finished on the next boot. It tries three
+/// times, a second apart, each time after `ensure_node`, and prints
+/// resize2fs's own error if all fail.
 fn grow_file_system(dev: &Path) {
     let mut why = String::new();
     for attempt in 1..=3 {
+        ensure_node(dev);
         match Command::new("resize2fs").arg(dev).output() {
             Ok(out) if out.status.success() => return,
             Ok(out) => {
@@ -310,6 +339,7 @@ pub fn mount_data() -> Result<()> {
         }
     }
     if !is_mounted(MOUNT_POINT)? {
+        ensure_node(&dev);
         run(Command::new("mount")
             .args(["-t", "ext4", "-o", "noatime"])
             .arg(&dev)
