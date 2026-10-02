@@ -10,7 +10,7 @@ set -eu
 
 dir=out/ab-test
 log=out/ab-test.log
-run_vm "$log" 'AB-TEST: (PASS|FAIL)' "${AB_TEST_TIMEOUT:-900}" -snapshot \
+run_vm "$log" 'AB-TEST: (PASS|FAIL)' "${AB_TEST_TIMEOUT:-1500}" -snapshot \
 	-drive if=none,id=disk0,format=raw,file="$dir/edel-vm-x86_64.img" \
 	-device virtio-blk-pci,drive=disk0,bootindex=0 \
 	-drive if=none,id=update,format=raw,file="$dir/edel-vm-x86_64.ext4" \

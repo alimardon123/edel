@@ -36,6 +36,7 @@ run_vm() {
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$vars" \
 		-netdev user,id=net0 -device virtio-net-pci,netdev=net0,romfile= \
+		-device i6300esb -action watchdog=reset \
 		"$@" &
 	qemu=$!
 	found=0

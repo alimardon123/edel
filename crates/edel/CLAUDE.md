@@ -21,6 +21,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 - `grubenv.rs`: GRUB's 1024-byte environment block and the `Slot` type, shared by `boot.rs` and `update.rs`.
 - `update.rs`: `edel update status|install|mark-good|rollback`; pure transitions (`before_install`, `after_install`, `confirm`, `roll_back`) and slot discovery (`find_disk`, tested on a fake sysfs tree).
 - `data.rs`: `edel boot mount-data`, which grows the data partition on first boot, mounts it at `/data` and overlays `/etc` (merging new system users first), binds `/home` and `/var` onto it after topping up `/data/var` from the slot, and mounts `/tmp` as tmpfs.
+- `guard.rs`: `edel boot guard`, which pets the watchdog until the health files in `EDEL_HEALTH` exist, then confirms the slot and stops the watchdog with the magic close, or lets it reset the machine after `EDEL_HEALTH_TIMEOUT`.
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
 
 ## Conventions

@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+# Watches this Edel OS slot until it is healthy (roadmap M1.5). `edel boot
+# guard` pets the hardware watchdog in the background until the health
+# files named by EDEL_HEALTH in /usr/lib/os-release exist, then confirms
+# the slot and exits. If they never appear, it stops petting, the watchdog
+# restarts the machine, and GRUB counts the try. Started early in sysinit,
+# so a hang anywhere after it falls back.
+
+description="Watch this Edel OS slot until it is healthy"
+command=/usr/bin/edel
+command_args="boot guard"
+command_background=yes
+pidfile=/run/edel-guard.pid
+output_log=/dev/console
+error_log=/dev/console
+
+depend() {
+	after hwdrivers
+	before edel-data
+}

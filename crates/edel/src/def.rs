@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::boot;
+use crate::guard;
 
 /// The only definition format this version of `edel` understands. Bump it on
 /// any breaking change and teach `edel` to migrate older files.
@@ -29,6 +30,33 @@ pub struct ImageDef {
     #[serde(default)]
     pub files: Vec<PathBuf>,
     pub vm: Option<Vm>,
+    /// Facts about the image written into its os-release.
+    #[serde(default)]
+    pub image: ImageFacts,
+}
+
+/// `[image]`: what `edel boot guard` waits for before it confirms a slot
+/// (M1.5), written as `EDEL_HEALTH` and `EDEL_HEALTH_TIMEOUT`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImageFacts {
+    #[serde(default)]
+    pub health: Vec<String>,
+    #[serde(default = "default_health_timeout")]
+    pub health_timeout: u64,
+}
+
+impl Default for ImageFacts {
+    fn default() -> Self {
+        ImageFacts {
+            health: Vec::new(),
+            health_timeout: default_health_timeout(),
+        }
+    }
+}
+
+fn default_health_timeout() -> u64 {
+    guard::DEFAULT_TIMEOUT
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -145,6 +173,15 @@ impl ImageDef {
                 bail!("a container image must not have a [vm] section")
             }
             (Variant::Vm, Some(vm)) => {
+                if self.image.health.is_empty() {
+                    bail!("a vm image needs [image] health, the files the boot guard waits for");
+                }
+                if let Some(name) = self.image.health.iter().find(|n| !guard::is_health_name(n)) {
+                    bail!("image.health {name:?} is not a known health name");
+                }
+                if self.image.health_timeout < 10 {
+                    bail!("image.health_timeout must be at least 10 seconds");
+                }
                 let kernel_pkg = format!("linux-{}", vm.kernel);
                 if !self.packages.install.contains(&kernel_pkg) {
                     bail!(
@@ -219,6 +256,9 @@ mod tests {
         boot = ["hostname"]
         default = ["sshd"]
 
+        [image]
+        health = ["default-runlevel"]
+
         [vm]
         kernel = "virt"
         slot_mib = 1024
@@ -260,6 +300,16 @@ mod tests {
     fn rejects_an_unknown_format() {
         let err = parse(&VM.replace("format = 1", "format = 2")).unwrap_err();
         assert!(err.to_string().contains("format 2 is not supported"));
+    }
+
+    #[test]
+    fn rejects_unknown_or_missing_health() {
+        let unknown = VM.replace("\"default-runlevel\"", "\"desktop-ish\"");
+        let def: ImageDef = toml::from_str(&unknown).unwrap();
+        assert!(def.validate().is_err());
+        let none = VM.replace("health = [\"default-runlevel\"]", "");
+        let def: ImageDef = toml::from_str(&none).unwrap();
+        assert!(def.validate().is_err());
     }
 
     #[test]
