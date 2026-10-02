@@ -5,14 +5,15 @@
 # number lives on the EFI system partition, which both slots share.
 #
 #   1. Slot A runs with a read-only root. A release.toml with one byte
-#      changed is refused. Write markers into /home and
+#      changed is refused. The update comes over HTTP from the host. Write markers into /home and
 #      /var, delete /var/lib/ci-new, change the hostname, note the ssh
 #      host key, add a user and drop a system user from this machine's
 #      /etc/passwd, then install the update (the disk with no partitions)
 #      into slot B.
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
-#      from the slot, and so did /var/lib/ci-new. Roll back by command.
+#      from the slot, and so did /var/lib/ci-new; the shrunk update grew to
+#      fill the slot. Roll back by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
@@ -89,6 +90,11 @@ ab_break_b() {
 	umount /run/ab-test/slot
 }
 
+# The update image is shrunk; installing it must grow it to the slot.
+slot_is_full() {
+	[ "$(df -m / | awk 'NR == 2 { print $2 }')" -gt 900 ]
+}
+
 ab_next() {
 	echo "$1" >"$esp/ab-test-step"
 	sync
@@ -106,22 +112,15 @@ start() {
 	ab_say "step $step"
 	echo "$slots"
 
-	# The update is the second disk: a bare filesystem, no partitions,
-	# holding a signed release.toml beside the image.
-	disk=''
-	for d in /sys/block/vd*; do
-		[ -e "$d/${d##*/}1" ] || disk=/dev/${d##*/}
-	done
-	mkdir -p /run/ab-test/update
-	mount -o ro "$disk" /run/ab-test/update
-	update=/run/ab-test/update/release.toml
+	# ci/ab-test.sh serves the signed update on the host, 10.0.2.2.
+	update=http://10.0.2.2:8000/release.toml
 
 	case "$step" in
 	1)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
 		ab_has /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
-		if refused=$(/usr/bin/edel update install /run/ab-test/update/bad.toml 2>&1); then
+		if refused=$(/usr/bin/edel update install http://10.0.2.2:8000/bad.toml 2>&1); then
 			ab_end "FAIL: step 1 installed a tampered release.toml"
 			return 0
 		fi
@@ -145,6 +144,7 @@ start() {
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
+		ab_check "a slot grown to its full size" slot_is_full || return 0
 		ab_check "hostname ab-host" grep -qx ab-host /etc/hostname || return 0
 		ab_check "the same ssh host key" cmp -s /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey || return 0
 		ab_check "user abuser" grep -q '^abuser:' /etc/passwd || return 0

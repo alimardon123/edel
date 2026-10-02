@@ -11,6 +11,8 @@ publish = false
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 ed25519-dalek = "3"
+flate2 = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "0.11"
 toml = "1.1.6"
+ureq = { version = "3", default-features = false, features = ["rustls"] }

@@ -106,15 +106,21 @@ enum UpdateCommands {
     /// Install a signed release into the slot that is not running; it
     /// starts next
     Install {
-        /// The release's release.toml (its .sig and image beside it), or
-        /// with --unsigned a slot image or a block device holding one
-        path: PathBuf,
+        /// The release's release.toml, a path or an http(s) URL (its .sig
+        /// and image beside it), or with --unsigned a slot image or a block
+        /// device holding one
+        location: String,
         /// Install even when the release is not newer than this system
         #[arg(long)]
         allow_downgrade: bool,
         /// Install a slot image without a signed release.toml (for testing)
         #[arg(long)]
         unsigned: bool,
+    },
+    /// Show the version of the release at a path or URL next to this one
+    Check {
+        /// The release's release.toml, a path or an http(s) URL
+        location: String,
     },
     /// Confirm that the running slot works (run once the system is up)
     MarkGood,
@@ -213,10 +219,11 @@ fn main() -> Result<()> {
         Commands::Update { command } => match command {
             UpdateCommands::Status => update::status(),
             UpdateCommands::Install {
-                path,
+                location,
                 allow_downgrade,
                 unsigned,
-            } => update::install(&path, allow_downgrade, unsigned),
+            } => update::install(&location, allow_downgrade, unsigned),
+            UpdateCommands::Check { location } => release::check(&location),
             UpdateCommands::MarkGood => update::mark_good(),
             UpdateCommands::Rollback => update::rollback(),
         },

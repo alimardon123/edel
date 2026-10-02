@@ -27,7 +27,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Conventions
 
-- Today the dependencies are `anyhow`, `clap`, `ed25519-dalek`, `serde`, `toml` and `sha2`, with no dev-dependencies. The roadmap names the next ones. Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
+- Today the dependencies are `anyhow`, `clap`, `ed25519-dalek`, `flate2`, `serde`, `sha2`, `toml` and `ureq` (rustls with ring, webpki roots), with no dev-dependencies. The roadmap names the next ones. Every new one, those included, needs a one-paragraph reason in the PR (principle 3) and its `Cargo.lock` change (CI uses `--locked`).
 - Release binaries are built by Alpine 3.24's `cargo` package inside `ci/build.sh` (musl), not only by the runner's Rust. Code must build with both. Crates the roadmap marks "check in CI" (the `ed25519-dalek` musl build in M1.6, rustls with the ring provider in M1.7, `serde_ignored` in M2.1) are proven by that step's first CI run.
 - Errors: `anyhow` only, no custom error types. Return `Result`, fail with `bail!`, add `.context(...)` or `.with_context(...)`. Messages are lower case, have no final period, quote values with `{:?}` and say what to do: "the image has no /usr/lib/os-release; add one to the files directories". Progress goes to stdout with `println!`; non-fatal problems go to stderr as `warning: ...`.
 - No `unwrap` outside tests; the one `expect` (in `boot.rs`) says why it cannot fail. No `unsafe`, no `#[allow]`, no lint config: CI's `clippy -D warnings` and `fmt --check` are the rules.

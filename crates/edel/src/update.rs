@@ -315,28 +315,27 @@ pub fn status() -> Result<()> {
     Ok(())
 }
 
-/// Installs the signed release at `path` (or, with `unsigned`, the slot
-/// image or block device at `path`) into the slot that is not running and
-/// makes it start next.
-pub fn install(path: &Path, allow_downgrade: bool, unsigned: bool) -> Result<()> {
+/// Installs the signed release whose `release.toml` is at `location`, a
+/// path or an http(s) URL (or, with `unsigned`, the slot image or block
+/// device at that path), into the slot that is not running, and makes it
+/// start next. The image streams into the slot, decompressed on the way
+/// when it is gzipped, and grows to fill the slot.
+pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<()> {
     let _lock = Lock::take()?;
-    let image = if unsigned {
-        eprintln!("warning: installing an unsigned image; nothing checked where it came from");
-        path.to_path_buf()
-    } else {
-        crate::release::checked_image(path, allow_downgrade)?
-    };
-    let image = image.as_path();
     let disk = Disk::find()?;
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
-    let size = size_of(image)?;
+    let (mut source, expected, size): (Box<dyn Read>, Option<Vec<u8>>, u64) = if unsigned {
+        eprintln!("warning: installing an unsigned image; nothing checked where it came from");
+        let path = Path::new(location);
+        (Box::new(File::open(path)?), None, size_of(path)?)
+    } else {
+        let release = crate::release::open_checked(location, allow_downgrade)?;
+        (release.reader, Some(release.sha256), release.size)
+    };
     let room = size_of(&target)?;
     if size > room {
-        bail!(
-            "{} ({size} bytes) does not fit in slot {slot} ({room} bytes)",
-            image.display()
-        );
+        bail!("the image ({size} bytes) does not fit in slot {slot} ({room} bytes)");
     }
 
     let esp = Esp::mount(&disk)?;
@@ -344,26 +343,21 @@ pub fn install(path: &Path, allow_downgrade: bool, unsigned: bool) -> Result<()>
     before_install(&mut env, slot);
     esp.save(&env)?;
 
-    println!(
-        "writing {} to slot {slot} ({})",
-        image.display(),
-        target.display()
-    );
-    let mut src = File::open(image)?;
+    println!("writing {location} to slot {slot} ({})", target.display());
     let mut dst = OpenOptions::new()
         .write(true)
         .open(&target)
         .with_context(|| format!("opening {}", target.display()))?;
-    std::io::copy(&mut src, &mut dst)?;
+    let (written, streamed) = copy_hashing(&mut source, &mut dst)?;
     dst.sync_all()?;
     drop(dst);
+    if expected.as_ref().is_some_and(|e| *e != streamed) || written != size {
+        bail!("refused: sha256: the image does not match release.toml; slot {slot} stays off");
+    }
     // Drop cached blocks, so the check reads what is on the disk.
     run(Command::new("blockdev").arg("--flushbufs").arg(&target))?;
-    if hash_prefix(image, size)? != hash_prefix(&target, size)? {
-        bail!(
-            "slot {slot} does not match {} after writing; it stays off",
-            image.display()
-        );
+    if hash_prefix(&target, written)? != streamed {
+        bail!("slot {slot} does not match the image after writing; it stays off");
     }
 
     // e2fsck -p exits 1 when it fixed something, which is fine.
@@ -377,6 +371,11 @@ pub fn install(path: &Path, allow_downgrade: bool, unsigned: bool) -> Result<()>
     if !matches!(fsck.code(), Some(0 | 1)) {
         bail!("slot {slot} has filesystem errors; it stays off");
     }
+    // Images are shipped shrunk; the file system grows to fill the slot.
+    run(Command::new("resize2fs")
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null()))?;
     // GRUB hands the kernel root=UUID=..., so the new slot needs a UUID of
     // its own rather than the one of the image it came from.
     run(Command::new("tune2fs")
@@ -392,6 +391,23 @@ pub fn install(path: &Path, allow_downgrade: bool, unsigned: bool) -> Result<()>
         disk.running
     );
     Ok(())
+}
+
+/// Copies `src` into `dst`, returning the bytes written and their SHA-256.
+fn copy_hashing(src: &mut dyn Read, dst: &mut dyn Write) -> Result<(u64, Vec<u8>)> {
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut total = 0u64;
+    loop {
+        let n = src.read(&mut buf).context("reading the image")?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        dst.write_all(&buf[..n]).context("writing the slot")?;
+        total += n as u64;
+    }
+    Ok((total, hasher.finalize().to_vec()))
 }
 
 /// Confirms that the running slot works, so GRUB keeps starting it.

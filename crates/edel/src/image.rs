@@ -3,11 +3,14 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
+
 use std::os::unix::fs::{FileExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
+use flate2::Compression;
+use flate2::write::GzEncoder;
 
 use crate::boot::{self, Layout};
 use crate::def::{ImageDef, Variant};
@@ -283,6 +286,7 @@ impl Build<'_> {
         };
 
         self.make_slot(root, &update, vm.slot_mib)?;
+        self.shrink(&update)?;
         // Slot A gets a filesystem of its own rather than a copy of the
         // update image: the kernel finds its root by filesystem UUID, so no
         // two filesystems a machine can see may share one.
@@ -311,8 +315,48 @@ impl Build<'_> {
             copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
             copy_sparse(&data, &disk, layout.data_start_mib() * MIB)?;
         }
+        self.gzip(&update)?;
+        self.gzip(&disk)?;
         println!("vm disk: {}", disk.display());
         println!("update image: {}", update.display());
+        Ok(())
+    }
+
+    /// Shrinks the update image to its file system, so it fits any slot at
+    /// least that big; `edel update install` grows it again (M1.7).
+    fn shrink(&self, image: &Path) -> Result<()> {
+        self.runner
+            .run(Command::new("e2fsck").arg("-fp").arg(image))?;
+        self.runner
+            .run(Command::new("resize2fs").arg("-M").arg(image))?;
+        self.runner.step(&format!(
+            "cut {} to the size of its file system",
+            image.display()
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let mut superblock = vec![0u8; 2048];
+        File::open(image)?.read_exact(&mut superblock)?;
+        let size = ext4_size(&superblock)?;
+        OpenOptions::new().write(true).open(image)?.set_len(size)?;
+        Ok(())
+    }
+
+    /// Writes `FILE.gz` next to `file`, the form releases publish.
+    fn gzip(&self, file: &Path) -> Result<()> {
+        let gz = PathBuf::from(format!("{}.gz", file.display()));
+        self.runner
+            .step(&format!("compress {} to {}", file.display(), gz.display()));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let mut encoder = GzEncoder::new(
+            File::create(&gz).with_context(|| format!("creating {}", gz.display()))?,
+            Compression::default(),
+        );
+        std::io::copy(&mut File::open(file)?, &mut encoder)?;
+        encoder.finish()?;
         Ok(())
     }
 
@@ -414,6 +458,27 @@ impl Build<'_> {
     }
 }
 
+/// The size in bytes of the ext4 file system whose first 2048 bytes are
+/// `head`: block count times block size, from the superblock at 1024.
+fn ext4_size(head: &[u8]) -> Result<u64> {
+    let sb = head
+        .get(1024..1024 + 0x160)
+        .context("too short for an ext4 superblock")?;
+    let u32_at = |off: usize| {
+        u64::from(u32::from_le_bytes([
+            sb[off],
+            sb[off + 1],
+            sb[off + 2],
+            sb[off + 3],
+        ]))
+    };
+    if sb[0x38] != 0x53 || sb[0x39] != 0xEF {
+        bail!("not an ext4 file system");
+    }
+    let blocks = u32_at(0x04) | (u32_at(0x150) << 32);
+    Ok(blocks * (1024 << u32_at(0x18)))
+}
+
 /// Copies `src` into `dst` starting `offset` bytes in, skipping blocks of
 /// zeros so sparse images stay sparse. That region of `dst` must already be
 /// zeros, as it is in a freshly created disk image.
@@ -501,6 +566,18 @@ mod tests {
     #[test]
     fn fails_without_a_root_entry() {
         assert!(lock_root("bin:!::0:::::\n").is_err());
+    }
+
+    #[test]
+    fn reads_the_ext4_size_from_the_superblock() {
+        let mut head = vec![0u8; 2048];
+        head[1024 + 0x04..1024 + 0x08].copy_from_slice(&40_000u32.to_le_bytes());
+        head[1024 + 0x18..1024 + 0x1c].copy_from_slice(&2u32.to_le_bytes());
+        head[1024 + 0x38] = 0x53;
+        head[1024 + 0x39] = 0xEF;
+        assert_eq!(ext4_size(&head).unwrap(), 40_000 * 4096);
+        head[1024 + 0x38] = 0;
+        assert!(ext4_size(&head).is_err());
     }
 
     #[test]
