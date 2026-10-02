@@ -25,6 +25,15 @@ needed_modules() {
 	esac
 }
 
+# The firmware directories an image's initramfs must hold files from, by
+# its kernel flavour: a graphics driver that loads there without its
+# firmware fails and is not retried later (amdgpu and xe need it to start).
+needed_firmware() {
+	case "$1" in
+	lts) echo "amdgpu i915 xe" ;;
+	esac
+}
+
 for def in images/*.toml; do
 	flavor=$(sed -n 's/^kernel = "\(.*\)"$/\1/p' "$def")
 	[ -n "$flavor" ] || continue
@@ -41,10 +50,15 @@ for def in images/*.toml; do
 	[ "$(sudo od -An -tx1 -N4 "$boot/initramfs-$flavor" | tr -d ' ')" = 28b52ffd ] && unpack='zstd -dc'
 	files=$(sudo cat "$boot/initramfs-$flavor" | $unpack | cpio -t --quiet)
 	modules=$(echo "$files" | sed -n 's|.*/\([^/]*\)\.ko\(\.[a-z]*\)\{0,1\}$|\1|p' | tr '-' '_' | sort -u)
-	firmware=$(echo "$files" | grep -c '^lib/firmware/.*[^/]$' || true)
+	# Archive names may start with ./; a file's last part has a dot, a
+	# directory's does not.
+	firmware=$(echo "$files" | grep -cE '(^|/)lib/firmware/(.*/)?[^/]*\.[^/]+$' || true)
 	absent=''
 	for module in $(needed_modules "$flavor"); do
 		echo "$modules" | grep -qx "$module" || absent="$absent $module"
+	done
+	for dir in $(needed_firmware "$flavor"); do
+		echo "$files" | grep -qE "(^|/)lib/firmware/$dir/" || absent="$absent firmware/$dir"
 	done
 	count=$(echo "$modules" | grep -c . || true)
 	size=$(sudo du -h "$boot/initramfs-$flavor" | cut -f1)
