@@ -1,0 +1,173 @@
+//! The widget table (M5.1c): every widget a preset's panel can hold, one
+//! module and one line each. A widget says what it shows now, how wide it
+//! is and how it draws; the panel lays them out from the preset and draws
+//! again only when what one shows changes. Code that talks to an OS
+//! feature lives in `src/features/NAME.rs`, and its widget's line carries
+//! `needs: Some("NAME")`: on a machine without
+//! `/usr/share/edel/features/NAME.toml` the widget is skipped with a log
+//! line (ADR-008). The tests fail when a line needs a feature with no file
+//! under `features/`, and when a built-in preset names a widget missing
+//! here.
+
+pub mod clock;
+pub mod menu;
+
+use std::path::Path;
+
+use tiny_skia::Pixmap;
+
+use edel::tokens::Tokens;
+
+use crate::paint::Text;
+
+/// Where a widget draws: the panel's pixmap, with the panel's row in it.
+pub struct Canvas<'a> {
+    pub pixmap: &'a mut Pixmap,
+    pub tokens: &'a Tokens,
+    /// The fonts, if loaded; without them text measures and draws nothing.
+    pub text: Option<&'a mut Text>,
+    /// Buffer pixels per logical pixel.
+    pub scale: f32,
+    /// The panel's top row in the pixmap and its height, in its pixels.
+    pub top: f32,
+    pub height: f32,
+}
+
+pub struct Widget {
+    pub name: &'static str,
+    /// The OS feature it talks to, if any.
+    pub needs: Option<&'static str>,
+    /// What it shows now: the panel draws again when this changes.
+    pub shows: fn() -> String,
+    /// Its width showing `shown`, in the pixmap's pixels.
+    pub width: fn(&mut Canvas, shown: &str) -> f32,
+    /// Draws it showing `shown`, its left edge at `x`.
+    pub draw: fn(&mut Canvas, shown: &str, x: f32),
+}
+
+/// Every widget, by name.
+pub const TABLE: &[Widget] = &[menu::WIDGET, clock::WIDGET];
+
+/// The widget called `name`.
+#[cfg(test)]
+pub fn find(name: &str) -> Option<&'static Widget> {
+    TABLE.iter().find(|w| w.name == name)
+}
+
+/// The widgets `names` lists that this machine can show, with a line for
+/// each one skipped: one the table lacks (a preset from a later release)
+/// or one needing a feature `features` (the machine's
+/// `/usr/share/edel/features/`) has no file for.
+pub fn usable(names: &[String], features: &Path) -> (Vec<&'static Widget>, Vec<String>) {
+    pick(TABLE, names, features)
+}
+
+fn pick(
+    table: &'static [Widget],
+    names: &[String],
+    features: &Path,
+) -> (Vec<&'static Widget>, Vec<String>) {
+    let mut found = Vec::new();
+    let mut notes = Vec::new();
+    for name in names {
+        let Some(widget) = table.iter().find(|w| w.name == name) else {
+            notes.push(format!(
+                "the preset names a widget {name:?} this shell-ui does not have; it is skipped"
+            ));
+            continue;
+        };
+        match widget.needs {
+            Some(feature) if !features.join(format!("{feature}.toml")).is_file() => {
+                notes.push(format!(
+                    "the widget {name} needs the feature {feature}, which this machine does not have; it is skipped"
+                ));
+            }
+            _ => found.push(widget),
+        }
+    }
+    (found, notes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repository() -> &'static Path {
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+    }
+
+    #[test]
+    fn names_are_unique_and_every_needed_feature_has_a_file() {
+        for (i, widget) in TABLE.iter().enumerate() {
+            assert!(edel::features::is_name(widget.name), "{}", widget.name);
+            assert!(
+                TABLE[..i].iter().all(|w| w.name != widget.name),
+                "two widgets called {}",
+                widget.name
+            );
+            if let Some(feature) = widget.needs {
+                let file = repository().join(format!("features/{feature}.toml"));
+                assert!(
+                    file.is_file(),
+                    "the widget {} needs the feature {feature}, which has no {}",
+                    widget.name,
+                    file.display()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_built_in_preset_names_only_widgets_in_the_table() {
+        for (name, _) in edel::presets::BUILT_IN {
+            let (preset, _) = edel::presets::named(Some(name));
+            for panel in &preset.panels {
+                for widget in panel.widgets() {
+                    assert!(
+                        find(widget).is_some(),
+                        "presets/{name}.toml names the widget {widget}, which the table lacks"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_widget_is_skipped_without_its_feature_or_its_line() {
+        fn none() -> String {
+            String::new()
+        }
+        fn zero(_: &mut Canvas, _: &str) -> f32 {
+            0.0
+        }
+        fn nothing(_: &mut Canvas, _: &str, _: f32) {}
+        // A table with a stand-in for a widget that talks to an OS feature.
+        static TEST: [Widget; 2] = [
+            menu::WIDGET,
+            Widget {
+                name: "battery",
+                needs: Some("power"),
+                shows: none,
+                width: zero,
+                draw: nothing,
+            },
+        ];
+        let dir = std::env::temp_dir().join(format!("edel-shell-ui-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let names = ["menu", "weather", "battery"].map(String::from);
+        let names_of = |found: &[&Widget]| found.iter().map(|w| w.name).collect::<Vec<_>>();
+        // No power.toml: battery is skipped, and weather, which the table
+        // lacks; menu stays.
+        let (found, notes) = pick(&TEST, &names, &dir);
+        assert_eq!(names_of(&found), ["menu"]);
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes[0].contains("\"weather\""), "{}", notes[0]);
+        assert!(notes[1].contains("needs the feature power"), "{}", notes[1]);
+        // With it, battery is shown, after menu as the preset says.
+        std::fs::write(dir.join("power.toml"), "format = 1\n").unwrap();
+        let (found, notes) = pick(&TEST, &names, &dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(names_of(&found), ["menu", "battery"]);
+        assert_eq!(notes.len(), 1);
+    }
+}

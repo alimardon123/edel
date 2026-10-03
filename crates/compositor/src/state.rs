@@ -315,7 +315,7 @@ impl Edel {
         }
         self.restyle();
         let rescaled = self.apply_scales();
-        if old.tiling != new.tiling {
+        if old.policy() != new.policy() {
             self.switch_policy(new.policy());
         } else if old.title_bars != new.title_bars || rescaled {
             self.relayout();

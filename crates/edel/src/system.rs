@@ -28,6 +28,20 @@ pub const FORMAT: i64 = 1;
 /// shell reads (`[shell]`, `[outputs]`, `[appearance]`), its values win.
 pub const MACHINE_FILE: &str = "/data/edel/system.toml";
 
+/// The person's file: `$XDG_CONFIG_HOME/edel/system.toml`, else
+/// `~/.config/edel/system.toml`; none without either variable.
+pub fn person_file() -> Option<PathBuf> {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|home| PathBuf::from(home).join(".config"))
+        })?;
+    Some(config.join("edel/system.toml"))
+}
+
 /// What a key's value must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
