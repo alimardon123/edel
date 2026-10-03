@@ -53,6 +53,7 @@ use smithay::wayland::presentation::Refresh;
 use edel_compositor::layout::{auto_scale, parse_mode, pick_mode, place_screens};
 use edel_compositor::tokens::Tokens;
 
+use crate::program::Program;
 use crate::state::{Edel, listen};
 
 /// Where the session tells root it is up (M4.1, M4.8).
@@ -100,7 +101,7 @@ struct Gpu {
     started: Instant,
 }
 
-pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
+pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
@@ -108,6 +109,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let handle = event_loop.handle();
     let name = listen(&handle, display)?;
     crate::xwayland::listen(&handle, &mut state, &name);
+    state.program = program;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
@@ -178,6 +180,8 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     }
 
     let vblank = Rc::clone(&gpu);
+    let later = handle.clone();
+    let socket = name.clone();
     handle
         .insert_source(
             drm_events,
@@ -186,6 +190,10 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
                     let mut gpu = vblank.borrow_mut();
                     gpu.presented(crtc, metadata.as_ref());
                     gpu.render(state);
+                    // Once the desktop is on screen (M4.7b).
+                    if gpu.announced {
+                        crate::program::start(&later, state, &socket);
+                    }
                 }
                 DrmEvent::Error(e) => eprintln!("edel-compositor: the GPU reported an error: {e}"),
             },
@@ -632,7 +640,8 @@ fn announce(output: &Output, first: bool) {
             .parent()
             .is_some_and(|dir| dir.is_dir())
     {
-        if let Err(e) = std::fs::write(READY, format!("{line}\n")) {
+        if let Err(e) = crate::statefile::replace(std::path::Path::new(READY), &format!("{line}\n"))
+        {
             eprintln!("edel-compositor: writing {READY} failed: {e}");
         }
     }

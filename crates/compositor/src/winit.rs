@@ -23,6 +23,7 @@ use smithay::utils::Transform;
 
 use edel_compositor::tokens::Tokens;
 
+use crate::program::Program;
 use crate::state::Edel;
 
 /// How long `--bench` measures.
@@ -35,7 +36,7 @@ struct Window {
     started: Instant,
 }
 
-pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
+pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
@@ -44,6 +45,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
 
     let name = crate::state::listen(&handle, display)?;
     crate::xwayland::listen(&handle, &mut state, &name);
+    state.program = program;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
@@ -74,6 +76,9 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     state.space.map_output(&output, (0, 0));
     state.apply_scales();
     state.outputs_changed();
+    // From inside the loop, so a program that cannot start ends it.
+    let (later, socket) = (handle.clone(), name.clone());
+    handle.insert_idle(move |state| crate::program::start(&later, state, &socket));
     let window = Rc::new(RefCell::new(Window {
         damage: OutputDamageTracker::from_output(&output),
         backend,

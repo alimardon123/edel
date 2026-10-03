@@ -97,6 +97,8 @@ pub struct Edel {
     pub screens_changed: bool,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
+    /// The program the session runs, if it was given one (`program.rs`).
+    pub program: Option<crate::program::Program>,
     /// Where window frames go; one workspace until M5.2.
     workspace: Workspace<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
@@ -164,6 +166,7 @@ impl Edel {
             settings: Settings::default(),
             screens_changed: false,
             x11: None,
+            program: None,
             workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),
             state_file: StateFile::start(),

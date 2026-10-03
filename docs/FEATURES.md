@@ -19,7 +19,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop, desktop |
 | `graphics` | Mesa for every common GPU (llvmpipe where none loads), DRM, libinput, keyboard layouts; module `virtio_gpu` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
 | `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
-| `login` | greetd with its text greeter, which starts the compositor after login; `/run/user/UID` from pam_rundir | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
+| `login` | greetd, whose greeter is our compositor running its text greeter in foot (M4.7b) and which starts the compositor as the person after login; `/run/user/UID` from pam_rundir; needs `terminal` and `compositor` | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
 | `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
 | `terminal` | foot | `foot` | none | desktop |
 | `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |

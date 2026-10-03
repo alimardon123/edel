@@ -119,6 +119,15 @@ commands() {
 			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' /tmp/compositor.log | tail -n 1) xclock" </dev/null &
 			(sleep 5 && say "x11_rss_mib $(x11_rss)") &
 			;;
+		# The session's compositor dies (M4.7b): greetd should start its
+		# greeter, our compositor, which writes a new ready line; then ci
+		# logs in through it with a password only this image sets.
+		'kill compositor')
+			echo 'ci:edel-desktop-test' | chpasswd
+			before=$(cut -d' ' -f1 /proc/uptime)
+			pkill -9 -x edel-compositor
+			respawned "$before" &
+			;;
 		*)
 			say "unknown command $command"
 			continue
@@ -164,6 +173,34 @@ windows() {
 		$1 == "height" { h = $2 }
 		END { flush(); print n + 0 out }
 	' /run/edel/session/state.toml 2>/dev/null
+}
+
+# respawned SINCE: waits up to 15 s for the greeter's compositor to log
+# its first frame, then says how long after SINCE (uptime seconds) that
+# was, and whose the health file now is; then waits up to 60 s for ci's
+# compositor, once ci has logged in through the greeter, to take the
+# health file back.
+respawned() {
+	i=0
+	while ! grep -q 'edel-compositor: output .* ready' /tmp/greeter.log 2>/dev/null; do
+		i=$((i + 1))
+		if [ "$i" -ge 150 ]; then
+			say "respawn: no ready line from the greeter in 15 s"
+			cat /var/log/greetd.log /tmp/greeter.log >/dev/console 2>&1
+			return
+		fi
+		sleep 0.1
+	done
+	now=$(cut -d' ' -f1 /proc/uptime)
+	say "greeter $(grep 'edel-compositor: output .* ready' /tmp/greeter.log | head -n 1)"
+	say "ready_owner $(stat -c %U /run/edel/session/ready)"
+	say "respawn_seconds $(awk -v a="$1" -v b="$now" 'BEGIN { printf "%.2f", b - a }')"
+	i=0
+	while [ "$(stat -c %U /run/edel/session/ready)" != ci ] && [ "$i" -lt 600 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	say "login_ready $(stat -c %U /run/edel/session/ready) $(cat /run/edel/session/ready)"
 }
 
 # x11_rss: the memory XWayland and xwayland-satellite use, in MiB.
