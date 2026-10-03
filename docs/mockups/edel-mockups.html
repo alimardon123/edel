@@ -83,15 +83,15 @@ svg { display: block; }
 /* Windows */
 .win { position: absolute; background: var(--win); border-radius: var(--r-win); box-shadow: var(--shadow-win-2); overflow: hidden; }
 .win.focused { box-shadow: var(--shadow-win); }
-.titlebar { height: 32px; background: var(--bar); display: flex; align-items: center; justify-content: center; position: relative; color: var(--text-3); font-weight: 500; font-size: 12.5px; border-bottom: 0.5px solid var(--line); }
+.titlebar { height: 28px; background: var(--bar); display: flex; align-items: center; justify-content: center; position: relative; color: var(--text-3); font-weight: 500; font-size: 12px; border-bottom: 0.5px solid var(--line); }
 .win.focused .titlebar { background: var(--bar-focused); color: var(--text); }
-.titlebar .buttons { position: absolute; right: 6px; top: 0; height: 32px; display: flex; align-items: center; gap: 2px; }
+.titlebar .buttons { position: absolute; right: 5px; top: 0; height: 28px; display: flex; align-items: center; gap: 2px; }
 .titlebar.left .buttons { right: auto; left: 6px; flex-direction: row-reverse; }
-.tb { width: 26px; height: 22px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--text-2); }
+.tb { width: 24px; height: 20px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--text-2); }
 .win:not(.focused) .tb { color: var(--text-3); }
 .tb.hot { background: var(--close); color: #fff; }
 .titlebar .title { display: flex; align-items: center; gap: 7px; }
-.winbody { position: absolute; top: 32px; left: 0; right: 0; bottom: 0; }
+.winbody { position: absolute; top: 28px; left: 0; right: 0; bottom: 0; }
 
 /* Panel */
 .panel { position: absolute; left: 0; right: 0; height: 40px; display: flex; align-items: center; padding: 0 6px; gap: 2px; background: var(--material); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%); box-shadow: inset 0 0.5px 0 var(--edge); }
@@ -111,20 +111,21 @@ svg { display: block; }
 .clock b { font-weight: 600; font-size: 12.5px; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 .clock small { font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
-/* Workspaces: numbered buttons, Super+1 to 4. */
-.desks { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--fill); }
-.desk { width: 24px; height: 22px; border-radius: var(--r-sm); display: grid; place-items: center; font-size: 11.5px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; position: relative; }
-.desk.busy { color: var(--text-2); }
-.desk.busy::after { content: ""; position: absolute; bottom: 2px; width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .7; }
-.desk.on { background: var(--accent); color: var(--accent-text); }
-.desk.on::after { background: var(--accent-text); }
-/* Floating or tiling, for this workspace: Super+T. */
-.seg { display: flex; gap: 2px; padding: 2px; border-radius: var(--r-ctl); background: var(--fill); }
-.seg .s { width: 28px; height: 22px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--text-2); }
-.seg .s.on { background: var(--thumb); color: var(--text); box-shadow: var(--shadow-thumb); }
+/* Workspaces: round buttons, the shown one a wider accent pill; at most
+   three at a time (the shown one and its neighbours), the rest a scroll
+   away, hinted by a faded edge. */
+.ws { display: flex; align-items: center; gap: 5px; overflow: hidden; }
+.ws.more-right { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent); }
+.ws.more-left { -webkit-mask-image: linear-gradient(270deg, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(270deg, #000 calc(100% - 14px), transparent); }
+.ws .d { flex: none; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; font-size: 10.5px; font-weight: 600; color: var(--text-3); background: var(--fill); font-variant-numeric: tabular-nums; }
+.ws .d.busy { color: var(--text); background: var(--fill-2); }
+.ws .d.on { width: 32px; background: var(--accent); color: var(--accent-text); }
+/* Floating or tiling: one button; its icon changes, and it fills when tiled. */
+.lt { width: 30px; height: 26px; border-radius: var(--r-ctl); display: grid; place-items: center; color: var(--text-2); }
+.lt.tiled { background: var(--accent-soft); color: var(--accent); }
 
-/* App icons: one shape, one light from above, muted colours. */
-.app { border-radius: 23%; display: grid; place-items: center; color: #fff; flex: none; box-shadow: inset 0 0.5px 0 rgba(255,255,255,.35), inset 0 -0.5px 0 rgba(0,0,0,.12), 0 0 0 0.5px rgba(0,0,0,.14), 0 1px 1.5px rgba(0,0,0,.12); }
+/* App icons: objects in their own shapes, lit from above. */
+.app { flex: none; display: block; filter: drop-shadow(0 0.5px 0.6px rgba(0,0,0,.22)) drop-shadow(0 1.5px 2px rgba(0,0,0,.10)); }
 
 /* Materials */
 .menu { position: absolute; background: var(--material-strong); backdrop-filter: blur(34px) saturate(180%); -webkit-backdrop-filter: blur(34px) saturate(180%); border-radius: var(--r-menu); box-shadow: var(--shadow-menu); }
@@ -202,6 +203,7 @@ svg { display: block; }
 <script>
 const st = (w, extra = '') => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"${extra}>`;
 const I = {
+  grid: s => `<svg width="${s||18}" height="${s||18}" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="6.6" height="6.6" rx="1.9"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.9"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.9"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.9"/></svg>`,
   edel: s => `<svg width="${s||18}" height="${s||18}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.8l8 4.6v9.2L12 21.2l-8-4.6V7.4z"/><path d="M12 8.2l3.3 1.9v3.8L12 15.8l-3.3-1.9v-3.8z" fill="currentColor" stroke="none"/></svg>`,
   search: s => `${st(s||15)}<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>`,
   wifi: s => `${st(s||17)}<path d="M3 9.5a13 13 0 0 1 18 0"/><path d="M6 12.8a8.5 8.5 0 0 1 12 0"/><path d="M9 16a4 4 0 0 1 6 0"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>`,
@@ -237,36 +239,23 @@ const I = {
   floating: s => `${st(s||15)}<rect x="3" y="4.5" width="11.5" height="9.5" rx="1.8"/><rect x="9.5" y="10" width="11.5" height="9.5" rx="1.8" fill="var(--win)"/></svg>`,
   tiling: s => `${st(s||15)}<rect x="3" y="4.5" width="18" height="15" rx="1.8"/><path d="M12 4.5v15M12 12h9"/></svg>`,
 };
-const glyph = {
-  files: '<path d="M3.5 7.5A2 2 0 0 1 5.5 5.5h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
-  web: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/>',
-  term: '<path d="M5.5 8l4 4-4 4M12 16.5h6.5"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8l1.6 2.4 2.8-.6.6 2.8 2.4 1.6-1.2 2.6 1.2 2.6-2.4 1.6-.6 2.8-2.8-.6-1.6 2.4-1.6-2.4-2.8.6-.6-2.8-2.4-1.6 1.2-2.6-1.2-2.6 2.4-1.6.6-2.8 2.8.6z"/>',
-  text: '<path d="M6 7h12M6 11h12M6 15h8"/>',
-  music: '<path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
-  photos: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.5" fill="#fff"/><path d="M4 17l5-4.5 4 3.5 3-2.5 4 3.5"/>',
-  software: '<path d="M5 8h14l-1 12H6z"/><path d="M9 8a3 3 0 0 1 6 0"/>',
-  calendar: '<rect x="4" y="5.5" width="16" height="14" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
-  mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M4 7l8 6 8-6"/>',
-  chat: '<path d="M4.5 5.5h15v10h-9l-4 3.5v-3.5h-2z"/>',
-  calc: '<rect x="5.5" y="3.5" width="13" height="17" rx="2.5"/><path d="M8.5 7.5h7M9 12h.5M12 12h.5M15 12h.5M9 15.5h.5M12 15.5h.5M15 15.5h.5"/>',
+const lg = (id, a, b) => `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`;
+const ICON = {
+  files: `<defs>${lg('gF', '#6aa8f6', '#3474db')}</defs><path d="M2.5 6.3c0-1 .8-1.8 1.8-1.8h4.5c.5 0 1 .2 1.3.6l1.2 1.4h8.4c1 0 1.8.8 1.8 1.8V9H2.5z" fill="#2c63c4"/><rect x="2.5" y="8" width="19" height="12.2" rx="1.8" fill="url(#gF)"/><rect x="3.3" y="8.6" width="17.4" height=".7" rx=".35" fill="#fff" opacity=".4"/>`,
+  web: `<defs>${lg('gW', '#52c3dc', '#2474c2')}</defs><circle cx="12" cy="12" r="9.5" fill="url(#gW)"/><g fill="none" stroke="#fff" stroke-opacity=".88" stroke-width="1.05"><ellipse cx="12" cy="12" rx="3.9" ry="9.5"/><path d="M2.5 12h19M3.8 7.6h16.4M3.8 16.4h16.4"/></g>`,
+  term: `<rect x="2.5" y="4" width="19" height="16" rx="2.2" fill="#272b32"/><path d="M4.7 4h14.6c1.2 0 2.2 1 2.2 2.2v.9h-19v-.9C2.5 5 3.5 4 4.7 4z" fill="#41464f"/><path d="M6.2 10.6l2.6 2.1-2.6 2.1" fill="none" stroke="#9fe3b6" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 15.1h4.6" stroke="#d9dde3" stroke-width="1.4" stroke-linecap="round"/>`,
+  settings: `<defs>${lg('gS', '#a7aeba', '#626a77')}</defs><path d="M12 1.9l1.9 2.6 3.2-.6.7 3.1 2.7 1.9-1.4 2.9 1.4 2.9-2.7 1.9-.7 3.1-3.2-.6L12 22.1l-1.9-2.6-3.2.6-.7-3.1-2.7-1.9 1.4-2.9-1.4-2.9 2.7-1.9.7-3.1 3.2.6z" fill="url(#gS)"/><circle cx="12" cy="12" r="4.4" fill="#eef0f3"/><circle cx="12" cy="12" r="2.3" fill="#788090"/>`,
+  text: `<path d="M5.2 2.8h9.6l4 4v14.4H5.2z" fill="#fbfbfc"/><path d="M5.2 2.8h9.6l4 4v14.4H5.2z" fill="none" stroke="#c9ced6" stroke-width=".7"/><path d="M14.8 2.8v4h4" fill="#e3e6eb"/><rect x="5.2" y="2.8" width="1.9" height="18.4" fill="#ee9f3a"/><path d="M9 10h7.5M9 13h7.5M9 16h5" stroke="#9aa1ac" stroke-width="1.1" stroke-linecap="round"/>`,
+  music: `<defs>${lg('gM', '#f37b98', '#cf3e67')}</defs><circle cx="12" cy="12" r="9.5" fill="url(#gM)"/><path d="M10.2 15.4V8.2l5.8-1.3v6.8" fill="none" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/><circle cx="8.7" cy="15.5" r="1.7" fill="#fff"/><circle cx="14.5" cy="14.2" r="1.7" fill="#fff"/>`,
+  photos: `<rect x="2.5" y="4.5" width="19" height="15" rx="2" fill="#fbfbfc"/><rect x="2.5" y="4.5" width="19" height="15" rx="2" fill="none" stroke="#c9ced6" stroke-width=".7"/><rect x="4.1" y="6.1" width="15.8" height="11.8" rx="1" fill="#8ec5ef"/><path d="M4.1 15.2l4.4-4.4 3.6 3.5 2.4-2 5.4 4.5v1.1H4.1z" fill="#3d9c6b"/><circle cx="15.6" cy="9.1" r="1.6" fill="#f6c94c"/>`,
+  software: `<defs>${lg('gB', '#9284f3', '#5a4ad2')}</defs><path d="M4.4 8.2h15.2l-1.2 12a1.7 1.7 0 0 1-1.7 1.5H7.3a1.7 1.7 0 0 1-1.7-1.5z" fill="url(#gB)"/><path d="M8.6 10V7.2a3.4 3.4 0 0 1 6.8 0V10" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1.4" stroke-linecap="round"/>`,
+  calendar: `<rect x="3.5" y="4" width="17" height="17" rx="2.2" fill="#fbfbfc"/><rect x="3.5" y="4" width="17" height="17" rx="2.2" fill="none" stroke="#c9ced6" stroke-width=".7"/><path d="M5.7 4h12.6c1.2 0 2.2 1 2.2 2.2V9h-17V6.2C3.5 5 4.5 4 5.7 4z" fill="#e2533c"/><text x="12" y="18.4" font-family="Inter Variable, Inter, sans-serif" font-size="8.2" font-weight="650" text-anchor="middle" fill="#2a2e35">3</text>`,
+  mail: `<defs>${lg('gE', '#5f9ef3', '#2f6bd6')}</defs><rect x="2.5" y="5" width="19" height="14" rx="2" fill="url(#gE)"/><path d="M3.3 6.2l8.7 6.9 8.7-6.9" fill="none" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>`,
+  chat: `<defs>${lg('gC', '#4fc99f', '#1f9874')}</defs><path d="M4.1 5h15.8c.9 0 1.6.7 1.6 1.6v9.2c0 .9-.7 1.6-1.6 1.6H11l-4.5 3.4v-3.4H4.1c-.9 0-1.6-.7-1.6-1.6V6.6c0-.9.7-1.6 1.6-1.6z" fill="url(#gC)"/><circle cx="8" cy="11.2" r="1.1" fill="#fff"/><circle cx="12" cy="11.2" r="1.1" fill="#fff"/><circle cx="16" cy="11.2" r="1.1" fill="#fff"/>`,
+  calc: `<rect x="5" y="2.5" width="14" height="19" rx="2.2" fill="#30343c"/><rect x="6.9" y="4.4" width="10.2" height="4" rx="1" fill="#b4cfa9"/>${[0, 1, 2].map(r => [0, 1, 2].map(c => `<rect x="${6.9 + c * 3.6}" y="${10.2 + r * 3.6}" width="2.6" height="2.6" rx=".6" fill="${c === 2 ? '#ef9d38' : '#5c626d'}"/>`).join('')).join('')}`,
 };
-// Muted colours, one light from above: lighter at the top by a small step.
-const apps = {
-  files: ['Files', '#4a86e8', '#336fd6'],
-  web: ['Web', '#3aa3c4', '#2786ad'],
-  term: ['Terminal', '#3b4049', '#23262d'],
-  settings: ['Settings', '#8d939e', '#6a717c'],
-  text: ['Text Editor', '#e9a845', '#d98e2b'],
-  music: ['Music', '#e05d7c', '#c94467'],
-  photos: ['Photos', '#45aa82', '#2f9069'],
-  software: ['Software', '#7467db', '#5c4fc6'],
-  calendar: ['Calendar', '#e0684f', '#c9503a'],
-  mail: ['Mail', '#4f87dc', '#3a6cc4'],
-  chat: ['Chat', '#3fae94', '#2a917a'],
-  calc: ['Calculator', '#6b717c', '#4c525c'],
-};
-const app = (k, size = 40) => `<div class="app" style="width:${size}px;height:${size}px;background:linear-gradient(180deg,${apps[k][1]},${apps[k][2]})"><svg width="${Math.round(size * 0.56)}" height="${Math.round(size * 0.56)}" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="${size < 24 ? 2 : 1.7}" stroke-linecap="round" stroke-linejoin="round">${glyph[k]}</svg></div>`;
+const apps = { files: ['Files'], web: ['Web'], term: ['Terminal'], settings: ['Settings'], text: ['Text Editor'], music: ['Music'], photos: ['Photos'], software: ['Software'], calendar: ['Calendar'], mail: ['Mail'], chat: ['Chat'], calc: ['Calculator'] };
+const app = (k, size = 40) => `<svg class="app" width="${size}" height="${size}" viewBox="0 0 24 24">${ICON[k]}</svg>`;
 
 function wall(dark) {
   const grain = '<div class="grain"></div>';
@@ -356,17 +345,32 @@ function settings(selected, dark) {
   </div>`;
 }
 
+// The workspace switcher: at most three round buttons, the shown one and
+// its neighbours; more lie a scroll away, hinted by a faded edge.
+function ws(shown, count, busy = [], big = false) {
+  const start = Math.max(0, Math.min(shown - 1, count - 3));
+  const left = start > 0, right = start + 3 < count;
+  const items = [];
+  for (let n = start - (left ? 1 : 0); n < Math.min(count, start + 3 + (right ? 1 : 0)); n++) items.push(n);
+  const sz = big ? 'width:28px;height:28px;border-radius:14px;font-size:12.5px' : '';
+  const on = big ? 'width:44px' : '';
+  const width = (big ? 44 + 28 * 2 + 10 : 32 + 20 * 2 + 10) + (left ? 14 : 0) + (right ? 14 : 0);
+  return `<div class="ws${right ? ' more-right' : ''}${left ? ' more-left' : ''}" style="width:${width}px">${items.map((n, i) => `<div class="d${n === shown ? ' on' : busy.includes(n) ? ' busy' : ''}" style="${sz};${n === shown ? on : ''}${i === 0 && left ? ';margin-left:' + (big ? -18 : -10) + 'px' : ''}">${n + 1}</div>`).join('')}</div>`;
+}
+// Floating or tiling: one button whose icon changes, filled when tiled.
+const lt = (tiled, size = 15, style = '') => `<div class="lt${tiled ? ' tiled' : ''}" style="${style}">${tiled ? I.tiling(size) : I.floating(size)}</div>`;
+
 // The Classic panel: menu, workspaces, windows; the layout toggle, status and clock.
 function classicPanel(tasks, opts = {}) {
   return `<div class="panel bottom">
-    <div class="pbtn${opts.menu ? ' active' : ''}" style="color:${opts.menu ? 'var(--accent)' : 'var(--text)'};width:36px">${I.edel(19)}</div>
-    <div class="desks" style="margin:0 4px">${[1, 2, 3, 4].map(n => `<div class="desk${n === 1 ? ' on' : n === 2 ? ' busy' : ''}">${n}</div>`).join('')}</div>
+    <div class="pbtn${opts.menu ? ' active' : ''}" style="color:${opts.menu ? 'var(--accent)' : 'var(--text)'};width:36px">${I.grid(18)}</div>
     <div class="sep"></div>
     ${tasks.map(t => `<div class="task${t[2] ? ' focused' : ''}">${app(t[0], 20)}<span>${t[1]}</span>${t[3] === false ? '' : '<div class="ind"></div>'}</div>`).join('')}
     <div class="tray">
-      <div class="seg" title="Floating or tiling, Super+T"><div class="s${opts.tiled ? '' : ' on'}">${I.floating(15)}</div><div class="s${opts.tiled ? ' on' : ''}">${I.tiling(15)}</div></div>
+      ${ws(0, 4, [1])}
+      ${lt(opts.tiled, 15, 'margin-left:6px')}
       <div class="sep"></div>
-      <div class="pbtn${opts.qs ? ' active' : ''}" style="gap:9px;padding:0 9px">${I.wifi(16)}${I.vol(16)}${I.bat(15)}</div>
+      <div class="pbtn${opts.qs ? ' active' : ''}" style="gap:10px;padding:0 9px">${I.wifi(16)}${I.vol(16)}${I.bat(15)}</div>
       <div class="pbtn">${I.bell(16)}</div>
       <div class="clock"><b>14:05</b><small>Sat 3 Oct</small></div>
     </div>
@@ -427,8 +431,8 @@ screens.push(['mac-like', '', `${wall(false)}
   <div class="panel top" style="padding:0 12px;gap:14px">
     <div style="color:var(--text)">${I.edel(16)}</div><b style="font-weight:650">Settings</b><span style="color:var(--text-2)">Edit</span><span style="color:var(--text-2)">View</span>
     <div class="tray" style="gap:6px">
-      <div class="desks" style="background:none;padding:0">${[1, 2, 3, 4].map(n => `<div class="desk${n === 1 ? ' on' : ''}" style="width:20px;height:18px;font-size:10.5px">${n}</div>`).join('')}</div>
-      <div class="seg" style="padding:1px"><div class="s on" style="height:20px;width:24px">${I.floating(14)}</div><div class="s" style="height:20px;width:24px">${I.tiling(14)}</div></div>
+      ${ws(0, 4, [2])}
+      ${lt(false, 14, 'width:26px;height:22px')}
       <div style="display:flex;gap:12px;margin-left:8px;align-items:center">${I.wifi(15)}${I.vol(15)}${I.bat(14)}<span style="font-weight:550;font-variant-numeric:tabular-nums">Sat 3 Oct  14:05</span></div>
     </div>
   </div>${fillets('top', 'rgba(246,247,249,.76)', 30)}
@@ -445,10 +449,10 @@ screens.push(['windows-like', 'dark', `${wall(true)}
   <div class="panel bottom" style="height:46px;gap:4px;padding:0 8px">
     <div class="pbtn" style="width:38px;height:36px;color:var(--accent)">${I.edel(21)}</div>
     <div class="search" style="height:32px;width:220px;font-size:12.5px">${I.search(14)}<span>Search</span></div>
-    <div class="desks" style="margin-left:6px">${[1, 2, 3, 4].map(n => `<div class="desk${n === 1 ? ' on' : n === 3 ? ' busy' : ''}">${n}</div>`).join('')}</div>
-    <div style="display:flex;gap:2px;margin-left:auto;margin-right:auto">${['files', 'web', 'term', 'settings', 'mail', 'music'].map((k, i) => `<div class="task${i === 3 ? ' focused' : ''}" style="padding:0 8px;height:38px">${app(k, 24)}${[0, 2, 3].includes(i) ? '<div class="ind"></div>' : ''}</div>`).join('')}</div>
+        <div style="display:flex;gap:2px;margin-left:auto;margin-right:auto">${['files', 'web', 'term', 'settings', 'mail', 'music'].map((k, i) => `<div class="task${i === 3 ? ' focused' : ''}" style="padding:0 8px;height:38px">${app(k, 24)}${[0, 2, 3].includes(i) ? '<div class="ind"></div>' : ''}</div>`).join('')}</div>
     <div class="tray" style="gap:2px;margin-left:0">
-      <div class="seg"><div class="s on">${I.floating(15)}</div><div class="s">${I.tiling(15)}</div></div>
+      ${ws(0, 4, [2])}
+      ${lt(false, 15, 'margin-left:4px')}
       <div class="pbtn" style="gap:9px;padding:0 9px">${I.wifi(16)}${I.vol(16)}${I.bat(15)}</div>
       <div class="clock" style="padding:0 8px"><b>14:05</b><small>03/10/2026</small></div>
       <div class="pbtn">${I.bell(16)}</div>
@@ -461,10 +465,9 @@ const editor = `<div style="position:absolute;inset:0;background:var(--win);font
 ].map((l, i) => `<div style="display:flex"><span style="width:38px;text-align:right;padding-right:12px;color:var(--text-3)">${i + 1}</span><span style="color:${l[0].startsWith('[') ? 'var(--accent)' : 'var(--text)'}">${l[0]}</span><span style="color:#d6a271;white-space:pre">${l[1]}</span></div>`).join('')}</div>`;
 screens.push(['tiling', 'dark', `${wall(true)}
   <div class="panel top" style="padding:0 8px;gap:8px;height:30px">
-    <div class="desks" style="padding:1px">${[1, 2, 3, 4].map(n => `<div class="desk${n === 1 ? ' on' : n === 2 ? ' busy' : ''}" style="height:20px">${n}</div>`).join('')}</div>
-    <div class="seg" style="padding:1px"><div class="s" style="height:20px;width:24px">${I.floating(14)}</div><div class="s on" style="height:20px;width:24px">${I.tiling(14)}</div></div>
-    <span style="margin-left:8px;color:var(--text-2)">system.toml, Text Editor</span>
-    <div class="tray" style="gap:12px;padding-right:6px">${I.wifi(15)}${I.vol(15)}${I.bat(14)}<span style="font-weight:600;font-variant-numeric:tabular-nums">14:05</span></div>
+    <div style="color:var(--text);padding:0 4px">${I.grid(15)}</div>
+    <span style="margin-left:6px;color:var(--text-2)">system.toml, Text Editor</span>
+    <div class="tray" style="gap:12px;padding-right:6px">${ws(0, 4, [1])}${lt(true, 14, 'width:26px;height:22px')}${I.wifi(15)}${I.vol(15)}${I.bat(14)}<span style="font-weight:600;font-variant-numeric:tabular-nums">14:05</span></div>
   </div>
   ${win(8, 38, 628, 754, 'Terminal', 'term', termFor('tiling'))}
   ${win(644, 38, 628, 373, 'system.toml', 'text', editor, { focused: true, style: 'box-shadow:0 0 0 1.5px var(--accent),var(--shadow-win)' })}
@@ -478,11 +481,11 @@ function tabletScreen() {
     <div class="win" style="position:relative;flex:1;height:100%">${titlebar('Notes for the release.md', 'text', {})}<div class="winbody" style="padding:22px 26px;line-height:1.6;color:var(--text)"><div style="font-size:20px;font-weight:650;letter-spacing:-0.02em;margin-bottom:10px">Release notes</div><div style="color:var(--text-2)">Workspaces arrive: four on the Classic preset, switched from the panel or with Super+1 to 4. Each one floats or tiles on its own.</div><div style="margin-top:12px;color:var(--text-2)">On a tablet, windows tile by default. The toggle in the panel floats them again.</div></div></div>
   </div>
   <div class="panel bottom" style="height:52px;padding:0 12px;gap:6px">
-    <div class="pbtn" style="width:44px;height:40px">${I.edel(22)}</div>
-    <div class="desks" style="padding:3px">${[1, 2, 3, 4].map(n => `<div class="desk${n === 1 ? ' on' : n === 2 ? ' busy' : ''}" style="width:34px;height:30px;font-size:13px">${n}</div>`).join('')}</div>
+    <div class="pbtn" style="width:44px;height:40px">${I.grid(22)}</div>
     <div style="display:flex;gap:6px;margin-left:auto;margin-right:auto">${['files', 'text', 'web', 'mail', 'music', 'settings'].map((k, i) => `<div class="task${i === 0 ? ' focused' : ''}" style="height:42px;padding:0 9px">${app(k, 30)}${i < 2 ? '<div class="ind"></div>' : ''}</div>`).join('')}</div>
     <div class="tray" style="margin-left:0;gap:6px">
-      <div class="seg" style="padding:3px"><div class="s" style="width:38px;height:30px">${I.floating(18)}</div><div class="s on" style="width:38px;height:30px">${I.tiling(18)}</div></div>
+      ${ws(0, 4, [1], true)}
+      ${lt(true, 19, 'width:40px;height:34px;margin-left:4px')}
       <div class="pbtn" style="gap:12px;padding:0 12px;height:40px">${I.wifi(18)}${I.vol(18)}${I.bat(17)}</div>
       <div class="clock"><b style="font-size:14px">14:05</b><small>Sat 3 Oct</small></div>
     </div>
@@ -504,7 +507,7 @@ function tierScene(kind) {
     <div style="position:absolute;inset:0;transform:translateX(${kind === 'full' ? 0 : kind === 'balanced' ? -427 : -854}px);width:1280px">${wall(false)}</div>
     <div class="win focused" style="left:40px;top:70px;width:340px;height:300px;border-radius:${radius}px;${flat ? 'box-shadow:0 0 0 1px rgba(20,24,32,.2)' : ''}">${titlebar('Pictures', 'files', {})}<div class="winbody"><div class="thumbs" style="left:14px;right:14px;top:14px;grid-template-columns:repeat(3,1fr)">${pics.slice(0, 6).map(p => `<div class="thumb"><div class="pic" style="background:linear-gradient(160deg,${p[0]});border-radius:${flat ? 0 : 6}px"></div></div>`).join('')}</div></div></div>
     <div style="position:absolute;left:150px;top:200px;width:220px;height:226px;border-radius:${flat ? 0 : 12}px;background:${menuBg};${blur}${flat ? edge : 'box-shadow:var(--shadow-menu)'};padding:6px;overflow:hidden">${pre}<div style="position:relative">${['Open', 'Open with Photos', 'Rename', 'Copy', 'Move to Trash', 'Properties'].map((m, i) => `<div style="height:34px;display:flex;align-items:center;padding:0 12px;border-radius:${flat ? 0 : 6}px;${i === 1 ? 'background:var(--accent);color:#fff' : ''}">${m}</div>`).join('')}</div></div>
-    <div style="position:absolute;left:0;right:0;bottom:0;height:40px;background:${panelBg};${blur}box-shadow:inset 0 ${flat ? 1 : 0.5}px 0 rgba(20,24,32,${flat ? .16 : .12});display:flex;align-items:center;padding:0 6px;gap:6px;overflow:hidden">${pre}<div style="position:relative;display:flex;align-items:center;gap:4px;width:100%"><div class="pbtn" style="width:34px">${I.edel(18)}</div><div class="desks" style="${flat ? 'border-radius:0' : ''}">${[1, 2, 3].map(n => `<div class="desk${n === 1 ? ' on' : ''}" style="${flat ? 'border-radius:0' : ''}">${n}</div>`).join('')}</div><div class="task focused" style="${flat ? 'border-radius:0' : ''}">${app('files', 20)}<span>Pictures</span><div class="ind"></div></div><div class="clock" style="margin-left:auto"><b>14:05</b><small>Sat 3 Oct</small></div></div></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:40px;background:${panelBg};${blur}box-shadow:inset 0 ${flat ? 1 : 0.5}px 0 rgba(20,24,32,${flat ? .16 : .12});display:flex;align-items:center;padding:0 6px;gap:6px;overflow:hidden">${pre}<div style="position:relative;display:flex;align-items:center;gap:4px;width:100%"><div class="pbtn" style="width:34px">${I.grid(17)}</div><div class="task focused" style="${flat ? 'border-radius:0' : ''}">${app('files', 20)}<span>Pictures</span><div class="ind"></div></div><div class="clock" style="margin-left:auto"><b>14:05</b><small>Sat 3 Oct</small></div></div></div>
     ${flat ? '' : fillets('bottom', kind === 'full' ? 'rgba(246,247,249,.72)' : 'rgba(232,235,240,.96)', 40)}
     <div class="tag">${kind === 'full' ? 'Full' : kind === 'balanced' ? 'Balanced' : 'Lite'}</div>
   </div>`;

@@ -3,13 +3,15 @@
 Pictures of where the Edel shell's look is heading. They are not
 screenshots and not binding: the real values are design tokens
 (`design/tokens.toml`, M5.5), and a person can change every one of them
-(M5.12). This is the second round, retouched on 2026-10-03 after
-Alimardon's review of the first: a little sharper, calm and polished
-rather than playful, and welcoming to everyone by default.
+(M5.12). This is the third round, from 2026-10-03, after two reviews by
+Alimardon: a little sharper, calm and polished rather than playful, and
+welcoming to everyone by default; the menu button's four squares, round
+workspace buttons on the right, one floating or tiling button, thinner
+title bars and app icons drawn as objects came with the second review.
 
 | Picture | What it shows |
 |---|---|
-| [classic.jpg](classic.jpg) | Classic, the default, light: a panel along the bottom with the menu, workspace buttons 1 to 4, the windows, the floating or tiling toggle, status and clock |
+| [classic.jpg](classic.jpg) | Classic, the default, light: a panel along the bottom with the menu and the windows, then the workspace buttons, the floating or tiling button, status and clock |
 | [classic-dark.jpg](classic-dark.jpg) | The same in the dark scheme |
 | [classic-menus.jpg](classic-menus.jpg) | The launcher, quick settings and a notification, over the Settings app's Layout page |
 | [mac-like.jpg](mac-like.jpg) | Mac-like: a bar on top, a dock, window buttons on the left |
@@ -26,7 +28,14 @@ What the look is made of, each a token:
 - soft layered shadows from one light above, and hairline edges;
 - one calm blue accent, light and dark both first-class;
 - Inter in sentence case, tabular figures for the clock;
-- app icons in one shape with muted colours and one light from above;
+- the workspace switcher: round buttons, the shown workspace a wider
+  accent pill, at most three at once (the shown one and its neighbours),
+  the rest a scroll away behind a faded edge, sliding as it scrolls;
+- one floating or tiling button, its icon changing and its background
+  filling when the workspace tiles;
+- title bars 28 px high, as the compositor draws them;
+- app icons drawn as objects, a folder, a globe, a gear, each lit from
+  above, never a glyph on a coloured tile;
 - frosted panels and menus on Full, the wallpaper blurred once on
   Balanced, solid colours on Lite.
 
