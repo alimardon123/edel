@@ -12,7 +12,7 @@ use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Transform};
 use edel::presets::Edge;
 use edel::tokens::{Colour, Tokens};
 
-use crate::widgets::{Canvas, Widget};
+use crate::widgets::{Canvas, Live, Widget};
 
 /// Everything a panel shows, at one scale.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,8 +47,13 @@ impl Row {
     }
 
     /// What each widget shows now, for [`Look::shown`].
-    pub fn shows(&self) -> Vec<String> {
-        self.all().map(|w| (w.shows)()).collect()
+    pub fn shows(&self, live: &Live) -> Vec<String> {
+        self.all().map(|w| (w.shows)(live)).collect()
+    }
+
+    /// The `i`th widget, start to end.
+    pub fn widget(&self, i: usize) -> Option<&'static Widget> {
+        self.all().nth(i)
     }
 }
 
@@ -196,14 +201,15 @@ fn fillet(x: f32, y: f32, r: f32, left: bool, up: bool) -> Option<Path> {
 }
 
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
-/// with `row`'s widgets showing `look.shown`.
+/// with `row`'s widgets showing `look.shown`; returns where each widget
+/// lies, start to end, as its left edge and width in logical pixels.
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
     tokens: &Tokens,
     text: Option<&mut Text>,
     row: &Row,
-) {
+) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
     let strip = fillet_height(tokens) as f32 * s;
@@ -259,6 +265,7 @@ pub fn paint(
     let centre = measure(&row.centre);
     let end = measure(&row.end);
     let total = |group: &[(&Widget, &str, f32)]| group.iter().map(|g| g.2).sum::<f32>();
+    let mut places = Vec::new();
     for (group, from) in [
         (&start, 0.0),
         (&centre, ((w - total(&centre)) / 2.0).round()),
@@ -267,9 +274,11 @@ pub fn paint(
         let mut x = from;
         for (widget, showing, width) in group {
             (widget.draw)(&mut canvas, showing, x);
+            places.push((x / s, width / s));
             x += width;
         }
     }
+    places
 }
 
 /// The pixmap's premultiplied RGBA as the BGRA bytes `wl_shm`'s
@@ -307,7 +316,7 @@ mod tests {
             scale: 1,
             edge,
             fillets,
-            shown: row.shows(),
+            shown: row.shows(&Live::default()),
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, row);

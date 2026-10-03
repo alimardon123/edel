@@ -75,6 +75,9 @@ pub struct Tokens {
     /// shell-ui's panel (M5.1b) and the text and icons on it.
     pub panel: Colour,
     pub panel_text: Colour,
+    /// The one accent: what is chosen or shown, such as the shown
+    /// workspace's button (M5.2c).
+    pub accent: Colour,
     /// The panel's height, logical pixels.
     pub panel_height: u32,
     /// The panel's text, logical pixels per em.
@@ -127,6 +130,7 @@ impl Tokens {
                 "title_close_hover" => &mut self.title_close_hover,
                 "panel" => &mut self.panel,
                 "panel_text" => &mut self.panel_text,
+                "accent" => &mut self.accent,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -182,6 +186,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "title_close_hover",
                 "panel",
                 "panel_text",
+                "accent",
             ][..],
         ),
         (
@@ -223,6 +228,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         gap: 0,
         panel: BLACK,
         panel_text: BLACK,
+        accent: BLACK,
         panel_height: 0,
         panel_text_size: 0,
         radius: 0,

@@ -58,7 +58,9 @@
 #               while hidden leaves the state file (M5.2a); then
 #               edel-testclient --workspace 3, over ext-workspace-v1, sees
 #               four workspaces with the first shown and shows the third,
-#               and --workspace 1 brings the first back (M5.2b)
+#               and --workspace 1 brings the first back (M5.2b); the
+#               panel's switcher shows the first as the accent pill, and
+#               a click on its 3 shows the third (M5.2c)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -595,7 +597,24 @@ case_workspaces() {
 	guest 'activate 1'
 	wait_more 'DESKTOP-TEST: ext workspaces 1\* 2 3 4$' "$seen" || fail "edel-testclient --workspace 1 did not bring workspace 1 back"
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "workspace 1 is not back as it was: $(value windows)"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first"
+	# The panel's switcher (M5.2c): three round buttons, the shown one the
+	# accent pill, then a dot for the fourth; a click on its 3 shows the
+	# third. Each button is 20 px, the pill 32, 5 apart, after 6 px of
+	# room and the 8 px where a dot would say more lie to the left.
+	guest 'panel places'
+	wait_for 'DESKTOP-TEST: places .*workspaces [0-9]+\+' || fail "shell-ui did not say where its widgets lie"
+	x=$(value places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	accent=$(token accent)
+	shot switcher $((x + 30)) 780 "$accent" >/dev/null || fail "the switcher's 1, at $((x + 30)),780, is not the accent pill"
+	shows=$(count 'edel-compositor: workspace 3')
+	python3 ci/qmp.py click $((x + 86)) 780
+	wait_more 'edel-compositor: workspace 3' "$shows" || fail "a click on the switcher's 3 did not show workspace 3"
+	# The view follows: 2, then 3 as the pill, then 4.
+	shot switcher $((x + 55)) 780 "$accent" >/dev/null || fail "after the click, the pill at $((x + 55)),780 is not the accent"
+	back=$(count "DESKTOP-TEST: windows $first\$")
+	python3 ci/qmp.py key meta_l-1
+	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
 }
 
 case_rollback() {

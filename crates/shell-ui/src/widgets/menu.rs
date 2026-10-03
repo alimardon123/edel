@@ -4,7 +4,7 @@
 
 use tiny_skia::{FillRule, Transform};
 
-use super::{Canvas, Widget};
+use super::{Canvas, Live, Widget, no_input};
 use crate::paint::{paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
@@ -13,10 +13,11 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
+    input: no_input,
 };
 
 /// It always shows the same icon.
-fn shows() -> String {
+fn shows(_: &Live) -> String {
     String::new()
 }
 
