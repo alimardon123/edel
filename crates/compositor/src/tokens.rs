@@ -48,6 +48,11 @@ impl Colour {
     pub fn rgba(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
+
+    /// Red, green, blue and alpha, 0 to 255.
+    pub fn bytes(self) -> [u8; 4] {
+        [self.r, self.g, self.b, self.a].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
+    }
 }
 
 /// The tokens the compositor uses.
@@ -57,9 +62,14 @@ pub struct Tokens {
     pub title_bar: Colour,
     pub title_bar_focused: Colour,
     pub title_text: Colour,
+    pub title_text_unfocused: Colour,
+    pub title_button_hover: Colour,
+    pub title_close_hover: Colour,
     /// Logical pixels.
     pub title_bar_height: u32,
     pub border: u32,
+    /// Logical pixels per em.
+    pub title_text_size: u32,
 }
 
 impl Tokens {
@@ -101,6 +111,9 @@ impl Tokens {
                 "title_bar" => &mut self.title_bar,
                 "title_bar_focused" => &mut self.title_bar_focused,
                 "title_text" => &mut self.title_text,
+                "title_text_unfocused" => &mut self.title_text_unfocused,
+                "title_button_hover" => &mut self.title_button_hover,
+                "title_close_hover" => &mut self.title_close_hover,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -120,6 +133,7 @@ impl Tokens {
             let (slot, max) = match key.as_str() {
                 "title_bar" => (&mut self.title_bar_height, 200),
                 "border" => (&mut self.border, 50),
+                "title_text" => (&mut self.title_text_size, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -141,9 +155,17 @@ pub fn check(text: &str) -> Result<Tokens> {
     for (section, keys) in [
         (
             "colour",
-            &["background", "title_bar", "title_bar_focused", "title_text"][..],
+            &[
+                "background",
+                "title_bar",
+                "title_bar_focused",
+                "title_text",
+                "title_text_unfocused",
+                "title_button_hover",
+                "title_close_hover",
+            ][..],
         ),
-        ("size", &["title_bar", "border"][..]),
+        ("size", &["title_bar", "border", "title_text"][..]),
     ] {
         let found = table.get(section).and_then(Value::as_table);
         if let Some(key) = keys
@@ -162,8 +184,12 @@ pub fn check(text: &str) -> Result<Tokens> {
         title_bar: BLACK,
         title_bar_focused: BLACK,
         title_text: BLACK,
+        title_text_unfocused: BLACK,
+        title_button_hover: BLACK,
+        title_close_hover: BLACK,
         title_bar_height: 0,
         border: 0,
+        title_text_size: 0,
     };
     tokens.apply(&table, &mut notes);
     if !notes.is_empty() {
@@ -195,6 +221,10 @@ mod tests {
         let c = Colour::parse("#ff8000").unwrap();
         assert_eq!(c.rgba(), [1.0, 128.0 / 255.0, 0.0, 1.0]);
         assert_eq!(Colour::parse("#00000080").unwrap().a, 128.0 / 255.0);
+        assert_eq!(
+            Colour::parse("#3a404b").unwrap().bytes(),
+            [0x3a, 0x40, 0x4b, 0xff]
+        );
         for bad in ["ff8000", "#ff800", "#gg8000", "#ff8000801", "#ÿÿÿ"] {
             assert_eq!(Colour::parse(bad), None, "{bad}");
         }

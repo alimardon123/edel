@@ -1,7 +1,10 @@
-//! Moving and resizing a window with the pointer (M4.3): one grab for
-//! both, started by the window itself (dragging its own title bar or
-//! edges, xdg-shell's move and resize requests) or by Super with the left
-//! button (move) or the right button (resize from the nearest corner).
+//! Moving and resizing a window with the pointer (M4.3, M4.4): one grab for
+//! both, started by the title bar and edges the compositor draws, by the
+//! window itself (dragging its own bar or edges, xdg-shell's move and
+//! resize requests) or by Super with the left button (move) or the right
+//! button (resize from the nearest corner). A maximized window stays put
+//! until dragged [`UNSNAP`] pixels, then goes back to its size under the
+//! pointer and moves.
 //! While it lasts, the pointer belongs to the grab and no client sees it;
 //! when the button is released, the floating policy records the new place
 //! and the state file is written once, never during the drag (ADR-002).
@@ -22,6 +25,9 @@ use crate::state::Edel;
 /// The smallest a window can be made by resizing it, wide and high.
 const MIN_W: i32 = 96;
 const MIN_H: i32 = 64;
+
+/// How far a maximized window is dragged before it lets go of the screen.
+const UNSNAP: f64 = 8.0;
 
 /// What the grab does with the pointer's motion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +114,17 @@ impl PointerGrab<Edel> for WindowGrab {
     ) {
         // The window under the pointer sees nothing while it is dragged.
         handle.motion(data, None, event);
+        if self.kind == Kind::Move && data.is_maximized(&self.window) {
+            let pulled = event.location - self.start.location;
+            if pulled.x.abs().max(pulled.y.abs()) < UNSNAP {
+                return;
+            }
+            if let Some(place) = data.unmaximize_under(&self.window, event.location) {
+                self.initial = place;
+                self.current = place;
+                self.start.location = event.location;
+            }
+        }
         let delta = (event.location - self.start.location).to_i32_round();
         match self.kind {
             Kind::Move => {

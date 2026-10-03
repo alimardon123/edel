@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-# Test only (roadmap M4.1, M4.2b, M4.3): CI builds this into
+# Test only (roadmap M4.1, M4.2b, M4.3, M4.4): CI builds this into
 # ci/desktop/vm.toml. greetd logs user ci (from the seed system file, put
 # in the seat group by edel system apply) in to the compositor at once.
 # This service waits for the compositor's health file, then, as ci, times
@@ -7,7 +7,8 @@
 # telemetry and memory, and opens foot and two test clients, each once the
 # one before is on screen, so they cascade in a known order. It prints the
 # results and the compositor's state file on the serial console, where
-# ci/desktop-test.sh reads them.
+# ci/desktop-test.sh reads them; then, while that script clicks and drags,
+# the windows each time they change and the compositor's log as it grows.
 
 description="Edel OS desktop test"
 
@@ -67,8 +68,9 @@ report() {
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
-	# Windows open centred, each 32 px down and right of an open window
-	# whose centre it would share (M4.3): foot first, then one, then two.
+	# Window frames open centred, each 32 px down and right of an open
+	# window whose centre it would share (M4.3): foot first, then one,
+	# then two, each with a title bar (M4.4).
 	as_ci foot --window-size-pixels=400x300 </dev/null >/dev/null 2>&1 &
 	shown 1
 	as_ci edel-testclient --size 300x200 --colour cc3333 --title one </dev/null >/dev/null 2>&1 &
@@ -79,6 +81,44 @@ report() {
 		say "state $line"
 	done </run/edel/session/state.toml
 	say "done"
+	follow
+}
+
+# follow: for 5 minutes, the compositor's log lines as they come and the
+# windows each time they change, for the cases that click and drag.
+follow() {
+	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
+	last=''
+	i=0
+	while [ "$i" -lt 1500 ]; do
+		now=$(windows)
+		if [ "$now" != "$last" ]; then
+			say "windows $now"
+			last=$now
+		fi
+		sleep 0.2
+		i=$((i + 1))
+	done
+	kill $! 2>/dev/null
+}
+
+# windows: how many windows the state file lists, then each as
+# title@x,y,widthxheight, bottom first, spaces in titles as _.
+windows() {
+	awk -F' = ' '
+		function flush() {
+			if (t != "") out = out " " t "@" x "," y "," w "x" h
+			t = ""
+		}
+		/^\[/ { flush() }
+		/^\[\[windows\]\]/ { n++ }
+		$1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
+		$1 == "x" { x = $2 }
+		$1 == "y" { y = $2 }
+		$1 == "width" { w = $2 }
+		$1 == "height" { h = $2 }
+		END { flush(); print n + 0 out }
+	' /run/edel/session/state.toml 2>/dev/null
 }
 
 # shown N: waits up to 30 s for the state file to list N windows.

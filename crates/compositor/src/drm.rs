@@ -86,6 +86,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
     let handle = event_loop.handle();
     let name = listen(&handle, display)?;
+    crate::decoration::load_text(&handle, state.tokens.title_text_size);
 
     let (mut session, session_events) = LibSeatSession::new()
         .context("opening a seat session (is seatd running and is this user in group seat?)")?;
@@ -307,16 +308,7 @@ fn render(gpu: &mut Gpu, state: &mut Edel) {
         output,
         ..
     } = gpu;
-    let elements = match state
-        .space
-        .render_elements_for_output(renderer, output, 1.0)
-    {
-        Ok(elements) => elements,
-        Err(e) => {
-            eprintln!("edel-compositor: listing what to draw failed: {e:?}");
-            return;
-        }
-    };
+    let elements = state.elements(renderer, output);
     let queued = match compositor.render_frame(
         renderer,
         &elements,

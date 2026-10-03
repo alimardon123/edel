@@ -1,7 +1,8 @@
 //! The compositor's state and the Wayland protocols it serves: surfaces,
 //! shared memory, xdg-shell windows, the seat (keyboard and pointer), the
-//! clipboard, outputs and presentation time. Windows live in one smithay
-//! `Space`; the floating policy decides where each opens (M4.3), and
+//! clipboard, outputs, presentation time and server-side decorations.
+//! Windows live in one smithay `Space`; the floating policy decides where
+//! each frame opens (M4.3), the window sits inside its frame (M4.4), and
 //! every change of what is on screen is written to the state file.
 
 use std::sync::Arc;
@@ -14,11 +15,13 @@ use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode as TriggerMode, PostAction,
 };
-use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{
+    ResizeEdge, WmCapabilities,
+};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource as _};
-use smithay::utils::{Clock, Logical, Monotonic, Point, Rectangle, SERIAL_COUNTER, Serial};
+use smithay::utils::{Clock, Logical, Monotonic, Rectangle, SERIAL_COUNTER, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
@@ -30,6 +33,7 @@ use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
 };
+use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
     XdgToplevelSurfaceData,
@@ -38,14 +42,16 @@ use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::socket::ListeningSocketSource;
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_output, delegate_presentation,
-    delegate_seat, delegate_shm, delegate_xdg_shell,
+    delegate_seat, delegate_shm, delegate_xdg_decoration, delegate_xdg_shell,
 };
 use toml::{Table, Value};
 
+use edel_compositor::frame::{Button, Text};
 use edel_compositor::layout::{Floating, WindowPolicy};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
 
+use crate::decoration::{data, server_side, title};
 use crate::grabs::{Kind, WindowGrab};
 use crate::statefile::{self, StateFile};
 
@@ -64,7 +70,15 @@ pub struct Edel {
     /// A window is being moved or resized (`grabs.rs`). Kept here because
     /// asking the pointer from inside its grab would wait on its own lock.
     pub dragging: bool,
-    /// Where windows go; one workspace until M4.5.
+    /// The title font, once its thread has loaded it (`decoration.rs`).
+    pub text: Option<Text>,
+    /// The title bar button under the pointer.
+    pub hover: Option<(Window, Button)>,
+    /// The title bar button the left button went down on.
+    pub pressed: Option<(Window, Button)>,
+    /// The last click on a title bar, and when, for double clicks.
+    pub last_title_click: Option<(Window, u32)>,
+    /// Where window frames go; one workspace until M4.5.
     policy: Floating<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
@@ -75,6 +89,7 @@ pub struct Edel {
     shm: ShmState,
     seat_state: SeatState<Edel>,
     data_device: DataDeviceState,
+    _decorations: XdgDecorationState,
     _outputs: OutputManagerState,
     _presentation: PresentationState,
 }
@@ -87,9 +102,16 @@ impl Edel {
         seat.add_pointer();
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
-            xdg_shell: XdgShellState::new::<Edel>(&display),
+            // Minimize waits for the window list that brings a window back
+            // (M5.2), fullscreen and the window menu for their own steps;
+            // apps that draw their own bars leave out what is missing.
+            xdg_shell: XdgShellState::new_with_capabilities::<Edel>(
+                &display,
+                [WmCapabilities::Maximize],
+            ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
             data_device: DataDeviceState::new::<Edel>(&display),
+            _decorations: XdgDecorationState::new::<Edel>(&display),
             _outputs: OutputManagerState::new_with_xdg_output::<Edel>(&display),
             // When a frame reached the screen, on the monotonic clock: what
             // CI's frame times are read from (M4.1).
@@ -105,6 +127,10 @@ impl Edel {
             telemetry: Telemetry::default(),
             report_armed: false,
             dragging: false,
+            text: None,
+            hover: None,
+            pressed: None,
+            last_title_click: None,
             policy: Floating::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
@@ -112,19 +138,6 @@ impl Edel {
             signal,
             tokens,
         })
-    }
-
-    /// The surface under `point`, with its position, for pointer focus.
-    pub fn surface_under(
-        &self,
-        point: Point<f64, Logical>,
-    ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        let (window, location) = self.space.element_under(point)?;
-        let (surface, offset) = window.surface_under(
-            point - location.to_f64(),
-            smithay::desktop::WindowSurfaceType::ALL,
-        )?;
-        Some((surface, (offset + location).to_f64()))
     }
 
     /// Raises `window` and gives it the keyboard.
@@ -137,20 +150,60 @@ impl Edel {
         self.dirty = true;
     }
 
-    /// A person put `window` at `place`: the policy decides where it stays,
-    /// and the state file says so.
+    /// `window` was put at `place`, by a person or by maximizing: the
+    /// policy decides where its frame stays, and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
-        let kept = self.policy.moved(window, place);
+        let insets = self.insets(window);
+        let kept = insets.window(self.policy.moved(window, insets.frame(place)));
         self.space.map_element(window.clone(), kept.loc, true);
         self.dirty = true;
         self.state_changed();
     }
 
-    /// The outputs changed: the policy fits every window to the new area.
+    /// `window` leaves the screen, closed or hidden: the policy forgets its
+    /// place and the keyboard goes to the window now on top.
+    fn unmap(&mut self, window: &Window) {
+        eprintln!("edel-compositor: unmapped window {}", title(window));
+        self.forget(window);
+        let mut frame = data(window).borrow_mut();
+        frame.restore = None;
+        frame.shape = None;
+        drop(frame);
+        self.policy.close(window);
+        self.space.unmap_elem(window);
+        if let Some(top) = self.space.elements().last().cloned() {
+            self.focus(&top);
+        }
+        self.dirty = true;
+        self.state_changed();
+    }
+
+    /// A shown window may have drawn itself at a new size, or taken or
+    /// given up its title bar: the policy and the state file learn its
+    /// frame now. Its place stays.
+    fn reshaped(&mut self, window: &Window) {
+        let Some(place) = self.space.element_geometry(window) else {
+            return;
+        };
+        let shape = (place.size, server_side(window));
+        if data(window).borrow_mut().shape.replace(shape) == Some(shape) {
+            return;
+        }
+        self.policy.moved(window, self.insets(window).frame(place));
+        self.state_changed();
+    }
+
+    /// The outputs changed: the policy fits every frame to the new area,
+    /// and maximized windows fill it.
     pub fn outputs_changed(&mut self) {
         if let Some(area) = self.output_area() {
-            for (window, place) in self.policy.arrange(area) {
-                self.space.map_element(window, place.loc, false);
+            for (window, frame) in self.policy.arrange(area) {
+                if self.is_maximized(&window) {
+                    self.maximize(&window);
+                } else {
+                    let place = self.insets(&window).window(frame);
+                    self.space.map_element(window, place.loc, false);
+                }
             }
         }
         self.dirty = true;
@@ -209,6 +262,11 @@ impl Edel {
                 insert_rect(&mut t, place);
                 let is_focused = focused.as_ref() == Some(toplevel.wl_surface());
                 t.insert("focused".into(), Value::Boolean(is_focused));
+                t.insert("title_bar".into(), Value::Boolean(server_side(window)));
+                t.insert(
+                    "maximized".into(),
+                    Value::Boolean(self.is_maximized(window)),
+                );
                 Some(Value::Table(t))
             })
             .collect();
@@ -216,7 +274,7 @@ impl Edel {
         toml::to_string(&table).unwrap_or_default()
     }
 
-    fn window_of(&self, surface: &WlSurface) -> Option<Window> {
+    pub fn window_of(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
             .chain(&self.unplaced)
@@ -246,7 +304,9 @@ impl Edel {
         let Some(place) = self.space.element_geometry(&window) else {
             return;
         };
-        if !asked {
+        // A maximized window moves once dragged far enough (`grabs.rs`),
+        // but keeps its size.
+        if !asked || (kind != Kind::Move && self.is_maximized(&window)) {
             return;
         }
         let grab = WindowGrab {
@@ -259,6 +319,14 @@ impl Edel {
         pointer.set_grab(self, grab, serial, Focus::Clear);
         self.dragging = true;
     }
+}
+
+/// Whether `surface` has a buffer to show.
+fn has_buffer(surface: &WlSurface) -> bool {
+    smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
+        s.buffer().is_some()
+    })
+    .unwrap_or(false)
 }
 
 fn insert_rect(table: &mut Table, rect: Rectangle<i32, Logical>) {
@@ -305,6 +373,15 @@ impl CompositorHandler for Edel {
             }
             if let Some(window) = self.window_of(&root) {
                 window.on_commit();
+                // A shown window that drops its buffer hides itself; it
+                // shows again, placed anew, once it draws again.
+                let shown = self.space.element_geometry(&window).is_some();
+                if shown && surface == &root && !has_buffer(surface) {
+                    self.unmap(&window);
+                    self.unplaced.push(window);
+                    return;
+                }
+                self.reshaped(&window);
             }
         }
         self.dirty = true;
@@ -324,20 +401,34 @@ impl CompositorHandler for Edel {
             toplevel.send_configure();
             return;
         }
-        let drawn = smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
-            s.buffer().is_some()
-        })
-        .unwrap_or(false);
+        let drawn = has_buffer(surface);
         let Some(area) = self.output_area() else {
             return;
         };
         if drawn {
             let window = self.unplaced.remove(i);
-            let place = self
-                .policy
-                .open(window.clone(), window.geometry().size, area);
+            let insets = self.insets(&window);
+            let frame = self.policy.open(
+                window.clone(),
+                insets.frame_size(window.geometry().size),
+                area,
+            );
+            let place = insets.window(frame);
             self.space.map_element(window.clone(), place.loc, true);
+            data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
+            eprintln!(
+                "edel-compositor: mapped window {} at {},{} {}x{}",
+                title(&window),
+                place.loc.x,
+                place.loc.y,
+                place.size.w,
+                place.size.h
+            );
             self.focus(&window);
+            let maximize = std::mem::take(&mut data(&window).borrow_mut().maximize_when_placed);
+            if maximize {
+                self.maximize(&window);
+            }
             self.state_changed();
         }
     }
@@ -381,6 +472,39 @@ impl XdgShellHandler for Edel {
         surface.send_repositioned(token);
     }
 
+    fn maximize_request(&mut self, surface: ToplevelSurface) {
+        match self.window_of(surface.wl_surface()) {
+            Some(window) if self.space.element_geometry(&window).is_some() => {
+                self.maximize(&window);
+            }
+            Some(window) => {
+                data(&window).borrow_mut().maximize_when_placed = true;
+                if surface.is_initial_configure_sent() {
+                    surface.send_configure();
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn unmaximize_request(&mut self, surface: ToplevelSurface) {
+        let Some(window) = self.window_of(surface.wl_surface()) else {
+            return;
+        };
+        data(&window).borrow_mut().maximize_when_placed = false;
+        if self.is_maximized(&window) {
+            self.unmaximize(&window);
+        } else if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
+
+    fn title_changed(&mut self, _surface: ToplevelSurface) {
+        // Bars are drawn again when what they show changes.
+        self.dirty = true;
+        self.state_changed();
+    }
+
     fn move_request(&mut self, surface: ToplevelSurface, _seat: wl_seat::WlSeat, serial: Serial) {
         self.grab_for(&surface, serial, Kind::Move);
     }
@@ -398,17 +522,9 @@ impl XdgShellHandler for Edel {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.unplaced
             .retain(|w| w.toplevel().is_none_or(|t| t != &surface));
-        let Some(window) = self.window_of(surface.wl_surface()) else {
-            return;
-        };
-        self.policy.close(&window);
-        self.space.unmap_elem(&window);
-        // The keyboard goes to the window now on top.
-        if let Some(top) = self.space.elements().last().cloned() {
-            self.focus(&top);
+        if let Some(window) = self.window_of(surface.wl_surface()) {
+            self.unmap(&window);
         }
-        self.dirty = true;
-        self.state_changed();
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {
@@ -474,6 +590,7 @@ pub fn listen(handle: &LoopHandle<'static, Edel>, display: Display<Edel>) -> Res
 delegate_compositor!(Edel);
 delegate_shm!(Edel);
 delegate_xdg_shell!(Edel);
+delegate_xdg_decoration!(Edel);
 delegate_seat!(Edel);
 delegate_data_device!(Edel);
 delegate_output!(Edel);

@@ -13,10 +13,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
-use smithay::desktop::space::render_output;
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -45,6 +43,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let handle = event_loop.handle();
 
     let name = crate::state::listen(&handle, display)?;
+    crate::decoration::load_text(&handle, state.tokens.title_text_size);
 
     let (backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
@@ -144,18 +143,11 @@ fn draw(window: &mut Window, state: &mut Edel) {
     let background = state.tokens.background.rgba();
     let damage = match window.backend.bind() {
         Ok((renderer, mut framebuffer)) => {
-            render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
-                &window.output,
-                renderer,
-                &mut framebuffer,
-                1.0,
-                age,
-                [&state.space],
-                &[],
-                &mut window.damage,
-                background,
-            )
-            .map(|result| result.damage.cloned())
+            let elements = state.elements(renderer, &window.output);
+            window
+                .damage
+                .render_output(renderer, &mut framebuffer, age, &elements, background)
+                .map(|result| result.damage.cloned())
         }
         Err(e) => {
             eprintln!("edel-compositor: binding the window failed: {e}");

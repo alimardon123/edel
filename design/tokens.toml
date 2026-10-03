@@ -9,12 +9,19 @@ format = 1
 [colour]
 # Behind every window, where there is no wallpaper.
 background = "#24272e"
-# Window title bars (M4.4), the focused one lighter, and their text.
+# Window title bars (M4.4), the focused one lighter, and their text,
+# dimmer on the windows without the keyboard.
 title_bar = "#2e323a"
 title_bar_focused = "#3a404b"
 title_text = "#e8e8ea"
+title_text_unfocused = "#9a9da5"
+# Behind a title bar button under the pointer; close turns red.
+title_button_hover = "#4b5260"
+title_close_hover = "#c4473f"
 
 [size]
 # In logical pixels.
 title_bar = 28
 border = 1
+# The title's letters, in logical pixels per em.
+title_text = 13
