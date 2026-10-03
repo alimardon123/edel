@@ -226,8 +226,9 @@ impl Edel {
     ) -> Vec<Drawn> {
         let look = self.animations.closing_look(closed, now);
         let context = renderer.context_id();
-        let centre = centre_of(closed.frame, screen, scale, Point::default());
-        let at = |p: Point<i32, Logical>| (p - screen).to_f64().to_physical(scale);
+        let shift = look.offset.to_physical(scale);
+        let centre = centre_of(closed.frame, screen, scale, shift.to_i32_round());
+        let at = |p: Point<i32, Logical>| (p - screen).to_f64().to_physical(scale) + shift;
         let mut parts: Vec<Element> = closed
             .parts
             .iter()
