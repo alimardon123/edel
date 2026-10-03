@@ -3,9 +3,11 @@
 //! window under it. A window's title bar moves it when dragged and
 //! maximizes it on a double click; its buttons act when released over
 //! them; its edges resize it. Super with the left button moves any window,
-//! with the right button resizes it from the nearest corner, Super+Q
-//! closes the focused one and Super+T switches the workspace between
-//! floating and tiling (M4.5). Wheels and touchpads scroll the window
+//! with the right button resizes it from the nearest corner, and the
+//! keyboard shortcuts of `[shortcuts]` act (`shortcuts.rs`, M5.13a: by
+//! default Super+Q closes the focused window, Super+T switches the
+//! workspace between floating and tiling and Ctrl+Alt+T opens a terminal).
+//! Wheels and touchpads scroll the window
 //! under the pointer, and pens reach windows through `zwp_tablet_v2`
 //! (M4.6b). Ctrl+Alt+F1 to F12 ask for a virtual terminal,
 //! which only a real seat can switch to, so a person can always reach a
@@ -29,6 +31,7 @@ use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 use edel_compositor::frame::{self, Button, Hit};
 
 use crate::grabs::{Kind, WindowGrab, nearest_corner};
+use crate::shortcuts::Act;
 use crate::state::Edel;
 
 /// Linux's codes for the left and right mouse buttons (`BTN_LEFT`,
@@ -42,9 +45,9 @@ const DOUBLE_CLICK: u32 = 400;
 
 /// What a key the compositor keeps from the windows does.
 enum Action {
-    Terminal(i32),
-    Close,
-    ToggleTiling,
+    /// Ctrl+Alt+F1 to F12: that virtual terminal.
+    Vt(i32),
+    Shortcut(crate::shortcuts::Act),
 }
 
 /// What is under the pointer.
@@ -90,36 +93,37 @@ impl Edel {
                     event.state(),
                     serial,
                     event.time_msec(),
-                    |_, modifiers, keysym| {
+                    |state, modifiers, keysym| {
                         let sym = keysym.modified_sym().raw();
                         let vts =
                             xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12;
-                        // Q and T where a Latin layout has them, whatever
-                        // the layout.
-                        let latin = keysym.raw_latin_sym_or_raw_current_sym().map(|s| s.raw());
-                        let q = latin == Some(xkb::keysyms::KEY_q);
-                        let t = latin == Some(xkb::keysyms::KEY_t);
-                        if pressed && vts.contains(&sym) {
-                            FilterResult::Intercept(Action::Terminal(
+                        // Keys where a Latin layout has them, whatever the
+                        // layout.
+                        let latin = keysym.raw_latin_sym_or_raw_current_sym();
+                        if !pressed {
+                            FilterResult::Forward
+                        } else if vts.contains(&sym) {
+                            FilterResult::Intercept(Action::Vt(
                                 (sym - xkb::keysyms::KEY_XF86Switch_VT_1 + 1) as i32,
                             ))
-                        } else if pressed && modifiers.logo && q {
-                            FilterResult::Intercept(Action::Close)
-                        } else if pressed && modifiers.logo && t {
-                            FilterResult::Intercept(Action::ToggleTiling)
+                        } else if let Some(act) =
+                            crate::shortcuts::find(&state.bindings, modifiers, latin)
+                        {
+                            FilterResult::Intercept(Action::Shortcut(act))
                         } else {
                             FilterResult::Forward
                         }
                     },
                 );
                 match action? {
-                    Action::Terminal(vt) => return Some(vt),
-                    Action::Close => {
+                    Action::Vt(vt) => return Some(vt),
+                    Action::Shortcut(Act::Close) => {
                         if let Some(window) = self.focused_window() {
                             self.close(&window);
                         }
                     }
-                    Action::ToggleTiling => self.toggle_tiling(),
+                    Action::Shortcut(Act::Tiling) => self.toggle_tiling(),
+                    Action::Shortcut(Act::Terminal) => crate::program::open(self, "foot"),
                 }
             }
             InputEvent::PointerMotion { event } => {

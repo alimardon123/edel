@@ -129,6 +129,13 @@ commands() {
 			as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
 			;;
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
+		# Shortcuts (M5.13a): a window to close with keys, close moved to
+		# Super+W, and back to its default.
+		'shortcut window')
+			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
+			;;
+		'close on super-w') edel system set shortcuts.close=Super+W ;;
+		'shortcuts default') edel system unset shortcuts.close ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its
