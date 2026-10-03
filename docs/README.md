@@ -14,6 +14,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [ADR-007](ADR-007-immutability.md) | Immutable base, three customization levels, add-ons, developer mode and dev containers | Proposed |
 | [ADR-008](ADR-008-features-defaults-and-install.md) | Features as one file each, files read across releases, defaults as the absence of a key, one way in from Settings, the terminal or a file | Proposed |
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
+| [REVIEW-shells.md](REVIEW-shells.md) | What we take from Hyprland, niri, the Quickshell shells, GNOME, macOS and Windows 11 to look beautiful and feel instant, and what we skip | Review |
 | [REVIEW-postmarketos.md](REVIEW-postmarketos.md) | What we can learn from postmarketOS (now Nura) and its immutable Duranium | Review |
 | [FEATURES.md](FEATURES.md) | How images are made of feature files: the features today, the file, format 2 definitions, the merge and its refusals, worked examples | Reference |
 | [FORMATS.md](FORMATS.md) | Every file format edel owns: fields, signatures, leniency, the stepping-stone rule | Reference |
