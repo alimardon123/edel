@@ -11,6 +11,7 @@
 //! here.
 
 pub mod clock;
+pub mod layout;
 pub mod menu;
 pub mod windows;
 pub mod workspaces;
@@ -52,13 +53,15 @@ pub struct Widget {
 
 /// What shell-ui knows that widgets show: the workspaces, by name, with
 /// the shown one marked (ext-workspace-v1), where a scroll left the
-/// workspace switcher's view, and the windows on a screen
-/// (wlr-foreign-toplevel-management).
+/// workspace switcher's view, the windows on a screen
+/// (wlr-foreign-toplevel-management), and the shown workspace's policy
+/// (edel-shell-v1).
 #[derive(Debug, Default)]
 pub struct Live {
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     pub windows: Vec<Task>,
+    pub policy: String,
 }
 
 /// A window, as the window list shows it.
@@ -91,6 +94,8 @@ pub enum Action {
     Activate(usize),
     /// Minimize the window at this place in [`Live::windows`].
     Minimize(usize),
+    /// Switch the shown workspace's policy, as Super+T.
+    TogglePolicy,
 }
 
 /// For widgets that take no input.
@@ -103,6 +108,7 @@ pub const TABLE: &[Widget] = &[
     menu::WIDGET,
     windows::WIDGET,
     workspaces::WIDGET,
+    layout::WIDGET,
     clock::WIDGET,
 ];
 

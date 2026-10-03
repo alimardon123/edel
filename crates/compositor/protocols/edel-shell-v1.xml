@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="edel_shell_v1">
+  <copyright>
+    Copyright the Edel OS authors. GPL-3.0-or-later.
+  </copyright>
+
+  <description summary="the Edel shell's private link">
+    What the compositor tells shell-ui and what shell-ui asks of it beyond
+    the standard protocols (ADR-002, roadmap M5.3). Private: the two ship
+    together in one image, so the interface grows within version 1 until
+    the first public release. Not an extension API.
+  </description>
+
+  <interface name="edel_shell_v1" version="1">
+    <description summary="the shell's link to the compositor">
+      Bound once by shell-ui. The compositor sends the shown workspace's
+      policy when bound and whenever it changes.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop listening"/>
+    </request>
+
+    <request name="toggle_policy">
+      <description summary="switch the shown workspace's policy">
+        The other policy for the shown workspace only, as Super+T does;
+        the system file is left as it is.
+      </description>
+    </request>
+
+    <event name="policy">
+      <description summary="the shown workspace's policy">
+        How the shown workspace places its windows.
+      </description>
+      <arg name="name" type="string" summary="floating or tiling"/>
+    </event>
+  </interface>
+</protocol>

@@ -124,6 +124,8 @@ pub struct Edel {
     /// Clients that follow the windows (`toplevels.rs`, M5.2d); a cell, as
     /// they hear of changes wherever the state file is written.
     pub toplevels: std::cell::RefCell<crate::toplevels::Toplevels>,
+    /// shell-ui's private link (`edelshell.rs`, M5.3).
+    pub links: crate::edelshell::Links,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -152,6 +154,7 @@ impl Edel {
         seat.add_pointer();
         crate::extworkspace::create_global(&display);
         crate::toplevels::create_global(&display);
+        crate::edelshell::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
             // Minimize since the window list brings a window back (M5.2h);
@@ -208,6 +211,7 @@ impl Edel {
             desks: Desks::new(Settings::default().workspaces(), tokens.gap),
             ext_workspaces: Default::default(),
             toplevels: Default::default(),
+            links: Default::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -424,6 +428,7 @@ impl Edel {
         }
         self.state_file.send(self.state_toml());
         self.sync_toplevels();
+        self.sync_shell();
     }
 
     /// Outputs and windows, bottom of the stack first, as TOML: the shown

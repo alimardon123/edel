@@ -25,5 +25,8 @@ toml = "1.1.6"
 # Pinned like the test client's: the layer shell and a calloop event loop
 # for the clock's timer; no xkbcommon until shell-ui takes keys (M5.3).
 smithay-client-toolkit = { version = "=0.21.1", default-features = false, features = ["calloop"] }
+# The code for the compositor's private protocol, edel-shell-v1 (M5.3);
+# already in the tree through smithay-client-toolkit's protocols.
+wayland-scanner = "0.31.11"
 # 2D drawing into the panel's shared-memory buffers.
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
