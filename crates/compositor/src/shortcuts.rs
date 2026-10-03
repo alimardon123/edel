@@ -2,8 +2,8 @@
 //! system files, laid over the defaults by `edel::shortcuts::resolve`, the
 //! one table `edel system check` and Settings use, and turned into the
 //! keysyms the keyboard reports. Only actions whose step has landed are
-//! bound here; the keys of the others (launcher, switcher, workspaces,
-//! screenshot, lock) reach the app that has the keyboard until then.
+//! bound here; the keys of the others (launcher, switcher, screenshot,
+//! lock) reach the app that has the keyboard until then.
 //! Keys match on the Latin layout's keysym, whatever the layout.
 
 use std::collections::BTreeMap;
@@ -18,24 +18,30 @@ pub enum Act {
     Close,
     Tiling,
     Terminal,
+    /// Go to workspace N, from 0 (M5.2a).
+    Workspace(usize),
+    /// Move the focused window to workspace N, from 0.
+    MoveTo(usize),
 }
 
 impl Act {
     /// The action called `name`, if it does anything yet.
     fn of(name: &str) -> Option<Act> {
+        let number = |rest: &str| match rest.parse::<usize>() {
+            Ok(n @ 1..=9) => Some(n - 1),
+            _ => None,
+        };
         match name {
             "close" => Some(Act::Close),
             "tiling" => Some(Act::Tiling),
             "terminal" => Some(Act::Terminal),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Act::Close => "close",
-            Act::Tiling => "tiling",
-            Act::Terminal => "terminal",
+            _ => {
+                if let Some(rest) = name.strip_prefix("move_to_workspace_") {
+                    number(rest).map(Act::MoveTo)
+                } else {
+                    number(name.strip_prefix("workspace_")?).map(Act::Workspace)
+                }
+            }
         }
     }
 }
@@ -101,13 +107,14 @@ pub fn changes(old: &[Binding], new: &[Binding]) -> Vec<String> {
             .find(|b| b.act == act)
             .map(|b| b.keys.to_string())
     };
-    [Act::Close, Act::Tiling, Act::Terminal]
-        .into_iter()
-        .filter_map(|act| {
+    edel::shortcuts::ACTIONS
+        .iter()
+        .filter_map(|action| {
+            let act = Act::of(action.name)?;
             let (before, after) = (keys_of(old, act), keys_of(new, act));
             (before != after).then(|| match after {
-                Some(keys) => format!("shortcut {} is {keys}", act.name()),
-                None => format!("shortcut {} has no keys", act.name()),
+                Some(keys) => format!("shortcut {} is {keys}", action.name),
+                None => format!("shortcut {} has no keys", action.name),
             })
         })
         .collect()
@@ -149,12 +156,19 @@ mod tests {
             find(&bindings, &held(false, false, false, false), sym("q")),
             None
         );
-        // Actions still to come (switcher, workspaces) bind nothing yet.
+        // Super+N goes to workspace N, Super+Shift+N takes the window.
+        assert_eq!(find(&bindings, &super_, sym("1")), Some(Act::Workspace(0)));
+        assert_eq!(find(&bindings, &super_, sym("9")), Some(Act::Workspace(8)));
+        let super_shift = held(true, false, false, true);
+        assert_eq!(
+            find(&bindings, &super_shift, sym("2")),
+            Some(Act::MoveTo(1))
+        );
+        // Actions still to come (the switcher) bind nothing yet.
         assert_eq!(
             find(&bindings, &held(false, false, true, false), sym("Tab")),
             None
         );
-        assert_eq!(find(&bindings, &super_, sym("1")), None);
     }
 
     #[test]

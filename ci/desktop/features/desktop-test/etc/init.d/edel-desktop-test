@@ -146,6 +146,12 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
 			;;
 		'close on super-w') edel system set shortcuts.close=Super+W ;;
+		# Workspaces (M5.2a): a window to send to another workspace, and
+		# closed while it is there.
+		'away window')
+			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
+			;;
+		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
 		'shortcuts default') edel system unset shortcuts.close ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
@@ -173,6 +179,7 @@ commands() {
 follow() {
 	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
 	last=''
+	last_hidden=''
 	last_layers=''
 	i=0
 	while [ "$i" -lt 3000 ]; do
@@ -180,6 +187,11 @@ follow() {
 		if [ "$now" != "$last" ]; then
 			say "windows $now"
 			last=$now
+		fi
+		now=$(windows hidden)
+		if [ "$now" != "$last_hidden" ]; then
+			say "hidden $now"
+			last_hidden=$now
 		fi
 		now=$(layers)
 		if [ "$now" != "$last_layers" ]; then
@@ -192,22 +204,34 @@ follow() {
 	kill $! 2>/dev/null
 }
 
-# windows: how many windows the state file lists, then each as
-# title@x,y,widthxheight, bottom first, spaces in titles as _.
+# windows: how many windows the state file lists on the shown workspace,
+# then each as title@x,y,widthxheight, bottom first, spaces in titles as
+# _. windows hidden: the shown workspace and how many windows the others
+# hold, then each as title@workspace (M5.2a).
 windows() {
-	awk -F' = ' '
+	awk -F' = ' -v hidden="${1:-}" '
 		function flush() {
-			if (t != "") out = out " " t "@" x "," y "," w "x" h
-			t = ""
+			if (inside && (hidden != "") == (ws != shown)) {
+				n++
+				if (hidden != "") out = out " " t "@" ws
+				else if (t != "") out = out " " t "@" x "," y "," w "x" h
+			}
+			inside = 0
 		}
-		/^\[/ { flush() }
-		/^\[\[windows\]\]/ { n++ }
-		$1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
-		$1 == "x" { x = $2 }
-		$1 == "y" { y = $2 }
-		$1 == "width" { w = $2 }
-		$1 == "height" { h = $2 }
-		END { flush(); print n + 0 out }
+		/^\[/ { flush(); header = 1 }
+		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = "" }
+		!header && $1 == "workspace" { shown = $2 }
+		inside && $1 == "workspace" { ws = $2 }
+		inside && $1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
+		inside && $1 == "x" { x = $2 }
+		inside && $1 == "y" { y = $2 }
+		inside && $1 == "width" { w = $2 }
+		inside && $1 == "height" { h = $2 }
+		END {
+			flush()
+			if (hidden != "") printf "on %s, ", shown
+			print n + 0 out
+		}
 	' /run/edel/session/state.toml 2>/dev/null
 }
 

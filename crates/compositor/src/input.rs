@@ -124,6 +124,8 @@ impl Edel {
                     }
                     Action::Shortcut(Act::Tiling) => self.toggle_tiling(),
                     Action::Shortcut(Act::Terminal) => crate::program::open(self, "foot"),
+                    Action::Shortcut(Act::Workspace(n)) => self.switch_workspace(n),
+                    Action::Shortcut(Act::MoveTo(n)) => self.move_to_workspace(n),
                 }
             }
             InputEvent::PointerMotion { event } => {
@@ -331,6 +333,16 @@ impl Edel {
         if kept != at {
             self.move_pointer(kept, SERIAL_COUNTER.next_serial(), 0);
         }
+    }
+
+    /// What lies under the pointer changed, not the pointer: a workspace
+    /// was shown or a window left it. The pointer's focus follows.
+    pub fn repoint(&mut self) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let at = pointer.current_location();
+        self.move_pointer(at, SERIAL_COUNTER.next_serial(), 0);
     }
 
     /// Moves the pointer to `at`, as a pen does on its way.

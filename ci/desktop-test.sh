@@ -50,6 +50,12 @@
 #               moves close: Super+Q then leaves a window open and Super+W
 #               closes it; Ctrl+Alt+T opens a terminal; removing the key
 #               brings Super+Q back (M5.13a)
+#   workspaces  Super+Shift+2 sends a new window to workspace 2, which
+#               the state file says while workspace 1 stays shown;
+#               Super+2 shows it tiled, as shell.tiling from the tiling
+#               case says, Super+T floats that workspace alone, Super+1
+#               brings workspace 1 back as it was, and the window closed
+#               while hidden leaves the state file (M5.2a)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -536,6 +542,46 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_workspaces() {
+	# Classic's four workspaces (M5.2a). away opens on the first, over the
+	# windows there, and takes the keyboard.
+	first=$(value windows)
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' 0 || fail "the test client away did not open: $(value windows)"
+	shot workspaces 640 393 7744aa >/dev/null || fail "away is not drawn at 640,393"
+	# Super+Shift+2 sends it to the second, which the state file says;
+	# the first stays shown.
+	python3 ci/qmp.py key meta_l-shift-2
+	wait_for 'edel-compositor: window away to workspace 2' || fail "Super+Shift+2 did not send away to workspace 2"
+	wait_for 'DESKTOP-TEST: hidden on 1, 1 away@2$' || fail "the state file does not keep away on workspace 2: $(value hidden)"
+	shot workspaces 640 393 '!7744aa' >/dev/null || fail "away is still drawn on workspace 1"
+	# Super+2 shows it tiled, as shell.tiling = true from the tiling case
+	# says for every workspace; Super+T floats this one alone, with away
+	# centred where its floating policy put it.
+	python3 ci/qmp.py key meta_l-2
+	wait_for 'edel-compositor: workspace 2' || fail "Super+2 did not show workspace 2"
+	wait_for 'DESKTOP-TEST: windows 1 away@9,36,1262x715' || fail "away does not fill workspace 2, tiled: $(value windows)"
+	shot workspaces 640 393 7744aa >/dev/null || fail "away is not drawn on workspace 2"
+	floated=$(count 'edel-compositor: windows now floating')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now floating' "$floated" || fail "Super+T did not float workspace 2"
+	wait_for 'DESKTOP-TEST: windows 1 away@540,318,200x150' || fail "away is not centred on workspace 2, floating: $(value windows)"
+	# Super+1 brings the first back as it was, floating.
+	back=$(count "DESKTOP-TEST: windows $first\$")
+	kept=$(count 'DESKTOP-TEST: hidden on 1, 1 away@2$')
+	python3 ci/qmp.py key meta_l-1
+	wait_for 'edel-compositor: workspace 1' || fail "Super+1 did not show workspace 1"
+	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring back $first: $(value windows)"
+	wait_more 'DESKTOP-TEST: hidden on 1, 1 away@2$' "$kept" || fail "away is not kept on workspace 2: $(value hidden)"
+	shot workspaces 640 393 '!7744aa' >/dev/null || fail "away is drawn on workspace 1"
+	# away closes while hidden, and leaves the state file.
+	none=$(count 'DESKTOP-TEST: hidden on 1, 0$')
+	guest 'away off'
+	wait_for 'edel-compositor: unmapped window away' || fail "away, closed on workspace 2, was not unmapped"
+	wait_more 'DESKTOP-TEST: hidden on 1, 0$' "$none" || fail "the state file still lists away: $(value hidden)"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file"
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -638,13 +684,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
+	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, workspaces and xwayland"
 		exit 1
 		;;
 	esac

@@ -26,6 +26,7 @@ mod statefile;
 mod tiers;
 mod watch;
 mod winit;
+mod workspaces;
 mod xwayland;
 
 use std::process::ExitCode;

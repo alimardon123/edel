@@ -6,6 +6,7 @@
 
 pub mod animation;
 pub mod cursor;
+pub mod desks;
 pub mod effects;
 pub mod frame;
 pub mod layout;
