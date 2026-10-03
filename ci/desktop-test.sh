@@ -36,6 +36,11 @@
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
+#   respawn     kill -9 edel-compositor ends the session, and greetd's
+#               greeter, our compositor, logs a new ready line within 5 s
+#               and owns the health file; typing ci and a password into
+#               its agreety starts ci's compositor again; last, as it
+#               ends the first session
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -280,6 +285,36 @@ case_xwayland() {
 	echo "PASS: no X11 process ran until xclock connected, then XWayland and xwayland-satellite ($(value x11_rss_mib) MiB) showed it at $x,$y with a title bar in the focused colour, and its close button closed it"
 }
 
+case_respawn() {
+	# greetd owns the compositor's lifecycle (M4.7b): when the session's
+	# compositor dies, the session ends and greetd starts its greeter, our
+	# compositor running agreety in foot, which writes the health file.
+	guest 'kill compositor'
+	wait_for 'DESKTOP-TEST: (respawn_seconds|respawn:)' ||
+		fail "no word from the test service after kill -9 edel-compositor"
+	seconds=$(value respawn_seconds)
+	[ -n "$seconds" ] || fail "greetd's greeter never logged a ready line: $(value respawn:)"
+	awk -v s="$seconds" 'BEGIN { exit !(s <= 5) }' ||
+		fail "the greeter's compositor showed its first frame $seconds s after the kill, over 5"
+	owner=$(value ready_owner)
+	[ "$owner" = greetd ] || fail "the health file is $owner's, not the greeter's"
+	# The login screen itself: foot, running agreety, the only window, with
+	# the keyboard. Logging in as ci there ends the greeter's compositor,
+	# and greetd starts ci's, which takes the health file back.
+	wait_for 'DESKTOP-TEST: windows 1 foot@' ||
+		fail "the greeter's compositor shows no foot window: $(value windows)"
+	sleep 2
+	python3 ci/qmp.py type 'ci\n'
+	sleep 3
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_for 'DESKTOP-TEST: login_ready ' || fail "no word from the test service after the login"
+	case "$(value login_ready)" in
+	"ci output "*" ready") ;;
+	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
+	esac
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again"
+}
+
 case_tiling() {
 	# Through the system file, as Settings and people will: the compositor
 	# follows it and re-lays the windows out at once. foot is the master on
@@ -372,12 +407,12 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland scale
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland scale respawn
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | outputs | pointer | scale | tiling | titlebar | xwayland) ;;
+	console | compositor | floating | outputs | pointer | respawn | scale | tiling | titlebar | xwayland) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, scale, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, respawn, scale, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac
