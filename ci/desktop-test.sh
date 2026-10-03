@@ -38,10 +38,10 @@
 #   layers      a layer-shell panel (the test client, --layer bottom) lies
 #               along the bottom in its colour, keeps its height free of
 #               tiled windows, and goes when closed (M5.1a)
-#   animations  appearance.motion = "reduced" leaves only fades and its
-#               removal brings the rest back; ten windows opening one after
-#               another and closing at the Full tier keep the frame budget,
-#               or drop the tier and say so (M5.11b)
+#   animations  appearance.motion = "reduced" logs fades only and its
+#               removal logs the tier's own animations again; ten windows
+#               opening one after another and closing at the tier llvmpipe
+#               picks keep the frame budget (M5.11b)
 #   shortcuts   edel system set shortcuts.close=Super+W, sent to the VM,
 #               moves close: Super+Q then leaves a window open and Super+W
 #               closes it; Ctrl+Alt+T opens a terminal; removing the key
@@ -185,12 +185,13 @@ case_compositor() {
 	"output "*" ready") ;;
 	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
 	esac
-	# CI's session forces the Full tier, the heaviest (M5.11); edel shell
-	# tier reads the tier now, Full or lower after a drop, from the state
-	# file, and the animations follow it. The greeter shows the tier
-	# llvmpipe picks itself, in respawn.
-	[ "$(value tier)" = 'edel-compositor: tier=full (EDEL_EFFECTS)' ] ||
-		fail "the compositor logged \"$(value tier)\", not tier=full as CI's EDEL_EFFECTS asks"
+	# llvmpipe draws on the CPU, so the compositor picks the Lite tier
+	# itself (M5.11); edel shell tier reads the tier now from the state
+	# file, and the animations follow it.
+	case "$(value tier)" in
+	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
+	*) fail "the compositor did not pick tier=lite under llvmpipe: \"$(value tier)\"" ;;
+	esac
 	now=$(value tier_now)
 	[ "tier=$(value shell_tier)" = "$now" ] ||
 		fail "edel shell tier said \"$(value shell_tier)\", but the compositor logged $now last"
@@ -335,8 +336,8 @@ case_respawn() {
 		fail "the greeter's compositor showed its first frame $seconds s after the kill, over 5"
 	owner=$(value ready_owner)
 	[ "$owner" = greetd ] || fail "the health file is $owner's, not the greeter's"
-	# Without CI's EDEL_EFFECTS, llvmpipe draws on the CPU, so the
-	# greeter's compositor picks the Lite tier itself (M5.11).
+	# The greeter's compositor picks its tier itself too: Lite, under
+	# llvmpipe (M5.11).
 	case "$(value greeter_tier)" in
 	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
 	*) fail "the greeter's compositor did not pick tier=lite under llvmpipe: \"$(value greeter_tier)\"" ;;
@@ -402,7 +403,8 @@ wait_more() {
 
 case_animations() {
 	# appearance.motion (M5.11b): reduced keeps the fades and drops the
-	# growing and sliding; removing the key brings them back.
+	# growing and sliding, which Lite has none of; removing the key logs
+	# the tier's own animations again.
 	full=$(tr -d '\r' <"$log" | grep -c 'motion full: open' || true)
 	guest 'motion reduced'
 	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [1-9][0-9]* ms, close [1-9][0-9]* ms, slide 0 ms' ||
@@ -418,9 +420,10 @@ case_animations() {
 	# Ten windows opening one after another, then closing at once, while
 	# weston-presentation-shm times the frames as at the start: first with
 	# motion off, what opening ten programs costs without any animation,
-	# then at the Full tier CI forces. Were frames to miss the screen's
-	# refresh, the tier would drop on its own; the case says which tier
-	# each run ended at.
+	# then with the animations of the tier llvmpipe picks, Lite. M5.11's
+	# done-when asks for the frame budget there; the Full tier, which no
+	# machine without a GPU starts in, drops on its own when its frames
+	# miss (11a's cargo tests). The case says which tier each run ended at.
 	off_runs=$(count 'DESKTOP-TEST: open_ten_tier ')
 	guest 'motion off'
 	wait_for 'edel-compositor: animations at tier [a-z]+, motion off: open 0 ms' ||
@@ -448,7 +451,7 @@ case_animations() {
 	echo "ten windows: frames p99 ${p99_off:-?} ms with motion off (tier $tier_off), ${p99:-?} ms with it full (tier $tier), budget $limit ms"
 	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
 	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "with ten windows opening and closing at the Full tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (tier now $tier; ${p99_off:-?} ms with motion off)"
+		fail "with ten windows opening and closing at tier $tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (${p99_off:-?} ms with motion off)"
 	i=0
 	while [ "$(value windows)" != "$windows" ]; do
 		i=$((i + 1))
@@ -456,9 +459,9 @@ case_animations() {
 		sleep 0.2
 	done
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Ten windows opening and closing at the Full tier (M5.11b): frames p99 $p99 ms (budget $limit ms), $frames frames, tier $tier after." >>"$GITHUB_STEP_SUMMARY"
+		echo "Ten windows opening and closing with animations (M5.11b): frames p99 $p99 ms (budget $limit ms; $p99_off ms with motion off), $frames frames, tier $tier." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the rest back; ten windows opened and closed at the Full tier with frames p99 $p99 ms over $frames frames, within $limit ms, tier $tier after"
+	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the tier's own back; ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, within $limit ms"
 }
 
 case_shortcuts() {
