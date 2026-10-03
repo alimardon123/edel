@@ -163,7 +163,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
 /// steps, keeping three in sight.
 fn input(shown: &str, input: Input) -> Option<Action> {
     match input {
-        Input::Click(at) => buttons(shown)
+        Input::Click(at, _) => buttons(shown)
             .into_iter()
             .find(|(_, _, left, w)| (*left..left + w).contains(&at))
             .map(|(name, ..)| Action::Show(name.to_string())),
@@ -186,6 +186,7 @@ mod tests {
                 .map(|n| (n.to_string(), n == active + 1))
                 .collect(),
             view,
+            windows: Vec::new(),
         }
     }
 
@@ -228,15 +229,15 @@ mod tests {
         };
         let middle = |b: (&str, bool, f32, f32)| b.2 + b.3 / 2.0;
         assert_eq!(
-            input(shown, Input::Click(middle(three))),
+            input(shown, Input::Click(middle(three), 0.0)),
             Some(Action::Show("3".into()))
         );
         assert_eq!(
-            input(shown, Input::Click(middle(two))),
+            input(shown, Input::Click(middle(two), 0.0)),
             Some(Action::Show("2".into()))
         );
         assert_eq!(
-            input(shown, Input::Click(0.0)),
+            input(shown, Input::Click(0.0, 0.0)),
             None,
             "the room is no button"
         );

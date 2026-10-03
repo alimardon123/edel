@@ -6,13 +6,15 @@
 //! shaped by cosmic-text, all from the design tokens. Today it draws the
 //! preset's panels (M5.1b, M5.1c): the system file's `shell.preset`, else
 //! Classic, whose one panel runs along the bottom of the first screen
-//! with the menu button, the workspace switcher (M5.2c) and a clock. Each
+//! with the menu button, the window list (M5.2h), the workspace switcher
+//! (M5.2c) and a clock. Each
 //! panel holds widgets from the table in `widgets/` and is drawn again
 //! only when what a widget shows, or the panel's size or scale, changes;
 //! a click or a scroll on a widget does what the widget says. It exits
 //! when the compositor goes away.
 
 mod paint;
+mod toplevels;
 mod widgets;
 mod workspaces;
 
@@ -61,9 +63,10 @@ struct Shell {
     outputs: OutputState,
     seat: SeatState,
     pointer: Option<wl_pointer::WlPointer>,
-    /// What widgets show beyond the clock: the workspaces.
+    /// What widgets show beyond the clock: the workspaces and windows.
     live: Live,
     workspaces: workspaces::Workspaces,
+    toplevels: toplevels::Toplevels,
     compositor: CompositorState,
     shm: Shm,
     pool: SlotPool,
@@ -156,6 +159,7 @@ fn run() -> Result<()> {
         pointer: None,
         live: Live::default(),
         workspaces: workspaces::Workspaces::bind(&globals, &qh),
+        toplevels: toplevels::Toplevels::bind(&globals, &qh),
         compositor,
         shm,
         pool,
@@ -328,15 +332,24 @@ impl Shell {
         self.draw_all();
     }
 
+    /// The compositor said what changed about the windows.
+    fn windows_changed(&mut self) {
+        let now = self.toplevels.tasks();
+        if now != self.live.windows {
+            self.live.windows = now;
+            self.draw_all();
+        }
+    }
+
     fn draw_all(&mut self) {
         for i in 0..self.panels.len() {
             self.draw(i);
         }
     }
 
-    /// `input` at `x` logical pixels along panel `i`: the widget there
-    /// says what it does.
-    fn input(&mut self, i: usize, x: f32, input: impl Fn(f32) -> Input) {
+    /// `input` at `x` logical pixels along panel `i`: the widget there,
+    /// told how far along it and how wide it is, says what it does.
+    fn input(&mut self, i: usize, x: f32, input: impl Fn(f32, f32) -> Input) {
         let panel = &self.panels[i];
         let Some(j) = panel
             .places
@@ -349,13 +362,19 @@ impl Shell {
             return;
         };
         let shown = look.shown.get(j).map_or("", String::as_str);
-        let action = (widget.input)(shown, input(x - panel.places[j].0));
+        let (left, width) = panel.places[j];
+        let action = (widget.input)(shown, input(x - left, width));
         match action {
             Some(Action::Show(name)) => self.workspaces.show(&name),
             Some(Action::View(first)) => {
                 self.live.view = Some(first);
                 self.draw_all();
             }
+            Some(Action::Activate(window)) => {
+                let seat = self.seat.seats().next();
+                self.toplevels.activate(window, seat.as_ref());
+            }
+            Some(Action::Minimize(window)) => self.toplevels.minimize(window),
             None => {}
         }
     }
@@ -542,7 +561,7 @@ impl PointerHandler for Shell {
                     };
                     let n = steps(vertical) + steps(horizontal);
                     if n != 0 {
-                        self.input(i, x, |_| Input::Scroll(n));
+                        self.input(i, x, |_, _| Input::Scroll(n));
                     }
                 }
                 _ => {}

@@ -108,7 +108,7 @@ jobs:
       - name: Test the desktop image on a virtual GPU
         # After the other VMs, alone, so the frame times and memory it
         # checks against ci/budgets.toml are measured on a quiet runner.
-        run: sh ci/desktop-test.sh floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces scale respawn
+        run: sh ci/desktop-test.sh floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows scale respawn
 
       - name: Check the release, and show what would be published
         run: |

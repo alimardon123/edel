@@ -7,7 +7,9 @@
 //! switch slides at the tier's slide length (M5.2f): the shown windows'
 //! pictures leave towards one side while the other workspace's windows
 //! come in from the other, as the workspaces lie in a row; on Lite, whose
-//! slides take no time, the switch is instant.
+//! slides take no time, the switch is instant. Minimizing (M5.2h) hides a
+//! window the same way, on its own workspace, until the window list
+//! brings it back.
 
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
@@ -106,9 +108,60 @@ impl Edel {
         self.announce_workspaces();
     }
 
-    /// `window`, on a hidden workspace, closed or dropped its buffer: it
-    /// leaves its workspace and the state file, and what it was is
-    /// forgotten, as `unmap` does for a shown window.
+    /// Minimizes `window`, shown, as its title bar's button, the window
+    /// itself or the window list asks: its picture fades as a closed
+    /// window's does, the others may fill its place, and the keyboard goes
+    /// to the window now on top. Nothing happens during a drag.
+    pub fn minimize(&mut self, window: &Window) {
+        if self.dragging {
+            return;
+        }
+        let Some(frame) = self.frame_of(window) else {
+            return;
+        };
+        self.desks.minimize(window.clone(), frame);
+        eprintln!("edel-compositor: minimized window {}", title(window));
+        self.snapshot_closing(window);
+        self.hide(window);
+        self.focus_top();
+        if self.desks.layout().rearranges() {
+            self.relayout();
+        }
+        self.dirty = true;
+        self.state_changed();
+        self.repoint();
+    }
+
+    /// Brings `window` back if it is minimized, showing its workspace
+    /// first: on top, with the keyboard, where it was (a tile in tiling,
+    /// the screen if it was maximized). False if it was not minimized, or
+    /// during a drag.
+    pub fn restore(&mut self, window: &Window) -> bool {
+        let Some((desk, _)) = self.desks.minimized(window) else {
+            return false;
+        };
+        if self.dragging {
+            return false;
+        }
+        self.switch_workspace(desk);
+        let area = self.window_area().unwrap_or_default();
+        let Some(frame) = self.desks.restore(window, area) else {
+            return false;
+        };
+        eprintln!("edel-compositor: restored window {}", title(window));
+        self.show(window.clone(), frame, Point::default());
+        self.animations.opened(window);
+        self.focus(window);
+        self.relayout();
+        self.dirty = true;
+        self.state_changed();
+        self.repoint();
+        true
+    }
+
+    /// `window`, on a hidden workspace or minimized, closed or dropped
+    /// its buffer: it leaves its workspace and the state file, and what it
+    /// was is forgotten, as `unmap` does for a shown window.
     pub fn forget_hidden(&mut self, window: &Window) {
         eprintln!("edel-compositor: unmapped window {}", title(window));
         let mut frame = data(window).borrow_mut();

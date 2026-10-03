@@ -221,21 +221,24 @@ follow() {
 # windows: how many windows the state file lists on the shown workspace,
 # then each as title@x,y,widthxheight, bottom first, spaces in titles as
 # _. windows hidden: the shown workspace and how many windows the others
-# hold, then each as title@workspace (M5.2a).
+# hold, then each as title@workspace (M5.2a). A minimized window's entry
+# ends in - (M5.2h).
 windows() {
 	awk -F' = ' -v hidden="${1:-}" '
 		function flush() {
 			if (inside && (hidden != "") == (ws != shown)) {
 				n++
-				if (hidden != "") out = out " " t "@" ws
-				else if (t != "") out = out " " t "@" x "," y "," w "x" h
+				# A minimized window (M5.2h) ends in -.
+				if (hidden != "") out = out " " t "@" ws (m ? "-" : "")
+				else if (t != "") out = out " " t "@" x "," y "," w "x" h (m ? "-" : "")
 			}
 			inside = 0
 		}
 		/^\[/ { flush(); header = 1 }
-		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = "" }
+		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = ""; m = 0 }
 		!header && $1 == "workspace" { shown = $2 }
 		inside && $1 == "workspace" { ws = $2 }
+		inside && $1 == "minimized" { m = ($2 == "true") }
 		inside && $1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
 		inside && $1 == "x" { x = $2 }
 		inside && $1 == "y" { y = $2 }
