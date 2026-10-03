@@ -25,6 +25,11 @@
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
 #               protocols
+#   outputs     both screens of virtio-vga,max_outputs=2 lit (the second
+#               forced on by the image's kernel command line, at the seed
+#               system file's mode 1024x768), side by side in the state
+#               file, and the second turned off by
+#               edel system set outputs.Virtual-2.enabled=false
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -300,6 +305,25 @@ case_pointer() {
 	echo "PASS: the cursor is where the pointer is, and the compositor offers tablets, cursor shapes, fractional scale and viewporter"
 }
 
+case_outputs() {
+	n=$(tr -d '\r' <"$log" | grep -c 'DESKTOP-TEST: screen output Virtual-[12] [0-9]*x[0-9]* ready' || true)
+	[ "$n" = 2 ] || fail "$n screens showed a first frame, not 2: $(grep 'DESKTOP-TEST: screen' "$log" | tr -d '\r')"
+	sed -n 's/.*DESKTOP-TEST: state //p' "$log" | tr -d '\r' >"$dir/state.toml"
+	python3 - "$dir/state.toml" <<-'EOF' || fail "the state file does not show the two screens side by side"
+		import sys, tomllib
+		outputs = {o["name"]: o for o in tomllib.load(open(sys.argv[1], "rb"))["outputs"]}
+		place = lambda n: (outputs[n]["x"], outputs[n]["y"], outputs[n]["width"], outputs[n]["height"])
+		assert place("Virtual-1") == (0, 0, 1280, 800), place("Virtual-1")
+		assert place("Virtual-2") == (1280, 0, 1024, 768), place("Virtual-2")
+	EOF
+	guest 'screen 2 off'
+	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
+		fail "edel system set outputs.Virtual-2.enabled=false did not run in the VM"
+	wait_for 'edel-compositor: output Virtual-2 off' ||
+		fail "the compositor did not turn Virtual-2 off"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the system file's mode 1024x768, and outputs.Virtual-2.enabled = false turned the second off"
+}
+
 case_scale() {
 	guest 'scale 2'
 	wait_for 'DESKTOP-TEST: ran scale 2: 0' ||
@@ -319,19 +343,19 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer compositor scale
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor scale
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | pointer | scale | tiling | titlebar) ;;
+	console | compositor | floating | outputs | pointer | scale | tiling | titlebar) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, pointer, scale, tiling and titlebar"
+		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, scale, tiling and titlebar"
 		exit 1
 		;;
 	esac
 done
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot -snapshot \
-	-m 2048 -smp 4 -vga none -device virtio-vga \
+	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \

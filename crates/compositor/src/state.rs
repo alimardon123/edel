@@ -92,6 +92,9 @@ pub struct Edel {
     pub last_title_click: Option<(Window, u32)>,
     /// What the system file says (`watch.rs`).
     pub settings: Settings,
+    /// `[outputs]` changed: the backend scans and places its screens again
+    /// (`drm.rs`).
+    pub screens_changed: bool,
     /// Where window frames go; one workspace until M5.2.
     workspace: Workspace<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
@@ -157,6 +160,7 @@ impl Edel {
             pressed: None,
             last_title_click: None,
             settings: Settings::default(),
+            screens_changed: false,
             workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
@@ -257,6 +261,9 @@ impl Edel {
             eprintln!("edel-compositor: {note}");
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
+        if old.outputs != new.outputs {
+            self.screens_changed = true;
+        }
         let rescaled = self.apply_scales();
         if old.tiling != new.tiling {
             self.switch_policy(new.policy());

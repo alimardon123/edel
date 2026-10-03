@@ -46,9 +46,10 @@ impl Edel {
         for output in outputs {
             let wanted = self
                 .settings
-                .scales
+                .outputs
                 .get(&output.name())
-                .map_or_else(|| auto_scale(&output), |s| snap_scale(*s));
+                .and_then(|o| o.scale)
+                .map_or_else(|| auto_scale(&output), snap_scale);
             if (output.current_scale().fractional_scale() - wanted).abs() > 1e-9 {
                 output.change_current_state(None, None, Some(Scale::Fractional(wanted)), None);
                 eprintln!("edel-compositor: output {} scale {wanted}", output.name());
