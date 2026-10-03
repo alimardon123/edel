@@ -6,7 +6,7 @@
 description="Mount the Edel OS data partition"
 
 depend() {
-	after devfs mdev hwdrivers
+	after devfs mdev hwdrivers udev-settle
 }
 
 start() {

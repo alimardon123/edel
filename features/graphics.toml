@@ -1,0 +1,8 @@
+# The screen, the GPU and input, for any image with a display.
+format = 1
+summary = "Graphics and input: Mesa for every common GPU, DRM, libinput and keyboard layouts"
+why = "The compositor draws with EGL and GBM on DRM (Mesa's Gallium drivers, llvmpipe where no GPU driver loads), apps use Vulkan and VA-API through Mesa, libinput reads input devices, and xkeyboard-config holds every keyboard layout."
+packages = ["mesa-dri-gallium", "mesa-egl", "mesa-gbm", "mesa-vulkan-intel", "mesa-vulkan-ati", "mesa-va-gallium", "libdrm", "libinput", "xkeyboard-config"]
+# QEMU's virtual GPU, so the screen comes up in the initramfs as a
+# laptop's does with kms (M4.1).
+modules = ["virtio_gpu"]

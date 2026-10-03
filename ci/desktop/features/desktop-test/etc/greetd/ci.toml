@@ -1,0 +1,12 @@
+# Test only (roadmap M4.1): logs user ci in to sway once, at boot, then
+# shows the text greeter of features/login when sway ends.
+[terminal]
+vt = 7
+
+[initial_session]
+command = "/usr/share/edel/ci/sway-session.sh"
+user = "ci"
+
+[default_session]
+command = "agreety --cmd /bin/sh"
+user = "greetd"

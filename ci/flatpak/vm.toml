@@ -5,7 +5,7 @@ name = "edel-flatpak"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "ab-boot", "ssh", "vm", "flatpak-test"]
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak-test"]
 
 [alpine]
 branch = "v3.24"

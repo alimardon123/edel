@@ -56,3 +56,15 @@ kernels = ["lts"]
 
 [USB_STORAGE]
 reason = "the laptop image boots from a USB stick (M3.4)"
+
+[DRM_VIRTIO_GPU]
+reason = "the virtual GPU the desktop tests draw on (M4.1)"
+kernels = ["lts"]
+
+[VIRTIO_INPUT]
+reason = "the virtual keyboard and tablet the desktop tests type and click with (M4.1)"
+kernels = ["lts"]
+
+[INPUT_EVDEV]
+reason = "libinput reads keyboards, mice and touchpads through evdev (M4.1)"
+kernels = ["lts"]

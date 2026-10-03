@@ -1,0 +1,7 @@
+# Test only (roadmap M4.1): the seed system file of CI's desktop image.
+format = 1
+
+# The person CI logs in to sway; the test service adds ci to the seat
+# group until users join it on their own (M4.2b).
+[users.ci]
+admin = false

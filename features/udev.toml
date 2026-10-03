@@ -1,0 +1,9 @@
+# Device events for the desktop: libinput and the compositor read input
+# and display devices through udev's database, which mdev does not keep.
+format = 1
+summary = "Devices with udev, which input and graphics need"
+why = "libinput and the compositor find keyboards, mice, touchpads and GPUs through udev; udev-trigger loads the drivers for the hardware found, as hwdrivers does with mdev."
+packages = ["eudev", "udev-init-scripts", "udev-init-scripts-openrc"]
+
+[services]
+sysinit = ["udev", "udev-trigger", "udev-settle"]

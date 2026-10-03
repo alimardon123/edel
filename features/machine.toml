@@ -1,11 +1,11 @@
 # What any booted machine runs. features/machine/ holds the console and
 # serial logins (inittab) and the network by DHCP (network/interfaces).
 format = 1
-summary = "A booted machine: init, devices, logs, a console login and the network"
-why = "alpine-base is OpenRC with busybox's tools; its services bring up devices, the kernel log, the hostname, logging and the network by DHCP, and stop the machine cleanly."
+summary = "A booted machine: init, logs, a console login and the network"
+why = "alpine-base is OpenRC with busybox's tools; its services mount /dev, keep the kernel log, set the hostname, log, bring up the network by DHCP, and stop the machine cleanly. Device events come from mdev or udev, a feature each."
 packages = ["alpine-base"]
 
 [services]
-sysinit = ["devfs", "dmesg", "mdev", "hwdrivers"]
+sysinit = ["devfs", "dmesg"]
 boot = ["modules", "sysctl", "hostname", "bootmisc", "syslog", "networking"]
 shutdown = ["mount-ro", "killprocs", "savecache"]

@@ -1,0 +1,4 @@
+# seatd (roadmap M4.1): under supervise-daemon, which starts it again if
+# it dies; before greetd, so a session never starts before its seat.
+supervisor=supervise-daemon
+rc_before="greetd"

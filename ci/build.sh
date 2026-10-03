@@ -88,6 +88,11 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 # service that installs and runs a Flathub runtime (roadmap M1.9).
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
+# The desktop test image (roadmap M4.1): the desktop image plus the test
+# feature in ci/desktop/features, which logs user ci in to sway at once
+# and measures it (ci/desktop-test.sh).
+build "$version" ci/desktop/vm.toml --no-compress --out out/desktop-test
+
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update
 # images and their release.toml, the disks, the container image and the
@@ -109,7 +114,7 @@ done
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/flatpak out/install-test out/keys out/release out/system-test; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/flatpak out/install-test out/keys out/release out/system-test; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

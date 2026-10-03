@@ -1,0 +1,9 @@
+# Device events for machines without a desktop (servers, VMs, the laptop
+# stick): busybox mdev, which alpine-base already brings. A desktop lists
+# udev instead, which libinput needs.
+format = 1
+summary = "Devices with busybox mdev, the small device manager"
+why = "mdev makes device nodes and hwdrivers loads the drivers for the hardware found, with nothing beyond busybox."
+
+[services]
+sysinit = ["mdev", "hwdrivers"]

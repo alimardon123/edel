@@ -88,7 +88,7 @@ assert r["started"].startswith("Started in "), "no boot line"
 assert r["pci"] and all(d["driver"] for d in r["pci"]), "no PCI devices"
 assert "Linux version" in r["dmesg"], "no kernel log"
 # M4.0: the image carries the files of the features vm.toml lists.
-assert r["features"] == ["ab-boot", "base", "machine", "ssh", "vm"], "features: %s" % r["features"]
+assert r["features"] == ["ab-boot", "base", "machine", "mdev", "ssh", "vm"], "features: %s" % r["features"]
 assert r["feature_notes"] == [], "feature notes: %s" % r["feature_notes"]
 print("report:", r["version"], r["kernel"], len(r["pci"]), "PCI devices,", r["memory_in_use_mib"], "MiB in use, features", " ".join(r["features"]))
 ' || fail "edel report printed no valid report: $(head -c 400 out/report.toml)"

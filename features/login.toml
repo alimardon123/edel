@@ -1,0 +1,10 @@
+# The login screen. features/login/ holds greetd's config (agreety, its
+# text greeter, until the compositor greets people in M5.10), its PAM file
+# with pam_rundir, and its conf.d, which runs it under supervise-daemon.
+format = 1
+summary = "Login: greetd and its greeter, with a private runtime directory per session"
+why = "greetd starts the session after login and starts it again when it ends; pam_rundir gives every session /run/user/UID (mode 0700) without logind, which Wayland needs for its socket."
+packages = ["greetd", "greetd-openrc", "greetd-agreety", "pam-rundir"]
+
+[services]
+default = ["greetd"]

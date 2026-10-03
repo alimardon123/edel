@@ -1,0 +1,3 @@
+# greetd (roadmap M4.1): under supervise-daemon, which starts it again if
+# it dies, and with it the greeter.
+supervisor=supervise-daemon

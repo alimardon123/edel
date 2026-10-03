@@ -5,7 +5,7 @@ name = "edel-vm"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "ab-boot", "ssh", "vm"]
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm"]
 
 [alpine]
 branch = "v3.24"
