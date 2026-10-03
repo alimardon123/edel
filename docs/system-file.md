@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-02
 
-One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, `edel system diff [FILE]` shows what apply would change (exit 1 when anything would), `edel system set KEY=VALUE` and `unset KEY` change one key of the machine's file in place, and `edel system export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
+One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, `edel system diff [FILE]` shows what apply would change (exit 1 when anything would), `edel system set KEY=VALUE` and `unset KEY` change one key of the machine's file in place (unsetting a user's last key keeps `[users.NAME]`, so apply takes back what the key gave), and `edel system export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
 
 ```toml
 format = 1
@@ -38,7 +38,7 @@ On the first boot, `edel system apply` seeds the file from the first of: a volum
 |---|---|---|
 | `users.*.admin` | `true` or `false`: member of the `admin` group; absent is `false` | M2.2 |
 | `users.*.ssh_keys` | list of public keys for `~/.ssh/authorized_keys`; absent leaves the file as it is | M2.2 |
-| `users.*.shell` | text, a login shell; absent is `/bin/sh` | M2.2 |
+| `users.*.shell` | a login shell's full path, such as `/bin/ash`, with no `:`; absent is `/bin/sh`. Apply leaves the shell as it is, and says so, when the path is not a program on the machine | M2.2 |
 
 ## `[network]` and `[locale]`
 
