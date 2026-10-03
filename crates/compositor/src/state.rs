@@ -119,6 +119,8 @@ pub struct Edel {
     pub program: Option<crate::program::Program>,
     /// The workspaces and where window frames go on each (M5.2a).
     pub desks: Desks<Window>,
+    /// Clients that follow the workspaces (`extworkspace.rs`, M5.2b).
+    pub ext_workspaces: crate::extworkspace::Managers,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -145,6 +147,7 @@ impl Edel {
         let mut seat = seat_state.new_wl_seat(&display, "seat0");
         seat.add_keyboard(Default::default(), 600, 25)?;
         seat.add_pointer();
+        crate::extworkspace::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
             // Minimize waits for the window list that brings a window back
@@ -199,6 +202,7 @@ impl Edel {
             socket: String::new(),
             bindings: crate::shortcuts::bind(&Default::default()).0,
             desks: Desks::new(Settings::default().workspaces(), tokens.gap),
+            ext_workspaces: Default::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -395,6 +399,7 @@ impl Edel {
     pub fn outputs_changed(&mut self) {
         self.screens_changed_for_layers();
         self.relayout();
+        self.announce_workspaces();
     }
 
     /// Sends the state file what is on screen now. Never during a drag:
@@ -804,7 +809,16 @@ impl DataDeviceHandler for Edel {
 impl ClientDndGrabHandler for Edel {}
 impl ServerDndGrabHandler for Edel {}
 
-impl OutputHandler for Edel {}
+impl OutputHandler for Edel {
+    /// A client's new `wl_output` joins the workspace group it sees.
+    fn output_bound(
+        &mut self,
+        _output: smithay::output::Output,
+        _wl_output: smithay::reexports::wayland_server::protocol::wl_output::WlOutput,
+    ) {
+        self.announce_workspaces();
+    }
+}
 
 /// Opens the Wayland socket (`wayland-1` or the next free name) and
 /// serves clients from the event loop; returns the socket's name.

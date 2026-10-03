@@ -5,10 +5,13 @@
 //! the compositor resizes it, and exits when asked to close. With
 //! `--layer top` or `--layer bottom` it is a panel instead (M5.1a): a
 //! layer surface along that edge, as wide as the screen when its width is
-//! 0, on the top layer, keeping its height free of windows.
+//! 0, on the top layer, keeping its height free of windows. With
+//! `--workspace N` it draws nothing and shows workspace N instead
+//! (`workspaces.rs`, M5.2b).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
+//!     edel-testclient --workspace 3
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -73,7 +76,9 @@ fn args() -> Result<Args> {
                     _ => bail!("--layer is top or bottom"),
                 })
             }
-            _ => bail!("unknown argument {word}; use --size, --colour, --title and --layer"),
+            _ => bail!(
+                "unknown argument {word}; use --size, --colour, --title and --layer, or --workspace alone"
+            ),
         }
     }
     if size.0 == 0 && layer.is_none() {
@@ -122,7 +127,15 @@ struct Client {
     closed: bool,
 }
 
+mod workspaces;
+
 fn main() -> Result<()> {
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    if let [flag, name] = words.as_slice() {
+        if flag == "--workspace" {
+            return workspaces::run(name);
+        }
+    }
     let args = args()?;
     let connection = Connection::connect_to_env().context("connecting to the compositor")?;
     let (globals, mut queue) = registry_queue_init(&connection).context("reading the globals")?;

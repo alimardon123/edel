@@ -1,7 +1,8 @@
 //! Window animations on screen (roadmap M5.11b): a window fades in when it
 //! opens, growing a little on Balanced and Full; a closed window's last
 //! picture fades out, shrinking a little; a window the layout moves slides
-//! to its new place. `edel_compositor::animation` holds the rules (how
+//! to its new place; on a workspace switch (M5.2f) the shown windows'
+//! pictures slide off the screen while the other workspace's slide in. `edel_compositor::animation` holds the rules (how
 //! long and how far, by tier and `appearance.motion`); this keeps what is
 //! animating, starts it from the window events and gives `render.rs` each
 //! window's look. While anything animates the backends draw a frame every
@@ -40,7 +41,8 @@ pub struct Animations {
     logged: Option<(Tier, Motion)>,
 }
 
-/// A closed window's last picture, fading out.
+/// A closed window's last picture, fading out, or a window's picture
+/// sliding away with the workspace it is on.
 pub struct Closing {
     pub anim: Anim,
     /// How many windows were above it: it fades out at that depth.
@@ -54,6 +56,8 @@ pub struct Closing {
     pub bar: Option<Bar>,
     /// Its border, left, right and bottom.
     pub borders: Vec<(SolidColorBuffer, Rectangle<i32, Logical>)>,
+    /// How far it slides when its workspace is left; none when it closed.
+    pub leave: Option<Point<i32, Logical>>,
 }
 
 /// A closed window's title bar: its last pixels, their size and the bar's
@@ -67,6 +71,7 @@ pub struct Bar {
 /// One surface of a window as last drawn: the texture it showed, kept
 /// alive for a fade, and where it was, from the window's origin until it
 /// closes and from the layout's after.
+#[derive(Clone)]
 pub struct Part {
     pub texture: GlesTexture,
     pub at: Point<i32, Logical>,
@@ -164,9 +169,17 @@ impl Animations {
         }
     }
 
-    /// How a closed window is drawn at `now`.
+    /// How a closed or leaving window is drawn at `now`.
     pub fn closing_look(&self, closed: &Closing, now: Duration) -> Look {
-        let (alpha, zoom) = closing(&self.style, closed.anim.eased(now));
+        let progress = closed.anim.eased(now);
+        if let Some(by) = closed.leave {
+            return Look {
+                alpha: 1.0,
+                zoom: 1.0,
+                offset: (f64::from(by.x) * progress, f64::from(by.y) * progress).into(),
+            };
+        }
+        let (alpha, zoom) = closing(&self.style, progress);
         Look {
             alpha,
             zoom,
@@ -259,20 +272,40 @@ impl Edel {
     /// `window` closed: its last picture fades out where it was, if it
     /// was ever drawn.
     pub fn snapshot_closing(&mut self, window: &Window) {
+        self.snapshot(window, None);
+    }
+
+    /// `window`'s workspace is being left: its picture slides `by` off
+    /// the screen, at the tier's slide length. The window keeps its
+    /// picture, for when its workspace is shown again.
+    pub fn snapshot_leaving(&mut self, window: &Window, by: Point<i32, Logical>) {
+        self.snapshot(window, Some(by));
+    }
+
+    fn snapshot(&mut self, window: &Window, leave: Option<Point<i32, Logical>>) {
         let style = self.animations.style;
         let Some(place) = self.space.element_geometry(window) else {
             return;
         };
-        if style.close.is_zero() {
+        let length = if leave.is_some() {
+            style.slide
+        } else {
+            style.close
+        };
+        if length.is_zero() {
             return;
         }
         let origin = place.loc - window.geometry().loc;
         let insets = self.insets(window);
         let frame = insets.frame(place);
         let mut frame_data = data(window).borrow_mut();
-        let parts: Vec<_> = frame_data
-            .picture
-            .drain(..)
+        let picture = if leave.is_some() {
+            frame_data.picture.clone()
+        } else {
+            std::mem::take(&mut frame_data.picture)
+        };
+        let parts: Vec<_> = picture
+            .into_iter()
             .map(|part| {
                 let at = origin + part.at;
                 (Id::new(), Part { at, ..part })
@@ -307,12 +340,13 @@ impl Edel {
             .position(|w| w == window)
             .unwrap_or(0);
         self.animations.closing.push(Closing {
-            anim: Anim::new(self.animations.now(), style.close),
+            anim: Anim::new(self.animations.now(), length),
             above,
             frame,
             parts,
             bar,
             borders,
+            leave,
         });
         self.dirty = true;
     }
