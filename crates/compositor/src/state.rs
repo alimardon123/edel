@@ -1,34 +1,28 @@
 //! The compositor's state and the Wayland protocols it serves: surfaces,
 //! shared memory, xdg-shell windows, the seat (keyboard and pointer), the
-//! clipboard and outputs. Windows live in one smithay `Space`; where they
-//! go is the window policies' job from M4.3.
+//! clipboard, outputs and presentation time. Windows live in one smithay
+//! `Space`; the floating policy decides where each opens (M4.3), and
+//! every change of what is on screen is written to the state file.
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use smithay::backend::input::KeyState;
-use smithay::backend::input::{
-    AbsolutePositionEvent, ButtonState, Event, InputBackend, InputEvent, KeyboardKeyEvent,
-    PointerButtonEvent, PointerMotionEvent,
-};
-use smithay::input::keyboard::{FilterResult, xkb};
-use smithay::input::pointer::{ButtonEvent, MotionEvent, RelativeMotionEvent};
-use smithay::reexports::calloop::generic::Generic;
-use smithay::reexports::calloop::{Interest, LoopHandle, Mode as TriggerMode, PostAction};
-use smithay::reexports::wayland_server::Display;
-use smithay::utils::SERIAL_COUNTER;
-use smithay::wayland::socket::ListeningSocketSource;
-
 use smithay::desktop::{PopupManager, Space, Window, find_popup_root_surface};
+use smithay::input::pointer::Focus;
 use smithay::input::{Seat, SeatHandler, SeatState};
-use smithay::reexports::calloop::LoopSignal;
+use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::{
+    Interest, LoopHandle, LoopSignal, Mode as TriggerMode, PostAction,
+};
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
-use smithay::reexports::wayland_server::{Client, DisplayHandle};
-use smithay::utils::{Clock, Logical, Monotonic, Point, Serial};
+use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource as _};
+use smithay::utils::{Clock, Logical, Monotonic, Point, Rectangle, SERIAL_COUNTER, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
+    with_states,
 };
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::presentation::PresentationState;
@@ -38,15 +32,22 @@ use smithay::wayland::selection::data_device::{
 };
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+    XdgToplevelSurfaceData,
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
+use smithay::wayland::socket::ListeningSocketSource;
 use smithay::{
     delegate_compositor, delegate_data_device, delegate_output, delegate_presentation,
     delegate_seat, delegate_shm, delegate_xdg_shell,
 };
+use toml::{Table, Value};
 
+use edel_compositor::layout::{Floating, WindowPolicy};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
+
+use crate::grabs::{Kind, WindowGrab};
+use crate::statefile::{self, StateFile};
 
 pub struct Edel {
     pub display: DisplayHandle,
@@ -60,6 +61,12 @@ pub struct Edel {
     pub telemetry: Telemetry,
     /// A timer will log the telemetry once the screen is still (`drm.rs`).
     pub report_armed: bool,
+    /// Where windows go; one workspace until M4.5.
+    policy: Floating<Window>,
+    /// Windows whose first buffer has not come yet, so their size is not
+    /// known and they are not placed or shown.
+    unplaced: Vec<Window>,
+    state_file: StateFile,
     compositor: CompositorState,
     xdg_shell: XdgShellState,
     shm: ShmState,
@@ -70,7 +77,7 @@ pub struct Edel {
 }
 
 impl Edel {
-    pub fn new(display: DisplayHandle, signal: LoopSignal, tokens: Tokens) -> anyhow::Result<Edel> {
+    pub fn new(display: DisplayHandle, signal: LoopSignal, tokens: Tokens) -> Result<Edel> {
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display, "seat0");
         seat.add_keyboard(Default::default(), 600, 25)?;
@@ -94,14 +101,16 @@ impl Edel {
             dirty: true,
             telemetry: Telemetry::default(),
             report_armed: false,
+            policy: Floating::default(),
+            unplaced: Vec::new(),
+            state_file: StateFile::start(),
             display,
             signal,
             tokens,
         })
     }
 
-    /// The window and the surface under `point`, with the surface's
-    /// position, for pointer focus.
+    /// The surface under `point`, with its position, for pointer focus.
     pub fn surface_under(
         &self,
         point: Point<f64, Logical>,
@@ -114,130 +123,147 @@ impl Edel {
         Some((surface, (offset + location).to_f64()))
     }
 
-    /// Keyboard to the focused window; the pointer moves, focuses and
-    /// clicks the window under it. Floating placement, moving and
-    /// resizing come with the floating policy (M4.3). Returns the virtual
-    /// terminal Ctrl+Alt+F1 to F12 asked for, which only a real seat can
-    /// switch to, so a person can always reach a text console.
-    pub fn input<B: InputBackend>(&mut self, event: InputEvent<B>) -> Option<i32> {
-        let serial = SERIAL_COUNTER.next_serial();
-        match event {
-            InputEvent::Keyboard { event } => {
-                let pressed = event.state() == KeyState::Pressed;
-                let keyboard = self.seat.get_keyboard()?;
-                return keyboard.input(
-                    self,
-                    event.key_code(),
-                    event.state(),
-                    serial,
-                    event.time_msec(),
-                    |_, _, keysym| {
-                        let sym = keysym.modified_sym().raw();
-                        let vts =
-                            xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12;
-                        if pressed && vts.contains(&sym) {
-                            FilterResult::Intercept(
-                                (sym - xkb::keysyms::KEY_XF86Switch_VT_1 + 1) as i32,
-                            )
-                        } else {
-                            FilterResult::Forward
-                        }
-                    },
-                );
-            }
-            InputEvent::PointerMotion { event } => {
-                let pointer = self.seat.get_pointer()?;
-                let area = self.output_area()?;
-                let mut location = pointer.current_location() + event.delta();
-                location.x = location.x.clamp(
-                    f64::from(area.loc.x),
-                    f64::from(area.loc.x + area.size.w - 1),
-                );
-                location.y = location.y.clamp(
-                    f64::from(area.loc.y),
-                    f64::from(area.loc.y + area.size.h - 1),
-                );
-                let focus = self.surface_under(location);
-                pointer.motion(
-                    self,
-                    focus.clone(),
-                    &MotionEvent {
-                        location,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.relative_motion(
-                    self,
-                    focus,
-                    &RelativeMotionEvent {
-                        delta: event.delta(),
-                        delta_unaccel: event.delta_unaccel(),
-                        utime: event.time(),
-                    },
-                );
-                pointer.frame(self);
-                self.dirty = true;
-            }
-            InputEvent::PointerMotionAbsolute { event } => {
-                let area = self.output_area()?;
-                let location = event.position_transformed(area.size) + area.loc.to_f64();
-                let focus = self.surface_under(location);
-                if let Some(pointer) = self.seat.get_pointer() {
-                    pointer.motion(
-                        self,
-                        focus,
-                        &MotionEvent {
-                            location,
-                            serial,
-                            time: event.time_msec(),
-                        },
-                    );
-                    pointer.frame(self);
-                }
-                self.dirty = true;
-            }
-            InputEvent::PointerButton { event } => {
-                let pointer = self.seat.get_pointer()?;
-                if event.state() == ButtonState::Pressed {
-                    let location = pointer.current_location();
-                    let window = self.space.element_under(location).map(|(w, _)| w.clone());
-                    if let Some(window) = window {
-                        self.space.raise_element(&window, true);
-                        let surface = window.toplevel().map(|t| t.wl_surface().clone());
-                        if let Some(keyboard) = self.seat.get_keyboard() {
-                            keyboard.set_focus(self, surface, serial);
-                        }
-                        self.dirty = true;
-                    }
-                }
-                pointer.button(
-                    self,
-                    &ButtonEvent {
-                        button: event.button_code(),
-                        state: event.state(),
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
-            }
-            _ => {}
+    /// Raises `window` and gives it the keyboard.
+    pub fn focus(&mut self, window: &Window) {
+        self.space.raise_element(window, true);
+        let surface = window.toplevel().map(|t| t.wl_surface().clone());
+        if let Some(keyboard) = self.seat.get_keyboard() {
+            keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
-        None
+        self.dirty = true;
     }
 
-    /// The first output's area in the layout.
-    fn output_area(&self) -> Option<smithay::utils::Rectangle<i32, Logical>> {
-        let output = self.space.outputs().next()?;
-        self.space.output_geometry(output)
+    /// A person put `window` at `place`: the policy decides where it stays,
+    /// and the state file says so.
+    pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
+        let kept = self.policy.moved(window, place);
+        self.space.map_element(window.clone(), kept.loc, true);
+        self.dirty = true;
+        self.state_changed();
+    }
+
+    /// The outputs changed: the policy fits every window to the new area.
+    pub fn outputs_changed(&mut self) {
+        if let Some(area) = self.output_area() {
+            for (window, place) in self.policy.arrange(area) {
+                self.space.map_element(window, place.loc, false);
+            }
+        }
+        self.dirty = true;
+        self.state_changed();
+    }
+
+    /// Sends the state file what is on screen now. Never during a drag:
+    /// the grab writes it once, when it ends.
+    pub fn state_changed(&self) {
+        if self.seat.get_pointer().is_some_and(|p| p.is_grabbed()) {
+            return;
+        }
+        self.state_file.send(self.state_toml());
+    }
+
+    /// Outputs and windows, bottom of the stack first, as TOML.
+    fn state_toml(&self) -> String {
+        let mut table = Table::new();
+        table.insert("format".into(), Value::Integer(statefile::FORMAT));
+        table.insert("policy".into(), Value::String(self.policy.name().into()));
+        let outputs = self
+            .space
+            .outputs()
+            .filter_map(|output| {
+                let area = self.space.output_geometry(output)?;
+                let mut t = Table::new();
+                t.insert("name".into(), Value::String(output.name()));
+                t.insert(
+                    "scale".into(),
+                    Value::Float(output.current_scale().fractional_scale()),
+                );
+                insert_rect(&mut t, area);
+                Some(Value::Table(t))
+            })
+            .collect();
+        table.insert("outputs".into(), Value::Array(outputs));
+        let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
+        let windows = self
+            .space
+            .elements()
+            .filter_map(|window| {
+                let toplevel = window.toplevel()?;
+                let place = self.space.element_geometry(window)?;
+                let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
+                    let data = states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()?
+                        .lock()
+                        .ok()?;
+                    Some((data.title.clone(), data.app_id.clone()))
+                })
+                .unwrap_or_default();
+                let mut t = Table::new();
+                t.insert("title".into(), Value::String(title.unwrap_or_default()));
+                t.insert("app_id".into(), Value::String(app_id.unwrap_or_default()));
+                insert_rect(&mut t, place);
+                let is_focused = focused.as_ref() == Some(toplevel.wl_surface());
+                t.insert("focused".into(), Value::Boolean(is_focused));
+                Some(Value::Table(t))
+            })
+            .collect();
+        table.insert("windows".into(), Value::Array(windows));
+        toml::to_string(&table).unwrap_or_default()
     }
 
     fn window_of(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
+            .chain(&self.unplaced)
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
             .cloned()
+    }
+
+    /// Starts a move or resize the window asked for, if the button that
+    /// asked is still down on it.
+    fn grab_for(&mut self, surface: &ToplevelSurface, serial: Serial, kind: Kind) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        if !pointer.has_grab(serial) {
+            return;
+        }
+        let Some(start) = pointer.grab_start_data() else {
+            return;
+        };
+        let asked = start
+            .focus
+            .as_ref()
+            .is_some_and(|(focus, _)| focus.id().same_client_as(&surface.wl_surface().id()));
+        let Some(window) = self.window_of(surface.wl_surface()) else {
+            return;
+        };
+        let Some(place) = self.space.element_geometry(&window) else {
+            return;
+        };
+        if !asked {
+            return;
+        }
+        let grab = WindowGrab {
+            start,
+            window,
+            kind,
+            initial: place,
+            current: place,
+        };
+        pointer.set_grab(self, grab, serial, Focus::Clear);
+    }
+}
+
+fn insert_rect(table: &mut Table, rect: Rectangle<i32, Logical>) {
+    for (key, value) in [
+        ("x", rect.loc.x),
+        ("y", rect.loc.y),
+        ("width", rect.size.w),
+        ("height", rect.size.h),
+    ] {
+        table.insert(key.into(), Value::Integer(value.into()));
     }
 }
 
@@ -276,15 +302,39 @@ impl CompositorHandler for Edel {
                 window.on_commit();
             }
         }
-        // The first commit of a toplevel asks for its first configure.
-        if let Some(window) = self.window_of(surface) {
-            if let Some(toplevel) = window.toplevel() {
-                if !toplevel.is_initial_configure_sent() {
-                    toplevel.send_configure();
-                }
-            }
-        }
         self.dirty = true;
+        let Some(i) = self
+            .unplaced
+            .iter()
+            .position(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
+        else {
+            return;
+        };
+        let Some(toplevel) = self.unplaced[i].toplevel().cloned() else {
+            return;
+        };
+        // The first commit asks for the first configure; the window shows
+        // once a buffer comes, at the size it drew.
+        if !toplevel.is_initial_configure_sent() {
+            toplevel.send_configure();
+            return;
+        }
+        let drawn = smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
+            s.buffer().is_some()
+        })
+        .unwrap_or(false);
+        let Some(area) = self.output_area() else {
+            return;
+        };
+        if drawn {
+            let window = self.unplaced.remove(i);
+            let place = self
+                .policy
+                .open(window.clone(), window.geometry().size, area);
+            self.space.map_element(window.clone(), place.loc, true);
+            self.focus(&window);
+            self.state_changed();
+        }
     }
 }
 
@@ -303,12 +353,8 @@ impl XdgShellHandler for Edel {
         &mut self.xdg_shell
     }
 
-    /// Until the floating policy (M4.3), a new window opens at the top
-    /// left, activated, at the size it asks for.
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), true);
-        self.dirty = true;
+        self.unplaced.push(Window::new_wayland_window(surface));
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
@@ -330,11 +376,34 @@ impl XdgShellHandler for Edel {
         surface.send_repositioned(token);
     }
 
+    fn move_request(&mut self, surface: ToplevelSurface, _seat: wl_seat::WlSeat, serial: Serial) {
+        self.grab_for(&surface, serial, Kind::Move);
+    }
+
+    fn resize_request(
+        &mut self,
+        surface: ToplevelSurface,
+        _seat: wl_seat::WlSeat,
+        serial: Serial,
+        edges: ResizeEdge,
+    ) {
+        self.grab_for(&surface, serial, Kind::Resize(edges));
+    }
+
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        if let Some(window) = self.window_of(surface.wl_surface()) {
-            self.space.unmap_elem(&window);
+        self.unplaced
+            .retain(|w| w.toplevel().is_none_or(|t| t != &surface));
+        let Some(window) = self.window_of(surface.wl_surface()) else {
+            return;
+        };
+        self.policy.close(&window);
+        self.space.unmap_elem(&window);
+        // The keyboard goes to the window now on top.
+        if let Some(top) = self.space.elements().last().cloned() {
+            self.focus(&top);
         }
         self.dirty = true;
+        self.state_changed();
     }
 
     fn popup_destroyed(&mut self, surface: PopupSurface) {

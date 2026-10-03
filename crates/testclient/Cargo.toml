@@ -1,0 +1,18 @@
+[package]
+name = "edel-testclient"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A deterministic Wayland client for the desktop tests: one window of a given size, colour and title"
+license = "GPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "edel-testclient"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+# Pinned (roadmap M4.3), without calloop and xkbcommon: the client only
+# draws and never reads keys.
+smithay-client-toolkit = { version = "=0.21.1", default-features = false }

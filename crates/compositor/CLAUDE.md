@@ -14,9 +14,12 @@
 - `lib.rs`: the parts that need no display, tested with `cargo test`:
   - `tokens.rs`: `Tokens::read` (lenient, starting from the built-in `design/tokens.toml`) and `check` (strict); `Colour::parse` takes `#rrggbb` and `#rrggbbaa`.
   - `telemetry.rs`: render times and idle frames; `percentile` is nearest rank, the same rule as CI's desktop test (M4.1); `Summary` prints `frames N, render p50 X ms, p99 Y ms, idle frames Z`.
-  - `layout.rs`: the `WindowPolicy` trait and `OutputLayout` (mode, scale snapped to 1/120, logical size).
+  - `layout.rs`: the `WindowPolicy` trait (`open`, `close`, `moved`, `arrange`), `Floating` (M4.3: centred, cascading `CASCADE` px off a window with the same centre, kept inside the area; the CI pixel checks depend on this rule) and `OutputLayout` (mode, scale snapped to 1/120, logical size).
 - `main.rs`: arguments (`--bench`), the tokens from `/usr/share/edel/design/tokens.toml`, else the built-in ones, and the backend: winit when `WAYLAND_DISPLAY` or `DISPLAY` is set, else DRM.
-- `state.rs`: `Edel`, the Wayland state: compositor, shm, xdg-shell, seat, data device, outputs, presentation time, one `Space`; `dirty` says something changed. `listen` opens the socket; `input` routes keyboard and pointer for both backends (relative and absolute motion, click to focus) and returns the terminal Ctrl+Alt+F1 to F12 asks for.
+- `state.rs`: `Edel`, the Wayland state: compositor, shm, xdg-shell, seat, data device, outputs, presentation time, one `Space` and the floating policy; `dirty` says something changed. A new toplevel waits in `unplaced` until its first buffer, then the policy places it and it takes the keyboard; `placed`, `outputs_changed` and `state_changed` keep the policy, the space and the state file in step. `listen` opens the socket.
+- `input.rs`: keyboard and pointer for both backends (relative and absolute motion, click to focus and raise, Super with the left or right button starts a move or resize) and the terminal Ctrl+Alt+F1 to F12 asks for.
+- `grabs.rs`: `WindowGrab`, one pointer grab for moving and resizing (`resized` keeps the opposite edges and a 96x64 minimum); it hands the final place to `Edel::placed` when the button is released.
+- `statefile.rs`: the writer thread of `/run/edel/session/state.toml` (only outside a session it does nothing); the newest state wins, and its new file is created under a fresh name, never opened through a link.
 - `drm.rs` (M4.2b): the backend for real screens. A libseat session opens the primary GPU (`primary_gpu`, else the first); GBM, EGL and `GlesRenderer`; one `DrmCompositor` on the first connected connector at its preferred mode; libinput on the session. A frame is drawn when `dirty` is set and the last one's vblank has come; on the vblank, presentation feedback goes to clients and the first one writes `/run/edel/session/ready` and logs `edel-compositor: output NAME WxH ready`. A timer armed by the first frame after a quiet spell logs the telemetry once the screen has been still for 2 s, so nothing wakes while idle. Pausing the session (another VT) pauses DRM and libinput; activating resets the compositor's state and redraws.
 - `winit.rs`: the development backend. A frame is drawn only when `dirty` is set (a commit, a new or closed window, input that focuses, a resize), so an idle desktop draws nothing; `--bench` stops after 5 s and prints the telemetry.
 
@@ -26,4 +29,6 @@ On a desktop with X11 or Wayland: `cargo run -p edel-compositor`, then `WAYLAND_
 
 ## Coming changes (roadmap)
 
-Make each change only in its step: M4.3 the floating policy and a test client; M4.4 title bars; M4.5 tiling; M4.6 outputs and input settings; M4.7 XWayland; M4.8 rollback of a dead desktop.
+`crates/testclient` is `edel-testclient` (M4.3): one window of `--size WxH`, `--colour RRGGBB` and `--title T`, drawn once and again only on resize, for CI's pixel checks; it exits when the compositor goes away. Only CI's images ship it.
+
+Make each change only in its step: M4.4 title bars; M4.5 tiling; M4.6 outputs and input settings; M4.7 XWayland; M4.8 rollback of a dead desktop.

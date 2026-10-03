@@ -7,7 +7,10 @@
 //!     edel-compositor --bench   run for 5 s, then print the frame telemetry
 
 mod drm;
+mod grabs;
+mod input;
 mod state;
+mod statefile;
 mod winit;
 
 use std::process::ExitCode;
