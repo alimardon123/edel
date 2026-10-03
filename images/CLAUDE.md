@@ -42,5 +42,5 @@ Check a definition with `cargo run --quiet --locked -- image check images/vm.tom
 
 Make each change only in its step, and take the details from the step itself, not from here. Steps that touch this directory:
 
-- M4.8 adds the compositor's health (`health = ["compositor"]` in `features/compositor.toml`); M5.10 makes the compositor greet people itself, without agreety and foot.
+- The desktop's health is `default-runlevel compositor` (M4.8: `health = ["compositor"]` in `features/compositor.toml`): its guard waits for `/run/edel/session/ready`, which the greeter's compositor writes. M5.10 makes the compositor greet people itself, without agreety and foot.
 - Definitions stay strict in every format.

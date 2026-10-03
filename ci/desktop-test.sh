@@ -41,6 +41,12 @@
 #               and owns the health file; typing ci and a password into
 #               its agreety starts ci's compositor again; last, as it
 #               ends the first session
+#   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
+#               it restarts the VM): the test service installs the update
+#               ci/build.sh signs, served here on port 8001, puts a
+#               compositor that only fails into slot B and restarts; no
+#               frame, so the guard lets the watchdog restart slot B, and
+#               GRUB, out of tries, starts slot A, which says so (M4.8)
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -117,12 +123,13 @@ time.sleep(1)
 s.close()' "$commands" "$1"
 }
 
-# wait_for PATTERN: waits up to 20 s for a serial line matching PATTERN.
+# wait_for PATTERN [SECONDS]: waits up to SECONDS (20) for a serial line
+# matching PATTERN.
 wait_for() {
 	i=0
 	while ! tr -d '\r' <"$log" | grep -qE "$1"; do
 		i=$((i + 1))
-		[ "$i" -lt 100 ] || return 1
+		[ "$i" -lt $((${2:-20} * 5)) ] || return 1
 		sleep 0.2
 	done
 }
@@ -315,6 +322,20 @@ case_respawn() {
 	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again"
 }
 
+case_rollback() {
+	guest 'break update'
+	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
+		fail "the test service did not install the broken update: $(tr -d '\r' <"$log" | grep -a 'rollback' | tail -n 3)"
+	value rollback: | grep -q '^FAIL' && fail "$(value rollback:)"
+	# Two boots: slot B, broken, then slot A once the guard gave up on B.
+	wait_for 'DESKTOP-TEST: rollback: (PASS|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
+		fail "the VM did not come back on slot A: $(tr -d '\r' <"$log" | grep -a -E 'rollback|edel guard|running:' | tail -n 6)"
+	value rollback: | grep -q '^PASS' || fail "$(value rollback:)"
+	tr -d '\r' <"$log" | grep -q 'DESKTOP-TEST: rollback: slot B runs' ||
+		fail "slot B never ran, so its fallback proves nothing"
+	echo "PASS: an update whose compositor fails was installed into slot B; slot B never showed a frame, the guard let the watchdog restart it and the VM came back on slot A, with slot B switched off"
+}
+
 case_tiling() {
 	# Through the system file, as Settings and people will: the compositor
 	# follows it and re-lays the windows out at once. foot is the master on
@@ -411,14 +432,26 @@ case_scale() {
 for c in "$@"; do
 	case "$c" in
 	console | compositor | floating | outputs | pointer | respawn | scale | tiling | titlebar | xwayland) ;;
+	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, respawn, scale, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, respawn, rollback, scale, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac
 done
 
-keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot -snapshot \
+# Any restart ends the VM, so a crash is never missed, except in rollback,
+# whose VM restarts on purpose and fetches the update from this host, the
+# guest's 10.0.2.2, on a port of its own (ab-test.sh has 8000).
+restart=-no-reboot
+if [ "$*" = rollback ]; then
+	restart=''
+	python3 -m http.server 8001 --bind 127.0.0.1 --directory "$dir/update" >out/desktop-http.log 2>&1 &
+	server=$!
+	trap 'kill "$server" 2>/dev/null || true' EXIT
+fi
+
+keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci \
 	-qmp unix:"$QMP",server=on,wait=off \

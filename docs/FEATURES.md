@@ -22,7 +22,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `login` | greetd, whose greeter is our compositor running its text greeter in foot (M4.7b) and which starts the compositor as the person after login; `/run/user/UID` from pam_rundir; needs `terminal` and `compositor` | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
 | `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
 | `terminal` | foot | `foot` | none | desktop |
-| `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
+| `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus; health `compositor` (M4.8): the slot is good once a compositor, the greeter's included, shows a frame or waits for a screen | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
 | `xwayland` | X11 apps: XWayland through xwayland-satellite, which the compositor starts when the first X11 app connects (M4.7) | `xwayland`, `xwayland-satellite` | none | desktop |
 
 CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, wayland-utils for `wayland-info`, xclock for an X11 window, the program `edel-testclient`, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.

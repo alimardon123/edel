@@ -1,9 +1,12 @@
 # The Edel shell's compositor (ADR-002, M4.2b): its program is built from
 # this repository's workspace and copied in by edel image build. The
 # packages are the libraries it links, which apk cannot see in a copied
-# program, and dbus for dbus-run-session.
+# program, and dbus for dbus-run-session. Its health (M4.8): a slot is
+# good only once a compositor has shown its first frame, the greeter's
+# included, so an update whose desktop cannot start rolls back.
 format = 1
 summary = "The compositor: windows on the screen, drawn with the GPU"
 why = "edel-compositor draws every window and routes all input (ADR-002); it links libseat, libinput, libudev, libgbm, libxkbcommon and libgcc, and dbus-run-session gives each session its own bus, which apps and portals talk over."
 programs = ["edel-compositor"]
 packages = ["dbus", "eudev-libs", "libgcc", "libinput-libs", "libseat", "libxkbcommon", "mesa-gbm"]
+health = ["compositor"]
