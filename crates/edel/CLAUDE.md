@@ -10,7 +10,7 @@ The one command-line tool of Edel OS and the library `edel::system`: the only cr
 
 ## Fast checks
 
-Run the four "Rust checks" commands from the root CLAUDE.md before every push. After touching `image.rs`, `run.rs` or `def.rs`, also run `cargo run -- image build images/vm.toml --dry-run` and the same for `images/container.toml`. Run the tool with `cargo run -- ...`, never a binary left in `target/`: a stale build rejects newer definitions with errors such as "unknown field `cmdline`".
+Run the six "Rust checks" commands from the root CLAUDE.md before every push. After touching `image.rs`, `run.rs` or `def.rs`, also run `cargo run -- image build images/vm.toml --dry-run` and the same for `images/container.toml`. Run the tool with `cargo run -- ...`, never a binary left in `target/`: a stale build rejects newer definitions with errors such as "unknown field `cmdline`".
 
 ## Layout
 
@@ -57,7 +57,7 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Formats: strict for builders, lenient on machines
 
-- Every file format has a top-level integer `format`, from version 1. Image definitions are format 1 (`def::FORMAT`); bump it only for a breaking change. Every definition lives in this repository, so the bump converts them in the same PR and refuses the old format (M4.0); migration (`edel migrate`) is for files on machines, such as `system.toml`.
+- Every file format has a top-level integer `format`, from version 1. Image definitions are format 2 (`def::FORMAT`, M4.0); feature files are format 1 (`features::FORMAT`); bump it only for a breaking change. Every definition lives in this repository, so the bump converts them in the same PR and refuses the old format (M4.0); migration (`edel migrate`) is for files on machines, such as `system.toml`.
 - Image definitions and presets stay strict (`#[serde(deny_unknown_fields)]`): only CI and the slot that ships them read them.
 - Files a machine reads from another release (`release.toml` from M1.6, `system.toml` from M2.1, feature files) are lenient. Before writing one, read the reader table in [ADR-008](../../docs/ADR-008-features-defaults-and-install.md), section 2. In short: no `deny_unknown_fields`; collect unknown keys with `serde_ignored` and report them; read enum values leniently; write with `toml_edit` so unknown keys and comments survive. Refuse only a format you do not know.
 - A key is never removed or renamed within a format. From M2.1 a cargo test checks the structs against the append-only `crates/edel/tests/keys.txt`. A dropped key gets `retired = "VERSION"` in the help table next to the structs (M6.11): it is still parsed, reported as no longer used and refused by `set`, until `edel migrate` drops it at the next format bump.
@@ -71,6 +71,6 @@ Run the four "Rust checks" commands from the root CLAUDE.md before every push. A
 
 ## Tests
 
-- Unit tests close each file: `#[cfg(test)] mod tests { use super::*; ... }`. Names are sentences in snake_case: `rejects_unknown_fields`, `grub_counts_every_try`. `tests/` holds only `keys.txt`, the append-only list of system file keys that `system.rs` tests read; there are no integration tests.
+- Unit tests close each file: `#[cfg(test)] mod tests { use super::*; ... }`. Names are sentences in snake_case: `rejects_unknown_fields`, `grub_counts_every_try`. `tests/` holds `keys.txt`, the append-only list of system file keys that `system.rs` tests read, and `format1/`, `main`'s format-1 definitions from before M4.0 that `def.rs` tests rebuild from features; there are no integration tests.
 - Put logic in small pure functions that take text and numbers, so tests need no root, disk, Alpine or network; what needs Alpine, root or a VM is proven by the `ci/` scripts in CI. `def.rs` tests merge a `const VM: &str` with in-memory features and vary it with `.replace(...)`.
 - A test that needs files works under `std::env::temp_dir()` in a directory named after that test and the process id (`edel-copy-sparse-<pid>` in `copies_into_place_and_keeps_holes`), because cargo runs tests in parallel threads of one process, and removes it afterwards.

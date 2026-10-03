@@ -25,7 +25,8 @@ const HOST_KEYS: &str = "/etc/apk/keys";
 
 pub struct Build<'a> {
     pub def: &'a ImageDef,
-    /// Directory holding the definition file; `files` paths are relative to it.
+    /// Directory holding the definition file; `[release] public_keys` are
+    /// relative to it.
     pub def_dir: PathBuf,
     /// More directories copied over the image after the definition's own,
     /// for test images. Not part of the definition, so a release image can
@@ -401,7 +402,7 @@ impl Build<'_> {
         }
 
         if !root.join("usr/lib/os-release").is_file() {
-            bail!("the image has no /usr/lib/os-release; add one to the files directories");
+            bail!("the image has no /usr/lib/os-release; it comes from features/base/");
         }
         let os_release = root.join("etc/os-release");
         if os_release.symlink_metadata().is_ok() {

@@ -25,16 +25,30 @@ ovmf_vars=$(echo "$ovmf_code" | sed 's/CODE/VARS/')
 # to 1 if PATTERN appeared, and waited to the seconds it took. vm_net adds
 # options to the user network, such as ",hostfwd=tcp:127.0.0.1:2222-:22";
 # with keep_vm=1 a VM that showed PATTERN keeps running until stop_vm.
+# With vm_stamp=1 each finished line of LOG starts with the seconds since
+# QEMU started, taken on the host as the line arrives, so the services of
+# a boot can be timed without changing the image (the budgets use it).
 run_vm() {
 	log=$1 pattern=$2 timeout_s=$3
 	shift 3
 	vars=$(mktemp)
 	cp "$ovmf_vars" "$vars"
 	rm -f "$log"
+	serial=$log stamper=''
+	if [ "${vm_stamp:-0}" = 1 ]; then
+		serial=$(mktemp -u)
+		mkfifo "$serial"
+		python3 -u -c 'import sys, time
+start = time.monotonic()
+for line in sys.stdin.buffer:
+    sys.stdout.buffer.write(b"%8.3f " % (time.monotonic() - start) + line)
+    sys.stdout.buffer.flush()' <"$serial" >"$log" &
+		stamper=$!
+	fi
 	echo "booting with $accel, waiting up to ${timeout_s}s for: $pattern"
 	qemu-system-x86_64 \
 		-machine q35,accel="$accel" -m 512 -smp 2 \
-		-display none -monitor none -serial file:"$log" \
+		-display none -monitor none -serial file:"$serial" \
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$vars" \
 		-netdev user,id=net0"${vm_net:-}" -device virtio-net-pci,netdev=net0,romfile= \
@@ -67,4 +81,12 @@ stop_vm() {
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
 	rm -f "$vars"
+	if [ -n "$stamper" ]; then
+		# QEMU closed the pipe, so the stamper reads its last line and
+		# ends; one still waiting to open it (QEMU never started) is
+		# stopped after 2 s.
+		(sleep 2 && kill "$stamper" 2>/dev/null) &
+		wait "$stamper" 2>/dev/null || true
+		rm -f "$serial"
+	fi
 }

@@ -112,6 +112,7 @@ CI's "Build and boot images" job runs the real build and the VM tests. They need
 
 ```sh
 docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+docker run --rm -v "$PWD:/src" -w /src alpine:3.24 sh ci/sign.sh
 sh ci/container-test.sh
 sh ci/initramfs-check.sh
 sh ci/vm-tests.sh    # boot, system, install, ab and flatpak tests, two lanes at once

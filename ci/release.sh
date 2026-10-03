@@ -40,11 +40,22 @@ would() {
 	if [ "$mode" = publish ]; then echo "$*"; else echo "dry run, would $*"; fi
 }
 
+# The version the preview holds now, or nothing.
+preview_version() {
+	curl -fsSL https://github.com/alimardon123/edel/releases/download/preview/release.toml 2>/dev/null |
+		sed -n 's/^version = "\(.*\)"$/\1/p' || true
+}
+
+# newer_than_ours VERSION: whether VERSION is newer than this build's.
+newer_than_ours() {
+	[ -n "$1" ] && [ "$1" != "$version" ] &&
+		[ "$(printf '%s\n%s\n' "$1" "$version" | sort -V | tail -n 1)" = "$1" ]
+}
+
 case "$tag" in
 preview)
-	current=$(curl -fsSL https://github.com/alimardon123/edel/releases/download/preview/release.toml 2>/dev/null |
-		sed -n 's/^version = "\(.*\)"$/\1/p' || true)
-	if [ -n "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n 1)" != "$version" ]; then
+	current=$(preview_version)
+	if newer_than_ours "$current"; then
 		echo "the preview holds $current, newer than $version; leaving it"
 		exit 0
 	fi
@@ -53,7 +64,20 @@ preview)
 		gh release view preview >/dev/null 2>&1 ||
 			gh release create preview --prerelease --title "Edel OS preview" --notes-file docs/TRY-IT.md
 		gh release edit preview --prerelease --notes-file docs/TRY-IT.md
-		gh release upload preview out/release/* --clobber
+		# The images first and the signed list last, so the list never
+		# names an image that is not there yet; a list met halfway fails
+		# its signature or sha256 check and is refused, never installed.
+		set --
+		for f in out/release/*; do
+			case "$f" in */release.toml | */release.toml.sig) ;; *) set -- "$@" "$f" ;; esac
+		done
+		gh release upload preview "$@" --clobber
+		current=$(preview_version)
+		if newer_than_ours "$current"; then
+			echo "the preview became $current while uploading, newer than $version; leaving its list"
+			exit 0
+		fi
+		gh release upload preview out/release/release.toml.sig out/release/release.toml --clobber
 	fi
 	;;
 v*)
