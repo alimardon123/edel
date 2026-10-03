@@ -152,6 +152,12 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
 			;;
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
+		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
+		# as the panel's switcher will, and prints what it saw.
+		'activate 3' | 'activate 1')
+			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
+				while IFS= read -r line; do say "ext $line"; done
+			;;
 		'shortcuts default') edel system unset shortcuts.close ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;

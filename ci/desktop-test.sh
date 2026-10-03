@@ -55,7 +55,10 @@
 #               Super+2 shows it tiled, as shell.tiling from the tiling
 #               case says, Super+T floats that workspace alone, Super+1
 #               brings workspace 1 back as it was, and the window closed
-#               while hidden leaves the state file (M5.2a)
+#               while hidden leaves the state file (M5.2a); then
+#               edel-testclient --workspace 3, over ext-workspace-v1, sees
+#               four workspaces with the first shown and shows the third,
+#               and --workspace 1 brings the first back (M5.2b)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -579,7 +582,20 @@ case_workspaces() {
 	guest 'away off'
 	wait_for 'edel-compositor: unmapped window away' || fail "away, closed on workspace 2, was not unmapped"
 	wait_more 'DESKTOP-TEST: hidden on 1, 0$' "$none" || fail "the state file still lists away: $(value hidden)"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file"
+	# ext-workspace-v1 (M5.2b): a client sees the four workspaces, the
+	# first shown, and shows the third, as the panel's switcher will.
+	guest 'activate 3'
+	wait_for 'DESKTOP-TEST: ext workspaces 1 2 3\* 4$' ||
+		fail "edel-testclient --workspace 3 did not see workspace 3 shown: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: ext' | tail -n 3)"
+	wait_for 'DESKTOP-TEST: ext workspaces 1\* 2 3 4$' || fail "the client did not first see workspace 1 shown"
+	wait_for 'edel-compositor: workspace 3' || fail "the compositor did not show workspace 3"
+	wait_for 'DESKTOP-TEST: hidden on 3, ' || fail "the state file does not say workspace 3 is shown: $(value hidden)"
+	seen=$(count 'DESKTOP-TEST: ext workspaces 1\* 2 3 4$')
+	back=$(count "DESKTOP-TEST: windows $first\$")
+	guest 'activate 1'
+	wait_more 'DESKTOP-TEST: ext workspaces 1\* 2 3 4$' "$seen" || fail "edel-testclient --workspace 1 did not bring workspace 1 back"
+	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "workspace 1 is not back as it was: $(value windows)"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first"
 }
 
 case_rollback() {
