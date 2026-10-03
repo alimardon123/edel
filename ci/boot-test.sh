@@ -27,8 +27,8 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'Starting sshd' out/boot.log &&
 	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
 	! grep -q 'generating new host keys' out/boot.log &&
-	grep -q 'edel guard: moved to the hardware watchdog' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd, moved the guard to the hardware watchdog and was confirmed in ${waited}s"
+	grep -q 'edel guard: using the hardware watchdog' out/boot.log; then
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
@@ -46,8 +46,8 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot-laptop.log &&
 	grep -q 'edel-data: mounted /data' out/boot-laptop.log &&
 	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log &&
 	grep -q 'edel report: wrote /EFI/edel/report.toml on the EFI system partition' out/boot-laptop.log &&
-	grep -q 'edel guard: moved to the hardware watchdog' out/boot-laptop.log; then
-	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts from USB to the login prompt, moved the guard to the hardware watchdog, was confirmed and left its report in ${waited}s"
+	grep -q 'edel guard: using the hardware watchdog .* (watchdog1)' out/boot-laptop.log; then
+	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts from USB to the login prompt, moved the guard from softdog to the hardware watchdog, was confirmed and left its report in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
 	exit 1

@@ -7,9 +7,10 @@
 //! counts the try.
 //!
 //! Early in boot the only watchdog is often softdog, a kernel timer that a
-//! frozen kernel never fires. A laptop's hardware watchdog (iTCO_wdt,
-//! sp5100_tco) loads later, from hwdrivers, so the guard moves to the
-//! first hardware watchdog that appears and stops softdog.
+//! frozen kernel never fires, or none at all (linux-virt has no softdog).
+//! A hardware watchdog (a laptop's iTCO_wdt or sp5100_tco, QEMU's
+//! i6300esb) loads later, from hwdrivers, so the guard takes the first one
+//! that appears and stops softdog.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -98,29 +99,23 @@ fn watchdogs(class: &Path) -> Vec<(String, String)> {
     found
 }
 
-/// The first hardware watchdog in `found`, if `/dev/watchdog` (the first
-/// one registered, `watchdog0`) is not already hardware.
-fn hardware_to_move_to(found: &[(String, String)]) -> Option<&(String, String)> {
-    let first_is_hardware = found
-        .iter()
-        .any(|(name, identity)| name == "watchdog0" && identity != SOFTDOG);
-    if first_is_hardware {
-        return None;
-    }
+/// The first hardware watchdog in `found`: one whose identity sysfs gives
+/// and is not softdog's.
+fn first_hardware(found: &[(String, String)]) -> Option<&(String, String)> {
     found
         .iter()
-        .find(|(name, identity)| name != "watchdog0" && !identity.is_empty() && identity != SOFTDOG)
+        .find(|(_, identity)| !identity.is_empty() && identity != SOFTDOG)
 }
 
-/// Opens the first hardware watchdog while the guard pets softdog, stops
-/// softdog with the magic close and sets `on_hardware`; does nothing once
-/// the guard pets hardware.
-fn move_to_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
-    if *on_hardware || watchdog.is_none() {
+/// Opens the first hardware watchdog once one has loaded, stops softdog
+/// with the magic close if the guard held it, and sets `on_hardware`; does
+/// nothing once the guard pets hardware.
+fn take_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
+    if *on_hardware {
         return;
     }
     let found = watchdogs(Path::new(WATCHDOG_CLASS));
-    let Some((name, identity)) = hardware_to_move_to(&found) else {
+    let Some((name, identity)) = first_hardware(&found) else {
         return;
     };
     let Ok(hardware) = OpenOptions::new()
@@ -134,7 +129,7 @@ fn move_to_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
         let _ = softdog.write_all(b"V");
     }
     *on_hardware = true;
-    println!("edel guard: moved to the hardware watchdog {identity} ({name})");
+    println!("edel guard: using the hardware watchdog {identity} ({name})");
 }
 
 /// Waits for the slot to become healthy, then confirms it.
@@ -146,15 +141,19 @@ pub fn guard() -> Result<()> {
     }
     let mut watchdog = open_watchdog();
     if watchdog.is_none() {
-        eprintln!("warning: edel guard: no watchdog, so a hang will not fall back");
+        eprintln!("warning: edel guard: no watchdog yet; a hang falls back once one loads");
     }
     // /dev/watchdog is watchdog0, the first one registered.
-    let mut on_hardware = watchdogs(Path::new(WATCHDOG_CLASS))
-        .iter()
-        .any(|(name, identity)| name == "watchdog0" && identity != SOFTDOG);
+    let mut on_hardware = watchdog.is_some()
+        && watchdogs(Path::new(WATCHDOG_CLASS))
+            .iter()
+            .any(|(name, identity)| name == "watchdog0" && identity != SOFTDOG);
+    if on_hardware {
+        println!("edel guard: using the hardware watchdog (watchdog0)");
+    }
     let start = Instant::now();
     loop {
-        move_to_hardware(&mut watchdog, &mut on_hardware);
+        take_hardware(&mut watchdog, &mut on_hardware);
         if let Some(dog) = watchdog.as_mut() {
             let _ = dog.write_all(b".");
         }
@@ -224,17 +223,18 @@ mod tests {
     }
 
     #[test]
-    fn moves_from_softdog_to_the_first_hardware_watchdog() {
+    fn takes_the_first_hardware_watchdog() {
         let w = |name: &str, identity: &str| (name.to_string(), identity.to_string());
+        // A laptop: softdog first, its hardware watchdog loaded later.
         let laptop = [w("watchdog0", SOFTDOG), w("watchdog1", "iTCO_wdt")];
-        assert_eq!(hardware_to_move_to(&laptop), Some(&laptop[1]));
-        assert_eq!(hardware_to_move_to(&laptop[..1]), None);
-        // Already on hardware, as in a VM whose i6300esb loads first.
-        let vm = [w("watchdog0", "i6300ESB timer"), w("watchdog1", SOFTDOG)];
-        assert_eq!(hardware_to_move_to(&vm), None);
+        assert_eq!(first_hardware(&laptop), Some(&laptop[1]));
+        assert_eq!(first_hardware(&laptop[..1]), None);
+        // A VM whose kernel has no softdog: i6300esb is the only one.
+        let vm = [w("watchdog0", "i6300ESB timer")];
+        assert_eq!(first_hardware(&vm), Some(&vm[0]));
         // A watchdog whose identity sysfs cannot give yet is not used.
         assert_eq!(
-            hardware_to_move_to(&[w("watchdog0", SOFTDOG), w("watchdog1", "")]),
+            first_hardware(&[w("watchdog0", SOFTDOG), w("watchdog1", "")]),
             None
         );
     }
@@ -253,7 +253,7 @@ mod tests {
         let found = watchdogs(&class);
         fs::remove_dir_all(&class).unwrap();
         assert_eq!(found[0], ("watchdog0".to_string(), SOFTDOG.to_string()));
-        assert_eq!(hardware_to_move_to(&found).unwrap().1, "iTCO_wdt");
+        assert_eq!(first_hardware(&found).unwrap().1, "iTCO_wdt");
     }
 
     #[test]
