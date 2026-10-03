@@ -1,0 +1,196 @@
+//! Layout presets (ADR-002, M5.1c): each one file under `presets/`, built
+//! into the library, so the compositor, shell-ui and Settings read the same
+//! preset with the same code. A preset gives the values the system file
+//! leaves out; a key the system file sets wins (ADR-008). Presets are part
+//! of the release, never written on a machine, so [`check`] reads them
+//! strictly and the tests check every one; a name this release does not
+//! have (a preset a later release dropped, or a typo in a hand-edited
+//! file) gives Classic, with a note.
+
+use anyhow::{Context, Result, bail};
+use serde::Deserialize;
+
+/// The only preset format so far.
+pub const FORMAT: i64 = 1;
+
+/// The presets this release has, by name, the default first. A new one is
+/// a file under `presets/` and a line here; its name must be in
+/// [`crate::system::PRESETS`].
+pub const BUILT_IN: &[(&str, &str)] = &[("classic", include_str!("../../../presets/classic.toml"))];
+
+/// The preset a missing `shell.preset` means.
+pub const DEFAULT: &str = "classic";
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Preset {
+    pub format: i64,
+    pub windows: Windows,
+    #[serde(default)]
+    pub panels: Vec<Panel>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Windows {
+    /// The policy a workspace starts in when `shell.tiling` is not set.
+    pub policy: Policy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Policy {
+    Floating,
+    Tiling,
+}
+
+impl Policy {
+    pub fn name(self) -> &'static str {
+        match self {
+            Policy::Floating => "floating",
+            Policy::Tiling => "tiling",
+        }
+    }
+}
+
+/// One panel: a layer-shell surface along a screen's edge holding
+/// shell-ui's widgets, by name, from its start, in its centre and towards
+/// its end.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Panel {
+    pub edge: Edge,
+    #[serde(default)]
+    pub start: Vec<String>,
+    #[serde(default)]
+    pub centre: Vec<String>,
+    #[serde(default)]
+    pub end: Vec<String>,
+}
+
+impl Panel {
+    /// Every widget the panel names, start to end.
+    pub fn widgets(&self) -> impl Iterator<Item = &str> {
+        self.start
+            .iter()
+            .chain(&self.centre)
+            .chain(&self.end)
+            .map(String::as_str)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Edge {
+    Top,
+    Bottom,
+}
+
+impl Edge {
+    pub fn name(self) -> &'static str {
+        match self {
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+        }
+    }
+}
+
+/// Reads a preset strictly: the format this release knows, every key
+/// known, at most one panel along each edge, widget names that could be
+/// names. Whether shell-ui has each widget is its own test's to say.
+pub fn check(text: &str) -> Result<Preset> {
+    let preset: Preset = toml::from_str(text).context("parsing the preset")?;
+    if preset.format != FORMAT {
+        bail!(
+            "format {} is not one this release reads; it reads {FORMAT}",
+            preset.format
+        );
+    }
+    for (i, panel) in preset.panels.iter().enumerate() {
+        if preset.panels[..i].iter().any(|p| p.edge == panel.edge) {
+            bail!("two panels along the {} edge", panel.edge.name());
+        }
+        if let Some(bad) = panel.widgets().find(|w| !crate::features::is_name(w)) {
+            bail!("{bad:?} is not a widget name");
+        }
+    }
+    Ok(preset)
+}
+
+/// The preset `name` names, else Classic and a note saying why. A missing
+/// name is Classic without a note.
+pub fn named(name: Option<&str>) -> (Preset, Option<String>) {
+    let wanted = name.unwrap_or(DEFAULT);
+    let found = BUILT_IN.iter().find(|(n, _)| *n == wanted);
+    let note = found
+        .is_none()
+        .then(|| format!("this release has no preset {wanted:?}; the Classic preset is used"));
+    let (_, text) = found.unwrap_or(&BUILT_IN[0]);
+    // Every built-in preset is checked by the tests.
+    let preset = check(text).expect("the built-in presets are checked by the tests");
+    (preset, note)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_built_in_preset_is_valid_and_known_to_the_system_file() {
+        assert_eq!(BUILT_IN[0].0, DEFAULT, "the default comes first");
+        for (name, text) in BUILT_IN {
+            check(text).unwrap_or_else(|e| panic!("presets/{name}.toml: {e:#}"));
+            assert!(
+                crate::system::PRESETS.contains(name),
+                "{name} is not in system::PRESETS, so shell.preset could not name it"
+            );
+        }
+    }
+
+    #[test]
+    fn classic_floats_with_one_panel_along_the_bottom() {
+        let (classic, note) = named(None);
+        assert_eq!(note, None);
+        assert_eq!(classic.windows.policy, Policy::Floating);
+        assert_eq!(classic.panels.len(), 1);
+        let panel = &classic.panels[0];
+        assert_eq!(panel.edge, Edge::Bottom);
+        assert_eq!(panel.widgets().collect::<Vec<_>>(), ["menu", "clock"]);
+    }
+
+    #[test]
+    fn an_unknown_name_is_classic_with_a_note() {
+        let (preset, note) = named(Some("cinnamon"));
+        assert_eq!(preset, named(None).0);
+        assert!(note.unwrap().contains("no preset \"cinnamon\""));
+    }
+
+    #[test]
+    fn check_refuses_what_this_release_does_not_read() {
+        let classic = BUILT_IN[0].1;
+        let refused = |text: &str, says: &str| {
+            let e = format!("{:#}", check(text).unwrap_err());
+            assert!(e.contains(says), "{e}");
+        };
+        refused(
+            &classic.replace("format = 1", "format = 2"),
+            "format 2 is not one this release reads",
+        );
+        refused(
+            &classic.replace("[windows]", "[windows]\nbuttons = \"left\""),
+            "unknown field `buttons`",
+        );
+        refused(
+            &classic.replace("policy = \"floating\"", "policy = \"stacking\""),
+            "unknown variant `stacking`",
+        );
+        refused(
+            &format!("{classic}\n[[panels]]\nedge = \"bottom\"\n"),
+            "two panels along the bottom edge",
+        );
+        refused(
+            &classic.replace("\"clock\"", "\"Clock Widget\""),
+            "\"Clock Widget\" is not a widget name",
+        );
+    }
+}

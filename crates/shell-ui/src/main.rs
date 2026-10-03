@@ -3,14 +3,16 @@
 //! it again if it ends. It draws its own surfaces (ADR-002's shell-ui
 //! toolkit decision of 2026-10-03): layer-shell surfaces through
 //! smithay-client-toolkit, drawn with tiny-skia into shared memory, text
-//! shaped by cosmic-text, all from the design tokens. Today it is the
-//! Classic preset's panel (M5.1b): along the bottom of the first screen,
-//! with the menu button's icon and a clock, redrawn only when the minute
-//! changes or the panel's size or scale does. It exits when the
-//! compositor goes away.
+//! shaped by cosmic-text, all from the design tokens. Today it draws the
+//! preset's panels (M5.1b, M5.1c): the system file's `shell.preset`, else
+//! Classic, whose one panel runs along the bottom of the first screen
+//! with the menu button and a clock. Each panel holds widgets from the
+//! table in `widgets/` and is drawn again only when what a widget shows,
+//! or the panel's size or scale, changes. It exits when the compositor
+//! goes away.
 
-mod clock;
 mod paint;
+mod widgets;
 
 use anyhow::{Context, Result};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
@@ -32,11 +34,14 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
+use edel::presets::{self, Edge};
+use edel::system;
 use edel::tokens::{self, Tokens};
 
-use crate::paint::{Look, Text};
+use crate::paint::{Look, Row, Text};
 
-/// The layer surface's namespace, as the compositor's state file lists it.
+/// The panels' layer surfaces' namespace, as the compositor's state file
+/// lists it.
 const NAMESPACE: &str = "edel-panel";
 
 /// Where the compositor says how much the desktop animates (M5.11a).
@@ -48,16 +53,23 @@ struct Shell {
     compositor: CompositorState,
     shm: Shm,
     pool: SlotPool,
-    panel: LayerSurface,
+    panels: Vec<Panel>,
     tokens: Tokens,
     text: Text,
-    /// The panel's logical width, once the compositor has said it.
+    fillets: bool,
+    exit: bool,
+}
+
+/// One of the preset's panels.
+struct Panel {
+    edge: Edge,
+    surface: LayerSurface,
+    row: Row,
+    /// Its logical width, once the compositor has said it.
     width: u32,
     scale: u32,
     /// What was drawn last, so nothing is drawn twice.
     drawn: Option<Look>,
-    fillets: bool,
-    exit: bool,
 }
 
 fn main() {
@@ -75,16 +87,48 @@ fn run() -> Result<()> {
     let compositor = CompositorState::bind(&globals, &qh).context("no wl_compositor")?;
     let shm = Shm::bind(&globals, &qh).context("no wl_shm")?;
     let layers = LayerShell::bind(&globals, &qh).context("no zwlr_layer_shell_v1")?;
-    // Along the bottom of the first screen; the strip above it for the
-    // fillets is drawn but takes no space and no clicks.
-    let surface = compositor.create_surface(&qh);
-    let panel = layers.create_layer_surface(&qh, surface, Layer::Top, Some(NAMESPACE), None);
     let strip = paint::fillet_height(&tokens);
-    panel.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
-    panel.set_size(0, tokens.panel_height + strip);
-    panel.set_exclusive_zone(tokens.panel_height as i32);
-    panel.set_keyboard_interactivity(KeyboardInteractivity::None);
-    panel.commit();
+    let features = std::path::Path::new(edel::features::DIR);
+    let mut panels = Vec::new();
+    for spec in &preset().panels {
+        let pick = |names: &[String]| {
+            let (found, notes) = widgets::usable(names, features);
+            for note in notes {
+                eprintln!("edel-shell-ui: {note}");
+            }
+            found
+        };
+        let row = Row {
+            start: pick(&spec.start),
+            centre: pick(&spec.centre),
+            end: pick(&spec.end),
+        };
+        // Along the edge of the first screen; the strip on its inner side
+        // for the fillets is drawn but takes no space and no clicks.
+        let surface = compositor.create_surface(&qh);
+        let surface = layers.create_layer_surface(&qh, surface, Layer::Top, Some(NAMESPACE), None);
+        let edge = match spec.edge {
+            Edge::Top => Anchor::TOP,
+            Edge::Bottom => Anchor::BOTTOM,
+        };
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, tokens.panel_height + strip);
+        surface.set_exclusive_zone(tokens.panel_height as i32);
+        surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+        surface.commit();
+        eprintln!(
+            "edel-shell-ui: panel {NAMESPACE} along the {}",
+            spec.edge.name()
+        );
+        panels.push(Panel {
+            edge: spec.edge,
+            surface,
+            row,
+            width: 0,
+            scale: 1,
+            drawn: None,
+        });
+    }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
         .context("creating the shared memory pool")?;
     let mut shell = Shell {
@@ -93,12 +137,9 @@ fn run() -> Result<()> {
         compositor,
         shm,
         pool,
-        panel,
+        panels,
         text: Text::load(),
         tokens,
-        width: 0,
-        scale: 1,
-        drawn: None,
         fillets: fillets(),
         exit: false,
     };
@@ -108,7 +149,6 @@ fn run() -> Result<()> {
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
     tick(&event_loop.handle());
-    eprintln!("edel-shell-ui: panel {NAMESPACE} along the bottom");
     while !shell.exit {
         // When the compositor goes away, so does the panel: the end.
         if event_loop.dispatch(None, &mut shell).is_err() {
@@ -132,6 +172,32 @@ fn load_tokens() -> Tokens {
     tokens
 }
 
+/// The preset the system files name, the person's over the machine's,
+/// else Classic; a broken file or an unknown name is reported, never fatal
+/// (ADR-008).
+fn preset() -> presets::Preset {
+    let mut name = None;
+    let files = [Some(system::MACHINE_FILE.into()), system::person_file()];
+    for path in files.into_iter().flatten() {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        match system::read(&text) {
+            Ok(read) if read.file.shell.preset.is_some() => name = read.file.shell.preset,
+            Ok(_) => {}
+            Err(e) => eprintln!(
+                "edel-shell-ui: {}: {e:#}; its keys are left out",
+                path.display()
+            ),
+        }
+    }
+    let (preset, note) = presets::named(name.as_deref());
+    if let Some(note) = note {
+        eprintln!("edel-shell-ui: {note}");
+    }
+    preset
+}
+
 /// Whether the fillets are drawn: not on the Lite tier, which keeps
 /// surfaces flat (ADR-002), nor before the compositor has said.
 fn fillets() -> bool {
@@ -142,71 +208,94 @@ fn fillets() -> bool {
     tier.is_some_and(|t| t != "lite")
 }
 
-/// Draws the clock again when the minute changes, then sleeps until the
-/// next one.
+/// Draws the panels again when the minute changes, for the clock, then
+/// sleeps until the next one.
 fn tick(handle: &LoopHandle<'static, Shell>) {
-    let first = clock::until_next_minute(&jiff::Zoned::now());
-    let result = handle.insert_source(Timer::from_duration(first), |_, _, shell: &mut Shell| {
-        shell.draw();
-        TimeoutAction::ToDuration(clock::until_next_minute(&jiff::Zoned::now()))
-    });
+    let next = || widgets::clock::until_next_minute(&jiff::Zoned::now());
+    let result = handle.insert_source(
+        Timer::from_duration(next()),
+        move |_, _, shell: &mut Shell| {
+            for i in 0..shell.panels.len() {
+                shell.draw(i);
+            }
+            TimeoutAction::ToDuration(next())
+        },
+    );
     if let Err(e) = result {
         eprintln!("edel-shell-ui: the clock's timer did not start: {e}");
     }
 }
 
 impl Shell {
-    /// Draws the panel if anything it shows changed.
-    fn draw(&mut self) {
-        if self.width == 0 {
+    /// Draws panel `i` if anything it shows changed.
+    fn draw(&mut self, i: usize) {
+        let panel = &self.panels[i];
+        if panel.width == 0 {
             return;
         }
         let strip = paint::fillet_height(&self.tokens);
         let look = Look {
-            width: self.width * self.scale,
-            height: (self.tokens.panel_height + strip) * self.scale,
-            scale: self.scale,
-            clock: clock::text(&jiff::Zoned::now()),
+            width: panel.width * panel.scale,
+            height: (self.tokens.panel_height + strip) * panel.scale,
+            scale: panel.scale,
+            edge: panel.edge,
             fillets: self.fillets,
+            shown: panel.row.shows(),
         };
-        if self.drawn.as_ref() == Some(&look) {
+        if panel.drawn.as_ref() == Some(&look) {
             return;
         }
-        if let Err(e) = self.show(&look) {
+        if let Err(e) = self.show(i, &look) {
             eprintln!("edel-shell-ui: drawing the panel failed: {e:#}");
             return;
         }
-        self.drawn = Some(look);
+        self.panels[i].drawn = Some(look);
     }
 
-    fn show(&mut self, look: &Look) -> Result<()> {
+    fn show(&mut self, i: usize, look: &Look) -> Result<()> {
+        let panel = &self.panels[i];
         let mut pixmap = Pixmap::new(look.width, look.height).context("a panel of no size")?;
-        paint::paint(&mut pixmap, look, &self.tokens, Some(&mut self.text));
+        paint::paint(
+            &mut pixmap,
+            look,
+            &self.tokens,
+            Some(&mut self.text),
+            &panel.row,
+        );
         let (w, h) = (look.width as i32, look.height as i32);
         let (buffer, canvas) = self
             .pool
             .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
             .context("creating a buffer")?;
         paint::to_argb(&pixmap, canvas);
-        let surface = self.panel.wl_surface();
+        let surface = panel.surface.wl_surface();
         // Only the panel itself is opaque and takes clicks; the fillets'
-        // strip above it lets both through.
-        let strip = paint::fillet_height(&self.tokens) as i32;
+        // strip beside it lets both through.
+        let top = paint::panel_top(panel.edge, &self.tokens) as i32;
         let panel_h = self.tokens.panel_height as i32;
         if let Ok(region) = Region::new(&self.compositor) {
-            region.add(0, strip, self.width as i32, panel_h);
+            region.add(0, top, panel.width as i32, panel_h);
             surface.set_opaque_region(Some(region.wl_region()));
             surface.set_input_region(Some(region.wl_region()));
         }
-        surface.set_buffer_scale(self.scale as i32);
+        surface.set_buffer_scale(panel.scale as i32);
         surface.damage_buffer(0, 0, w, h);
         buffer.attach_to(surface).context("attaching the buffer")?;
-        self.panel.commit();
+        panel.surface.commit();
         Ok(())
+    }
+
+    /// The panel whose surface is `surface`.
+    fn panel_of(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
+        self.panels
+            .iter()
+            .position(|p| p.surface.wl_surface() == surface)
     }
 }
 
 impl LayerShellHandler for Shell {
+    /// The compositor took a panel away (its screen went): shell-ui ends,
+    /// and the compositor starts it again, every panel afresh.
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
         self.exit = true;
     }
@@ -215,15 +304,18 @@ impl LayerShellHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &LayerSurface,
+        surface: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
+        let Some(i) = self.panel_of(surface.wl_surface()) else {
+            return;
+        };
         let (w, _) = configure.new_size;
         if w > 0 {
-            self.width = w;
+            self.panels[i].width = w;
         }
-        self.draw();
+        self.draw(i);
     }
 }
 
@@ -233,11 +325,14 @@ impl CompositorHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
+        surface: &wl_surface::WlSurface,
         factor: i32,
     ) {
-        self.scale = factor.clamp(1, 4) as u32;
-        self.draw();
+        let Some(i) = self.panel_of(surface) else {
+            return;
+        };
+        self.panels[i].scale = factor.clamp(1, 4) as u32;
+        self.draw(i);
     }
 
     fn transform_changed(

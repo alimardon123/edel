@@ -2,13 +2,15 @@
 //! machine's `/data/edel/system.toml` and the person's
 //! `~/.config/edel/system.toml`, the same schema, read with `edel::system`
 //! so the defaults and the leniency are `edel`'s (ADR-008). A key the
-//! person's file sets wins; a key neither sets is the default. Reading is
+//! person's file sets wins; a key neither sets is the preset's (M5.1c),
+//! then the default. Reading is
 //! lenient: a missing file is the defaults, and a broken one is reported
 //! and read as missing, never fatal.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use edel::presets;
 use edel::system::{self, SystemFile};
 
 use crate::animation::Motion;
@@ -24,8 +26,10 @@ pub enum TitleBars {
 /// The settings the compositor follows, all live.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Settings {
-    /// `shell.tiling`: workspaces tile; absent means floating.
-    pub tiling: bool,
+    /// `shell.tiling`: workspaces tile; absent means the preset's policy.
+    pub tiling: Option<bool>,
+    /// `shell.preset`: absent means Classic.
+    pub preset: Option<String>,
     /// `shell.title_bars`: absent means always.
     pub title_bars: TitleBars,
     /// `[outputs.NAME]`, by output name.
@@ -57,8 +61,11 @@ impl Settings {
     pub fn from_files(machine: Option<&SystemFile>, person: Option<&SystemFile>) -> Settings {
         let mut settings = Settings::default();
         for file in [machine, person].into_iter().flatten() {
-            if let Some(tiling) = file.shell.tiling {
-                settings.tiling = tiling;
+            if file.shell.tiling.is_some() {
+                settings.tiling = file.shell.tiling;
+            }
+            if file.shell.preset.is_some() {
+                settings.preset.clone_from(&file.shell.preset);
             }
             match file.shell.title_bars.as_deref() {
                 Some("always") => settings.title_bars = TitleBars::Always,
@@ -91,9 +98,17 @@ impl Settings {
     }
 
     /// The policy workspaces start in, or switch to when `shell.tiling`
-    /// changes.
+    /// or the preset changes: `shell.tiling` if set, else the preset's.
     pub fn policy(&self) -> &'static str {
-        if self.tiling { "tiling" } else { "floating" }
+        match self.tiling {
+            Some(true) => "tiling",
+            Some(false) => "floating",
+            None => presets::named(self.preset.as_deref())
+                .0
+                .windows
+                .policy
+                .name(),
+        }
     }
 
     /// Whether windows under `policy` get the compositor's title bars.
@@ -102,19 +117,7 @@ impl Settings {
     }
 }
 
-/// The person's file: `$XDG_CONFIG_HOME/edel/system.toml`, else
-/// `~/.config/edel/system.toml`.
-pub fn person_file() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(|home| PathBuf::from(home).join(".config"))
-        })?;
-    Some(config.join("edel/system.toml"))
-}
+pub use edel::system::person_file;
 
 /// Reads one file the way an unattended reader must: missing is nothing,
 /// what cannot be used is left out and noted, a file it cannot read at all
@@ -144,10 +147,9 @@ pub fn load(machine: &Path, person: Option<&Path>) -> (Settings, Vec<String>) {
     let mut notes = Vec::new();
     let machine = read(machine, &mut notes);
     let person = person.and_then(|p| read(p, &mut notes));
-    (
-        Settings::from_files(machine.as_ref(), person.as_ref()),
-        notes,
-    )
+    let settings = Settings::from_files(machine.as_ref(), person.as_ref());
+    notes.extend(presets::named(settings.preset.as_deref()).1);
+    (settings, notes)
 }
 
 #[cfg(test)]
@@ -176,7 +178,7 @@ mod tests {
         let machine = file("format = 1\n[shell]\ntiling = true\ntitle_bars = \"floating-only\"\n");
         let person = file("format = 1\n[shell]\ntiling = false\n");
         let settings = Settings::from_files(Some(&machine), Some(&person));
-        assert!(!settings.tiling, "the person's tiling wins");
+        assert_eq!(settings.tiling, Some(false), "the person's tiling wins");
         assert_eq!(
             settings.title_bars,
             TitleBars::FloatingOnly,
@@ -186,6 +188,30 @@ mod tests {
         assert!(settings.bars_in("floating"));
         let only_machine = Settings::from_files(Some(&machine), None);
         assert_eq!(only_machine.policy(), "tiling");
+    }
+
+    #[test]
+    fn without_shell_tiling_the_presets_policy_holds() {
+        // Classic floats, named or not; a preset this release lacks is
+        // Classic too.
+        for text in [
+            "format = 1\n",
+            "format = 1\n[shell]\npreset = \"classic\"\n",
+            "format = 1\n[shell]\npreset = \"mac-like\"\n",
+        ] {
+            let settings = Settings::from_files(Some(&file(text)), None);
+            assert_eq!(settings.tiling, None);
+            assert_eq!(settings.policy(), "floating", "{text}");
+        }
+        let preset = file("format = 1\n[shell]\npreset = \"classic\"\n");
+        let person = file("format = 1\n[shell]\ntiling = true\n");
+        let settings = Settings::from_files(Some(&preset), Some(&person));
+        assert_eq!(settings.preset.as_deref(), Some("classic"));
+        assert_eq!(
+            settings.policy(),
+            "tiling",
+            "shell.tiling wins over the preset"
+        );
     }
 
     #[test]
