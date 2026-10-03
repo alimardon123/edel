@@ -48,6 +48,8 @@ enum Action {
     /// Ctrl+Alt+F1 to F12: that virtual terminal.
     Vt(i32),
     Shortcut(crate::shortcuts::Act),
+    /// The switcher closes, switching or not (M5.3c).
+    SwitcherDone(bool),
 }
 
 /// What is under the pointer.
@@ -92,6 +94,7 @@ impl Edel {
                     self.keys_down.saturating_sub(1)
                 };
                 let mut tapped = None;
+                let mut ending = None;
                 let keyboard = self.seat.get_keyboard()?;
                 let action = keyboard.input(
                     self,
@@ -117,6 +120,19 @@ impl Edel {
                         } else if state.tap.take() == Some(modifier) {
                             tapped = Some(modifier);
                         }
+                        // The switcher, while open: Escape leaves things as
+                        // they were, and letting go of its modifiers
+                        // switches; the app still hears that release.
+                        if state.switcher.is_some() {
+                            if pressed && sym == xkb::keysyms::KEY_Escape {
+                                return FilterResult::Intercept(Action::SwitcherDone(false));
+                            }
+                            if !pressed
+                                && !crate::shortcuts::holds_switcher(&state.bindings, modifiers)
+                            {
+                                ending = Some(true);
+                            }
+                        }
                         if !pressed {
                             FilterResult::Forward
                         } else if vts.contains(&sym) {
@@ -137,9 +153,13 @@ impl Edel {
                 {
                     self.shortcut(act);
                 }
+                if let Some(take) = ending {
+                    self.switcher_done(take);
+                }
                 match action? {
                     Action::Vt(vt) => return Some(vt),
                     Action::Shortcut(act) => self.shortcut(act),
+                    Action::SwitcherDone(take) => self.switcher_done(take),
                 }
             }
             InputEvent::PointerMotion { event } => {
@@ -323,6 +343,8 @@ impl Edel {
             Act::Workspace(n) => self.switch_workspace(n),
             Act::MoveTo(n) => self.move_to_workspace(n),
             Act::Launcher => self.show_launcher(),
+            Act::Switcher => self.switcher_step(false),
+            Act::SwitcherBack => self.switcher_step(true),
         }
     }
 
@@ -570,6 +592,7 @@ impl Edel {
 
     /// Forgets `window` wherever input remembers it, once it is gone.
     pub fn forget(&mut self, window: &Window) {
+        self.switcher_forget(window);
         if self.hover.as_ref().is_some_and(|(w, _)| w == window) {
             self.hover = None;
         }

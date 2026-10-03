@@ -2,7 +2,7 @@
 //! system files, laid over the defaults by `edel::shortcuts::resolve`, the
 //! one table `edel system check` and Settings use, and turned into the
 //! keysyms the keyboard reports. Only actions whose step has landed are
-//! bound here; the keys of the others (switcher, screenshot, lock) reach
+//! bound here; the keys of the others (screenshot, lock) reach
 //! the app that has the keyboard until then. Keys match on the Latin
 //! layout's keysym, whatever the layout. A modifier alone, such as the
 //! launcher's `Super` (M5.3b), is a tap: pressed and let go with nothing
@@ -26,6 +26,10 @@ pub enum Act {
     MoveTo(usize),
     /// Show or hide shell-ui's launcher (M5.3b).
     Launcher,
+    /// The next window in the switcher, held open while the keys'
+    /// modifiers are (M5.3c); with Shift as well, the one before.
+    Switcher,
+    SwitcherBack,
 }
 
 impl Act {
@@ -38,6 +42,7 @@ impl Act {
         match name {
             "close" => Some(Act::Close),
             "launcher" => Some(Act::Launcher),
+            "switcher" => Some(Act::Switcher),
             "tiling" => Some(Act::Tiling),
             "terminal" => Some(Act::Terminal),
             _ => {
@@ -112,6 +117,18 @@ pub fn find(
     latin: Option<xkb::Keysym>,
 ) -> Option<Act> {
     let latin = latin?;
+    find_exact(bindings, modifiers, latin).or_else(|| {
+        // The switcher's keys with Shift as well go back.
+        let without = ModifiersState {
+            shift: false,
+            ..*modifiers
+        };
+        (modifiers.shift && find_exact(bindings, &without, latin) == Some(Act::Switcher))
+            .then_some(Act::SwitcherBack)
+    })
+}
+
+fn find_exact(bindings: &[Binding], modifiers: &ModifiersState, latin: xkb::Keysym) -> Option<Act> {
     bindings
         .iter()
         .find(|b| {
@@ -122,6 +139,20 @@ pub fn find(
                 && b.keys.shift == modifiers.shift
         })
         .map(|b| b.act)
+}
+
+/// Whether the switcher's modifiers are still held: it stays open until
+/// they are all let go. Keys without modifiers hold it for one press.
+pub fn holds_switcher(bindings: &[Binding], modifiers: &ModifiersState) -> bool {
+    bindings
+        .iter()
+        .find(|b| b.act == Act::Switcher)
+        .is_some_and(|b| {
+            (b.keys.logo && modifiers.logo)
+                || (b.keys.ctrl && modifiers.ctrl)
+                || (b.keys.alt && modifiers.alt)
+                || (b.keys.shift && modifiers.shift)
+        })
 }
 
 /// Whether `sym` is a modifier that can be tapped alone.
@@ -227,11 +258,19 @@ mod tests {
             find(&bindings, &super_shift, sym("2")),
             Some(Act::MoveTo(1))
         );
-        // Actions still to come (the switcher) bind nothing yet.
+        // Alt+Tab steps the switcher, with Shift back; Alt alone holds it.
+        let alt = held(false, false, true, false);
+        assert_eq!(find(&bindings, &alt, sym("Tab")), Some(Act::Switcher));
         assert_eq!(
-            find(&bindings, &held(false, false, true, false), sym("Tab")),
+            find(&bindings, &held(false, false, true, true), sym("Tab")),
+            Some(Act::SwitcherBack)
+        );
+        assert_eq!(
+            find(&bindings, &held(false, true, true, false), sym("Tab")),
             None
         );
+        assert!(holds_switcher(&bindings, &alt));
+        assert!(!holds_switcher(&bindings, &held(false, false, false, true)));
     }
 
     #[test]

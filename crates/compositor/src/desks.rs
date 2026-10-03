@@ -125,6 +125,11 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
 
     /// Minimizes `window`, shown on this workspace with its frame at
     /// `frame`: it leaves the policies, so the others may fill its place.
+    /// The shown workspace's minimized windows, the latest last.
+    pub fn minimized_here(&self) -> impl Iterator<Item = &W> {
+        self.desks[self.active].minimized.iter().map(|(w, ..)| w)
+    }
+
     pub fn minimize(&mut self, window: W, frame: Rectangle<i32, Logical>) {
         let desk = &mut self.desks[self.active];
         let screen = desk.layout.screen_of(&window).map(str::to_string);

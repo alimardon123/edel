@@ -3,8 +3,9 @@
 //! standard protocols do not carry. Today the shown workspace's policy,
 //! sent when shell-ui binds and whenever it changes (`sync_shell`, run
 //! with the state file), for the panel's layout toggle; `toggle_policy`,
-//! which switches it as Super+T does; and the launcher's key (M5.3b),
-//! which shows or hides shell-ui's launcher. Any client may
+//! which switches it as Super+T does; the launcher's key (M5.3b),
+//! which shows or hides shell-ui's launcher; and the window switcher's
+//! titles and its end (M5.3c), which shell-ui draws. Any client may
 //! bind it, as with the workspace protocol: a narrower rule waits for a
 //! client the person did not start.
 
@@ -62,6 +63,23 @@ impl Edel {
 }
 
 impl Edel {
+    /// The switcher's titles, the chosen one marked (M5.3c).
+    pub fn show_switcher(&self, titles: &str, chosen: u32) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.switcher(titles.to_string(), chosen);
+            }
+        }
+    }
+
+    pub fn hide_switcher(&self) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.switcher_hide();
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");
