@@ -46,6 +46,12 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
     if state.shell_ui.started || state.program.is_some() {
         return;
     }
+    // Diagnostic only: never start shell-ui.
+    if std::env::var_os("EDEL_NO_SHELL_UI").is_some() {
+        state.shell_ui.started = true;
+        eprintln!("edel-compositor: diagnostic: shell-ui not started");
+        return;
+    }
     state.shell_ui.started = true;
     spawn(handle, state, wayland.to_string());
 }

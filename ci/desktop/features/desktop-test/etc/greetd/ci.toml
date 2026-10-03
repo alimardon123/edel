@@ -12,7 +12,7 @@
 vt = 7
 
 [initial_session]
-command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
+command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_NO_SHELL_UI=1 dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
 user = "ci"
 
 # The login feature's greeter (M4.7b), with the same settings for it and
