@@ -19,6 +19,7 @@ mod outputs;
 mod pointer;
 mod program;
 mod render;
+mod shortcuts;
 mod state;
 mod statefile;
 mod tiers;

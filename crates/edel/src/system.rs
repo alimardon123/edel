@@ -52,6 +52,9 @@ pub enum Kind {
     /// A login shell: an absolute path with no `:` and no control
     /// characters, which `/etc/passwd` could not hold
     Shell,
+    /// Keys for a shortcut, such as `"Super+Q"`, or `""` for none
+    /// ([`crate::shortcuts::parse`])
+    Keys,
 }
 
 /// One key of the system file. `*` in a path stands for any name, such as a
@@ -138,7 +141,7 @@ pub const KEYS: &[Key] = &[
         "appearance.motion",
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
-    later("shortcuts.*", Kind::Text),
+    now("shortcuts.*", Kind::Keys),
     later("defaults.browser", Kind::Text),
     later("defaults.files", Kind::Text),
     later("defaults.editor", Kind::Text),
@@ -422,6 +425,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
             .iter()
             .map(|key| format!("{key}: not supported yet")),
     );
+    // Across keys: unknown actions, two on one key, a way out unbound.
+    lines.extend(crate::shortcuts::check(&read.file.shortcuts));
     Ok(lines)
 }
 
@@ -505,7 +510,15 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             table.insert(last, toml_edit::Item::Value(new));
         }
     }
-    Ok(doc.to_string())
+    let text = doc.to_string();
+    // A shortcut must leave the table whole: no two actions on one key.
+    if path.first() == Some(&"shortcuts") {
+        let lines = crate::shortcuts::check(&read(&text)?.file.shortcuts);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
+    Ok(text)
 }
 
 /// `edel system unset KEY` on a file's text: removes the key, and tables
@@ -723,6 +736,8 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::Hostname, _) => fail("a hostname: letters, digits and hyphens, up to 63"),
         (Kind::Shell, Value::String(s)) if is_shell_path(s) => Ok(value.clone()),
         (Kind::Shell, _) => fail("a login shell's full path, such as \"/bin/sh\""),
+        (Kind::Keys, Value::String(s)) => crate::shortcuts::normalize(s).map(Value::String),
+        (Kind::Keys, _) => fail("keys in quotes, such as \"Super+Q\""),
     }
 }
 
@@ -784,6 +799,7 @@ mod tests {
             Kind::WholeOf(allowed) => Value::Integer(allowed[0]),
             Kind::Hostname => Value::String("x".into()),
             Kind::Shell => Value::String("/bin/sh".into()),
+            Kind::Keys => Value::String("Super+W".into()),
         }
     }
 
@@ -906,6 +922,31 @@ font_size = 11
             developer.ends_with("[system]\ndeveloper = false\n"),
             "{developer}"
         );
+    }
+
+    #[test]
+    fn shortcuts_are_written_one_way_and_never_clash() {
+        let text = "format = 1\n";
+        let set_one = set(text, "shortcuts.close", "super+w").unwrap();
+        assert_eq!(set_one, "format = 1\n\n[shortcuts]\nclose = \"Super+W\"\n");
+        assert!(check(&set_one).unwrap().is_empty());
+        let clash = set(text, "shortcuts.terminal", "Super+Q")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(clash, "shortcuts.terminal: Super+Q is already close's");
+        let unbound = set(text, "shortcuts.lock", "").unwrap_err().to_string();
+        assert!(
+            unbound.contains("a way out must keep its keys"),
+            "{unbound}"
+        );
+        let unknown = set(text, "shortcuts.cloze", "Super+W")
+            .unwrap_err()
+            .to_string();
+        assert!(unknown.contains("unknown action"), "{unknown}");
+        assert!(set(text, "shortcuts.close", "Super+Q+W").is_err());
+        // check says the same of a file written by hand.
+        let lines = check("format = 1\n[shortcuts]\nterminal = \"super+q\"\n").unwrap();
+        assert_eq!(lines, ["shortcuts.terminal: Super+Q is already close's"]);
     }
 
     #[test]

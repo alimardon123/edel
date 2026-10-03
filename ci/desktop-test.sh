@@ -42,6 +42,10 @@
 #               removal brings the rest back; ten windows opening one after
 #               another and closing at the Full tier keep the frame budget,
 #               or drop the tier and say so (M5.11b)
+#   shortcuts   edel system set shortcuts.close=Super+W, sent to the VM,
+#               moves close: Super+Q then leaves a window open and Super+W
+#               closes it; Ctrl+Alt+T opens a terminal; removing the key
+#               brings Super+Q back (M5.13a)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -457,6 +461,36 @@ case_animations() {
 	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the rest back; ten windows opened and closed at the Full tier with frames p99 $p99 ms over $frames frames, within $limit ms, tier $tier after"
 }
 
+case_shortcuts() {
+	# [shortcuts] (M5.13a), live from the system file: a window of its own,
+	# which takes the keyboard as it opens.
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' 0 || fail "the test client keys did not open: $(value windows)"
+	guest 'close on super-w'
+	wait_for 'edel-compositor: shortcut close is Super\+W' ||
+		fail "the compositor did not follow shortcuts.close = \"Super+W\""
+	# Super+Q now reaches the window, which ignores it; Super+W closes it.
+	python3 ci/qmp.py key meta_l-q
+	sleep 2
+	[ "$(count 'edel-compositor: unmapped window keys')" = 0 ] ||
+		fail "Super+Q still closed keys after close moved to Super+W"
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: unmapped window keys' 0 || fail "Super+W did not close keys: $(value windows)"
+	# Ctrl+Alt+T opens a terminal, which Super+W closes in turn.
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key ctrl-alt-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	sleep 1
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+W did not close the terminal"
+	# Unset, close is Super+Q again.
+	guest 'shortcuts default'
+	wait_for 'edel-compositor: shortcut close is Super\+Q' ||
+		fail "removing shortcuts.close did not bring Super+Q back"
+	echo "PASS: shortcuts.close = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -559,13 +593,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland layers animations scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland layers animations shortcuts scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | pointer | respawn | scale | tiling | titlebar | xwayland) ;;
+	animations | console | compositor | floating | layers | outputs | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, pointer, respawn, rollback, scale, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac

@@ -84,7 +84,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 
 | Key | Value | From |
 |---|---|---|
-| `shortcuts.*` | text, keys for the action `NAME`, such as `close = "Super+Q"` | M5.13 |
+| `shortcuts.*` | keys for the action `*`, such as `close = "Super+W"`, or `""` for none; the actions, their default keys and the key names are in [SHORTCUTS.md](SHORTCUTS.md). Check and set refuse an unknown action, two actions on one key and close, launcher or lock without keys. The compositor follows them at once | M5.13a |
 | `defaults.browser` | text, a `.desktop` id | M6.10 |
 | `defaults.files` | text, a `.desktop` id | M6.10 |
 | `defaults.editor` | text, a `.desktop` id | M6.10 |

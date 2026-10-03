@@ -105,6 +105,10 @@ pub struct Edel {
     pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
+    /// The Wayland socket's name, for programs the compositor starts.
+    pub socket: String,
+    /// The keyboard shortcuts that act (`shortcuts.rs`, M5.13a).
+    pub bindings: Vec<crate::shortcuts::Binding>,
     /// The program the session runs, if it was given one (`program.rs`).
     pub program: Option<crate::program::Program>,
     /// Where window frames go; one workspace until M5.2.
@@ -184,6 +188,8 @@ impl Edel {
             )),
             x11: None,
             program: None,
+            socket: String::new(),
+            bindings: crate::shortcuts::bind(&Default::default()).0,
             workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
@@ -293,6 +299,14 @@ impl Edel {
             eprintln!("edel-compositor: {note}");
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
+        let (bindings, notes) = crate::shortcuts::bind(&new.shortcuts);
+        for line in notes
+            .iter()
+            .chain(&crate::shortcuts::changes(&self.bindings, &bindings))
+        {
+            eprintln!("edel-compositor: {line}");
+        }
+        self.bindings = bindings;
         if old.outputs != new.outputs {
             self.screens_changed = true;
         }
