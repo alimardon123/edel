@@ -13,6 +13,7 @@ mod decoration;
 mod drm;
 mod grabs;
 mod input;
+mod layers;
 mod outputs;
 mod pointer;
 mod program;

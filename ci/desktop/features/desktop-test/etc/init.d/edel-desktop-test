@@ -119,6 +119,12 @@ commands() {
 			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' /tmp/compositor.log | tail -n 1) xclock" </dev/null &
 			(sleep 5 && say "x11_rss_mib $(x11_rss)") &
 			;;
+		# A panel along the bottom (M5.1a): the test client on the top
+		# layer, the screen's width and 40 px high.
+		'panel on')
+			as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
+			;;
+		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its
@@ -145,12 +151,18 @@ commands() {
 follow() {
 	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
 	last=''
+	last_layers=''
 	i=0
 	while [ "$i" -lt 1500 ]; do
 		now=$(windows)
 		if [ "$now" != "$last" ]; then
 			say "windows $now"
 			last=$now
+		fi
+		now=$(layers)
+		if [ "$now" != "$last_layers" ]; then
+			say "layers $now"
+			last_layers=$now
 		fi
 		sleep 0.2
 		i=$((i + 1))
@@ -210,6 +222,25 @@ x11_rss() {
 	for pid in $(pgrep -f 'Xwayland|xwayland-satellite'); do
 		awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status"
 	done | awk '{ kib += $1 } END { printf "%.1f", kib / 1024 }'
+}
+
+# layers: how many layer surfaces the state file lists (M5.1a), then each
+# as namespace@x,y,widthxheight, bottom first.
+layers() {
+	awk -F' = ' '
+		function flush() {
+			if (ns != "") out = out " " ns "@" x "," y "," w "x" h
+			ns = ""
+		}
+		/^\[/ { flush(); inside = 0 }
+		/^\[\[layers\]\]/ { n++; inside = 1 }
+		inside && $1 == "namespace" { ns = $2; gsub(/"/, "", ns) }
+		inside && $1 == "x" { x = $2 }
+		inside && $1 == "y" { y = $2 }
+		inside && $1 == "width" { w = $2 }
+		inside && $1 == "height" { h = $2 }
+		END { flush(); print n + 0 out }
+	' /run/edel/session/state.toml 2>/dev/null
 }
 
 # shown N: waits up to 30 s for the state file to list N windows.

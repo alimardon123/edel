@@ -33,6 +33,9 @@
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
+#   layers      a layer-shell panel (the test client, --layer bottom) lies
+#               along the bottom in its colour, keeps its height free of
+#               tiled windows, and goes when closed (M5.1a)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -322,6 +325,32 @@ case_respawn() {
 	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again"
 }
 
+case_layers() {
+	# A panel (M5.1a): the test client on the top layer along the bottom,
+	# the screen's width and 40 px high, in #2f343f. Only one is open,
+	# where titlebar left it.
+	guest 'panel on'
+	wait_for 'DESKTOP-TEST: layers 1 edel-testclient@0,760,1280x40' ||
+		fail "the panel is not along the bottom in the state file: $(value layers)"
+	shot layers 640 790 2f343f >/dev/null || fail "640,790 is not the panel's #2f343f"
+	# Windows tile, and would maximize, in the area above it. Super+T
+	# switches whatever the system file says: the tiling case leaves
+	# shell.tiling at true with the windows floating.
+	python3 ci/qmp.py key meta_l-t
+	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x715' ||
+		fail "one did not tile above the panel: $(value windows)"
+	python3 ci/qmp.py key meta_l-t
+	i=0
+	while [ "$(value windows)" != '1 one@722,145,300x200' ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "one did not float back: $(value windows)"
+		sleep 0.2
+	done
+	guest 'panel off'
+	wait_for 'DESKTOP-TEST: layers 0' || fail "the panel did not go: $(value layers)"
+	echo "PASS: a layer-shell panel lay along the bottom in its colour, windows tiled above it (one@9,36,1262x715), and it went when closed"
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -428,13 +457,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland layers scale respawn
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | outputs | pointer | respawn | scale | tiling | titlebar | xwayland) ;;
+	console | compositor | floating | layers | outputs | pointer | respawn | scale | tiling | titlebar | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, respawn, rollback, scale, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are console, compositor, floating, layers, outputs, pointer, respawn, rollback, scale, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac

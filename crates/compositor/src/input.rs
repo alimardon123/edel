@@ -17,7 +17,7 @@ use smithay::backend::input::{
     PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
     TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
-use smithay::desktop::{Window, WindowSurfaceType};
+use smithay::desktop::{LayerSurface, Window, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, xkb};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, Focus, GrabStartData, MotionEvent, RelativeMotionEvent,
@@ -51,6 +51,8 @@ enum Action {
 pub enum Under {
     /// A window's surface, at the given place on screen.
     Surface(Window, WlSurface, Point<f64, Logical>),
+    /// A panel's or background's surface (M5.1a).
+    Layer(LayerSurface, WlSurface, Point<f64, Logical>),
     /// A part of the frame the compositor draws round a window.
     Frame(Window, Hit),
     Nothing,
@@ -60,14 +62,14 @@ impl Under {
     fn window(&self) -> Option<&Window> {
         match self {
             Under::Surface(window, ..) | Under::Frame(window, _) => Some(window),
-            Under::Nothing => None,
+            Under::Layer(..) | Under::Nothing => None,
         }
     }
 
     /// The surface that gets the pointer's events, if any.
     fn focus(self) -> Option<(WlSurface, Point<f64, Logical>)> {
         match self {
-            Under::Surface(_, surface, at) => Some((surface, at)),
+            Under::Surface(_, surface, at) | Under::Layer(_, surface, at) => Some((surface, at)),
             _ => None,
         }
     }
@@ -345,9 +347,13 @@ impl Edel {
         self.dirty = true;
     }
 
-    /// What is at `point`: the windows from the top, each window's own
-    /// surfaces (its popups may lie over its bar) before its frame.
+    /// What is at `point`: panels over the windows, then the windows from
+    /// the top, each window's own surfaces (its popups may lie over its
+    /// bar) before its frame, then backgrounds.
     pub fn under(&self, point: Point<f64, Logical>) -> Under {
+        if let Some((layer, surface, at)) = self.layer_under(&crate::layers::ABOVE, point) {
+            return Under::Layer(layer, surface, at);
+        }
         for window in self.space.elements().rev() {
             let Some(place) = self.space.element_geometry(window) else {
                 continue;
@@ -367,6 +373,9 @@ impl Edel {
                     return Under::Frame(window.clone(), hit);
                 }
             }
+        }
+        if let Some((layer, surface, at)) = self.layer_under(&crate::layers::BELOW, point) {
+            return Under::Layer(layer, surface, at);
         }
         Under::Nothing
     }
@@ -399,6 +408,10 @@ impl Edel {
         time: u32,
     ) -> bool {
         let under = self.under(location);
+        if let Under::Layer(layer, ..) = &under {
+            self.focus_layer(layer);
+            return false;
+        }
         let Some(window) = under.window().cloned() else {
             return false;
         };

@@ -95,6 +95,12 @@ impl Edel {
         let focused = self.focused_window();
         let windows: Vec<_> = self.space.elements().rev().cloned().collect();
         let mut elements = self.cursor_elements(renderer, screen.loc, scale);
+        // Panels over the windows, backgrounds under them (M5.1a).
+        elements.extend(
+            crate::layers::elements(renderer, output, &crate::layers::ABOVE, scale)
+                .into_iter()
+                .map(Element::Surface),
+        );
         for window in windows {
             let Some(place) = self.space.element_geometry(&window) else {
                 continue;
@@ -194,6 +200,11 @@ impl Edel {
                 )));
             }
         }
+        elements.extend(
+            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale)
+                .into_iter()
+                .map(Element::Surface),
+        );
         elements
     }
 }

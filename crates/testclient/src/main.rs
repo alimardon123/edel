@@ -2,9 +2,13 @@
 //! colour and title, for the desktop tests. A known colour at a known
 //! place is what CI's pixel checks can trust under llvmpipe, and the
 //! same arguments always draw the same window. It draws again only when
-//! the compositor resizes it, and exits when asked to close.
+//! the compositor resizes it, and exits when asked to close. With
+//! `--layer top` or `--layer bottom` it is a panel instead (M5.1a): a
+//! layer surface along that edge, as wide as the screen when its width is
+//! 0, on the top layer, keeping its height free of windows.
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
+//!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -14,6 +18,10 @@ use smithay_client_toolkit::reexports::client::protocol::{wl_output, wl_shm, wl_
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
+    LayerSurfaceConfigure,
+};
 use smithay_client_toolkit::shell::xdg::XdgShell;
 use smithay_client_toolkit::shell::xdg::window::{
     Window, WindowConfigure, WindowDecorations, WindowHandler,
@@ -28,12 +36,15 @@ struct Args {
     /// Little-endian ARGB8888, the bytes as they go into the buffer.
     pixel: [u8; 4],
     title: String,
+    /// The screen edge a panel runs along.
+    layer: Option<Anchor>,
 }
 
 fn args() -> Result<Args> {
     let mut size = (300, 200);
     let mut pixel = [0x33, 0x33, 0xcc, 0xff];
     let mut title = "edel-testclient".to_string();
+    let mut layer = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         let value = words
@@ -43,8 +54,8 @@ fn args() -> Result<Args> {
             "--size" => {
                 let (w, h) = value.split_once('x').context("--size is WIDTHxHEIGHT")?;
                 size = (w.parse()?, h.parse()?);
-                if size.0 == 0 || size.1 == 0 || size.0 > 8192 || size.1 > 8192 {
-                    bail!("--size must be from 1x1 to 8192x8192");
+                if size.0 > 8192 || size.1 == 0 || size.1 > 8192 {
+                    bail!("--size must be from 0x1 to 8192x8192");
                 }
             }
             "--colour" => {
@@ -55,15 +66,48 @@ fn args() -> Result<Args> {
                 pixel = [rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8, 0xff];
             }
             "--title" => title = value,
-            _ => bail!("unknown argument {word}; use --size, --colour and --title"),
+            "--layer" => {
+                layer = Some(match value.as_str() {
+                    "top" => Anchor::TOP,
+                    "bottom" => Anchor::BOTTOM,
+                    _ => bail!("--layer is top or bottom"),
+                })
+            }
+            _ => bail!("unknown argument {word}; use --size, --colour, --title and --layer"),
         }
+    }
+    if size.0 == 0 && layer.is_none() {
+        bail!("only a panel (--layer) may have width 0, the screen's");
     }
     Ok(Args {
         width: size.0,
         height: size.1,
         pixel,
         title,
+        layer,
     })
+}
+
+/// What the client shows: a window, or a panel.
+enum Shown {
+    Window(Window),
+    Panel(LayerSurface),
+}
+
+impl Shown {
+    fn wl_surface(&self) -> &wl_surface::WlSurface {
+        match self {
+            Shown::Window(window) => window.wl_surface(),
+            Shown::Panel(panel) => panel.wl_surface(),
+        }
+    }
+
+    fn commit(&self) {
+        match self {
+            Shown::Window(window) => window.commit(),
+            Shown::Panel(panel) => panel.commit(),
+        }
+    }
 }
 
 struct Client {
@@ -71,7 +115,7 @@ struct Client {
     outputs: OutputState,
     shm: Shm,
     pool: SlotPool,
-    window: Window,
+    shown: Shown,
     width: u32,
     height: u32,
     pixel: [u8; 4],
@@ -84,26 +128,38 @@ fn main() -> Result<()> {
     let (globals, mut queue) = registry_queue_init(&connection).context("reading the globals")?;
     let qh = queue.handle();
     let compositor = CompositorState::bind(&globals, &qh).context("no wl_compositor")?;
-    let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
     let shm = Shm::bind(&globals, &qh).context("no wl_shm")?;
-    let window = shell.create_window(
-        compositor.create_surface(&qh),
-        WindowDecorations::ServerDefault,
-        &qh,
-    );
-    window.set_title(args.title);
-    window.set_app_id("edel-testclient");
+    let surface = compositor.create_surface(&qh);
+    let shown = match args.layer {
+        Some(edge) => {
+            let shell = LayerShell::bind(&globals, &qh).context("no zwlr_layer_shell_v1")?;
+            let panel =
+                shell.create_layer_surface(&qh, surface, Layer::Top, Some("edel-testclient"), None);
+            panel.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+            panel.set_size(args.width, args.height);
+            panel.set_exclusive_zone(args.height as i32);
+            panel.set_keyboard_interactivity(KeyboardInteractivity::None);
+            Shown::Panel(panel)
+        }
+        None => {
+            let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
+            let window = shell.create_window(surface, WindowDecorations::ServerDefault, &qh);
+            window.set_title(args.title);
+            window.set_app_id("edel-testclient");
+            Shown::Window(window)
+        }
+    };
     // The first commit carries no buffer; the compositor answers with a
     // configure, and the first draw follows it.
-    window.commit();
-    let pool = SlotPool::new((args.width * args.height * 4) as usize, &shm)
+    shown.commit();
+    let pool = SlotPool::new((args.width.max(1) * args.height * 4) as usize, &shm)
         .context("creating the shared memory pool")?;
     let mut client = Client {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         shm,
         pool,
-        window,
+        shown,
         width: args.width,
         height: args.height,
         pixel: args.pixel,
@@ -134,11 +190,40 @@ impl Client {
         for pixel in canvas.chunks_exact_mut(4) {
             pixel.copy_from_slice(&self.pixel);
         }
-        let surface = self.window.wl_surface();
+        let surface = self.shown.wl_surface();
         surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
         buffer.attach_to(surface).context("attaching the buffer")?;
-        self.window.commit();
+        self.shown.commit();
         Ok(())
+    }
+}
+
+impl LayerShellHandler for Client {
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
+        self.closed = true;
+    }
+
+    /// Takes the size the compositor gives, the screen's width for a
+    /// panel of width 0.
+    fn configure(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &LayerSurface,
+        configure: LayerSurfaceConfigure,
+        _: u32,
+    ) {
+        let (w, h) = configure.new_size;
+        if w > 0 {
+            self.width = w;
+        }
+        if h > 0 {
+            self.height = h;
+        }
+        if let Err(e) = self.draw() {
+            eprintln!("edel-testclient: {e:#}");
+            self.closed = true;
+        }
     }
 }
 

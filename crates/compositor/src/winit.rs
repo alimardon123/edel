@@ -179,5 +179,6 @@ fn draw(window: &mut Window, state: &mut Edel) {
             Some(window.output.clone())
         });
     }
+    crate::layers::send_frames(&window.output, now);
     state.cursor_frame(&window.output, now);
 }
