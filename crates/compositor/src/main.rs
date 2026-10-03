@@ -25,6 +25,7 @@ mod shortcuts;
 mod state;
 mod statefile;
 mod tiers;
+mod toplevels;
 mod watch;
 mod winit;
 mod workspaces;

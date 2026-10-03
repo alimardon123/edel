@@ -7,11 +7,13 @@
 //! layer surface along that edge, as wide as the screen when its width is
 //! 0, on the top layer, keeping its height free of windows. With
 //! `--workspace N` it draws nothing and shows workspace N instead
-//! (`workspaces.rs`, M5.2b).
+//! (`workspaces.rs`, M5.2b); with `--toplevels` it lists the windows, and
+//! activates one given its title (`toplevels.rs`, M5.2d).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
 //!     edel-testclient --workspace 3
+//!     edel-testclient --toplevels away
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -77,7 +79,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title and --layer, or --workspace alone"
+                "unknown argument {word}; use --size, --colour, --title and --layer, or --workspace or --toplevels alone"
             ),
         }
     }
@@ -127,14 +129,16 @@ struct Client {
     closed: bool,
 }
 
+mod toplevels;
 mod workspaces;
 
 fn main() -> Result<()> {
     let words: Vec<String> = std::env::args().skip(1).collect();
-    if let [flag, name] = words.as_slice() {
-        if flag == "--workspace" {
-            return workspaces::run(name);
-        }
+    match words.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        ["--workspace", name] => return workspaces::run(name),
+        ["--toplevels"] => return toplevels::run(None),
+        ["--toplevels", title] => return toplevels::run(Some(title)),
+        _ => {}
     }
     let args = args()?;
     let connection = Connection::connect_to_env().context("connecting to the compositor")?;
