@@ -61,7 +61,7 @@ impl Edel {
         let Some(window) = self.focused_window() else {
             return;
         };
-        let (Some(frame), Some(area)) = (self.frame_of(&window), self.window_area()) else {
+        let Some(frame) = self.frame_of(&window) else {
             return;
         };
         // A maximized window keeps the size it goes back to.
@@ -69,7 +69,8 @@ impl Edel {
             .borrow()
             .restore
             .map_or(frame.size, |r| r.size);
-        if self.desks.send(window.clone(), to, size, area).is_none() {
+        let areas = self.window_areas();
+        if self.desks.send(window.clone(), to, size, &areas).is_none() {
             return;
         }
         eprintln!(
@@ -95,9 +96,9 @@ impl Edel {
         if self.desks.active() >= count {
             self.switch_workspace(count - 1);
         }
-        let area = self.window_area().unwrap_or_default();
+        let areas = self.window_areas();
         let policy = self.settings.policy();
-        let Some(joined) = self.desks.set_count(count, area, policy) else {
+        let Some(joined) = self.desks.set_count(count, &areas, policy) else {
             return;
         };
         eprintln!("edel-compositor: {count} workspaces");
@@ -144,8 +145,8 @@ impl Edel {
             return false;
         }
         self.switch_workspace(desk);
-        let area = self.window_area().unwrap_or_default();
-        let Some(frame) = self.desks.restore(window, area) else {
+        let areas = self.window_areas();
+        let Some(frame) = self.desks.restore(window, &areas) else {
             return false;
         };
         eprintln!("edel-compositor: restored window {}", title(window));
