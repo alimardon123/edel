@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Drives a QEMU VM's screen, keyboard and tablet for the desktop tests
-(roadmap M4.1, M4.4), with the Python standard library only.
+"""Drives a QEMU VM's screen, keyboard, tablet and mouse for the desktop
+tests (roadmap M4.1, M4.4), with the Python standard library only.
 
     qmp.py screendump FILE.png   save the screen as PNG (QEMU 7.1 or newer)
     qmp.py move X Y              move the pointer to pixel X, Y
+    qmp.py nudge DX DY           move the pointer DX, DY with the mouse,
+                                 which, unlike the tablet, can leave the
+                                 first screen for the next (M5.2g)
     qmp.py click X Y             move the pointer to pixel X, Y and click
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
@@ -15,7 +18,7 @@
                                  print "uniform rrggbb" or "varied", for
                                  the whole screen or the W by H box at X, Y
 
-The first six talk to the QMP socket named by $QMP. Key names are
+The first seven talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -124,6 +127,14 @@ def point(qmp, size, x, y):
     qmp.run("input-send-event", events=events)
 
 
+def nudge(qmp, dx, dy):
+    events = [
+        {"type": "rel", "data": {"axis": "x", "value": dx}},
+        {"type": "rel", "data": {"axis": "y", "value": dy}},
+    ]
+    qmp.run("input-send-event", events=events)
+
+
 def button(qmp, down):
     time.sleep(0.05)
     qmp.run("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
@@ -228,6 +239,8 @@ def main(argv):
         screendump(qmp, args[0])
     elif command == "move":
         point(qmp, screen_size(qmp), int(args[0]), int(args[1]))
+    elif command == "nudge":
+        nudge(qmp, int(args[0]), int(args[1]))
     elif command == "click":
         click(qmp, int(args[0]), int(args[1]))
     elif command == "drag":

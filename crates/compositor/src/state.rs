@@ -154,12 +154,12 @@ impl Edel {
         crate::toplevels::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
-            // Minimize waits for the window list that brings a window back
-            // (M5.2), fullscreen and the window menu for their own steps;
+            // Minimize since the window list brings a window back (M5.2h);
+            // fullscreen and the window menu wait for their own steps, and
             // apps that draw their own bars leave out what is missing.
             xdg_shell: XdgShellState::new_with_capabilities::<Edel>(
                 &display,
-                [WmCapabilities::Maximize],
+                [WmCapabilities::Maximize, WmCapabilities::Minimize],
             ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
             layer_shell: WlrLayerShellState::new::<Edel>(&display),
@@ -231,8 +231,13 @@ impl Edel {
     /// the policy decides where its frame stays (floating keeps it, tiling
     /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
-        let insets = self.insets(window);
-        let frame = self.desks.layout_mut().moved(window, insets.frame(place));
+        let frame = self.insets(window).frame(place);
+        // A floating window put on another screen moves to it.
+        let middle = frame.loc.to_f64() + frame.size.to_f64().downscale(2.0).to_point();
+        let Some((screen, area)) = self.screen_at(middle) else {
+            return;
+        };
+        let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
         self.put(window, frame);
         self.dirty = true;
         self.state_changed();
@@ -286,9 +291,10 @@ impl Edel {
     /// stays on the screen.
     pub fn relayout(&mut self) {
         self.keep_pointer_on_screen();
-        if let Some(area) = self.window_area() {
+        let areas = self.window_areas();
+        if !areas.is_empty() {
             let stack: Vec<Window> = self.space.elements().cloned().collect();
-            for (window, frame) in self.desks.layout_mut().arrange(area) {
+            for (window, frame) in self.desks.layout_mut().arrange(&areas) {
                 if self.is_maximized(&window) {
                     self.maximize(&window);
                 } else {
@@ -396,7 +402,9 @@ impl Edel {
             return;
         }
         let frame = self.insets(window).frame(place);
-        self.desks.layout_mut().moved(window, frame);
+        if let Some((screen, area)) = self.home(window) {
+            self.desks.layout_mut().moved(window, frame, &screen, area);
+        }
         self.state_changed();
     }
 
@@ -420,7 +428,8 @@ impl Edel {
 
     /// Outputs and windows, bottom of the stack first, as TOML: the shown
     /// workspace's windows, then the hidden ones by workspace, each with
-    /// its workspace, counted from 1 as Super+1 to Super+9 are.
+    /// its workspace, counted from 1 as Super+1 to Super+9 are, and
+    /// whether it is minimized (M5.2h).
     fn state_toml(&self) -> String {
         let mut table = Table::new();
         table.insert("format".into(), Value::Integer(statefile::FORMAT));
@@ -489,6 +498,10 @@ impl Edel {
                 t.insert(
                     "maximized".into(),
                     Value::Boolean(self.is_maximized(window)),
+                );
+                t.insert(
+                    "minimized".into(),
+                    Value::Boolean(self.desks.minimized(window).is_some()),
                 );
                 Some(Value::Table(t))
             })
@@ -641,7 +654,8 @@ impl CompositorHandler for Edel {
             return;
         }
         let drawn = has_buffer(surface);
-        let Some(area) = self.window_area() else {
+        // On the screen the pointer is on (M5.2g).
+        let Some((screen, area)) = self.pointer_screen() else {
             return;
         };
         if drawn {
@@ -650,6 +664,7 @@ impl CompositorHandler for Edel {
             let frame = self.desks.layout_mut().open(
                 window.clone(),
                 insets.frame_size(window.geometry().size),
+                &screen,
                 area,
             );
             let place = insets.window(frame);
@@ -739,6 +754,16 @@ impl XdgShellHandler for Edel {
             self.unmaximize(&window);
         } else if surface.is_initial_configure_sent() {
             surface.send_configure();
+        }
+    }
+
+    /// A window that draws its own bar asks to be minimized, as ours does
+    /// from its button.
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_of(surface.wl_surface()) {
+            if self.space.element_geometry(&window).is_some() {
+                self.minimize(&window);
+            }
         }
     }
 

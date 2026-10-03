@@ -186,9 +186,9 @@ impl Edel {
         }
     }
 
-    /// The window fills the screen, title bar and all.
+    /// The window fills its screen, title bar and all.
     pub fn maximize(&mut self, window: &Window) {
-        let (Some(area), Some(frame)) = (self.window_area(), self.frame_of(window)) else {
+        let (Some((_, area)), Some(frame)) = (self.home(window), self.frame_of(window)) else {
             return;
         };
         let mut data = data(window).borrow_mut();

@@ -498,6 +498,7 @@ impl Edel {
         match button {
             Button::Close => self.close(&window),
             Button::Maximize => self.toggle_maximized(&window),
+            Button::Minimize => self.minimize(&window),
         }
     }
 
@@ -524,8 +525,8 @@ impl Edel {
         Some(clamp(to, *home))
     }
 
-    /// The first output's area in the layout: where windows open, and what
-    /// absolute pointers such as tablets map to.
+    /// The first output's area in the layout: what absolute pointers such
+    /// as tablets map to.
     pub fn output_area(&self) -> Option<Rectangle<i32, Logical>> {
         let output = self.space.outputs().next()?;
         self.space.output_geometry(output)

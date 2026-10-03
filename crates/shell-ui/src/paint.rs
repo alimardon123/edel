@@ -107,6 +107,33 @@ impl Text {
         Line { buffer, width }
     }
 
+    /// `text` as one line `size` pixels high in at most `room` pixels:
+    /// whole, or cut short with an ellipsis, or nothing if not even that
+    /// fits.
+    pub fn fit(&mut self, text: &str, size: f32, room: f32) -> Line {
+        let whole = self.line(text, size);
+        if whole.width <= room {
+            return whole;
+        }
+        // The most characters that fit before the ellipsis, by halving.
+        let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+        let (mut fits, mut over) = (0, ends.len());
+        let mut best = self.line("\u{2026}", size);
+        while fits + 1 < over {
+            let mid = (fits + over) / 2;
+            let line = self.line(&format!("{}\u{2026}", text[..ends[mid]].trim_end()), size);
+            if line.width <= room {
+                (fits, best) = (mid, line);
+            } else {
+                over = mid;
+            }
+        }
+        if best.width > room {
+            return self.line("", size);
+        }
+        best
+    }
+
     /// Draws `line` with its top left at `x`, `y`, rounded to pixels.
     pub fn draw(&mut self, pixmap: &mut Pixmap, line: &mut Line, x: f32, y: f32, colour: Colour) {
         let (x, y) = (x.round() as i32, y.round() as i32);
@@ -152,6 +179,17 @@ impl Text {
 /// tiny-skia's colour for a token colour.
 fn colour(c: Colour) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba(c.r, c.g, c.b, c.a).unwrap_or(tiny_skia::Color::BLACK)
+}
+
+/// `a` moved towards `b` by `t`, 0 to 1, opaque: text dimmed towards the
+/// panel it lies on.
+pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
+    Colour {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: 1.0,
+    }
 }
 
 pub fn paint_of(c: Colour) -> Paint<'static> {

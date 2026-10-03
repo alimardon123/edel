@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(panel.edge, Edge::Bottom);
         assert_eq!(
             panel.widgets().collect::<Vec<_>>(),
-            ["menu", "workspaces", "clock"]
+            ["menu", "windows", "workspaces", "clock"]
         );
     }
 

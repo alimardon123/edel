@@ -1,13 +1,14 @@
 //! wlr-foreign-toplevel-management (roadmap M5.2d): the windows as panels
 //! and docks see them, shell-ui's window list first. Each window, in the
 //! order the client first heard of it, with its title, app id, the screens it is on
-//! and whether it is focused or maximized; and requests to activate it
-//! (showing its workspace first), maximize it and close it. A window on a
+//! and whether it is focused, maximized or minimized (M5.2h); and requests
+//! to activate it (showing its workspace first, and bringing it back if
+//! it is minimized), maximize, minimize and close it. A window on a
 //! hidden workspace is on no screen, which is how a list of one
-//! workspace's windows leaves it out. `sync` runs whenever the state file
-//! is written and when the focus moves, and sends each client only what
-//! changed, then `done`. Minimize joins with the window list that brings
-//! a minimized window back.
+//! workspace's windows leaves it out; a minimized one stays on the
+//! screens it was on. `sync` runs whenever the state file is written and
+//! when the focus moves, and sends each client only what changed, then
+//! `done`.
 
 use smithay::desktop::Window;
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::{
@@ -27,6 +28,7 @@ use crate::state::Edel;
 
 /// The protocol's states, as its enum numbers them.
 const MAXIMIZED: u32 = 0;
+const MINIMIZED: u32 = 1;
 const ACTIVATED: u32 = 2;
 
 /// Every client's manager and the handles it was given.
@@ -84,8 +86,13 @@ impl Edel {
             })
             .unwrap_or_default();
         // From the geometry, not the space's own list, which follows only
-        // when the screens are next drawn.
-        let place = self.space.element_geometry(window);
+        // when the screens are next drawn; a window minimized on the shown
+        // workspace is where it was.
+        let minimized = self.desks.minimized(window);
+        let place = self.space.element_geometry(window).or_else(|| {
+            let (desk, frame) = minimized?;
+            (desk == self.desks.active()).then(|| self.insets(window).window(frame))
+        });
         let outputs = self
             .space
             .outputs()
@@ -99,6 +106,9 @@ impl Edel {
         let mut states = Vec::new();
         if self.is_maximized(window) {
             states.push(MAXIMIZED);
+        }
+        if minimized.is_some() {
+            states.push(MINIMIZED);
         }
         if window
             .toplevel()
@@ -254,14 +264,16 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Edel {
         let shown = state.space.element_geometry(&window).is_some();
         match request {
             // Its workspace first, then the window, as a click in a
-            // window list means.
+            // window list means; a minimized window comes back.
             zwlr_foreign_toplevel_handle_v1::Request::Activate { .. } => {
-                if let Some(desk) = state.desks.hidden_on(&window) {
-                    state.switch_workspace(desk);
-                }
-                if state.space.element_geometry(&window).is_some() {
-                    state.focus(&window);
-                    state.state_changed();
+                if !state.restore(&window) {
+                    if let Some(desk) = state.desks.hidden_on(&window) {
+                        state.switch_workspace(desk);
+                    }
+                    if state.space.element_geometry(&window).is_some() {
+                        state.focus(&window);
+                        state.state_changed();
+                    }
                 }
             }
             zwlr_foreign_toplevel_handle_v1::Request::Close => state.close(&window),
@@ -271,9 +283,14 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Edel {
             zwlr_foreign_toplevel_handle_v1::Request::UnsetMaximized if shown => {
                 state.unmaximize(&window);
             }
-            // Minimize joins with the window list (M5.2d); fullscreen and
-            // the rectangle a list draws a window's entry in mean nothing
-            // here yet.
+            zwlr_foreign_toplevel_handle_v1::Request::SetMinimized if shown => {
+                state.minimize(&window);
+            }
+            zwlr_foreign_toplevel_handle_v1::Request::UnsetMinimized => {
+                state.restore(&window);
+            }
+            // Fullscreen and the rectangle a list draws a window's entry
+            // in mean nothing here yet.
             _ => {}
         }
         state.sync_toplevels();

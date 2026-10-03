@@ -80,10 +80,13 @@ impl Insets {
 pub enum Button {
     Close,
     Maximize,
+    /// Since M5.2h, when the panel's window list brings a minimized
+    /// window back.
+    Minimize,
 }
 
 /// The buttons, rightmost first.
-pub const BUTTONS: [Button; 2] = [Button::Close, Button::Maximize];
+pub const BUTTONS: [Button; 3] = [Button::Close, Button::Maximize, Button::Minimize];
 
 /// A part of a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +203,7 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         if look.hovered == Some(*button) {
             let hover = match button {
                 Button::Close => tokens.title_close_hover,
-                Button::Maximize => tokens.title_button_hover,
+                Button::Maximize | Button::Minimize => tokens.title_button_hover,
             };
             canvas.fill(x, 0, size, h, hover);
             icon = tokens.title_text;
@@ -261,7 +264,8 @@ impl Canvas<'_> {
     }
 
     /// A button's icon, drawn in the middle of the square at `x`: a cross
-    /// for close, a square for maximize, two for restore.
+    /// for close, a square for maximize, two for restore, a dash across
+    /// the middle for minimize.
     fn icon(&mut self, button: Button, maximized: bool, x: usize, size: usize, colour: Colour) {
         let half = (size as f32 * 0.17).round().max(3.0);
         let centre = (x as f32 + size as f32 / 2.0, size as f32 / 2.0);
@@ -286,6 +290,11 @@ impl Canvas<'_> {
                 let x0 = (centre.0 - half) as i64;
                 let y0 = (centre.1 - half) as i64;
                 self.outline(x0, y0, s, colour, None);
+            }
+            Button::Minimize => {
+                let (cx, cy) = centre;
+                let a = half - 0.5;
+                self.line((cx - a, cy), (cx + a, cy), colour);
             }
         }
     }
@@ -504,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_has_the_title_then_maximize_and_close_at_the_right() {
+    fn the_bar_has_the_title_then_minimize_maximize_and_close_at_the_right() {
         let size = Size::from((302, 229));
         let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true);
         assert_eq!(at(10.0, 10.0), Some(Hit::Title));
@@ -512,7 +521,9 @@ mod tests {
         assert_eq!(at(274.0, 27.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(273.9, 14.0), Some(Hit::Button(Button::Maximize)));
         assert_eq!(at(246.0, 14.0), Some(Hit::Button(Button::Maximize)));
-        assert_eq!(at(245.9, 14.0), Some(Hit::Title));
+        assert_eq!(at(245.9, 14.0), Some(Hit::Button(Button::Minimize)));
+        assert_eq!(at(218.0, 14.0), Some(Hit::Button(Button::Minimize)));
+        assert_eq!(at(217.9, 14.0), Some(Hit::Title));
         assert_eq!(at(150.0, 100.0), None, "the window's own");
     }
 
@@ -574,6 +585,10 @@ mod tests {
             [focused[0], focused[1], focused[2]]
         );
         assert_eq!(pixel(&pixels, 302, 255, 14), [ink[0], ink[1], ink[2]]);
+        // Minimize's dash runs across its square's middle, nowhere else.
+        let bar = [focused[0], focused[1], focused[2]];
+        assert_ne!(pixel(&pixels, 302, 232, 14), bar);
+        assert_eq!(pixel(&pixels, 302, 232, 8), bar);
         let mut unfocused = vec![0; 302 * 28 * 4];
         paint(&mut unfocused, &look(302, false), &t, None);
         let bar = t.title_bar.bytes();

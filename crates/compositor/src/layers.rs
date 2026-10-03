@@ -10,7 +10,7 @@
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
+use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -25,6 +25,8 @@ use smithay::wayland::shell::xdg::PopupSurface;
 use std::time::Duration;
 use toml::{Table, Value};
 
+use edel_compositor::desks::screen_in;
+
 use crate::state::Edel;
 
 /// The layers drawn over the windows, the topmost first.
@@ -33,14 +35,52 @@ pub const ABOVE: [Layer; 2] = [Layer::Overlay, Layer::Top];
 pub const BELOW: [Layer; 2] = [Layer::Bottom, Layer::Background];
 
 impl Edel {
-    /// The first screen's area left to windows once panels have taken
-    /// their exclusive zones: where windows open, tile and maximize.
+    /// Each screen's area left to windows once panels have taken their
+    /// exclusive zones, by the screen's name, the first screen first:
+    /// where windows open, tile and maximize, each on its own (M5.2g).
+    pub fn window_areas(&self) -> Vec<(String, Rectangle<i32, Logical>)> {
+        self.space
+            .outputs()
+            .filter_map(|output| {
+                let screen = self.space.output_geometry(output)?;
+                let mut zone = layer_map_for_output(output).non_exclusive_zone();
+                zone.loc += screen.loc;
+                Some((output.name(), zone))
+            })
+            .collect()
+    }
+
+    /// The first screen's area left to windows.
     pub fn window_area(&self) -> Option<Rectangle<i32, Logical>> {
-        let output = self.space.outputs().next()?;
-        let screen = self.space.output_geometry(output)?;
-        let mut zone = layer_map_for_output(output).non_exclusive_zone();
-        zone.loc += screen.loc;
-        Some(zone)
+        self.window_areas().into_iter().next().map(|(_, area)| area)
+    }
+
+    /// The screen at `point`, by name, with its area; else the first.
+    pub fn screen_at(
+        &self,
+        point: Point<f64, Logical>,
+    ) -> Option<(String, Rectangle<i32, Logical>)> {
+        let areas = self.window_areas();
+        let name = self.space.output_under(point).next().map(|o| o.name());
+        screen_in(&areas, name.as_deref()).map(|(name, area)| (name.to_string(), area))
+    }
+
+    /// The screen the pointer is on, where a new window opens.
+    pub fn pointer_screen(&self) -> Option<(String, Rectangle<i32, Logical>)> {
+        let at = self
+            .seat
+            .get_pointer()
+            .map(|p| p.current_location())
+            .unwrap_or_default();
+        self.screen_at(at)
+    }
+
+    /// The screen `window` lies on in the shown workspace, with its area;
+    /// else the first.
+    pub fn home(&self, window: &Window) -> Option<(String, Rectangle<i32, Logical>)> {
+        let areas = self.window_areas();
+        let name = self.desks.layout().screen_of(window);
+        screen_in(&areas, name).map(|(name, area)| (name.to_string(), area))
     }
 
     /// Places every screen's layers again and tells them its scale, after
@@ -71,7 +111,7 @@ impl Edel {
         else {
             return false;
         };
-        let before = self.window_area();
+        let before = self.window_areas();
         {
             let mut map = layer_map_for_output(&output);
             map.arrange();
@@ -89,7 +129,7 @@ impl Edel {
                 }
             }
         }
-        if self.window_area() != before {
+        if self.window_areas() != before {
             self.relayout();
         }
         self.dirty = true;
@@ -279,7 +319,7 @@ impl WlrLayerShellHandler for Edel {
                 keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
             }
         }
-        let before = self.window_area();
+        let before = self.window_areas();
         for output in self.space.outputs() {
             let mut map = layer_map_for_output(output);
             let gone = map
@@ -290,7 +330,7 @@ impl WlrLayerShellHandler for Edel {
                 map.unmap_layer(&layer);
             }
         }
-        if self.window_area() != before {
+        if self.window_areas() != before {
             self.relayout();
         }
         self.dirty = true;
