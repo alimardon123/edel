@@ -333,13 +333,19 @@ case_layers() {
 	wait_for 'DESKTOP-TEST: layers 1 edel-testclient@0,760,1280x40' ||
 		fail "the panel is not along the bottom in the state file: $(value layers)"
 	shot layers 640 790 2f343f >/dev/null || fail "640,790 is not the panel's #2f343f"
-	# Windows tile, and would maximize, in the area above it.
-	guest 'tiling on'
+	# Windows tile, and would maximize, in the area above it. Super+T
+	# switches whatever the system file says: the tiling case leaves
+	# shell.tiling at true with the windows floating.
+	python3 ci/qmp.py key meta_l-t
 	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x715' ||
 		fail "one did not tile above the panel: $(value windows)"
-	guest 'tiling off'
-	wait_for 'DESKTOP-TEST: windows 1 one@722,145,300x200' ||
-		fail "one did not float back: $(value windows)"
+	python3 ci/qmp.py key meta_l-t
+	i=0
+	while [ "$(value windows)" != '1 one@722,145,300x200' ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "one did not float back: $(value windows)"
+		sleep 0.2
+	done
 	guest 'panel off'
 	wait_for 'DESKTOP-TEST: layers 0' || fail "the panel did not go: $(value layers)"
 	echo "PASS: a layer-shell panel lay along the bottom in its colour, windows tiled above it (one@9,36,1262x715), and it went when closed"
