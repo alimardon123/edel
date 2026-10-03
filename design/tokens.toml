@@ -1,0 +1,20 @@
+# Edel OS design tokens (DESIGN-PRINCIPLES, ADR-004): the one set of
+# colours and sizes the compositor, shell-ui and the GTK theme are drawn
+# with. Images carry it as /usr/share/edel/design/tokens.toml (M4.2b); the
+# compositor has this file built in for when that one is missing or
+# unreadable. M5.5 adds light and dark, the accent, spacing, type and
+# motion; M5.12 lets people override them in system.toml.
+format = 1
+
+[colour]
+# Behind every window, where there is no wallpaper.
+background = "#24272e"
+# Window title bars (M4.4), the focused one lighter, and their text.
+title_bar = "#2e323a"
+title_bar_focused = "#3a404b"
+title_text = "#e8e8ea"
+
+[size]
+# In logical pixels.
+title_bar = 28
+border = 1

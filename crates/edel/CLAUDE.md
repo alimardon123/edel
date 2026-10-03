@@ -1,6 +1,6 @@
 # The `edel` tool
 
-The one command-line tool of Edel OS and the library `edel::system`: the only crate of the workspace. Edition 2024, `rust-version = "1.85"`, GPL-3.0-or-later, `publish = false`.
+The one command-line tool of Edel OS and the library `edel::system`: the workspace's default member, beside `crates/compositor`. Edition 2024, `rust-version = "1.85"`, GPL-3.0-or-later, `publish = false`.
 
 ## What belongs here
 

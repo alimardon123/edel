@@ -22,9 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install the libraries the compositor links
+        # libxkbcommon for its keyboard; the DRM, GBM, libinput, udev and
+        # libseat ones join with the virtual GPU backend (M4.2b).
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
       - name: Image definitions are valid
         run: for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
       - name: The system file library builds without the command's dependencies

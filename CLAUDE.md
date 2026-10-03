@@ -4,7 +4,7 @@ Edel OS is a lightweight, fast and beautiful Linux operating system for everyone
 
 The person is **Alimardon** (GitHub `alimardon123`, they/them): the only human on the project and normally the one typing in these sessions. They set direction and order and can veto anything; Claude does the engineering, picks defaults and reports.
 
-Start at [docs/README.md](docs/README.md) for the architecture and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan. `docs/`, `crates/edel/`, `ci/` and `images/` each have a CLAUDE.md with the rules for working there; read it before editing in that directory.
+Start at [docs/README.md](docs/README.md) for the architecture and [docs/ROADMAP.md](docs/ROADMAP.md) for the plan. `docs/`, `crates/edel/`, `crates/compositor/`, `ci/` and `images/` each have a CLAUDE.md with the rules for working there; read it before editing in that directory.
 
 ## Rules a session must not miss
 
@@ -81,26 +81,28 @@ When docs disagree, the newer ADR wins.
 
 | Path | What |
 |---|---|
-| `crates/edel/` | The only crate: the `edel` tool (`edel image`, `boot`, `release`, `update` and `system check`) and the library `edel::system`; `tests/keys.txt` lists every system file key |
+| `crates/edel/` | The `edel` tool (`edel image`, `boot`, `release`, `update` and `system check`) and the library `edel::system`; `tests/keys.txt` lists every system file key; the workspace's default member |
+| `crates/compositor/` | `edel-compositor` (M4.2a): design tokens, frame telemetry, outputs, the window policy trait, and the winit backend for development ([its CLAUDE.md](crates/compositor/CLAUDE.md)) |
+| `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it) |
 | `images/` | Image definitions (`container.toml`, `vm.toml`, `laptop.toml`, `desktop.toml`), format 2: each lists its features and holds image facts |
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-008, the AerynOS review, the roadmap; index in `docs/README.md` |
 | `.github/workflows/ci.yml` | The workflow "CI": Rust checks, Build and boot images, and Publish the release (off until `EDEL_PUBLISH` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
-| `Cargo.toml`, `Cargo.lock` | Workspace with one member; the lock file is committed |
+| `Cargo.toml`, `Cargo.lock` | Workspace of two crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
 
-The compositor, shell-ui and settings crates and `packages/` do not exist yet. Create each only in the roadmap step that introduces it.
+The shell-ui and settings crates and `packages/` do not exist yet. Create each only in the roadmap step that introduces it.
 
 ## Commands
 
-Run from the repository root. CI's "Rust checks" job runs exactly these; run all six before every push. They work in any checkout with Rust (crates.io was reachable from cloud sessions):
+Run from the repository root. CI's "Rust checks" job runs exactly these; run all six before every push. They work in any checkout with Rust and `libxkbcommon-dev`, which the compositor links (crates.io and Ubuntu's archive were reachable from cloud sessions):
 
 ```sh
 cargo fmt --all --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
 cargo build --locked --lib --no-default-features
 sh ci/keys-check.sh
