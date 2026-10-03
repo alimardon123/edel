@@ -1,0 +1,9 @@
+# Test only (roadmap M4.1): OpenRC reads conf.d/greetd.default instead of
+# conf.d/greetd when greetd starts in the default runlevel, so CI points
+# greetd at its own config without touching the login feature's file.
+cfgfile=/etc/greetd/ci.toml
+supervisor=supervise-daemon
+# greetd's own messages, which the test service prints when the session
+# does not start.
+output_log=/var/log/greetd.log
+error_log=/var/log/greetd.log

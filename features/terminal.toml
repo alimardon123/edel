@@ -1,0 +1,4 @@
+format = 1
+summary = "A terminal: foot"
+why = "foot is a small, fast Wayland terminal; developer mode and people who want a shell need one, and CI uses it as a window that asks for server-side title bars (M4.4)."
+packages = ["foot"]

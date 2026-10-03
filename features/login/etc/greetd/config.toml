@@ -1,0 +1,9 @@
+# greetd (roadmap M4.1): agreety asks for the user and password on its own
+# virtual terminal, then starts that user's login shell. The compositor
+# replaces agreety as the greeter in M5.10.
+[terminal]
+vt = 7
+
+[default_session]
+command = "agreety --cmd /bin/sh"
+user = "greetd"

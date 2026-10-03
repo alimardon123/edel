@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# Makes /run/edel/session (roadmap M4.1): the compositor, running as the
+# person at the machine, leaves its health file `ready` (M4.8) and its
+# `state.toml` there, and root reads them. Members of the seat group may
+# write it; the sticky bit keeps one member from removing another's
+# files. /run/edel itself stays root's alone, so no session can plant a
+# file or a link where root writes its own (the update lock, the
+# confirmation of the slot).
+
+description="Let the session leave files for root in /run/edel/session"
+
+depend() {
+	before seatd greetd
+}
+
+start() {
+	checkpath -d -m 0755 -o root:root /run/edel
+	checkpath -d -m 1770 -o root:seat /run/edel/session
+}

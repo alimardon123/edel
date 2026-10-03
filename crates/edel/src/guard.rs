@@ -30,7 +30,7 @@ use crate::update;
 /// hang.
 const SENTINELS: [(&str, &str); 2] = [
     ("default-runlevel", "edel/default-reached"),
-    ("compositor", "edel/ready"),
+    ("compositor", "edel/session/ready"),
 ];
 /// How long a slot may take to become healthy when the image says nothing.
 pub const DEFAULT_TIMEOUT: u64 = 120;

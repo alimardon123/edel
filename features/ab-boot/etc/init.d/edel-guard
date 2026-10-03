@@ -18,5 +18,5 @@ error_log=/dev/console
 
 depend() {
 	after devfs
-	before mdev hwdrivers edel-data
+	before mdev hwdrivers udev udev-trigger edel-data
 }

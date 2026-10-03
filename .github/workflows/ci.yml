@@ -101,6 +101,11 @@ jobs:
         # flatpak-test; ci/vm-tests.sh says why they can share the runner.
         run: sh ci/vm-tests.sh
 
+      - name: Test the desktop image on a virtual GPU
+        # After the other VMs, alone, so the sway baseline it writes into
+        # the step summary is measured on a quiet runner (M4.1).
+        run: sh ci/desktop-test.sh console baseline
+
       - name: Check the release, and show what would be published
         run: |
           sh ci/release.sh dry-run preview
@@ -123,7 +128,7 @@ jobs:
         if: always()
         run: sh ci/package-report.sh >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Keep the container image and boot log
+      - name: Keep the container image, the logs and the screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -133,6 +138,7 @@ jobs:
             out/*.tar.gz
             out/*.log
             out/*.packages
+            out/desktop-test/*.png
 
   # Publishes what the images job built and tested (M3.4): the preview on
   # every merge to main, a draft release for a v* tag. Off until Alimardon

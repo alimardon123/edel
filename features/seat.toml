@@ -1,0 +1,12 @@
+# Who may use the screen and input. features/seat/ holds edel-rundir,
+# which makes /run/edel/session at boot for the files the session leaves
+# for root (the compositor's health file, M4.8), and runs seatd under
+# supervise-daemon, which starts it again if it dies.
+format = 1
+summary = "Seats: the screen and input for the person at the machine"
+why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes /run/edel/session, where the compositor, running as the person, leaves its health file for the boot guard."
+packages = ["seatd", "seatd-openrc"]
+
+[services]
+boot = ["edel-rundir"]
+default = ["seatd"]

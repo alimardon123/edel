@@ -1,0 +1,4 @@
+format = 1
+summary = "Fonts: Inter for the interface, Noto for the rest and the terminal"
+why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks; its other scripts arrive in M5.12."
+packages = ["font-inter", "font-noto"]

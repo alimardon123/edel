@@ -1,0 +1,9 @@
+#%PAM-1.0
+# Alpine's greetd PAM file, plus pam_rundir (roadmap M4.1): every session
+# gets /run/user/UID, mode 0700, without logind.
+
+auth include base-auth
+account include base-account
+password include base-password
+session include base-session
+session optional pam_rundir.so

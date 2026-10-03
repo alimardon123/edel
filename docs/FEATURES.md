@@ -1,6 +1,6 @@
 # Features: how images are made
 
-**Date:** 2026-10-02 (roadmap M4.0)
+**Date:** 2026-10-02 (roadmap M4.0), amended 2026-10-03 (M4.1: the desktop's features)
 
 Every Edel OS image is a list of features. A feature is one file, `features/NAME.toml`, and an optional directory, `features/NAME/`, copied over the root; an image definition (`images/*.toml`) names the features it is made of and holds only facts about the image. The rules are ADR-008's; this page is the maintainer's how-to. Adding, swapping or dropping a feature is one PR, and machines meet it as one A/B update that rolls back.
 
@@ -10,13 +10,21 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 |---|---|---|---|---|
 | `base` | The identity (os-release, issue, motd) and what apk needs; modules `ext4`, `overlay` | `alpine-keys`, `busybox-binsh`, `ca-certificates-bundle` | none | every image |
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
-| `machine` | A booted machine: OpenRC, devices, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg, mdev, hwdrivers; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, laptop |
-| `ab-boot` | Two root slots, rollback, `/data`, the system file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-system; edel-boot-ok | vm, laptop |
-| `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; laptop ships it off |
+| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, laptop, desktop |
+| `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm, laptop |
+| `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle | desktop |
+| `ab-boot` | Two root slots, rollback, `/data`, the system file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-system; edel-boot-ok | vm, laptop, desktop |
+| `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; laptop and desktop ship it off |
 | `vm` | The small kernel for virtual machines | `linux-virt` | none | vm |
-| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop |
+| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop, desktop |
+| `graphics` | Mesa for every common GPU (llvmpipe where none loads), DRM, libinput, keyboard layouts; module `virtio_gpu` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
+| `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
+| `login` | greetd with its text greeter; `/run/user/UID` from pam_rundir | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
+| `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
+| `terminal` | foot | `foot` | none | desktop |
+| `sway-baseline` | Until the compositor (M4.2b): sway, for CI's baseline numbers | `sway` | none | desktop |
 
-CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`.
+CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, its test service, an autologin of user ci in to sway) to the desktop's in `ci/desktop/vm.toml`.
 
 ## A feature file
 
@@ -55,7 +63,7 @@ name = "edel-laptop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "ab-boot", "ssh", "laptop"]
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "laptop"]
 off = ["ssh"]
 
 [alpine]
@@ -101,4 +109,4 @@ A cargo test (`def::tests`) fails when a change makes an image install or enable
 - **Simple:** one file per feature, one way to put a package or service into an image, no dependencies or scripts between features, and the old `files` lists and the `boot::MODULES` and `INITRAMFS_FEATURES` constants are gone.
 - **Efficient:** nothing runs at boot for this; each image carries a few small TOML files.
 - **Scalable:** the desktop, phone and later images are lists of the same features.
-- **Traded off:** two lookup places (beside a CI definition and the repository's) instead of one, so test features stay under `ci/`; seven features where one list per image was shorter to read.
+- **Traded off:** two lookup places (beside a CI definition and the repository's) instead of one, so test features stay under `ci/`; a feature per piece (15 since M4.1) where one list per image was shorter to read.

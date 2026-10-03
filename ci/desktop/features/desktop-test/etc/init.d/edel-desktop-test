@@ -1,0 +1,58 @@
+#!/sbin/openrc-run
+# Test only (roadmap M4.1): CI builds this into ci/desktop/vm.toml. Before
+# greetd starts, it puts user ci (from the seed system file) in the seat
+# group; greetd then logs ci in to sway at once, and the session runs
+# /usr/share/edel/ci/desktop-session.sh. This service waits for that
+# script's results and prints them on the serial console, with the
+# runtime directory pam_rundir made and sway's memory. ci/desktop-test.sh
+# reads the lines.
+
+description="Edel OS desktop test"
+
+depend() {
+	after edel-system
+	before greetd
+}
+
+say() {
+	echo "DESKTOP-TEST: $*" >/dev/console
+}
+
+# The session's results, read once the session script has written them.
+report() {
+	uid=$(id -u ci)
+	dir=/run/user/$uid
+	i=0
+	while [ ! -s "$dir/desktop-test" ] && [ "$i" -lt 180 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	say "rundir $(stat -c '%a %U' "$dir" 2>&1)"
+	if [ ! -s "$dir/desktop-test" ]; then
+		say "FAIL: the session wrote no results in ${i}s; what follows is for finding out why"
+		{
+			id ci
+			ls -l /run/user /dev/dri /dev/input
+			ps | grep -v ' \['
+			dmesg | grep -iE 'drm|virtio_gpu|input:'
+			tail -n 30 /var/log/messages
+			cat /var/log/greetd.log /tmp/sway-ci.log
+		} >/dev/console 2>&1
+		return
+	fi
+	# Two seconds of quiet before memory is read.
+	sleep 2
+	while IFS= read -r line; do
+		say "$line"
+	done <"$dir/desktop-test"
+	pid=$(pidof sway)
+	say "sway_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
+	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
+	say "done"
+}
+
+start() {
+	addgroup ci seat
+	report </dev/null >/dev/null 2>&1 &
+	return 0
+}

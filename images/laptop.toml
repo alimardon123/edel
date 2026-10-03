@@ -7,7 +7,7 @@ name = "edel-laptop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "ab-boot", "ssh", "laptop"]
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "laptop"]
 off = ["ssh"]
 
 [alpine]
