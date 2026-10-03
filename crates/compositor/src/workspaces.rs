@@ -37,6 +37,7 @@ impl Edel {
         self.focus_top();
         self.relayout();
         self.repoint();
+        self.announce_workspaces();
     }
 
     /// Moves the focused window to workspace `to`, on top of its windows;
@@ -92,6 +93,7 @@ impl Edel {
             self.show(window, frame);
         }
         self.relayout();
+        self.announce_workspaces();
     }
 
     /// `window`, on a hidden workspace, closed or dropped its buffer: it
