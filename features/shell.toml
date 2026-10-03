@@ -7,6 +7,6 @@
 # session's D-Bus when asked.
 format = 1
 summary = "shell-ui: the panel, and later the launcher and quick settings"
-why = "edel-shell-ui draws the panel along the screen's edge, the second of the shell's two long-running processes (ADR-002); its text needs the fonts feature's Inter. at-spi2-core is the accessibility bus screen readers find every app's tree on, started by D-Bus when asked (M5.1d)."
+why = "edel-shell-ui draws the panel along the screen's edge, the second of the shell's two long-running processes (ADR-002); its text needs the fonts feature's Inter. at-spi2-core is the accessibility bus screen readers find every app's tree on, started by D-Bus when asked (M5.1d); its launcher aborts without the GSettings schemas of gsettings-desktop-schemas."
 programs = ["edel-shell-ui"]
-packages = ["at-spi2-core"]
+packages = ["at-spi2-core", "gsettings-desktop-schemas"]
