@@ -44,6 +44,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let handle = event_loop.handle();
 
     let name = crate::state::listen(&handle, display)?;
+    state.socket = name.clone();
     crate::xwayland::listen(&handle, &mut state, &name);
     state.program = program;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);

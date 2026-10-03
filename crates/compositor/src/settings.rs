@@ -28,6 +28,10 @@ pub struct Settings {
     pub title_bars: TitleBars,
     /// `[outputs.NAME]`, by output name.
     pub outputs: BTreeMap<String, OutputSettings>,
+    /// `[shortcuts]`, action to keys as written, the person's over the
+    /// machine's; `edel::shortcuts::resolve` lays them over the defaults
+    /// (M5.13a).
+    pub shortcuts: BTreeMap<String, String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -57,6 +61,7 @@ impl Settings {
                 Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
                 _ => {}
             }
+            settings.shortcuts.extend(file.shortcuts.clone());
             for (name, output) in &file.outputs {
                 let into = settings.outputs.entry(name.clone()).or_default();
                 if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
@@ -174,6 +179,16 @@ mod tests {
         assert!(settings.bars_in("floating"));
         let only_machine = Settings::from_files(Some(&machine), None);
         assert_eq!(only_machine.policy(), "tiling");
+    }
+
+    #[test]
+    fn shortcuts_merge_action_by_action() {
+        let machine =
+            file("format = 1\n[shortcuts]\nclose = \"Super+W\"\nterminal = \"Super+Return\"\n");
+        let person = file("format = 1\n[shortcuts]\nclose = \"Super+X\"\n");
+        let shortcuts = Settings::from_files(Some(&machine), Some(&person)).shortcuts;
+        assert_eq!(shortcuts["close"], "Super+X", "the person's wins");
+        assert_eq!(shortcuts["terminal"], "Super+Return", "the machine's stays");
     }
 
     #[test]

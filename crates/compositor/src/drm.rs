@@ -108,6 +108,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
     let handle = event_loop.handle();
     let name = listen(&handle, display)?;
+    state.socket = name.clone();
     crate::xwayland::listen(&handle, &mut state, &name);
     state.program = program;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
