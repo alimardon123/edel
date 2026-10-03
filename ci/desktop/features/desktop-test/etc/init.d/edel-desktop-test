@@ -134,6 +134,8 @@ commands() {
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# shell-ui dies (M5.1b): the compositor should start it again.
 		'kill panel') pkill -9 -x edel-shell-ui ;;
+		# Diagnostic only: frames with and without shell-ui's panel.
+		diag) diag & ;;
 		# appearance.motion (M5.11b), reduced and back to the default.
 		'motion reduced') edel system set appearance.motion=reduced ;;
 		'motion off') edel system set appearance.motion=off ;;
@@ -269,6 +271,37 @@ open_ten() {
 	say "open_ten_p99_ms $(frame_ms /tmp/frames-ten.txt 99)"
 	say "open_ten_frames $(frame_ms /tmp/frames-ten.txt count)"
 	say "open_ten_tier $(edel shell tier 2>&1)"
+}
+
+# diag: weston-presentation-shm's frames, 10 s each, with shell-ui as it
+# is, stopped, gone, and with only the test client's panel. Diagnostic.
+diag_frames() {
+	as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-diag.txt 2>&1
+	say "diag $1: p50 $(frame_ms /tmp/frames-diag.txt 50) p99 $(frame_ms /tmp/frames-diag.txt 99) frames $(frame_ms /tmp/frames-diag.txt count) telemetry $(grep 'telemetry' /tmp/compositor.log | tail -n 1)"
+}
+
+diag() {
+	diag_frames running
+	pkill -STOP -x edel-shell-ui
+	diag_frames stopped
+	pkill -CONT -x edel-shell-ui
+	# Killed five times within 10 s of starting, the compositor gives up.
+	for n in 1 2 3 4 5 6; do
+		pkill -9 -x edel-shell-ui
+		sleep 1
+	done
+	sleep 1
+	say "diag shell-ui processes: $(pgrep -c -x edel-shell-ui)"
+	diag_frames gone
+	as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
+	sleep 2
+	diag_frames testpanel
+	pkill -f '[e]del-testclient --layer'
+	sleep 1
+	as_ci edel-shell-ui </dev/null >/tmp/su.log 2>&1 &
+	sleep 2
+	diag_frames manual
+	say "diag_done"
 }
 
 # x11_rss: the memory XWayland and xwayland-satellite use, in MiB.

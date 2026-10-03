@@ -536,6 +536,13 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_diag() {
+	guest diag
+	wait_for 'DESKTOP-TEST: diag_done' 120 || fail "the diagnostic did not finish"
+	tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: diag'
+	echo "PASS: diagnostic"
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -641,7 +648,7 @@ case_scale() {
 [ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
+	animations | console | compositor | diag | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
 		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
