@@ -488,6 +488,7 @@ impl Gpu {
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
+                state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
                 state.frame_drawn(
                     started.elapsed(),
@@ -679,18 +680,29 @@ fn write_ready(line: &str) {
 
 /// Once frames are being drawn, a timer logs the telemetry when the screen
 /// has been still for [`QUIET`]; nothing wakes the compositor while idle.
-/// Marks the screens dirty `interval` from now, once, for the next step
-/// of an animation; the event loop then draws them.
+/// Marks the screens dirty for the next step of an animation once a
+/// refresh `interval` has passed without a frame; the event loop then
+/// draws them. While clients' frames come anyway, each of them steps the
+/// animation, so it adds no frame of its own: on a virtual GPU, which
+/// shows a frame the moment it is queued, an extra frame would make the
+/// next client frame wait for it.
 fn arm_animation(handle: &LoopHandle<'static, Edel>, state: &mut Edel, interval: Duration) {
     if state.animation_armed {
         return;
     }
     state.animation_armed = true;
-    let result = handle.insert_source(Timer::from_duration(interval), |_, _, state: &mut Edel| {
-        state.animation_armed = false;
-        state.dirty = true;
-        TimeoutAction::Drop
-    });
+    let result = handle.insert_source(
+        Timer::from_duration(interval),
+        move |_, _, state: &mut Edel| {
+            let since = state.last_frame.map_or(interval, |at| at.elapsed());
+            if since < interval && state.animations.running() {
+                return TimeoutAction::ToDuration(interval - since);
+            }
+            state.animation_armed = false;
+            state.dirty = true;
+            TimeoutAction::Drop
+        },
+    );
     if let Err(e) = result {
         eprintln!("edel-compositor: the animation timer did not start: {e}");
         state.animation_armed = false;
