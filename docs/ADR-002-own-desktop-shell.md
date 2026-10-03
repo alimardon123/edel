@@ -113,6 +113,8 @@ Here, the compositor draws a slim title bar with close, minimize and maximize fo
 
 Audio (PipeWire), networking (NetworkManager), Bluetooth (BlueZ), login screen (greetd plus a small greeter), file manager, terminal, text editor, browser, office suite, store front (start with an existing Flatpak front end).
 
+**shell-ui toolkit decision (2026-10-03):** shell-ui draws its own surfaces, with no GUI toolkit: layer-shell surfaces through smithay-client-toolkit, drawing with tiny-skia into shared-memory buffers, text through a shaping library, and AccessKit for screen readers (AT-SPI on Linux). Alimardon chose this (option B of three: GTK 4 with a raised memory budget, our own drawing, or Slint) on 2026-10-03, after a minimal GTK 4 window measured 54 to 182 MiB proportional memory against about 30 MiB left in the desktop budget. Settings and our apps keep GTK 4 and libadwaita (ADR-004). Alimardon also asked that shell-ui learn from shells that look beautiful and feel instant, such as Hyprland: [REVIEW-shells.md](REVIEW-shells.md) records what we take and what we skip. Asked by Alimardon.
+
 ## Options Considered
 
 ### Option A: Own shell on smithay (Rust), recommended
@@ -148,6 +150,8 @@ The shell-ui process needs a toolkit for panels and menus. Because it is a separ
 
 Lean: GTK4 for version 1, because accessibility and input methods matter for "every user on the planet" and come for free. Revisit after measuring.
 
+**Decided 2026-10-03, after measuring:** shell-ui draws itself (see Decision, "shell-ui toolkit decision"). A minimal GTK 4 window took 54 to 182 MiB proportional memory under our compositor with llvmpipe, against about 30 MiB left in the desktop budget, so GTK 4 stays for Settings and our apps only.
+
 ## Trade-off Analysis
 
 - **Control vs effort.** This is the largest single piece of work in the whole project. The two-process scope and the "not building" list are what keep it finishable.
@@ -166,5 +170,5 @@ Lean: GTK4 for version 1, because accessibility and input methods matter for "ev
 2. [ ] Compositor spike on smithay: floating policy, one output, XWayland.
 3. [ ] Add the dynamic tiling policy and the switch between them.
 4. [ ] Define the preset file format; ship Classic first.
-5. [ ] shell-ui spike: panel and launcher with gtk4-layer-shell.
+5. [ ] shell-ui spike: panel and launcher, drawn by shell-ui itself on the layer shell (amended 2026-10-03: was gtk4-layer-shell; roadmap M5.1b).
 6. [ ] Plan screen sharing (portal backend) and input methods before version 1.
