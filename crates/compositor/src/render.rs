@@ -9,7 +9,7 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::output::Output;
-use smithay::utils::{Point, Scale, Size};
+use smithay::utils::{Point, Rectangle, Scale, Size};
 
 use edel_compositor::frame::Look;
 
@@ -56,9 +56,19 @@ impl Edel {
             }
             let outer = insets.frame(place);
             let is_focused = focused.as_ref() == Some(&window);
+            // The bar is drawn in the screen's own pixels, so it stays sharp
+            // at any scale, and shown at its logical size.
+            let bar_size = Size::<i32, smithay::utils::Logical>::from((outer.size.w, insets.top));
+            let pixels = bar_size.to_f64().to_physical(scale).to_i32_round::<i32>();
+            let bar_at = (outer.loc - screen.loc)
+                .to_f64()
+                .to_physical(scale)
+                .to_i32_round::<i32>()
+                .to_f64();
             let look = Look {
-                width: outer.size.w,
-                height: insets.top,
+                width: pixels.w,
+                height: pixels.h,
+                scale_120: (scale * 120.0).round() as u32,
                 title: title(&window),
                 focused: is_focused,
                 maximized: self.is_maximized(&window),
@@ -76,11 +86,13 @@ impl Edel {
             let bar = frame.bar(look, &self.tokens, self.text.as_mut());
             match MemoryRenderBufferRenderElement::from_buffer(
                 renderer,
-                at(outer.loc),
+                bar_at,
                 bar,
                 None,
-                None,
-                None,
+                Some(Rectangle::from_size(
+                    (f64::from(pixels.w), f64::from(pixels.h)).into(),
+                )),
+                Some(bar_size),
                 Kind::Unspecified,
             ) {
                 Ok(element) => elements.push(Element::Bar(element)),

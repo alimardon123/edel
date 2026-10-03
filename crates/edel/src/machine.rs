@@ -650,9 +650,10 @@ pub fn set(assignment: &str) -> Result<()> {
 }
 
 /// What makes a change to `key` take effect: the desktop follows the shell
-/// keys at once (M4.5); `edel system apply` applies the rest.
+/// and output keys at once (M4.5, M4.6); `edel system apply` applies the
+/// rest.
 fn who_applies(key: &str) -> &'static str {
-    if key.starts_with("shell.") {
+    if key.starts_with("shell.") || key.starts_with("outputs.") {
         "the desktop follows it at once"
     } else {
         "edel system apply applies it"
@@ -1029,6 +1030,10 @@ mod tests {
     fn the_desktop_follows_shell_keys_and_apply_the_rest() {
         assert_eq!(
             who_applies("shell.tiling"),
+            "the desktop follows it at once"
+        );
+        assert_eq!(
+            who_applies("outputs.eDP-1.scale"),
             "the desktop follows it at once"
         );
         assert_eq!(

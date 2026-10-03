@@ -120,7 +120,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["desktop", "tablet", "phone"]),
     ),
     later("outputs.*.position", Kind::Pair),
-    later("outputs.*.scale", Kind::Number),
+    now("outputs.*.scale", Kind::Number),
     later("outputs.*.mode", Kind::Text),
     later("outputs.*.enabled", Kind::Flag),
     later("outputs.*.transform", Kind::WholeOf(&[0, 90, 180, 270])),

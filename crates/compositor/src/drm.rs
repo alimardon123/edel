@@ -44,6 +44,7 @@ use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Clock, DeviceFd, Monotonic};
 use smithay::wayland::presentation::Refresh;
 
+use edel_compositor::layout::auto_scale;
 use edel_compositor::tokens::Tokens;
 
 use crate::state::{Edel, listen};
@@ -132,7 +133,24 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
     output.set_preferred(wl_mode);
     output.create_global::<Edel>(&state.display);
+    // Built-in panels are seen from closer than monitors (M4.6).
+    let built_in = matches!(
+        info.interface(),
+        connector::Interface::EmbeddedDisplayPort
+            | connector::Interface::LVDS
+            | connector::Interface::DSI
+    );
+    let (w, h) = mode.size();
+    crate::outputs::set_auto_scale(
+        &output,
+        auto_scale(
+            (i32::from(w), i32::from(h)).into(),
+            (mm_w as i32, mm_h as i32).into(),
+            built_in,
+        ),
+    );
     state.space.map_output(&output, (0, 0));
+    state.apply_scales();
     state.outputs_changed();
 
     let surface = drm

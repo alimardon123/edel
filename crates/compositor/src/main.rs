@@ -10,6 +10,7 @@ mod decoration;
 mod drm;
 mod grabs;
 mod input;
+mod outputs;
 mod render;
 mod state;
 mod statefile;

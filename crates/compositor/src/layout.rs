@@ -212,6 +212,37 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Floating<W> {
     }
 }
 
+/// Logical pixels per inch a scale aims for: built-in panels are seen from
+/// closer than monitors on a desk.
+pub const BUILT_IN_PPI: f64 = 125.0;
+pub const EXTERNAL_PPI: f64 = 110.0;
+
+/// The scale a screen gets when `outputs.NAME.scale` is absent (M4.6,
+/// ADR-008): its pixels per inch, from the EDID's physical width, over
+/// [`BUILT_IN_PPI`] or [`EXTERNAL_PPI`], rounded to 0.25 and kept from 1
+/// to 3; 1 when the screen does not say its size. Worked out whenever a
+/// screen appears and never written to the system file.
+pub fn auto_scale(mode: Size<i32, Physical>, size_mm: Size<i32, Physical>, built_in: bool) -> f64 {
+    if mode.w <= 0 || size_mm.w <= 0 || size_mm.h <= 0 {
+        return 1.0;
+    }
+    let ppi = f64::from(mode.w) / (f64::from(size_mm.w) / 25.4);
+    let target = if built_in { BUILT_IN_PPI } else { EXTERNAL_PPI };
+    ((ppi / target * 4.0).round() / 4.0).clamp(1.0, 3.0)
+}
+
+/// `scale` snapped to the nearest 1/120 and kept between 1 and 4, in
+/// 120ths, as `wp_fractional_scale_v1` sends it.
+pub fn scale_120(scale: f64) -> u32 {
+    let scale = if scale.is_finite() { scale } else { 1.0 };
+    (scale.clamp(1.0, 4.0) * 120.0).round() as u32
+}
+
+/// `scale` as the compositor uses it: [`scale_120`] back as a number.
+pub fn snap_scale(scale: f64) -> f64 {
+    f64::from(scale_120(scale)) / 120.0
+}
+
 /// One screen as the compositor lays it out. M4.6 adds its position,
 /// transform and whether it is on, from `[outputs.NAME]` in `system.toml`.
 #[derive(Debug, Clone, PartialEq)]
@@ -229,12 +260,7 @@ impl OutputLayout {
     /// `scale` snapped to the nearest 1/120 and kept between 1 and 4, the
     /// value every other number here is computed from.
     pub fn scale_120(&self) -> u32 {
-        let scale = if self.scale.is_finite() {
-            self.scale
-        } else {
-            1.0
-        };
-        (scale.clamp(1.0, 4.0) * 120.0).round() as u32
+        scale_120(self.scale)
     }
 
     /// The size windows are laid out in: the mode divided by the scale,
@@ -269,6 +295,25 @@ mod tests {
         let third = output(1920, 1200, 4.0 / 3.0);
         assert_eq!(third.scale_120(), 160);
         assert_eq!(third.logical_size(), (1440, 900).into());
+    }
+
+    /// The roadmap's table (M4.6): sizes as EDIDs give them, in mm.
+    #[test]
+    fn automatic_scales_for_common_screens() {
+        let scale =
+            |w, h, mm_w, mm_h, built_in| auto_scale((w, h).into(), (mm_w, mm_h).into(), built_in);
+        // A 13.3-inch 1920x1080 laptop panel.
+        assert_eq!(scale(1920, 1080, 294, 165, true), 1.25);
+        // A 14-inch 2880x1800 laptop panel.
+        assert_eq!(scale(2880, 1800, 302, 189, true), 2.0);
+        // A 24-inch 1080p monitor.
+        assert_eq!(scale(1920, 1080, 531, 299, false), 1.0);
+        // A 27-inch 4K monitor.
+        assert_eq!(scale(3840, 2160, 597, 336, false), 1.5);
+        // No size: a projector, a VM's virtual screen.
+        assert_eq!(scale(1280, 800, 0, 0, false), 1.0);
+        // Never above 3, even on a phone-sized 4K panel.
+        assert_eq!(scale(3840, 2160, 110, 62, true), 3.0);
     }
 
     #[test]

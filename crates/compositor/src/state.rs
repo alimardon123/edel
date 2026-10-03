@@ -29,6 +29,7 @@ use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
     with_states,
 };
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::selection::SelectionHandler;
@@ -42,9 +43,11 @@ use smithay::wayland::shell::xdg::{
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::viewporter::ViewporterState;
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_output, delegate_presentation,
-    delegate_seat, delegate_shm, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_output,
+    delegate_presentation, delegate_seat, delegate_shm, delegate_viewporter,
+    delegate_xdg_decoration, delegate_xdg_shell,
 };
 use toml::{Table, Value};
 
@@ -96,6 +99,8 @@ pub struct Edel {
     seat_state: SeatState<Edel>,
     data_device: DataDeviceState,
     _decorations: XdgDecorationState,
+    _fractional_scale: FractionalScaleManagerState,
+    _viewporter: ViewporterState,
     _outputs: OutputManagerState,
     _presentation: PresentationState,
 }
@@ -118,6 +123,8 @@ impl Edel {
             shm: ShmState::new::<Edel>(&display, Vec::new()),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
+            _fractional_scale: FractionalScaleManagerState::new::<Edel>(&display),
+            _viewporter: ViewporterState::new::<Edel>(&display),
             _outputs: OutputManagerState::new_with_xdg_output::<Edel>(&display),
             // When a frame reached the screen, on the monotonic clock: what
             // CI's frame times are read from (M4.1).
@@ -195,6 +202,7 @@ impl Edel {
             }
         }
         self.space.map_element(window.clone(), place.loc, false);
+        self.send_scale(window);
     }
 
     /// Every window where the active policy puts it; maximized windows
@@ -236,9 +244,10 @@ impl Edel {
             eprintln!("edel-compositor: {note}");
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
+        let rescaled = self.apply_scales();
         if old.tiling != new.tiling {
             self.switch_policy(new.policy());
-        } else if old.title_bars != new.title_bars {
+        } else if old.title_bars != new.title_bars || rescaled {
             self.relayout();
         }
     }
@@ -457,6 +466,8 @@ impl CompositorHandler for Edel {
             }
             if let Some(window) = self.window_of(&root) {
                 window.on_commit();
+                // New subsurfaces and popups hear the scale too.
+                self.send_scale(&window);
                 // A shown window that drops its buffer hides itself; it
                 // shows again, placed anew, once it draws again.
                 let shown = self.space.element_geometry(&window).is_some();
@@ -678,6 +689,8 @@ delegate_compositor!(Edel);
 delegate_shm!(Edel);
 delegate_xdg_shell!(Edel);
 delegate_xdg_decoration!(Edel);
+delegate_fractional_scale!(Edel);
+delegate_viewporter!(Edel);
 delegate_seat!(Edel);
 delegate_data_device!(Edel);
 delegate_output!(Edel);

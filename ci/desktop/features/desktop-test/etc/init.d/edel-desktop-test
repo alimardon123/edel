@@ -97,6 +97,7 @@ commands() {
 		case "$command" in
 		'tiling on') edel system set shell.tiling=true ;;
 		'tiling off') edel system set shell.tiling=false ;;
+		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
 		*)
 			say "unknown command $command"
 			continue

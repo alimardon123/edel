@@ -21,6 +21,9 @@
 #   tiling      edel system set shell.tiling=true, sent to the VM, tiles
 #               foot and one side by side with their bars; Super+T puts
 #               them back where they floated, overlapping
+#   scale       edel system set outputs.Virtual-1.scale=2 halves the
+#               logical screen and doubles the title bar's height in
+#               screen pixels, after the other cases
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -276,12 +279,31 @@ case_tiling() {
 	echo "PASS: edel system set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console compositor
+case_scale() {
+	guest 'scale 2'
+	wait_for 'DESKTOP-TEST: ran scale 2: 0' ||
+		fail "edel system set outputs.Virtual-1.scale=2 did not run in the VM"
+	wait_for 'edel-compositor: output Virtual-1 scale 2' ||
+		fail "the compositor did not follow outputs.Virtual-1.scale = 2"
+	# The screen is 640x400 logical pixels now, so one's frame, last at
+	# 721,117 and 302x229, is pulled in to 338,117.
+	wait_for 'DESKTOP-TEST: windows 1 one@339,145,300x200' ||
+		fail "one is not where the smaller screen puts it: $(value windows)"
+	# Its 28 px bar is 56 screen pixels from y 234: row 284 is still the
+	# bar, row 294 the window.
+	focused=$(token title_bar_focused)
+	shot scale 688 284 "$focused" >/dev/null ||
+		fail "at scale 2, 688,284 is not one's bar, #$focused: the bar is not 56 pixels high"
+	shot scale 688 294 cc3333 >/dev/null || fail "at scale 2, 688,294 is not one's red"
+	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
+}
+
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console compositor scale
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | tiling | titlebar) ;;
+	console | compositor | floating | scale | tiling | titlebar) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, tiling and titlebar"
+		echo "unknown case $c; the cases are console, compositor, floating, scale, tiling and titlebar"
 		exit 1
 		;;
 	esac
