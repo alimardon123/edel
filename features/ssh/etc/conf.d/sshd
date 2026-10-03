@@ -15,9 +15,9 @@
 #
 #key_types_to_generate=""
 #
-# Edel OS: ed25519 only (the ssh feature). RSA key generation takes a
-# random second or two on the first boot, and every client since 2014
-# reads ed25519.
+# Edel OS: ed25519 only (the ssh feature). An RSA key takes a random,
+# sometimes long time to make on the first boot, longest on old hardware;
+# ed25519 takes milliseconds, and every client since 2014 reads it.
 key_types_to_generate="ed25519"
 
 # The number of bits to use for a generated ECDSA SSH host key.
