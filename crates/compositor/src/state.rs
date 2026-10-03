@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use smithay::desktop::{PopupManager, Space, Window, find_popup_root_surface};
-use smithay::input::pointer::Focus;
+use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
@@ -29,6 +29,7 @@ use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
     with_states,
 };
+use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::presentation::PresentationState;
@@ -43,11 +44,12 @@ use smithay::wayland::shell::xdg::{
 };
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::socket::ListeningSocketSource;
+use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatHandler};
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::{
-    delegate_compositor, delegate_data_device, delegate_fractional_scale, delegate_output,
-    delegate_presentation, delegate_seat, delegate_shm, delegate_viewporter,
-    delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_compositor, delegate_cursor_shape, delegate_data_device, delegate_fractional_scale,
+    delegate_output, delegate_presentation, delegate_seat, delegate_shm, delegate_tablet_manager,
+    delegate_viewporter, delegate_xdg_decoration, delegate_xdg_shell,
 };
 use toml::{Table, Value};
 
@@ -60,6 +62,7 @@ use edel_compositor::tokens::Tokens;
 
 use crate::decoration::{data, server_side, title};
 use crate::grabs::{Kind, WindowGrab};
+use crate::pointer::Cursors;
 use crate::statefile::{self, StateFile};
 
 pub struct Edel {
@@ -79,6 +82,8 @@ pub struct Edel {
     pub dragging: bool,
     /// The title font, once its thread has loaded it (`decoration.rs`).
     pub text: Option<Text>,
+    /// The cursor and its images (`pointer.rs`).
+    pub cursors: Cursors,
     /// The title bar button under the pointer.
     pub hover: Option<(Window, Button)>,
     /// The title bar button the left button went down on.
@@ -101,6 +106,8 @@ pub struct Edel {
     _decorations: XdgDecorationState,
     _fractional_scale: FractionalScaleManagerState,
     _viewporter: ViewporterState,
+    _tablets: TabletManagerState,
+    _cursor_shapes: CursorShapeManagerState,
     _outputs: OutputManagerState,
     _presentation: PresentationState,
 }
@@ -125,6 +132,10 @@ impl Edel {
             _decorations: XdgDecorationState::new::<Edel>(&display),
             _fractional_scale: FractionalScaleManagerState::new::<Edel>(&display),
             _viewporter: ViewporterState::new::<Edel>(&display),
+            // Pens and drawing tablets (M4.6b), and cursors named by shape,
+            // as GTK 4 asks for them.
+            _tablets: TabletManagerState::new::<Edel>(&display),
+            _cursor_shapes: CursorShapeManagerState::new::<Edel>(&display),
             _outputs: OutputManagerState::new_with_xdg_output::<Edel>(&display),
             // When a frame reached the screen, on the monotonic clock: what
             // CI's frame times are read from (M4.1).
@@ -141,6 +152,7 @@ impl Edel {
             report_armed: false,
             dragging: false,
             text: None,
+            cursors: Cursors::new(),
             hover: None,
             pressed: None,
             last_title_click: None,
@@ -206,8 +218,9 @@ impl Edel {
     }
 
     /// Every window where the active policy puts it; maximized windows
-    /// fill the screen again.
+    /// fill the screen again, and the pointer stays on the screen.
     pub fn relayout(&mut self) {
+        self.keep_pointer_on_screen();
         if let Some(area) = self.output_area() {
             for (window, frame) in self.workspace.arrange(area) {
                 if self.is_maximized(&window) {
@@ -642,7 +655,15 @@ impl SeatHandler for Edel {
     fn seat_state(&mut self) -> &mut SeatState<Edel> {
         &mut self.seat_state
     }
+
+    /// The window under the pointer set its cursor (`pointer.rs`).
+    fn cursor_image(&mut self, _seat: &Seat<Edel>, image: CursorImageStatus) {
+        self.cursors.status = image;
+        self.dirty = true;
+    }
 }
+
+impl TabletSeatHandler for Edel {}
 
 impl SelectionHandler for Edel {
     type SelectionUserData = ();
@@ -691,6 +712,8 @@ delegate_xdg_shell!(Edel);
 delegate_xdg_decoration!(Edel);
 delegate_fractional_scale!(Edel);
 delegate_viewporter!(Edel);
+delegate_tablet_manager!(Edel);
+delegate_cursor_shape!(Edel);
 delegate_seat!(Edel);
 delegate_data_device!(Edel);
 delegate_output!(Edel);

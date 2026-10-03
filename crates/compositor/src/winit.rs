@@ -173,4 +173,5 @@ fn draw(window: &mut Window, state: &mut Edel) {
             Some(window.output.clone())
         });
     }
+    state.cursor_frame(&window.output, now);
 }

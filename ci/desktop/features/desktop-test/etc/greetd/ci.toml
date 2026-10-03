@@ -2,13 +2,15 @@
 # at boot, then shows the text greeter of features/login when it ends.
 # QEMU's virtio-vga has no 3D, so Mesa draws with llvmpipe
 # (LIBGL_ALWAYS_SOFTWARE), finishing each frame before the flip copies it
-# to QEMU (LP_NUM_THREADS=0); greetd runs the command through sh, so the
-# log can go to /tmp, where the test service reads it.
+# to QEMU (LP_NUM_THREADS=0); the cursor is drawn into the frame, where
+# QEMU's screenshots see it, not on the GPU's cursor plane
+# (EDEL_SOFTWARE_CURSOR, M4.6b); greetd runs the command through sh, so
+# the log can go to /tmp, where the test service reads it.
 [terminal]
 vt = 7
 
 [initial_session]
-command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
+command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
 user = "ci"
 
 [default_session]

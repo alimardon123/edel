@@ -70,6 +70,8 @@ report() {
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
+	# Every protocol the compositor offers, as wayland-info lists them.
+	say "globals $(as_ci wayland-info 2>/dev/null | sed -n "s/.*interface: '\([^']*\)'.*/\1/p" | sort | tr '\n' ' ')"
 	# Window frames open centred, each 32 px down and right of an open
 	# window whose centre it would share (M4.3): foot first, then one,
 	# then two, each with a title bar (M4.4).

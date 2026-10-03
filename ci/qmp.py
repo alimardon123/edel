@@ -3,6 +3,7 @@
 (roadmap M4.1, M4.4), with the Python standard library only.
 
     qmp.py screendump FILE.png   save the screen as PNG (QEMU 7.1 or newer)
+    qmp.py move X Y              move the pointer to pixel X, Y
     qmp.py click X Y             move the pointer to pixel X, Y and click
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
@@ -14,7 +15,7 @@
                                  print "uniform rrggbb" or "varied", for
                                  the whole screen or the W by H box at X, Y
 
-The first five talk to the QMP socket named by $QMP. Key names are
+The first six talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -225,6 +226,8 @@ def main(argv):
     qmp = Qmp(os.environ["QMP"])
     if command == "screendump":
         screendump(qmp, args[0])
+    elif command == "move":
+        point(qmp, screen_size(qmp), int(args[0]), int(args[1]))
     elif command == "click":
         click(qmp, int(args[0]), int(args[1]))
     elif command == "drag":

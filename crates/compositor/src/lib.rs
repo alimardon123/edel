@@ -4,6 +4,7 @@
 //! file (M4.5).
 //! The binary (`main.rs`) adds the Wayland state and the backends.
 
+pub mod cursor;
 pub mod frame;
 pub mod layout;
 pub mod settings;
