@@ -10,8 +10,6 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use edel::features;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 
 use crate::boot::{self, Layout};
 use crate::def::{ImageDef, Variant};
@@ -535,21 +533,14 @@ impl Build<'_> {
         Ok(())
     }
 
-    /// Writes `FILE.gz` next to `file`, the form releases publish.
+    /// Writes `FILE.gz` next to `file`, the form releases publish, with
+    /// pigz: one ordinary gzip stream, made on every core, so the desktop
+    /// image's two files take seconds instead of most of a minute each.
+    /// `-n` leaves out the file's name and time, so the same file always
+    /// gives the same bytes.
     fn gzip(&self, file: &Path) -> Result<()> {
-        let gz = PathBuf::from(format!("{}.gz", file.display()));
         self.runner
-            .step(&format!("compress {} to {}", file.display(), gz.display()));
-        if self.runner.dry_run {
-            return Ok(());
-        }
-        let mut encoder = GzEncoder::new(
-            File::create(&gz).with_context(|| format!("creating {}", gz.display()))?,
-            Compression::default(),
-        );
-        std::io::copy(&mut File::open(file)?, &mut encoder)?;
-        encoder.finish()?;
-        Ok(())
+            .run(Command::new("pigz").args(["-k", "-f", "-n"]).arg(file))
     }
 
     fn make_slot(&self, root: &Path, image: &Path, size_mib: u64) -> Result<()> {
