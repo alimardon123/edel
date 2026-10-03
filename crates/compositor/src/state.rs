@@ -96,6 +96,8 @@ pub struct Edel {
     /// `[outputs]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
+    /// The effect tier and its frame-deadline monitor (`tiers.rs`).
+    pub deadline: edel_compositor::effects::Deadline,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
     /// The program the session runs, if it was given one (`program.rs`).
@@ -169,6 +171,7 @@ impl Edel {
             last_title_click: None,
             settings: Settings::default(),
             screens_changed: false,
+            deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             x11: None,
             program: None,
             workspace: Workspace::new(tokens.gap),
@@ -360,6 +363,10 @@ impl Edel {
                 Some(Value::Table(t))
             })
             .collect();
+        table.insert(
+            "tier".into(),
+            Value::String(self.deadline.tier().name().into()),
+        );
         table.insert("outputs".into(), Value::Array(outputs));
         let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
         let windows = self

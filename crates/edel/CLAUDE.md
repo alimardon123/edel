@@ -4,7 +4,7 @@ The one command-line tool of Edel OS and the library `edel::system`: the workspa
 
 ## What belongs here
 
-- Every system function lands here as a subcommand (`edel update`, `edel boot`, `edel release`, `edel system`, `edel install`, `edel report`), never as a separate tool: "one tool to learn" (`main.rs`). Add-ons, the live USB and fleet images are built by the same `edel image build`, not by a new builder.
+- Every system function lands here as a subcommand (`edel update`, `edel boot`, `edel release`, `edel system`, `edel install`, `edel report`, `edel shell`), never as a separate tool: "one tool to learn" (`main.rs`). Add-ons, the live USB and fleet images are built by the same `edel image build`, not by a new builder.
 - Settings change only through `edel system set` and `unset`. Never add a per-domain verb that changes settings (no `edel addon add`), shell completion scripts, telemetry, runtime-loaded code or a plugin API (ADR-008).
 - The library target (`lib.rs`: `edel::system`, `edel::features` and `edel::install`) is the one parser for system files and feature files. The compositor (M4.5), shell-ui (M5.1) and Settings (M5.6) link it, so it has no network or signing dependencies: `clap`, `ed25519-dalek`, `flate2`, `sha2` and `ureq` are optional and sit behind the binary's default `cli` feature (ADR-008). CI builds the library with `--no-default-features`; code the library needs never uses them.
 
@@ -31,6 +31,7 @@ Run the six "Rust checks" commands from the root CLAUDE.md before every push. Af
 - `release.rs`: `release.toml` (format 1, read leniently), ed25519 keys and signatures, `edel release keygen|make|sign|verify`, and `open_checked` (returns `Checked`: the image reader, its sha256 and size), which `edel update install` calls before writing a slot. `edel release make --base-url URL` names each image by its URL there (a channel manifest served apart from the images, M3.4) and `--out DIR` writes `release.toml` there; an image `file` that is a URL is used as it is.
 - `loader.rs`: the boot loader riding along (M1.8): `loader.toml`, `swap_file` (`.prev`, `.new`, rename) and `update_esp`, which `mark-good` calls once the slot is confirmed.
 - `run.rs`: `Runner` (dry run, external tools), kernel filesystem mounts with `MountGuard`, `ensure_nothing_mounted_under`.
+- `shell.rs`: `edel shell tier` (M5.11a): the effect tier the compositor runs at, `lite`, `balanced` or `full`, read from `tier` in `/run/edel/session/state.toml` (`tier_of`, tested); it fails when no compositor runs.
 
 ## Conventions
 

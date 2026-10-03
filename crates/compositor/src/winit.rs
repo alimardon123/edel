@@ -49,8 +49,9 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
-    let (backend, events) = winit::init::<GlesRenderer>()
+    let (mut backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
+    state.start_effects(&crate::tiers::renderer_name(backend.renderer()));
     let size = backend.window_size();
     let output = Output::new(
         "winit".into(),
@@ -168,6 +169,10 @@ fn draw(window: &mut Window, state: &mut Edel) {
                 eprintln!("edel-compositor: showing the frame failed: {e}");
             }
             state.telemetry.frame(started.elapsed(), !damage.is_empty());
+            state.frame_drawn(
+                started.elapsed(),
+                crate::tiers::refresh_interval(&window.output),
+            );
         }
         Ok(None) => {}
         Err(e) => eprintln!("edel-compositor: rendering failed: {e:?}"),
