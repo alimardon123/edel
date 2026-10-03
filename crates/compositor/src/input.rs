@@ -498,6 +498,7 @@ impl Edel {
         match button {
             Button::Close => self.close(&window),
             Button::Maximize => self.toggle_maximized(&window),
+            Button::Minimize => self.minimize(&window),
         }
     }
 

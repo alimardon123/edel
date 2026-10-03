@@ -154,12 +154,12 @@ impl Edel {
         crate::toplevels::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
-            // Minimize waits for the window list that brings a window back
-            // (M5.2), fullscreen and the window menu for their own steps;
+            // Minimize since the window list brings a window back (M5.2h);
+            // fullscreen and the window menu wait for their own steps, and
             // apps that draw their own bars leave out what is missing.
             xdg_shell: XdgShellState::new_with_capabilities::<Edel>(
                 &display,
-                [WmCapabilities::Maximize],
+                [WmCapabilities::Maximize, WmCapabilities::Minimize],
             ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
             layer_shell: WlrLayerShellState::new::<Edel>(&display),
@@ -420,7 +420,8 @@ impl Edel {
 
     /// Outputs and windows, bottom of the stack first, as TOML: the shown
     /// workspace's windows, then the hidden ones by workspace, each with
-    /// its workspace, counted from 1 as Super+1 to Super+9 are.
+    /// its workspace, counted from 1 as Super+1 to Super+9 are, and
+    /// whether it is minimized (M5.2h).
     fn state_toml(&self) -> String {
         let mut table = Table::new();
         table.insert("format".into(), Value::Integer(statefile::FORMAT));
@@ -489,6 +490,10 @@ impl Edel {
                 t.insert(
                     "maximized".into(),
                     Value::Boolean(self.is_maximized(window)),
+                );
+                t.insert(
+                    "minimized".into(),
+                    Value::Boolean(self.desks.minimized(window).is_some()),
                 );
                 Some(Value::Table(t))
             })
@@ -739,6 +744,16 @@ impl XdgShellHandler for Edel {
             self.unmaximize(&window);
         } else if surface.is_initial_configure_sent() {
             surface.send_configure();
+        }
+    }
+
+    /// A window that draws its own bar asks to be minimized, as ours does
+    /// from its button.
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_of(surface.wl_surface()) {
+            if self.space.element_geometry(&window).is_some() {
+                self.minimize(&window);
+            }
         }
     }
 

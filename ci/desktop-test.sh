@@ -633,6 +633,80 @@ case_workspaces() {
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
 }
 
+# list_until TEST: waits up to 10 s for shell-ui's last places line to
+# give its window list a width W for which [ W TEST ] holds, and prints
+# the list's x and W.
+list_until() {
+	i=0
+	while :; do
+		place=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*windows \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+		[ "${place#* }" $1 ] 2>/dev/null && break
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || break
+		sleep 0.2
+	done
+	echo "$place"
+	[ "${place#* }" $1 ] 2>/dev/null
+}
+
+# list_width N: the window list's width with N buttons on CI's 1280 px
+# panel, as shell-ui's windows widget lays them out: each button at most
+# 180 px and together at most 45% of the panel (576 px), 4 px at each end
+# and between them.
+list_width() {
+	[ "$1" -gt 0 ] || { echo 0; return; }
+	b=$(((576 - 8 - ($1 - 1) * 4) / $1))
+	[ "$b" -le 180 ] || b=180
+	[ "$b" -ge 32 ] || b=32
+	echo $((8 + $1 * b + ($1 - 1) * 4))
+}
+
+case_windows() {
+	# The panel's window list (M5.2h): a button for each window on the
+	# screen, sharing its width, 4 px at each end and between them.
+	# Launching away adds one, lit with the accent line along its foot,
+	# 2 px high and 4 px above the foot of a 30 px button in the middle of
+	# the 40 px panel that starts at 760: row 791.
+	panel=$(token panel)
+	accent=$(token accent)
+	opened=$(count 'edel-compositor: mapped window away')
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open: $(value windows)"
+	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$' || fail "away is not on top in the state file: $(value windows)"
+	# The width is waited for, not compared with an earlier one: the
+	# panel may still be catching up with the case before.
+	n=$(value windows | cut -d' ' -f1)
+	place=$(list_until "-eq $(list_width "$n")") ||
+		fail "the window list is not $(list_width "$n") px wide with $n windows, away among them: $place"
+	read -r x w <<-EOF
+		$place
+	EOF
+	button=$(((w - 8 - (n - 1) * 4) / n))
+	cx=$((x + w - 4 - button / 2))
+	shot windows "$cx" 791 "$accent" >/dev/null || fail "away's button, the last of $n at $cx, has no accent line at row 791"
+	# Its title bar's minimize button, the third square from the right,
+	# hides it; its button stays, with no mark.
+	read -r ax ay aw <<-EOF
+		$(value windows | sed -n 's/.*away@\([0-9]*\),\([0-9]*\),\([0-9]*\)x150$/\1 \2 \3/p')
+	EOF
+	python3 ci/qmp.py click $((ax + aw - 69)) $((ay - 14))
+	wait_for 'edel-compositor: minimized window away' || fail "away's minimize button at $((ax + aw - 69)),$((ay - 14)) did not minimize it"
+	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150-$' || fail "the state file does not say away is minimized: $(value windows)"
+	shot windows 640 393 '!7744aa' >/dev/null || fail "away is still drawn at 640,393"
+	shot windows "$cx" 791 "$panel" >/dev/null || fail "away's button still has a mark at $cx,791"
+	# A click on its button brings it back, focused; 40 px left of the
+	# line, which the cursor would cover.
+	python3 ci/qmp.py click $((cx - 40)) 780
+	wait_for 'edel-compositor: restored window away' || fail "a click on away's button at $((cx - 40)),780 did not bring it back"
+	shot windows "$cx" 791 "$accent" >/dev/null || fail "away's button has no accent line after it came back"
+	shot windows 640 393 7744aa >/dev/null || fail "away is not drawn at 640,393 after it came back"
+	# Closed, its button goes.
+	guest 'away off'
+	place=$(list_until "-eq $(list_width $((n - 1)))") ||
+		fail "the window list is not $(list_width $((n - 1))) px wide for $((n - 1)) windows after away closed: $place"
+	echo "PASS: away's opening added a button to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -735,13 +809,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | workspaces | xwayland) ;;
+	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

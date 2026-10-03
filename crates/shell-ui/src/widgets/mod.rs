@@ -12,6 +12,7 @@
 
 pub mod clock;
 pub mod menu;
+pub mod windows;
 pub mod workspaces;
 
 use std::path::Path;
@@ -50,19 +51,30 @@ pub struct Widget {
 }
 
 /// What shell-ui knows that widgets show: the workspaces, by name, with
-/// the shown one marked (ext-workspace-v1), and where a scroll left the
-/// workspace switcher's view.
+/// the shown one marked (ext-workspace-v1), where a scroll left the
+/// workspace switcher's view, and the windows on a screen
+/// (wlr-foreign-toplevel-management).
 #[derive(Debug, Default)]
 pub struct Live {
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
+    pub windows: Vec<Task>,
+}
+
+/// A window, as the window list shows it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Task {
+    pub title: String,
+    pub focused: bool,
+    pub minimized: bool,
 }
 
 /// A person's input on a widget.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Input {
-    /// A click this many logical pixels from its left edge.
-    Click(f32),
+    /// A click this many logical pixels from its left edge, on the widget
+    /// as wide as the second number.
+    Click(f32, f32),
     /// A scroll, in steps: positive towards the end.
     Scroll(i32),
 }
@@ -74,6 +86,11 @@ pub enum Action {
     Show(String),
     /// Start the workspace switcher's view at this button.
     View(usize),
+    /// Bring the window at this place in [`Live::windows`] forward, back
+    /// if it is minimized.
+    Activate(usize),
+    /// Minimize the window at this place in [`Live::windows`].
+    Minimize(usize),
 }
 
 /// For widgets that take no input.
@@ -82,7 +99,12 @@ pub fn no_input(_: &str, _: Input) -> Option<Action> {
 }
 
 /// Every widget, by name.
-pub const TABLE: &[Widget] = &[menu::WIDGET, workspaces::WIDGET, clock::WIDGET];
+pub const TABLE: &[Widget] = &[
+    menu::WIDGET,
+    windows::WIDGET,
+    workspaces::WIDGET,
+    clock::WIDGET,
+];
 
 /// The widget called `name`.
 #[cfg(test)]
