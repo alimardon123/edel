@@ -253,6 +253,7 @@ impl PointerGrab<Edel> for WindowGrab {
             });
             toplevel.send_pending_configure();
         }
+        data.dragging = false;
         data.placed(&self.window, self.current);
     }
 }

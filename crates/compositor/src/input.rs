@@ -128,6 +128,7 @@ impl Edel {
                                 current: place,
                             };
                             pointer.set_grab(self, grab, serial, Focus::Clear);
+                            self.dragging = true;
                             // The window never sees a click it did not get.
                             return None;
                         }

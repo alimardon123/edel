@@ -61,6 +61,9 @@ pub struct Edel {
     pub telemetry: Telemetry,
     /// A timer will log the telemetry once the screen is still (`drm.rs`).
     pub report_armed: bool,
+    /// A window is being moved or resized (`grabs.rs`). Kept here because
+    /// asking the pointer from inside its grab would wait on its own lock.
+    pub dragging: bool,
     /// Where windows go; one workspace until M4.5.
     policy: Floating<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
@@ -101,6 +104,7 @@ impl Edel {
             dirty: true,
             telemetry: Telemetry::default(),
             report_armed: false,
+            dragging: false,
             policy: Floating::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
@@ -156,7 +160,7 @@ impl Edel {
     /// Sends the state file what is on screen now. Never during a drag:
     /// the grab writes it once, when it ends.
     pub fn state_changed(&self) {
-        if self.seat.get_pointer().is_some_and(|p| p.is_grabbed()) {
+        if self.dragging {
             return;
         }
         self.state_file.send(self.state_toml());
@@ -253,6 +257,7 @@ impl Edel {
             current: place,
         };
         pointer.set_grab(self, grab, serial, Focus::Clear);
+        self.dragging = true;
     }
 }
 
