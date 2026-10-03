@@ -134,6 +134,9 @@ start() {
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0" || return 0
 		ab_has /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
+		# Installed from a live disk with 1024 MiB slots, as from the
+		# laptop stick: edel install grew slot A to 4096 MiB (M3.3b).
+		ab_check "slot A grown to its full size" slot_is_full || return 0
 		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
 		if refused=$(/usr/bin/edel update install http://10.0.2.2:8000/bad.toml 2>&1); then

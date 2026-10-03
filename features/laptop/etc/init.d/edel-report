@@ -3,7 +3,8 @@
 # /EFI/edel/report.toml on the stick's EFI system partition at every boot.
 # The stick has no login and no Wi-Fi set up yet, so a person boots it on
 # their laptop, plugs it into any computer and attaches that file to an
-# issue (docs/TRY-IT.md). It runs once and exits; it serves nothing.
+# issue (docs/TRY-IT.md). It runs once and exits; it serves nothing. On a
+# disk that is not removable (an installed laptop) it writes nothing.
 
 description="Leave a hardware report on the EFI system partition"
 
@@ -13,6 +14,6 @@ depend() {
 
 start() {
 	ebegin "Writing the hardware report to the EFI system partition"
-	/usr/bin/edel report --esp >/dev/null
+	/usr/bin/edel report --esp
 	eend $?
 }

@@ -20,7 +20,7 @@ options() {
 # The modules an image's initramfs must hold, by its kernel flavour.
 needed_modules() {
 	case "$1" in
-	lts) echo "nvme usb_storage xhci_pci ahci i915 xe amdgpu ext4 overlay" ;;
+	lts) echo "nvme usb_storage xhci_pci ahci mmc_block sdhci_pci i915 xe amdgpu ext4 overlay" ;;
 	*) echo "virtio_blk ext4 overlay" ;;
 	esac
 }
