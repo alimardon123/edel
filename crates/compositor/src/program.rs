@@ -88,3 +88,26 @@ fn watch(
         })?;
     Ok(())
 }
+
+/// Starts `name` in the session, as Ctrl+Alt+T does with the terminal
+/// (M5.13a), with the session's Wayland socket and X11 display; a thread
+/// waits for it, so it leaves nothing behind when it exits.
+pub fn open(state: &Edel, name: &str) {
+    let mut command = Command::new(name);
+    command.env("WAYLAND_DISPLAY", &state.socket);
+    match &state.x11 {
+        Some(x11) => command.env("DISPLAY", format!(":{}", x11.number)),
+        None => command.env_remove("DISPLAY"),
+    };
+    match command.spawn() {
+        Ok(mut child) => {
+            let waiter = thread::Builder::new()
+                .name(format!("wait-{name}"))
+                .spawn(move || child.wait());
+            if let Err(e) = waiter {
+                eprintln!("edel-compositor: waiting for {name} failed: {e}");
+            }
+        }
+        Err(e) => eprintln!("edel-compositor: {name} did not start: {e}"),
+    }
+}

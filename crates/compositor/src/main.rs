@@ -19,6 +19,7 @@ mod pointer;
 mod program;
 mod render;
 mod shellui;
+mod shortcuts;
 mod state;
 mod statefile;
 mod tiers;
