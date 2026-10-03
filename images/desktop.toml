@@ -1,5 +1,6 @@
 # Edel OS desktop image (roadmap M4.1, M4.2b): the laptop image plus
-# graphics, seats, the login screen, fonts, a terminal and our compositor.
+# graphics, seats, the login screen, fonts, a terminal, our compositor and
+# XWayland for X11 apps (M4.7).
 # greetd's text greeter logs people in and starts the compositor, until
 # the compositor greets people itself (M5.10). A bootable A/B disk like
 # the laptop's, so its variant is vm.
@@ -8,7 +9,7 @@ name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor", "xwayland"]
 off = ["ssh"]
 
 [alpine]

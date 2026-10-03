@@ -17,6 +17,7 @@ mod state;
 mod statefile;
 mod watch;
 mod winit;
+mod xwayland;
 
 use std::process::ExitCode;
 

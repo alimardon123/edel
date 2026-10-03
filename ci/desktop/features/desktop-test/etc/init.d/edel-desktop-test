@@ -73,6 +73,10 @@ report() {
 	say "idle_frames $(echo "$telemetry" | sed -n 's/.*idle frames \([0-9][0-9]*\).*/\1/p')"
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
+	# The X11 display (M4.7), logged before follow prints the log, and no
+	# X11 process yet: they start with the first X11 app.
+	say "x11 $(grep 'edel-compositor: X11 apps' /tmp/compositor.log | tail -n 1)"
+	say "x11_processes $(pgrep -f 'Xwayland|xwayland-satellite' | wc -l)"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
 	# Every screen's first frame, not only the first screen's (M4.6c).
 	grep 'edel-compositor: output .* ready' /tmp/compositor.log | while IFS= read -r line; do
@@ -109,6 +113,12 @@ commands() {
 		'tiling off') edel system set shell.tiling=false ;;
 		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
 		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
+		# An X11 app (M4.7) on the compositor's X11 display, and then the
+		# memory of what it started.
+		xclock)
+			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' /tmp/compositor.log | tail -n 1) xclock" </dev/null &
+			(sleep 5 && say "x11_rss_mib $(x11_rss)") &
+			;;
 		*)
 			say "unknown command $command"
 			continue
@@ -154,6 +164,13 @@ windows() {
 		$1 == "height" { h = $2 }
 		END { flush(); print n + 0 out }
 	' /run/edel/session/state.toml 2>/dev/null
+}
+
+# x11_rss: the memory XWayland and xwayland-satellite use, in MiB.
+x11_rss() {
+	for pid in $(pgrep -f 'Xwayland|xwayland-satellite'); do
+		awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status"
+	done | awk '{ kib += $1 } END { printf "%.1f", kib / 1024 }'
 }
 
 # shown N: waits up to 30 s for the state file to list N windows.
