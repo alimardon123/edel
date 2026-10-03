@@ -153,8 +153,12 @@ pub fn hit(
 /// Everything a bar shows; when it changes, the bar is drawn again.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Look {
+    /// In pixels on the screen: the logical size times the scale, so the
+    /// bar is sharp at any scale (M4.6).
     pub width: i32,
     pub height: i32,
+    /// The screen's scale, in 120ths, as `wp_fractional_scale_v1` gives it.
+    pub scale_120: u32,
     pub title: String,
     pub focused: bool,
     pub maximized: bool,
@@ -170,7 +174,12 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
     if pixels.len() < w * h * 4 || w == 0 || h == 0 {
         return;
     }
-    let mut canvas = Canvas { pixels, width: w };
+    let scale = look.scale_120.max(120) as f32 / 120.0;
+    let mut canvas = Canvas {
+        pixels,
+        width: w,
+        stroke: scale,
+    };
     let bar = if look.focused {
         tokens.title_bar_focused
     } else {
@@ -209,6 +218,7 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
     if room <= 0.0 || look.title.is_empty() {
         return;
     }
+    text.set_size(tokens.title_text_size as f32 * scale);
     let title = text.fit(&look.title, room);
     let width = text.width(&title);
     let x = ((w as f32 - width) / 2.0).min(right - width).max(pad);
@@ -219,6 +229,8 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
 struct Canvas<'a> {
     pixels: &'a mut [u8],
     width: usize,
+    /// How thick lines are, in pixels: the scale, so icons keep their weight.
+    stroke: f32,
 }
 
 impl Canvas<'_> {
@@ -261,11 +273,12 @@ impl Canvas<'_> {
                 self.line((cx - a, cy + a), (cx + a, cy - a), colour);
             }
             Button::Maximize if maximized => {
-                let s = half as i64 * 2 - 2;
+                let step = self.stroke.round().max(1.0) as i64 * 2;
+                let s = half as i64 * 2 - step;
                 let x0 = (centre.0 - half) as i64;
-                let y0 = (centre.1 - half) as i64 + 2;
+                let y0 = (centre.1 - half) as i64 + step;
                 // The window behind, then the one in front over it.
-                self.outline(x0 + 2, y0 - 2, s, colour, Some((x0, y0, s)));
+                self.outline(x0 + step, y0 - step, s, colour, Some((x0, y0, s)));
                 self.outline(x0, y0, s, colour, None);
             }
             Button::Maximize => {
@@ -277,8 +290,8 @@ impl Canvas<'_> {
         }
     }
 
-    /// A square's one-pixel outline, `s` wide, leaving out what falls
-    /// inside the square `hidden` (x, y, side).
+    /// A square's outline, `s` wide and one stroke thick, leaving out
+    /// what falls inside the square `hidden` (x, y, side).
     fn outline(
         &mut self,
         x0: i64,
@@ -287,9 +300,10 @@ impl Canvas<'_> {
         colour: Colour,
         hidden: Option<(i64, i64, i64)>,
     ) {
+        let t = self.stroke.round().max(1.0) as i64;
         for y in y0..y0 + s {
             for x in x0..x0 + s {
-                let edge = x == x0 || y == y0 || x == x0 + s - 1 || y == y0 + s - 1;
+                let edge = x < x0 + t || y < y0 + t || x >= x0 + s - t || y >= y0 + s - t;
                 let behind = hidden
                     .is_some_and(|(hx, hy, hs)| x >= hx && x < hx + hs && y >= hy && y < hy + hs);
                 if edge && !behind {
@@ -299,9 +313,9 @@ impl Canvas<'_> {
         }
     }
 
-    /// A smooth line 1.5 pixels wide from `a` to `b`.
+    /// A smooth line 1.5 strokes wide from `a` to `b`.
     fn line(&mut self, a: (f32, f32), b: (f32, f32), colour: Colour) {
-        const WIDTH: f32 = 1.5;
+        let width = 1.5 * self.stroke;
         let (x0, x1) = (
             a.0.min(b.0).floor() as i64 - 1,
             a.0.max(b.0).ceil() as i64 + 1,
@@ -318,7 +332,7 @@ impl Canvas<'_> {
                 let t = (((px - a.0) * dx + (py - a.1) * dy) / (length * length)).clamp(0.0, 1.0);
                 let (nx, ny) = (a.0 + t * dx - px, a.1 + t * dy - py);
                 let distance = (nx * nx + ny * ny).sqrt();
-                self.blend(x, y, colour, WIDTH / 2.0 + 0.5 - distance);
+                self.blend(x, y, colour, width / 2.0 + 0.5 - distance);
             }
         }
     }
@@ -368,6 +382,20 @@ impl Text {
             ascent: metrics.ascent,
             descent: metrics.descent,
         })
+    }
+
+    /// Draws from now on at `px` pixels per em; the letters drawn at the
+    /// old size are dropped.
+    pub fn set_size(&mut self, px: f32) {
+        if px == self.px || px <= 0.0 {
+            return;
+        }
+        if let Some(metrics) = self.font.horizontal_line_metrics(px) {
+            self.px = px;
+            self.ascent = metrics.ascent;
+            self.descent = metrics.descent;
+            self.glyphs.clear();
+        }
     }
 
     fn glyph(&mut self, c: char) -> &(fontdue::Metrics, Vec<u8>) {
@@ -513,6 +541,7 @@ mod tests {
         Look {
             width,
             height: 28,
+            scale_120: 120,
             title: "foot".into(),
             focused,
             maximized: false,
@@ -595,6 +624,27 @@ mod tests {
         assert!(changed.len() > 20, "the title is drawn");
         let (left, right) = (changed.iter().min().unwrap(), changed.iter().max().unwrap());
         assert!(*left > 120 && *right < 182, "centred: {left} to {right}");
+    }
+
+    #[test]
+    fn at_scale_two_the_bar_has_twice_the_pixels_and_thicker_lines() {
+        let t = tokens();
+        let mut look = look(604, true);
+        look.height = 56;
+        look.scale_120 = 240;
+        let mut pixels = vec![0; 604 * 56 * 4];
+        paint(&mut pixels, &look, &t, None);
+        let bar = t.title_bar_focused.bytes();
+        assert_eq!(pixel(&pixels, 604, 10, 50), [bar[0], bar[1], bar[2]]);
+        // Close is the rightmost 56 px; its cross crosses at the middle,
+        // and the square's outline is two pixels thick.
+        let ink = t.title_text.bytes();
+        let ink = [ink[0], ink[1], ink[2]];
+        assert_eq!(pixel(&pixels, 604, 576, 28), ink);
+        let left = 604 - 2 * 56 + 28 - 10;
+        assert_eq!(pixel(&pixels, 604, left, 28), ink);
+        assert_eq!(pixel(&pixels, 604, left + 1, 28), ink);
+        assert_eq!(pixel(&pixels, 604, left + 2, 28), [bar[0], bar[1], bar[2]]);
     }
 
     #[test]

@@ -71,6 +71,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     );
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
+    state.apply_scales();
     state.outputs_changed();
     let window = Rc::new(RefCell::new(Window {
         damage: OutputDamageTracker::from_output(&output),

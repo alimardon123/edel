@@ -6,6 +6,7 @@
 //! lenient: a missing file is the defaults, and a broken one is reported
 //! and read as missing, never fatal.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use edel::system::{self, SystemFile};
@@ -19,12 +20,15 @@ pub enum TitleBars {
 }
 
 /// The settings the compositor follows, all live.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Settings {
     /// `shell.tiling`: workspaces tile; absent means floating.
     pub tiling: bool,
     /// `shell.title_bars`: absent means always.
     pub title_bars: TitleBars,
+    /// `outputs.NAME.scale`, by output name; an output without one gets
+    /// [`crate::layout::auto_scale`].
+    pub scales: BTreeMap<String, f64>,
 }
 
 impl Settings {
@@ -39,6 +43,11 @@ impl Settings {
                 Some("always") => settings.title_bars = TitleBars::Always,
                 Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
                 _ => {}
+            }
+            for (name, output) in &file.outputs {
+                if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
+                    settings.scales.insert(name.clone(), scale);
+                }
             }
         }
         settings
@@ -140,6 +149,17 @@ mod tests {
         assert!(settings.bars_in("floating"));
         let only_machine = Settings::from_files(Some(&machine), None);
         assert_eq!(only_machine.policy(), "tiling");
+    }
+
+    #[test]
+    fn output_scales_come_by_name_and_the_persons_win() {
+        let machine =
+            file("format = 1\n[outputs.eDP-1]\nscale = 1.5\n[outputs.HDMI-A-1]\nscale = 1\n");
+        let person = file("format = 1\n[outputs.eDP-1]\nscale = 2\n[outputs.DP-1]\nscale = -1\n");
+        let scales = Settings::from_files(Some(&machine), Some(&person)).scales;
+        assert_eq!(scales.get("eDP-1"), Some(&2.0));
+        assert_eq!(scales.get("HDMI-A-1"), Some(&1.0));
+        assert_eq!(scales.get("DP-1"), None, "a scale below 0 is left out");
     }
 
     #[test]
