@@ -81,6 +81,9 @@ pub struct Edel {
     /// A timer will mark the screens dirty for an animation's next step
     /// (`drm.rs`, M5.11b).
     pub animation_armed: bool,
+    /// When a screen last drew a frame, so an animation adds no frame of
+    /// its own while clients' frames already step it.
+    pub last_frame: Option<std::time::Instant>,
     /// A window is being moved or resized (`grabs.rs`). Kept here because
     /// asking the pointer from inside its grab would wait on its own lock.
     pub dragging: bool,
@@ -173,6 +176,7 @@ impl Edel {
             telemetry: Telemetry::default(),
             report_armed: false,
             animation_armed: false,
+            last_frame: None,
             dragging: false,
             text: None,
             cursors: Cursors::new(),
