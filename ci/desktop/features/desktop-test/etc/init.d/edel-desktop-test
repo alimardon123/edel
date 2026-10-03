@@ -280,7 +280,22 @@ diag_frames() {
 	say "diag $1: p50 $(frame_ms /tmp/frames-diag.txt 50) p99 $(frame_ms /tmp/frames-diag.txt 99) frames $(frame_ms /tmp/frames-diag.txt count) telemetry $(grep 'telemetry' /tmp/compositor.log | tail -n 1)"
 }
 
+# diag_cpu: the busiest processes over 5 s, in clock ticks, the load and
+# how often the compositor started shell-ui. Diagnostic.
+diag_cpu() {
+	for f in /proc/[0-9]*/stat; do
+		awk '{ print $1, $2, $14 + $15 }' "$f" 2>/dev/null
+	done >/tmp/cpu-a.txt
+	sleep 5
+	for f in /proc/[0-9]*/stat; do
+		awk '{ print $1, $2, $14 + $15 }' "$f" 2>/dev/null
+	done >/tmp/cpu-b.txt
+	busy=$(awk 'NR == FNR { a[$1] = $3; next } { d = $3 - a[$1]; if (d > 0) print d, $2 }' /tmp/cpu-a.txt /tmp/cpu-b.txt | sort -rn | head -n 8 | tr '\n' ' ')
+	say "diag cpu $1: load $(cut -d' ' -f1-3 /proc/loadavg); busiest ticks in 5 s: $busy; shell-ui starts $(grep -c 'started edel-shell-ui' /tmp/compositor.log); ended $(grep -c 'edel-shell-ui ended\|edel-shell-ui was lost' /tmp/compositor.log)"
+}
+
 diag() {
+	diag_cpu idle
 	diag_frames running
 	pkill -STOP -x edel-shell-ui
 	diag_frames stopped
@@ -291,7 +306,8 @@ diag() {
 		sleep 1
 	done
 	sleep 1
-	say "diag shell-ui processes: $(pgrep -c -x edel-shell-ui)"
+	say "diag shell-ui processes: $(pgrep -x edel-shell-ui | wc -l)"
+	diag_cpu gone
 	diag_frames gone
 	as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
 	sleep 2
