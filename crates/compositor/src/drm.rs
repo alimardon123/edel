@@ -495,6 +495,7 @@ impl Gpu {
                     surface_primary_scanout_output,
                 );
             }
+            crate::layers::send_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
         }
     }

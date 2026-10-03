@@ -37,6 +37,7 @@ use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
 };
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -48,8 +49,8 @@ use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatHandler};
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::{
     delegate_compositor, delegate_cursor_shape, delegate_data_device, delegate_fractional_scale,
-    delegate_output, delegate_presentation, delegate_seat, delegate_shm, delegate_tablet_manager,
-    delegate_viewporter, delegate_xdg_decoration, delegate_xdg_shell,
+    delegate_layer_shell, delegate_output, delegate_presentation, delegate_seat, delegate_shm,
+    delegate_tablet_manager, delegate_viewporter, delegate_xdg_decoration, delegate_xdg_shell,
 };
 use toml::{Table, Value};
 
@@ -107,6 +108,8 @@ pub struct Edel {
     state_file: StateFile,
     compositor: CompositorState,
     xdg_shell: XdgShellState,
+    /// Panels, docks and backgrounds (`layers.rs`).
+    pub layer_shell: WlrLayerShellState,
     shm: ShmState,
     seat_state: SeatState<Edel>,
     data_device: DataDeviceState,
@@ -135,6 +138,7 @@ impl Edel {
                 [WmCapabilities::Maximize],
             ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
+            layer_shell: WlrLayerShellState::new::<Edel>(&display),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             _fractional_scale: FractionalScaleManagerState::new::<Edel>(&display),
@@ -231,7 +235,7 @@ impl Edel {
     /// fill the screen again, and the pointer stays on the screen.
     pub fn relayout(&mut self) {
         self.keep_pointer_on_screen();
-        if let Some(area) = self.output_area() {
+        if let Some(area) = self.window_area() {
             for (window, frame) in self.workspace.arrange(area) {
                 if self.is_maximized(&window) {
                     self.maximize(&window);
@@ -323,6 +327,7 @@ impl Edel {
     /// The outputs changed: the policy fits every frame to the new area,
     /// and maximized windows fill it.
     pub fn outputs_changed(&mut self) {
+        self.screens_changed_for_layers();
         self.relayout();
     }
 
@@ -390,6 +395,7 @@ impl Edel {
             })
             .collect();
         table.insert("windows".into(), Value::Array(windows));
+        table.insert("layers".into(), Value::Array(self.layers_toml()));
         toml::to_string(&table).unwrap_or_default()
     }
 
@@ -490,6 +496,9 @@ impl CompositorHandler for Edel {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
+            if self.layer_commit(&root) {
+                return;
+            }
             if let Some(window) = self.window_of(&root) {
                 window.on_commit();
                 // New subsurfaces and popups hear the scale too.
@@ -523,7 +532,7 @@ impl CompositorHandler for Edel {
             return;
         }
         let drawn = has_buffer(surface);
-        let Some(area) = self.output_area() else {
+        let Some(area) = self.window_area() else {
             return;
         };
         if drawn {
@@ -731,3 +740,4 @@ delegate_seat!(Edel);
 delegate_data_device!(Edel);
 delegate_output!(Edel);
 delegate_presentation!(Edel);
+delegate_layer_shell!(Edel);
