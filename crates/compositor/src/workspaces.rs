@@ -3,12 +3,16 @@
 //! how many (`edel_compositor::desks` keeps them). A hidden workspace's
 //! windows leave the `Space`, so they are not drawn and get no frame
 //! callbacks; each workspace keeps its stacking order and its own policy.
-//! Nothing happens during a drag, whose grab holds a shown window.
+//! Nothing happens during a drag, whose grab holds a shown window. A
+//! switch slides at the tier's slide length (M5.2f): the shown windows'
+//! pictures leave towards one side while the other workspace's windows
+//! come in from the other, as the workspaces lie in a row; on Lite, whose
+//! slides take no time, the switch is instant.
 
 use smithay::desktop::Window;
-use smithay::utils::{Logical, Rectangle, SERIAL_COUNTER};
+use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 
-use edel_compositor::desks::MOST;
+use edel_compositor::desks::{MOST, slide_by};
 
 use crate::decoration::{data, title};
 use crate::state::Edel;
@@ -24,14 +28,20 @@ impl Edel {
             .elements()
             .filter_map(|window| Some((window.clone(), self.frame_of(window)?)))
             .collect();
+        let from = self.desks.active();
         let Some(back) = self.desks.switch(to, shown.clone()) else {
             return;
         };
+        let width = self.window_area().map_or(0, |area| area.size.w);
+        let by = Point::from((slide_by(from, to, width), 0));
         for (window, _) in &shown {
+            self.snapshot_leaving(window, by);
             self.hide(window);
         }
+        // Each comes in from a screen's width away; the relayout below
+        // slides it to its place, or puts it there at once on Lite.
         for (window, frame) in back {
-            self.show(window, frame);
+            self.show(window, frame, Point::default() - by);
         }
         eprintln!("edel-compositor: workspace {}", to + 1);
         self.focus_top();
@@ -90,7 +100,7 @@ impl Edel {
         };
         eprintln!("edel-compositor: {count} workspaces");
         for (window, frame) in joined {
-            self.show(window, frame);
+            self.show(window, frame, Point::default());
         }
         self.relayout();
         self.announce_workspaces();
@@ -124,11 +134,12 @@ impl Edel {
         }
     }
 
-    /// `window` comes back on top, its frame at `frame`; the relayout
-    /// after it fits the frame to the screen as it is now.
-    fn show(&mut self, window: Window, frame: Rectangle<i32, Logical>) {
+    /// `window` comes back on top, its frame at `frame`, drawn `from`
+    /// away from it; the relayout after it fits the frame to the screen as
+    /// it is now, sliding the window there.
+    fn show(&mut self, window: Window, frame: Rectangle<i32, Logical>, from: Point<i32, Logical>) {
         let place = self.insets(&window).window(frame);
-        self.space.map_element(window, place.loc, false);
+        self.space.map_element(window, place.loc + from, false);
     }
 
     /// The keyboard goes to the top window, or to nothing on an empty
