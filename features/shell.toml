@@ -2,9 +2,11 @@
 # from this repository's workspace and copied in by edel image build. It
 # draws its own surfaces (ADR-002's shell-ui toolkit decision), so it links
 # no library apk would need to see; the compositor starts it in every
-# session but the greeter's and starts it again if it ends.
+# session but the greeter's and starts it again if it ends. Screen readers
+# read it through AT-SPI (M5.1d), whose bus at-spi2-core starts on the
+# session's D-Bus when asked.
 format = 1
 summary = "shell-ui: the panel, and later the launcher and quick settings"
-why = "edel-shell-ui draws the panel along the screen's edge, the second of the shell's two long-running processes (ADR-002); its text needs the fonts feature's Inter."
+why = "edel-shell-ui draws the panel along the screen's edge, the second of the shell's two long-running processes (ADR-002); its text needs the fonts feature's Inter. at-spi2-core is the accessibility bus screen readers find every app's tree on, started by D-Bus when asked (M5.1d)."
 programs = ["edel-shell-ui"]
-packages = []
+packages = ["at-spi2-core"]

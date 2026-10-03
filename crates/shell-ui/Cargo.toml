@@ -27,3 +27,9 @@ toml = "1.1.6"
 smithay-client-toolkit = { version = "=0.21.1", default-features = false, features = ["calloop"] }
 # 2D drawing into the panel's shared-memory buffers.
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }
+# Screen readers (M5.1d): every widget a node in an AccessKit tree, which
+# the Unix adapter serves over AT-SPI on the session's D-Bus once a reader
+# turns accessibility on. Its zbus is the D-Bus shell-ui talks over later
+# (M5.2, M5.5, M5.9).
+accesskit = "0.25.0"
+accesskit_unix = "0.23.0"

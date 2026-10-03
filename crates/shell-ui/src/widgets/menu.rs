@@ -2,6 +2,7 @@
 //! colour, centred in a square as tall as the panel. The launcher it opens
 //! comes with M5.3.
 
+use accesskit::Role;
 use tiny_skia::{FillRule, Transform};
 
 use super::{Canvas, Widget};
@@ -13,7 +14,13 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
+    role: Role::Button,
+    label,
 };
+
+fn label(_: &str) -> String {
+    "Menu".into()
+}
 
 /// It always shows the same icon.
 fn shows() -> String {
