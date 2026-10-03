@@ -23,7 +23,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource as _};
-use smithay::utils::{Clock, Logical, Monotonic, Rectangle, SERIAL_COUNTER, Serial};
+use smithay::utils::{Clock, Logical, Monotonic, Point, Rectangle, SERIAL_COUNTER, Serial};
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface,
@@ -78,6 +78,9 @@ pub struct Edel {
     pub telemetry: Telemetry,
     /// A timer will log the telemetry once the screen is still (`drm.rs`).
     pub report_armed: bool,
+    /// A timer will mark the screens dirty for an animation's next step
+    /// (`drm.rs`, M5.11b).
+    pub animation_armed: bool,
     /// A window is being moved or resized (`grabs.rs`). Kept here because
     /// asking the pointer from inside its grab would wait on its own lock.
     pub dragging: bool,
@@ -98,6 +101,8 @@ pub struct Edel {
     pub screens_changed: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
+    /// What is opening, closing and sliding (`animate.rs`).
+    pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
     /// shell-ui, started and started again (`shellui.rs`, M5.1b).
@@ -169,6 +174,7 @@ impl Edel {
             dirty: true,
             telemetry: Telemetry::default(),
             report_armed: false,
+            animation_armed: false,
             dragging: false,
             text: None,
             cursors: Cursors::new(),
@@ -178,6 +184,10 @@ impl Edel {
             settings: Settings::default(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
+            animations: crate::animate::Animations::new(edel_compositor::animation::style(
+                edel_compositor::effects::Tier::Lite,
+                edel_compositor::animation::Motion::Full,
+            )),
             x11: None,
             shell_ui: Default::default(),
             program: None,
@@ -239,8 +249,17 @@ impl Edel {
                 toplevel.send_pending_configure();
             }
         }
+        self.slide(window, place.loc);
         self.space.map_element(window.clone(), place.loc, false);
         self.send_scale(window);
+    }
+
+    /// The layout is about to move `window` to `to`: if it is on screen
+    /// somewhere else, it slides there (M5.11b).
+    pub fn slide(&mut self, window: &Window, to: Point<i32, Logical>) {
+        if let Some(from) = self.space.element_location(window) {
+            self.animations.moved(window, from, to);
+        }
     }
 
     /// Every window where the active policy puts it; maximized windows
@@ -294,6 +313,7 @@ impl Edel {
         if old.outputs != new.outputs {
             self.screens_changed = true;
         }
+        self.restyle();
         let rescaled = self.apply_scales();
         if old.tiling != new.tiling {
             self.switch_policy(new.policy());
@@ -312,6 +332,7 @@ impl Edel {
     fn unmap(&mut self, window: &Window) {
         eprintln!("edel-compositor: unmapped window {}", title(window));
         self.forget(window);
+        self.animations.forget(window);
         let mut frame = data(window).borrow_mut();
         frame.restore = None;
         frame.shape = None;
@@ -569,6 +590,7 @@ impl CompositorHandler for Edel {
             );
             let place = insets.window(frame);
             self.put(&window, frame);
+            self.animations.opened(&window);
             data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
             eprintln!(
                 "edel-compositor: mapped window {} at {},{} {}x{}",
@@ -680,6 +702,7 @@ impl XdgShellHandler for Edel {
         self.unplaced
             .retain(|w| w.toplevel().is_none_or(|t| t != &surface));
         if let Some(window) = self.window_of(surface.wl_surface()) {
+            self.snapshot_closing(&window);
             self.unmap(&window);
         }
     }

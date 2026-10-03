@@ -9,12 +9,12 @@
 #               0700 by pam_rundir for the autologin, foot's window on a
 #               screenshot that is not one colour, and typing `exit` after
 #               a click into foot closes it
-#   compositor  the compositor's ready line, its effect tier (lite under
-#               llvmpipe, logged and from edel shell tier), the top left
-#               corner in the background colour of design/tokens.toml, and
-#               its numbers
-#               (boot to ready, memory, its RSS, frame p99, idle frames)
-#               within ci/budgets.toml, written to the step summary
+#   compositor  the compositor's ready line, its effect tier (Full, which
+#               CI's session forces, logged, and the same from edel shell
+#               tier), the top left corner in the background colour of
+#               design/tokens.toml, and its numbers (boot to ready, memory,
+#               its RSS, frame p99, idle frames) within ci/budgets.toml,
+#               written to the step summary
 #   floating    the two test clients where the floating policy puts them,
 #               in the state file and in their colours on screen
 #   titlebar    every window with a title bar in the token colours and its
@@ -42,6 +42,10 @@
 #   panel       shell-ui's panel along the bottom in the token colour with
 #               its clock drawn, within its memory budget, and back after
 #               kill -9 (M5.1b)
+#   animations  appearance.motion = "reduced" leaves only fades and its
+#               removal brings the rest back; ten windows opening one after
+#               another and closing at the Full tier keep the frame budget,
+#               or drop the tier and say so (M5.11b)
 #   shortcuts   edel system set shortcuts.close=Super+W, sent to the VM,
 #               moves close: Super+Q then leaves a window open and Super+W
 #               closes it; Ctrl+Alt+T opens a terminal; removing the key
@@ -50,8 +54,9 @@
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
-#               greeter, our compositor, logs a new ready line within 5 s
-#               and owns the health file; typing ci and a password into
+#               greeter, our compositor, logs a new ready line within 5 s,
+#               picks the Lite tier itself under llvmpipe, and owns the
+#               health file; typing ci and a password into
 #               its agreety starts ci's compositor again; last, as it
 #               ends the first session
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
@@ -90,26 +95,29 @@ value() {
 }
 
 # shot NAME X Y WANT: takes screenshots into $dir/NAME.png, one a second
-# for up to 10 s, until the pixel at X, Y is #WANT, or with WANT !RRGGBB
-# until it is anything else; prints the last colour and fails if it never
-# was. Slow runners draw late.
+# for up to 10 s, until the pixel at X, Y is #WANT (or any of several
+# colours written RRGGBB|RRGGBB), or with WANT !RRGGBB until it is
+# anything else; prints the last colour and fails if it never was. Slow
+# runners draw late, and windows animate (M5.11b).
 shot() {
 	i=0
 	while :; do
 		python3 ci/qmp.py screendump "$dir/$1.png"
 		colour=$(python3 ci/qmp.py pixel "$dir/$1.png" "$2" "$3")
-		case "$4" in
-		!*) [ "$colour" != "${4#!}" ] && break ;;
-		*) [ "$colour" = "$4" ] && break ;;
-		esac
+		matches "$colour" "$4" && break
 		i=$((i + 1))
 		[ "$i" -lt 10 ] || break
 		sleep 1
 	done
 	echo "$colour"
-	case "$4" in
-	!*) [ "$colour" != "${4#!}" ] ;;
-	*) [ "$colour" = "$4" ] ;;
+	matches "$colour" "$4"
+}
+
+# matches COLOUR WANT: whether COLOUR is what shot's WANT asks for.
+matches() {
+	case "$2" in
+	!*) [ "$1" != "${2#!}" ] ;;
+	*) case "|$2|" in *"|$1|"*) true ;; *) false ;; esac ;;
 	esac
 }
 
@@ -182,9 +190,19 @@ case_compositor() {
 	"output "*" ready") ;;
 	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
 	esac
-	# llvmpipe draws on the CPU, so the effect tier starts at Lite (M5.11).
-	[ "$(value tier)" = tier=lite ] || fail "the compositor logged \"$(value tier)\", not tier=lite under llvmpipe"
-	[ "$(value shell_tier)" = lite ] || fail "edel shell tier said \"$(value shell_tier)\", not lite"
+	# CI's session forces the Full tier, the heaviest (M5.11); edel shell
+	# tier reads the tier now, Full or lower after a drop, from the state
+	# file, and the animations follow it. The greeter shows the tier
+	# llvmpipe picks itself, in respawn.
+	[ "$(value tier)" = 'edel-compositor: tier=full (EDEL_EFFECTS)' ] ||
+		fail "the compositor logged \"$(value tier)\", not tier=full as CI's EDEL_EFFECTS asks"
+	now=$(value tier_now)
+	[ "tier=$(value shell_tier)" = "$now" ] ||
+		fail "edel shell tier said \"$(value shell_tier)\", but the compositor logged $now last"
+	case "$(value animations)" in
+	"edel-compositor: animations at tier ${now#tier=}, motion full: "*) ;;
+	*) fail "the animations are not the ${now#tier=} tier's: \"$(value animations)\"" ;;
+	esac
 	# Windows open centred (M4.3), so the background shows in a corner.
 	shot compositor 20 20 "$background" >/dev/null ||
 		fail "the top left corner of the screen is not the background #$background"
@@ -220,7 +238,7 @@ case_compositor() {
 		EOF
 	fi
 	[ "$over" = 0 ] || fail "the compositor is over a budget in ci/budgets.toml"
-	echo "PASS: $(value ready_line) in $(value ready_seconds) s at tier lite, the centre is the background, every budget met; $(value telemetry)"
+	echo "PASS: $(value ready_line) in $(value ready_seconds) s at ${now#tier=}, the centre is the background, every budget met; $(value telemetry)"
 }
 
 case_floating() {
@@ -324,6 +342,12 @@ case_respawn() {
 		fail "the greeter's compositor showed its first frame $seconds s after the kill, over 5"
 	owner=$(value ready_owner)
 	[ "$owner" = greetd ] || fail "the health file is $owner's, not the greeter's"
+	# Without CI's EDEL_EFFECTS, llvmpipe draws on the CPU, so the
+	# greeter's compositor picks the Lite tier itself (M5.11).
+	case "$(value greeter_tier)" in
+	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
+	*) fail "the greeter's compositor did not pick tier=lite under llvmpipe: \"$(value greeter_tier)\"" ;;
+	esac
 	# The login screen itself: foot, running agreety, the only window, with
 	# the keyboard. Logging in as ci there ends the greeter's compositor,
 	# and greetd starts ci's, which takes the health file back.
@@ -418,6 +442,67 @@ case_panel() {
 	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, uses $rss MiB (budget $limit), and came back after kill -9"
 }
 
+case_animations() {
+	# appearance.motion (M5.11b): reduced keeps the fades and drops the
+	# growing and sliding; removing the key brings them back.
+	full=$(tr -d '\r' <"$log" | grep -c 'motion full: open' || true)
+	guest 'motion reduced'
+	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [1-9][0-9]* ms, close [1-9][0-9]* ms, slide 0 ms' ||
+		fail "appearance.motion = \"reduced\" did not leave fades only: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
+	reduced=$(tr -d '\r' <"$log" | grep -a 'motion reduced: open' | tail -n 1 | sed 's/.*: open/open/')
+	guest 'motion default'
+	i=0
+	while [ "$(tr -d '\r' <"$log" | grep -c 'motion full: open' || true)" -le "$full" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "removing appearance.motion did not bring the full animations back"
+		sleep 0.2
+	done
+	# Ten windows opening one after another, then closing at once, while
+	# weston-presentation-shm times the frames as at the start: first with
+	# motion off, what opening ten programs costs without any animation,
+	# then at the Full tier CI forces. Were frames to miss the screen's
+	# refresh, the tier would drop on its own; the case says which tier
+	# each run ended at.
+	off_runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+	guest 'motion off'
+	wait_for 'edel-compositor: animations at tier [a-z]+, motion off: open 0 ms' ||
+		fail "appearance.motion = \"off\" did not stop the animations"
+	windows=$(value windows)
+	guest 'open ten'
+	wait_more 'DESKTOP-TEST: open_ten_tier ' "$off_runs" 90 || fail "no word from the test service on the ten windows"
+	p99_off=$(value open_ten_p99_ms)
+	tier_off=$(value open_ten_tier)
+	i=0
+	while [ "$(value windows)" != "$windows" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "the ten windows did not all close: $(value windows)"
+		sleep 0.2
+	done
+	full=$(count 'motion full: open')
+	guest 'motion default'
+	wait_more 'motion full: open' "$full" || fail "removing appearance.motion again did not bring the animations back"
+	guest 'open ten'
+	wait_more 'DESKTOP-TEST: open_ten_tier ' "$((off_runs + 1))" 90 || fail "no word from the test service on the ten windows"
+	p99=$(value open_ten_p99_ms)
+	frames=$(value open_ten_frames)
+	tier=$(value open_ten_tier)
+	limit=$(budget frame_p99_ms)
+	echo "ten windows: frames p99 ${p99_off:-?} ms with motion off (tier $tier_off), ${p99:-?} ms with it full (tier $tier), budget $limit ms"
+	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
+	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "with ten windows opening and closing at the Full tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (tier now $tier; ${p99_off:-?} ms with motion off)"
+	i=0
+	while [ "$(value windows)" != "$windows" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "the ten windows did not all close: $(value windows)"
+		sleep 0.2
+	done
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Ten windows opening and closing at the Full tier (M5.11b): frames p99 $p99 ms (budget $limit ms), $frames frames, tier $tier after." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the rest back; ten windows opened and closed at the Full tier with frames p99 $p99 ms over $frames frames, within $limit ms, tier $tier after"
+}
+
 case_shortcuts() {
 	# [shortcuts] (M5.13a), live from the system file: a window of its own,
 	# which takes the keyboard as it opens.
@@ -484,13 +569,9 @@ case_tiling() {
 	# Each tile keeps its title bar: their left ends, as in titlebar.
 	bar=$(token title_bar)
 	focused=$(token title_bar_focused)
-	colour=$(shot tiling 14 12 "!$(token background)") ||
-		fail "foot's tile shows no title bar at 14,12"
-	[ "$colour" = "$bar" ] || [ "$colour" = "$focused" ] ||
+	colour=$(shot tiling 14 12 "$bar|$focused") ||
 		fail "foot's tile's bar is #$colour at 14,12, not a title bar colour"
-	colour=$(shot tiling 650 12 "!$(token background)") ||
-		fail "one's tile shows no title bar at 650,12"
-	[ "$colour" = "$bar" ] || [ "$colour" = "$focused" ] ||
+	colour=$(shot tiling 650 12 "$bar|$focused") ||
 		fail "one's tile's bar is #$colour at 650,12, not a title bar colour"
 	# Super+T: this workspace floats again, each window where it was.
 	python3 ci/qmp.py key meta_l-t
@@ -554,13 +635,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers shortcuts scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts scale respawn
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
+	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac

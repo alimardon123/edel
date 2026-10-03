@@ -78,7 +78,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 | `appearance.font_size` | a number, in points | M5.12 |
 | `appearance.cursor_size` | a whole number, in pixels | M5.12 |
 | `appearance.icon_size` | a whole number, in pixels | M5.12 |
-| `appearance.motion` | `full`, `reduced` or `off` | M5.12 |
+| `appearance.motion` | `full`, `reduced` (fades only) or `off`; absent is `full`. The compositor follows it at once | M5.11b |
 
 ## Behaviour: `[shortcuts]`, `[defaults]`, `[startup]`, `[power]`, `[services]`
 

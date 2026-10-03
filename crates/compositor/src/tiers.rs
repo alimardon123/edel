@@ -82,6 +82,7 @@ impl Edel {
                 "edel-compositor: tier={tier} after {MISSES} of {WINDOW} frames missed the screen's refresh"
             );
             self.state_changed();
+            self.restyle();
         }
     }
 }

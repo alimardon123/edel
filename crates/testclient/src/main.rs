@@ -184,7 +184,10 @@ impl Client {
                 self.width as i32,
                 self.height as i32,
                 stride,
-                wl_shm::Format::Argb8888,
+                // Opaque, as real apps say they are where they draw solid
+                // colour (an opaque region, or no alpha), so the
+                // compositor can skip what such a window hides (M5.11b).
+                wl_shm::Format::Xrgb8888,
             )
             .context("creating a buffer")?;
         for pixel in canvas.chunks_exact_mut(4) {

@@ -4,18 +4,20 @@
 # (LIBGL_ALWAYS_SOFTWARE), finishing each frame before the flip copies it
 # to QEMU (LP_NUM_THREADS=0); the cursor is drawn into the frame, where
 # QEMU's screenshots see it, not on the GPU's cursor plane
-# (EDEL_SOFTWARE_CURSOR, M4.6b); greetd runs the command through sh, so
-# the log can go to /tmp, where the test service reads it.
+# (EDEL_SOFTWARE_CURSOR, M4.6b); every animation runs at the Full tier,
+# the heaviest, where llvmpipe would pick Lite (EDEL_EFFECTS, M5.11b);
+# greetd runs the command through sh, so the log can go to /tmp, where the
+# test service reads it.
 [terminal]
 vt = 7
 
 [initial_session]
-command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
+command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_EFFECTS=full dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
 user = "ci"
 
-# The login feature's greeter (M4.7b), with the same settings, for it and
-# for the session it starts, and its log in /tmp/greeter.log, for the
-# respawn case.
+# The login feature's greeter (M4.7b), with the same settings but the
+# tier it picks itself, for it and for the session it starts, and its log
+# in /tmp/greeter.log, for the respawn case.
 [default_session]
 command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 edel-compositor -- foot agreety --cmd 'env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 dbus-run-session -- edel-compositor' 2>/tmp/greeter.log"
 user = "greetd"

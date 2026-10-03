@@ -58,14 +58,11 @@ report() {
 	as_ci() {
 		su -s /bin/sh ci -c "XDG_RUNTIME_DIR=$dir WAYLAND_DISPLAY=$socket $*"
 	}
-	# Lines hold "p2p N us": microseconds since the previous presented frame.
 	as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames.txt 2>&1
-	frames=$(awk '{ for (i = 1; i < NF; i++) if ($i == "p2p" && $(i + 1) > 0) print $(i + 1) }' /tmp/frames.txt | sort -n)
-	count=$(echo "$frames" | grep -c . || true)
 	for p in 50 99; do
-		say "frame_p${p}_ms $(echo "$frames" | awk -v n="$count" -v p="$p" 'NR == int(n * p / 100 + 0.999) { printf "%.1f", $1 / 1000 }')"
+		say "frame_p${p}_ms $(frame_ms /tmp/frames.txt "$p")"
 	done
-	say "frames $count"
+	say "frames $(frame_ms /tmp/frames.txt count)"
 	# The compositor logs its telemetry once the screen is still for 2 s.
 	sleep 4
 	telemetry=$(grep 'edel-compositor: frames' /tmp/compositor.log | tail -n 1)
@@ -73,13 +70,16 @@ report() {
 	say "idle_frames $(echo "$telemetry" | sed -n 's/.*idle frames \([0-9][0-9]*\).*/\1/p')"
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
+	# The effect tier (M5.11): the first logged, which CI forces to Full,
+	# the last, after any drop, and edel shell tier's, from the state
+	# file; then the animations it gives (M5.11b).
+	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
+	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
 	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
-	# The effect tier (M5.11): Lite under llvmpipe, as logged and as
-	# edel shell tier reads it from the state file.
-	say "tier $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
 	say "shell_tier $(edel shell tier 2>&1)"
+	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
 	# X11 process yet: they start with the first X11 app.
 	say "x11 $(grep 'edel-compositor: X11 apps' /tmp/compositor.log | tail -n 1)"
@@ -134,6 +134,12 @@ commands() {
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# shell-ui dies (M5.1b): the compositor should start it again.
 		'kill panel') pkill -9 -x edel-shell-ui ;;
+		# appearance.motion (M5.11b), reduced and back to the default.
+		'motion reduced') edel system set appearance.motion=reduced ;;
+		'motion off') edel system set appearance.motion=off ;;
+		'motion default') edel system unset appearance.motion ;;
+		# Ten windows opening and closing, timed (M5.11b).
+		'open ten') open_ten & ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to
 		# Super+W, and back to its default.
 		'shortcut window')
@@ -162,14 +168,14 @@ commands() {
 	say "commands: ttyS1 closed"
 }
 
-# follow: for 5 minutes, the compositor's log lines as they come and the
+# follow: for 10 minutes, the compositor's log lines as they come and the
 # windows each time they change, for the cases that click and drag.
 follow() {
 	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
 	last=''
 	last_layers=''
 	i=0
-	while [ "$i" -lt 1500 ]; do
+	while [ "$i" -lt 3000 ]; do
 		now=$(windows)
 		if [ "$now" != "$last" ]; then
 			say "windows $now"
@@ -223,6 +229,7 @@ respawned() {
 	done
 	now=$(cut -d' ' -f1 /proc/uptime)
 	say "greeter $(grep 'edel-compositor: output .* ready' /tmp/greeter.log | head -n 1)"
+	say "greeter_tier $(grep 'edel-compositor: tier=' /tmp/greeter.log | head -n 1)"
 	say "ready_owner $(stat -c %U /run/edel/session/ready)"
 	say "respawn_seconds $(awk -v a="$1" -v b="$now" 'BEGIN { printf "%.2f", b - a }')"
 	i=0
@@ -231,6 +238,37 @@ respawned() {
 		i=$((i + 1))
 	done
 	say "login_ready $(stat -c %U /run/edel/session/ready) $(cat /run/edel/session/ready)"
+}
+
+# frame_ms FILE P: the Pth percentile, in ms, of the frame times
+# weston-presentation-shm wrote to FILE, whose lines hold "p2p N us", the
+# microseconds since the frame before; with P count, how many there are.
+frame_ms() {
+	awk '{ for (i = 1; i < NF; i++) if ($i == "p2p" && $(i + 1) > 0) print $(i + 1) }' "$1" | sort -n |
+		awk -v p="$2" '{ t[NR] = $1 } END {
+			if (p == "count") { print NR; exit }
+			if (NR) printf "%.1f", t[int(NR * p / 100 + 0.999)] / 1000
+		}'
+}
+
+# open_ten: while weston-presentation-shm times 10 s of frames, as at the
+# start, ten test clients open, each once the one before is on screen,
+# and then all close (M5.11b); says the frames' p99 and count and the tier
+# after them.
+open_ten() {
+	as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-ten.txt 2>&1 &
+	timer=$!
+	sleep 1
+	before=$(grep -c '^\[\[windows\]\]' /run/edel/session/state.toml 2>/dev/null || true)
+	for n in 1 2 3 4 5 6 7 8 9 10; do
+		as_ci edel-testclient --size 200x150 --colour 33aa55 --title "ten$n" </dev/null >/dev/null 2>&1 &
+		shown $((${before:-0} + n))
+	done
+	pkill -f '[e]del-testclient --size 200x150 --colour 33aa55'
+	wait "$timer"
+	say "open_ten_p99_ms $(frame_ms /tmp/frames-ten.txt 99)"
+	say "open_ten_frames $(frame_ms /tmp/frames-ten.txt count)"
+	say "open_ten_tier $(edel shell tier 2>&1)"
 }
 
 # x11_rss: the memory XWayland and xwayland-satellite use, in MiB.
