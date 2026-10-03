@@ -44,6 +44,9 @@ pub enum Kind {
     WholeOf(&'static [i64]),
     /// A hostname: letters, digits and hyphens, up to 63
     Hostname,
+    /// A login shell: an absolute path with no `:` and no control
+    /// characters, which `/etc/passwd` could not hold
+    Shell,
 }
 
 /// One key of the system file. `*` in a path stands for any name, such as a
@@ -96,7 +99,7 @@ pub const KEYS: &[Key] = &[
     later("system.profiles", Kind::Texts),
     now("users.*.admin", Kind::Flag),
     now("users.*.ssh_keys", Kind::Texts),
-    now("users.*.shell", Kind::Text),
+    now("users.*.shell", Kind::Shell),
     now("network.hostname", Kind::Hostname),
     later("locale.language", Kind::Text),
     later("locale.keyboard", Kind::Text),
@@ -499,11 +502,21 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
 
 /// `edel system unset KEY` on a file's text: removes the key, and tables
 /// left empty by it, so the release decides again (ADR-008). Every other
-/// byte stays. A key this release does not know can be removed too.
+/// byte stays. A key this release does not know can be removed too. A
+/// user's table stays when its last key goes, so apply still looks after
+/// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
     let path: Vec<&str> = key.split('.').collect();
     let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
-    if !remove_path(doc.as_table_mut(), &path)? {
+    let removed = match path.as_slice() {
+        ["users", name, last] => doc
+            .get_mut("users")
+            .and_then(|users| users.as_table_like_mut()?.get_mut(name))
+            .and_then(|user| user.as_table_like_mut())
+            .is_some_and(|user| user.remove(last).is_some()),
+        _ => remove_path(doc.as_table_mut(), &path)?,
+    };
+    if !removed {
         bail!("{key} is not in the file");
     }
     Ok(doc.to_string())
@@ -700,6 +713,8 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         }
         (Kind::Hostname, Value::String(s)) if is_hostname(s) => Ok(value.clone()),
         (Kind::Hostname, _) => fail("a hostname: letters, digits and hyphens, up to 63"),
+        (Kind::Shell, Value::String(s)) if is_shell_path(s) => Ok(value.clone()),
+        (Kind::Shell, _) => fail("a login shell's full path, such as \"/bin/sh\""),
     }
 }
 
@@ -709,6 +724,15 @@ pub fn is_hostname(name: &str) -> bool {
         && !name.starts_with('-')
         && !name.ends_with('-')
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// A login shell `/etc/passwd` can hold: an absolute path of at most 255
+/// bytes, with no `:` (the field separator) and no control characters.
+pub fn is_shell_path(path: &str) -> bool {
+    path.starts_with('/')
+        && path.len() <= 255
+        && !path.contains(':')
+        && !path.chars().any(char::is_control)
 }
 
 /// A name busybox `adduser` accepts and every tool handles.
@@ -751,6 +775,7 @@ mod tests {
             Kind::OneOf(allowed) => Value::String(allowed[0].into()),
             Kind::WholeOf(allowed) => Value::Integer(allowed[0]),
             Kind::Hostname => Value::String("x".into()),
+            Kind::Shell => Value::String("/bin/sh".into()),
         }
     }
 
@@ -903,6 +928,36 @@ font_size = 11
             unset(EDITED, "future.key").unwrap(),
             EDITED.replace("future.key = 1 # kept\n", "")
         );
+    }
+
+    #[test]
+    fn unset_keeps_a_user_whose_last_key_goes() {
+        assert_eq!(
+            unset("format = 1\n[users.bob]\nadmin = true\n", "users.bob.admin").unwrap(),
+            "format = 1\n[users.bob]\n"
+        );
+        let kept = unset(EDITED, "users.ci.admin").unwrap();
+        assert!(
+            kept.ends_with("# The person who runs CI\n[users.ci]\n"),
+            "{kept}"
+        );
+        assert!(read(&kept).unwrap().file.users.contains_key("ci"));
+    }
+
+    #[test]
+    fn a_login_shell_is_a_full_path_passwd_can_hold() {
+        let error = |value: &str| {
+            set("format = 1\n", "users.ali.shell", value)
+                .unwrap_err()
+                .to_string()
+        };
+        assert!(set("format = 1\n", "users.ali.shell", "/bin/ash").is_ok());
+        assert!(error("bash").contains("full path"));
+        assert!(error("/bin/sh:x").contains("full path"));
+        assert!(error("\"/bin/sh\\n\"").contains("full path"));
+        let read = read("format = 1\n[users.ali]\nshell = \"/bin/a:b\"\n").unwrap();
+        assert_eq!(read.file.users["ali"].shell, None);
+        assert_eq!(read.problems.len(), 1);
     }
 
     #[test]

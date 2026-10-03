@@ -248,6 +248,7 @@ dependencies = [
  "clap",
  "ed25519-dalek",
  "flate2",
+ "libc",
  "serde",
  "serde_ignored",
  "sha2",

@@ -13,6 +13,8 @@ depend() {
 
 start() {
 	ebegin "Applying the system file"
-	/usr/bin/edel system apply --boot
+	# One stuck step must never stop the boot (the guard would restart
+	# the machine, again and again): the boot goes on after 60 s.
+	timeout 60 /usr/bin/edel system apply --boot
 	eend $?
 }

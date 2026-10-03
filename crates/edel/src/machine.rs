@@ -5,12 +5,14 @@
 //! the hostname, users, their ssh keys and developer mode. It adds and
 //! changes, and never deletes a user (ADR-006).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs::{self, Permissions};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt, chown};
+use std::fs;
+use std::io::{Read as _, Write as _};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, chown};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use edel::system::{self, SystemFile, User};
@@ -35,6 +37,14 @@ const SLOT_SEED: &str = "/usr/share/edel/system.toml";
 pub const DEFAULT_SHELL: &str = "/bin/sh";
 /// Members of this group are admins.
 const ADMIN_GROUP: &str = "admin";
+/// The most of a user's `authorized_keys` apply and export read.
+const KEYS_MAX: u64 = 1 << 20;
+/// Writes `~/.ssh/authorized_keys` from standard input. It runs as the
+/// user, so nothing in the user's home can send it elsewhere.
+const WRITE_KEYS: &str = "umask 077 && mkdir -p \"$HOME/.ssh\" && chmod 700 \"$HOME/.ssh\" && \
+    cat >\"$HOME/.ssh/authorized_keys.edel-new\" && \
+    chmod 600 \"$HOME/.ssh/authorized_keys.edel-new\" && \
+    mv -f \"$HOME/.ssh/authorized_keys.edel-new\" \"$HOME/.ssh/authorized_keys\"";
 
 /// One line of `/etc/passwd`.
 #[derive(Debug, PartialEq)]
@@ -200,6 +210,8 @@ struct Machine {
     shadow: Option<String>,
     /// `~/.ssh/authorized_keys` of each named user that has one
     keys: BTreeMap<String, String>,
+    /// The shells the file names that are programs on this machine
+    shells: BTreeSet<String>,
     developer: bool,
 }
 
@@ -209,12 +221,19 @@ impl Machine {
         let mut keys = BTreeMap::new();
         for account in accounts(&passwd) {
             if file.users.contains_key(&account.name) {
-                let path = Path::new(&account.home).join(".ssh/authorized_keys");
-                if let Ok(text) = fs::read_to_string(path) {
+                if let Some(text) = read_keys(&account) {
                     keys.insert(account.name, text);
                 }
             }
         }
+        let shells = file
+            .users
+            .values()
+            .filter_map(|u| u.shell.clone())
+            .filter(|s| {
+                fs::metadata(s).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            })
+            .collect();
         Ok(Machine {
             hostname: fs::read_to_string("/etc/hostname").unwrap_or_default(),
             hostname_set: Path::new(ETC_UPPER).join("hostname").exists(),
@@ -222,6 +241,7 @@ impl Machine {
             group: fs::read_to_string("/etc/group")?,
             shadow: fs::read_to_string("/etc/shadow").ok(),
             keys,
+            shells,
             developer: Path::new(DEVELOPER_FLAG).exists(),
         })
     }
@@ -240,8 +260,20 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let all = accounts(&machine.passwd);
     let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
     for (name, user) in &file.users {
-        let shell = user.shell.as_deref().unwrap_or(DEFAULT_SHELL).to_string();
         let account = all.iter().find(|a| &a.name == name);
+        // A shell the machine lacks would lock the user out: OpenSSH and
+        // login refuse a shell that does not exist. The current one stays.
+        let shell = match user.shell.as_deref() {
+            Some(s) if !machine.shells.contains(s) => {
+                notes.push(format!(
+                    "kept users.{name}.shell as it is: {s} is not a program on this machine"
+                ));
+                account.map_or(DEFAULT_SHELL, |a| a.shell.as_str())
+            }
+            Some(s) => s,
+            None => DEFAULT_SHELL,
+        }
+        .to_string();
         let is_admin =
             members(&machine.group, ADMIN_GROUP).is_some_and(|m| m.iter().any(|m| m == name));
         match account {
@@ -311,6 +343,61 @@ fn find_account(name: &str) -> Result<Account> {
         .with_context(|| format!("{name} is not in /etc/passwd"))
 }
 
+/// `~/.ssh/authorized_keys` of `account`, read without trusting the home,
+/// which the user owns: never through a symlink, never from a FIFO or a
+/// device, only a regular file the user owns and at most `KEYS_MAX` long.
+/// Anything else counts as no file, so apply writes the keys, as the user.
+fn read_keys(account: &Account) -> Option<String> {
+    let path = Path::new(&account.home).join(".ssh/authorized_keys");
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(&path)
+        .ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.uid() != account.uid || meta.len() > KEYS_MAX {
+        eprintln!(
+            "edel system: ignored {}: not a regular file of {} up to 1 MiB",
+            path.display(),
+            account.name
+        );
+        return None;
+    }
+    let mut text = String::new();
+    file.take(KEYS_MAX).read_to_string(&mut text).ok()?;
+    Some(text)
+}
+
+/// Writes `account`'s `~/.ssh/authorized_keys` as that user, never as root:
+/// the user owns the home and every path in it, so a symlink there could
+/// send root's writes, chmods and chowns to any file (WRITE_KEYS).
+fn write_keys(account: &Account, text: &str) -> Result<()> {
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", WRITE_KEYS])
+        .env_clear()
+        .env("HOME", &account.home)
+        .env("PATH", "/usr/bin:/bin")
+        .uid(account.uid)
+        .gid(account.gid)
+        .stdin(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("starting a shell as {}", account.name))?;
+    let written = child
+        .stdin
+        .take()
+        .context("no input to the shell")?
+        .write_all(text.as_bytes());
+    let status = child.wait()?;
+    if !status.success() || written.is_err() {
+        bail!(
+            "could not write {}/.ssh/authorized_keys as {}",
+            account.home,
+            account.name
+        );
+    }
+    Ok(())
+}
+
 fn unlock(name: &str) -> Result<()> {
     if let Some(text) = shadow_unlocked(&fs::read_to_string("/etc/shadow")?, name) {
         replace(Path::new("/etc/shadow"), &text)?;
@@ -357,17 +444,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
         Change::Admin { name, on: false } => {
             run(Command::new("delgroup").args([name, ADMIN_GROUP]))?
         }
-        Change::Keys { name, keys } => {
-            let account = find_account(name)?;
-            let dir = Path::new(&account.home).join(".ssh");
-            let path = dir.join("authorized_keys");
-            fs::create_dir_all(&dir)?;
-            fs::write(&path, keys_text(keys))?;
-            for (p, mode) in [(&dir, 0o700), (&path, 0o600)] {
-                fs::set_permissions(p, Permissions::from_mode(mode))?;
-                chown(p, Some(account.uid), Some(account.gid))?;
-            }
-        }
+        Change::Keys { name, keys } => write_keys(&find_account(name)?, &keys_text(keys))?,
         Change::Developer(true) => {
             let flag = Path::new(DEVELOPER_FLAG);
             fs::create_dir_all(flag.parent().unwrap_or(Path::new("/")))?;
@@ -426,9 +503,8 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
         }
     }
     let machine = Path::new(SYSTEM_FILE);
-    if let Some(path) = file.filter(|f| *f != machine) {
-        fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
-        fs::copy(path, machine).with_context(|| format!("saving {SYSTEM_FILE}"))?;
+    if let Some(path) = file.filter(|f| !same_file(f, machine)) {
+        keep_as_machine_file(path, machine)?;
         println!(
             "edel system: {} is now this machine's system file",
             path.display()
@@ -440,6 +516,40 @@ pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
         bail!("{failed} of {} changes could not be applied", changes.len());
     }
     Ok(())
+}
+
+/// Whether `a` and `b` name the same file, however they are spelled.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (fs::metadata(a), fs::metadata(b)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+/// Writes `text` to `path` through a new file and a rename, so a power cut
+/// leaves the old file or the new one, never an empty one.
+fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
+    fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
+    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    let mut out = fs::File::create(&new).with_context(|| format!("writing {}", new.display()))?;
+    out.write_all(text)?;
+    out.sync_all()?;
+    fs::rename(&new, path).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+/// Makes the applied `from` this machine's file `to`. A file in a newer
+/// format brings the `.v<N>` this release read, so the next boot reads it
+/// too (ADR-008).
+fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
+    let text = fs::read(from).with_context(|| format!("reading {}", from.display()))?;
+    if system::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > system::FORMAT) {
+        let older = system::versioned(from, system::FORMAT);
+        let older_text =
+            fs::read(&older).with_context(|| format!("reading {}", older.display()))?;
+        write_whole(&system::versioned(to, system::FORMAT), &older_text)?;
+    }
+    write_whole(to, &text).with_context(|| format!("saving {}", to.display()))
 }
 
 /// `edel system diff [FILE]`: what apply would change, one `change:` line
@@ -519,32 +629,38 @@ pub fn unset(key: &str) -> Result<()> {
 
 /// Looks for a first system file: on a volume labelled EDEL-SEED, then on
 /// this disk's EFI system partition, then in the slot. Copies the first one
-/// found to `target` and says where it came from. The partition is found
-/// from the running disk, not by label: an installer stick and the disk it
-/// installed both have an EDEL-ESP.
+/// this release can read to `target` and says where it came from; one it
+/// cannot read is reported and passed over, so a fixed seed is read at the
+/// next boot instead of a broken copy staying for good. The partition is
+/// found from the running disk, not by label: an installer stick and the
+/// disk it installed both have an EDEL-ESP.
 fn seed(target: &Path) -> Result<Option<String>> {
     let esp_file = format!("{}/system.toml", GRUB_PREFIX.trim_start_matches('/'));
-    let mut found = find_by_label(SEED_LABEL)
-        .and_then(|device| read_from(&device, "system.toml", None))
-        .map(|text| (text, format!("the {SEED_LABEL} volume")));
-    if found.is_none() {
-        found = Disk::find()
-            .and_then(|disk| disk.device(ESP_PARTITION))
-            .ok()
-            .and_then(|device| read_from(&device, &esp_file, Some("vfat")))
-            .map(|text| (text, "the EFI system partition".to_string()));
-    }
-    if found.is_none() {
-        found = fs::read_to_string(SLOT_SEED)
-            .ok()
-            .map(|text| (text, SLOT_SEED.to_string()));
-    }
-    let Some((text, from)) = found else {
-        return Ok(None);
+    // The first source that holds a file this release can read wins.
+    let adopt = |text: Option<String>, from: &str| -> Result<Option<String>> {
+        let Some(text) = text else {
+            return Ok(None);
+        };
+        if let Err(err) = system::read(&text) {
+            println!("edel system: passed over the system file on {from}: {err:#}");
+            return Ok(None);
+        }
+        write_whole(target, text.as_bytes())?;
+        Ok(Some(from.to_string()))
     };
-    fs::create_dir_all(target.parent().unwrap_or(Path::new("/")))?;
-    fs::write(target, text).with_context(|| format!("writing {}", target.display()))?;
-    Ok(Some(from))
+    let volume =
+        find_by_label(SEED_LABEL).and_then(|device| read_from(&device, "system.toml", None));
+    if let Some(from) = adopt(volume, &format!("the {SEED_LABEL} volume"))? {
+        return Ok(Some(from));
+    }
+    let esp = Disk::find()
+        .and_then(|disk| disk.device(ESP_PARTITION))
+        .ok()
+        .and_then(|device| read_from(&device, &esp_file, Some("vfat")));
+    if let Some(from) = adopt(esp, "the EFI system partition")? {
+        return Ok(Some(from));
+    }
+    adopt(fs::read_to_string(SLOT_SEED).ok(), SLOT_SEED)
 }
 
 /// The device of the file system labelled `label`, if one is attached.
@@ -611,7 +727,7 @@ pub fn export() -> Result<()> {
         &fs::read_to_string("/etc/passwd")?,
         &fs::read_to_string("/etc/group")?,
         hostname.as_deref(),
-        |home| fs::read_to_string(Path::new(home).join(".ssh/authorized_keys")).ok(),
+        read_keys,
         Path::new(DEVELOPER_FLAG).exists(),
     );
     print!("{}", toml::to_string(&file)?);
@@ -652,7 +768,7 @@ fn describe(
     passwd: &str,
     group: &str,
     hostname: Option<&str>,
-    authorized_keys: impl Fn(&str) -> Option<String>,
+    authorized_keys: impl Fn(&Account) -> Option<String>,
     developer: bool,
 ) {
     file.network.hostname = hostname.map(|h| h.trim().to_string());
@@ -660,7 +776,7 @@ fn describe(
     let admins = members(group, ADMIN_GROUP).unwrap_or_default();
     file.users.clear();
     for account in accounts(passwd).iter().filter(|a| is_person(a)) {
-        let keys: Option<Vec<String>> = authorized_keys(&account.home).map(|text| {
+        let keys: Option<Vec<String>> = authorized_keys(account).map(|text| {
             text.lines()
                 .map(str::trim)
                 .filter(|l| !l.is_empty() && !l.starts_with('#'))
@@ -736,6 +852,7 @@ mod tests {
             group: "admin:x:101:ci\n".into(),
             shadow: Some("ci:*:1::::::\nali:!:1::::::\n".into()),
             keys: BTreeMap::from([("ci".into(), "ssh-ed25519 AAAA ci@edel\n".into())]),
+            shells: BTreeSet::from(["/bin/ash".into()]),
             developer: false,
         }
     }
@@ -774,6 +891,139 @@ mod tests {
         );
     }
 
+    /// A home in a temporary directory, owned by whoever runs the tests.
+    fn home(test: &str) -> (PathBuf, Account) {
+        let dir = std::env::temp_dir().join(format!("edel-{test}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join(".ssh")).unwrap();
+        let meta = fs::metadata(&dir).unwrap();
+        let account = Account {
+            name: "ci".into(),
+            uid: meta.uid(),
+            gid: meta.gid(),
+            home: dir.display().to_string(),
+            shell: DEFAULT_SHELL.into(),
+        };
+        (dir, account)
+    }
+
+    #[test]
+    fn reads_keys_only_from_a_regular_file_the_user_owns() {
+        let (dir, account) = home("read-keys");
+        let keys = dir.join(".ssh/authorized_keys");
+        fs::write(&keys, "ssh-ed25519 AAAA ci@edel\n").unwrap();
+        assert_eq!(
+            read_keys(&account).as_deref(),
+            Some("ssh-ed25519 AAAA ci@edel\n")
+        );
+        let stranger = Account {
+            uid: account.uid + 1,
+            ..account
+        };
+        assert_eq!(read_keys(&stranger), None);
+        let account = Account {
+            uid: stranger.uid - 1,
+            ..stranger
+        };
+        // A link to a file elsewhere, and a FIFO that never ends, both
+        // count as no file: root must not read through them or hang.
+        fs::remove_file(&keys).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", &keys).unwrap();
+        assert_eq!(read_keys(&account), None);
+        fs::remove_file(&keys).unwrap();
+        assert!(
+            Command::new("mkfifo")
+                .arg(&keys)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(read_keys(&account), None);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn writes_keys_as_the_user_with_private_modes() {
+        let (dir, account) = home("write-keys");
+        fs::remove_dir(dir.join(".ssh")).unwrap();
+        write_keys(&account, "ssh-ed25519 AAAA ci@edel\n").unwrap();
+        let keys = dir.join(".ssh/authorized_keys");
+        assert_eq!(
+            fs::read_to_string(&keys).unwrap(),
+            "ssh-ed25519 AAAA ci@edel\n"
+        );
+        assert_eq!(
+            fs::metadata(dir.join(".ssh")).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(&keys).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(!dir.join(".ssh/authorized_keys.edel-new").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn keeps_the_shell_when_the_file_names_one_the_machine_lacks() {
+        let file = system::read(
+            "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nshell = \"/bin/zsh\"\n[users.new]\nshell = \"/bin/zsh\"\n",
+        )
+        .unwrap()
+        .file;
+        let (changes, notes) = plan(&file, &machine());
+        let shown: Vec<String> = changes.iter().map(|c| c.to_string()).collect();
+        assert_eq!(
+            shown,
+            ["users.ci.admin: off", "users.new: add, with shell /bin/sh"]
+        );
+        assert_eq!(
+            notes,
+            [
+                "kept users.ci.shell as it is: /bin/zsh is not a program on this machine",
+                "kept users.new.shell as it is: /bin/zsh is not a program on this machine",
+            ]
+        );
+    }
+
+    #[test]
+    fn unset_admin_takes_admin_away() {
+        let text = system::unset(
+            "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nadmin = true\n",
+            "users.ci.admin",
+        )
+        .unwrap();
+        let (changes, _) = plan(&system::read(&text).unwrap().file, &machine());
+        assert_eq!(
+            changes,
+            [Change::Admin {
+                name: "ci".into(),
+                on: false
+            }]
+        );
+    }
+
+    #[test]
+    fn keeps_an_applied_file_with_the_older_format_it_was_read_as() {
+        let dir = std::env::temp_dir().join(format!("edel-keep-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let from = dir.join("new.toml");
+        fs::write(&from, "format = 9\n").unwrap();
+        fs::write(dir.join("new.toml.v1"), "format = 1\n").unwrap();
+        let to = dir.join("data/system.toml");
+        keep_as_machine_file(&from, &to).unwrap();
+        assert_eq!(fs::read_to_string(&to).unwrap(), "format = 9\n");
+        assert_eq!(
+            fs::read_to_string(dir.join("data/system.toml.v1")).unwrap(),
+            "format = 1\n"
+        );
+        // The same file by another name is left alone, never emptied.
+        assert!(same_file(&to, &dir.join("data/../data/system.toml")));
+        assert!(!same_file(&to, &from));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn lists_what_the_machine_changed_in_etc() {
         let dir = std::env::temp_dir().join(format!("edel-changed-files-{}", std::process::id()));
@@ -800,7 +1050,9 @@ mod tests {
             PASSWD,
             "admin:x:101:ci\n",
             Some("lab-1\n"),
-            |home| (home == "/home/ci").then(|| "# mine\nssh-ed25519 AAAA ci@edel\n".into()),
+            |a: &Account| {
+                (a.home == "/home/ci").then(|| "# mine\nssh-ed25519 AAAA ci@edel\n".into())
+            },
             false,
         );
         assert_eq!(file.network.hostname.as_deref(), Some("lab-1"));
