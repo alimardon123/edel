@@ -38,7 +38,7 @@ pub struct Row {
 }
 
 impl Row {
-    fn all(&self) -> impl Iterator<Item = &'static Widget> + '_ {
+    pub fn all(&self) -> impl Iterator<Item = &'static Widget> + '_ {
         self.start
             .iter()
             .chain(&self.centre)
@@ -196,14 +196,16 @@ fn fillet(x: f32, y: f32, r: f32, left: bool, up: bool) -> Option<Path> {
 }
 
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
-/// with `row`'s widgets showing `look.shown`.
+/// with `row`'s widgets showing `look.shown`, and says where each widget
+/// went: its left edge and width in the pixmap's pixels, in the row's
+/// order.
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
     tokens: &Tokens,
     text: Option<&mut Text>,
     row: &Row,
-) {
+) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
     let strip = fillet_height(tokens) as f32 * s;
@@ -259,6 +261,7 @@ pub fn paint(
     let centre = measure(&row.centre);
     let end = measure(&row.end);
     let total = |group: &[(&Widget, &str, f32)]| group.iter().map(|g| g.2).sum::<f32>();
+    let mut placed = Vec::new();
     for (group, from) in [
         (&start, 0.0),
         (&centre, ((w - total(&centre)) / 2.0).round()),
@@ -267,9 +270,11 @@ pub fn paint(
         let mut x = from;
         for (widget, showing, width) in group {
             (widget.draw)(&mut canvas, showing, x);
+            placed.push((x, *width));
             x += width;
         }
     }
+    placed
 }
 
 /// The pixmap's premultiplied RGBA as the BGRA bytes `wl_shm`'s

@@ -11,6 +11,7 @@
 //! or the panel's size or scale, changes. It exits when the compositor
 //! goes away.
 
+mod a11y;
 mod paint;
 mod widgets;
 
@@ -70,6 +71,8 @@ struct Panel {
     scale: u32,
     /// What was drawn last, so nothing is drawn twice.
     drawn: Option<Look>,
+    /// What screen readers read of it (M5.1d).
+    reader: a11y::Reader,
 }
 
 fn main() {
@@ -127,6 +130,7 @@ fn run() -> Result<()> {
             width: 0,
             scale: 1,
             drawn: None,
+            reader: a11y::Reader::new(),
         });
     }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
@@ -245,17 +249,47 @@ impl Shell {
         if panel.drawn.as_ref() == Some(&look) {
             return;
         }
-        if let Err(e) = self.show(i, &look) {
-            eprintln!("edel-shell-ui: drawing the panel failed: {e:#}");
-            return;
-        }
-        self.panels[i].drawn = Some(look);
+        let placed = match self.show(i, &look) {
+            Ok(placed) => placed,
+            Err(e) => {
+                eprintln!("edel-shell-ui: drawing the panel failed: {e:#}");
+                return;
+            }
+        };
+        // Screen readers get what was drawn, in logical pixels.
+        let panel = &mut self.panels[i];
+        let s = f64::from(panel.scale);
+        let top = f64::from(paint::panel_top(panel.edge, &self.tokens));
+        let bottom = top + f64::from(self.tokens.panel_height);
+        let items: Vec<a11y::Item> = panel
+            .row
+            .all()
+            .zip(&look.shown)
+            .zip(placed)
+            .map(|((widget, shown), (x, width))| a11y::Item {
+                role: widget.role,
+                label: (widget.label)(shown),
+                bounds: accesskit::Rect::new(
+                    f64::from(x) / s,
+                    top,
+                    f64::from(x + width) / s,
+                    bottom,
+                ),
+            })
+            .collect();
+        let size = (
+            f64::from(panel.width),
+            f64::from(self.tokens.panel_height + strip),
+        );
+        panel.reader.update(a11y::tree(size, &items));
+        panel.drawn = Some(look);
     }
 
-    fn show(&mut self, i: usize, look: &Look) -> Result<()> {
+    /// Draws panel `i` showing `look`, and says where each widget went.
+    fn show(&mut self, i: usize, look: &Look) -> Result<Vec<(f32, f32)>> {
         let panel = &self.panels[i];
         let mut pixmap = Pixmap::new(look.width, look.height).context("a panel of no size")?;
-        paint::paint(
+        let placed = paint::paint(
             &mut pixmap,
             look,
             &self.tokens,
@@ -282,7 +316,7 @@ impl Shell {
         surface.damage_buffer(0, 0, w, h);
         buffer.attach_to(surface).context("attaching the buffer")?;
         panel.surface.commit();
-        Ok(())
+        Ok(placed)
     }
 
     /// The panel whose surface is `surface`.
