@@ -12,6 +12,14 @@ use crate::layout::Workspace;
 /// The most workspaces a preset can ask for.
 pub const MOST: usize = edel::presets::MOST_WORKSPACES;
 
+/// How far the shown windows slide when workspace `to` replaces `from`
+/// on a screen `width` wide (M5.2f): off to the left for a higher number,
+/// to the right for a lower one, as the workspaces lie in a row; the
+/// other workspace's windows come in from the opposite side.
+pub fn slide_by(from: usize, to: usize, width: i32) -> i32 {
+    if to > from { -width } else { width }
+}
+
 /// One workspace.
 pub struct Desk<W> {
     pub layout: Workspace<W>,
@@ -198,6 +206,12 @@ mod tests {
         assert_eq!(desks.hidden_on(&1), None);
         assert!(desks.switch(0, Vec::new()).is_none(), "already shown");
         assert!(desks.switch(4, Vec::new()).is_none(), "no fifth");
+    }
+
+    #[test]
+    fn a_higher_workspace_comes_in_from_the_right() {
+        assert_eq!(slide_by(0, 1, 1280), -1280, "the first leaves to the left");
+        assert_eq!(slide_by(3, 1, 1280), 1280, "the fourth leaves to the right");
     }
 
     #[test]
