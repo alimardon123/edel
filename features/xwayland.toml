@@ -1,0 +1,6 @@
+# X11 apps (roadmap M4.7): the compositor holds an X11 display and starts
+# xwayland-satellite, which runs XWayland, when the first X11 app connects.
+format = 1
+summary = "X11 apps: XWayland, started when one connects"
+why = "Older apps and games that speak only X11 run through XWayland; xwayland-satellite runs it and turns X11 windows into Wayland ones, so they get the same title bars and policies, and both start only when an X11 app connects, so a desktop without X11 apps spends nothing on them (M4.7)."
+packages = ["xwayland", "xwayland-satellite"]

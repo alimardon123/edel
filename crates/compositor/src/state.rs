@@ -95,6 +95,8 @@ pub struct Edel {
     /// `[outputs]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
+    /// The X11 display for X11 apps (`xwayland.rs`).
+    pub x11: Option<crate::xwayland::X11Display>,
     /// Where window frames go; one workspace until M5.2.
     workspace: Workspace<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
@@ -161,6 +163,7 @@ impl Edel {
             last_title_click: None,
             settings: Settings::default(),
             screens_changed: false,
+            x11: None,
             workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),
             state_file: StateFile::start(),

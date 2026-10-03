@@ -30,6 +30,9 @@
 #               system file's mode 1024x768), side by side in the state
 #               file, and the second turned off by
 #               edel system set outputs.Virtual-2.enabled=false
+#   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
+#               through xwayland-satellite and opens with our title bar,
+#               whose close button closes it
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -251,6 +254,32 @@ case_titlebar() {
 	echo "PASS: foot and the test clients have title bars in the token colours with their titles, two's close button closed it and one's bar moved it"
 }
 
+case_xwayland() {
+	# The compositor holds an X11 display, and nothing runs for it until an
+	# X11 app connects (M4.7); xclock is one that draws no bar of its own,
+	# so it gets ours, through xwayland-satellite.
+	value x11 | grep -q 'X11 apps on :[0-9]' || fail "the compositor holds no X11 display: \"$(value x11)\""
+	[ "$(value x11_processes)" = 0 ] ||
+		fail "$(value x11_processes) X11 processes ran before any X11 app did"
+	guest xclock
+	wait_for 'DESKTOP-TEST: windows [0-9]+ .*xclock@' || fail "xclock did not open: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: windows .*xclock@\([0-9]*\),\([0-9]*\),\([0-9]*\)x.*/\1 \2 \3/p' | tail -n 1)
+	read -r x y w <<-EOF
+		$place
+	EOF
+	# Its bar's left end, in the focused colour: it has the keyboard.
+	focused=$(token title_bar_focused)
+	shot xwayland $((x + 5)) $((y - 24)) "$focused" >/dev/null ||
+		fail "xclock at $x,$y has no title bar in #$focused at $((x + 5)),$((y - 24))"
+	wait_for 'DESKTOP-TEST: x11_rss_mib [0-9]' ||
+		fail "the test service did not say what XWayland and satellite use"
+	# Its close button, the bar's rightmost 28 px.
+	python3 ci/qmp.py click $((x + w - 13)) $((y - 14))
+	wait_for 'edel-compositor: unmapped window xclock' ||
+		fail "clicking xclock's close button at $((x + w - 13)),$((y - 14)) did not close it"
+	echo "PASS: no X11 process ran until xclock connected, then XWayland and xwayland-satellite ($(value x11_rss_mib) MiB) showed it at $x,$y with a title bar in the focused colour, and its close button closed it"
+}
+
 case_tiling() {
 	# Through the system file, as Settings and people will: the compositor
 	# follows it and re-lays the windows out at once. foot is the master on
@@ -343,12 +372,12 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor scale
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland scale
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | outputs | pointer | scale | tiling | titlebar) ;;
+	console | compositor | floating | outputs | pointer | scale | tiling | titlebar | xwayland) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, scale, tiling and titlebar"
+		echo "unknown case $c; the cases are console, compositor, floating, outputs, pointer, scale, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac

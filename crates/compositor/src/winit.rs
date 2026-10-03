@@ -43,6 +43,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let handle = event_loop.handle();
 
     let name = crate::state::listen(&handle, display)?;
+    crate::xwayland::listen(&handle, &mut state, &name);
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
