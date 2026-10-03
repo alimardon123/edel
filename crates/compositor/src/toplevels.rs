@@ -1,0 +1,294 @@
+//! wlr-foreign-toplevel-management (roadmap M5.2d): the windows as panels
+//! and docks see them, shell-ui's window list first. Each window, in the
+//! order the client first heard of it, with its title, app id, the screens it is on
+//! and whether it is focused or maximized; and requests to activate it
+//! (showing its workspace first), maximize it and close it. A window on a
+//! hidden workspace is on no screen, which is how a list of one
+//! workspace's windows leaves it out. `sync` runs whenever the state file
+//! is written and when the focus moves, and sends each client only what
+//! changed, then `done`. Minimize joins with the window list that brings
+//! a minimized window back.
+
+use smithay::desktop::Window;
+use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::{
+    self, ZwlrForeignToplevelHandleV1,
+};
+use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_manager_v1::{
+    self, ZwlrForeignToplevelManagerV1,
+};
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
+use smithay::reexports::wayland_server::{
+    Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::xdg::XdgToplevelSurfaceData;
+
+use crate::state::Edel;
+
+/// The protocol's states, as its enum numbers them.
+const MAXIMIZED: u32 = 0;
+const ACTIVATED: u32 = 2;
+
+/// Every client's manager and the handles it was given.
+#[derive(Default)]
+pub struct Toplevels {
+    managers: Vec<ZwlrForeignToplevelManagerV1>,
+    handles: Vec<Entry>,
+}
+
+/// One window as one manager was told of it.
+struct Entry {
+    window: Window,
+    handle: ZwlrForeignToplevelHandleV1,
+    sent: Seen,
+}
+
+/// What a client was last told of a window.
+#[derive(Default, Clone, PartialEq)]
+struct Seen {
+    title: String,
+    app_id: String,
+    outputs: Vec<WlOutput>,
+    states: Vec<u32>,
+}
+
+/// Offers `zwlr_foreign_toplevel_manager_v1` to every client.
+pub fn create_global(display: &DisplayHandle) {
+    display.create_global::<Edel, ZwlrForeignToplevelManagerV1, ()>(3, ());
+}
+
+impl Edel {
+    /// Every window the lists show, in the order it first showed: those
+    /// on screen, then those on hidden workspaces.
+    fn listed(&self) -> Vec<Window> {
+        self.space
+            .elements()
+            .chain(self.desks.hidden().map(|(_, window, _)| window))
+            .cloned()
+            .collect()
+    }
+
+    /// What `window` is now, as `client` would be told.
+    fn seen(&self, window: &Window, client: &Client) -> Seen {
+        let (title, app_id) = window
+            .toplevel()
+            .and_then(|t| {
+                with_states(t.wl_surface(), |states| {
+                    let data = states
+                        .data_map
+                        .get::<XdgToplevelSurfaceData>()?
+                        .lock()
+                        .ok()?;
+                    Some((data.title.clone(), data.app_id.clone()))
+                })
+            })
+            .unwrap_or_default();
+        // From the geometry, not the space's own list, which follows only
+        // when the screens are next drawn.
+        let place = self.space.element_geometry(window);
+        let outputs = self
+            .space
+            .outputs()
+            .filter(|output| {
+                let screen = self.space.output_geometry(output);
+                matches!((place, screen), (Some(p), Some(s)) if p.overlaps(s))
+            })
+            .flat_map(|output| output.client_outputs(client))
+            .collect();
+        let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
+        let mut states = Vec::new();
+        if self.is_maximized(window) {
+            states.push(MAXIMIZED);
+        }
+        if window
+            .toplevel()
+            .is_some_and(|t| focused.as_ref() == Some(t.wl_surface()))
+        {
+            states.push(ACTIVATED);
+        }
+        Seen {
+            title: title.unwrap_or_default(),
+            app_id: app_id.unwrap_or_default(),
+            outputs,
+            states,
+        }
+    }
+
+    /// Tells every client what changed about the windows since it was
+    /// last told: new windows get a handle, closed ones `closed`.
+    pub fn sync_toplevels(&self) {
+        let Ok(mut toplevels) = self.toplevels.try_borrow_mut() else {
+            return;
+        };
+        let windows = self.listed();
+        toplevels.managers.retain(|m| m.is_alive());
+        // Closed windows, or handles a client let go of.
+        toplevels.handles.retain(|entry| {
+            let keep = entry.handle.is_alive() && windows.contains(&entry.window);
+            if !keep && entry.handle.is_alive() {
+                entry.handle.closed();
+            }
+            keep
+        });
+        let managers = toplevels.managers.clone();
+        for manager in &managers {
+            let Some(client) = manager.client() else {
+                continue;
+            };
+            for window in &windows {
+                let known = toplevels
+                    .handles
+                    .iter()
+                    .any(|e| &e.window == window && e.handle.client().as_ref() == Some(&client));
+                if known {
+                    continue;
+                }
+                let Ok(handle) = client.create_resource::<ZwlrForeignToplevelHandleV1, (), Edel>(
+                    &self.display,
+                    manager.version(),
+                    (),
+                ) else {
+                    continue;
+                };
+                manager.toplevel(&handle);
+                toplevels.handles.push(Entry {
+                    window: window.clone(),
+                    handle,
+                    sent: Seen::default(),
+                });
+            }
+        }
+        for entry in &mut toplevels.handles {
+            let Some(client) = entry.handle.client() else {
+                continue;
+            };
+            let now = self.seen(&entry.window, &client);
+            if now == entry.sent {
+                continue;
+            }
+            if now.title != entry.sent.title {
+                entry.handle.title(now.title.clone());
+            }
+            if now.app_id != entry.sent.app_id {
+                entry.handle.app_id(now.app_id.clone());
+            }
+            for output in &now.outputs {
+                if !entry.sent.outputs.contains(output) {
+                    entry.handle.output_enter(output);
+                }
+            }
+            for output in &entry.sent.outputs {
+                if !now.outputs.contains(output) && output.is_alive() {
+                    entry.handle.output_leave(output);
+                }
+            }
+            if now.states != entry.sent.states {
+                let bytes = now.states.iter().flat_map(|s| s.to_ne_bytes()).collect();
+                entry.handle.state(bytes);
+            }
+            entry.handle.done();
+            entry.sent = now;
+        }
+    }
+
+    /// The window a handle stands for.
+    fn window_of_handle(&self, handle: &ZwlrForeignToplevelHandleV1) -> Option<Window> {
+        self.toplevels
+            .borrow()
+            .handles
+            .iter()
+            .find(|e| &e.handle == handle)
+            .map(|e| e.window.clone())
+    }
+}
+
+impl GlobalDispatch<ZwlrForeignToplevelManagerV1, ()> for Edel {
+    fn bind(
+        state: &mut Edel,
+        _: &DisplayHandle,
+        _: &Client,
+        resource: New<ZwlrForeignToplevelManagerV1>,
+        _: &(),
+        data_init: &mut DataInit<'_, Edel>,
+    ) {
+        let manager = data_init.init(resource, ());
+        state.toplevels.borrow_mut().managers.push(manager);
+        state.sync_toplevels();
+    }
+}
+
+impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for Edel {
+    fn request(
+        state: &mut Edel,
+        _: &Client,
+        resource: &ZwlrForeignToplevelManagerV1,
+        request: zwlr_foreign_toplevel_manager_v1::Request,
+        _: &(),
+        _: &DisplayHandle,
+        _: &mut DataInit<'_, Edel>,
+    ) {
+        if let zwlr_foreign_toplevel_manager_v1::Request::Stop = request {
+            state
+                .toplevels
+                .borrow_mut()
+                .managers
+                .retain(|m| m != resource);
+            resource.finished();
+        }
+    }
+}
+
+impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Edel {
+    fn request(
+        state: &mut Edel,
+        _: &Client,
+        resource: &ZwlrForeignToplevelHandleV1,
+        request: zwlr_foreign_toplevel_handle_v1::Request,
+        _: &(),
+        _: &DisplayHandle,
+        _: &mut DataInit<'_, Edel>,
+    ) {
+        let Some(window) = state.window_of_handle(resource) else {
+            return;
+        };
+        let shown = state.space.element_geometry(&window).is_some();
+        match request {
+            // Its workspace first, then the window, as a click in a
+            // window list means.
+            zwlr_foreign_toplevel_handle_v1::Request::Activate { .. } => {
+                if let Some(desk) = state.desks.hidden_on(&window) {
+                    state.switch_workspace(desk);
+                }
+                if state.space.element_geometry(&window).is_some() {
+                    state.focus(&window);
+                    state.state_changed();
+                }
+            }
+            zwlr_foreign_toplevel_handle_v1::Request::Close => state.close(&window),
+            zwlr_foreign_toplevel_handle_v1::Request::SetMaximized if shown => {
+                state.maximize(&window);
+            }
+            zwlr_foreign_toplevel_handle_v1::Request::UnsetMaximized if shown => {
+                state.unmaximize(&window);
+            }
+            // Minimize joins with the window list (M5.2d); fullscreen and
+            // the rectangle a list draws a window's entry in mean nothing
+            // here yet.
+            _ => {}
+        }
+        state.sync_toplevels();
+    }
+
+    fn destroyed(
+        state: &mut Edel,
+        _: smithay::reexports::wayland_server::backend::ClientId,
+        resource: &ZwlrForeignToplevelHandleV1,
+        _: &(),
+    ) {
+        state
+            .toplevels
+            .borrow_mut()
+            .handles
+            .retain(|e| &e.handle != resource);
+    }
+}

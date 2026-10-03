@@ -121,6 +121,9 @@ pub struct Edel {
     pub desks: Desks<Window>,
     /// Clients that follow the workspaces (`extworkspace.rs`, M5.2b).
     pub ext_workspaces: crate::extworkspace::Managers,
+    /// Clients that follow the windows (`toplevels.rs`, M5.2d); a cell, as
+    /// they hear of changes wherever the state file is written.
+    pub toplevels: std::cell::RefCell<crate::toplevels::Toplevels>,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -148,6 +151,7 @@ impl Edel {
         seat.add_keyboard(Default::default(), 600, 25)?;
         seat.add_pointer();
         crate::extworkspace::create_global(&display);
+        crate::toplevels::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
             // Minimize waits for the window list that brings a window back
@@ -203,6 +207,7 @@ impl Edel {
             bindings: crate::shortcuts::bind(&Default::default()).0,
             desks: Desks::new(Settings::default().workspaces(), tokens.gap),
             ext_workspaces: Default::default(),
+            toplevels: Default::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -219,6 +224,7 @@ impl Edel {
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
         self.dirty = true;
+        self.sync_toplevels();
     }
 
     /// `window` was put at `place` by a person, or back from maximized:
@@ -409,6 +415,7 @@ impl Edel {
             return;
         }
         self.state_file.send(self.state_toml());
+        self.sync_toplevels();
     }
 
     /// Outputs and windows, bottom of the stack first, as TOML: the shown
@@ -817,6 +824,7 @@ impl OutputHandler for Edel {
         _wl_output: smithay::reexports::wayland_server::protocol::wl_output::WlOutput,
     ) {
         self.announce_workspaces();
+        self.sync_toplevels();
     }
 }
 
