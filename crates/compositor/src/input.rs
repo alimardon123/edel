@@ -122,8 +122,8 @@ impl Edel {
             }
             InputEvent::PointerMotion { event } => {
                 let pointer = self.seat.get_pointer()?;
-                let area = self.output_area()?;
-                let location = clamp(pointer.current_location() + event.delta(), area);
+                let from = pointer.current_location();
+                let location = self.on_screens(from, from + event.delta())?;
                 let focus = self.pointer_over(location);
                 pointer.motion(
                     self,
@@ -315,11 +315,13 @@ impl Edel {
     /// After the screen shrank or rescaled: the pointer moves just enough
     /// to be on it again, so its cursor never goes out of sight.
     pub fn keep_pointer_on_screen(&mut self) {
-        let (Some(pointer), Some(area)) = (self.seat.get_pointer(), self.output_area()) else {
+        let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
         let at = pointer.current_location();
-        let kept = clamp(at, area);
+        let Some(kept) = self.on_screens(at, at) else {
+            return;
+        };
         if kept != at {
             self.move_pointer(kept, SERIAL_COUNTER.next_serial(), 0);
         }
@@ -470,7 +472,31 @@ impl Edel {
         }
     }
 
-    /// The first output's area in the layout.
+    /// `to` if it is on a screen, else the nearest point to it on the
+    /// screen `from` is on (else the first): the pointer crosses where
+    /// screens touch and stops at the outer edges.
+    fn on_screens(
+        &self,
+        from: Point<f64, Logical>,
+        to: Point<f64, Logical>,
+    ) -> Option<Point<f64, Logical>> {
+        let screens: Vec<Rectangle<i32, Logical>> = self
+            .space
+            .outputs()
+            .filter_map(|o| self.space.output_geometry(o))
+            .collect();
+        if screens.iter().any(|s| s.to_f64().contains(to)) {
+            return Some(to);
+        }
+        let home = screens
+            .iter()
+            .find(|s| s.to_f64().contains(from))
+            .or(screens.first())?;
+        Some(clamp(to, *home))
+    }
+
+    /// The first output's area in the layout: where windows open, and what
+    /// absolute pointers such as tablets map to.
     pub fn output_area(&self) -> Option<Rectangle<i32, Logical>> {
         let output = self.space.outputs().next()?;
         self.space.output_geometry(output)

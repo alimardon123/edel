@@ -26,9 +26,22 @@ pub struct Settings {
     pub tiling: bool,
     /// `shell.title_bars`: absent means always.
     pub title_bars: TitleBars,
-    /// `outputs.NAME.scale`, by output name; an output without one gets
-    /// [`crate::layout::auto_scale`].
-    pub scales: BTreeMap<String, f64>,
+    /// `[outputs.NAME]`, by output name.
+    pub outputs: BTreeMap<String, OutputSettings>,
+}
+
+/// One screen's keys; each absent one means the screen decides.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OutputSettings {
+    /// Else [`crate::layout::auto_scale`].
+    pub scale: Option<f64>,
+    /// Its top left in the layout, logical; else to the right of the
+    /// screens before it.
+    pub position: Option<(i32, i32)>,
+    /// `WIDTHxHEIGHT` or `WIDTHxHEIGHT@HZ`; else its preferred mode.
+    pub mode: Option<String>,
+    /// Off leaves the screen dark; absent or on uses it.
+    pub enabled: Option<bool>,
 }
 
 impl Settings {
@@ -45,8 +58,20 @@ impl Settings {
                 _ => {}
             }
             for (name, output) in &file.outputs {
+                let into = settings.outputs.entry(name.clone()).or_default();
                 if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
-                    settings.scales.insert(name.clone(), scale);
+                    into.scale = Some(scale);
+                }
+                if let Some([x, y]) = output.position {
+                    if let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) {
+                        into.position = Some((x, y));
+                    }
+                }
+                if output.mode.is_some() {
+                    into.mode.clone_from(&output.mode);
+                }
+                if output.enabled.is_some() {
+                    into.enabled = output.enabled;
                 }
             }
         }
@@ -156,10 +181,26 @@ mod tests {
         let machine =
             file("format = 1\n[outputs.eDP-1]\nscale = 1.5\n[outputs.HDMI-A-1]\nscale = 1\n");
         let person = file("format = 1\n[outputs.eDP-1]\nscale = 2\n[outputs.DP-1]\nscale = -1\n");
-        let scales = Settings::from_files(Some(&machine), Some(&person)).scales;
-        assert_eq!(scales.get("eDP-1"), Some(&2.0));
-        assert_eq!(scales.get("HDMI-A-1"), Some(&1.0));
-        assert_eq!(scales.get("DP-1"), None, "a scale below 0 is left out");
+        let outputs = Settings::from_files(Some(&machine), Some(&person)).outputs;
+        assert_eq!(outputs["eDP-1"].scale, Some(2.0));
+        assert_eq!(outputs["HDMI-A-1"].scale, Some(1.0));
+        assert_eq!(outputs["DP-1"].scale, None, "a scale below 0 is left out");
+    }
+
+    #[test]
+    fn a_screens_keys_merge_one_by_one() {
+        let machine =
+            file("format = 1\n[outputs.HDMI-A-1]\nposition = [1920, 0]\nmode = \"2560x1440@60\"\n");
+        let person = file("format = 1\n[outputs.HDMI-A-1]\nenabled = false\n");
+        let hdmi = &Settings::from_files(Some(&machine), Some(&person)).outputs["HDMI-A-1"];
+        assert_eq!(hdmi.position, Some((1920, 0)));
+        assert_eq!(hdmi.mode.as_deref(), Some("2560x1440@60"));
+        assert_eq!(
+            hdmi.enabled,
+            Some(false),
+            "the person's key added to the machine's"
+        );
+        assert_eq!(hdmi.scale, None);
     }
 
     #[test]

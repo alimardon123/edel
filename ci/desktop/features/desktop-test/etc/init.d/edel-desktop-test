@@ -49,6 +49,10 @@ report() {
 		return
 	fi
 	say "ready_seconds $ready"
+	# Each screen the GPU offers and whether one is plugged in (M4.6c).
+	for c in /sys/class/drm/card*-*/status; do
+		[ -e "$c" ] && say "connector $(basename "$(dirname "$c")") $(cat "$c")"
+	done
 	say "ready_line $(cat /run/edel/session/ready)"
 	socket=$(ls "$dir" | grep -E '^wayland-[0-9]+$' | head -n 1)
 	as_ci() {
@@ -70,6 +74,10 @@ report() {
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
+	# Every screen's first frame, not only the first screen's (M4.6c).
+	grep 'edel-compositor: output .* ready' /tmp/compositor.log | while IFS= read -r line; do
+		say "screen ${line#edel-compositor: }"
+	done
 	# Every protocol the compositor offers, as wayland-info lists them.
 	say "globals $(as_ci wayland-info 2>/dev/null | sed -n "s/.*interface: '\([^']*\)'.*/\1/p" | sort | tr '\n' ' ')"
 	# Window frames open centred, each 32 px down and right of an open
@@ -100,6 +108,7 @@ commands() {
 		'tiling on') edel system set shell.tiling=true ;;
 		'tiling off') edel system set shell.tiling=false ;;
 		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
+		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
 		*)
 			say "unknown command $command"
 			continue

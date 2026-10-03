@@ -119,10 +119,10 @@ pub const KEYS: &[Key] = &[
         "shell.form_factor",
         Kind::OneOf(&["desktop", "tablet", "phone"]),
     ),
-    later("outputs.*.position", Kind::Pair),
+    now("outputs.*.position", Kind::Pair),
     now("outputs.*.scale", Kind::Number),
-    later("outputs.*.mode", Kind::Text),
-    later("outputs.*.enabled", Kind::Flag),
+    now("outputs.*.mode", Kind::Text),
+    now("outputs.*.enabled", Kind::Flag),
     later("outputs.*.transform", Kind::WholeOf(&[0, 90, 180, 270])),
     later("appearance.wallpaper", Kind::Text),
     later(

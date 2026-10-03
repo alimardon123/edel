@@ -243,6 +243,53 @@ pub fn snap_scale(scale: f64) -> f64 {
     f64::from(scale_120(scale)) / 120.0
 }
 
+/// `outputs.NAME.mode` read: `1920x1080` or `1920x1080@60` (Hz, which
+/// may have decimals).
+pub fn parse_mode(text: &str) -> Option<(i32, i32, Option<f64>)> {
+    let (size, refresh) = match text.trim().split_once('@') {
+        Some((size, hz)) => (size, Some(hz.trim().parse::<f64>().ok()?)),
+        None => (text.trim(), None),
+    };
+    let (w, h) = size.split_once('x')?;
+    let (w, h) = (w.trim().parse().ok()?, h.trim().parse().ok()?);
+    (w > 0 && h > 0 && refresh.is_none_or(|r| r > 0.0)).then_some((w, h, refresh))
+}
+
+/// Which of a screen's `modes` (width, height, refresh in mHz) `wanted`
+/// names: its size at the refresh nearest the one asked for, or at the
+/// highest when none is asked for; none when the screen lacks the size.
+pub fn pick_mode(modes: &[(i32, i32, i32)], wanted: (i32, i32, Option<f64>)) -> Option<usize> {
+    let (w, h, hz) = wanted;
+    let same = modes
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.0 == w && m.1 == h);
+    match hz {
+        Some(hz) => same
+            .min_by_key(|(_, m)| (f64::from(m.2) - hz * 1000.0).abs() as i64)
+            .map(|(i, _)| i),
+        None => same.max_by_key(|(_, m)| m.2).map(|(i, _)| i),
+    }
+}
+
+/// A screen's logical size and the place the system file gives it.
+pub type ScreenPlace = (Size<i32, Logical>, Option<Point<i32, Logical>>);
+
+/// Where screens go: each at its `outputs.NAME.position` if it has one,
+/// else to the right of the screens before it, tops at 0, in the order
+/// given (the GPU's connector order).
+pub fn place_screens(screens: &[ScreenPlace]) -> Vec<Point<i32, Logical>> {
+    let mut right = 0;
+    screens
+        .iter()
+        .map(|(size, position)| {
+            let at = position.unwrap_or_else(|| Point::from((right, 0)));
+            right = right.max(at.x + size.w);
+            at
+        })
+        .collect()
+}
+
 /// One screen as the compositor lays it out. M4.6 adds its position,
 /// transform and whether it is on, from `[outputs.NAME]` in `system.toml`.
 #[derive(Debug, Clone, PartialEq)]
@@ -314,6 +361,61 @@ mod tests {
         assert_eq!(scale(1280, 800, 0, 0, false), 1.0);
         // Never above 3, even on a phone-sized 4K panel.
         assert_eq!(scale(3840, 2160, 110, 62, true), 3.0);
+    }
+
+    #[test]
+    fn modes_are_read_and_found_on_the_screen() {
+        assert_eq!(parse_mode("1920x1080"), Some((1920, 1080, None)));
+        assert_eq!(
+            parse_mode("2560x1440@59.95"),
+            Some((2560, 1440, Some(59.95)))
+        );
+        for bad in [
+            "1920",
+            "x1080",
+            "0x1080",
+            "1920x1080@",
+            "1920x1080@-60",
+            "big",
+        ] {
+            assert_eq!(parse_mode(bad), None, "{bad}");
+        }
+        let modes = [
+            (1920, 1080, 60000),
+            (1920, 1080, 144000),
+            (1280, 720, 60000),
+        ];
+        assert_eq!(
+            pick_mode(&modes, (1920, 1080, None)),
+            Some(1),
+            "the highest refresh"
+        );
+        assert_eq!(pick_mode(&modes, (1920, 1080, Some(59.94))), Some(0));
+        assert_eq!(pick_mode(&modes, (3840, 2160, None)), None);
+    }
+
+    #[test]
+    fn screens_go_left_to_right_unless_placed() {
+        let laptop = Size::from((1280, 800));
+        let monitor = Size::from((1920, 1080));
+        assert_eq!(
+            place_screens(&[(laptop, None), (monitor, None)]),
+            [Point::from((0, 0)), Point::from((1280, 0))]
+        );
+        // A monitor placed left of the laptop; the next unplaced one goes
+        // right of everything.
+        assert_eq!(
+            place_screens(&[
+                (laptop, Some(Point::from((1920, 0)))),
+                (monitor, Some(Point::from((0, 0)))),
+                (laptop, None),
+            ]),
+            [
+                Point::from((1920, 0)),
+                Point::from((0, 0)),
+                Point::from((3200, 0))
+            ]
+        );
     }
 
     #[test]
