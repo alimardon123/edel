@@ -1,19 +1,24 @@
-//! What a frame draws, for both backends (M4.4): the windows from the top
-//! down, each with its popups above it and its title bar and border round
-//! it. Bars and borders keep their ids between frames, so damage tracking
-//! redraws only what changed and an idle desktop draws nothing.
+//! What a frame draws, for both backends (M4.4): the cursor on top
+//! (M4.6b), then the windows from the top down, each with its popups above
+//! it and its title bar and border round it. Bars, borders and cursor
+//! images keep their ids between frames, so damage tracking redraws only
+//! what changed and an idle desktop draws nothing.
 
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+};
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::input::pointer::CursorImageStatus;
 use smithay::output::Output;
-use smithay::utils::{Point, Rectangle, Scale, Size};
+use smithay::utils::{Physical, Point, Rectangle, Scale, Size};
 
 use edel_compositor::frame::Look;
 
 use crate::decoration::{data, title};
+use crate::pointer::{SIZE, surface_hotspot};
 use crate::state::Edel;
 
 smithay::backend::renderer::element::render_elements! {
@@ -24,6 +29,63 @@ smithay::backend::renderer::element::render_elements! {
 }
 
 impl Edel {
+    /// The cursor at the pointer, if it is on this screen.
+    fn cursor_elements(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        screen: Point<i32, smithay::utils::Logical>,
+        scale: f64,
+    ) -> Vec<Element> {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return Vec::new();
+        };
+        let at = pointer.current_location() - screen.to_f64();
+        let kind = if self.cursors.software {
+            Kind::Unspecified
+        } else {
+            Kind::Cursor
+        };
+        if let Some(surface) = self.cursors.surface() {
+            let origin = (at - surface_hotspot(&surface).to_f64())
+                .to_physical(scale)
+                .to_i32_round();
+            return render_elements_from_surface_tree(
+                renderer,
+                &surface,
+                origin,
+                Scale::from(scale),
+                1.0,
+                kind,
+            )
+            .into_iter()
+            .map(Element::Surface)
+            .collect();
+        }
+        let CursorImageStatus::Named(icon) = self.cursors.status.clone() else {
+            return Vec::new();
+        };
+        let px = (f64::from(SIZE) * scale).round() as u32;
+        let image = self.cursors.image(icon.name(), px);
+        let origin = at.to_physical(scale).to_i32_round::<i32>() - image.hotspot;
+        // Drawn in the screen's own pixels, as title bars are.
+        let size = Size::<f64, Physical>::from((f64::from(image.width), f64::from(image.height)));
+        match MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            origin.to_f64(),
+            &image.buffer,
+            None,
+            Some(Rectangle::from_size((size.w, size.h).into())),
+            Some(size.to_logical(scale).to_i32_round()),
+            kind,
+        ) {
+            Ok(element) => vec![Element::Bar(element)],
+            Err(e) => {
+                eprintln!("edel-compositor: drawing the cursor failed: {e}");
+                Vec::new()
+            }
+        }
+    }
+
     /// Everything on `output`, front to back.
     pub fn elements(&mut self, renderer: &mut GlesRenderer, output: &Output) -> Vec<Element> {
         let Some(screen) = self.space.output_geometry(output) else {
@@ -32,7 +94,7 @@ impl Edel {
         let scale = output.current_scale().fractional_scale();
         let focused = self.focused_window();
         let windows: Vec<_> = self.space.elements().rev().cloned().collect();
-        let mut elements = Vec::new();
+        let mut elements = self.cursor_elements(renderer, screen.loc, scale);
         for window in windows {
             let Some(place) = self.space.element_geometry(&window) else {
                 continue;

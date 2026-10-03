@@ -5,21 +5,26 @@
 //! them; its edges resize it. Super with the left button moves any window,
 //! with the right button resizes it from the nearest corner, Super+Q
 //! closes the focused one and Super+T switches the workspace between
-//! floating and tiling (M4.5). Ctrl+Alt+F1 to F12 ask for a virtual terminal,
+//! floating and tiling (M4.5). Wheels and touchpads scroll the window
+//! under the pointer, and pens reach windows through `zwp_tablet_v2`
+//! (M4.6b). Ctrl+Alt+F1 to F12 ask for a virtual terminal,
 //! which only a real seat can switch to, so a person can always reach a
 //! text console.
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, ButtonState, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, PointerButtonEvent, PointerMotionEvent,
+    AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
+    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::desktop::{Window, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, xkb};
 use smithay::input::pointer::{
-    ButtonEvent, Focus, GrabStartData, MotionEvent, RelativeMotionEvent,
+    AxisFrame, ButtonEvent, Focus, GrabStartData, MotionEvent, RelativeMotionEvent,
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
+use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use edel_compositor::frame::{self, Button, Hit};
 
@@ -184,9 +189,158 @@ impl Edel {
                 );
                 pointer.frame(self);
             }
+            InputEvent::PointerAxis { event } => self.scroll::<B>(event),
+            InputEvent::DeviceAdded { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    let tablets = self.seat.tablet_seat();
+                    tablets.add_tablet::<Edel>(&self.display, &TabletDescriptor::from(&device));
+                }
+            }
+            InputEvent::DeviceRemoved { device } => {
+                if device.has_capability(DeviceCapability::TabletTool) {
+                    let tablets = self.seat.tablet_seat();
+                    tablets.remove_tablet(&TabletDescriptor::from(&device));
+                    if tablets.count_tablets() == 0 {
+                        tablets.clear_tools();
+                    }
+                }
+            }
+            InputEvent::TabletToolAxis { event } => {
+                let area = self.output_area()?;
+                let at = event.position_transformed(area.size) + area.loc.to_f64();
+                let focus = self.pointer_over(at);
+                let tablets = self.seat.tablet_seat();
+                let tablet = tablets.get_tablet(&TabletDescriptor::from(&event.device()));
+                let tool = tablets.get_tool(&event.tool());
+                if let (Some(tablet), Some(tool)) = (tablet, tool) {
+                    if event.pressure_has_changed() {
+                        tool.pressure(event.pressure());
+                    }
+                    if event.distance_has_changed() {
+                        tool.distance(event.distance());
+                    }
+                    if event.tilt_has_changed() {
+                        tool.tilt(event.tilt());
+                    }
+                    if event.slider_has_changed() {
+                        tool.slider_position(event.slider_position());
+                    }
+                    if event.rotation_has_changed() {
+                        tool.rotation(event.rotation());
+                    }
+                    if event.wheel_has_changed() {
+                        tool.wheel(event.wheel_delta(), event.wheel_delta_discrete());
+                    }
+                    tool.motion(at, focus, &tablet, serial, event.time_msec());
+                }
+                self.move_pointer(at, serial, event.time_msec());
+            }
+            InputEvent::TabletToolProximity { event } => {
+                let area = self.output_area()?;
+                let at = event.position_transformed(area.size) + area.loc.to_f64();
+                let tablets = self.seat.tablet_seat();
+                let display = self.display.clone();
+                let tool = tablets.add_tool::<Edel>(self, &display, &event.tool());
+                let tablet = tablets.get_tablet(&TabletDescriptor::from(&event.device()));
+                match (event.state(), tablet) {
+                    (ProximityState::In, Some(tablet)) => {
+                        if let Some(focus) = self.pointer_over(at) {
+                            tool.proximity_in(at, focus, &tablet, serial, event.time_msec());
+                        }
+                    }
+                    (ProximityState::Out, _) => tool.proximity_out(event.time_msec()),
+                    _ => {}
+                }
+                self.move_pointer(at, serial, event.time_msec());
+            }
+            InputEvent::TabletToolTip { event } => {
+                let tool = self.seat.tablet_seat().get_tool(&event.tool())?;
+                match event.tip_state() {
+                    TabletToolTipState::Down => {
+                        // A pen touching a window focuses it, as a click does.
+                        let at = self.seat.get_pointer()?.current_location();
+                        if let Some(window) = self.under(at).window().cloned() {
+                            self.focus(&window);
+                        }
+                        tool.tip_down(serial, event.time_msec());
+                    }
+                    TabletToolTipState::Up => tool.tip_up(event.time_msec()),
+                }
+            }
+            InputEvent::TabletToolButton { event } => {
+                let tool = self.seat.tablet_seat().get_tool(&event.tool())?;
+                tool.button(
+                    event.button(),
+                    event.button_state(),
+                    serial,
+                    event.time_msec(),
+                );
+            }
             _ => {}
         }
         None
+    }
+
+    /// A wheel turned or fingers slid on a touchpad: the window under the
+    /// pointer scrolls, by wheel clicks where the device counts them.
+    fn scroll<B: InputBackend>(&mut self, event: B::PointerAxisEvent) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let source = event.source();
+        let mut frame = AxisFrame::new(event.time_msec()).source(source);
+        for axis in [Axis::Horizontal, Axis::Vertical] {
+            let v120 = event.amount_v120(axis);
+            // A wheel click is 15 units of scrolling where only clicks come.
+            let amount = event
+                .amount(axis)
+                .or_else(|| v120.map(|v| v * 15.0 / 120.0))
+                .unwrap_or(0.0);
+            if amount != 0.0 {
+                frame = frame
+                    .relative_direction(axis, event.relative_direction(axis))
+                    .value(axis, amount);
+                if let Some(v120) = v120 {
+                    frame = frame.v120(axis, v120 as i32);
+                }
+            } else if source == AxisSource::Finger && event.amount(axis) == Some(0.0) {
+                // Fingers lifted: kinetic scrolling may start now.
+                frame = frame.stop(axis);
+            }
+        }
+        pointer.axis(self, frame);
+        pointer.frame(self);
+    }
+
+    /// After the screen shrank or rescaled: the pointer moves just enough
+    /// to be on it again, so its cursor never goes out of sight.
+    pub fn keep_pointer_on_screen(&mut self) {
+        let (Some(pointer), Some(area)) = (self.seat.get_pointer(), self.output_area()) else {
+            return;
+        };
+        let at = pointer.current_location();
+        let kept = clamp(at, area);
+        if kept != at {
+            self.move_pointer(kept, SERIAL_COUNTER.next_serial(), 0);
+        }
+    }
+
+    /// Moves the pointer to `at`, as a pen does on its way.
+    fn move_pointer(&mut self, at: Point<f64, Logical>, serial: Serial, time: u32) {
+        let focus = self.pointer_over(at);
+        if let Some(pointer) = self.seat.get_pointer() {
+            pointer.motion(
+                self,
+                focus,
+                &MotionEvent {
+                    location: at,
+                    serial,
+                    time,
+                },
+            );
+            pointer.frame(self);
+        }
+        self.dirty = true;
     }
 
     /// What is at `point`: the windows from the top, each window's own

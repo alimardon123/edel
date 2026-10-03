@@ -21,6 +21,10 @@
 #   tiling      edel system set shell.tiling=true, sent to the VM, tiles
 #               foot and one side by side with their bars; Super+T puts
 #               them back where they floated, overlapping
+#   pointer     the cursor where the pointer is (drawn into the frame in
+#               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
+#               tablet, cursor shape, fractional scale and viewporter
+#               protocols
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -132,8 +136,9 @@ case_console() {
 	# window through libinput and the seat, and the window closes.
 	python3 ci/qmp.py click "$foot_x" "$foot_y"
 	python3 ci/qmp.py type 'exit\n'
-	shot typed "$foot_x" "$foot_y" "$background" >/dev/null ||
-		fail "typing exit did not close foot; $foot_x,$foot_y is not the background #$background"
+	# Up and left of the click, where the cursor does not reach.
+	shot typed $((foot_x - 8)) $((foot_y - 8)) "$background" >/dev/null ||
+		fail "typing exit did not close foot; $((foot_x - 8)),$((foot_y - 8)) is not the background #$background"
 	echo "PASS: the desktop image booted to the login prompt, logged ci in to the compositor with /run/user/UID at 0700, showed foot and closed it when exit was typed (${waited}s)"
 }
 
@@ -279,6 +284,22 @@ case_tiling() {
 	echo "PASS: edel system set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
 
+case_pointer() {
+	globals=$(value globals)
+	for protocol in zwp_tablet_manager_v2 wp_cursor_shape_manager_v1 wp_fractional_scale_manager_v1 wp_viewporter zxdg_decoration_manager_v1; do
+		case " $globals " in
+		*" $protocol "*) ;;
+		*) fail "the compositor does not offer $protocol; wayland-info listed: $globals" ;;
+		esac
+	done
+	# The pointer's tip at 100,700, on the background: the arrow's black
+	# body below and right of it, nothing left of it.
+	python3 ci/qmp.py move 100 700
+	shot pointer 102 709 000000 >/dev/null || fail "no cursor at the pointer: 102,709 is not black"
+	shot pointer 97 700 "$background" >/dev/null || fail "97,700, left of the cursor, is not the background"
+	echo "PASS: the cursor is where the pointer is, and the compositor offers tablets, cursor shapes, fractional scale and viewporter"
+}
+
 case_scale() {
 	guest 'scale 2'
 	wait_for 'DESKTOP-TEST: ran scale 2: 0' ||
@@ -298,12 +319,12 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console compositor scale
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer compositor scale
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | scale | tiling | titlebar) ;;
+	console | compositor | floating | pointer | scale | tiling | titlebar) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating, scale, tiling and titlebar"
+		echo "unknown case $c; the cases are console, compositor, floating, pointer, scale, tiling and titlebar"
 		exit 1
 		;;
 	esac

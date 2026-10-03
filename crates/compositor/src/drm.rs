@@ -23,6 +23,7 @@ use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
+use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::element::default_primary_scanout_output_compare;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -181,6 +182,9 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
         .insert_source(
             LibinputInputBackend::new(libinput.clone()),
             move |event, _, state: &mut Edel| {
+                if let InputEvent::DeviceAdded { device } = &event {
+                    configure(device.clone());
+                }
                 if let Some(vt) = state.input(event) {
                     if let Err(e) = switcher.change_vt(vt) {
                         eprintln!("edel-compositor: switching to terminal {vt} failed: {e}");
@@ -386,6 +390,19 @@ fn render(gpu: &mut Gpu, state: &mut Edel) {
             Some(Duration::ZERO),
             surface_primary_scanout_output,
         );
+    }
+    state.cursor_frame(&gpu.output, now);
+}
+
+/// A new input device's options (M4.6b): tapping a touchpad clicks and
+/// typing pauses it, as most laptops' owners expect; presets change them
+/// from M5.4.
+fn configure(mut device: smithay::reexports::input::Device) {
+    if device.config_tap_finger_count() > 0 {
+        let _ = device.config_tap_set_enabled(true);
+    }
+    if device.config_dwt_is_available() {
+        let _ = device.config_dwt_set_enabled(true);
     }
 }
 
