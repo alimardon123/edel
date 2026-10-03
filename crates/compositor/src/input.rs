@@ -3,8 +3,9 @@
 //! window under it. A window's title bar moves it when dragged and
 //! maximizes it on a double click; its buttons act when released over
 //! them; its edges resize it. Super with the left button moves any window,
-//! with the right button resizes it from the nearest corner, and Super+Q
-//! closes the focused one. Ctrl+Alt+F1 to F12 ask for a virtual terminal,
+//! with the right button resizes it from the nearest corner, Super+Q
+//! closes the focused one and Super+T switches the workspace between
+//! floating and tiling (M4.5). Ctrl+Alt+F1 to F12 ask for a virtual terminal,
 //! which only a real seat can switch to, so a person can always reach a
 //! text console.
 
@@ -38,6 +39,7 @@ const DOUBLE_CLICK: u32 = 400;
 enum Action {
     Terminal(i32),
     Close,
+    ToggleTiling,
 }
 
 /// What is under the pointer.
@@ -85,16 +87,19 @@ impl Edel {
                         let sym = keysym.modified_sym().raw();
                         let vts =
                             xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12;
-                        // Q where a Latin layout has it, whatever the layout.
-                        let q = keysym
-                            .raw_latin_sym_or_raw_current_sym()
-                            .is_some_and(|s| s.raw() == xkb::keysyms::KEY_q);
+                        // Q and T where a Latin layout has them, whatever
+                        // the layout.
+                        let latin = keysym.raw_latin_sym_or_raw_current_sym().map(|s| s.raw());
+                        let q = latin == Some(xkb::keysyms::KEY_q);
+                        let t = latin == Some(xkb::keysyms::KEY_t);
                         if pressed && vts.contains(&sym) {
                             FilterResult::Intercept(Action::Terminal(
                                 (sym - xkb::keysyms::KEY_XF86Switch_VT_1 + 1) as i32,
                             ))
                         } else if pressed && modifiers.logo && q {
                             FilterResult::Intercept(Action::Close)
+                        } else if pressed && modifiers.logo && t {
+                            FilterResult::Intercept(Action::ToggleTiling)
                         } else {
                             FilterResult::Forward
                         }
@@ -107,6 +112,7 @@ impl Edel {
                             self.close(&window);
                         }
                     }
+                    Action::ToggleTiling => self.toggle_tiling(),
                 }
             }
             InputEvent::PointerMotion { event } => {

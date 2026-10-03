@@ -70,6 +70,8 @@ pub struct Tokens {
     pub border: u32,
     /// Logical pixels per em.
     pub title_text_size: u32,
+    /// Between tiled windows and the screen's edges.
+    pub gap: u32,
 }
 
 impl Tokens {
@@ -134,6 +136,7 @@ impl Tokens {
                 "title_bar" => (&mut self.title_bar_height, 200),
                 "border" => (&mut self.border, 50),
                 "title_text" => (&mut self.title_text_size, 100),
+                "gap" => (&mut self.gap, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -165,7 +168,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "title_close_hover",
             ][..],
         ),
-        ("size", &["title_bar", "border", "title_text"][..]),
+        ("size", &["title_bar", "border", "title_text", "gap"][..]),
     ] {
         let found = table.get(section).and_then(Value::as_table);
         if let Some(key) = keys
@@ -190,6 +193,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         title_bar_height: 0,
         border: 0,
         title_text_size: 0,
+        gap: 0,
     };
     tokens.apply(&table, &mut notes);
     if !notes.is_empty() {

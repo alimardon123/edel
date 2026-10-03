@@ -1,9 +1,11 @@
 //! The compositor's state and the Wayland protocols it serves: surfaces,
 //! shared memory, xdg-shell windows, the seat (keyboard and pointer), the
 //! clipboard, outputs, presentation time and server-side decorations.
-//! Windows live in one smithay `Space`; the floating policy decides where
-//! each frame opens (M4.3), the window sits inside its frame (M4.4), and
-//! every change of what is on screen is written to the state file.
+//! Windows live in one smithay `Space`; the workspace's active policy,
+//! floating (M4.3) or tiling (M4.5), decides where each frame goes, the
+//! window sits inside its frame (M4.4), the settings from the system file
+//! apply live (M4.5), and every change of what is on screen is written to
+//! the state file.
 
 use std::sync::Arc;
 
@@ -16,7 +18,7 @@ use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode as TriggerMode, PostAction,
 };
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{
-    ResizeEdge, WmCapabilities,
+    ResizeEdge, State, WmCapabilities,
 };
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
@@ -46,8 +48,10 @@ use smithay::{
 };
 use toml::{Table, Value};
 
+use edel::system::MACHINE_FILE;
 use edel_compositor::frame::{Button, Text};
-use edel_compositor::layout::{Floating, WindowPolicy};
+use edel_compositor::layout::Workspace;
+use edel_compositor::settings::{self, Settings};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
 
@@ -78,8 +82,10 @@ pub struct Edel {
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
     pub last_title_click: Option<(Window, u32)>,
-    /// Where window frames go; one workspace until M4.5.
-    policy: Floating<Window>,
+    /// What the system file says (`watch.rs`).
+    pub settings: Settings,
+    /// Where window frames go; one workspace until M5.2.
+    workspace: Workspace<Window>,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -131,7 +137,8 @@ impl Edel {
             hover: None,
             pressed: None,
             last_title_click: None,
-            policy: Floating::default(),
+            settings: Settings::default(),
+            workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -150,14 +157,95 @@ impl Edel {
         self.dirty = true;
     }
 
-    /// `window` was put at `place`, by a person or by maximizing: the
-    /// policy decides where its frame stays, and the state file says so.
+    /// `window` was put at `place` by a person, or back from maximized:
+    /// the policy decides where its frame stays (floating keeps it, tiling
+    /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
         let insets = self.insets(window);
-        let kept = insets.window(self.policy.moved(window, insets.frame(place)));
-        self.space.map_element(window.clone(), kept.loc, true);
+        let frame = self.workspace.moved(window, insets.frame(place));
+        self.put(window, frame);
         self.dirty = true;
         self.state_changed();
+    }
+
+    /// Puts `window`'s frame at `frame`: the window hears its new size,
+    /// and whether it is tiled, so an app that draws its own frame leaves
+    /// out its shadow and rounded corners there.
+    fn put(&mut self, window: &Window, frame: Rectangle<i32, Logical>) {
+        let place = self.insets(window).window(frame);
+        let tiled = self.workspace.rearranges();
+        if let Some(toplevel) = window.toplevel() {
+            toplevel.with_pending_state(|state| {
+                state.size = Some(place.size);
+                for edge in [
+                    State::TiledLeft,
+                    State::TiledRight,
+                    State::TiledTop,
+                    State::TiledBottom,
+                ] {
+                    if tiled {
+                        state.states.set(edge);
+                    } else {
+                        state.states.unset(edge);
+                    }
+                }
+            });
+            if toplevel.is_initial_configure_sent() {
+                toplevel.send_pending_configure();
+            }
+        }
+        self.space.map_element(window.clone(), place.loc, false);
+    }
+
+    /// Every window where the active policy puts it; maximized windows
+    /// fill the screen again.
+    pub fn relayout(&mut self) {
+        if let Some(area) = self.output_area() {
+            for (window, frame) in self.workspace.arrange(area) {
+                if self.is_maximized(&window) {
+                    self.maximize(&window);
+                } else {
+                    self.put(&window, frame);
+                }
+            }
+        }
+        self.dirty = true;
+        self.state_changed();
+    }
+
+    /// Makes `name` the workspace's policy and lays the windows out again.
+    pub fn switch_policy(&mut self, name: &str) {
+        if self.workspace.switch(name) {
+            eprintln!("edel-compositor: windows now {name}");
+            self.relayout();
+        }
+    }
+
+    /// Super+T: the other policy, for this workspace only; the system file
+    /// is left as it is.
+    pub fn toggle_tiling(&mut self) {
+        let next = self.workspace.next();
+        self.switch_policy(next);
+    }
+
+    /// Reads both system files again and applies what changed.
+    pub fn reload_settings(&mut self) {
+        let person = settings::person_file();
+        let (new, notes) = settings::load(std::path::Path::new(MACHINE_FILE), person.as_deref());
+        for note in notes {
+            eprintln!("edel-compositor: {note}");
+        }
+        let old = std::mem::replace(&mut self.settings, new.clone());
+        if old.tiling != new.tiling {
+            self.switch_policy(new.policy());
+        } else if old.title_bars != new.title_bars {
+            self.relayout();
+        }
+    }
+
+    /// Whether the compositor draws title bars under the active policy.
+    pub fn bars_shown(&self) -> bool {
+        self.settings.bars_in(self.workspace.name())
     }
 
     /// `window` leaves the screen, closed or hidden: the policy forgets its
@@ -169,10 +257,13 @@ impl Edel {
         frame.restore = None;
         frame.shape = None;
         drop(frame);
-        self.policy.close(window);
+        self.workspace.close(window);
         self.space.unmap_elem(window);
         if let Some(top) = self.space.elements().last().cloned() {
             self.focus(&top);
+        }
+        if self.workspace.rearranges() {
+            self.relayout();
         }
         self.dirty = true;
         self.state_changed();
@@ -189,25 +280,15 @@ impl Edel {
         if data(window).borrow_mut().shape.replace(shape) == Some(shape) {
             return;
         }
-        self.policy.moved(window, self.insets(window).frame(place));
+        self.workspace
+            .moved(window, self.insets(window).frame(place));
         self.state_changed();
     }
 
     /// The outputs changed: the policy fits every frame to the new area,
     /// and maximized windows fill it.
     pub fn outputs_changed(&mut self) {
-        if let Some(area) = self.output_area() {
-            for (window, frame) in self.policy.arrange(area) {
-                if self.is_maximized(&window) {
-                    self.maximize(&window);
-                } else {
-                    let place = self.insets(&window).window(frame);
-                    self.space.map_element(window, place.loc, false);
-                }
-            }
-        }
-        self.dirty = true;
-        self.state_changed();
+        self.relayout();
     }
 
     /// Sends the state file what is on screen now. Never during a drag:
@@ -223,7 +304,7 @@ impl Edel {
     fn state_toml(&self) -> String {
         let mut table = Table::new();
         table.insert("format".into(), Value::Integer(statefile::FORMAT));
-        table.insert("policy".into(), Value::String(self.policy.name().into()));
+        table.insert("policy".into(), Value::String(self.workspace.name().into()));
         let outputs = self
             .space
             .outputs()
@@ -262,7 +343,10 @@ impl Edel {
                 insert_rect(&mut t, place);
                 let is_focused = focused.as_ref() == Some(toplevel.wl_surface());
                 t.insert("focused".into(), Value::Boolean(is_focused));
-                t.insert("title_bar".into(), Value::Boolean(server_side(window)));
+                t.insert(
+                    "title_bar".into(),
+                    Value::Boolean(self.insets(window).top > 0),
+                );
                 t.insert(
                     "maximized".into(),
                     Value::Boolean(self.is_maximized(window)),
@@ -408,13 +492,13 @@ impl CompositorHandler for Edel {
         if drawn {
             let window = self.unplaced.remove(i);
             let insets = self.insets(&window);
-            let frame = self.policy.open(
+            let frame = self.workspace.open(
                 window.clone(),
                 insets.frame_size(window.geometry().size),
                 area,
             );
             let place = insets.window(frame);
-            self.space.map_element(window.clone(), place.loc, true);
+            self.put(&window, frame);
             data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
             eprintln!(
                 "edel-compositor: mapped window {} at {},{} {}x{}",
@@ -428,6 +512,9 @@ impl CompositorHandler for Edel {
             let maximize = std::mem::take(&mut data(&window).borrow_mut().maximize_when_placed);
             if maximize {
                 self.maximize(&window);
+            }
+            if self.workspace.rearranges() {
+                self.relayout();
             }
             self.state_changed();
         }

@@ -22,7 +22,7 @@ use crate::release::os_release_value;
 use crate::update::{Disk, Lock, run};
 
 /// The machine's system file, on the data partition.
-pub const SYSTEM_FILE: &str = "/data/edel/system.toml";
+pub const SYSTEM_FILE: &str = system::MACHINE_FILE;
 /// Developer mode is on while this file exists (ADR-007; M7.1 acts on it).
 const DEVELOPER_FLAG: &str = "/data/edel/developer";
 /// What this machine changed in `/etc`: a file here differs from the slot's.
@@ -595,7 +595,7 @@ pub fn diff(file: Option<&Path>) -> Result<bool> {
 /// Edits the machine's system file through `change`, or for a file in a
 /// newer format the `system.toml.v<N>` this release reads (ADR-008,
 /// writers). Never applies it.
-fn edit(what: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
+fn edit(what: &str, key: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
     let _lock = Lock::take("system", "edel system")?;
     let machine = Path::new(SYSTEM_FILE);
     let mut path = machine.to_path_buf();
@@ -626,8 +626,9 @@ fn edit(what: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
     fs::File::open(&new)?.sync_all()?;
     fs::rename(&new, &path).with_context(|| format!("replacing {}", path.display()))?;
     println!(
-        "edel system: {what} in {}; edel system apply applies it",
-        path.display()
+        "edel system: {what} in {}; {}",
+        path.display(),
+        who_applies(key)
     );
     if let Some(format) = newer {
         println!(
@@ -643,12 +644,26 @@ pub fn set(assignment: &str) -> Result<()> {
         .split_once('=')
         .context("write KEY=VALUE, such as network.hostname=lab-1")?;
     let (key, value) = (key.trim(), value.trim());
-    edit(&format!("set {key}"), |text| system::set(text, key, value))
+    edit(&format!("set {key}"), key, |text| {
+        system::set(text, key, value)
+    })
+}
+
+/// What makes a change to `key` take effect: the desktop follows the shell
+/// keys at once (M4.5); `edel system apply` applies the rest.
+fn who_applies(key: &str) -> &'static str {
+    if key.starts_with("shell.") {
+        "the desktop follows it at once"
+    } else {
+        "edel system apply applies it"
+    }
 }
 
 /// `edel system unset KEY`
 pub fn unset(key: &str) -> Result<()> {
-    edit(&format!("removed {key}"), |text| system::unset(text, key))
+    edit(&format!("removed {key}"), key, |text| {
+        system::unset(text, key)
+    })
 }
 
 /// Looks for a first system file: on a volume labelled EDEL-SEED, then on
@@ -1008,6 +1023,18 @@ mod tests {
         );
         assert!(!dir.join(".ssh/authorized_keys.edel-new").exists());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_desktop_follows_shell_keys_and_apply_the_rest() {
+        assert_eq!(
+            who_applies("shell.tiling"),
+            "the desktop follows it at once"
+        );
+        assert_eq!(
+            who_applies("network.hostname"),
+            "edel system apply applies it"
+        );
     }
 
     #[test]

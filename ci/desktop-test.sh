@@ -1,8 +1,9 @@
 #!/bin/sh
-# desktop-test.sh CASE... (roadmap M4.1 to M4.4): boots the CI desktop image
-# (ci/desktop/vm.toml) once, with a virtual GPU, keyboard and tablet and
-# a QMP socket for ci/qmp.py, waits for its test service's results on the
-# serial console, then runs each CASE against the running VM:
+# desktop-test.sh CASE... (roadmap M4.1 to M4.5): boots the CI desktop image
+# (ci/desktop/vm.toml) once, with a virtual GPU, keyboard and tablet, a
+# QMP socket for ci/qmp.py and a second serial port for commands to its
+# test service, waits for that service's results on the serial console,
+# then runs each CASE against the running VM:
 #
 #   console     the login prompt on serial, /run/user/UID made with mode
 #               0700 by pam_rundir for the autologin, foot's window on a
@@ -17,6 +18,9 @@
 #   titlebar    every window with a title bar in the token colours and its
 #               title on it; a click on two's close button closes it, and
 #               dragging one's bar moves it
+#   tiling      edel system set shell.tiling=true, sent to the VM, tiles
+#               foot and one side by side with their bars; Super+T puts
+#               them back where they floated, overlapping
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -27,7 +31,8 @@ set -eu
 dir=out/desktop-test
 log=out/desktop-test.log
 export QMP="$dir/qmp.sock"
-rm -f "$QMP" "$dir"/*.png
+commands="$dir/commands.sock"
+rm -f "$QMP" "$commands" "$dir"/*.png
 
 say() {
 	echo "DESKTOP-TEST: $*"
@@ -77,6 +82,19 @@ budget() {
 # token KEY: the colour KEY has in design/tokens.toml, as rrggbb.
 token() {
 	sed -n "s/^$1 = \"#\\([0-9a-f]\\{6\\}\\)\".*/\\1/p" design/tokens.toml
+}
+
+# guest COMMAND: sends one line to the test service, which runs the
+# commands it knows as root and prints "ran COMMAND: STATUS".
+guest() {
+	python3 -c 'import socket, sys, time
+s = socket.socket(socket.AF_UNIX)
+s.connect(sys.argv[1])
+s.sendall(sys.argv[2].encode() + b"\n")
+# QEMU drops what it has not passed to the serial port when the socket
+# closes, so the line gets a second to go through.
+time.sleep(1)
+s.close()' "$commands" "$1"
 }
 
 # wait_for PATTERN: waits up to 20 s for a serial line matching PATTERN.
@@ -220,12 +238,50 @@ case_titlebar() {
 	echo "PASS: foot and the test clients have title bars in the token colours with their titles, two's close button closed it and one's bar moved it"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar console compositor
+case_tiling() {
+	# Through the system file, as Settings and people will: the compositor
+	# follows it and re-lays the windows out at once. foot is the master on
+	# the left, one the stack on the right, 8 px apart and from the edges.
+	guest 'tiling on'
+	wait_for 'DESKTOP-TEST: ran tiling on: 0' ||
+		fail "edel system set shell.tiling=true did not run in the VM"
+	wait_for 'edel-compositor: windows now tiling' ||
+		fail "the compositor did not follow shell.tiling = true"
+	wait_for 'DESKTOP-TEST: windows 2 foot@9,36,[0-9]+x[0-9]+ one@645,36,626x755' ||
+		fail "foot and one are not tiled side by side: $(value windows)"
+	tiled=$(value windows)
+	python3 - "$tiled" <<-'EOF' || fail "the tiled windows overlap: $tiled"
+		import re, sys
+		frames = [(int(x) - 1, int(y) - 28, int(w) + 2, int(h) + 29)
+		          for x, y, w, h in re.findall(r"@(\d+),(\d+),(\d+)x(\d+)", sys.argv[1])]
+		(ax, ay, aw, ah), (bx, by, bw, bh) = frames
+		assert ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay, frames
+	EOF
+	# Each tile keeps its title bar: their left ends, as in titlebar.
+	bar=$(token title_bar)
+	focused=$(token title_bar_focused)
+	colour=$(shot tiling 14 12 "!$(token background)") ||
+		fail "foot's tile shows no title bar at 14,12"
+	[ "$colour" = "$bar" ] || [ "$colour" = "$focused" ] ||
+		fail "foot's tile's bar is #$colour at 14,12, not a title bar colour"
+	colour=$(shot tiling 650 12 "!$(token background)") ||
+		fail "one's tile shows no title bar at 650,12"
+	[ "$colour" = "$bar" ] || [ "$colour" = "$focused" ] ||
+		fail "one's tile's bar is #$colour at 650,12, not a title bar colour"
+	# Super+T: this workspace floats again, each window where it was.
+	python3 ci/qmp.py key meta_l-t
+	wait_for 'edel-compositor: windows now floating' || fail "Super+T did not switch back to floating"
+	wait_for 'DESKTOP-TEST: windows 2 foot@442,269,396x288 one@722,145,300x200' ||
+		fail "back in floating, foot and one are not where they floated: $(value windows)"
+	echo "PASS: edel system set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+}
+
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console compositor
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating | titlebar) ;;
+	console | compositor | floating | tiling | titlebar) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor, floating and titlebar"
+		echo "unknown case $c; the cases are console, compositor, floating, tiling and titlebar"
 		exit 1
 		;;
 	esac
@@ -235,6 +291,7 @@ keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300
 	-m 2048 -smp 4 -vga none -device virtio-vga \
 	-device virtio-keyboard-pci -device virtio-tablet-pci \
 	-qmp unix:"$QMP",server=on,wait=off \
+	-serial unix:"$commands",server=on,wait=off \
 	-drive if=none,id=disk0,format=raw,file="$dir/edel-desktop-x86_64.img" \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 grep 'DESKTOP-TEST' "$log" | tr -d '\r' || true

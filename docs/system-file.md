@@ -53,6 +53,8 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 
 ## `[shell]` and `[outputs.NAME]`
 
+The compositor follows these keys at once (M4.5): it reads the machine's file and the person's `~/.config/edel/system.toml`, where a key set wins over the machine's, and reads both again whenever either is written. `edel system apply` leaves them to it.
+
 | Key | Value | From |
 |---|---|---|
 | `shell.preset` | `classic`, `mac-like`, `windows-like`, `tiling`, `tablet` or `phone` | M5.4 |

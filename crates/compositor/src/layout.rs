@@ -1,10 +1,20 @@
 //! Outputs and window policies (ADR-002). Floating (M4.3) and dynamic
-//! tiling (M4.5) are two implementations of [`WindowPolicy`], switchable
-//! per workspace, with title bars in both; nothing outside this crate
-//! plugs into it (no extension API). The types here are plain data, so
-//! policies are tested without a display.
+//! tiling (M4.5, `tiling.rs`) are two implementations of [`WindowPolicy`],
+//! switchable per [`Workspace`], with title bars in both; nothing outside
+//! this crate plugs into it (no extension API). A policy is one module and
+//! one line in [`policies`]. The types here are plain data, so policies
+//! are tested without a display.
 
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
+
+use crate::tiling::Tiling;
+
+/// Every policy, the default first: what `shell.tiling` and Super+T choose
+/// between. Their names are what people see (ADR-008), never the
+/// algorithm's, so a later tiling algorithm keeps everyone's setting.
+pub fn policies<W: Clone + PartialEq + 'static>(gap: u32) -> Vec<Box<dyn WindowPolicy<W>>> {
+    vec![Box::new(Floating::default()), Box::new(Tiling::new(gap))]
+}
 
 /// Where windows go on one workspace.
 pub trait WindowPolicy<W> {
@@ -30,8 +40,89 @@ pub trait WindowPolicy<W> {
     fn moved(&mut self, window: &W, to: Rectangle<i32, Logical>) -> Rectangle<i32, Logical>;
 
     /// Every window's place, bottom of the stack first, after `area`
-    /// changed: an output added, removed, resized or rescaled.
+    /// changed: an output added, removed, resized or rescaled, or after
+    /// the workspace switched to this policy.
     fn arrange(&mut self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)>;
+
+    /// Whether opening or closing a window moves the others, so the
+    /// compositor arranges them all again.
+    fn rearranges(&self) -> bool {
+        false
+    }
+}
+
+/// One workspace: every policy follows its windows, and one of them, the
+/// active one, places them. Switching re-lays the windows out at once
+/// (ADR-002), and back in floating they are where they were.
+pub struct Workspace<W> {
+    policies: Vec<Box<dyn WindowPolicy<W>>>,
+    active: usize,
+}
+
+impl<W: Clone + PartialEq + 'static> Workspace<W> {
+    /// A floating workspace with every policy of [`policies`].
+    pub fn new(gap: u32) -> Workspace<W> {
+        Workspace {
+            policies: policies(gap),
+            active: 0,
+        }
+    }
+
+    /// The active policy's name.
+    pub fn name(&self) -> &'static str {
+        self.policies[self.active].name()
+    }
+
+    /// Makes the policy called `name` the active one; false if there is
+    /// none, or it already is.
+    pub fn switch(&mut self, name: &str) -> bool {
+        match self.policies.iter().position(|p| p.name() == name) {
+            Some(i) if i != self.active => {
+                self.active = i;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The next policy after the active one, for Super+T.
+    pub fn next(&self) -> &'static str {
+        self.policies[(self.active + 1) % self.policies.len()].name()
+    }
+
+    pub fn open(
+        &mut self,
+        window: W,
+        wanted: Size<i32, Logical>,
+        area: Rectangle<i32, Logical>,
+    ) -> Rectangle<i32, Logical> {
+        let mut place = Rectangle::default();
+        for (i, policy) in self.policies.iter_mut().enumerate() {
+            let at = policy.open(window.clone(), wanted, area);
+            if i == self.active {
+                place = at;
+            }
+        }
+        place
+    }
+
+    pub fn close(&mut self, window: &W) {
+        for policy in &mut self.policies {
+            policy.close(window);
+        }
+    }
+
+    pub fn moved(&mut self, window: &W, to: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
+        self.policies[self.active].moved(window, to)
+    }
+
+    pub fn arrange(&mut self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)> {
+        self.policies[self.active].arrange(area)
+    }
+
+    pub fn rearranges(&self) -> bool {
+        self.policies[self.active].rearranges()
+    }
 }
 
 /// How far each new window moves down and right when its centre would
@@ -276,6 +367,39 @@ mod tests {
             [(1, Rectangle::new((724, 568).into(), (300, 200).into()))]
         );
         assert_eq!(floating.name(), "floating");
+    }
+
+    #[test]
+    fn a_workspace_switches_policies_and_floating_keeps_its_places() {
+        let mut workspace = Workspace::new(8);
+        assert_eq!(workspace.name(), "floating");
+        assert_eq!(workspace.next(), "tiling");
+        let one = workspace.open(1, (300, 200).into(), screen());
+        workspace.open(2, (200, 150).into(), screen());
+        let dragged = Rectangle::new((10, 10).into(), (300, 200).into());
+        workspace.moved(&1, dragged);
+        assert!(workspace.switch("tiling"));
+        assert!(!workspace.switch("tiling"), "already tiling");
+        assert!(!workspace.switch("spiral"), "no such policy");
+        assert!(workspace.rearranges());
+        let tiled = workspace.arrange(screen());
+        assert_eq!(tiled.len(), 2);
+        assert!(!tiled[0].1.overlaps(tiled[1].1));
+        // Dragging in tiling puts the window back; floating never hears it.
+        assert_eq!(workspace.moved(&1, one), tiled[0].1);
+        assert!(workspace.switch("floating"));
+        let floating = workspace.arrange(screen());
+        assert_eq!(floating[0], (1, dragged));
+        assert_eq!(
+            floating[1],
+            (2, Rectangle::new((572, 357).into(), (200, 150).into()))
+        );
+        workspace.close(&1);
+        assert!(workspace.switch("tiling"));
+        assert_eq!(
+            workspace.arrange(screen()),
+            [(2, Rectangle::new((8, 8).into(), (1264, 784).into()))]
+        );
     }
 
     #[test]
