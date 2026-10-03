@@ -92,9 +92,18 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
 # The desktop test image (roadmap M4.1): the desktop image plus the test
-# feature in ci/desktop/features, which logs user ci in to sway at once
-# and measures it (ci/desktop-test.sh).
-build "$version" ci/desktop/vm.toml --no-compress --out out/desktop-test
+# feature in ci/desktop/features, which logs user ci in to the compositor
+# at once and measures it (ci/desktop-test.sh). It takes CI's first key
+# and a 30 s health timeout, and its own update image, signed, is the
+# update `desktop-test.sh rollback` installs and breaks (roadmap M4.8).
+build "$version" ci/desktop/vm.toml --health-timeout 30 --public-key out/keys/ci-1.pub \
+	--no-compress --out out/desktop-test
+update=out/desktop-test/update
+rm -rf "$update"
+mkdir -p "$update"
+ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
+./target/release/edel release make --version "$version.1" --channel ci "$update/edel-desktop-x86_64.ext4.gz"
+./target/release/edel release sign --key out/keys/ci-1.key "$update/release.toml"
 
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update
@@ -117,7 +126,7 @@ done
 # the checkout, so the host can boot, read and delete them without root.
 # The work directories stay root's: they hold the built root filesystems.
 owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/flatpak out/install-test out/keys out/release out/system-test; do
+for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/desktop-test/update out/flatpak out/install-test out/keys out/release out/system-test; do
 	chown "$owner" "$dir"
 	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
 done

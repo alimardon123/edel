@@ -176,7 +176,12 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     }));
     gpu.borrow_mut().scan(&mut state);
     if gpu.borrow().screens.is_empty() {
-        bail!("no connected screen");
+        // Healthy all the same (M4.8): with the screen unplugged or off,
+        // the desktop waits for one, as udev will say, rather than leave
+        // the boot guard restarting the machine for want of a frame.
+        let line = "no screen connected yet; waiting for one";
+        eprintln!("edel-compositor: {line}");
+        write_ready(line);
     }
 
     let vblank = Rc::clone(&gpu);
@@ -635,13 +640,16 @@ fn announce(output: &Output, first: bool) {
     let size: Size<i32, _> = output.current_mode().map(|m| m.size).unwrap_or_default();
     let line = format!("output {} {}x{} ready", output.name(), size.w, size.h);
     eprintln!("edel-compositor: {line}");
-    if first
-        && std::path::Path::new(READY)
-            .parent()
-            .is_some_and(|dir| dir.is_dir())
-    {
-        if let Err(e) = crate::statefile::replace(std::path::Path::new(READY), &format!("{line}\n"))
-        {
+    if first {
+        write_ready(&line);
+    }
+}
+
+/// Writes the health file, in an Edel OS session.
+fn write_ready(line: &str) {
+    let path = std::path::Path::new(READY);
+    if path.parent().is_some_and(|dir| dir.is_dir()) {
+        if let Err(e) = crate::statefile::replace(path, &format!("{line}\n")) {
             eprintln!("edel-compositor: writing {READY} failed: {e}");
         }
     }

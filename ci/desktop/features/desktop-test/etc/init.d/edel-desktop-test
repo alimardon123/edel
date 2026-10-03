@@ -119,6 +119,8 @@ commands() {
 			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' /tmp/compositor.log | tail -n 1) xclock" </dev/null &
 			(sleep 5 && say "x11_rss_mib $(x11_rss)") &
 			;;
+		# A broken desktop update (M4.8): it must roll back on its own.
+		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its
 		# greeter, our compositor, which writes a new ready line; then ci
 		# logs in through it with a password only this image sets.
@@ -221,7 +223,68 @@ shown() {
 	done
 }
 
+# break_update (M4.8): installs CI's update into slot B, puts a compositor
+# there that only fails, gives slot B its last try and restarts. Slot B
+# then never shows a frame, so the guard lets the watchdog restart the VM
+# and GRUB starts slot A again; the marker on /data, which both slots
+# share, makes the next boots say so instead of testing the desktop.
+break_update() {
+	edel update install http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
+		say "rollback: FAIL: the update did not install"
+		return 1
+	}
+	slot_b=$(edel update status | awk '$1 == "B:" { print $4 }')
+	mkdir -p /run/desktop-test/slot /run/desktop-test/esp
+	mount "$slot_b" /run/desktop-test/slot || return 1
+	printf '#!/bin/sh\necho "edel-compositor: broken on purpose by desktop-test rollback" >&2\nexit 1\n' \
+		>/run/desktop-test/slot/usr/bin/edel-compositor
+	umount /run/desktop-test/slot
+	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" /run/desktop-test/esp || return 1
+	# The same length, so GRUB's 1024-byte block stays whole.
+	sed -i 's/^B_TRY=0$/B_TRY=2/' /run/desktop-test/esp/EFI/edel/grubenv
+	grep -q '^B_TRY=2$' /run/desktop-test/esp/EFI/edel/grubenv || {
+		say "rollback: FAIL: slot B's last try was not set"
+		return 1
+	}
+	umount /run/desktop-test/esp
+	touch /data/desktop-test-rollback
+	sync
+	say "rollback: slot B has the update with a broken compositor; restarting"
+	(sleep 1 && reboot) &
+}
+
+# rolled_back: each boot after break_update says which slot runs; on slot
+# A, once the guard has confirmed it (after its compositor's first frame,
+# which is when slot B is switched off and the fallback recorded), whether
+# both happened.
+rolled_back() {
+	slots=$(edel update status)
+	echo "$slots" >/dev/console
+	if echo "$slots" | grep -q '^running: B'; then
+		say "rollback: slot B runs with a broken compositor; the guard should restart the VM within 30 s"
+		return
+	fi
+	i=0
+	while [ ! -e /run/edel/confirmed ] && [ "$i" -lt 900 ]; do
+		sleep 0.2
+		i=$((i + 1))
+	done
+	slots=$(edel update status)
+	echo "$slots" >/dev/console
+	if echo "$slots" | grep -q '^running: A' && echo "$slots" | grep -q '^B: ok=0' &&
+		grep -q '^from = "B"' /data/edel/last-fallback.toml 2>/dev/null; then
+		say "rollback: PASS: back on slot A, slot B switched off and the fallback recorded"
+	else
+		say "rollback: FAIL: not back on slot A with slot B off"
+		cat /data/edel/last-fallback.toml >/dev/console 2>&1
+	fi
+}
+
 start() {
+	if [ -e /data/desktop-test-rollback ]; then
+		rolled_back </dev/null >/dev/null 2>&1 &
+		return 0
+	fi
 	report </dev/null >/dev/null 2>&1 &
 	return 0
 }
