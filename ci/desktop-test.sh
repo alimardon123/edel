@@ -664,6 +664,18 @@ list_until() {
 	[ "${place#* }" $1 ] 2>/dev/null
 }
 
+# list_width N: the window list's width with N buttons on CI's 1280 px
+# panel, as shell-ui's windows widget lays them out: each button at most
+# 180 px and together at most 45% of the panel (576 px), 4 px at each end
+# and between them.
+list_width() {
+	[ "$1" -gt 0 ] || { echo 0; return; }
+	b=$(((576 - 8 - ($1 - 1) * 4) / $1))
+	[ "$b" -le 180 ] || b=180
+	[ "$b" -ge 32 ] || b=32
+	echo $((8 + $1 * b + ($1 - 1) * 4))
+}
+
 case_windows() {
 	# The panel's window list (M5.2h): a button for each window on the
 	# screen, sharing its width, 4 px at each end and between them.
@@ -672,17 +684,18 @@ case_windows() {
 	# the 40 px panel that starts at 760: row 791.
 	panel=$(token panel)
 	accent=$(token accent)
-	before=$(list_until '-ge 0') || fail "shell-ui did not say where its window list lies"
-	before=${before#* }
 	opened=$(count 'edel-compositor: mapped window away')
 	guest 'away window'
 	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open: $(value windows)"
 	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$' || fail "away is not on top in the state file: $(value windows)"
-	place=$(list_until "-gt $before") || fail "the window list is not wider than its $before px with away open: $place"
+	# The width is waited for, not compared with an earlier one: the
+	# panel may still be catching up with the case before.
+	n=$(value windows | cut -d' ' -f1)
+	place=$(list_until "-eq $(list_width "$n")") ||
+		fail "the window list is not $(list_width "$n") px wide with $n windows, away among them: $place"
 	read -r x w <<-EOF
 		$place
 	EOF
-	n=$(value windows | cut -d' ' -f1)
 	button=$(((w - 8 - (n - 1) * 4) / n))
 	cx=$((x + w - 4 - button / 2))
 	shot windows "$cx" 791 "$accent" >/dev/null || fail "away's button, the last of $n at $cx, has no accent line at row 791"
@@ -704,7 +717,8 @@ case_windows() {
 	shot windows 640 393 7744aa >/dev/null || fail "away is not drawn at 640,393 after it came back"
 	# Closed, its button goes.
 	guest 'away off'
-	place=$(list_until "-eq $before") || fail "the window list is not back to $before px after away closed: $place"
+	place=$(list_until "-eq $(list_width $((n - 1)))") ||
+		fail "the window list is not $(list_width $((n - 1))) px wide for $((n - 1)) windows after away closed: $place"
 	echo "PASS: away's opening added a button to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
 }
 
