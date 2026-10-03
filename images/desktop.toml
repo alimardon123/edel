@@ -1,14 +1,14 @@
-# Edel OS desktop image (roadmap M4.1): the laptop image plus graphics,
-# seats, the login screen, the interface font and a terminal. Until the
-# compositor exists (M4.2b), greetd's text greeter logs people in to a
-# shell, and sway is here only for CI's baseline; dropping it is deleting
-# its line. A bootable A/B disk like the laptop's, so its variant is vm.
+# Edel OS desktop image (roadmap M4.1, M4.2b): the laptop image plus
+# graphics, seats, the login screen, fonts, a terminal and our compositor.
+# greetd's text greeter logs people in and starts the compositor, until
+# the compositor greets people itself (M5.10). A bootable A/B disk like
+# the laptop's, so its variant is vm.
 format = 2
 name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "sway-baseline"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor"]
 off = ["ssh"]
 
 [alpine]

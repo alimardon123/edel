@@ -37,6 +37,11 @@ const SLOT_SEED: &str = "/usr/share/edel/system.toml";
 pub const DEFAULT_SHELL: &str = "/bin/sh";
 /// Members of this group are admins.
 const ADMIN_GROUP: &str = "admin";
+/// The group seatd lets use the screen and input (the `seat` feature,
+/// M4.1); only images with a seat have it.
+const SEAT_GROUP: &str = "seat";
+/// The account greetd runs the greeter as, which needs the seat too.
+const GREETER: &str = "greetd";
 /// The most of a user's `authorized_keys` apply and export read.
 const KEYS_MAX: u64 = 1 << 20;
 /// Writes `~/.ssh/authorized_keys` from standard input. It runs as the
@@ -174,6 +179,8 @@ enum Change {
         keys: Vec<String>,
     },
     Developer(bool),
+    /// May use the screen and input: a person in the file, or the greeter
+    Seat(String),
 }
 
 impl fmt::Display for Change {
@@ -194,6 +201,7 @@ impl fmt::Display for Change {
             Change::Developer(on) => {
                 write!(f, "system.developer: {}", if *on { "on" } else { "off" })
             }
+            Change::Seat(name) => write!(f, "group {SEAT_GROUP}: add {name}"),
         }
     }
 }
@@ -259,6 +267,8 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     }
     let all = accounts(&machine.passwd);
     let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
+    let seated = members(&machine.group, SEAT_GROUP);
+    let mut seat = Vec::new();
     for (name, user) in &file.users {
         let account = all.iter().find(|a| &a.name == name);
         // A shell the machine lacks would lock the user out: OpenSSH and
@@ -302,6 +312,7 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
                 shell,
             }),
         }
+        seat.push(name.clone());
         let admin = user.admin == Some(true);
         if admin && !admin_group {
             changes.push(Change::AdminGroup);
@@ -328,6 +339,18 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let developer = file.system.developer == Some(true);
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
+    }
+    // On a desktop (M4.2b), every person in the file and the greeter may
+    // use the screen and input; machines without a seat have no group.
+    if let Some(seated) = seated {
+        if all.iter().any(|a| a.name == GREETER) {
+            seat.push(GREETER.to_string());
+        }
+        for name in seat {
+            if !seated.contains(&name) {
+                changes.push(Change::Seat(name));
+            }
+        }
     }
     (changes, notes)
 }
@@ -451,6 +474,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             fs::write(flag, "")?;
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+        Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
     }
     Ok(())
 }
@@ -889,6 +913,28 @@ mod tests {
                 "system.developer: on",
             ]
         );
+    }
+
+    #[test]
+    fn people_and_the_greeter_join_the_seat_where_there_is_one() {
+        let file = system::read("format = 1\n[users.ci]\n[users.new]\n[users.sshd]\n")
+            .unwrap()
+            .file;
+        let mut desktop = machine();
+        desktop
+            .passwd
+            .push_str("greetd:x:101:102:greetd:/var/lib/greetd:/sbin/nologin\n");
+        desktop.group.push_str("seat:x:103:ci\n");
+        let (changes, _) = plan(&file, &desktop);
+        let seat: Vec<String> = changes
+            .iter()
+            .filter(|c| matches!(c, Change::Seat(_)))
+            .map(|c| c.to_string())
+            .collect();
+        assert_eq!(seat, ["group seat: add new", "group seat: add greetd"]);
+        // A server has no seat group, so nobody joins one.
+        let (changes, _) = plan(&file, &machine());
+        assert!(!changes.iter().any(|c| matches!(c, Change::Seat(_))));
     }
 
     /// A home in a temporary directory, owned by whoever runs the tests.

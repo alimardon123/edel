@@ -1,11 +1,12 @@
 //! `edel-compositor`: windows, floating and tiling, title bars, outputs and
-//! effects (ADR-002). Today it runs in a window of the desktop it is
-//! started from (the winit backend, for development); M4.2b adds the
-//! virtual GPU and real hardware.
+//! effects (ADR-002). It draws on the GPU through DRM (`drm.rs`), or, when
+//! started inside another desktop for development, in a window there
+//! (`winit.rs`).
 //!
 //!     edel-compositor           run until the window is closed
 //!     edel-compositor --bench   run for 5 s, then print the frame telemetry
 
+mod drm;
 mod state;
 mod winit;
 
@@ -23,7 +24,12 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match winit::run(load_tokens(), bench) {
+    // In a desktop session (development), a window there; else the GPU.
+    let nested = ["WAYLAND_DISPLAY", "DISPLAY"]
+        .iter()
+        .any(|v| std::env::var_os(v).is_some_and(|s| !s.is_empty()));
+    let run = if nested { winit::run } else { drm::run };
+    match run(load_tokens(), bench) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("edel-compositor: {e:#}");

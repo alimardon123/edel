@@ -1,12 +1,13 @@
-# CI only (roadmap M4.1): the desktop image plus the desktop test, which
-# logs user ci in to sway at once and measures it (ci/desktop-test.sh).
+# CI only (roadmap M4.1, M4.2b): the desktop image plus the desktop test,
+# which logs user ci in to the compositor at once and measures it
+# (ci/desktop-test.sh).
 # Release images never use it.
 format = 2
 name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "sway-baseline", "desktop-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor", "desktop-test"]
 off = ["ssh"]
 
 [alpine]
