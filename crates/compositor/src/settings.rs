@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 use edel::system::{self, SystemFile};
 
+use crate::animation::Motion;
+
 /// Whether the compositor draws title bars in tiling too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TitleBars {
@@ -28,6 +30,8 @@ pub struct Settings {
     pub title_bars: TitleBars,
     /// `[outputs.NAME]`, by output name.
     pub outputs: BTreeMap<String, OutputSettings>,
+    /// `appearance.motion` (M5.11b): absent means full.
+    pub motion: Motion,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -56,6 +60,9 @@ impl Settings {
                 Some("always") => settings.title_bars = TitleBars::Always,
                 Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
                 _ => {}
+            }
+            if let Some(motion) = file.appearance.motion.as_deref().and_then(Motion::parse) {
+                settings.motion = motion;
             }
             for (name, output) in &file.outputs {
                 let into = settings.outputs.entry(name.clone()).or_default();
@@ -174,6 +181,22 @@ mod tests {
         assert!(settings.bars_in("floating"));
         let only_machine = Settings::from_files(Some(&machine), None);
         assert_eq!(only_machine.policy(), "tiling");
+    }
+
+    #[test]
+    fn motion_is_full_unless_a_file_says_otherwise() {
+        assert_eq!(Settings::from_files(None, None).motion, Motion::Full);
+        let machine = file("format = 1\n[appearance]\nmotion = \"off\"\n");
+        let person = file("format = 1\n[appearance]\nmotion = \"reduced\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&machine), None).motion,
+            Motion::Off
+        );
+        assert_eq!(
+            Settings::from_files(Some(&machine), Some(&person)).motion,
+            Motion::Reduced,
+            "the person's wins"
+        );
     }
 
     #[test]

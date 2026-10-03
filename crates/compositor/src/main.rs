@@ -9,6 +9,7 @@
 //!     edel-compositor -- PROGRAM ARG   run PROGRAM once the desktop is on
 //!                                      screen, until it exits (M4.7b)
 
+mod animate;
 mod decoration;
 mod drm;
 mod grabs;

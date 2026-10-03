@@ -39,6 +39,8 @@ pub struct FrameData {
     pub maximize_when_placed: bool,
     /// Its size and whether it has our bar, when last told to the policy.
     pub shape: Option<(smithay::utils::Size<i32, Logical>, bool)>,
+    /// Its surfaces as last drawn, for its close animation (M5.11b).
+    pub picture: Vec<crate::animate::Part>,
 }
 
 impl FrameData {
@@ -70,6 +72,14 @@ impl FrameData {
             self.bar = Some((buffer, look));
         }
         &self.bar.as_ref().expect("drawn above").0
+    }
+
+    /// The bar's last pixels and their size, for a closing window's
+    /// picture (M5.11b).
+    pub fn last_bar(&self) -> Option<(MemoryRenderBuffer, (i32, i32))> {
+        self.bar
+            .as_ref()
+            .map(|(buffer, look)| (buffer.clone(), (look.width, look.height)))
     }
 }
 
@@ -212,6 +222,8 @@ impl Edel {
         let x = pointer.x - along * f64::from(restore.size.w);
         let frame = Rectangle::new((x.round() as i32, now.loc.y).into(), restore.size);
         self.reframe(window, frame, false);
+        // It follows the pointer at once, not a slide.
+        self.animations.stop_slide(window);
         self.space.element_geometry(window)
     }
 
@@ -236,6 +248,7 @@ impl Edel {
             toplevel.send_pending_configure();
         }
         if maximized {
+            self.slide(window, place.loc);
             self.space.map_element(window.clone(), place.loc, true);
             self.dirty = true;
             self.state_changed();

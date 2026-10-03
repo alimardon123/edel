@@ -52,6 +52,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let (mut backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
     state.start_effects(&crate::tiers::renderer_name(backend.renderer()));
+    state.start_animations(backend.renderer());
     let size = backend.window_size();
     let output = Output::new(
         "winit".into(),
@@ -177,7 +178,9 @@ fn draw(window: &mut Window, state: &mut Edel) {
         Ok(None) => {}
         Err(e) => eprintln!("edel-compositor: rendering failed: {e:?}"),
     }
-    state.dirty = false;
+    // While a window opens, closes or slides, the next frame is wanted
+    // too (M5.11b).
+    state.dirty = state.animations.running();
     let now = window.started.elapsed();
     for w in state.space.elements() {
         w.send_frame(&window.output, now, Some(Duration::ZERO), |_, _| {

@@ -141,6 +141,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut renderer =
         unsafe { GlesRenderer::new(context) }.context("starting the GLES renderer")?;
     state.start_effects(&crate::tiers::renderer_name(&mut renderer));
+    state.start_animations(&renderer);
 
     let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
     if libinput.udev_assign_seat(&seat).is_err() {
@@ -503,6 +504,11 @@ impl Gpu {
             }
             crate::layers::send_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
+        }
+        // While a window opens, closes or slides, every screen draws again
+        // on its next vblank (M5.11b).
+        if state.animations.running() {
+            state.dirty = true;
         }
     }
 

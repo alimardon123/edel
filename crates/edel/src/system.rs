@@ -134,7 +134,7 @@ pub const KEYS: &[Key] = &[
     later("appearance.font_size", Kind::Number),
     later("appearance.cursor_size", Kind::Whole),
     later("appearance.icon_size", Kind::Whole),
-    later(
+    now(
         "appearance.motion",
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
