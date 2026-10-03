@@ -822,14 +822,17 @@ mod tests {
                 "{name}: services"
             );
             if name != "container" {
+                // Since the M2 and M3 review, i6300esb loads by hardware ID
+                // like a laptop's watchdog, and the laptop adds mmc.
                 assert_eq!(
                     new.modules.join(","),
-                    "ext4,overlay,i6300esb,softdog,virtio_pci,virtio_blk,nvme,ahci,sd_mod,usb-storage,uas,xhci_pci",
+                    "ext4,overlay,softdog,virtio_pci,virtio_blk,nvme,ahci,sd_mod,usb-storage,uas,xhci_pci",
                     "{name}: modules="
                 );
+                let mmc = if name == "laptop" { " mmc" } else { "" };
                 assert_eq!(
                     new.initramfs.join(" "),
-                    "ata base ext4 kms nvme scsi usb virtio",
+                    format!("ata base ext4 kms{mmc} nvme scsi usb virtio"),
                     "{name}: mkinitfs features"
                 );
                 assert_eq!(new.health, ["default-runlevel"], "{name}: EDEL_HEALTH");

@@ -1,10 +1,15 @@
 //! `edel boot guard`: a slot that hangs falls back too, not only one that
 //! crashes (roadmap M1.5, ADR-006). The `edel-guard` service starts it in
-//! the background early in boot. It opens the hardware watchdog and pets it
-//! until every health file the image names exists, then confirms the slot,
-//! stops the watchdog and exits, so no daemon stays. If the files do not
-//! appear in time it stops petting: the watchdog resets the machine and
-//! GRUB counts the try.
+//! the background early in boot. It opens the watchdog and pets it until
+//! every health file the image names exists, then confirms the slot, stops
+//! the watchdog and exits, so no daemon stays. If the files do not appear
+//! in time it stops petting: the watchdog resets the machine and GRUB
+//! counts the try.
+//!
+//! Early in boot the only watchdog is often softdog, a kernel timer that a
+//! frozen kernel never fires. A laptop's hardware watchdog (iTCO_wdt,
+//! sp5100_tco) loads later, from hwdrivers, so the guard moves to the
+//! first hardware watchdog that appears and stops softdog.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -29,6 +34,10 @@ const SENTINELS: [(&str, &str); 2] = [
 /// How long a slot may take to become healthy when the image says nothing.
 pub const DEFAULT_TIMEOUT: u64 = 120;
 const CONFIRMED: &str = "/run/edel/confirmed";
+/// Where the kernel lists watchdogs, each with its `identity`.
+const WATCHDOG_CLASS: &str = "/sys/class/watchdog";
+/// softdog's identity; every other watchdog is hardware.
+const SOFTDOG: &str = "Software Watchdog";
 
 /// Whether `name` is a health name edel knows.
 pub fn is_health_name(name: &str) -> bool {
@@ -71,6 +80,63 @@ fn open_watchdog() -> Option<File> {
     })
 }
 
+/// The watchdogs in `class` (`/sys/class/watchdog`) by device name, such
+/// as `watchdog1`, with their identity, in order.
+fn watchdogs(class: &Path) -> Vec<(String, String)> {
+    let Ok(entries) = fs::read_dir(class) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(String, String)> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let identity = fs::read_to_string(e.path().join("identity")).unwrap_or_default();
+            (name, identity.trim().to_string())
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// The first hardware watchdog in `found`, if `/dev/watchdog` (the first
+/// one registered, `watchdog0`) is not already hardware.
+fn hardware_to_move_to(found: &[(String, String)]) -> Option<&(String, String)> {
+    let first_is_hardware = found
+        .iter()
+        .any(|(name, identity)| name == "watchdog0" && identity != SOFTDOG);
+    if first_is_hardware {
+        return None;
+    }
+    found
+        .iter()
+        .find(|(name, identity)| name != "watchdog0" && !identity.is_empty() && identity != SOFTDOG)
+}
+
+/// Opens the first hardware watchdog while the guard pets softdog, stops
+/// softdog with the magic close and sets `on_hardware`; does nothing once
+/// the guard pets hardware.
+fn move_to_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
+    if *on_hardware || watchdog.is_none() {
+        return;
+    }
+    let found = watchdogs(Path::new(WATCHDOG_CLASS));
+    let Some((name, identity)) = hardware_to_move_to(&found) else {
+        return;
+    };
+    let Ok(hardware) = OpenOptions::new()
+        .write(true)
+        .open(Path::new("/dev").join(name))
+    else {
+        // mdev has not made its node yet; the next second tries again.
+        return;
+    };
+    if let Some(mut softdog) = watchdog.replace(hardware) {
+        let _ = softdog.write_all(b"V");
+    }
+    *on_hardware = true;
+    println!("edel guard: moved to the hardware watchdog {identity} ({name})");
+}
+
 /// Waits for the slot to become healthy, then confirms it.
 pub fn guard() -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
@@ -82,8 +148,13 @@ pub fn guard() -> Result<()> {
     if watchdog.is_none() {
         eprintln!("warning: edel guard: no watchdog, so a hang will not fall back");
     }
+    // /dev/watchdog is watchdog0, the first one registered.
+    let mut on_hardware = watchdogs(Path::new(WATCHDOG_CLASS))
+        .iter()
+        .any(|(name, identity)| name == "watchdog0" && identity != SOFTDOG);
     let start = Instant::now();
     loop {
+        move_to_hardware(&mut watchdog, &mut on_hardware);
         if let Some(dog) = watchdog.as_mut() {
             let _ = dog.write_all(b".");
         }
@@ -150,6 +221,39 @@ mod tests {
         let (files, timeout, _) = health_plan("NAME=x\n", Path::new("/run"));
         assert!(files.is_empty());
         assert_eq!(timeout, DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn moves_from_softdog_to_the_first_hardware_watchdog() {
+        let w = |name: &str, identity: &str| (name.to_string(), identity.to_string());
+        let laptop = [w("watchdog0", SOFTDOG), w("watchdog1", "iTCO_wdt")];
+        assert_eq!(hardware_to_move_to(&laptop), Some(&laptop[1]));
+        assert_eq!(hardware_to_move_to(&laptop[..1]), None);
+        // Already on hardware, as in a VM whose i6300esb loads first.
+        let vm = [w("watchdog0", "i6300ESB timer"), w("watchdog1", SOFTDOG)];
+        assert_eq!(hardware_to_move_to(&vm), None);
+        // A watchdog whose identity sysfs cannot give yet is not used.
+        assert_eq!(
+            hardware_to_move_to(&[w("watchdog0", SOFTDOG), w("watchdog1", "")]),
+            None
+        );
+    }
+
+    #[test]
+    fn lists_watchdogs_from_sysfs() {
+        let class = std::env::temp_dir().join(format!("edel-guard-class-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&class);
+        for (name, identity) in [
+            ("watchdog1", "iTCO_wdt\n"),
+            ("watchdog0", "Software Watchdog\n"),
+        ] {
+            fs::create_dir_all(class.join(name)).unwrap();
+            fs::write(class.join(name).join("identity"), identity).unwrap();
+        }
+        let found = watchdogs(&class);
+        fs::remove_dir_all(&class).unwrap();
+        assert_eq!(found[0], ("watchdog0".to_string(), SOFTDOG.to_string()));
+        assert_eq!(hardware_to_move_to(&found).unwrap().1, "iTCO_wdt");
     }
 
     #[test]

@@ -6,11 +6,13 @@ format = 1
 summary = "Updates that roll back: two root slots, the data partition and the system file"
 why = "The A/B disk needs vfat and ext4 tools for the EFI system partition, the slots and /data (e2fsprogs-extra gives edel update its tune2fs and the installer its resize2fs), partx and sfdisk to grow /data and to install, and libgcc, which the edel binary links; its services mount /data, guard the boot, apply the system file and confirm the slot."
 packages = ["dosfstools", "e2fsprogs", "e2fsprogs-extra", "libgcc", "partx", "sfdisk"]
-# The watchdogs the guard pets (QEMU's i6300esb, and softdog where the
-# kernel has it) and the disks a slot can live on, loaded before the root
-# is looked for. Everything else loads by hardware ID; a module a kernel
-# lacks is skipped (M3.3a).
-modules = ["i6300esb", "softdog", "virtio_pci", "virtio_blk", "nvme", "ahci", "sd_mod", "usb-storage", "uas", "xhci_pci"]
+# softdog, which the guard pets until a hardware watchdog loads by its
+# hardware ID (QEMU's i6300esb, a laptop's iTCO_wdt or sp5100_tco), and
+# the disks a slot can live on, loaded before the root is looked for.
+# Everything else loads by hardware ID; a module a kernel lacks is skipped
+# (M3.3a). i6300esb is left to hwdrivers like a laptop's watchdog, so CI
+# proves the guard's move to it.
+modules = ["softdog", "virtio_pci", "virtio_blk", "nvme", "ahci", "sd_mod", "usb-storage", "uas", "xhci_pci"]
 # The initramfs finds disks on SATA, NVMe, SCSI, USB and virtio with ext4,
 # and sets the screen mode early so a laptop's screen comes up (M3.3a).
 initramfs = ["ata", "base", "ext4", "kms", "nvme", "scsi", "usb", "virtio"]

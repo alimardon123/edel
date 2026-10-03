@@ -8,7 +8,7 @@
 //! `edel::install::Plan`.
 
 use std::fs::{self, File};
-use std::io::{self, BufRead, IsTerminal, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
@@ -35,6 +35,8 @@ pub const TOOLS: &[(&str, &str)] = &[
 ];
 
 const MIB: u64 = 1024 * 1024;
+/// The first block of a slot: it holds the ext4 superblock and its UUID.
+const HEAD: u64 = 4096;
 /// Exit code when the plan was shown but nobody could confirm it.
 const NOT_CONFIRMED: i32 = 3;
 
@@ -99,7 +101,13 @@ fn describe(name: &str) -> Result<Disk> {
         let line = out
             .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
             .unwrap_or_default();
-        let (label, fs) = parse_blkid(line.trim());
+        let (mut label, mut fs) = parse_blkid(line.trim());
+        // blkid says nothing about a partition it may not open, which is
+        // not the same as an empty one (a dry run needs no root).
+        if line.trim().is_empty() && File::open(Path::new("/dev").join(&part)).is_err() {
+            label = Some("unknown".into());
+            fs = Some("run as root to see".into());
+        }
         partitions.push(Partition {
             name: part,
             label,
@@ -248,9 +256,22 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     }
 
     println!("edel install: copying the running system into slot A");
+    let mut half = HalfCopy::new(part(2));
     let mut from = File::open(slot).with_context(|| format!("reading {}", slot.display()))?;
     let mut to = fs::OpenOptions::new().write(true).open(part(2))?;
-    io::copy(&mut io::Read::take(&mut from, running_mib * MIB), &mut to)?;
+    // The first block, which holds the file system's UUID, goes last.
+    from.seek(SeekFrom::Start(HEAD))?;
+    to.seek(SeekFrom::Start(HEAD))?;
+    io::copy(
+        &mut io::Read::take(&mut from, running_mib * MIB - HEAD),
+        &mut to,
+    )?;
+    to.sync_all()?;
+    let mut head = vec![0; HEAD as usize];
+    from.seek(SeekFrom::Start(0))?;
+    from.read_exact(&mut head)?;
+    to.seek(SeekFrom::Start(0))?;
+    to.write_all(&head)?;
     to.sync_all()?;
     drop(to);
     let status = Command::new("e2fsck").arg("-fp").arg(part(2)).status()?;
@@ -261,6 +282,7 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         run(Command::new("resize2fs").arg(part(2)))?;
     }
     run(Command::new("tune2fs").args(["-U", "random"]).arg(part(2)))?;
+    half.done();
 
     println!("edel install: writing the boot loader");
     run(Command::new("mkfs.vfat")
@@ -304,6 +326,46 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         disk.display()
     );
     Ok(())
+}
+
+/// Slot A while the running system is copied into it. Until `done`, after
+/// `tune2fs -U random`, it carries the running root's UUID, by which the
+/// stick's GRUB and initramfs find their root, so a copy that stops half
+/// way could be started instead of the stick (M2 and M3 review). The first
+/// block is written last and cleared again when the copy fails, leaving a
+/// window of the e2fsck, resize2fs and tune2fs seconds for a power cut.
+struct HalfCopy {
+    partition: PathBuf,
+    done: bool,
+}
+
+impl HalfCopy {
+    fn new(partition: PathBuf) -> HalfCopy {
+        HalfCopy {
+            partition,
+            done: false,
+        }
+    }
+
+    fn done(&mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for HalfCopy {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        if let Ok(mut part) = fs::OpenOptions::new().write(true).open(&self.partition) {
+            let _ = part.write_all(&[0; HEAD as usize]);
+            let _ = part.sync_all();
+        }
+        eprintln!(
+            "edel install: stopped; cleared the start of {} so it cannot be started",
+            self.partition.display()
+        );
+    }
 }
 
 #[cfg(test)]
