@@ -1,0 +1,19 @@
+[package]
+name = "edel-compositor"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The Edel OS compositor: windows, floating and tiling, title bars, outputs and effects"
+license = "GPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "edel-compositor"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+# Pinned (roadmap M4.2a): only what is used; the DRM, GBM, libinput, udev
+# and libseat backends join with the virtual GPU (M4.2b).
+smithay = { version = "=0.7.0", default-features = false, features = ["backend_winit", "desktop", "renderer_gl", "wayland_frontend"] }
+toml = "1.1.6"

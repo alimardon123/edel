@@ -18,3 +18,25 @@ vm_boot_seconds = 7.7
 # Memory in use at that moment (MemTotal minus MemAvailable), in MiB,
 # median of three boots with 512 MiB.
 vm_memory_mib = 76
+
+# The desktop (roadmap M4.2a), from the sway baseline CI measured on
+# 2026-10-03 in PR #41 (ci/desktop-test.sh baseline, sway under llvmpipe
+# with KVM) plus 20 percent: ready 7.67 s, sway 141.0 MiB, 292 MiB in use,
+# frames p99 3.7 ms. desktop-test checks them from M4.2b on, when our
+# compositor takes sway's place; shell-ui's row comes with shell-ui (M5.1).
+
+# Seconds from the kernel's start to the session's first client.
+desktop_ready_seconds = 9.2
+
+# Memory in use with the session idle (MemTotal minus MemAvailable), MiB.
+desktop_memory_mib = 350
+
+# The compositor's resident memory (VmRSS), MiB.
+compositor_rss_mib = 169
+
+# 99th percentile of the time between frames presented to a client that
+# draws whenever asked (weston-presentation-shm, 10 s), milliseconds.
+frame_p99_ms = 4.4
+
+# Frames the compositor draws while nothing on screen changes.
+idle_frames = 0
