@@ -1,5 +1,5 @@
 #!/bin/sh
-# desktop-test.sh CASE... (roadmap M4.1, M4.2b, M4.3): boots the CI desktop image
+# desktop-test.sh CASE... (roadmap M4.1 to M4.4): boots the CI desktop image
 # (ci/desktop/vm.toml) once, with a virtual GPU, keyboard and tablet and
 # a QMP socket for ci/qmp.py, waits for its test service's results on the
 # serial console, then runs each CASE against the running VM:
@@ -14,6 +14,9 @@
 #               within ci/budgets.toml, written to the step summary
 #   floating    the two test clients where the floating policy puts them,
 #               in the state file and in their colours on screen
+#   titlebar    every window with a title bar in the token colours and its
+#               title on it; a click on two's close button closes it, and
+#               dragging one's bar moves it
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -71,10 +74,27 @@ budget() {
 	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
+# token KEY: the colour KEY has in design/tokens.toml, as rrggbb.
+token() {
+	sed -n "s/^$1 = \"#\\([0-9a-f]\\{6\\}\\)\".*/\\1/p" design/tokens.toml
+}
+
+# wait_for PATTERN: waits up to 20 s for a serial line matching PATTERN.
+wait_for() {
+	i=0
+	while ! tr -d '\r' <"$log" | grep -qE "$1"; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || return 1
+		sleep 0.2
+	done
+}
+
 # The background colour the compositor clears to, from the design tokens.
-background=$(sed -n 's/^background = "#\([0-9a-f]\{6\}\)".*/\1/p' design/tokens.toml)
-# foot's own background. Windows open centred and cascade (M4.3): foot,
-# 400x300, opens first at 440,250, and 460,530 is inside it but outside
+background=$(token background)
+# foot's own background. Window frames open centred and cascade (M4.3),
+# each a 28 px title bar above the window and a 1 px border round the
+# rest (M4.4): foot, asked for 400x300, draws 396x288, whole character
+# cells, and opens first at 442,269; 460,530 is inside it but outside
 # the test clients opened after it.
 foot=242424
 foot_x=460 foot_y=530
@@ -142,31 +162,70 @@ case_compositor() {
 
 case_floating() {
 	sed -n 's/.*DESKTOP-TEST: state //p' "$log" | tr -d '\r' >"$dir/state.toml"
-	# On a 1280x800 screen, centred windows share the centre 640,400, so
-	# one, opened after foot, sits 32 px down and right of centred, and
-	# two 64 px.
+	# On a 1280x800 screen, centred frames share the centre 640,400, so
+	# one's frame, opened after foot's, sits 32 px down and right of
+	# centred, and two's 64 px; each window is 28 px below its frame's top
+	# and 1 px inside its left edge.
 	python3 - "$dir/state.toml" <<-'EOF' || fail "the state file does not show the test clients where the floating policy puts them"
 		import sys, tomllib
 		state = tomllib.load(open(sys.argv[1], "rb"))
 		windows = {w["title"]: w for w in state["windows"]}
 		place = lambda t: (windows[t]["x"], windows[t]["y"], windows[t]["width"], windows[t]["height"])
 		assert state["format"] == 1 and state["policy"] == "floating", state
-		assert place("one") == (522, 332, 300, 200), place("one")
-		assert place("two") == (604, 389, 200, 150), place("two")
+		assert place("one") == (522, 345, 300, 200), place("one")
+		assert place("two") == (604, 402, 200, 150), place("two")
 		assert windows["two"]["focused"], "the newest window has the keyboard"
 		assert [w["title"] for w in state["windows"]][-2:] == ["one", "two"], "two is on top"
 	EOF
-	shot floating 530 340 cc3333 >/dev/null || fail "test client one is not red at 530,340"
-	shot floating 704 464 3366cc >/dev/null || fail "test client two is not blue at its centre, 704,464"
+	shot floating 530 353 cc3333 >/dev/null || fail "test client one is not red at 530,353"
+	shot floating 704 477 3366cc >/dev/null || fail "test client two is not blue at its centre, 704,477"
 	echo "PASS: the floating policy placed foot and two test clients centred and cascading, the state file lists them, and each shows its colour"
 }
 
-[ "$#" -gt 0 ] || set -- console compositor floating
+case_titlebar() {
+	bar=$(token title_bar)
+	focused=$(token title_bar_focused)
+	sed -n 's/.*DESKTOP-TEST: state //p' "$log" | tr -d '\r' >"$dir/state.toml"
+	# Each bar's left end, 5 px in from its window's left edge and 24 px
+	# above its top, from the state file, since foot sizes itself to whole
+	# character cells: two's lighter, as it has the keyboard.
+	bars=$(
+		python3 - "$dir/state.toml" <<-'EOF'
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb"))["windows"]
+			assert len(windows) == 3 and all(w["title_bar"] for w in windows), windows
+			for w in windows:
+			    print(w["title"], w["x"] + 5, w["y"] - 24)
+		EOF
+	) || fail "the state file does not give foot and the test clients title bars"
+	while read -r title x y; do
+		want=$bar
+		[ "$title" = two ] && want=$focused
+		shot titlebar "$x" "$y" "$want" >/dev/null || fail "$title's title bar is not #$want at $x,$y"
+	done <<-EOF
+		$bars
+	EOF
+	text=$(python3 ci/qmp.py uniform "$dir/titlebar.png" 610 376 135 24)
+	[ "$text" = varied ] || fail "two's title bar shows no title: it is $text"
+	# Close two with its close button, the bar's rightmost 28 px.
+	python3 ci/qmp.py click 791 388
+	wait_for 'edel-compositor: unmapped window two' ||
+		fail "clicking two's close button at 791,388 did not close it"
+	wait_for 'DESKTOP-TEST: windows 2 ' || fail "the state file still lists two"
+	# Drag one by its bar 200 px right and up; foot stays uncovered at
+	# $foot_x,$foot_y for the console case.
+	python3 ci/qmp.py drag 560 331 760 131
+	wait_for 'DESKTOP-TEST: windows 2 .*one@72[123],14[456],300x200' ||
+		fail "dragging one's title bar from 560,331 to 760,131 did not move it to about 722,145: $(value windows)"
+	echo "PASS: foot and the test clients have title bars in the token colours with their titles, two's close button closed it and one's bar moved it"
+}
+
+[ "$#" -gt 0 ] || set -- floating titlebar console compositor
 for c in "$@"; do
 	case "$c" in
-	console | compositor | floating) ;;
+	console | compositor | floating | titlebar) ;;
 	*)
-		echo "unknown case $c; the cases are console, compositor and floating"
+		echo "unknown case $c; the cases are console, compositor, floating and titlebar"
 		exit 1
 		;;
 	esac

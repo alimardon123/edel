@@ -106,7 +106,10 @@ pub const KEYS: &[Key] = &[
     later("locale.timezone", Kind::Text),
     later("shell.preset", Kind::OneOf(PRESETS)),
     later("shell.tiling", Kind::Flag),
-    later("shell.title_bars", Kind::Flag),
+    later(
+        "shell.title_bars",
+        Kind::OneOf(&["always", "floating-only"]),
+    ),
     later(
         "shell.form_factor",
         Kind::OneOf(&["desktop", "tablet", "phone"]),
@@ -274,7 +277,7 @@ pub struct Shell {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiling: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub title_bars: Option<bool>,
+    pub title_bars: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub form_factor: Option<String>,
 }

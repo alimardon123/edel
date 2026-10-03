@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """Drives a QEMU VM's screen, keyboard and tablet for the desktop tests
-(roadmap M4.1), with the Python standard library only.
+(roadmap M4.1, M4.4), with the Python standard library only.
 
     qmp.py screendump FILE.png   save the screen as PNG (QEMU 7.1 or newer)
     qmp.py click X Y             move the pointer to pixel X, Y and click
+    qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
+                                 TO_X, TO_Y in steps and let go
     qmp.py key KEY...            press each chord, such as ctrl-alt-t or ret
     qmp.py type TEXT             type TEXT; \\n is Return
     qmp.py pixel FILE.png X Y    print the colour at X, Y as rrggbb
     qmp.py size FILE.png         print WIDTH HEIGHT
-    qmp.py uniform FILE.png      print "uniform rrggbb" or "varied"
+    qmp.py uniform FILE.png [X Y W H]
+                                 print "uniform rrggbb" or "varied", for
+                                 the whole screen or the W by H box at X, Y
 
-The first three talk to the QMP socket named by $QMP. Key names are
+The first five talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -103,19 +107,41 @@ def screendump(qmp, path):
     raise SystemExit(f"qmp: screendump wrote nothing to {path}")
 
 
-def click(qmp, x, y):
+def screen_size(qmp):
     with tempfile.TemporaryDirectory() as tmp:
         shot = os.path.join(tmp, "size.png")
         screendump(qmp, shot)
-        width, height = png_size(shot)
+        return png_size(shot)
+
+
+def point(qmp, size, x, y):
+    width, height = size
     events = [
         {"type": "abs", "data": {"axis": "x", "value": x * ABS_MAX // max(width - 1, 1)}},
         {"type": "abs", "data": {"axis": "y", "value": y * ABS_MAX // max(height - 1, 1)}},
     ]
     qmp.run("input-send-event", events=events)
-    for down in (True, False):
-        time.sleep(0.05)
-        qmp.run("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
+
+
+def button(qmp, down):
+    time.sleep(0.05)
+    qmp.run("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
+
+
+def click(qmp, x, y):
+    point(qmp, screen_size(qmp), x, y)
+    button(qmp, True)
+    button(qmp, False)
+
+
+def drag(qmp, x, y, to_x, to_y, steps=10):
+    size = screen_size(qmp)
+    point(qmp, size, x, y)
+    button(qmp, True)
+    for i in range(1, steps + 1):
+        time.sleep(0.03)
+        point(qmp, size, x + (to_x - x) * i // steps, y + (to_y - y) * i // steps)
+    button(qmp, False)
 
 
 def png_size(path):
@@ -192,7 +218,8 @@ def main(argv):
                 raise SystemExit(f"{args[0]}: {x}, {y} is outside {width}x{height}")
             print(hex_colour(rows[y][x]))
         else:
-            colours = {p for row in rows for p in row}
+            x, y, w, h = map(int, args[1:5]) if len(args) >= 5 else (0, 0, width, height)
+            colours = {p for row in rows[y:y + h] for p in row[x:x + w]}
             print("uniform " + hex_colour(colours.pop()) if len(colours) == 1 else "varied")
         return
     qmp = Qmp(os.environ["QMP"])
@@ -200,6 +227,8 @@ def main(argv):
         screendump(qmp, args[0])
     elif command == "click":
         click(qmp, int(args[0]), int(args[1]))
+    elif command == "drag":
+        drag(qmp, *map(int, args[:4]))
     elif command == "key":
         keys(qmp, args)
     elif command == "type":

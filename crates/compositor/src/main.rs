@@ -6,9 +6,11 @@
 //!     edel-compositor           run until the window is closed
 //!     edel-compositor --bench   run for 5 s, then print the frame telemetry
 
+mod decoration;
 mod drm;
 mod grabs;
 mod input;
+mod render;
 mod state;
 mod statefile;
 mod winit;

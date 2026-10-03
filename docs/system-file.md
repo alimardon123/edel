@@ -57,7 +57,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 |---|---|---|
 | `shell.preset` | `classic`, `mac-like`, `windows-like`, `tiling`, `tablet` or `phone` | M5.4 |
 | `shell.tiling` | `true` or `false` | M4.5 |
-| `shell.title_bars` | `true` or `false` | M4.4 |
+| `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |
 | `outputs.*.position` | two whole numbers, `[x, y]` | M4.6 |
 | `outputs.*.scale` | a number, such as `1.25` | M4.6 |
