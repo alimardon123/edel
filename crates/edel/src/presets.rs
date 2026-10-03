@@ -21,11 +21,16 @@ pub const BUILT_IN: &[(&str, &str)] = &[("classic", include_str!("../../../prese
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
 
+/// The most workspaces a preset can ask for: one for each of Super+1 to
+/// Super+9.
+pub const MOST_WORKSPACES: usize = 9;
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preset {
     pub format: i64,
     pub windows: Windows,
+    pub workspaces: Workspaces,
     #[serde(default)]
     pub panels: Vec<Panel>,
 }
@@ -35,6 +40,16 @@ pub struct Preset {
 pub struct Windows {
     /// The policy a workspace starts in when `shell.tiling` is not set.
     pub policy: Policy,
+}
+
+/// The workspace model (M5.2a): a fixed number of workspaces. A dynamic
+/// model, one more workspace whenever the last fills, joins with the
+/// preset that first asks for it.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Workspaces {
+    /// How many, 1 to [`MOST_WORKSPACES`].
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -96,14 +111,21 @@ impl Edge {
 }
 
 /// Reads a preset strictly: the format this release knows, every key
-/// known, at most one panel along each edge, widget names that could be
-/// names. Whether shell-ui has each widget is its own test's to say.
+/// known, 1 to [`MOST_WORKSPACES`] workspaces, at most one panel along
+/// each edge, widget names that could be names. Whether shell-ui has each
+/// widget is its own test's to say.
 pub fn check(text: &str) -> Result<Preset> {
     let preset: Preset = toml::from_str(text).context("parsing the preset")?;
     if preset.format != FORMAT {
         bail!(
             "format {} is not one this release reads; it reads {FORMAT}",
             preset.format
+        );
+    }
+    if !(1..=MOST_WORKSPACES).contains(&preset.workspaces.count) {
+        bail!(
+            "{} workspaces is not 1 to {MOST_WORKSPACES}",
+            preset.workspaces.count
         );
     }
     for (i, panel) in preset.panels.iter().enumerate() {
@@ -148,10 +170,11 @@ mod tests {
     }
 
     #[test]
-    fn classic_floats_with_one_panel_along_the_bottom() {
+    fn classic_floats_on_four_workspaces_with_one_panel_along_the_bottom() {
         let (classic, note) = named(None);
         assert_eq!(note, None);
         assert_eq!(classic.windows.policy, Policy::Floating);
+        assert_eq!(classic.workspaces.count, 4);
         assert_eq!(classic.panels.len(), 1);
         let panel = &classic.panels[0];
         assert_eq!(panel.edge, Edge::Bottom);
@@ -183,6 +206,14 @@ mod tests {
         refused(
             &classic.replace("policy = \"floating\"", "policy = \"stacking\""),
             "unknown variant `stacking`",
+        );
+        refused(
+            &classic.replace("count = 4", "count = 10"),
+            "10 workspaces is not 1 to 9",
+        );
+        refused(
+            &classic.replace("count = 4", "count = 0"),
+            "0 workspaces is not 1 to 9",
         );
         refused(
             &format!("{classic}\n[[panels]]\nedge = \"bottom\"\n"),

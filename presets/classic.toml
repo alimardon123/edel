@@ -1,17 +1,21 @@
 # Classic (M5.1c): Edel's default layout, like Cinnamon: one panel along
 # the bottom with the menu button at its start and the clock at its end,
-# and floating windows. Presets are built into edel, the compositor and
+# floating windows and four workspaces. Presets are built into edel, the compositor and
 # shell-ui; the system file picks one by name with shell.preset, and its
 # own keys win over the preset's (ADR-008). Keys join this file with the
-# steps that read them: the launcher's style (M5.3), the workspace model
-# (M5.2), the dock and the title bar buttons' side (M5.4) and the session's
-# services (M5.7).
+# steps that read them: the launcher's style (M5.3), the dock and the
+# title bar buttons' side (M5.4) and the session's services (M5.7).
 format = 1
 
 [windows]
 # The policy a workspace starts in when shell.tiling is not set:
 # floating or tiling.
 policy = "floating"
+
+[workspaces]
+# How many workspaces, 1 to 9, one for each of Super+1 to Super+9; their
+# number stays as it is.
+count = 4
 
 # Each panel is one layer-shell surface along a screen's edge, top or
 # bottom, holding shell-ui's widgets by name: from its start, in its

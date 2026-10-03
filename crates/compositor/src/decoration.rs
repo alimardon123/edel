@@ -230,7 +230,9 @@ impl Edel {
     /// Puts `window`'s frame at `frame` and tells the window its new size
     /// and whether it is maximized. A maximized window covers the screen
     /// over the policy's places; one back from maximized goes where the
-    /// policy says, its tile in tiling.
+    /// policy says, its tile in tiling. A window on a hidden workspace
+    /// hears its state and size but stays hidden; its workspace's policy
+    /// places it when the workspace is shown.
     fn reframe(&mut self, window: &Window, frame: Rectangle<i32, Logical>, maximized: bool) {
         let Some(toplevel) = window.toplevel() else {
             return;
@@ -246,6 +248,9 @@ impl Edel {
         });
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
+        }
+        if self.desks.hidden_on(window).is_some() {
+            return;
         }
         if maximized {
             self.slide(window, place.loc);
