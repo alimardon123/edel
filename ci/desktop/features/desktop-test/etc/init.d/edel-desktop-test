@@ -154,6 +154,14 @@ commands() {
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
 		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
 		# as the panel's switcher will, and prints what it saw.
+		# The windows as a window list sees them (M5.2d), and away
+		# activated from there.
+		'toplevels' | 'toplevels away')
+			as_ci timeout 10 edel-testclient --$command </dev/null 2>&1 |
+				while IFS= read -r line; do say "$line"; done
+			;;
+		# Where shell-ui's widgets lie (M5.2c), for clicks on them.
+		'panel places') say "places $(grep -a 'edel-shell-ui: panel places' /tmp/compositor.log | tail -n 1 | sed 's/.*panel places //')" ;;
 		'activate 3' | 'activate 1')
 			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
 				while IFS= read -r line; do say "ext $line"; done

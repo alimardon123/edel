@@ -1,7 +1,8 @@
 //! The widget table (M5.1c): every widget a preset's panel can hold, one
-//! module and one line each. A widget says what it shows now, how wide it
-//! is and how it draws; the panel lays them out from the preset and draws
-//! again only when what one shows changes. Code that talks to an OS
+//! module and one line each. A widget says what it shows now, from what
+//! shell-ui knows ([`Live`]), how wide it is and how it draws, and what a
+//! click or a scroll on it does (M5.2c); the panel lays them out from the
+//! preset and draws again only when what one shows changes. Code that talks to an OS
 //! feature lives in `src/features/NAME.rs`, and its widget's line carries
 //! `needs: Some("NAME")`: on a machine without
 //! `/usr/share/edel/features/NAME.toml` the widget is skipped with a log
@@ -11,6 +12,7 @@
 
 pub mod clock;
 pub mod menu;
+pub mod workspaces;
 
 use std::path::Path;
 
@@ -38,15 +40,49 @@ pub struct Widget {
     /// The OS feature it talks to, if any.
     pub needs: Option<&'static str>,
     /// What it shows now: the panel draws again when this changes.
-    pub shows: fn() -> String,
+    pub shows: fn(&Live) -> String,
     /// Its width showing `shown`, in the pixmap's pixels.
     pub width: fn(&mut Canvas, shown: &str) -> f32,
     /// Draws it showing `shown`, its left edge at `x`.
     pub draw: fn(&mut Canvas, shown: &str, x: f32),
+    /// What `input` on it does while it shows `shown`, if anything.
+    pub input: fn(shown: &str, input: Input) -> Option<Action>,
+}
+
+/// What shell-ui knows that widgets show: the workspaces, by name, with
+/// the shown one marked (ext-workspace-v1), and where a scroll left the
+/// workspace switcher's view.
+#[derive(Debug, Default)]
+pub struct Live {
+    pub workspaces: Vec<(String, bool)>,
+    pub view: Option<usize>,
+}
+
+/// A person's input on a widget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Input {
+    /// A click this many logical pixels from its left edge.
+    Click(f32),
+    /// A scroll, in steps: positive towards the end.
+    Scroll(i32),
+}
+
+/// What a widget asks shell-ui to do.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    /// Show the workspace called this.
+    Show(String),
+    /// Start the workspace switcher's view at this button.
+    View(usize),
+}
+
+/// For widgets that take no input.
+pub fn no_input(_: &str, _: Input) -> Option<Action> {
+    None
 }
 
 /// Every widget, by name.
-pub const TABLE: &[Widget] = &[menu::WIDGET, clock::WIDGET];
+pub const TABLE: &[Widget] = &[menu::WIDGET, workspaces::WIDGET, clock::WIDGET];
 
 /// The widget called `name`.
 #[cfg(test)]
@@ -134,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_widget_is_skipped_without_its_feature_or_its_line() {
-        fn none() -> String {
+        fn none(_: &Live) -> String {
             String::new()
         }
         fn zero(_: &mut Canvas, _: &str) -> f32 {
@@ -150,6 +186,7 @@ mod tests {
                 shows: none,
                 width: zero,
                 draw: nothing,
+                input: no_input,
             },
         ];
         let dir = std::env::temp_dir().join(format!("edel-shell-ui-test-{}", std::process::id()));
