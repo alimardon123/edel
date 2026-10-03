@@ -380,6 +380,22 @@ case_layers() {
 	echo "PASS: a layer-shell panel lay along the bottom in its colour, windows tiled above it (one@9,36,1262x715), and it went when closed"
 }
 
+# count PATTERN: how many serial lines match PATTERN so far.
+count() {
+	tr -d '\r' <"$log" | grep -cE "$1" || true
+}
+
+# wait_more PATTERN N [SECONDS]: waits up to SECONDS (20) for more than N
+# lines to match.
+wait_more() {
+	i=0
+	while [ "$(count "$1")" -le "$2" ]; do
+		i=$((i + 1))
+		[ "$i" -lt $((${3:-20} * 5)) ] || return 1
+		sleep 0.2
+	done
+}
+
 case_animations() {
 	# appearance.motion (M5.11b): reduced keeps the fades and drops the
 	# growing and sliding; removing the key brings them back.
@@ -395,21 +411,40 @@ case_animations() {
 		[ "$i" -lt 100 ] || fail "removing appearance.motion did not bring the full animations back"
 		sleep 0.2
 	done
-	# Ten windows opening one after another, then closing at once, at the
-	# Full tier CI forces, while weston-presentation-shm times the frames
-	# as at the start: they keep the frame budget. Were frames to miss the
-	# screen's refresh, the tier would drop on its own; the case says
-	# which tier they ended at.
+	# Ten windows opening one after another, then closing at once, while
+	# weston-presentation-shm times the frames as at the start: first with
+	# motion off, what opening ten programs costs without any animation,
+	# then at the Full tier CI forces. Were frames to miss the screen's
+	# refresh, the tier would drop on its own; the case says which tier
+	# each run ended at.
+	off_runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+	guest 'motion off'
+	wait_for 'edel-compositor: animations at tier [a-z]+, motion off: open 0 ms' ||
+		fail "appearance.motion = \"off\" did not stop the animations"
 	windows=$(value windows)
 	guest 'open ten'
-	wait_for 'DESKTOP-TEST: open_ten_tier ' 90 || fail "no word from the test service on the ten windows"
+	wait_more 'DESKTOP-TEST: open_ten_tier ' "$off_runs" 90 || fail "no word from the test service on the ten windows"
+	p99_off=$(value open_ten_p99_ms)
+	tier_off=$(value open_ten_tier)
+	i=0
+	while [ "$(value windows)" != "$windows" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "the ten windows did not all close: $(value windows)"
+		sleep 0.2
+	done
+	full=$(count 'motion full: open')
+	guest 'motion default'
+	wait_more 'motion full: open' "$full" || fail "removing appearance.motion again did not bring the animations back"
+	guest 'open ten'
+	wait_more 'DESKTOP-TEST: open_ten_tier ' "$((off_runs + 1))" 90 || fail "no word from the test service on the ten windows"
 	p99=$(value open_ten_p99_ms)
 	frames=$(value open_ten_frames)
 	tier=$(value open_ten_tier)
 	limit=$(budget frame_p99_ms)
+	echo "ten windows: frames p99 ${p99_off:-?} ms with motion off (tier $tier_off), ${p99:-?} ms with it full (tier $tier), budget $limit ms"
 	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
 	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "with ten windows opening and closing at the Full tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (tier now $tier)"
+		fail "with ten windows opening and closing at the Full tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (tier now $tier; ${p99_off:-?} ms with motion off)"
 	i=0
 	while [ "$(value windows)" != "$windows" ]; do
 		i=$((i + 1))

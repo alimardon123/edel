@@ -131,6 +131,7 @@ commands() {
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# appearance.motion (M5.11b), reduced and back to the default.
 		'motion reduced') edel system set appearance.motion=reduced ;;
+		'motion off') edel system set appearance.motion=off ;;
 		'motion default') edel system unset appearance.motion ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
