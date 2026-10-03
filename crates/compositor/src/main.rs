@@ -20,6 +20,7 @@ mod program;
 mod render;
 mod state;
 mod statefile;
+mod tiers;
 mod watch;
 mod winit;
 mod xwayland;

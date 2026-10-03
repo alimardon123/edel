@@ -138,7 +138,9 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let egl = unsafe { EGLDisplay::new(gbm.clone()) }.context("starting EGL")?;
     let context = EGLContext::new(&egl).context("creating the GL context")?;
     // SAFETY: the context is current only on this thread.
-    let renderer = unsafe { GlesRenderer::new(context) }.context("starting the GLES renderer")?;
+    let mut renderer =
+        unsafe { GlesRenderer::new(context) }.context("starting the GLES renderer")?;
+    state.start_effects(&crate::tiers::renderer_name(&mut renderer));
 
     let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
     if libinput.udev_assign_seat(&seat).is_err() {
@@ -485,6 +487,10 @@ impl Gpu {
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
                 state.telemetry.frame(started.elapsed(), true);
+                state.frame_drawn(
+                    started.elapsed(),
+                    crate::tiers::refresh_interval(&screen.output),
+                );
                 arm_report(&self.handle, state);
             }
             for window in state.space.elements() {

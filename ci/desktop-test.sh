@@ -9,8 +9,10 @@
 #               0700 by pam_rundir for the autologin, foot's window on a
 #               screenshot that is not one colour, and typing `exit` after
 #               a click into foot closes it
-#   compositor  the compositor's ready line, the top left corner in the
-#               background colour of design/tokens.toml, and its numbers
+#   compositor  the compositor's ready line, its effect tier (lite under
+#               llvmpipe, logged and from edel shell tier), the top left
+#               corner in the background colour of design/tokens.toml, and
+#               its numbers
 #               (boot to ready, memory, its RSS, frame p99, idle frames)
 #               within ci/budgets.toml, written to the step summary
 #   floating    the two test clients where the floating policy puts them,
@@ -171,6 +173,9 @@ case_compositor() {
 	"output "*" ready") ;;
 	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
 	esac
+	# llvmpipe draws on the CPU, so the effect tier starts at Lite (M5.11).
+	[ "$(value tier)" = tier=lite ] || fail "the compositor logged \"$(value tier)\", not tier=lite under llvmpipe"
+	[ "$(value shell_tier)" = lite ] || fail "edel shell tier said \"$(value shell_tier)\", not lite"
 	# Windows open centred (M4.3), so the background shows in a corner.
 	shot compositor 20 20 "$background" >/dev/null ||
 		fail "the top left corner of the screen is not the background #$background"
@@ -206,7 +211,7 @@ case_compositor() {
 		EOF
 	fi
 	[ "$over" = 0 ] || fail "the compositor is over a budget in ci/budgets.toml"
-	echo "PASS: $(value ready_line) in $(value ready_seconds) s, the centre is the background, every budget met; $(value telemetry)"
+	echo "PASS: $(value ready_line) in $(value ready_seconds) s at tier lite, the centre is the background, every budget met; $(value telemetry)"
 }
 
 case_floating() {

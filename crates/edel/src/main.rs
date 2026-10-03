@@ -16,6 +16,7 @@ mod machine;
 mod release;
 mod report;
 mod run;
+mod shell;
 mod update;
 
 use std::path::PathBuf;
@@ -85,6 +86,18 @@ enum Commands {
         #[command(subcommand)]
         command: SystemCommands,
     },
+    /// What the desktop session is doing
+    Shell {
+        #[command(subcommand)]
+        command: ShellCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ShellCommands {
+    /// Print the effect tier the compositor runs at: lite, balanced or
+    /// full
+    Tier,
 }
 
 #[derive(Subcommand)]
@@ -377,6 +390,9 @@ fn main() -> Result<()> {
             yes,
         } => installer::install(&disk, &system, dry_run, yes),
         Commands::Report { esp } => report::report(esp),
+        Commands::Shell { command } => match command {
+            ShellCommands::Tier => shell::tier(),
+        },
         Commands::System { command } => match command {
             SystemCommands::Check { file } => check_system_file(&file),
             SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),
