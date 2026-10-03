@@ -505,10 +505,18 @@ impl Gpu {
             crate::layers::send_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
         }
-        // While a window opens, closes or slides, every screen draws again
-        // on its next vblank (M5.11b).
+        // While a window opens, closes or slides, the screens draw again
+        // one refresh later (M5.11b): animations step with the display,
+        // never faster, even where a frame is shown the moment it is
+        // queued, as on a virtual GPU.
         if state.animations.running() {
-            state.dirty = true;
+            let interval = self
+                .screens
+                .values()
+                .map(|s| crate::tiers::refresh_interval(&s.output))
+                .min()
+                .unwrap_or(Duration::from_micros(16_667));
+            arm_animation(&self.handle, state, interval);
         }
     }
 
@@ -670,6 +678,25 @@ fn write_ready(line: &str) {
 
 /// Once frames are being drawn, a timer logs the telemetry when the screen
 /// has been still for [`QUIET`]; nothing wakes the compositor while idle.
+/// Marks the screens dirty `interval` from now, once, for the next step
+/// of an animation; the event loop then draws them.
+fn arm_animation(handle: &LoopHandle<'static, Edel>, state: &mut Edel, interval: Duration) {
+    if state.animation_armed {
+        return;
+    }
+    state.animation_armed = true;
+    let result = handle.insert_source(Timer::from_duration(interval), |_, _, state: &mut Edel| {
+        state.animation_armed = false;
+        state.dirty = true;
+        TimeoutAction::Drop
+    });
+    if let Err(e) = result {
+        eprintln!("edel-compositor: the animation timer did not start: {e}");
+        state.animation_armed = false;
+        state.dirty = true;
+    }
+}
+
 fn arm_report(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     if state.report_armed {
         return;

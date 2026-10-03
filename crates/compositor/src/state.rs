@@ -78,6 +78,9 @@ pub struct Edel {
     pub telemetry: Telemetry,
     /// A timer will log the telemetry once the screen is still (`drm.rs`).
     pub report_armed: bool,
+    /// A timer will mark the screens dirty for an animation's next step
+    /// (`drm.rs`, M5.11b).
+    pub animation_armed: bool,
     /// A window is being moved or resized (`grabs.rs`). Kept here because
     /// asking the pointer from inside its grab would wait on its own lock.
     pub dragging: bool,
@@ -165,6 +168,7 @@ impl Edel {
             dirty: true,
             telemetry: Telemetry::default(),
             report_armed: false,
+            animation_armed: false,
             dragging: false,
             text: None,
             cursors: Cursors::new(),
