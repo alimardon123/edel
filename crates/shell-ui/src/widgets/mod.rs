@@ -96,6 +96,8 @@ pub enum Action {
     Minimize(usize),
     /// Switch the shown workspace's policy, as Super+T.
     TogglePolicy,
+    /// Open the launcher, or close it (M5.3b).
+    Launcher,
 }
 
 /// For widgets that take no input.

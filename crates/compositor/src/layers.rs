@@ -18,8 +18,8 @@ use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::wlr_layer::{
-    Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
-    WlrLayerShellState,
+    KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 use std::time::Duration;
@@ -129,6 +129,7 @@ impl Edel {
                 }
             }
         }
+        self.give_keyboard(&output, surface);
         if self.window_areas() != before {
             self.relayout();
         }
@@ -164,6 +165,48 @@ impl Edel {
             }
         }
         None
+    }
+
+    /// A layer above the windows that asks for the keyboard alone, such
+    /// as the launcher, gets it once, when it first shows; a click
+    /// elsewhere takes it away again, as the launcher expects.
+    fn give_keyboard(&mut self, output: &Output, surface: &WlSurface) {
+        if self.keyboard_layer.as_ref() == Some(surface) || !crate::state::has_buffer(surface) {
+            return;
+        }
+        let wants = {
+            let map = layer_map_for_output(output);
+            map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .is_some_and(|layer| {
+                    ABOVE.contains(&layer.layer())
+                        && layer.cached_state().keyboard_interactivity
+                            == KeyboardInteractivity::Exclusive
+                })
+        };
+        if !wants {
+            return;
+        }
+        self.keyboard_layer = Some(surface.clone());
+        if let Some(keyboard) = self.seat.get_keyboard() {
+            keyboard.set_focus(self, Some(surface.clone()), SERIAL_COUNTER.next_serial());
+        }
+    }
+
+    /// A click on nothing takes the keyboard back from such a layer, as a
+    /// click on a window does: the launcher closes, and the top window
+    /// has the keyboard again.
+    pub fn take_keyboard_back(&mut self) {
+        let (Some(layer), Some(keyboard)) = (self.keyboard_layer.clone(), self.seat.get_keyboard())
+        else {
+            return;
+        };
+        if keyboard.current_focus().as_ref() != Some(&layer) {
+            return;
+        }
+        match self.space.elements().last().cloned() {
+            Some(top) => self.focus(&top),
+            None => keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial()),
+        }
     }
 
     /// A click on a layer that takes the keyboard gives it the keyboard.
@@ -306,6 +349,9 @@ impl WlrLayerShellHandler for Edel {
     }
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
+        if self.keyboard_layer.as_ref() == Some(surface.wl_surface()) {
+            self.keyboard_layer = None;
+        }
         // The keyboard goes back to the top window if the layer had it.
         let had_keyboard = self
             .seat

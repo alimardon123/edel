@@ -2,8 +2,9 @@
 //! compositor and shell-ui, from `protocols/edel-shell-v1.xml`: what the
 //! standard protocols do not carry. Today the shown workspace's policy,
 //! sent when shell-ui binds and whenever it changes (`sync_shell`, run
-//! with the state file), for the panel's layout toggle; and
-//! `toggle_policy`, which switches it as Super+T does. Any client may
+//! with the state file), for the panel's layout toggle; `toggle_policy`,
+//! which switches it as Super+T does; and the launcher's key (M5.3b),
+//! which shows or hides shell-ui's launcher. Any client may
 //! bind it, as with the workspace protocol: a narrower rule waits for a
 //! client the person did not start.
 
@@ -55,6 +56,18 @@ impl Edel {
             if told != now {
                 link.policy(now.to_string());
                 *told = now.to_string();
+            }
+        }
+    }
+}
+
+impl Edel {
+    /// The launcher's key: shell-ui shows its launcher, or hides it.
+    pub fn show_launcher(&self) {
+        eprintln!("edel-compositor: launcher");
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.launcher();
             }
         }
     }

@@ -648,6 +648,43 @@ case_workspaces() {
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
 }
 
+case_launcher() {
+	# The launcher (M5.3b): Super, tapped alone, opens it beside the
+	# panel's start, 360x352 at 8,400, 8 px from the screen's side and
+	# the panel, in the panel's colour; 188,748 lies in its bottom
+	# margin, below its last row, and is the background before.
+	background=$(token background)
+	panel=$(token panel)
+	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super, tapped alone, did not open the launcher"
+	shot launcher 188 748 "$panel" >/dev/null || fail "the launcher is not drawn at 188,748 in the panel's colour"
+	apps=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, //')
+	# Typed, foot is the best match, and Return starts it.
+	opened=$(count 'edel-compositor: mapped window foot')
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py type foot
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "typing foot and Return did not open foot"
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "the launcher did not close when foot started"
+	tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: launched Foot (foot)' || fail "the launcher did not start foot's own command"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot, which should have had the keyboard"
+	# Opened again, Escape closes it.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher a second time"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher"
+	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
+	guest 'shell rss'
+	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then used $(value shell_ui_rss_now_mib) MiB"
+}
+
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
 # give its window list a width W for which [ W TEST ] holds, and prints
 # the list's x and W.
@@ -838,13 +875,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

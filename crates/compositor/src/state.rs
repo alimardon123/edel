@@ -98,6 +98,13 @@ pub struct Edel {
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
     pub last_title_click: Option<(Window, u32)>,
+    /// How many keys are down, and the modifier pressed alone while
+    /// nothing else was, until another key or a button comes (M5.3b).
+    pub keys_down: u32,
+    pub tap: Option<smithay::input::keyboard::Keysym>,
+    /// The layer that asked for the keyboard alone and was given it when
+    /// it showed, such as shell-ui's launcher (M5.3b).
+    pub keyboard_layer: Option<WlSurface>,
     /// What the system file says (`watch.rs`).
     pub settings: Settings,
     /// `[outputs]` changed: the backend scans and places its screens again
@@ -196,6 +203,9 @@ impl Edel {
             hover: None,
             pressed: None,
             last_title_click: None,
+            keys_down: 0,
+            tap: None,
+            keyboard_layer: None,
             settings: Settings::default(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
@@ -567,7 +577,7 @@ impl Edel {
 }
 
 /// Whether `surface` has a buffer to show.
-fn has_buffer(surface: &WlSurface) -> bool {
+pub fn has_buffer(surface: &WlSurface) -> bool {
     smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
         s.buffer().is_some()
     })
