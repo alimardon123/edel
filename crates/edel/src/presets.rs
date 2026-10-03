@@ -178,7 +178,10 @@ mod tests {
         assert_eq!(classic.panels.len(), 1);
         let panel = &classic.panels[0];
         assert_eq!(panel.edge, Edge::Bottom);
-        assert_eq!(panel.widgets().collect::<Vec<_>>(), ["menu", "clock"]);
+        assert_eq!(
+            panel.widgets().collect::<Vec<_>>(),
+            ["menu", "workspaces", "clock"]
+        );
     }
 
     #[test]
