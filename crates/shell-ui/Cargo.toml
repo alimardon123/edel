@@ -1,0 +1,29 @@
+[package]
+name = "edel-shell-ui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The Edel OS shell's panels and menus, drawn by itself (ADR-002)"
+license = "GPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "edel-shell-ui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+# Text for every script, shaped, with fallback fonts (ADR-002's shell-ui
+# toolkit decision, M5.1b).
+cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "fontconfig", "swash"] }
+# The design tokens and, later, the system file, read as every part does.
+edel = { path = "../edel", default-features = false }
+# The clock's local time, from /etc/localtime when a zone is set.
+jiff = "0.2"
+# The compositor's state file, for the effect tier (M5.11a).
+toml = "1.1.6"
+# Pinned like the test client's: the layer shell and a calloop event loop
+# for the clock's timer; no xkbcommon until shell-ui takes keys (M5.3).
+smithay-client-toolkit = { version = "=0.21.1", default-features = false, features = ["calloop"] }
+# 2D drawing into the panel's shared-memory buffers.
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }

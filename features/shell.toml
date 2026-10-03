@@ -1,0 +1,10 @@
+# The Edel shell's panels and menus (ADR-002, M5.1b): edel-shell-ui, built
+# from this repository's workspace and copied in by edel image build. It
+# draws its own surfaces (ADR-002's shell-ui toolkit decision), so it links
+# no library apk would need to see; the compositor starts it in every
+# session but the greeter's and starts it again if it ends.
+format = 1
+summary = "shell-ui: the panel, and later the launcher and quick settings"
+why = "edel-shell-ui draws the panel along the screen's edge, the second of the shell's two long-running processes (ADR-002); its text needs the fonts feature's Inter."
+programs = ["edel-shell-ui"]
+packages = []

@@ -100,6 +100,8 @@ pub struct Edel {
     pub deadline: edel_compositor::effects::Deadline,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
+    /// shell-ui, started and started again (`shellui.rs`, M5.1b).
+    pub shell_ui: crate::shellui::ShellUi,
     /// The program the session runs, if it was given one (`program.rs`).
     pub program: Option<crate::program::Program>,
     /// Where window frames go; one workspace until M5.2.
@@ -173,6 +175,7 @@ impl Edel {
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             x11: None,
+            shell_ui: Default::default(),
             program: None,
             workspace: Workspace::new(tokens.gap),
             unplaced: Vec::new(),

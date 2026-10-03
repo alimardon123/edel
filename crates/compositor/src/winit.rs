@@ -79,7 +79,10 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     state.outputs_changed();
     // From inside the loop, so a program that cannot start ends it.
     let (later, socket) = (handle.clone(), name.clone());
-    handle.insert_idle(move |state| crate::program::start(&later, state, &socket));
+    handle.insert_idle(move |state| {
+        crate::program::start(&later, state, &socket);
+        crate::shellui::start(&later, state, &socket);
+    });
     let window = Rc::new(RefCell::new(Window {
         damage: OutputDamageTracker::from_output(&output),
         backend,

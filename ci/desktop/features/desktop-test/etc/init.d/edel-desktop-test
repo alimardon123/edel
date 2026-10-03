@@ -73,6 +73,9 @@ report() {
 	say "idle_frames $(echo "$telemetry" | sed -n 's/.*idle frames \([0-9][0-9]*\).*/\1/p')"
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
+	# shell-ui (M5.1b), started by the compositor with the first frame.
+	pid=$(pidof edel-shell-ui)
+	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	# The effect tier (M5.11): Lite under llvmpipe, as logged and as
 	# edel shell tier reads it from the state file.
 	say "tier $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
@@ -129,6 +132,8 @@ commands() {
 			as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
 			;;
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
+		# shell-ui dies (M5.1b): the compositor should start it again.
+		'kill panel') pkill -9 -x edel-shell-ui ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its

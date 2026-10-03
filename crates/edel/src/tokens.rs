@@ -55,7 +55,7 @@ impl Colour {
     }
 }
 
-/// The tokens the compositor uses.
+/// The tokens the compositor and shell-ui use.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tokens {
     pub background: Colour,
@@ -72,6 +72,15 @@ pub struct Tokens {
     pub title_text_size: u32,
     /// Between tiled windows and the screen's edges.
     pub gap: u32,
+    /// shell-ui's panel (M5.1b) and the text and icons on it.
+    pub panel: Colour,
+    pub panel_text: Colour,
+    /// The panel's height, logical pixels.
+    pub panel_height: u32,
+    /// The panel's text, logical pixels per em.
+    pub panel_text_size: u32,
+    /// The corner radius of rounded shapes, logical pixels.
+    pub radius: u32,
 }
 
 impl Tokens {
@@ -97,7 +106,7 @@ impl Tokens {
             match (key.as_str(), value) {
                 ("format", Value::Integer(n)) if *n <= FORMAT => {}
                 ("format", value) => notes.push(format!(
-                    "format {value} is newer than this compositor's {FORMAT}; read what it understands"
+                    "format {value} is newer than this release's {FORMAT}; read what it understands"
                 )),
                 ("colour", Value::Table(colours)) => self.apply_colours(colours, notes),
                 ("size", Value::Table(sizes)) => self.apply_sizes(sizes, notes),
@@ -116,6 +125,8 @@ impl Tokens {
                 "title_text_unfocused" => &mut self.title_text_unfocused,
                 "title_button_hover" => &mut self.title_button_hover,
                 "title_close_hover" => &mut self.title_close_hover,
+                "panel" => &mut self.panel,
+                "panel_text" => &mut self.panel_text,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -137,6 +148,9 @@ impl Tokens {
                 "border" => (&mut self.border, 50),
                 "title_text" => (&mut self.title_text_size, 100),
                 "gap" => (&mut self.gap, 100),
+                "panel" => (&mut self.panel_height, 200),
+                "panel_text" => (&mut self.panel_text_size, 100),
+                "radius" => (&mut self.radius, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -166,9 +180,22 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "title_text_unfocused",
                 "title_button_hover",
                 "title_close_hover",
+                "panel",
+                "panel_text",
             ][..],
         ),
-        ("size", &["title_bar", "border", "title_text", "gap"][..]),
+        (
+            "size",
+            &[
+                "title_bar",
+                "border",
+                "title_text",
+                "gap",
+                "panel",
+                "panel_text",
+                "radius",
+            ][..],
+        ),
     ] {
         let found = table.get(section).and_then(Value::as_table);
         if let Some(key) = keys
@@ -194,6 +221,11 @@ pub fn check(text: &str) -> Result<Tokens> {
         border: 0,
         title_text_size: 0,
         gap: 0,
+        panel: BLACK,
+        panel_text: BLACK,
+        panel_height: 0,
+        panel_text_size: 0,
+        radius: 0,
     };
     tokens.apply(&table, &mut notes);
     if !notes.is_empty() {

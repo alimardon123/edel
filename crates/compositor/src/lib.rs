@@ -11,4 +11,6 @@ pub mod layout;
 pub mod settings;
 pub mod telemetry;
 pub mod tiling;
-pub mod tokens;
+/// The design tokens live in `edel::tokens`, which shell-ui reads too
+/// (M5.1b).
+pub use edel::tokens;
