@@ -36,11 +36,14 @@ format = 1
 [users.me]
 admin = true
 ssh_keys = ["$(cat ~/.ssh/id_ed25519.pub)"]
+
+[users.root]
+ssh_keys = ["$(cat ~/.ssh/id_ed25519.pub)"]
 EOF
 mkfs.vfat -C seed.img 1024 -n EDEL-SEED && mcopy -i seed.img system.toml ::/
 ```
 
-Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`. Then try `edel update status`, `edel system export` and `edel system set network.hostname=mine`.
+Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel system export` works as `me`. Commands that change the machine, such as `edel update status`, `edel update install` and `edel system set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
 
 ## On a laptop
 

@@ -9,11 +9,12 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its older run; pushes to main
-# each keep their own.
+# A new push to a pull request cancels its older run. Every push to main
+# or of a tag keeps its own run, even when main and a tag point at the same
+# commit, so no publish is ever cancelled halfway.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rust:
@@ -48,7 +49,8 @@ jobs:
 
       - name: Number this build
         # YYYY.MM.N, with N the run number, so later runs are newer (M3.1);
-        # a v* tag is its own version. The channel and the tag a release
+        # the month is the commit's, so a run re-run next month keeps its
+        # version and never beats newer code. A v* tag is its own version. The channel and the tag a release
         # would go to (M3.4): a pull request checks the tag path, main
         # makes the preview, a tag makes a stable release.
         run: |
@@ -57,7 +59,7 @@ jobs:
             echo "EDEL_CHANNEL=stable" >> "$GITHUB_ENV"
             echo "EDEL_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
           else
-            version=$(date -u +%Y.%m).$GITHUB_RUN_NUMBER
+            version=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER
             echo "EDEL_VERSION=$version" >> "$GITHUB_ENV"
             if [ "$GITHUB_EVENT_NAME" = push ]; then
               echo "EDEL_CHANNEL=preview" >> "$GITHUB_ENV"
@@ -69,11 +71,15 @@ jobs:
           fi
 
       - name: Build images inside Alpine 3.24
+        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+
+      - name: Sign the release in a container of its own
         env:
-          # Empty until Alimardon adds the secret (docs/RELEASE.md); then
-          # the release is signed with it instead of a throwaway key.
-          EDEL_RELEASE_KEY: ${{ secrets.EDEL_RELEASE_KEY }}
-        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+          # Empty until Alimardon adds the secret (docs/RELEASE.md), and
+          # always empty for pull requests: only this step of a push to
+          # main or of a tag sees the key; the rest sign with a throwaway.
+          EDEL_RELEASE_KEY: ${{ github.event_name == 'push' && secrets.EDEL_RELEASE_KEY || '' }}
+        run: docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:3.24 sh ci/sign.sh
 
       - name: Test the container image
         run: sh ci/container-test.sh
@@ -135,6 +141,11 @@ jobs:
     name: Publish the release
     needs: [rust, images]
     if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
+    # One publish per ref at a time, never cancelled halfway: two merges in
+    # a row upload one after the other, and ci/release.sh keeps the newer.
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write

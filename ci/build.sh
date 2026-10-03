@@ -92,41 +92,18 @@ build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 # made: out/release/ holds what a GitHub release publishes (the update
 # images and their release.toml, the disks, the container image and the
 # package lists), and out/channel/release.toml names the same update images
-# by their URL under the tag's release, for the stable channel. Both are
-# signed with the release key when CI has it (EDEL_RELEASE_KEY, the secret
-# half in hex) and checked against the committed public half in
-# images/keys/; otherwise with a throwaway key, and out/channel/signer says
-# which, so ci/release.sh never publishes a throwaway signature.
+# by their URL under the tag's release, for the stable channel. They are
+# signed by ci/sign.sh in a container of its own, so the release key never
+# reaches cargo, apk or this build.
 tag=${EDEL_TAG:-v$version}
 rm -rf out/release out/channel
 mkdir -p out/release out/channel
 for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages; do
 	ln "$f" out/release/
 done
-if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
-	ls images/keys/*.pub >/dev/null 2>&1 || {
-		echo "FAIL: EDEL_RELEASE_KEY is set but images/keys/ has no .pub to check it with (docs/RELEASE.md, step 1)"
-		exit 1
-	}
-	# The secret never outlives this script, even when signing fails.
-	trap 'rm -f out/keys/release.key' EXIT
-	(umask 077 && printf '%s\n' "$EDEL_RELEASE_KEY" >out/keys/release.key)
-	key=out/keys/release.key keys=images/keys signer=release
-else
-	# Its own directory: verify reads every *.pub in it, and out/keys also
-	# holds the test keys and an ssh key.
-	./target/release/edel release keygen out/keys/throwaway ci-release
-	key=out/keys/throwaway/ci-release.key keys=out/keys/throwaway signer=throwaway
-fi
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" out/release/*.ext4.gz
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
-for manifest in out/release/release.toml out/channel/release.toml; do
-	./target/release/edel release sign --key "$key" "$manifest"
-	./target/release/edel release verify --keys "$keys" "$manifest"
-done
-rm -f out/keys/release.key
-echo "$signer" >out/channel/signer
 
 # This container runs as root. Hand the finished images back to whoever owns
 # the checkout, so the host can boot, read and delete them without root.

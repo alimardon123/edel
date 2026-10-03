@@ -6,7 +6,7 @@ How Edel OS is published, what is kept, and the two steps only Alimardon takes. 
 
 ## What CI publishes
 
-Every run of "Build and boot images" makes a release in `out/release/`: the update images (`*.ext4.gz`) and their `release.toml`, signed, the disks (`*.img.gz`), the container image and the package lists; and `out/channel/release.toml`, the same list naming each image by its URL under a tagged release. On a pull request it only checks them (`ci/release.sh dry-run`, `ci/channel.sh dry-run`) and says what it would upload.
+Every run of "Build and boot images" makes a release in `out/release/`: the update images (`*.ext4.gz`) and their `release.toml`, the disks (`*.img.gz`), the container image and the package lists; and `out/channel/release.toml`, the same list naming each image by its URL under a tagged release. `ci/sign.sh` signs both lists in a container of its own, the only step that is given the release key, and only on a push to `main` or of a tag: the build runs cargo and apk, whose code comes from the network, and a pull request's build is never signed with the real key. Pull requests and a push to `main` dry-run the preview (`ci/release.sh dry-run`); pull requests and tags also dry-run the tag path and the channel (`ci/channel.sh dry-run`), saying what they would upload.
 
 | Event | What happens once every test passed |
 |---|---|
@@ -22,13 +22,13 @@ The files of every tagged release are never deleted, and a published release is 
 
 ## Keys
 
-Each image trusts the public keys in its `/usr/share/edel/keys/`, from the definition's `[release] public_keys`; an update signed with any other key is refused (M1.6). Until the release key exists, CI signs with a throwaway key made in each run, and `ci/release.sh publish` refuses to upload a release signed that way.
+Each image trusts the public keys in its `/usr/share/edel/keys/`, from the definition's `[release] public_keys`; an update signed with any other key is refused (M1.6). Every image carries two release keys, so one can replace the other without stranding a machine (FORMATS.md): `edel-release-1` signs, and `edel-release-2` stays offline until it is needed. With the key, `ci/sign.sh` refuses to sign unless `images/keys/` holds both public keys and every bootable image carries them. Until the release key exists, CI signs with a throwaway key made in each run, and `ci/release.sh publish` refuses to upload a release signed that way.
 
 ## What waits for Alimardon
 
 Publishing is off until both steps are done. Each is a repository setting or a secret, which Claude never changes.
 
-1. **Make the release key and keep its backup offline.** On your own computer, in a clone of this repository with Rust installed, run `cargo run --release -- release keygen keys edel-release`. It writes `keys/edel-release.key` (the secret, 64 hex digits) and `keys/edel-release.pub`. Copy the `.key` file to two places that are not online (a USB stick in a drawer, a password manager's secure note), then add its contents as the repository secret `EDEL_RELEASE_KEY` (Settings, Secrets and variables, Actions, New repository secret). Send the `.pub` file in a message or commit it as `images/keys/edel-release.pub`; Claude then names it in every image definition's `[release] public_keys`. Until the `.pub` is on `main`, a run that has the secret stops with a message naming this step, so add the secret once it is there. Never commit the `.key` file.
+1. **Make the two release keys and keep them offline.** On your own computer, in a clone of this repository with Rust installed, run `cargo run --release -- release keygen ~/edel-keys edel-release-1` and the same with `edel-release-2`. The keys go to `~/edel-keys`, outside the clone, so no `git add` can pick them up (`.gitignore` also ignores `*.key`). Each run writes `NAME.key` (the secret, 64 hex digits) and `NAME.pub`. Copy both `.key` files to two places that are not online (a USB stick in a drawer, a password manager's secure note). Send both `.pub` files in a message, or commit them as `images/keys/edel-release-1.pub` and `images/keys/edel-release-2.pub`; Claude then names both in every image definition's `[release] public_keys` in one PR. Once that PR is on `main`, add the contents of `edel-release-1.key` as the repository secret `EDEL_RELEASE_KEY` (Settings, Secrets and variables, Actions, New repository secret); a run that has the secret but not both public keys in every image stops with a message naming this step. `edel-release-2.key` never goes online. Never commit a `.key` file.
 2. **Turn publishing on.** Add the repository variable `EDEL_PUBLISH` with the value `yes` (Settings, Secrets and variables, Actions, Variables). The next merge to `main` publishes the first preview. For the stable channel, turn on GitHub Pages from the `gh-pages` branch (Settings, Pages) once the first tag is published.
 
 To stop publishing, delete the variable; nothing already published changes.

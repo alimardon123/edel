@@ -41,7 +41,7 @@ check() {
 if [ -e "$container" ] && [ -e "$vm" ]; then
 	rm -f out/budgets.txt
 	for n in 1 2 3; do
-		run_vm "out/budget-boot-$n.log" 'Started in [0-9.]+ s' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
+		vm_stamp=1 run_vm "out/budget-boot-$n.log" 'Started in [0-9.]+ s' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
 			-drive if=none,id=disk0,format=raw,file="$vm" \
 			-device virtio-blk-pci,drive=disk0,bootindex=0
 		line=$(tr -d '\r' <"out/budget-boot-$n.log" |

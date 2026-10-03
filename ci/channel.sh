@@ -41,15 +41,34 @@ grep -q "releases/download/$tag/" "$from/channel.toml" || {
 
 pages=$(mktemp -d)
 rmdir "$pages"
+cleanup() {
+	git worktree remove --force "$pages" 2>/dev/null || true
+	git branch -D -q "gh-pages-$$" 2>/dev/null || true
+	rm -rf "$from"
+}
+trap cleanup EXIT
 if git fetch -q origin gh-pages 2>/dev/null; then
 	git worktree add -q --detach "$pages" FETCH_HEAD
 else
 	git worktree add -q --orphan -b "gh-pages-$$" "$pages"
 fi
+version_of() { sed -n 's/^version = "\(.*\)"$/\1/p' "$1" 2>/dev/null || true; }
+new=$(version_of "$from/channel.toml")
+old=$(version_of "$pages/channels/stable/release.toml")
+# The stable channel only moves forward: publishing an older kept release
+# later must not send machines back to it.
+if [ -n "$old" ] && [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" = "$old" ] && [ "$old" != "$new" ]; then
+	echo "the stable channel is at $old, newer than $tag; leaving it"
+	exit 0
+fi
 mkdir -p "$pages/channels/stable"
 cp "$from/channel.toml" "$pages/channels/stable/release.toml"
 cp "$from/channel.toml.sig" "$pages/channels/stable/release.toml.sig"
 git -C "$pages" add channels
+if git -C "$pages" diff --cached --quiet; then
+	echo "the stable channel already points at $tag"
+	exit 0
+fi
 git -C "$pages" -c user.name="github-actions[bot]" \
 	-c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
 	commit -qm "Point the stable channel at $tag"
@@ -60,6 +79,3 @@ if [ "$mode" = publish ]; then
 else
 	echo "dry run, would push this commit to gh-pages"
 fi
-git worktree remove --force "$pages"
-git branch -D -q "gh-pages-$$" 2>/dev/null || true
-rm -rf "$from"
