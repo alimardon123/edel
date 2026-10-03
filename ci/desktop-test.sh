@@ -35,9 +35,13 @@
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
-#   layers      a layer-shell panel (the test client, --layer bottom) lies
-#               along the bottom in its colour, keeps its height free of
-#               tiled windows, and goes when closed (M5.1a)
+#   layers      a second layer-shell panel (the test client, --layer
+#               bottom) lies above shell-ui's along the bottom in its
+#               colour, keeps its height free of tiled windows, and goes
+#               when closed (M5.1a)
+#   panel       shell-ui's panel along the bottom in the token colour with
+#               its clock drawn, within its memory budget, and back after
+#               kill -9 (M5.1b)
 #   animations  appearance.motion = "reduced" logs fades only and its
 #               removal logs the tier's own animations again; ten windows
 #               opening one after another and closing at the tier llvmpipe
@@ -153,11 +157,12 @@ wait_for() {
 
 # The background colour the compositor clears to, from the design tokens.
 background=$(token background)
-# foot's own background. Window frames open centred and cascade (M4.3),
-# each a 28 px title bar above the window and a 1 px border round the
-# rest (M4.4): foot, asked for 400x300, draws 396x288, whole character
-# cells, and opens first at 442,269; 460,530 is inside it but outside
-# the test clients opened after it.
+# foot's own background. Window frames open centred in the area above
+# shell-ui's 40 px panel (M5.1b), 1280x760, and cascade (M4.3), each a
+# 28 px title bar above the window and a 1 px border round the rest
+# (M4.4): foot, asked for 400x300, draws 396x288, whole character cells,
+# and opens first at 442,249; 460,530 is inside it but outside the test
+# clients opened after it.
 foot=242424
 foot_x=460 foot_y=530
 
@@ -239,7 +244,8 @@ case_compositor() {
 
 case_floating() {
 	sed -n 's/.*DESKTOP-TEST: state //p' "$log" | tr -d '\r' >"$dir/state.toml"
-	# On a 1280x800 screen, centred frames share the centre 640,400, so
+	# Above a 40 px panel on a 1280x800 screen, centred frames share the
+	# centre 640,380, so
 	# one's frame, opened after foot's, sits 32 px down and right of
 	# centred, and two's 64 px; each window is 28 px below its frame's top
 	# and 1 px inside its left edge.
@@ -249,13 +255,13 @@ case_floating() {
 		windows = {w["title"]: w for w in state["windows"]}
 		place = lambda t: (windows[t]["x"], windows[t]["y"], windows[t]["width"], windows[t]["height"])
 		assert state["format"] == 1 and state["policy"] == "floating", state
-		assert place("one") == (522, 345, 300, 200), place("one")
-		assert place("two") == (604, 402, 200, 150), place("two")
+		assert place("one") == (522, 325, 300, 200), place("one")
+		assert place("two") == (604, 382, 200, 150), place("two")
 		assert windows["two"]["focused"], "the newest window has the keyboard"
 		assert [w["title"] for w in state["windows"]][-2:] == ["one", "two"], "two is on top"
 	EOF
-	shot floating 530 353 cc3333 >/dev/null || fail "test client one is not red at 530,353"
-	shot floating 704 477 3366cc >/dev/null || fail "test client two is not blue at its centre, 704,477"
+	shot floating 530 333 cc3333 >/dev/null || fail "test client one is not red at 530,333"
+	shot floating 704 457 3366cc >/dev/null || fail "test client two is not blue at its centre, 704,457"
 	echo "PASS: the floating policy placed foot and two test clients centred and cascading, the state file lists them, and each shows its colour"
 }
 
@@ -282,18 +288,19 @@ case_titlebar() {
 	done <<-EOF
 		$bars
 	EOF
-	text=$(python3 ci/qmp.py uniform "$dir/titlebar.png" 610 376 135 24)
+	text=$(python3 ci/qmp.py uniform "$dir/titlebar.png" 610 356 135 24)
 	[ "$text" = varied ] || fail "two's title bar shows no title: it is $text"
 	# Close two with its close button, the bar's rightmost 28 px.
-	python3 ci/qmp.py click 791 388
+	python3 ci/qmp.py click 791 368
 	wait_for 'edel-compositor: unmapped window two' ||
-		fail "clicking two's close button at 791,388 did not close it"
+		fail "clicking two's close button at 791,368 did not close it"
 	wait_for 'DESKTOP-TEST: windows 2 ' || fail "the state file still lists two"
-	# Drag one by its bar 200 px right and up; foot stays uncovered at
-	# $foot_x,$foot_y for the console case.
-	python3 ci/qmp.py drag 560 331 760 131
+	# Drag one by its bar 200 px right and 180 up, to where later cases
+	# expect it; foot stays uncovered at $foot_x,$foot_y for the console
+	# case.
+	python3 ci/qmp.py drag 560 311 760 131
 	wait_for 'DESKTOP-TEST: windows 2 .*one@72[123],14[456],300x200' ||
-		fail "dragging one's title bar from 560,331 to 760,131 did not move it to about 722,145: $(value windows)"
+		fail "dragging one's title bar from 560,311 to 760,131 did not move it to about 722,145: $(value windows)"
 	echo "PASS: foot and the test clients have title bars in the token colours with their titles, two's close button closed it and one's bar moved it"
 }
 
@@ -360,19 +367,20 @@ case_respawn() {
 }
 
 case_layers() {
-	# A panel (M5.1a): the test client on the top layer along the bottom,
-	# the screen's width and 40 px high, in #2f343f. Only one is open,
-	# where titlebar left it.
+	# A second panel (M5.1a): the test client on the top layer along the
+	# bottom, the screen's width and 40 px high, in #2f343f, stacked above
+	# shell-ui's own panel (M5.1b). Only one window is open, where titlebar
+	# left it.
 	guest 'panel on'
-	wait_for 'DESKTOP-TEST: layers 1 edel-testclient@0,760,1280x40' ||
-		fail "the panel is not along the bottom in the state file: $(value layers)"
-	shot layers 640 790 2f343f >/dev/null || fail "640,790 is not the panel's #2f343f"
-	# Windows tile, and would maximize, in the area above it. Super+T
+	wait_for 'DESKTOP-TEST: layers 2 .*edel-testclient@0,720,1280x40' ||
+		fail "the test panel is not above shell-ui's along the bottom in the state file: $(value layers)"
+	shot layers 640 740 2f343f >/dev/null || fail "640,740 is not the test panel's #2f343f"
+	# Windows tile, and would maximize, in the area above both. Super+T
 	# switches whatever the system file says: the tiling case leaves
 	# shell.tiling at true with the windows floating.
 	python3 ci/qmp.py key meta_l-t
-	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x715' ||
-		fail "one did not tile above the panel: $(value windows)"
+	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x675' ||
+		fail "one did not tile above the panels: $(value windows)"
 	python3 ci/qmp.py key meta_l-t
 	i=0
 	while [ "$(value windows)" != '1 one@722,145,300x200' ]; do
@@ -381,8 +389,13 @@ case_layers() {
 		sleep 0.2
 	done
 	guest 'panel off'
-	wait_for 'DESKTOP-TEST: layers 0' || fail "the panel did not go: $(value layers)"
-	echo "PASS: a layer-shell panel lay along the bottom in its colour, windows tiled above it (one@9,36,1262x715), and it went when closed"
+	i=0
+	while [ "$(value layers)" != '1 edel-panel@0,748,1280x52' ]; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "the test panel did not go: $(value layers)"
+		sleep 0.2
+	done
+	echo "PASS: a second layer-shell panel lay above shell-ui's along the bottom in its colour, windows tiled above both (one@9,36,1262x675), and it went when closed"
 }
 
 # count PATTERN: how many serial lines match PATTERN so far.
@@ -399,6 +412,35 @@ wait_more() {
 		[ "$i" -lt $((${3:-20} * 5)) ] || return 1
 		sleep 0.2
 	done
+}
+
+case_panel() {
+	# shell-ui's panel (M5.1b), which the compositor started once the
+	# desktop was on screen: a 40 px panel along the bottom, drawn with a
+	# 12 px strip above it for the fillets, which takes no space.
+	panel=$(token panel)
+	value layers | grep -q 'edel-panel@0,748,1280x52' ||
+		fail "shell-ui's panel is not along the bottom in the state file: $(value layers)"
+	shot panel 640 790 "$panel" >/dev/null || fail "640,790 is not the panel's #$panel"
+	shot panel 640 761 "$panel" >/dev/null || fail "640,761, the panel's top row, is not #$panel"
+	# The clock, at the panel's right end, is drawn: not one colour.
+	clock=$(python3 ci/qmp.py uniform "$dir/panel.png" 1180 765 84 30)
+	[ "$clock" = varied ] || fail "the clock's region at the panel's right end is $clock"
+	# Its memory, as the service read it once the desktop was idle.
+	rss=$(value shell_ui_rss_mib)
+	limit=$(budget shell_ui_rss_mib)
+	awk -v m="$rss" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "edel-shell-ui uses ${rss:-?} MiB, over its budget of $limit MiB"
+	# Killed, it comes back: the compositor starts it again.
+	started=$(count 'edel-compositor: started edel-shell-ui')
+	guest 'kill panel'
+	wait_more 'edel-compositor: started edel-shell-ui' "$started" ||
+		fail "the compositor did not start edel-shell-ui again after kill -9"
+	shot panel 640 790 "$panel" >/dev/null || fail "after kill -9, the panel did not come back at 640,790"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "shell-ui (M5.1b): $rss MiB resident (budget $limit MiB)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, uses $rss MiB (budget $limit), and came back after kill -9"
 }
 
 case_animations() {
@@ -517,7 +559,7 @@ case_tiling() {
 		fail "edel system set shell.tiling=true did not run in the VM"
 	wait_for 'edel-compositor: windows now tiling' ||
 		fail "the compositor did not follow shell.tiling = true"
-	wait_for 'DESKTOP-TEST: windows 2 foot@9,36,[0-9]+x[0-9]+ one@645,36,626x755' ||
+	wait_for 'DESKTOP-TEST: windows 2 foot@9,36,[0-9]+x[0-9]+ one@645,36,626x715' ||
 		fail "foot and one are not tiled side by side: $(value windows)"
 	tiled=$(value windows)
 	python3 - "$tiled" <<-'EOF' || fail "the tiled windows overlap: $tiled"
@@ -537,7 +579,7 @@ case_tiling() {
 	# Super+T: this workspace floats again, each window where it was.
 	python3 ci/qmp.py key meta_l-t
 	wait_for 'edel-compositor: windows now floating' || fail "Super+T did not switch back to floating"
-	wait_for 'DESKTOP-TEST: windows 2 foot@442,269,396x288 one@722,145,300x200' ||
+	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel system set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
@@ -596,13 +638,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor xwayland layers animations shortcuts scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
+	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar and xwayland"
 		exit 1
 		;;
 	esac

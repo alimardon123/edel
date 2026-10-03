@@ -18,6 +18,10 @@ title_text_unfocused = "#9a9da5"
 # Behind a title bar button under the pointer; close turns red.
 title_button_hover = "#4b5260"
 title_close_hover = "#c4473f"
+# shell-ui's panel (M5.1b), a shade darker than the background, and its
+# text and icons.
+panel = "#1b1d22"
+panel_text = "#e8e8ea"
 
 [size]
 # In logical pixels.
@@ -27,3 +31,9 @@ border = 1
 title_text = 13
 # Between tiled windows and round them (M4.5).
 gap = 8
+# shell-ui's panel along the screen's edge, and its clock's letters (M5.1b).
+panel = 40
+panel_text = 13
+# The corner radius of rounded shapes: the fillets where the panel meets
+# the screen (M5.1b), then windows, menus and buttons (M5.14).
+radius = 12

@@ -40,3 +40,8 @@ frame_p99_ms = 4.4
 
 # Frames the compositor draws while nothing on screen changes.
 idle_frames = 0
+
+# shell-ui's resident memory (VmRSS) with the session idle, MiB (M5.1b):
+# 6.0 MiB measured on 2026-10-03 (desktop-test's panel case) plus 20
+# percent.
+shell_ui_rss_mib = 7.2

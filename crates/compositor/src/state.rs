@@ -108,6 +108,8 @@ pub struct Edel {
     pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
     pub x11: Option<crate::xwayland::X11Display>,
+    /// shell-ui, started and started again (`shellui.rs`, M5.1b).
+    pub shell_ui: crate::shellui::ShellUi,
     /// The Wayland socket's name, for programs the compositor starts.
     pub socket: String,
     /// The keyboard shortcuts that act (`shortcuts.rs`, M5.13a).
@@ -191,6 +193,7 @@ impl Edel {
                 edel_compositor::animation::Motion::Full,
             )),
             x11: None,
+            shell_ui: Default::default(),
             program: None,
             socket: String::new(),
             bindings: crate::shortcuts::bind(&Default::default()).0,

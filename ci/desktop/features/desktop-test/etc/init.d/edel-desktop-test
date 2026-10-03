@@ -75,6 +75,9 @@ report() {
 	# file; then the animations it gives (M5.11b).
 	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
 	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
+	# shell-ui (M5.1b), started by the compositor with the first frame.
+	pid=$(pidof edel-shell-ui)
+	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	say "shell_tier $(edel shell tier 2>&1)"
 	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
@@ -129,6 +132,8 @@ commands() {
 			as_ci edel-testclient --layer bottom --size 0x40 --colour 2f343f </dev/null >/dev/null 2>&1 &
 			;;
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
+		# shell-ui dies (M5.1b): the compositor should start it again.
+		'kill panel') pkill -9 -x edel-shell-ui ;;
 		# appearance.motion (M5.11b), reduced and back to the default.
 		'motion reduced') edel system set appearance.motion=reduced ;;
 		'motion off') edel system set appearance.motion=off ;;
