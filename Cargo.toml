@@ -1,4 +1,4 @@
 [workspace]
-members = ["crates/edel", "crates/compositor"]
+members = ["crates/edel", "crates/compositor", "crates/testclient"]
 default-members = ["crates/edel"]
 resolver = "3"

@@ -1,11 +1,13 @@
 #!/sbin/openrc-run
-# Test only (roadmap M4.1, M4.2b): CI builds this into ci/desktop/vm.toml.
-# greetd logs user ci (from the seed system file, put in the seat group by
-# edel system apply) in to the compositor at once. This service waits for
-# the compositor's health file, then, as ci, times 10 s of frames with
-# weston-presentation-shm, reads the compositor's telemetry and memory,
-# and opens a small foot window for the keyboard check. It prints the
-# results on the serial console, where ci/desktop-test.sh reads them.
+# Test only (roadmap M4.1, M4.2b, M4.3): CI builds this into
+# ci/desktop/vm.toml. greetd logs user ci (from the seed system file, put
+# in the seat group by edel system apply) in to the compositor at once.
+# This service waits for the compositor's health file, then, as ci, times
+# 10 s of frames with weston-presentation-shm, reads the compositor's
+# telemetry and memory, and opens foot and two test clients, each once the
+# one before is on screen, so they cascade in a known order. It prints the
+# results and the compositor's state file on the serial console, where
+# ci/desktop-test.sh reads them.
 
 description="Edel OS desktop test"
 
@@ -65,10 +67,29 @@ report() {
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
-	# Until the floating policy (M4.3) every window opens at the top
-	# left; a small one leaves the centre of the screen to the background.
+	# Windows open centred, each 32 px down and right of an open window
+	# whose centre it would share (M4.3): foot first, then one, then two.
 	as_ci foot --window-size-pixels=400x300 </dev/null >/dev/null 2>&1 &
+	shown 1
+	as_ci edel-testclient --size 300x200 --colour cc3333 --title one </dev/null >/dev/null 2>&1 &
+	shown 2
+	as_ci edel-testclient --size 200x150 --colour 3366cc --title two </dev/null >/dev/null 2>&1 &
+	shown 3
+	while IFS= read -r line; do
+		say "state $line"
+	done </run/edel/session/state.toml
 	say "done"
+}
+
+# shown N: waits up to 30 s for the state file to list N windows.
+shown() {
+	i=0
+	while [ "$i" -lt 150 ]; do
+		n=$(grep -c '^\[\[windows\]\]' /run/edel/session/state.toml 2>/dev/null || true)
+		[ "${n:-0}" -ge "$1" ] && return
+		sleep 0.2
+		i=$((i + 1))
+	done
 }
 
 start() {

@@ -24,7 +24,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `terminal` | foot | `foot` | none | desktop |
 | `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
 
-CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.
+CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, the program `edel-testclient`, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.
 
 ## A feature file
 

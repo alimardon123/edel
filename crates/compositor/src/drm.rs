@@ -131,6 +131,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     output.set_preferred(wl_mode);
     output.create_global::<Edel>(&state.display);
     state.space.map_output(&output, (0, 0));
+    state.outputs_changed();
 
     let surface = drm
         .create_surface(crtc, mode, &[connector])

@@ -71,6 +71,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     );
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
+    state.outputs_changed();
     let window = Rc::new(RefCell::new(Window {
         damage: OutputDamageTracker::from_output(&output),
         backend,
@@ -121,7 +122,7 @@ fn on_event(window: &mut Window, state: &mut Edel, event: WinitEvent) {
                 .output
                 .change_current_state(Some(mode), None, None, None);
             window.output.set_preferred(mode);
-            state.dirty = true;
+            state.outputs_changed();
         }
         WinitEvent::Input(event) => {
             // The host desktop switches its own terminals.

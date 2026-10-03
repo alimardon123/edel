@@ -3,8 +3,9 @@
 # at once.
 format = 1
 summary = "CI only: log in to the compositor at once and measure it"
-why = "weston-presentation-shm times the frames the compositor presents; the test service prints what it measured on the serial console."
+why = "weston-presentation-shm times the frames the compositor presents, and edel-testclient draws windows of known size and colour (M4.3); the test service prints what it measured on the serial console."
 packages = ["weston-clients"]
+programs = ["edel-testclient"]
 
 [services]
 default = ["edel-desktop-test"]
