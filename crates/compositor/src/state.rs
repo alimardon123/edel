@@ -231,8 +231,13 @@ impl Edel {
     /// the policy decides where its frame stays (floating keeps it, tiling
     /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
-        let insets = self.insets(window);
-        let frame = self.desks.layout_mut().moved(window, insets.frame(place));
+        let frame = self.insets(window).frame(place);
+        // A floating window put on another screen moves to it.
+        let middle = frame.loc.to_f64() + frame.size.to_f64().downscale(2.0).to_point();
+        let Some((screen, area)) = self.screen_at(middle) else {
+            return;
+        };
+        let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
         self.put(window, frame);
         self.dirty = true;
         self.state_changed();
@@ -286,9 +291,10 @@ impl Edel {
     /// stays on the screen.
     pub fn relayout(&mut self) {
         self.keep_pointer_on_screen();
-        if let Some(area) = self.window_area() {
+        let areas = self.window_areas();
+        if !areas.is_empty() {
             let stack: Vec<Window> = self.space.elements().cloned().collect();
-            for (window, frame) in self.desks.layout_mut().arrange(area) {
+            for (window, frame) in self.desks.layout_mut().arrange(&areas) {
                 if self.is_maximized(&window) {
                     self.maximize(&window);
                 } else {
@@ -396,7 +402,9 @@ impl Edel {
             return;
         }
         let frame = self.insets(window).frame(place);
-        self.desks.layout_mut().moved(window, frame);
+        if let Some((screen, area)) = self.home(window) {
+            self.desks.layout_mut().moved(window, frame, &screen, area);
+        }
         self.state_changed();
     }
 
@@ -646,7 +654,8 @@ impl CompositorHandler for Edel {
             return;
         }
         let drawn = has_buffer(surface);
-        let Some(area) = self.window_area() else {
+        // On the screen the pointer is on (M5.2g).
+        let Some((screen, area)) = self.pointer_screen() else {
             return;
         };
         if drawn {
@@ -655,6 +664,7 @@ impl CompositorHandler for Edel {
             let frame = self.desks.layout_mut().open(
                 window.clone(),
                 insets.frame_size(window.geometry().size),
+                &screen,
                 area,
             );
             let place = insets.window(frame);

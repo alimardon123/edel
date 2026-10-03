@@ -767,12 +767,26 @@ case_outputs() {
 		assert place("Virtual-1") == (0, 0, 1280, 800), place("Virtual-1")
 		assert place("Virtual-2") == (1280, 0, 1024, 768), place("Virtual-2")
 	EOF
+	# A window opens on the screen the pointer is on (M5.2g): the mouse
+	# takes the pointer over the shared edge onto Virtual-2, where away,
+	# 200x150, opens centred in that screen's own area, which has no
+	# panel: its frame, 202x179, at 1691,294.
+	python3 ci/qmp.py move 1270 400
+	python3 ci/qmp.py nudge 300 0
+	opened=$(count 'edel-compositor: mapped window away')
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open"
+	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@1692,322,200x150$' ||
+		fail "away did not open centred on Virtual-2, where the pointer is: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window away')
+	guest 'away off'
+	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
 	guest 'screen 2 off'
 	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
 		fail "edel system set outputs.Virtual-2.enabled=false did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-2 off' ||
 		fail "the compositor did not turn Virtual-2 off"
-	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the system file's mode 1024x768, and outputs.Virtual-2.enabled = false turned the second off"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the system file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and outputs.Virtual-2.enabled = false turned the second off"
 }
 
 case_scale() {
@@ -819,7 +833,7 @@ fi
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
-	-device virtio-keyboard-pci -device virtio-tablet-pci \
+	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
 	-drive if=none,id=disk0,format=raw,file="$dir/edel-desktop-x86_64.img" \

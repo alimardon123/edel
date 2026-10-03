@@ -51,32 +51,56 @@ pub trait WindowPolicy<W> {
     }
 }
 
-/// One workspace: every policy follows its windows, and one of them, the
-/// active one, places them. Switching re-lays the windows out at once
-/// (ADR-002), and back in floating they are where they were.
+/// The areas windows lie in, one per screen, by the screen's name: each
+/// screen's part left to windows once panels have taken their room.
+pub type Areas = [(String, Rectangle<i32, Logical>)];
+
+/// One workspace: on each screen, every policy follows that screen's
+/// windows, and one of them, the active one, places them (M5.2g: each
+/// screen its own area, so a window tiles and maximizes on its own).
+/// Switching re-lays the windows out at once (ADR-002), and back in
+/// floating they are where they were.
 pub struct Workspace<W> {
-    policies: Vec<Box<dyn WindowPolicy<W>>>,
+    gap: u32,
+    /// Each policy's name and whether it rearranges, in [`policies`]'
+    /// order, asked once.
+    kinds: Vec<(&'static str, bool)>,
+    screens: Vec<Screen<W>>,
     active: usize,
+}
+
+/// One screen's windows, in the order they opened, its policies and the
+/// area they last placed windows in.
+struct Screen<W> {
+    name: String,
+    area: Rectangle<i32, Logical>,
+    windows: Vec<W>,
+    policies: Vec<Box<dyn WindowPolicy<W>>>,
 }
 
 impl<W: Clone + PartialEq + 'static> Workspace<W> {
     /// A floating workspace with every policy of [`policies`].
     pub fn new(gap: u32) -> Workspace<W> {
         Workspace {
-            policies: policies(gap),
+            gap,
+            kinds: policies::<W>(gap)
+                .iter()
+                .map(|p| (p.name(), p.rearranges()))
+                .collect(),
+            screens: Vec::new(),
             active: 0,
         }
     }
 
     /// The active policy's name.
     pub fn name(&self) -> &'static str {
-        self.policies[self.active].name()
+        self.kinds[self.active].0
     }
 
-    /// Makes the policy called `name` the active one; false if there is
-    /// none, or it already is.
+    /// Makes the policy called `name` the active one, on every screen;
+    /// false if there is none, or it already is.
     pub fn switch(&mut self, name: &str) -> bool {
-        match self.policies.iter().position(|p| p.name() == name) {
+        match self.kinds.iter().position(|(n, _)| *n == name) {
             Some(i) if i != self.active => {
                 self.active = i;
                 true
@@ -87,19 +111,46 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
 
     /// The next policy after the active one, for Super+T.
     pub fn next(&self) -> &'static str {
-        self.policies[(self.active + 1) % self.policies.len()].name()
+        self.kinds[(self.active + 1) % self.kinds.len()].0
     }
 
+    /// The screen `window` lies on, by name.
+    pub fn screen_of(&self, window: &W) -> Option<&str> {
+        self.screens
+            .iter()
+            .find(|s| s.windows.contains(window))
+            .map(|s| s.name.as_str())
+    }
+
+    /// `window` opened on the screen called `screen`, whose area is
+    /// `area`; returns its place there.
     pub fn open(
         &mut self,
         window: W,
         wanted: Size<i32, Logical>,
+        screen: &str,
         area: Rectangle<i32, Logical>,
     ) -> Rectangle<i32, Logical> {
+        self.close(&window);
+        let i = match self.screens.iter().position(|s| s.name == screen) {
+            Some(i) => i,
+            None => {
+                self.screens.push(Screen {
+                    name: screen.to_string(),
+                    area,
+                    windows: Vec::new(),
+                    policies: policies(self.gap),
+                });
+                self.screens.len() - 1
+            }
+        };
+        let screen = &mut self.screens[i];
+        screen.area = area;
+        screen.windows.push(window.clone());
         let mut place = Rectangle::default();
-        for (i, policy) in self.policies.iter_mut().enumerate() {
+        for (j, policy) in screen.policies.iter_mut().enumerate() {
             let at = policy.open(window.clone(), wanted, area);
-            if i == self.active {
+            if j == self.active {
                 place = at;
             }
         }
@@ -107,21 +158,70 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
     }
 
     pub fn close(&mut self, window: &W) {
-        for policy in &mut self.policies {
-            policy.close(window);
+        for screen in &mut self.screens {
+            if screen.windows.contains(window) {
+                screen.windows.retain(|w| w != window);
+                for policy in &mut screen.policies {
+                    policy.close(window);
+                }
+            }
         }
     }
 
-    pub fn moved(&mut self, window: &W, to: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
-        self.policies[self.active].moved(window, to)
+    /// A person moved or resized `window` to `to`, on the screen called
+    /// `screen` with area `area` (where its middle now lies); returns
+    /// where it stays. A floating window moved to another screen moves to
+    /// that screen's policies; a tiled one goes back to its tile.
+    pub fn moved(
+        &mut self,
+        window: &W,
+        to: Rectangle<i32, Logical>,
+        screen: &str,
+        area: Rectangle<i32, Logical>,
+    ) -> Rectangle<i32, Logical> {
+        let from = self.screen_of(window).map(str::to_string);
+        if !self.rearranges() && from.as_deref().is_some_and(|f| f != screen) {
+            self.open(window.clone(), to.size, screen, area);
+        }
+        let active = self.active;
+        match self.screens.iter_mut().find(|s| s.windows.contains(window)) {
+            Some(screen) => screen.policies[active].moved(window, to),
+            None => to,
+        }
     }
 
-    pub fn arrange(&mut self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)> {
-        self.policies[self.active].arrange(area)
+    /// Every window's place, after a screen came, went, or changed its
+    /// area, or after the workspace switched policies: each screen's
+    /// windows in its area from `areas`. The windows of a screen no longer
+    /// there move to the first screen, at their sizes.
+    pub fn arrange(&mut self, areas: &Areas) -> Vec<(W, Rectangle<i32, Logical>)> {
+        let Some((first, first_area)) = areas.first() else {
+            return Vec::new();
+        };
+        let active = self.active;
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.screens)
+            .into_iter()
+            .partition(|s| areas.iter().all(|(name, _)| *name != s.name));
+        self.screens = kept;
+        for mut screen in gone {
+            let was = screen.area;
+            for (window, place) in screen.policies[active].arrange(was) {
+                self.open(window, place.size, first, *first_area);
+            }
+        }
+        let mut placed = Vec::new();
+        for screen in &mut self.screens {
+            let Some((_, area)) = areas.iter().find(|(name, _)| *name == screen.name) else {
+                continue;
+            };
+            screen.area = *area;
+            placed.extend(screen.policies[active].arrange(*area));
+        }
+        placed
     }
 
     pub fn rearranges(&self) -> bool {
-        self.policies[self.active].rearranges()
+        self.kinds[self.active].1
     }
 }
 
@@ -516,26 +616,30 @@ mod tests {
         assert_eq!(floating.name(), "floating");
     }
 
+    fn one_screen() -> Vec<(String, Rectangle<i32, Logical>)> {
+        vec![("one".into(), screen())]
+    }
+
     #[test]
     fn a_workspace_switches_policies_and_floating_keeps_its_places() {
         let mut workspace = Workspace::new(8);
         assert_eq!(workspace.name(), "floating");
         assert_eq!(workspace.next(), "tiling");
-        let one = workspace.open(1, (300, 200).into(), screen());
-        workspace.open(2, (200, 150).into(), screen());
+        let one = workspace.open(1, (300, 200).into(), "one", screen());
+        workspace.open(2, (200, 150).into(), "one", screen());
         let dragged = Rectangle::new((10, 10).into(), (300, 200).into());
-        workspace.moved(&1, dragged);
+        workspace.moved(&1, dragged, "one", screen());
         assert!(workspace.switch("tiling"));
         assert!(!workspace.switch("tiling"), "already tiling");
         assert!(!workspace.switch("spiral"), "no such policy");
         assert!(workspace.rearranges());
-        let tiled = workspace.arrange(screen());
+        let tiled = workspace.arrange(&one_screen());
         assert_eq!(tiled.len(), 2);
         assert!(!tiled[0].1.overlaps(tiled[1].1));
         // Dragging in tiling puts the window back; floating never hears it.
-        assert_eq!(workspace.moved(&1, one), tiled[0].1);
+        assert_eq!(workspace.moved(&1, one, "one", screen()), tiled[0].1);
         assert!(workspace.switch("floating"));
-        let floating = workspace.arrange(screen());
+        let floating = workspace.arrange(&one_screen());
         assert_eq!(floating[0], (1, dragged));
         assert_eq!(
             floating[1],
@@ -544,9 +648,51 @@ mod tests {
         workspace.close(&1);
         assert!(workspace.switch("tiling"));
         assert_eq!(
-            workspace.arrange(screen()),
+            workspace.arrange(&one_screen()),
             [(2, Rectangle::new((8, 8).into(), (1264, 784).into()))]
         );
+    }
+
+    #[test]
+    fn each_screen_places_its_own_windows() {
+        let left = screen();
+        let right = Rectangle::new((1280, 0).into(), (1024, 768).into());
+        let both = vec![("one".to_string(), left), ("two".to_string(), right)];
+        let mut workspace = Workspace::new(8);
+        // Each opens centred on its own screen.
+        let a = workspace.open(1, (300, 200).into(), "one", left);
+        let b = workspace.open(2, (300, 200).into(), "two", right);
+        assert_eq!(a.loc, (490, 300).into());
+        assert_eq!(b.loc, (1280 + 362, 284).into());
+        assert_eq!(workspace.screen_of(&2), Some("two"));
+        // Tiled, each fills its own screen.
+        workspace.switch("tiling");
+        let tiled = workspace.arrange(&both);
+        assert!(tiled.contains(&(1, Rectangle::new((8, 8).into(), (1264, 784).into()))));
+        assert!(tiled.contains(&(2, Rectangle::new((1288, 8).into(), (1008, 752).into()))));
+        // Floating, a window dragged onto the other screen moves there and
+        // stays where it was put.
+        workspace.switch("floating");
+        let there = Rectangle::new((1400, 100).into(), (300, 200).into());
+        assert_eq!(workspace.moved(&1, there, "two", right), there);
+        assert_eq!(workspace.screen_of(&1), Some("two"));
+        workspace.switch("tiling");
+        assert_eq!(
+            workspace
+                .arrange(&both)
+                .iter()
+                .filter(|(_, at)| at.loc.x >= 1280)
+                .count(),
+            2
+        );
+        // The second screen goes: its windows join the first.
+        workspace.switch("floating");
+        let left_only = vec![("one".to_string(), left)];
+        let placed = workspace.arrange(&left_only);
+        assert_eq!(placed.len(), 2);
+        assert!(placed.iter().all(|(_, at)| at.loc.x + at.size.w <= 1280));
+        assert_eq!(workspace.screen_of(&2), Some("one"));
+        assert!(workspace.arrange(&[]).is_empty(), "no screen, no places");
     }
 
     #[test]
