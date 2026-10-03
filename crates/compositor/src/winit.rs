@@ -1,6 +1,7 @@
 //! The development backend: the compositor in a window of the desktop it
 //! runs on (smithay's winit backend), for working on it without a VM. The
-//! virtual GPU and real hardware get the DRM backend in M4.2b.
+//! virtual GPU and real hardware use `drm.rs`; this one runs when
+//! `WAYLAND_DISPLAY` or `DISPLAY` says there is a desktop to run in.
 //!
 //! A frame is drawn only when something changed (`Edel::dirty`), so an idle
 //! desktop draws nothing; `--bench` runs for 5 s and prints the frame
@@ -11,27 +12,20 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use smithay::backend::input::{
-    AbsolutePositionEvent, ButtonState, Event, InputEvent, KeyboardKeyEvent, PointerButtonEvent,
-};
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::desktop::space::render_output;
-use smithay::input::keyboard::FilterResult;
-use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-use smithay::reexports::calloop::generic::Generic;
+use smithay::reexports::calloop::EventLoop;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::calloop::{EventLoop, Interest, Mode as TriggerMode, PostAction};
 use smithay::reexports::wayland_server::Display;
-use smithay::utils::{SERIAL_COUNTER, Transform};
-use smithay::wayland::socket::ListeningSocketSource;
+use smithay::utils::Transform;
 
 use edel_compositor::tokens::Tokens;
 
-use crate::state::{Edel, new_client_data};
+use crate::state::Edel;
 
 /// How long `--bench` measures.
 const BENCH: Duration = Duration::from_secs(5);
@@ -50,25 +44,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
     let handle = event_loop.handle();
 
-    let socket = ListeningSocketSource::new_auto().context("opening a Wayland socket")?;
-    let name = socket.socket_name().to_string_lossy().into_owned();
-    handle
-        .insert_source(socket, |stream, _, state: &mut Edel| {
-            if let Err(e) = state.display.insert_client(stream, new_client_data()) {
-                eprintln!("edel-compositor: a client could not connect: {e}");
-            }
-        })
-        .map_err(|e| anyhow::anyhow!("listening on the socket: {e}"))?;
-    handle
-        .insert_source(
-            Generic::new(display, Interest::READ, TriggerMode::Level),
-            |_, display, state: &mut Edel| {
-                // SAFETY: the display is never dropped while the loop runs.
-                unsafe { display.get_mut().dispatch_clients(state)? };
-                Ok(PostAction::Continue)
-            },
-        )
-        .map_err(|e| anyhow::anyhow!("watching the display: {e}"))?;
+    let name = crate::state::listen(&handle, display)?;
 
     let (backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
@@ -147,7 +123,10 @@ fn on_event(window: &mut Window, state: &mut Edel, event: WinitEvent) {
             window.output.set_preferred(mode);
             state.dirty = true;
         }
-        WinitEvent::Input(event) => input(state, event),
+        WinitEvent::Input(event) => {
+            // The host desktop switches its own terminals.
+            let _ = state.input(event);
+        }
         WinitEvent::Redraw => {
             if state.dirty {
                 draw(window, state);
@@ -198,75 +177,5 @@ fn draw(window: &mut Window, state: &mut Edel) {
         w.send_frame(&window.output, now, Some(Duration::ZERO), |_, _| {
             Some(window.output.clone())
         });
-    }
-}
-
-/// Keyboard to the focused window; the pointer focuses and clicks the
-/// window under it.
-fn input(state: &mut Edel, event: InputEvent<winit::WinitInput>) {
-    let serial = SERIAL_COUNTER.next_serial();
-    match event {
-        InputEvent::Keyboard { event } => {
-            if let Some(keyboard) = state.seat.get_keyboard() {
-                keyboard.input::<(), _>(
-                    state,
-                    event.key_code(),
-                    event.state(),
-                    serial,
-                    event.time_msec(),
-                    |_, _, _| FilterResult::Forward,
-                );
-            }
-        }
-        InputEvent::PointerMotionAbsolute { event } => {
-            let Some(output) = state.space.outputs().next() else {
-                return;
-            };
-            let Some(area) = state.space.output_geometry(output) else {
-                return;
-            };
-            let location = event.position_transformed(area.size) + area.loc.to_f64();
-            let focus = state.surface_under(location);
-            if let Some(pointer) = state.seat.get_pointer() {
-                pointer.motion(
-                    state,
-                    focus,
-                    &MotionEvent {
-                        location,
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(state);
-            }
-        }
-        InputEvent::PointerButton { event } => {
-            let Some(pointer) = state.seat.get_pointer() else {
-                return;
-            };
-            if event.state() == ButtonState::Pressed {
-                let location = pointer.current_location();
-                let window = state.space.element_under(location).map(|(w, _)| w.clone());
-                if let Some(window) = window {
-                    state.space.raise_element(&window, true);
-                    let surface = window.toplevel().map(|t| t.wl_surface().clone());
-                    if let Some(keyboard) = state.seat.get_keyboard() {
-                        keyboard.set_focus(state, surface, serial);
-                    }
-                    state.dirty = true;
-                }
-            }
-            pointer.button(
-                state,
-                &ButtonEvent {
-                    button: event.button_code(),
-                    state: event.state(),
-                    serial,
-                    time: event.time_msec(),
-                },
-            );
-            pointer.frame(state);
-        }
-        _ => {}
     }
 }

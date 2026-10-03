@@ -9,9 +9,12 @@ set -eu
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar \
+	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf
 
-cargo build --release --locked
+# The tool and our programs the features ship (edel-compositor, M4.2b);
+# edel image build copies those from beside itself.
+cargo build --release --locked --workspace
 # Every image of this run carries the run's version (EDEL_VERSION, from
 # ci.yml; 0.1 when built by hand) and installs from one package index in a
 # shared apk cache (roadmap M3.1). Test images that no step downloads are

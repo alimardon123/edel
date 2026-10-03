@@ -4,13 +4,14 @@
 //! of render time (`frame_p99_ms`) and idle frames, which must be 0.
 
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Frames recorded so far.
 #[derive(Debug, Default)]
 pub struct Telemetry {
     render: Vec<Duration>,
     idle: u64,
+    last: Option<Instant>,
 }
 
 /// What [`Telemetry`] measured.
@@ -28,9 +29,17 @@ impl Telemetry {
     /// handing it to the display, and whether anything had changed.
     pub fn frame(&mut self, took: Duration, damaged: bool) {
         self.render.push(took);
+        self.last = Some(Instant::now());
         if !damaged {
             self.idle += 1;
         }
+    }
+
+    /// How much longer until no frame has been drawn for `quiet`, or
+    /// `None` once that is so (or before the first frame).
+    pub fn still_for(&self, quiet: Duration) -> Option<Duration> {
+        let since = self.last?.elapsed();
+        quiet.checked_sub(since).filter(|wait| !wait.is_zero())
     }
 
     pub fn summary(&self) -> Summary {
@@ -110,6 +119,16 @@ mod tests {
             s.to_string(),
             "frames 6, render p50 3.00 ms, p99 9.00 ms, idle frames 1"
         );
+    }
+
+    #[test]
+    fn stillness_is_counted_from_the_last_frame() {
+        let mut t = Telemetry::default();
+        assert_eq!(t.still_for(ms(50)), None);
+        t.frame(ms(1), true);
+        assert!(t.still_for(Duration::from_secs(60)).is_some());
+        std::thread::sleep(ms(20));
+        assert_eq!(t.still_for(ms(10)), None);
     }
 
     #[test]

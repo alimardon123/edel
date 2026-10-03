@@ -1,15 +1,17 @@
 #!/bin/sh
-# desktop-test.sh CASE... (roadmap M4.1): boots the CI desktop image
+# desktop-test.sh CASE... (roadmap M4.1, M4.2b): boots the CI desktop image
 # (ci/desktop/vm.toml) once, with a virtual GPU, keyboard and tablet and
 # a QMP socket for ci/qmp.py, waits for its test service's results on the
 # serial console, then runs each CASE against the running VM:
 #
-#   console    the login prompt on serial, /run/user/UID made with mode
-#              0700 by pam_rundir for the autologin, a screenshot that is
-#              not uniformly black and shows foot's title bar, and typing
-#              `exit` closes foot
-#   baseline   sway's numbers under llvmpipe, written to the step summary:
-#              the budgets of M4.2a are set from them
+#   console     the login prompt on serial, /run/user/UID made with mode
+#               0700 by pam_rundir for the autologin, foot's window on a
+#               screenshot that is not one colour, and typing `exit` after
+#               a click into foot closes it
+#   compositor  the compositor's ready line, the screen's centre in the
+#               background colour of design/tokens.toml, and its numbers
+#               (boot to ready, memory, its RSS, frame p99, idle frames)
+#               within ci/budgets.toml, written to the step summary
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -62,55 +64,86 @@ shot() {
 	esac
 }
 
+# budget KEY: the number KEY has in ci/budgets.toml.
+budget() {
+	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
+}
+
+# The background colour the compositor clears to, from the design tokens.
+background=$(sed -n 's/^background = "#\([0-9a-f]\{6\}\)".*/\1/p' design/tokens.toml)
+# foot's own background, inside its window at the top left (M4.2b opens
+# every window there until the floating policy, M4.3).
+foot=242424
+
 case_console() {
 	grep -q 'edel login:' "$log" || fail "no login prompt on the serial console"
 	rundir=$(value rundir)
 	[ "$rundir" = "700 ci" ] || fail "/run/user/UID of ci is \"$rundir\", not mode 700 owned by ci"
-	python3 ci/qmp.py screendump "$dir/size.png"
-	set -- $(python3 ci/qmp.py size "$dir/size.png")
-	rm -f "$dir/size.png"
-	x=$(($1 / 2)) y=2 middle=$(($2 / 2))
-	# Foot's title bar, the focused colour sway's CI config sets.
-	bar=$(shot console "$x" "$y" 3366cc) ||
-		fail "foot's title bar is not on the screen: $x,$y is #$bar, not #3366cc"
+	shot console 100 100 "$foot" >/dev/null ||
+		fail "foot's window is not on the screen: 100,100 is not #$foot"
 	uniform=$(python3 ci/qmp.py uniform "$dir/console.png")
 	[ "$uniform" = varied ] || fail "the screen is $uniform"
 	# Click into foot and type into its shell: the keyboard reaches the
-	# window, and the window closes.
-	python3 ci/qmp.py click "$x" "$middle"
+	# window through libinput and the seat, and the window closes.
+	python3 ci/qmp.py click 100 100
 	python3 ci/qmp.py type 'exit\n'
-	shot typed "$x" "$y" '!3366cc' >/dev/null ||
-		fail "typing exit did not close foot; its title bar is still at $x,$y"
-	echo "PASS: the desktop image booted to the login prompt, logged ci in to sway with /run/user/UID at 0700, showed foot's title bar on screen and closed it when exit was typed (${waited}s)"
+	shot typed 100 100 "$background" >/dev/null ||
+		fail "typing exit did not close foot; 100,100 is not the background #$background"
+	echo "PASS: the desktop image booted to the login prompt, logged ci in to the compositor with /run/user/UID at 0700, showed foot and closed it when exit was typed (${waited}s)"
 }
 
-case_baseline() {
-	ready=$(value ready_seconds) rss=$(value sway_rss_mib) memory=$(value memory_in_use_mib)
-	p50=$(value frame_p50_ms) p99=$(value frame_p99_ms) frames=$(value frames)
-	[ -n "$ready" ] && [ -n "$rss" ] && [ "${frames:-0}" -gt 0 ] && [ "$p99" != none ] ||
-		fail "the baseline is incomplete: ready $ready s, sway $rss MiB, $frames frames, p99 $p99 ms"
-	echo "PASS: sway baseline under llvmpipe: ready ${ready} s after the kernel started, sway ${rss} MiB, ${memory} MiB in use, frames every ${p50} ms, p99 ${p99} ms, over ${frames} frames"
+case_compositor() {
+	line=$(value ready_line)
+	case "$line" in
+	"output "*" ready") ;;
+	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
+	esac
+	python3 ci/qmp.py screendump "$dir/size.png"
+	set -- $(python3 ci/qmp.py size "$dir/size.png")
+	rm -f "$dir/size.png"
+	shot compositor $(($1 / 2)) $(($2 / 2)) "$background" >/dev/null ||
+		fail "the centre of the screen is not the background #$background"
+	over=0
+	rows=''
+	# check WHAT MEASURED KEY UNIT
+	check() {
+		limit=$(budget "$3")
+		if [ -n "$2" ] && awk -v m="$2" -v b="$limit" 'BEGIN { exit !(m <= b) }'; then
+			verdict=ok
+		else
+			verdict='**over**'
+			over=1
+		fi
+		echo "budget $3: ${2:-none} $4, budget $limit $4, $verdict"
+		rows="$rows| $1 | ${2:-none} $4 | $limit $4 | $verdict |
+"
+	}
+	check 'Boot to the compositor ready' "$(value ready_seconds)" desktop_ready_seconds s
+	check 'Memory in use, session idle' "$(value memory_in_use_mib)" desktop_memory_mib MiB
+	check 'Compositor RSS' "$(value compositor_rss_mib)" compositor_rss_mib MiB
+	check 'Time between frames, p99' "$(value frame_p99_ms)" frame_p99_ms ms
+	check 'Frames drawn while idle' "$(value idle_frames)" idle_frames ''
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		cat >>"$GITHUB_STEP_SUMMARY" <<-EOF
-			### Desktop baseline (sway under llvmpipe, M4.1)
+			### Desktop budgets (our compositor under llvmpipe, M4.2b)
 
-			| Measure | Value |
-			|---|---|
-			| Boot to sway ready | ${ready} s |
-			| sway RSS | ${rss} MiB |
-			| Memory in use | ${memory} MiB |
-			| Time between frames | median ${p50} ms, p99 ${p99} ms, over ${frames} frames |
+			| Measure | Measured | Budget | Verdict |
+			|---|---|---|---|
+			$rows
+			Frames: $(value frames), median $(value frame_p50_ms) ms between them; $(value ready_line); $(value telemetry).
 
 		EOF
 	fi
+	[ "$over" = 0 ] || fail "the compositor is over a budget in ci/budgets.toml"
+	echo "PASS: $(value ready_line) in $(value ready_seconds) s, the centre is the background, every budget met; $(value telemetry)"
 }
 
-[ "$#" -gt 0 ] || set -- console baseline
+[ "$#" -gt 0 ] || set -- console compositor
 for c in "$@"; do
 	case "$c" in
-	console | baseline) ;;
+	console | compositor) ;;
 	*)
-		echo "unknown case $c; the cases are console and baseline"
+		echo "unknown case $c; the cases are console and compositor"
 		exit 1
 		;;
 	esac

@@ -103,6 +103,7 @@ impl Build<'_> {
         if def.variant == Variant::Vm {
             self.install_edel(&root)?;
             self.install_keys(&root)?;
+            self.install_programs(&root)?;
         }
         self.enable_services(&root)?;
         self.configure(&root)?;
@@ -290,6 +291,35 @@ impl Build<'_> {
         fs::create_dir_all(root.join("usr/bin"))?;
         fs::copy(&exe, &dest).with_context(|| format!("copying {}", exe.display()))?;
         fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
+        Ok(())
+    }
+
+    /// Copies the programs the features name (`programs`) from beside the
+    /// running `edel`, where `cargo build --release --workspace` leaves
+    /// them, to `/usr/bin`.
+    fn install_programs(&self, root: &Path) -> Result<()> {
+        if self.def.programs.is_empty() {
+            return Ok(());
+        }
+        let exe = std::env::current_exe().context("finding the running edel binary")?;
+        let dir = exe.parent().context("finding the directory of edel")?;
+        for program in &self.def.programs {
+            let src = dir.join(program);
+            self.runner
+                .step(&format!("copy {} to /usr/bin/{program}", src.display()));
+            if self.runner.dry_run {
+                continue;
+            }
+            if !src.is_file() {
+                bail!(
+                    "{} is missing; build it beside edel with cargo build --release --locked --workspace",
+                    src.display()
+                );
+            }
+            let dest = root.join("usr/bin").join(program);
+            fs::copy(&src, &dest).with_context(|| format!("copying {}", src.display()))?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
+        }
         Ok(())
     }
 

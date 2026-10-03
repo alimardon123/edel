@@ -23,9 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install the libraries the compositor links
-        # libxkbcommon for its keyboard; the DRM, GBM, libinput, udev and
-        # libseat ones join with the virtual GPU backend (M4.2b).
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev
+        # libxkbcommon for the keyboard; libudev, libinput, libgbm and
+        # libseat for the GPU backend (M4.2b). EGL is loaded at run time.
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -106,9 +106,9 @@ jobs:
         run: sh ci/vm-tests.sh
 
       - name: Test the desktop image on a virtual GPU
-        # After the other VMs, alone, so the sway baseline it writes into
-        # the step summary is measured on a quiet runner (M4.1).
-        run: sh ci/desktop-test.sh console baseline
+        # After the other VMs, alone, so the frame times and memory it
+        # checks against ci/budgets.toml are measured on a quiet runner.
+        run: sh ci/desktop-test.sh console compositor
 
       - name: Check the release, and show what would be published
         run: |

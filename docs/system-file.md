@@ -40,6 +40,8 @@ On the first boot, `edel system apply` seeds the file from the first of: a volum
 | `users.*.ssh_keys` | list of public keys for `~/.ssh/authorized_keys`; absent leaves the file as it is | M2.2 |
 | `users.*.shell` | a login shell's full path, such as `/bin/ash`, with no `:`; absent is `/bin/sh`. Apply leaves the shell as it is, and says so, when the path is not a program on the machine | M2.2 |
 
+On a desktop (an image with the `seat` feature), apply also puts every person in `[users]` and the greeter's account in the `seat` group, so they may use the screen and input; there is no key for it (M4.2b).
+
 ## `[network]` and `[locale]`
 
 | Key | Value | From |

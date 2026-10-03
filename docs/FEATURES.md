@@ -1,6 +1,6 @@
 # Features: how images are made
 
-**Date:** 2026-10-02 (roadmap M4.0), amended 2026-10-03 (M4.1: the desktop's features)
+**Date:** 2026-10-02 (roadmap M4.0), amended 2026-10-03 (M4.1: the desktop's features; M4.2b: `programs` and the compositor)
 
 Every Edel OS image is a list of features. A feature is one file, `features/NAME.toml`, and an optional directory, `features/NAME/`, copied over the root; an image definition (`images/*.toml`) names the features it is made of and holds only facts about the image. The rules are ADR-008's; this page is the maintainer's how-to. Adding, swapping or dropping a feature is one PR, and machines meet it as one A/B update that rolls back.
 
@@ -19,12 +19,12 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop, desktop |
 | `graphics` | Mesa for every common GPU (llvmpipe where none loads), DRM, libinput, keyboard layouts; module `virtio_gpu` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
 | `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
-| `login` | greetd with its text greeter; `/run/user/UID` from pam_rundir | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
+| `login` | greetd with its text greeter, which starts the compositor after login; `/run/user/UID` from pam_rundir | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | greetd | desktop |
 | `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
 | `terminal` | foot | `foot` | none | desktop |
-| `sway-baseline` | Until the compositor (M4.2b): sway, for CI's baseline numbers | `sway` | none | desktop |
+| `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
 
-CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, its test service, an autologin of user ci in to sway) to the desktop's in `ci/desktop/vm.toml`.
+CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.
 
 ## A feature file
 
@@ -39,6 +39,7 @@ initramfs = []      # mkinitfs features
 switchable = true   # may ship off (off = [...]); services.ssh later (M6.10)
 addon = false       # also built as a signed add-on (M7.2a)
 health = []         # health files it writes, which the boot guard waits for
+programs = []       # our own programs it ships in /usr/bin (edel-compositor)
 
 [services]
 default = ["sshd"]  # also sysinit, boot, shutdown
@@ -51,6 +52,7 @@ default = ["sshd"]  # also sysinit, boot, shutdown
 | `why` | Required when the feature adds a package or a service: the written reason of principle 3, now a build check |
 | `packages`, `services` | Alpine package names; OpenRC services by runlevel, each in one runlevel. A service's `/etc/init.d/NAME` comes from a package or a feature's directory |
 | `modules`, `initramfs` | Only a-z, 0-9, `_` and `-`. Images without a kernel ignore them |
+| `programs` | Programs of this repository's workspace the feature ships in `/usr/bin`, such as `edel-compositor`; `edel image build` copies each from beside itself, where `cargo build --release --workspace` leaves it, so list the libraries it links in `packages`, which apk cannot see. A program needs a `why` |
 | `flatpak`, `flatpak_dropped` | Only in the `apps` feature (M6.2) |
 
 No dependencies, versions, scripts or alternatives between features: apk resolves packages. A package one image needs alone goes into a feature named after that image (`vm`, `laptop`, `container`).
@@ -82,9 +84,9 @@ Besides these, a definition has only `[image] health_timeout` and `[release] pub
 ## What `edel image build` does with them
 
 - **Finds** features in `features/` beside the definition, if there is one (CI's test features under `ci/`), and in the repository's, the `features/` of the nearest directory above that also holds `images/`. It checks every feature file there strictly, so an unknown field, a `NAME/` without `NAME.toml` or any other file in a features directory stops the build even when no image lists it.
-- **Merges** the listed features in order: packages, services, modules, health files and mkinitfs features as sets, so several features may list `dbus`; modules keep the order they are first named in (`modules=` loads them in that order), and the mkinitfs features are sorted.
+- **Merges** the listed features in order: packages, services, modules, health files, programs and mkinitfs features as sets, so several features may list `dbus`; modules keep the order they are first named in (`modules=` loads them in that order), and the mkinitfs features are sorted.
 - **Refuses** an unknown feature, one listed twice, a missing `why`, one service in two runlevels, a file path shipped by two features, an `off` entry that is not listed or not switchable, a VM image without health, modules, mkinitfs features or its kernel package, and a container image with health.
-- **Ships** each listed feature's file as `/usr/share/edel/features/NAME.toml`, writes the union of health as `EDEL_HEALTH` and the `off` list as `EDEL_SERVICES_OFF` in os-release, installs the packages of every listed feature, and enables the services of those not in `off`.
+- **Ships** each listed feature's file as `/usr/share/edel/features/NAME.toml`, writes the union of health as `EDEL_HEALTH` and the `off` list as `EDEL_SERVICES_OFF` in os-release, installs the packages of every listed feature, copies their programs to `/usr/bin`, and enables the services of those not in `off`.
 
 On a machine, feature files are read leniently: `edel report` lists the features in `/usr/share/edel/features/` and notes any field it skipped (`edel::features::read`), so an older release can read a newer feature file. `edel image check` and the build use the strict `edel::features::check`.
 

@@ -1,7 +1,0 @@
-# Only until the compositor exists (M4.2b): the numbers its first budgets
-# are set from. Dropping it is deleting this file and one line in
-# images/desktop.toml (ADR-008).
-format = 1
-summary = "Sway, as the baseline the compositor's frame and memory budgets are set from"
-why = "CI measures sway's memory, boot to ready and frame times under llvmpipe once, so the compositor's budgets start from a known wlroots compositor (M4.1)."
-packages = ["sway"]

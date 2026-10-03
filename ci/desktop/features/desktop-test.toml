@@ -1,9 +1,9 @@
-# CI only (roadmap M4.1). features/desktop-test/ holds the test service,
-# greetd's CI config, which logs user ci in to sway at once, sway's CI
-# config and the session script that measures it.
+# CI only (roadmap M4.1, M4.2b). features/desktop-test/ holds the test
+# service and greetd's CI config, which logs user ci in to the compositor
+# at once.
 format = 1
-summary = "CI only: log in to sway at once and measure it"
-why = "weston-presentation-shm times the frames sway presents; the test service lets user ci use the seat and prints what the session measured on the serial console."
+summary = "CI only: log in to the compositor at once and measure it"
+why = "weston-presentation-shm times the frames the compositor presents; the test service prints what it measured on the serial console."
 packages = ["weston-clients"]
 
 [services]

@@ -49,6 +49,11 @@ pub struct Feature {
     /// Health files it writes, which the boot guard waits for (M1.5).
     #[serde(default)]
     pub health: Vec<String>,
+    /// Programs of this repository's workspace it ships in `/usr/bin`,
+    /// such as `edel-compositor` (M4.2b); `edel image build` copies each
+    /// from beside itself.
+    #[serde(default)]
+    pub programs: Vec<String>,
     /// The default apps (M6.2); only the `apps` feature has them.
     #[serde(default)]
     pub flatpak: Vec<String>,
@@ -141,9 +146,16 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
     if feature.summary.trim().is_empty() {
         bail!("summary is empty; say in one line what the feature gives people");
     }
-    let adds = !feature.packages.is_empty() || !feature.services.entries().is_empty();
+    let adds = !feature.packages.is_empty()
+        || !feature.services.entries().is_empty()
+        || !feature.programs.is_empty();
     if adds && feature.why.trim().is_empty() {
-        bail!("why is empty; a feature that adds a package or a service says why (principle 3)");
+        bail!(
+            "why is empty; a feature that adds a package, a service or a program says why (principle 3)"
+        );
+    }
+    if let Some(p) = feature.programs.iter().find(|p| !is_name(p)) {
+        bail!("program {p:?} is not a program name");
     }
     if let Some(p) = feature.packages.iter().find(|p| !is_package(p)) {
         bail!("package {p:?} is not a package name");
@@ -280,6 +292,17 @@ mod tests {
         assert!(check("ssh", &module).is_err());
         let package = SSH.replace("openssh-server", "openssh server");
         assert!(check("ssh", &package).is_err());
+    }
+
+    #[test]
+    fn programs_are_names_and_need_a_why() {
+        let text = SSH.replace("switchable", "programs = [\"edel-compositor\"]\nswitchable");
+        assert_eq!(check("ssh", &text).unwrap().programs, ["edel-compositor"]);
+        let path = text.replace("edel-compositor", "../edel");
+        assert!(check("ssh", &path).is_err());
+        let bare = "format = 1\nsummary = \"x\"\nprograms = [\"edel-compositor\"]\n";
+        let err = check("compositor", bare).unwrap_err();
+        assert!(err.to_string().contains("why is empty"), "{err}");
     }
 
     #[test]

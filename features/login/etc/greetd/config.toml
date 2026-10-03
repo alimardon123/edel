@@ -1,9 +1,9 @@
-# greetd (roadmap M4.1): agreety asks for the user and password on its own
-# virtual terminal, then starts that user's login shell. The compositor
-# replaces agreety as the greeter in M5.10.
+# greetd (roadmap M4.1, M4.2b): agreety asks for the user and password on
+# its own virtual terminal, then starts our compositor as that user, with
+# a session bus. The compositor greets people itself from M5.10.
 [terminal]
 vt = 7
 
 [default_session]
-command = "agreety --cmd /bin/sh"
+command = "agreety --cmd 'dbus-run-session -- edel-compositor'"
 user = "greetd"

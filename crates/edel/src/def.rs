@@ -82,6 +82,8 @@ pub struct ImageDef {
     pub initramfs: Vec<String>,
     /// The health files the boot guard waits for (`EDEL_HEALTH`).
     pub health: Vec<String>,
+    /// Our own programs to copy to `/usr/bin`, each once, in order.
+    pub programs: Vec<String>,
 }
 
 /// `[release]`: public key files (relative to the definition) that may sign
@@ -313,6 +315,7 @@ impl ImageDef {
         let mut modules = Vec::new();
         let mut initramfs = Vec::new();
         let mut health = Vec::new();
+        let mut programs = Vec::new();
         let mut shipped: BTreeMap<PathBuf, &str> = BTreeMap::new();
         for l in &listed {
             let f = &l.feature;
@@ -334,6 +337,7 @@ impl ImageDef {
             add_new(&mut modules, &f.modules);
             add_new(&mut initramfs, &f.initramfs);
             add_new(&mut health, &f.health);
+            add_new(&mut programs, &f.programs);
             if let Some(dir) = &l.files {
                 for path in files_below(dir)? {
                     if let Some(other) = shipped.insert(path.clone(), &l.name) {
@@ -364,6 +368,7 @@ impl ImageDef {
             modules,
             initramfs,
             health,
+            programs,
         };
         def.validate()?;
         Ok(def)
