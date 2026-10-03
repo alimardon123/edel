@@ -19,13 +19,15 @@ required-features = ["cli"]
 default = ["cli"]
 # What only the command needs: arguments, hashing, signing and downloads.
 # The compositor, shell-ui and Settings link the library without them.
-cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:sha2", "dep:ureq"]
+cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "dep:ureq"]
 
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"], optional = true }
 ed25519-dalek = { version = "3", optional = true }
 flate2 = { version = "1", optional = true }
+# O_NOFOLLOW and O_NONBLOCK, to read files in a user's home safely as root.
+libc = { version = "0.2", optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_ignored = "0.1"
 sha2 = { version = "0.11", optional = true }
