@@ -13,7 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"
+# The system file reader (M4.5), without the command line's network and
+# signing dependencies.
+edel = { path = "../edel", default-features = false }
 fontdue = "0.9.4"
+inotify = { version = "0.11.5", default-features = false }
 # Pinned (roadmap M4.2a): only what is used; the DRM, GBM, libinput, udev
 # and libseat backends join with the virtual GPU (M4.2b).
 smithay = { version = "=0.7.0", default-features = false, features = ["backend_drm", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "renderer_gl", "wayland_frontend"] }

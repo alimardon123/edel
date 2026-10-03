@@ -87,6 +87,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
     let handle = event_loop.handle();
     let name = listen(&handle, display)?;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
+    crate::watch::start(&handle, &mut state);
 
     let (mut session, session_events) = LibSeatSession::new()
         .context("opening a seat session (is seatd running and is this user in group seat?)")?;

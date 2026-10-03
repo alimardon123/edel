@@ -25,3 +25,5 @@ title_bar = 28
 border = 1
 # The title's letters, in logical pixels per em.
 title_text = 13
+# Between tiled windows and round them (M4.5).
+gap = 8

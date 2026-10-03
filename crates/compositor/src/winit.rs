@@ -44,6 +44,7 @@ pub fn run(tokens: Tokens, bench: bool) -> Result<()> {
 
     let name = crate::state::listen(&handle, display)?;
     crate::decoration::load_text(&handle, state.tokens.title_text_size);
+    crate::watch::start(&handle, &mut state);
 
     let (backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;

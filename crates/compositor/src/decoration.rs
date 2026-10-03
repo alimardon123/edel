@@ -147,9 +147,9 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, px: u32) {
 
 impl Edel {
     /// What the frame adds round `window`: nothing for a window that draws
-    /// its own.
+    /// its own, nor in tiling when `shell.title_bars = "floating-only"`.
     pub fn insets(&self, window: &Window) -> Insets {
-        if server_side(window) {
+        if server_side(window) && self.bars_shown() {
             Insets::server_side(&self.tokens)
         } else {
             Insets::default()
@@ -215,8 +215,10 @@ impl Edel {
         self.space.element_geometry(window)
     }
 
-    /// Puts `window`'s frame at `frame`, tells the window its new size and
-    /// whether it is maximized, and the policy where it is.
+    /// Puts `window`'s frame at `frame` and tells the window its new size
+    /// and whether it is maximized. A maximized window covers the screen
+    /// over the policy's places; one back from maximized goes where the
+    /// policy says, its tile in tiling.
     fn reframe(&mut self, window: &Window, frame: Rectangle<i32, Logical>, maximized: bool) {
         let Some(toplevel) = window.toplevel() else {
             return;
@@ -233,7 +235,13 @@ impl Edel {
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
         }
-        self.placed(window, place);
+        if maximized {
+            self.space.map_element(window.clone(), place.loc, true);
+            self.dirty = true;
+            self.state_changed();
+        } else {
+            self.placed(window, place);
+        }
     }
 
     /// Asks `window` to close, as its close button and Super+Q do.

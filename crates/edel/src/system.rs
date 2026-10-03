@@ -23,6 +23,11 @@ use toml_edit::DocumentMut;
 /// format has had, and a cargo test holds the structs to it.
 pub const FORMAT: i64 = 1;
 
+/// The machine's system file, on the data partition. A person's own file,
+/// `~/.config/edel/system.toml`, has the same schema; for the keys the
+/// shell reads (`[shell]`, `[outputs]`, `[appearance]`), its values win.
+pub const MACHINE_FILE: &str = "/data/edel/system.toml";
+
 /// What a key's value must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -105,8 +110,8 @@ pub const KEYS: &[Key] = &[
     later("locale.keyboard", Kind::Text),
     later("locale.timezone", Kind::Text),
     later("shell.preset", Kind::OneOf(PRESETS)),
-    later("shell.tiling", Kind::Flag),
-    later(
+    now("shell.tiling", Kind::Flag),
+    now(
         "shell.title_bars",
         Kind::OneOf(&["always", "floating-only"]),
     ),

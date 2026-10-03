@@ -1,5 +1,5 @@
 #!/sbin/openrc-run
-# Test only (roadmap M4.1, M4.2b, M4.3, M4.4): CI builds this into
+# Test only (roadmap M4.1 to M4.5): CI builds this into
 # ci/desktop/vm.toml. greetd logs user ci (from the seed system file, put
 # in the seat group by edel system apply) in to the compositor at once.
 # This service waits for the compositor's health file, then, as ci, times
@@ -8,7 +8,9 @@
 # one before is on screen, so they cascade in a known order. It prints the
 # results and the compositor's state file on the serial console, where
 # ci/desktop-test.sh reads them; then, while that script clicks and drags,
-# the windows each time they change and the compositor's log as it grows.
+# the windows each time they change and the compositor's log as it grows,
+# and it runs the few commands that script sends over the VM's second
+# serial port (/dev/ttyS1), such as `tiling on`.
 
 description="Edel OS desktop test"
 
@@ -81,7 +83,28 @@ report() {
 		say "state $line"
 	done </run/edel/session/state.toml
 	say "done"
+	commands &
 	follow
+}
+
+# commands: runs what ci/desktop-test.sh sends over the second serial
+# port, one known command a line, as root, and says how each ended.
+commands() {
+	stty -F /dev/ttyS1 clocal -echo 2>/dev/null
+	exec 3</dev/ttyS1
+	say "commands: reading ttyS1"
+	while read -r command <&3; do
+		case "$command" in
+		'tiling on') edel system set shell.tiling=true ;;
+		'tiling off') edel system set shell.tiling=false ;;
+		*)
+			say "unknown command $command"
+			continue
+			;;
+		esac >/dev/null 2>&1
+		say "ran $command: $?"
+	done
+	say "commands: ttyS1 closed"
 }
 
 # follow: for 5 minutes, the compositor's log lines as they come and the

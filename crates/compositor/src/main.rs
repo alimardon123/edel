@@ -13,6 +13,7 @@ mod input;
 mod render;
 mod state;
 mod statefile;
+mod watch;
 mod winit;
 
 use std::process::ExitCode;
