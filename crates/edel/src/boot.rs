@@ -119,8 +119,10 @@ impl Layout {
     }
 }
 
-/// Watchdog timeouts the guard relies on (roadmap M1.5).
-pub const WATCHDOG_ARGS: &str = "i6300esb.heartbeat=15 softdog.soft_margin=15";
+/// Watchdog timeouts the guard relies on (roadmap M1.5): QEMU's, softdog,
+/// and the hardware watchdogs of Intel and AMD laptops.
+pub const WATCHDOG_ARGS: &str =
+    "i6300esb.heartbeat=15 softdog.soft_margin=15 iTCO_wdt.heartbeat=15 sp5100_tco.heartbeat=15";
 
 /// CPU microcode a slot may carry in `/boot` (intel-ucode, amd-ucode). GRUB
 /// loads each one present before the initramfs, so the kernel applies it
@@ -312,7 +314,7 @@ mod tests {
         assert!(cfg.contains(
             "linux /boot/vmlinuz-virt root=UUID=$uuid rootfstype=ext4 panic=10 modules=ext4,overlay i6300esb."
         ));
-        assert!(cfg.contains(" softdog.soft_margin=15 console=ttyS0\n"));
+        assert!(cfg.contains(" sp5100_tco.heartbeat=15 console=ttyS0\n"));
         assert!(cfg.contains("initrd /boot/initramfs-virt\n"));
         let laptop = grub_cfg("lts", "ext4", "", MICROCODE);
         assert!(

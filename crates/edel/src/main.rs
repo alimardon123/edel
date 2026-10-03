@@ -213,47 +213,7 @@ enum UpdateCommands {
 #[derive(Subcommand)]
 enum ImageCommands {
     /// Build an image from its definition file (run as root on Alpine)
-    Build {
-        /// Image definition, for example images/vm.toml
-        definition: PathBuf,
-        /// Directory for the finished images and the work area
-        #[arg(long, default_value = "out")]
-        out: PathBuf,
-        /// Another directory to copy over the image, after the definition's
-        /// own files; for test images. Can be given more than once.
-        #[arg(long = "files", value_name = "DIR")]
-        extra_files: Vec<PathBuf>,
-        /// Seconds the boot guard waits for health before the watchdog
-        /// restarts the machine, instead of the definition's; for test images
-        #[arg(long, value_name = "SECS")]
-        health_timeout: Option<u64>,
-        /// Another public key that may sign updates, after the definition's
-        /// own; for test images. Can be given more than once.
-        #[arg(long = "public-key", value_name = "FILE")]
-        public_keys: Vec<PathBuf>,
-        /// A tag written into grub.cfg so the boot loader differs from an
-        /// untagged build; for test images
-        #[arg(long, value_name = "TAG")]
-        loader_tag: Option<String>,
-        /// The release version written into the image, such as 2026.10.3;
-        /// without it the image keeps its development version
-        #[arg(long, value_name = "VERSION")]
-        version: Option<String>,
-        /// The channel written into the image, such as preview or stable
-        #[arg(long, default_value = "dev")]
-        channel: String,
-        /// An apk cache to share between the images of one build, so they
-        /// all install from one package index
-        #[arg(long, value_name = "DIR")]
-        apk_cache: Option<PathBuf>,
-        /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
-        /// update image, is always made); for test images
-        #[arg(long)]
-        no_compress: bool,
-        /// Print every step without changing anything
-        #[arg(long)]
-        dry_run: bool,
-    },
+    Build(Box<BuildArgs>),
     /// Check an image definition without building it
     Check {
         /// Image definition, for example images/vm.toml
@@ -261,22 +221,72 @@ enum ImageCommands {
     },
 }
 
+#[derive(clap::Args)]
+struct BuildArgs {
+    /// Image definition, for example images/vm.toml
+    definition: PathBuf,
+    /// Directory for the finished images and the work area
+    #[arg(long, default_value = "out")]
+    out: PathBuf,
+    /// Another directory to copy over the image, after the definition's
+    /// own files; for test images. Can be given more than once.
+    #[arg(long = "files", value_name = "DIR")]
+    extra_files: Vec<PathBuf>,
+    /// Seconds the boot guard waits for health before the watchdog
+    /// restarts the machine, instead of the definition's; for test images
+    #[arg(long, value_name = "SECS")]
+    health_timeout: Option<u64>,
+    /// Size of each slot in MiB, instead of the definition's; for test
+    /// images, such as the install test's live disk, which has the
+    /// laptop stick's small slots
+    #[arg(long, value_name = "MIB", value_parser = clap::value_parser!(u64).range(64..))]
+    slot_mib: Option<u64>,
+    /// Another public key that may sign updates, after the definition's
+    /// own; for test images. Can be given more than once.
+    #[arg(long = "public-key", value_name = "FILE")]
+    public_keys: Vec<PathBuf>,
+    /// A tag written into grub.cfg so the boot loader differs from an
+    /// untagged build; for test images
+    #[arg(long, value_name = "TAG")]
+    loader_tag: Option<String>,
+    /// The release version written into the image, such as 2026.10.3;
+    /// without it the image keeps its development version
+    #[arg(long, value_name = "VERSION")]
+    version: Option<String>,
+    /// The channel written into the image, such as preview or stable
+    #[arg(long, default_value = "dev")]
+    channel: String,
+    /// An apk cache to share between the images of one build, so they
+    /// all install from one package index
+    #[arg(long, value_name = "DIR")]
+    apk_cache: Option<PathBuf>,
+    /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
+    /// update image, is always made); for test images
+    #[arg(long)]
+    no_compress: bool,
+    /// Print every step without changing anything
+    #[arg(long)]
+    dry_run: bool,
+}
+
 fn main() -> Result<()> {
     match Cli::parse().command {
         Commands::Image { command } => match command {
-            ImageCommands::Build {
-                definition,
-                out,
-                extra_files,
-                health_timeout,
-                public_keys,
-                loader_tag,
-                version,
-                channel,
-                apk_cache,
-                no_compress,
-                dry_run,
-            } => {
+            ImageCommands::Build(args) => {
+                let BuildArgs {
+                    definition,
+                    out,
+                    extra_files,
+                    health_timeout,
+                    slot_mib,
+                    public_keys,
+                    loader_tag,
+                    version,
+                    channel,
+                    apk_cache,
+                    no_compress,
+                    dry_run,
+                } = *args;
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
                     anyhow::bail!("version {v:?} is not numbers joined by dots, such as 2026.10.3");
                 }
@@ -303,6 +313,7 @@ fn main() -> Result<()> {
                     def_dir,
                     extra_files,
                     health_timeout,
+                    slot_mib,
                     extra_keys: public_keys,
                     loader_tag,
                     version,

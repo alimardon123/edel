@@ -5,6 +5,9 @@
 format = 1
 summary = "Real laptops: the long-term kernel, firmware for graphics and Wi-Fi, CPU microcode and the hardware report"
 why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them, and CPU microcode, which GRUB loads before the initramfs (M3.3a); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
+# eMMC disks of small laptops: without mmc the initramfs cannot find a
+# root installed on one.
+initramfs = ["mmc"]
 packages = [
   "linux-lts",
   "amd-ucode",

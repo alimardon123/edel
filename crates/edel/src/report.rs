@@ -114,6 +114,18 @@ fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>) {
     (names, notes)
 }
 
+/// Whether the disk `name` is a stick or another removable disk: on USB,
+/// or marked removable by the kernel. `sys` is `/sys`.
+fn is_removable(sys: &Path, name: &str) -> bool {
+    let block = sys.join("block").join(name);
+    let removable = fs::read_to_string(block.join("removable")).is_ok_and(|r| r.trim() == "1");
+    let on_usb = fs::canonicalize(&block).is_ok_and(|path| {
+        path.components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with("usb"))
+    });
+    removable || on_usb
+}
+
 /// MemTotal minus MemAvailable from `/proc/meminfo`, in MiB.
 fn memory_in_use_mib(meminfo: &str) -> Option<u64> {
     let field = |name: &str| {
@@ -157,6 +169,17 @@ pub fn report(esp: bool) -> Result<()> {
     };
     let text = render(&report)?;
     if esp {
+        // Only a stick needs the report on its partition: an installed
+        // machine has a login to run `edel report`, and its ESP is its one
+        // way to boot, so it is not written at every boot for nothing.
+        let disk = crate::update::Disk::find()?;
+        if !is_removable(Path::new("/sys"), &disk.name) {
+            println!(
+                "edel report: {} is not a removable disk, so the report stays off its EFI system partition",
+                disk.name
+            );
+            return Ok(());
+        }
         let path = crate::update::write_beside_grubenv("report.toml", &text)?;
         println!("edel report: wrote {path} on the EFI system partition");
     } else {
@@ -207,6 +230,36 @@ mod tests {
         assert_eq!(names, ["base", "ssh"]);
         assert_eq!(notes[1], "ssh: unknown field shiny ignored");
         assert!(notes[0].starts_with("broken: not read"), "{notes:?}");
+    }
+
+    #[test]
+    fn writes_to_the_esp_of_removable_disks_only() {
+        let sys = std::env::temp_dir().join(format!("edel-report-sys-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&sys);
+        let devices = sys.join("devices/pci0000:00");
+        for (dir, removable) in [
+            ("0000:00:14.0/usb2/2-1/2-1:1.0/host0/block/sda", "0"),
+            ("0000:00:04.0/virtio1/block/vda", "0"),
+            ("0000:00:1f.2/ata1/host1/block/sdb", "1"),
+        ] {
+            fs::create_dir_all(devices.join(dir)).unwrap();
+            fs::write(devices.join(dir).join("removable"), removable).unwrap();
+        }
+        fs::create_dir_all(sys.join("block")).unwrap();
+        for (name, dir) in [
+            ("sda", "0000:00:14.0/usb2/2-1/2-1:1.0/host0/block/sda"),
+            ("vda", "0000:00:04.0/virtio1/block/vda"),
+            ("sdb", "0000:00:1f.2/ata1/host1/block/sdb"),
+        ] {
+            std::os::unix::fs::symlink(devices.join(dir), sys.join("block").join(name)).unwrap();
+        }
+        let found = [
+            is_removable(&sys, "sda"),
+            is_removable(&sys, "vda"),
+            is_removable(&sys, "sdb"),
+        ];
+        fs::remove_dir_all(&sys).unwrap();
+        assert_eq!(found, [true, false, true]);
     }
 
     #[test]

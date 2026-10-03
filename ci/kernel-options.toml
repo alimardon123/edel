@@ -46,5 +46,13 @@ kernels = ["lts"]
 [BLK_DEV_NVME]
 reason = "most laptop disks are NVMe"
 
+[MMC_BLOCK]
+reason = "eMMC disks of small laptops, which edel install accepts"
+kernels = ["lts"]
+
+[MMC_SDHCI_PCI]
+reason = "the SD and eMMC controllers of most laptops"
+kernels = ["lts"]
+
 [USB_STORAGE]
 reason = "the laptop image boots from a USB stick (M3.4)"

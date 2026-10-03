@@ -61,8 +61,9 @@ build "$version" images/vm.toml --files "$seed" --no-compress --out out/system-t
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
-# keeps the hang cases to minutes (roadmap M1.5).
-build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files \
+# keeps the hang cases to minutes (roadmap M1.5). Its slots are 1024 MiB,
+# as on the laptop stick, so the install grows slot A to 4096 MiB (M3.3b).
+build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--no-compress --out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it

@@ -8,11 +8,15 @@
 set -eu
 . ci/vm.sh
 
+# boot LOG IMAGE [DEVICE ARGUMENTS...]: the disk is drive disk0, on virtio
+# unless the arguments attach it otherwise.
 boot() {
-	run_vm "$1" 'edel login:' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
-		-drive if=none,id=disk0,format=raw,file="$2" \
-		-device virtio-blk-pci,drive=disk0,bootindex=0
-	cat "$1"
+	log_file=$1 image=$2
+	shift 2
+	[ "$#" -gt 0 ] || set -- -device virtio-blk-pci,drive=disk0,bootindex=0
+	run_vm "$log_file" 'edel login:' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
+		-drive if=none,id=disk0,format=raw,file="$image" "$@"
+	cat "$log_file"
 }
 
 boot out/boot.log out/edel-vm-x86_64.img
@@ -22,24 +26,28 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot.log &&
 	grep -q 'Starting sshd' out/boot.log &&
 	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
-	! grep -q 'generating new host keys' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd and was confirmed in ${waited}s"
+	! grep -q 'generating new host keys' out/boot.log &&
+	grep -q 'edel guard: using the hardware watchdog' out/boot.log; then
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
 fi
 
 # The laptop image (roadmap M3.3a): the same checks with linux-lts and its
-# firmware; a VM has none of the laptop's hardware, so this proves the
-# kernel, initramfs and slots, and Alimardon's laptops prove the drivers.
-boot out/boot-laptop.log out/edel-laptop-x86_64.img
+# firmware, booted from a USB stick as a person would; a VM has none of
+# the laptop's hardware, so this proves the kernel, initramfs and slots,
+# and Alimardon's laptops prove the drivers. The report line is the one
+# edel prints after writing it, so a failed report fails the test.
+boot out/boot-laptop.log out/edel-laptop-x86_64.img \
+	-device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=disk0,bootindex=0
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot-laptop.log &&
 	grep -q 'edel update: slot A confirmed' out/boot-laptop.log &&
 	grep -q 'edel-data: mounted /data' out/boot-laptop.log &&
 	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log &&
-	grep -q 'Writing the hardware report to the EFI system partition' out/boot-laptop.log &&
-	! grep -q 'Writing the hardware report.*!!' out/boot-laptop.log; then
-	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts to the login prompt, was confirmed and left its report in ${waited}s"
+	grep -q 'edel report: wrote /EFI/edel/report.toml on the EFI system partition' out/boot-laptop.log &&
+	grep -q 'edel guard: using the hardware watchdog .* (watchdog1)' out/boot-laptop.log; then
+	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts from USB to the login prompt, moved the guard from softdog to the hardware watchdog, was confirmed and left its report in ${waited}s"
 else
 	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
 	exit 1

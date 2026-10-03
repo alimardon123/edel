@@ -34,6 +34,8 @@ pub struct Build<'a> {
     pub extra_files: Vec<PathBuf>,
     /// Another health timeout in seconds, for test images (M1.5).
     pub health_timeout: Option<u64>,
+    /// Another slot size in MiB, for test images.
+    pub slot_mib: Option<u64>,
     /// More public keys for updates, for test images (M1.6).
     pub extra_keys: Vec<PathBuf>,
     /// A tag written into grub.cfg so the loader differs, for test images
@@ -464,20 +466,21 @@ impl Build<'_> {
         let stem = self.out.join(self.def.stem());
         let update = stem.with_extension("ext4");
         let disk = stem.with_extension("img");
+        let slot_mib = self.slot_mib.unwrap_or(vm.slot_mib);
         let layout = Layout {
-            slot_mib: vm.slot_mib,
+            slot_mib,
             data_mib: vm.data_mib,
         };
 
         let loader = work.join("esp");
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
-        self.make_slot(root, &update, vm.slot_mib)?;
+        self.make_slot(root, &update, slot_mib)?;
         self.shrink(&update)?;
         // Slot A gets a filesystem of its own rather than a copy of the
         // update image: the kernel finds its root by filesystem UUID, so no
         // two filesystems a machine can see may share one.
         let slot_a = work.join("slot-a.ext4");
-        self.make_slot(root, &slot_a, vm.slot_mib)?;
+        self.make_slot(root, &slot_a, slot_mib)?;
         let data = work.join("data.ext4");
         self.make_data(&data, vm.data_mib)?;
         let esp = work.join("esp.img");

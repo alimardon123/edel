@@ -256,10 +256,13 @@ pub(crate) fn write_beside_grubenv(name: &str, text: &str) -> Result<String> {
     let dir = env
         .parent()
         .context("GRUB's environment block has no directory")?;
-    let new = dir.join(format!("{name}.new"));
-    fs::write(&new, text)?;
-    File::open(&new)?.sync_all()?;
-    fs::rename(&new, dir.join(name))?;
+    // In place, not through a rename: on FAT a rename over an existing
+    // file is two directory writes, and a power cut between them can
+    // cross-link clusters in the directory that holds grub.cfg and
+    // grubenv. A torn report is harmless; the next boot writes it again.
+    let mut file = File::create(dir.join(name))?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
     let shown = dir.strip_prefix(&esp.dir).unwrap_or(dir).join(name);
     Ok(format!("/{}", shown.display()))
 }
@@ -274,8 +277,9 @@ impl Drop for Esp {
 }
 
 /// One writer at a time: two installs would write the same slot, two
-/// applies the same account files. `name` names the lock file and `what`
-/// the command, for the message.
+/// applies the same account files. `name` names the lock file; `what`, the
+/// command taking it, is written beside the pid, so a refused command says
+/// who holds the lock.
 pub(crate) struct Lock(PathBuf);
 
 impl Lock {
@@ -285,14 +289,15 @@ impl Lock {
         for _ in 0..2 {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
                 Ok(mut file) => {
-                    writeln!(file, "{}", std::process::id())?;
+                    writeln!(file, "{} {what}", std::process::id())?;
                     return Ok(Lock(path));
                 }
                 Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
                     if !is_stale(&path) {
+                        let held = fs::read_to_string(&path).unwrap_or_default();
                         bail!(
-                            "another {what} is running; if none is, delete {}",
-                            path.display()
+                            "{what} has to wait: {}; try again when it is done",
+                            holder(&held)
                         );
                     }
                     // A process killed mid-install leaves its lock behind;
@@ -306,14 +311,24 @@ impl Lock {
     }
 }
 
+/// Who holds a lock, from the lock file's `PID COMMAND`.
+fn holder(held: &str) -> String {
+    match held.trim().split_once(' ') {
+        Some((pid, what)) => format!("{what} (pid {pid}) is running"),
+        None if !held.trim().is_empty() => format!("pid {} is running", held.trim()),
+        None => "another command is starting".into(),
+    }
+}
+
 /// A lock whose pid no longer runs. A lock with no pid yet is only stale
 /// once it is a few seconds old, since its holder writes the pid right
 /// after creating it.
 fn is_stale(path: &Path) -> bool {
-    match fs::read_to_string(path)
-        .ok()
-        .and_then(|t| t.trim().parse::<u32>().ok())
-    {
+    match fs::read_to_string(path).ok().and_then(|t| {
+        t.split_whitespace()
+            .next()
+            .and_then(|p| p.parse::<u32>().ok())
+    }) {
         Some(pid) => !Path::new("/proc").join(pid.to_string()).exists(),
         None => fs::metadata(path)
             .and_then(|m| m.modified())
