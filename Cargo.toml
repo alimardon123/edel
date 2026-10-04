@@ -2,3 +2,11 @@
 members = ["crates/edel", "crates/compositor", "crates/shell-ui", "crates/testclient"]
 default-members = ["crates/edel"]
 resolver = "3"
+
+# One code unit per crate: smaller binaries whose code lies together, so
+# a running process touches fewer pages. shell-ui used 0.45 MiB less at
+# idle (7.6 against 8.05 MiB, a glibc build, 2026-10-04), the compositor
+# and edel likewise; builds take longer. Link-time optimisation saved
+# only 0.06 MiB more and is left out.
+[profile.release]
+codegen-units = 1
