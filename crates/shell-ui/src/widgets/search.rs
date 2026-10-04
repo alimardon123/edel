@@ -1,5 +1,6 @@
-//! The search field (M5.4c): a field with a magnifier and the word
-//! "Search", as Windows' taskbar has, its corners the controls'. It is only a door: a click
+//! The search field (M5.4c): a pill with a magnifier and the word
+//! "Search", as Windows' taskbar has; Alimardon preferred this rounder,
+//! narrower field to the mockup's. It is only a door: a click
 //! opens the launcher, where typing searches the apps, as Super does
 //! (M5.3b).
 
@@ -21,8 +22,8 @@ pub const WIDGET: Widget = Widget {
 };
 
 /// The field and the room on each side of it, in logical pixels.
-const WIDTH: f32 = 220.0;
-const HEIGHT: f32 = 32.0;
+const WIDTH: f32 = 180.0;
+const HEIGHT: f32 = 30.0;
 const ROOM: f32 = 4.0;
 /// The magnifier's inset from the field's left end and its size.
 const PAD: f32 = 11.0;
@@ -58,8 +59,7 @@ fn draw(canvas: &mut Canvas, _: &str, x: f32) {
     let fx = (x + ROOM * s).round();
     let fy = canvas.top + ((canvas.height - fh) / 2.0).round();
     let field = mix(tokens.panel, tokens.panel_text, 0.1);
-    let r = tokens.radius_control as f32 * s;
-    fill(canvas.pixmap, fx, fy, fw, fh, r, field);
+    fill(canvas.pixmap, fx, fy, fw, fh, fh / 2.0, field);
     let ink = mix(tokens.panel_text, tokens.panel, 0.3);
     // The magnifier: a ring and its handle, from a 14-unit square.
     let unit = GLASS * s / 14.0;
@@ -93,9 +93,9 @@ mod tests {
 
     #[test]
     fn a_click_anywhere_opens_the_launcher_and_a_scroll_does_nothing() {
-        assert_eq!(input("", Input::Click(1.0, 228.0)), Some(Action::Launcher));
+        assert_eq!(input("", Input::Click(1.0, 188.0)), Some(Action::Launcher));
         assert_eq!(input("", Input::Scroll(1)), None);
         assert_eq!(label(""), "Search");
-        assert_eq!(logical_width(), 228.0);
+        assert_eq!(logical_width(), 188.0);
     }
 }

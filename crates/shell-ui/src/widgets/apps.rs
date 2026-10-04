@@ -1,8 +1,10 @@
 //! The apps widget (M5.4c): the preset's pinned apps, then every other
 //! app with a window open, one icon each in a square cell, as a taskbar
 //! or a dock shows them. A running app has a dot under its icon; the
-//! focused one's cell is lit and marked by a short accent line. An app
-//! without an icon shows its initial on a tile. A click brings the app's
+//! focused one's cell is lit and marked by a short accent line. In a dock
+//! (M5.4d) the cells and icons are bigger and only dots mark them: the
+//! panel's colour faded for a running app, the accent for the focused
+//! one. An app without an icon shows its initial on a tile. A click brings the app's
 //! window forward, back if minimized, or minimizes it when it is the
 //! focused one, or starts the app when no window of it is open.
 
@@ -35,6 +37,19 @@ const ICON: f32 = 24.0;
 /// app's line and a running app's dot, 2 px high.
 const LINE: f32 = 14.0;
 const DOT: f32 = 4.0;
+/// In a dock: the cell is the dock's height less this, and the icon this
+/// big, its dot round, 4 px across.
+const DOCK_INSET: f32 = 8.0;
+const DOCK_ICON: f32 = 40.0;
+
+/// A cell's side and its icon's in logical pixels, in a bar or a dock.
+fn sizes(canvas: &Canvas) -> (f32, f32) {
+    if canvas.dock {
+        (canvas.height / canvas.scale - DOCK_INSET, DOCK_ICON)
+    } else {
+        (CELL, ICON)
+    }
+}
 
 /// One cell: the app's state, its id, icon and name.
 #[derive(Debug, Clone, PartialEq)]
@@ -135,38 +150,51 @@ fn label(shown: &str) -> String {
     format!("Apps: {}", names.join(", "))
 }
 
-/// The widget's width in logical pixels for `count` cells.
-pub fn logical_width(count: usize) -> f32 {
+/// The widget's width in logical pixels for `count` cells `cell` wide.
+pub fn logical_width(count: usize, cell: f32) -> f32 {
     if count == 0 {
         0.0
     } else {
-        2.0 * EDGE + count as f32 * CELL
+        2.0 * EDGE + count as f32 * cell
     }
 }
 
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
-    logical_width(read(shown).len()) * canvas.scale
+    let (cell, _) = sizes(canvas);
+    logical_width(read(shown).len(), cell) * canvas.scale
 }
 
 fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let s = canvas.scale;
     let tokens = canvas.tokens;
+    let dock = canvas.dock;
+    let (cell_w, icon) = sizes(canvas);
     let lit = Colour {
         a: 0.08,
         ..tokens.panel_text
     };
-    let px = (ICON * s).round();
+    let px = (icon * s).round();
+    let side = cell_w * s;
     for (i, cell) in read(shown).iter().enumerate() {
-        let cx = (x + (EDGE + i as f32 * CELL) * s).round();
-        let cy = canvas.top + ((canvas.height - CELL * s) / 2.0).round();
-        if cell.state == '*' {
+        let cx = (x + EDGE * s + i as f32 * side).round();
+        let cy = canvas.top + ((canvas.height - side) / 2.0).round();
+        if cell.state == '*' && !dock {
             let inset = ((CELL - LIT) / 2.0 * s).round();
             let r = tokens.radius_control as f32 * s;
-            let side = (LIT * s).round();
-            fill(canvas.pixmap, cx + inset, cy + inset, side, side, r, lit);
+            let lit_side = (LIT * s).round();
+            fill(
+                canvas.pixmap,
+                cx + inset,
+                cy + inset,
+                lit_side,
+                lit_side,
+                r,
+                lit,
+            );
         }
-        let ix = cx + ((CELL * s - px) / 2.0).round();
-        let iy = cy + ((CELL * s - px) / 2.0).round() - (2.0 * s).round();
+        let ix = cx + ((side - px) / 2.0).round();
+        // The icon sits a little high, leaving room for its mark.
+        let iy = cy + ((side - px) / 2.0).round() - (if dock { 3.0 } else { 2.0 } * s).round();
         let drawn = canvas
             .icons
             .as_deref_mut()
@@ -199,15 +227,31 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
                 text.draw(canvas.pixmap, &mut line, lx, ly, tokens.panel);
             }
         }
+        let faded = mix(tokens.panel_text, tokens.panel, 0.45);
+        if dock {
+            // A round dot under the icon: the accent for the focused app.
+            let colour = match cell.state {
+                '*' => Some(tokens.accent),
+                '+' => Some(faded),
+                _ => None,
+            };
+            if let Some(colour) = colour {
+                let d = (DOT * s).round();
+                let dx = (cx + (side - d) / 2.0).round();
+                let dy = (iy + px + 2.0 * s).round();
+                fill(canvas.pixmap, dx, dy, d, d, d / 2.0, colour);
+            }
+            continue;
+        }
         let foot = match cell.state {
             '*' => Some((LINE, tokens.accent)),
-            '+' => Some((DOT, mix(tokens.panel_text, tokens.panel, 0.45))),
+            '+' => Some((DOT, faded)),
             _ => None,
         };
         if let Some((w, colour)) = foot {
             let (fw, fh) = ((w * s).round(), (2.0 * s).round());
-            let fx = (cx + (CELL * s - fw) / 2.0).round();
-            let fy = cy + CELL * s - 2.0 * fh;
+            let fx = (cx + (side - fw) / 2.0).round();
+            let fy = cy + side - 2.0 * fh;
             if let Some(rect) = Rect::from_xywh(fx, fy, fw, fh) {
                 canvas
                     .pixmap
@@ -219,14 +263,17 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
 
 /// A click on a cell opens, raises or minimizes its app.
 fn input(shown: &str, input: Input) -> Option<Action> {
-    let Input::Click(at, _) = input else {
+    let Input::Click(at, width) = input else {
         return None;
     };
-    if at < EDGE {
+    let cells = read(shown);
+    if at < EDGE || cells.is_empty() {
         return None;
     }
-    let i = ((at - EDGE) / CELL).floor() as usize;
-    read(shown).get(i).map(|c| Action::App(c.id.to_string()))
+    // The cells share the widget's width, in a bar or a dock alike.
+    let cell = (width - 2.0 * EDGE) / cells.len() as f32;
+    let i = ((at - EDGE) / cell).floor() as usize;
+    cells.get(i).map(|c| Action::App(c.id.to_string()))
 }
 
 #[cfg(test)]
@@ -313,8 +360,8 @@ mod tests {
 
     #[test]
     fn no_apps_take_no_room() {
-        assert_eq!(logical_width(0), 0.0);
-        assert_eq!(logical_width(3), 2.0 * EDGE + 3.0 * CELL);
+        assert_eq!(logical_width(0, CELL), 0.0);
+        assert_eq!(logical_width(3, CELL), 2.0 * EDGE + 3.0 * CELL);
         assert!(read("").is_empty());
     }
 }

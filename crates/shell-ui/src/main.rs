@@ -190,7 +190,7 @@ fn run() -> Result<()> {
         };
         if dock {
             surface.set_anchor(edge);
-            surface.set_size(tokens.panel_height, tokens.panel_height);
+            surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
             let (top, bottom) = match spec.edge {
                 Edge::Top => (DOCK_MARGIN, 0),
                 Edge::Bottom => (0, DOCK_MARGIN),
@@ -205,7 +205,7 @@ fn run() -> Result<()> {
         let zone = if dock && spec.hide == Hide::Covered {
             0
         } else {
-            tokens.panel_height as i32
+            paint::height(spec.style, &tokens) as i32
         };
         surface.set_exclusive_zone(zone);
         surface.set_keyboard_interactivity(KeyboardInteractivity::None);
@@ -389,7 +389,7 @@ impl Shell {
                 let panel = &mut self.panels[i];
                 if natural != panel.asked {
                     panel.asked = natural;
-                    panel.surface.set_size(natural, self.tokens.panel_height);
+                    panel.surface.set_size(natural, paint::DOCK_HEIGHT);
                     panel.surface.commit();
                 }
                 return;
@@ -398,7 +398,7 @@ impl Shell {
         let panel = &self.panels[i];
         let look = Look {
             width: panel.width * panel.scale,
-            height: (self.tokens.panel_height + strip) * panel.scale,
+            height: (paint::height(panel.style, &self.tokens) + strip) * panel.scale,
             scale: panel.scale,
             edge: panel.edge,
             style: panel.style,
@@ -415,7 +415,7 @@ impl Shell {
         // Screen readers get what was drawn, in logical pixels.
         let panel = &mut self.panels[i];
         let top = f64::from(paint::panel_top(panel.edge, panel.style, &self.tokens));
-        let bottom = top + f64::from(self.tokens.panel_height);
+        let bottom = top + f64::from(paint::height(panel.style, &self.tokens));
         let items = panel
             .row
             .all()
@@ -430,7 +430,7 @@ impl Shell {
             .collect();
         let size = (
             f64::from(panel.width),
-            f64::from(self.tokens.panel_height + strip),
+            f64::from(paint::height(panel.style, &self.tokens) + strip),
         );
         panel.reader.update(size, items);
         panel.drawn = Some(look);
@@ -466,7 +466,7 @@ impl Shell {
         // strip beside it lets both through. A dock's rounded corners
         // are not opaque.
         let top = paint::panel_top(panel.edge, panel.style, &self.tokens) as i32;
-        let panel_h = self.tokens.panel_height as i32;
+        let panel_h = paint::height(panel.style, &self.tokens) as i32;
         if let Ok(region) = Region::new(&self.compositor) {
             region.add(0, top, panel.width as i32, panel_h);
             if panel.style == Style::Bar {

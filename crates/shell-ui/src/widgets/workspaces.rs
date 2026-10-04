@@ -1,18 +1,20 @@
 //! The workspace switcher (M5.2c): round buttons numbered as Super+1 to
 //! Super+9 are, the shown workspace a wider pill in the accent colour. At
 //! most three show at once, the shown workspace and its neighbours, so the
-//! panel keeps its width whatever the preset's count; a dot at a side says
-//! more lie there, which the wheel or a touchpad scrolls to. A click shows
-//! its workspace through ext-workspace-v1 (`crate::workspaces`). Sizes are
-//! logical pixels, drawn at the panel's scale.
+//! panel keeps its width whatever the preset's count; where more lie, the
+//! next one's button peeks in at that side, fading out, as the mockups
+//! draw it, and the wheel or a touchpad scrolls to it, or a click on it
+//! does. A click on a button shows its workspace through ext-workspace-v1
+//! (`crate::workspaces`). Sizes are logical pixels, drawn at the panel's
+//! scale.
 
 use accesskit::Role;
-use tiny_skia::{FillRule, Transform};
+use tiny_skia::{FillRule, Pixmap, PixmapPaint, Transform};
 
 use edel::tokens::Colour;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{paint_of, rounded};
+use crate::paint::{Text, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
     name: "workspaces",
@@ -48,8 +50,9 @@ const BUTTON: f32 = 20.0;
 /// The shown workspace's pill.
 const PILL: f32 = 32.0;
 const GAP: f32 = 5.0;
-/// Where a dot says more workspaces lie.
-const HINT: f32 = 8.0;
+/// How much of the next button peeks in where more workspaces lie,
+/// fading out towards the widget's end.
+const PEEK: f32 = 14.0;
 /// Space on each side, between it and its neighbours.
 const ROOM: f32 = 6.0;
 
@@ -97,7 +100,7 @@ fn read(shown: &str) -> (usize, Vec<(&str, bool)>) {
 /// logical pixels.
 pub fn buttons(shown: &str) -> Vec<(&str, bool, f32, f32)> {
     let (first, names) = read(shown);
-    let mut x = ROOM + if names.len() > SHOWN { HINT } else { 0.0 };
+    let mut x = ROOM + if names.len() > SHOWN { PEEK + GAP } else { 0.0 };
     let mut out = Vec::new();
     for &(name, on) in names.iter().skip(first).take(SHOWN) {
         let width = if on { PILL } else { BUTTON };
@@ -115,8 +118,56 @@ pub fn logical_width(shown: &str) -> f32 {
         return 0.0;
     }
     let shown_count = names.len().min(SHOWN) as f32;
-    let hints = if names.len() > SHOWN { 2.0 * HINT } else { 0.0 };
-    2.0 * ROOM + hints + PILL + (shown_count - 1.0) * (BUTTON + GAP)
+    let peeks = if names.len() > SHOWN {
+        2.0 * (PEEK + GAP)
+    } else {
+        0.0
+    };
+    2.0 * ROOM + peeks + PILL + (shown_count - 1.0) * (BUTTON + GAP)
+}
+
+/// The buttons peeking in: the one before the first shown, on the left,
+/// and the one after the last, on the right, each with its name, the
+/// left edge of its strip and whether it is on the left.
+pub fn peeks(shown: &str) -> Vec<(&str, f32, bool)> {
+    let (first, names) = read(shown);
+    let mut out = Vec::new();
+    if first > 0 {
+        out.push((names[first - 1].0, ROOM, true));
+    }
+    if let Some(&(name, _)) = names.get(first + SHOWN) {
+        out.push((name, logical_width(shown) - ROOM - PEEK, false));
+    }
+    out
+}
+
+/// Draws a workspace's button, `on` if it is the shown one, at `x`, `y`
+/// in `pixmap`, `w` by `h` pixels.
+#[allow(clippy::too_many_arguments)]
+fn button(
+    pixmap: &mut Pixmap,
+    text: Option<&mut Text>,
+    tokens: &edel::tokens::Tokens,
+    name: &str,
+    on: bool,
+    (x, y, w, h): (f32, f32, f32, f32),
+    size: f32,
+) {
+    let off = Colour {
+        a: 0.14,
+        ..tokens.panel_text
+    };
+    if let Some(path) = rounded(x, y, w, h, h / 2.0) {
+        let fill = paint_of(if on { tokens.accent } else { off });
+        pixmap.fill_path(&path, &fill, FillRule::Winding, Transform::identity(), None);
+    }
+    if let Some(text) = text {
+        let mut line = text.line(name, size);
+        let tx = x + (w - line.width) / 2.0;
+        let ty = y + (h - size * 1.25) / 2.0;
+        let ink = if on { tokens.panel } else { tokens.panel_text };
+        text.draw(pixmap, &mut line, tx, ty, ink);
+    }
 }
 
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
@@ -128,52 +179,62 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let tokens = canvas.tokens;
     let height = BUTTON * s;
     let y = canvas.top + ((canvas.height - height) / 2.0).round();
-    let off = Colour {
-        a: 0.14,
-        ..tokens.panel_text
-    };
     let size = (tokens.panel_text_size as f32 * 0.82).round() * s;
     for (name, on, left, w) in buttons(shown) {
-        let (bx, bw) = ((x + left * s).round(), w * s);
-        if let Some(path) = rounded(bx, y, bw, height, height / 2.0) {
-            let fill = paint_of(if on { tokens.accent } else { off });
-            canvas
-                .pixmap
-                .fill_path(&path, &fill, FillRule::Winding, Transform::identity(), None);
-        }
-        if let Some(text) = canvas.text.as_deref_mut() {
-            let mut line = text.line(name, size);
-            let tx = bx + (bw - line.width) / 2.0;
-            let ty = y + (height - size * 1.25) / 2.0;
-            let ink = if on { tokens.panel } else { tokens.panel_text };
-            text.draw(canvas.pixmap, &mut line, tx, ty, ink);
-        }
+        let place = ((x + left * s).round(), y, w * s, height);
+        button(
+            canvas.pixmap,
+            canvas.text.as_deref_mut(),
+            tokens,
+            name,
+            on,
+            place,
+            size,
+        );
     }
-    // A dot on each side where more workspaces lie.
-    let (first, names) = read(shown);
-    let dot = Colour {
-        a: 0.5,
-        ..tokens.panel_text
-    };
-    let r = 1.5 * s;
-    let mid = canvas.top + canvas.height / 2.0;
-    let total = logical_width(shown) * s;
-    let mut dots = Vec::new();
-    if first > 0 {
-        dots.push(x + (ROOM + HINT / 2.0) * s);
+    // The next button at each side where more lie: drawn whole into a
+    // strip PEEK wide, the part beyond it cut off, then faded towards
+    // the widget's end.
+    let strip = (PEEK * s).round();
+    for (name, left, on_left) in peeks(shown) {
+        let Some(mut peek) = Pixmap::new(strip as u32, height.ceil() as u32) else {
+            continue;
+        };
+        let bx = if on_left { strip - BUTTON * s } else { 0.0 };
+        button(
+            &mut peek,
+            canvas.text.as_deref_mut(),
+            tokens,
+            name,
+            false,
+            (bx, 0.0, BUTTON * s, height),
+            size,
+        );
+        fade(&mut peek, on_left);
+        canvas.pixmap.draw_pixmap(
+            (x + left * s).round() as i32,
+            y as i32,
+            peek.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
     }
-    if first + SHOWN < names.len() {
-        dots.push(x + total - (ROOM + HINT / 2.0) * s);
-    }
-    for cx in dots {
-        if let Some(path) = rounded(cx - r, mid - r, 2.0 * r, 2.0 * r, r) {
-            canvas.pixmap.fill_path(
-                &path,
-                &paint_of(dot),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
+}
+
+/// Fades `pixmap` out towards its left side if `to_left`, else its right:
+/// full at the inner side, nothing at the outer one.
+fn fade(pixmap: &mut Pixmap, to_left: bool) {
+    let w = pixmap.width() as usize;
+    for (i, pixel) in pixmap.data_mut().chunks_exact_mut(4).enumerate() {
+        let column = (i % w) as f32 + 0.5;
+        let kept = if to_left {
+            column / w as f32
+        } else {
+            1.0 - column / w as f32
+        };
+        for channel in pixel {
+            *channel = (f32::from(*channel) * kept).round() as u8;
         }
     }
 }
@@ -182,10 +243,20 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
 /// steps, keeping three in sight.
 fn input(shown: &str, input: Input) -> Option<Action> {
     match input {
-        Input::Click(at, _) => buttons(shown)
-            .into_iter()
-            .find(|(_, _, left, w)| (*left..left + w).contains(&at))
-            .map(|(name, ..)| Action::Show(name.to_string())),
+        Input::Click(at, _) => {
+            if let Some(&(_, _, on_left)) = peeks(shown)
+                .iter()
+                .find(|(_, left, _)| (*left..left + PEEK).contains(&at))
+            {
+                // A click on a peeking button scrolls one step towards it.
+                let (first, _) = read(shown);
+                return Some(Action::View(if on_left { first - 1 } else { first + 1 }));
+            }
+            buttons(shown)
+                .into_iter()
+                .find(|(_, _, left, w)| (*left..left + w).contains(&at))
+                .map(|(name, ..)| Action::Show(name.to_string()))
+        }
         Input::Scroll(steps) => {
             let (first, names) = read(shown);
             let last = names.len().saturating_sub(SHOWN) as i64;
@@ -228,9 +299,10 @@ mod tests {
         let first = buttons("0;1*,2,3,4");
         let names: Vec<_> = first.iter().map(|b| (b.0, b.1)).collect();
         assert_eq!(names, [("1", true), ("2", false), ("3", false)]);
-        // Room, then the hint's place on the left, as more lie to the right.
-        assert_eq!((first[0].2, first[0].3), (ROOM + HINT, PILL));
-        assert_eq!(first[1].2, ROOM + HINT + PILL + GAP);
+        // Room, then the peek's place on the left, as more lie to the
+        // right.
+        assert_eq!((first[0].2, first[0].3), (ROOM + PEEK + GAP, PILL));
+        assert_eq!(first[1].2, ROOM + PEEK + GAP + PILL + GAP);
         assert_eq!(
             logical_width("0;1*,2,3,4"),
             logical_width("1;1,2,3*,4"),
@@ -272,6 +344,42 @@ mod tests {
             "already at the first"
         );
         assert_eq!(input("0;1*,2", Input::Scroll(1)), None);
+    }
+
+    #[test]
+    fn the_next_workspace_peeks_in_where_more_lie_and_a_click_scrolls_to_it() {
+        // At the start, only 4 peeks in, at the right end.
+        let start = "0;1*,2,3,4";
+        let width = logical_width(start);
+        assert_eq!(peeks(start), [("4", width - ROOM - PEEK, false)]);
+        // In the middle of nine, one at each side.
+        let middle = "3;1,2,3,4,5*,6,7,8,9";
+        assert_eq!(
+            peeks(middle),
+            [("3", ROOM, true), ("7", width - ROOM - PEEK, false)]
+        );
+        assert_eq!(
+            input(middle, Input::Click(ROOM + 1.0, 0.0)),
+            Some(Action::View(2))
+        );
+        assert_eq!(
+            input(middle, Input::Click(width - ROOM - 1.0, 0.0)),
+            Some(Action::View(4))
+        );
+        assert!(peeks("0;1*,2,3").is_empty());
+    }
+
+    #[test]
+    fn a_peek_fades_out_towards_the_outer_side() {
+        let mut strip = Pixmap::new(10, 2).unwrap();
+        strip.fill(tiny_skia::Color::WHITE);
+        fade(&mut strip, false);
+        let alpha = |p: &Pixmap, x: u32| p.pixel(x, 0).unwrap().alpha();
+        assert!(alpha(&strip, 0) > 230 && alpha(&strip, 9) < 20);
+        let mut strip = Pixmap::new(10, 2).unwrap();
+        strip.fill(tiny_skia::Color::WHITE);
+        fade(&mut strip, true);
+        assert!(alpha(&strip, 0) < 20 && alpha(&strip, 9) > 230);
     }
 
     #[test]

@@ -85,7 +85,19 @@ pub fn panel_top(edge: Edge, style: Style, tokens: &Tokens) -> u32 {
 }
 
 /// The room inside a dock's card at each end, in logical pixels.
-pub const DOCK_PAD: f32 = 6.0;
+pub const DOCK_PAD: f32 = 8.0;
+/// A dock's height and its corners' radius, in logical pixels: taller and
+/// rounder than a bar, for bigger icons.
+pub const DOCK_HEIGHT: u32 = 60;
+const DOCK_RADIUS: f32 = 18.0;
+
+/// A panel's own height, without the fillets' strip, in logical pixels.
+pub fn height(style: Style, tokens: &Tokens) -> u32 {
+    match style {
+        Style::Bar => tokens.panel_height,
+        Style::Dock => DOCK_HEIGHT,
+    }
+}
 
 /// The fonts and glyph cache text is drawn with, loaded once.
 pub struct Text {
@@ -298,13 +310,21 @@ pub fn paint(
     let panel = paint_of(tokens.panel);
     let dock = look.style == Style::Dock;
     if dock {
+        // A card rounded all round, with a hairline of the text's colour
+        // inside its edge, so it reads on any background.
+        let r = DOCK_RADIUS * s;
+        let line = Colour {
+            a: 0.1,
+            ..tokens.panel_text
+        };
+        fill(pixmap, 0.0, top, w, panel_h, r, line);
         fill(
             pixmap,
-            0.0,
-            top,
-            w,
-            panel_h,
-            tokens.radius as f32 * s,
+            s,
+            top + s,
+            w - 2.0 * s,
+            panel_h - 2.0 * s,
+            r - s,
             tokens.panel,
         );
     } else if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
@@ -339,6 +359,7 @@ pub fn paint(
         scale: s,
         top,
         height: panel_h,
+        dock,
     };
     let mut shown = look.shown.iter().map(String::as_str);
     // Each group's widgets with what they show and their widths.
@@ -384,7 +405,7 @@ pub fn natural_width(
     scale: u32,
 ) -> u32 {
     let s = scale.max(1) as f32;
-    let Some(mut pixmap) = Pixmap::new(1, (tokens.panel_height as f32 * s) as u32) else {
+    let Some(mut pixmap) = Pixmap::new(1, (DOCK_HEIGHT as f32 * s) as u32) else {
         return 0;
     };
     let height = pixmap.height() as f32;
@@ -396,6 +417,7 @@ pub fn natural_width(
         scale: s,
         top: 0.0,
         height,
+        dock: true,
     };
     let widgets: f32 = row
         .all()
@@ -499,7 +521,8 @@ mod tests {
         };
         let shown = row.shows(&Live::default());
         let width = natural_width(&tokens, None, None, &row, &shown, 1);
-        let h = tokens.panel_height;
+        let h = DOCK_HEIGHT;
+        assert_eq!(height(Style::Dock, &tokens), h);
         assert_eq!(width, 2 * h + 2 * DOCK_PAD as u32);
         let look = Look {
             width,
@@ -517,6 +540,11 @@ mod tests {
             [(DOCK_PAD, h as f32), (DOCK_PAD + h as f32, h as f32)]
         );
         assert_eq!(pixel(&pixmap, width / 2, 1), tokens.panel.bytes());
+        assert_ne!(
+            pixel(&pixmap, width / 2, 0),
+            tokens.panel.bytes(),
+            "a hairline runs along its edge"
+        );
         assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "its corners are round");
         assert_eq!(pixel(&pixmap, width - 1, h - 1)[3], 0);
         // No fillets and no strip: its buffer is the card.
