@@ -19,7 +19,7 @@
 //! yet). These are the names RAUC's GRUB backend uses, so RAUC could manage
 //! the slots later without changing the disk. On every boot GRUB picks the
 //! first slot in `ORDER` that is OK and has tries left, and counts the
-//! attempt. Once the system is up, `edel update mark-good` resets the count.
+//! attempt. Once the system is up, `edel boot mark-good` resets the count.
 //! A slot that fails [`TRIES`] times in a row is passed over, and the next
 //! slot boots instead.
 
@@ -139,7 +139,7 @@ pub fn grub_cfg(kernel: &str, modules: &str, cmdline: &str, microcode: &[&str]) 
     let mut cfg = String::from(
         r#"# Edel OS A/B boot, written by `edel image build`. GRUB starts the
 # first slot in ORDER that is OK and has tries left, and counts the try;
-# `edel update mark-good` resets the count once the system is up.
+# `edel boot mark-good` resets the count once the system is up.
 
 serial --unit=0 --speed=115200
 terminal_input console serial

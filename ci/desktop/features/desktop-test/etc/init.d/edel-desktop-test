@@ -363,11 +363,11 @@ shown() {
 # and GRUB starts slot A again; the marker on /data, which both slots
 # share, makes the next boots say so instead of testing the desktop.
 break_update() {
-	edel update install http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
+	edel update http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
 		say "rollback: FAIL: the update did not install"
 		return 1
 	}
-	slot_b=$(edel update status | awk '$1 == "B:" { print $4 }')
+	slot_b=$(edel status | awk '$1 == "B:" { print $4 }')
 	mkdir -p /run/desktop-test/slot /run/desktop-test/esp
 	mount "$slot_b" /run/desktop-test/slot || return 1
 	printf '#!/bin/sh\necho "edel-compositor: broken on purpose by desktop-test rollback" >&2\nexit 1\n' \
@@ -392,7 +392,7 @@ break_update() {
 # which is when slot B is switched off and the fallback recorded), whether
 # both happened.
 rolled_back() {
-	slots=$(edel update status)
+	slots=$(edel status)
 	echo "$slots" >/dev/console
 	if echo "$slots" | grep -q '^running: B'; then
 		say "rollback: slot B runs with a broken compositor; the guard should restart the VM within 30 s"
@@ -403,7 +403,7 @@ rolled_back() {
 		sleep 0.2
 		i=$((i + 1))
 	done
-	slots=$(edel update status)
+	slots=$(edel status)
 	echo "$slots" >/dev/console
 	if echo "$slots" | grep -q '^running: A' && echo "$slots" | grep -q '^B: ok=0' &&
 		grep -q '^from = "B"' /data/edel/last-fallback.toml 2>/dev/null; then

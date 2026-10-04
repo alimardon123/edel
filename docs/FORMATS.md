@@ -22,9 +22,9 @@ size = 187695104
 ```
 
 - **Signature:** `release.toml.sig` holds an ed25519 signature over the exact bytes of `release.toml`, as hex. Public keys are 32 bytes as hex in `*.pub` files; every image carries two of them in `/usr/share/edel/keys/`, so one key can replace the other without stranding a machine. `edel release keygen`, `make`, `sign` and `verify` handle them.
-- **Where from:** `edel update install` and `edel update check` take a path, a `file://` URL or an http(s) URL; the signature makes plain http as safe as https. The image streams into the slot and is hashed on the way (M1.7).
+- **Where from:** `edel update` and `edel update --dry-run` take a path, a `file://` URL or an http(s) URL; the signature makes plain http as safe as https. The image streams into the slot and is hashed on the way (M1.7).
 - **Images are shrunk:** `edel image build` cuts the update image to its file system (`resize2fs -M`), so it fits any slot at least that big, and the install grows it to fill the slot. `size` is that shrunk size, so it is also the smallest slot the image needs.
-- **What `edel update install` refuses:** a manifest no carried key signed (`refused: signature`), an image whose sha256 or size differs (`refused: sha256`), a release with no image named like this machine's `EDEL_IMAGE`, and a version that is not newer than the running `VERSION_ID` unless `--allow-downgrade` is given. Versions compare number by number (`2026.10.2` is newer than `2026.9.9`).
+- **What `edel update` refuses:** a manifest no carried key signed (`refused: signature`), an image whose sha256 or size differs (`refused: sha256`), a release with no image named like this machine's `EDEL_IMAGE`, and a version that is not newer than the running `VERSION_ID` unless `--allow-downgrade` is given. Versions compare number by number (`2026.10.2` is newer than `2026.9.9`).
 - **Reading:** unknown fields are ignored; the signature still covers them. Only an unknown `format` is refused, naming the format.
 - **The stepping-stone rule:** a breaking change publishes the new format under a new file name and keeps `release.toml` pointing at a release whose `edel` reads both formats. A machine two formats behind installs that stepping stone, then the newer release at its next check, with no extra command from the person (AerynOS users rerun theirs by hand).
 - **Keys today:** until the first preview (M3.4) no image carries a real key. CI makes two throwaway keys on every run and bakes them into its test images with `edel image build --public-key`. The real key goes into the `EDEL_RELEASE_KEY` secret, which waits for Alimardon.
@@ -50,13 +50,13 @@ The file that describes a whole machine, `/data/edel/system.toml`; [system-file.
 
 ## `loader.toml` (format 1, M1.8)
 
-`format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel update mark-good` installs that slot's loader when the versions differ.
+`format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel boot mark-good` installs that slot's loader when the versions differ.
 
 ## The disk layout (M1.2, slot size M3.3b)
 
 A machine's disk is GPT: partition 1 is the EFI system partition (64 MiB, label `EDEL-ESP`), 2 and 3 are slot A and slot B, and 4 is the data partition (label `edel-data`), which takes the rest. An update can replace everything inside a slot, but never the layout, so it is decided once:
 
 - Every slot of an installed machine is 4096 MiB (`edel::install::SLOT_MIB`), whatever it was installed from, and the VM image's slots are too, because a VM runs from that disk as it is. A machine installed from the first preview must be able to take every later update.
-- An update image is the slot's file system shrunk to its contents (`resize2fs -M`); `edel update install` writes it into the other slot and grows it to fill the slot. So a release may grow until its files fill 4096 MiB, and no release may need more.
+- An update image is the slot's file system shrunk to its contents (`resize2fs -M`); `edel update` writes it into the other slot and grows it to fill the slot. So a release may grow until its files fill 4096 MiB, and no release may need more.
 - The laptop image, a stick to try Edel OS and install it from, keeps 1024 MiB slots so it fits a common 8 GB stick (about 7.45 GiB); `edel install` copies its running slot into a 4096 MiB slot and grows it.
 - Changing the slot size later means moving every installed machine's data partition, so it waits for a format change of the disk itself, with a migration in `edel update`.

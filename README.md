@@ -67,13 +67,13 @@ CI builds both images on every change, runs the container, boots the VM in QEMU 
 The VM disk has two root slots, A and B, each a complete system with its own kernel ([ADR-006](docs/ADR-006-atomic-updates-and-replication.md)). An update is written to the slot that is not running, so the running system is never changed. The system itself is read-only; `/home`, `/var` and every change to `/etc` live on the data partition, so updates and rollbacks keep people's files and settings:
 
 ```sh
-edel update install https://.../release.toml   # check its signature, write the other slot
-reboot                                    # the new slot starts
-edel update rollback                      # if you want the previous system back
+edel update https://.../release.toml   # check its signature, write the other slot
+reboot                                 # the new version starts
+edel rollback                          # if you want the previous version back
 reboot
 ```
 
-Each slot carries its own boot loader, installed only once the slot is confirmed. GRUB gives a newly installed slot three tries. Once the system has started, the boot guard confirms the slot; if it hangs instead, a hardware watchdog restarts the machine and the try counts. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel update status` shows both slots, and `edel update rollback` starts the other slot again at the next boot.
+Each slot carries its own boot loader, installed only once the slot is confirmed. GRUB gives a newly installed slot three tries. Once the system has started, the boot guard confirms the slot; if it hangs instead, a hardware watchdog restarts the machine and the try counts. If the slot fails to start three times, GRUB starts the previous slot again on its own, and that slot switches the failed one off. `edel status` shows both slots, and `edel rollback` starts the other slot again at the next boot.
 
 CI tests the whole cycle in one VM: install an update and start it, then install a deliberately broken update and check that the machine comes back on the previous slot, with a rollback by command in between.
 

@@ -1,7 +1,7 @@
 //! The boot loader rides along with the slot (roadmap M1.8). Each slot
 //! carries the GRUB binary, `grub.cfg` and `loader.toml` (its version) in
 //! `/usr/lib/edel/boot/`. Only after a slot is confirmed does
-//! `edel update mark-good` compare that version with the one on the EFI
+//! `edel boot mark-good` compare that version with the one on the EFI
 //! system partition and, when they differ, swap the files in: the loader is
 //! the one piece outside the A/B rollback, so it changes only under a slot
 //! known to work. The environment block is never replaced.

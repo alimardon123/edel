@@ -132,6 +132,19 @@ Every install path ends in one `system.toml` and one `edel system apply`:
 
 CI proves every row as it proves everything else: the images build, the boot, ab, install and upgrade tests pass, budgets hold, and the package diff (M3.1) shows what moved.
 
+**Easy to use decision (2026-10-04):** Alimardon asked that the keyboard shortcuts, Settings, the `edel` commands and the system file all be easy and clear for everyone, never confusing, and still powerful and scalable. Every step that adds or changes one of them meets these rules:
+
+1. **One name, the same everywhere.** A setting has one key, named for what people see (`shell.tiling_style`, never an algorithm's name), and its Settings row, its `edel` line, its docs line and its messages use the same words. Keys are lowercase with underscores: a section, then a name (`outputs.NAME.scale` adds the screen's name). Values are short lowercase words (`stack`, `floating-only`), `true` or `false`, or numbers whose unit the key's help names.
+2. **Nothing to set up first.** Every key has a default that works, so a fresh machine needs no setting changed; a key left out is its default, and `edel system unset` or a row's Reset brings it back (section 3).
+3. **Mistakes explain themselves.** A refused key or value says in one line what was wrong and what is allowed, with the nearest key for a typo (M6.11); Settings, `edel system set` and `edel system check` print the same line. Nothing fails silently: a value a reader falls back from shows in `edel system diff`.
+4. **Commands read as sentences.** An action on the whole machine is one verb (`edel update`, `edel rollback`, `edel install DISK`), and a group of related actions is a noun and a verb (`edel system set`, `edel image build`), with the same verbs wherever they fit: `get`, `set`, `unset`, `check`, `diff`, `apply`, `list`. Each command's help is one plain line. Commands only the boot services or CI run stay out of the help list. A command that changes much can show the change first (`edel system diff`, `--dry-run`), and every command exits non-zero when it fails, so scripts and fleets (M7) can rely on them. Alimardon found `edel update install` and `edel update rollback` confusing, so they became `edel update RELEASE` and `edel rollback`.
+5. **Shortcuts follow one pattern.** Super is the desktop's key, and tapped alone it opens the launcher. Super with a key acts on windows and workspaces, and adding Shift moves the focused window the same way: Super+2 shows workspace 2 and Super+Shift+2 sends the window there; Super+Left moves the focus left and Super+Shift+Left moves the window (M5.16). One key does one thing, every preset keeps the same core keys (M5.4), every shortcut is in the one generated table (`docs/SHORTCUTS.md`) and on the Shortcuts page, and the keys that get a person out (close, launcher, lock) can never be left unbound (M5.13).
+6. **Settings shows what people need, in their words.** One row per key, on pages named for what people want to do (Layout, Appearance, Display), labelled with the key's plain name and saying where the value comes from (`Set by this machine`, the preset or the default) (M5.6). A change takes effect at once, with no restart, and each row has Reset. A new need is met by a preset, an add-on or an app before another row (principle 9).
+7. **The file stays readable and shareable.** One TOML file holding only what people chose, its comments and order kept by `set`; every key in `docs/system-file.md` with an example; a file from one machine applies to another, or to a fleet, unchanged (`export`, `diff`, `apply`).
+8. **Checked, not remembered.** M5.13's and M6.11's tests enforce what code can check: conflicts and rescue keys, a row, help and a default for every key, a button and a command for every action. A PR that adds a key, a shortcut or a command shows in its body the row, the command, the file line and the error message it adds.
+
+Principles: Simple and Functional for everyone, Powerful and Scalable through the file and the commands, and Versatile through presets rather than more options; traded off: a few lines in each PR that adds a setting. Asked by Alimardon.
+
 ## Options Considered
 
 | Option | Verdict |
@@ -165,6 +178,7 @@ Not built, and defended: a plugin or extension API; dependencies, versions or al
 8. [ ] Add-ons as features, files moved under `/usr`, the skip rule (M7.2a); add-ons at the next boot (M7.2b); unattended install (M7.3); containers once (M7.4); profiles by name (M7.6); serial helper reused (M8.2); the `release/*` freeze (M8.5); Defaults reviewed (M8.7); platform as a feature (M10.1).
 9. [ ] List ADR-008 in `docs/README.md`; amend ADR-002's line on sharing presets and point ADR-007's add-on format item at feature files; add the boot-reader tie-break to `DESIGN-PRINCIPLES.md`.
 10. [ ] Every action behind a Settings button and an `edel` command, checked by the action table's test; a Roll back button on the Updates page (M5.8, M6.11).
+11. [ ] Shortcuts, Settings, the `edel` commands and the system file meet the easy to use rules, checked by M5.13's and M6.11's tests and shown in each PR that adds a key, a shortcut or a command (decided 2026-10-04).
 
 ## Principles check
 
