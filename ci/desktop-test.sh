@@ -150,9 +150,13 @@ budget() {
 	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
-# token KEY: the colour KEY has in design/tokens.toml, as rrggbb.
+# token KEY [TABLE]: the colour KEY has in design/tokens.toml's [colour]
+# table, or in TABLE such as colour.light (M5.5c), as rrggbb.
 token() {
-	sed -n "s/^$1 = \"#\\([0-9a-f]\\{6\\}\\)\".*/\\1/p" design/tokens.toml
+	awk -v key="$1" -v table="[${2:-colour}]" '
+		/^\[/ { here = ($1 == table); next }
+		here && $1 == key && $3 ~ /^"#[0-9a-f]{6}"$/ { print substr($3, 3, 6); exit }
+	' design/tokens.toml
 }
 
 # guest COMMAND: sends one line to the test service, which runs the
@@ -953,6 +957,69 @@ case_portal() {
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
+case_scheme() {
+	# Light and dark (M5.5c): edel system set appearance.color_scheme=light
+	# gives the compositor the tokens' [colour.light], drawing the title
+	# bars and the background again, and restarts shell-ui, whose panel
+	# and portal follow; the portal tells apps already open with
+	# SettingChanged, which xdg-desktop-portal passes on. Unset, it is
+	# dark again. Kept as scheme-light.png and scheme-dark.png.
+	guest 'portal watch'
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window keys at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	read -r x y <<-EOF
+		$place
+	EOF
+	for scheme in light dark; do
+		if [ "$scheme" = light ]; then
+			table=colour.light
+			command='scheme light'
+		else
+			table=colour
+			command='scheme default'
+		fi
+		said=$(count "edel-compositor: colour scheme $scheme")
+		restarts=$(count "edel-compositor: restarting edel-shell-ui: the colour scheme is now $scheme")
+		guest "$command"
+		wait_more "edel-compositor: colour scheme $scheme" "$said" ||
+			fail "the compositor did not take the $scheme scheme"
+		wait_more "edel-compositor: restarting edel-shell-ui: the colour scheme is now $scheme" "$restarts" ||
+			fail "the compositor did not restart shell-ui for the $scheme scheme"
+		shot "scheme-$scheme" 640 790 "$(token panel "$table")" >/dev/null ||
+			fail "the panel at 640,790 is not the $scheme scheme's #$(token panel "$table")"
+		shot "scheme-$scheme-bar" $((x + 5)) $((y - 24)) "$(token title_bar_focused "$table")" >/dev/null ||
+			fail "keys' title bar at $((x + 5)),$((y - 24)) is not the $scheme scheme's #$(token title_bar_focused "$table")"
+		shot "scheme-$scheme-background" 4 4 "$(token background "$table")" >/dev/null ||
+			fail "the background at 4,4 is not the $scheme scheme's #$(token background "$table")"
+		asked=$(count 'DESKTOP-TEST: portal accent-color ')
+		guest 'portal read'
+		wait_more 'DESKTOP-TEST: portal accent-color ' "$asked" 60 || fail "the service did not hear back from the portal"
+		read=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal color-scheme //p' | tail -n 1)
+		want=1
+		[ "$scheme" = dark ] || want=2
+		case "$read" in
+		"(<uint32 $want>,)"*) ;;
+		*) fail "in the $scheme scheme the portal's colour scheme is not $want: $read" ;;
+		esac
+	done
+	guest 'portal signals'
+	wait_for 'DESKTOP-TEST: portal signals ' || fail "the service did not print the portal's signals"
+	signals=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal signals //p' | tail -n 1)
+	for want in 2 1; do
+		echo "$signals" | grep -q "member=SettingChanged string \"org.freedesktop.appearance\" string \"color-scheme\" variant uint32 $want" ||
+			fail "xdg-desktop-portal did not tell apps the colour scheme changed to $want: $signals"
+	done
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Light and dark (M5.5c): scheme-light.png and scheme-dark.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: appearance.color_scheme=light turned the panel, keys' title bar and the background to the light tokens, the portal said prefer light (2) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to dark (1)"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with shell.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
@@ -1175,13 +1242,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

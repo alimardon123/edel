@@ -186,6 +186,8 @@ pub struct Look {
     pub text: bool,
     /// The side the buttons sit on (M5.4b).
     pub side: Side,
+    /// Light or dark (M5.5c): a new scheme draws the bar again.
+    pub scheme: crate::tokens::Scheme,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
@@ -698,6 +700,7 @@ mod tests {
             hovered: None,
             text: false,
             side: Side::Right,
+            scheme: crate::tokens::Scheme::Dark,
         }
     }
 

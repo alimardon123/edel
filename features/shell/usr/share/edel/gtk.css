@@ -1,6 +1,7 @@
 /* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),
    written by edel::tokens::Tokens::gtk_css; a cargo test keeps
-   this file equal to it. */
+   this file equal to it. GTK picks the light ones when the
+   settings portal says light (M5.5c). */
 @define-color accent_color #5b8ef5;
 @define-color accent_bg_color #5b8ef5;
 @define-color accent_fg_color #ffffff;
@@ -17,3 +18,22 @@
 @define-color popover_fg_color #e8e8ea;
 @define-color dialog_bg_color #2e323a;
 @define-color dialog_fg_color #e8e8ea;
+
+@media (prefers-color-scheme: light) {
+  @define-color accent_color #3a73e8;
+  @define-color accent_bg_color #3a73e8;
+  @define-color accent_fg_color #ffffff;
+  @define-color window_bg_color #dfe3ea;
+  @define-color window_fg_color #1f2329;
+  @define-color view_bg_color #f2f3f5;
+  @define-color view_fg_color #1f2329;
+  @define-color headerbar_bg_color #e9ecf0;
+  @define-color headerbar_fg_color #1f2329;
+  @define-color headerbar_backdrop_color #dfe3ea;
+  @define-color sidebar_bg_color #f2f3f5;
+  @define-color sidebar_fg_color #1f2329;
+  @define-color popover_bg_color #e9ecf0;
+  @define-color popover_fg_color #1f2329;
+  @define-color dialog_bg_color #e9ecf0;
+  @define-color dialog_fg_color #1f2329;
+}

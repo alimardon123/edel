@@ -60,7 +60,7 @@ use tiny_skia::Pixmap;
 
 use edel::presets::{self, Edge, Hide, Style};
 use edel::system;
-use edel::tokens::{self, Tokens};
+use edel::tokens::{self, Scheme, Tokens};
 
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
@@ -155,7 +155,8 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let tokens = load_tokens();
+    let (preset, scheme) = from_system_files();
+    let tokens = load_tokens(scheme);
     let connection = Connection::connect_to_env().context("connecting to the compositor")?;
     let (globals, queue) = registry_queue_init(&connection).context("reading the globals")?;
     let qh = queue.handle();
@@ -165,7 +166,6 @@ fn run() -> Result<()> {
     let strip = paint::fillet_height(&tokens);
     let features = std::path::Path::new(edel::features::DIR);
     let mut panels = Vec::new();
-    let preset = preset();
     for spec in &preset.panels {
         let pick = |names: &[String]| {
             let (found, notes) = widgets::usable(names, features);
@@ -292,24 +292,21 @@ fn run() -> Result<()> {
     Ok(())
 }
 
-/// The image's tokens if it has them, else the built-in ones; anything
-/// skipped is reported, never fatal (ADR-008).
-fn load_tokens() -> Tokens {
-    let Ok(text) = std::fs::read_to_string(tokens::PATH) else {
-        return Tokens::built_in();
-    };
-    let (tokens, notes) = Tokens::read(&text);
+/// The image's tokens in `scheme` if it has them, else the built-in ones;
+/// anything skipped is reported, never fatal (ADR-008).
+fn load_tokens(scheme: Scheme) -> Tokens {
+    let (tokens, notes) = tokens::load(scheme);
     for note in notes {
         eprintln!("edel-shell-ui: {}: {note}", tokens::PATH);
     }
     tokens
 }
 
-/// The preset the system files name, the person's over the machine's,
-/// else Classic; a broken file or an unknown name is reported, never fatal
-/// (ADR-008).
-fn preset() -> presets::Preset {
-    let (mut name, mut panels) = (None, None);
+/// The preset the system files name, else Classic, and the colour scheme
+/// they pick (M5.5c), the person's over the machine's; a broken file or an
+/// unknown name is reported, never fatal (ADR-008).
+fn from_system_files() -> (presets::Preset, Scheme) {
+    let (mut name, mut panels, mut scheme) = (None, None, None);
     let files = [Some(system::MACHINE_FILE.into()), system::person_file()];
     for path in files.into_iter().flatten() {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -320,6 +317,7 @@ fn preset() -> presets::Preset {
                 let shell = read.file.shell;
                 name = shell.preset.or(name);
                 panels = shell.panels.or(panels);
+                scheme = read.file.appearance.color_scheme.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",
@@ -335,7 +333,11 @@ fn preset() -> presets::Preset {
     if let Some(panels) = panels {
         preset.panels = panels;
     }
-    preset
+    let scheme = scheme
+        .as_deref()
+        .and_then(Scheme::parse)
+        .unwrap_or_default();
+    (preset, scheme)
 }
 
 /// Whether the fillets are drawn: not on the Lite tier, which keeps
