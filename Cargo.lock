@@ -719,6 +719,7 @@ dependencies = [
  "rustix 1.1.5",
  "smithay",
  "toml",
+ "wayland-scanner",
  "xcursor",
 ]
 
@@ -733,6 +734,7 @@ dependencies = [
  "smithay-client-toolkit 0.21.1",
  "tiny-skia",
  "toml",
+ "wayland-scanner",
 ]
 
 [[package]]

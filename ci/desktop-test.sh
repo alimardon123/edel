@@ -437,8 +437,23 @@ case_panel() {
 	shot panel 640 790 "$panel" >/dev/null || fail "640,790 is not the panel's #$panel"
 	shot panel 640 761 "$panel" >/dev/null || fail "640,761, the panel's top row, is not #$panel"
 	# The clock, at the panel's right end, is drawn: not one colour.
-	clock=$(python3 ci/qmp.py uniform "$dir/panel.png" 1180 765 84 30)
+	clock=$(python3 ci/qmp.py uniform "$dir/panel.png" 1214 765 62 30)
 	[ "$clock" = varied ] || fail "the clock's region at the panel's right end is $clock"
+	# The layout toggle (M5.3a): a click switches the shown workspace's
+	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
+	# wide after 3 px of room, with the accent; another switches it back.
+	# The checked pixel is left of where the cursor lies after a click.
+	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
+	[ -n "$toggle" ] || fail "shell-ui did not say where its layout toggle lies"
+	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle at $((toggle + 6)),780 is filled while the windows float"
+	tiled=$(count 'edel-compositor: windows now tiling')
+	python3 ci/qmp.py click $((toggle + 18)) 780
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "a click on the layout toggle at $((toggle + 18)),780 did not tile the windows"
+	shot panel $((toggle + 6)) 780 "!$panel" >/dev/null || fail "the layout toggle is not filled while the windows tile"
+	floated=$(count 'edel-compositor: windows now floating')
+	python3 ci/qmp.py click $((toggle + 18)) 780
+	wait_more 'edel-compositor: windows now floating' "$floated" || fail "a second click on the layout toggle did not float the windows again"
+	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle is still filled after the windows float again"
 	# Its memory, as the service read it once the desktop was idle.
 	rss=$(value shell_ui_rss_mib)
 	limit=$(budget shell_ui_rss_mib)
@@ -453,7 +468,7 @@ case_panel() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "shell-ui (M5.1b): $rss MiB resident (budget $limit MiB)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, uses $rss MiB (budget $limit), and came back after kill -9"
+	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, its layout toggle tiled the windows and floated them again, it uses $rss MiB (budget $limit), and it came back after kill -9"
 }
 
 case_animations() {

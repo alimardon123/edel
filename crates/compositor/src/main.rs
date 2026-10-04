@@ -12,6 +12,7 @@
 mod animate;
 mod decoration;
 mod drm;
+mod edelshell;
 mod extworkspace;
 mod grabs;
 mod input;

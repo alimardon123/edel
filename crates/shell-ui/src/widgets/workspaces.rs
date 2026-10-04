@@ -186,7 +186,7 @@ mod tests {
                 .map(|n| (n.to_string(), n == active + 1))
                 .collect(),
             view,
-            windows: Vec::new(),
+            ..Live::default()
         }
     }
 

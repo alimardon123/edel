@@ -7,12 +7,13 @@
 //! preset's panels (M5.1b, M5.1c): the system file's `shell.preset`, else
 //! Classic, whose one panel runs along the bottom of the first screen
 //! with the menu button, the window list (M5.2h), the workspace switcher
-//! (M5.2c) and a clock. Each
+//! (M5.2c), the layout toggle (M5.3a) and a clock. Each
 //! panel holds widgets from the table in `widgets/` and is drawn again
 //! only when what a widget shows, or the panel's size or scale, changes;
 //! a click or a scroll on a widget does what the widget says. It exits
 //! when the compositor goes away.
 
+mod link;
 mod paint;
 mod toplevels;
 mod widgets;
@@ -63,10 +64,12 @@ struct Shell {
     outputs: OutputState,
     seat: SeatState,
     pointer: Option<wl_pointer::WlPointer>,
-    /// What widgets show beyond the clock: the workspaces and windows.
+    /// What widgets show beyond the clock: the workspaces, the windows and
+    /// the shown workspace's policy.
     live: Live,
     workspaces: workspaces::Workspaces,
     toplevels: toplevels::Toplevels,
+    link: link::Link,
     compositor: CompositorState,
     shm: Shm,
     pool: SlotPool,
@@ -160,6 +163,7 @@ fn run() -> Result<()> {
         live: Live::default(),
         workspaces: workspaces::Workspaces::bind(&globals, &qh),
         toplevels: toplevels::Toplevels::bind(&globals, &qh),
+        link: link::Link::bind(&globals, &qh),
         compositor,
         shm,
         pool,
@@ -375,6 +379,7 @@ impl Shell {
                 self.toplevels.activate(window, seat.as_ref());
             }
             Some(Action::Minimize(window)) => self.toplevels.minimize(window),
+            Some(Action::TogglePolicy) => self.link.toggle_policy(),
             None => {}
         }
     }
