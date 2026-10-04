@@ -41,7 +41,10 @@ frame_p99_ms = 4.4
 # Frames the compositor draws while nothing on screen changes.
 idle_frames = 0
 
-# shell-ui's resident memory (VmRSS) with the session idle, MiB (M5.1b):
-# 6.0 MiB measured on 2026-10-03 (desktop-test's panel case) plus 20
-# percent.
-shell_ui_rss_mib = 7.2
+# shell-ui's resident memory (VmRSS) with the session idle and no screen
+# reader, MiB (M5.1b): 10.5 MiB expected on 2026-10-04 with AccessKit's
+# D-Bus link (M5.1d) plus 20 percent. Alimardon chose this (option A in
+# PR #62) over keeping 7.2 MiB: that budget was set before the D-Bus that
+# screen readers, the tray (M5.2), the portal (M5.5) and notifications
+# (M5.9) all need.
+shell_ui_rss_mib = 12.6

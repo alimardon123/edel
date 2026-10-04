@@ -111,6 +111,11 @@ impl Settings {
         }
     }
 
+    /// How many workspaces the preset has (M5.2a).
+    pub fn workspaces(&self) -> usize {
+        presets::named(self.preset.as_deref()).0.workspaces.count
+    }
+
     /// Whether windows under `policy` get the compositor's title bars.
     pub fn bars_in(&self, policy: &str) -> bool {
         self.title_bars == TitleBars::Always || policy == "floating"

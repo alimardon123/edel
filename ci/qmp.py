@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Drives a QEMU VM's screen, keyboard and tablet for the desktop tests
-(roadmap M4.1, M4.4), with the Python standard library only.
+"""Drives a QEMU VM's screen, keyboard, tablet and mouse for the desktop
+tests (roadmap M4.1, M4.4), with the Python standard library only.
 
     qmp.py screendump FILE.png   save the screen as PNG (QEMU 7.1 or newer)
     qmp.py move X Y              move the pointer to pixel X, Y
+    qmp.py nudge DX DY           move the pointer DX, DY with the mouse,
+                                 which, unlike the tablet, can leave the
+                                 first screen for the next (M5.2g)
     qmp.py click X Y             move the pointer to pixel X, Y and click
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
     qmp.py key KEY...            press each chord, such as ctrl-alt-t or ret
+    qmp.py down KEY...           press and hold each key, such as alt
+    qmp.py up KEY...             let go of each key (M5.3c)
     qmp.py type TEXT             type TEXT; \\n is Return
     qmp.py pixel FILE.png X Y    print the colour at X, Y as rrggbb
     qmp.py size FILE.png         print WIDTH HEIGHT
@@ -15,7 +20,7 @@
                                  print "uniform rrggbb" or "varied", for
                                  the whole screen or the W by H box at X, Y
 
-The first six talk to the QMP socket named by $QMP. Key names are
+The first nine talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -81,6 +86,13 @@ def keys(qmp, chords):
         time.sleep(0.05)
 
 
+def hold(qmp, names, down):
+    for name in names:
+        event = {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": name}}}
+        qmp.run("input-send-event", events=[event])
+        time.sleep(0.05)
+
+
 def type_text(qmp, text):
     chords = []
     for c in text:
@@ -120,6 +132,14 @@ def point(qmp, size, x, y):
     events = [
         {"type": "abs", "data": {"axis": "x", "value": x * ABS_MAX // max(width - 1, 1)}},
         {"type": "abs", "data": {"axis": "y", "value": y * ABS_MAX // max(height - 1, 1)}},
+    ]
+    qmp.run("input-send-event", events=events)
+
+
+def nudge(qmp, dx, dy):
+    events = [
+        {"type": "rel", "data": {"axis": "x", "value": dx}},
+        {"type": "rel", "data": {"axis": "y", "value": dy}},
     ]
     qmp.run("input-send-event", events=events)
 
@@ -228,12 +248,16 @@ def main(argv):
         screendump(qmp, args[0])
     elif command == "move":
         point(qmp, screen_size(qmp), int(args[0]), int(args[1]))
+    elif command == "nudge":
+        nudge(qmp, int(args[0]), int(args[1]))
     elif command == "click":
         click(qmp, int(args[0]), int(args[1]))
     elif command == "drag":
         drag(qmp, *map(int, args[:4]))
     elif command == "key":
         keys(qmp, args)
+    elif command in ("down", "up"):
+        hold(qmp, args, command == "down")
     elif command == "type":
         type_text(qmp, args[0].replace("\\n", "\n"))
     else:

@@ -128,9 +128,11 @@ pub fn title(window: &Window) -> String {
     .unwrap_or_default()
 }
 
-/// Loads the title font on a thread; the bars get their titles when it
-/// arrives, or stay without if no font loads.
-pub fn load_text(handle: &LoopHandle<'static, Edel>, px: u32) {
+/// Loads the title font, the tokens' interface `family`, on a thread; the
+/// bars get their titles when it arrives, or stay without if no font
+/// loads.
+pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
+    let family = family.to_string();
     let (sender, receiver) = channel::channel();
     let inserted = handle.insert_source(receiver, |event, _, state: &mut Edel| {
         if let Event::Msg(result) = event {
@@ -148,7 +150,7 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, px: u32) {
         return;
     }
     let started = thread::Builder::new().name("font".into()).spawn(move || {
-        let _ = sender.send(Text::load(px as f32));
+        let _ = sender.send(Text::load(&family, px as f32));
     });
     if let Err(e) = started {
         eprintln!("edel-compositor: title bars show no titles: {e}");
@@ -186,9 +188,9 @@ impl Edel {
         }
     }
 
-    /// The window fills the screen, title bar and all.
+    /// The window fills its screen, title bar and all.
     pub fn maximize(&mut self, window: &Window) {
-        let (Some(area), Some(frame)) = (self.window_area(), self.frame_of(window)) else {
+        let (Some((_, area)), Some(frame)) = (self.home(window), self.frame_of(window)) else {
             return;
         };
         let mut data = data(window).borrow_mut();
@@ -230,7 +232,9 @@ impl Edel {
     /// Puts `window`'s frame at `frame` and tells the window its new size
     /// and whether it is maximized. A maximized window covers the screen
     /// over the policy's places; one back from maximized goes where the
-    /// policy says, its tile in tiling.
+    /// policy says, its tile in tiling. A window on a hidden workspace
+    /// hears its state and size but stays hidden; its workspace's policy
+    /// places it when the workspace is shown.
     fn reframe(&mut self, window: &Window, frame: Rectangle<i32, Logical>, maximized: bool) {
         let Some(toplevel) = window.toplevel() else {
             return;
@@ -246,6 +250,9 @@ impl Edel {
         });
         if toplevel.is_initial_configure_sent() {
             toplevel.send_pending_configure();
+        }
+        if self.desks.hidden_on(window).is_some() {
+            return;
         }
         if maximized {
             self.slide(window, place.loc);

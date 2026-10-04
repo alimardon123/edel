@@ -1,7 +1,8 @@
 //! The compositor's state and the Wayland protocols it serves: surfaces,
 //! shared memory, xdg-shell windows, the seat (keyboard and pointer), the
 //! clipboard, outputs, presentation time and server-side decorations.
-//! Windows live in one smithay `Space`; the workspace's active policy,
+//! The shown workspace's windows live in one smithay `Space`
+//! (`workspaces.rs`, M5.2a); its active policy,
 //! floating (M4.3) or tiling (M4.5), decides where each frame goes, the
 //! window sits inside its frame (M4.4), the settings from the system file
 //! apply live (M4.5), and every change of what is on screen is written to
@@ -55,8 +56,8 @@ use smithay::{
 use toml::{Table, Value};
 
 use edel::system::MACHINE_FILE;
+use edel_compositor::desks::Desks;
 use edel_compositor::frame::{Button, Text};
-use edel_compositor::layout::Workspace;
 use edel_compositor::settings::{self, Settings};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
@@ -97,6 +98,14 @@ pub struct Edel {
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
     pub last_title_click: Option<(Window, u32)>,
+    /// The modifier pressed alone while nothing else was, until another
+    /// key or a button comes (M5.3b).
+    pub tap: Option<smithay::input::keyboard::Keysym>,
+    /// The layer that asked for the keyboard alone and was given it when
+    /// it showed, such as shell-ui's launcher (M5.3b).
+    pub keyboard_layer: Option<WlSurface>,
+    /// The window switcher while its keys are held (M5.3c).
+    pub switcher: Option<crate::switcher::Switcher>,
     /// What the system file says (`watch.rs`).
     pub settings: Settings,
     /// `[outputs]` changed: the backend scans and places its screens again
@@ -116,8 +125,15 @@ pub struct Edel {
     pub bindings: Vec<crate::shortcuts::Binding>,
     /// The program the session runs, if it was given one (`program.rs`).
     pub program: Option<crate::program::Program>,
-    /// Where window frames go; one workspace until M5.2.
-    workspace: Workspace<Window>,
+    /// The workspaces and where window frames go on each (M5.2a).
+    pub desks: Desks<Window>,
+    /// Clients that follow the workspaces (`extworkspace.rs`, M5.2b).
+    pub ext_workspaces: crate::extworkspace::Managers,
+    /// Clients that follow the windows (`toplevels.rs`, M5.2d); a cell, as
+    /// they hear of changes wherever the state file is written.
+    pub toplevels: std::cell::RefCell<crate::toplevels::Toplevels>,
+    /// shell-ui's private link (`edelshell.rs`, M5.3).
+    pub links: crate::edelshell::Links,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -144,14 +160,17 @@ impl Edel {
         let mut seat = seat_state.new_wl_seat(&display, "seat0");
         seat.add_keyboard(Default::default(), 600, 25)?;
         seat.add_pointer();
+        crate::extworkspace::create_global(&display);
+        crate::toplevels::create_global(&display);
+        crate::edelshell::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
-            // Minimize waits for the window list that brings a window back
-            // (M5.2), fullscreen and the window menu for their own steps;
+            // Minimize since the window list brings a window back (M5.2h);
+            // fullscreen and the window menu wait for their own steps, and
             // apps that draw their own bars leave out what is missing.
             xdg_shell: XdgShellState::new_with_capabilities::<Edel>(
                 &display,
-                [WmCapabilities::Maximize],
+                [WmCapabilities::Maximize, WmCapabilities::Minimize],
             ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
             layer_shell: WlrLayerShellState::new::<Edel>(&display),
@@ -185,6 +204,9 @@ impl Edel {
             hover: None,
             pressed: None,
             last_title_click: None,
+            tap: None,
+            keyboard_layer: None,
+            switcher: None,
             settings: Settings::default(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
@@ -197,7 +219,10 @@ impl Edel {
             program: None,
             socket: String::new(),
             bindings: crate::shortcuts::bind(&Default::default()).0,
-            workspace: Workspace::new(tokens.gap),
+            desks: Desks::new(Settings::default().workspaces(), tokens.gap),
+            ext_workspaces: Default::default(),
+            toplevels: Default::default(),
+            links: Default::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -214,14 +239,27 @@ impl Edel {
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
         self.dirty = true;
+        self.sync_toplevels();
     }
 
     /// `window` was put at `place` by a person, or back from maximized:
     /// the policy decides where its frame stays (floating keeps it, tiling
     /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
-        let insets = self.insets(window);
-        let frame = self.workspace.moved(window, insets.frame(place));
+        let frame = self.insets(window).frame(place);
+        // A floating window put on another screen moves to it; one whose
+        // middle is off every screen stays on its own.
+        let middle = frame.loc.to_f64() + frame.size.to_f64().downscale(2.0).to_point();
+        let on_a_screen = self.space.output_under(middle).next().is_some();
+        let found = if on_a_screen {
+            self.screen_at(middle)
+        } else {
+            self.home(window)
+        };
+        let Some((screen, area)) = found else {
+            return;
+        };
+        let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
         self.put(window, frame);
         self.dirty = true;
         self.state_changed();
@@ -230,9 +268,13 @@ impl Edel {
     /// Puts `window`'s frame at `frame`: the window hears its new size,
     /// and whether it is tiled, so an app that draws its own frame leaves
     /// out its shadow and rounded corners there.
+    /// A window on a hidden workspace stays hidden.
     fn put(&mut self, window: &Window, frame: Rectangle<i32, Logical>) {
+        if self.desks.hidden_on(window).is_some() {
+            return;
+        }
         let place = self.insets(window).window(frame);
-        let tiled = self.workspace.rearranges();
+        let tiled = self.desks.layout().rearranges();
         if let Some(toplevel) = window.toplevel() {
             toplevel.with_pending_state(|state| {
                 state.size = Some(place.size);
@@ -266,26 +308,37 @@ impl Edel {
         }
     }
 
-    /// Every window where the active policy puts it; maximized windows
-    /// fill the screen again, and the pointer stays on the screen.
+    /// Every window where the active policy puts it, stacked as they
+    /// were; maximized windows fill the screen again, and the pointer
+    /// stays on the screen.
     pub fn relayout(&mut self) {
         self.keep_pointer_on_screen();
-        if let Some(area) = self.window_area() {
-            for (window, frame) in self.workspace.arrange(area) {
+        let areas = self.window_areas();
+        if !areas.is_empty() {
+            let stack: Vec<Window> = self.space.elements().cloned().collect();
+            for (window, frame) in self.desks.layout_mut().arrange(&areas) {
                 if self.is_maximized(&window) {
                     self.maximize(&window);
                 } else {
                     self.put(&window, frame);
                 }
             }
+            for window in &stack {
+                self.space.raise_element(window, false);
+            }
         }
         self.dirty = true;
         self.state_changed();
     }
 
-    /// Makes `name` the workspace's policy and lays the windows out again.
+    /// `shell.tiling` or the preset changed: `name` is every workspace's
+    /// policy, and the shown one's windows are laid out again.
     pub fn switch_policy(&mut self, name: &str) {
-        if self.workspace.switch(name) {
+        let shown = self.desks.layout().name();
+        for layout in self.desks.layouts_mut() {
+            layout.switch(name);
+        }
+        if shown != name {
             eprintln!("edel-compositor: windows now {name}");
             self.relayout();
         }
@@ -294,8 +347,11 @@ impl Edel {
     /// Super+T: the other policy, for this workspace only; the system file
     /// is left as it is.
     pub fn toggle_tiling(&mut self) {
-        let next = self.workspace.next();
-        self.switch_policy(next);
+        let next = self.desks.layout().next();
+        if self.desks.layout_mut().switch(next) {
+            eprintln!("edel-compositor: windows now {next}");
+            self.relayout();
+        }
     }
 
     /// Reads both system files again and applies what changed.
@@ -319,6 +375,9 @@ impl Edel {
         }
         self.restyle();
         let rescaled = self.apply_scales();
+        if self.desks.count() != new.workspaces() {
+            self.set_workspace_count(new.workspaces());
+        }
         if old.policy() != new.policy() {
             self.switch_policy(new.policy());
         } else if old.title_bars != new.title_bars || rescaled {
@@ -328,7 +387,7 @@ impl Edel {
 
     /// Whether the compositor draws title bars under the active policy.
     pub fn bars_shown(&self) -> bool {
-        self.settings.bars_in(self.workspace.name())
+        self.settings.bars_in(self.desks.layout().name())
     }
 
     /// `window` leaves the screen, closed or hidden: the policy forgets its
@@ -341,12 +400,21 @@ impl Edel {
         frame.restore = None;
         frame.shape = None;
         drop(frame);
-        self.workspace.close(window);
+        // The keyboard moves only if this window had it, or nothing has
+        // it: never away from a layer such as the launcher.
+        let had_keyboard = self
+            .seat
+            .get_keyboard()
+            .and_then(|k| k.current_focus())
+            .is_none_or(|focus| window.toplevel().is_some_and(|t| t.wl_surface() == &focus));
+        self.desks.close(window);
         self.space.unmap_elem(window);
-        if let Some(top) = self.space.elements().last().cloned() {
-            self.focus(&top);
+        if had_keyboard {
+            if let Some(top) = self.space.elements().last().cloned() {
+                self.focus(&top);
+            }
         }
-        if self.workspace.rearranges() {
+        if self.desks.layout().rearranges() {
             self.relayout();
         }
         self.dirty = true;
@@ -364,8 +432,10 @@ impl Edel {
         if data(window).borrow_mut().shape.replace(shape) == Some(shape) {
             return;
         }
-        self.workspace
-            .moved(window, self.insets(window).frame(place));
+        let frame = self.insets(window).frame(place);
+        if let Some((screen, area)) = self.home(window) {
+            self.desks.layout_mut().moved(window, frame, &screen, area);
+        }
         self.state_changed();
     }
 
@@ -374,6 +444,7 @@ impl Edel {
     pub fn outputs_changed(&mut self) {
         self.screens_changed_for_layers();
         self.relayout();
+        self.announce_workspaces();
     }
 
     /// Sends the state file what is on screen now. Never during a drag:
@@ -383,13 +454,27 @@ impl Edel {
             return;
         }
         self.state_file.send(self.state_toml());
+        self.sync_toplevels();
+        self.sync_shell();
     }
 
-    /// Outputs and windows, bottom of the stack first, as TOML.
+    /// Outputs and windows, bottom of the stack first, as TOML: the shown
+    /// workspace's windows, then the hidden ones by workspace, each with
+    /// its workspace, counted from 1 as Super+1 to Super+9 are, and
+    /// whether it is minimized (M5.2h).
     fn state_toml(&self) -> String {
         let mut table = Table::new();
         table.insert("format".into(), Value::Integer(statefile::FORMAT));
-        table.insert("policy".into(), Value::String(self.workspace.name().into()));
+        table.insert(
+            "policy".into(),
+            Value::String(self.desks.layout().name().into()),
+        );
+        let shown = self.desks.active();
+        table.insert("workspace".into(), Value::Integer(shown as i64 + 1));
+        table.insert(
+            "workspaces".into(),
+            Value::Integer(self.desks.count() as i64),
+        );
         let outputs = self
             .space
             .outputs()
@@ -411,12 +496,17 @@ impl Edel {
         );
         table.insert("outputs".into(), Value::Array(outputs));
         let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
+        let hidden = self
+            .desks
+            .hidden()
+            .map(|(desk, window, frame)| (desk, window, self.insets(window).window(frame)));
         let windows = self
             .space
             .elements()
-            .filter_map(|window| {
+            .filter_map(|window| Some((shown, window, self.space.element_geometry(window)?)))
+            .chain(hidden)
+            .filter_map(|(desk, window, place)| {
                 let toplevel = window.toplevel()?;
-                let place = self.space.element_geometry(window)?;
                 let (title, app_id) = with_states(toplevel.wl_surface(), |states| {
                     let data = states
                         .data_map
@@ -430,6 +520,7 @@ impl Edel {
                 t.insert("title".into(), Value::String(title.unwrap_or_default()));
                 t.insert("app_id".into(), Value::String(app_id.unwrap_or_default()));
                 insert_rect(&mut t, place);
+                t.insert("workspace".into(), Value::Integer(desk as i64 + 1));
                 let is_focused = focused.as_ref() == Some(toplevel.wl_surface());
                 t.insert("focused".into(), Value::Boolean(is_focused));
                 t.insert(
@@ -440,6 +531,10 @@ impl Edel {
                     "maximized".into(),
                     Value::Boolean(self.is_maximized(window)),
                 );
+                t.insert(
+                    "minimized".into(),
+                    Value::Boolean(self.desks.minimized(window).is_some()),
+                );
                 Some(Value::Table(t))
             })
             .collect();
@@ -448,10 +543,13 @@ impl Edel {
         toml::to_string(&table).unwrap_or_default()
     }
 
+    /// The window `surface` is, shown, on a hidden workspace or not yet
+    /// placed.
     pub fn window_of(&self, surface: &WlSurface) -> Option<Window> {
         self.space
             .elements()
             .chain(&self.unplaced)
+            .chain(self.desks.hidden().map(|(_, window, _)| window))
             .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
             .cloned()
     }
@@ -496,7 +594,7 @@ impl Edel {
 }
 
 /// Whether `surface` has a buffer to show.
-fn has_buffer(surface: &WlSurface) -> bool {
+pub fn has_buffer(surface: &WlSurface) -> bool {
     smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
         s.buffer().is_some()
     })
@@ -552,13 +650,20 @@ impl CompositorHandler for Edel {
                 window.on_commit();
                 // New subsurfaces and popups hear the scale too.
                 self.send_scale(&window);
-                // A shown window that drops its buffer hides itself; it
-                // shows again, placed anew, once it draws again.
-                let shown = self.space.element_geometry(&window).is_some();
-                if shown && surface == &root && !has_buffer(surface) {
-                    self.unmap(&window);
-                    self.unplaced.push(window);
-                    return;
+                // A window that drops its buffer hides itself; it shows
+                // again, placed anew on the shown workspace, once it draws
+                // again.
+                if surface == &root && !has_buffer(surface) {
+                    if self.space.element_geometry(&window).is_some() {
+                        self.unmap(&window);
+                        self.unplaced.push(window);
+                        return;
+                    }
+                    if self.desks.hidden_on(&window).is_some() {
+                        self.forget_hidden(&window);
+                        self.unplaced.push(window);
+                        return;
+                    }
                 }
                 self.reshaped(&window);
             }
@@ -581,15 +686,17 @@ impl CompositorHandler for Edel {
             return;
         }
         let drawn = has_buffer(surface);
-        let Some(area) = self.window_area() else {
+        // On the screen the pointer is on (M5.2g).
+        let Some((screen, area)) = self.pointer_screen() else {
             return;
         };
         if drawn {
             let window = self.unplaced.remove(i);
             let insets = self.insets(&window);
-            let frame = self.workspace.open(
+            let frame = self.desks.layout_mut().open(
                 window.clone(),
                 insets.frame_size(window.geometry().size),
+                &screen,
                 area,
             );
             let place = insets.window(frame);
@@ -609,7 +716,7 @@ impl CompositorHandler for Edel {
             if maximize {
                 self.maximize(&window);
             }
-            if self.workspace.rearranges() {
+            if self.desks.layout().rearranges() {
                 self.relayout();
             }
             self.state_changed();
@@ -682,6 +789,16 @@ impl XdgShellHandler for Edel {
         }
     }
 
+    /// A window that draws its own bar asks to be minimized, as ours does
+    /// from its button.
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_of(surface.wl_surface()) {
+            if self.space.element_geometry(&window).is_some() {
+                self.minimize(&window);
+            }
+        }
+    }
+
     fn title_changed(&mut self, _surface: ToplevelSurface) {
         // Bars are drawn again when what they show changes.
         self.dirty = true;
@@ -705,7 +822,12 @@ impl XdgShellHandler for Edel {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.unplaced
             .retain(|w| w.toplevel().is_none_or(|t| t != &surface));
-        if let Some(window) = self.window_of(surface.wl_surface()) {
+        let Some(window) = self.window_of(surface.wl_surface()) else {
+            return;
+        };
+        if self.desks.hidden_on(&window).is_some() {
+            self.forget_hidden(&window);
+        } else {
             self.snapshot_closing(&window);
             self.unmap(&window);
         }
@@ -751,7 +873,17 @@ impl DataDeviceHandler for Edel {
 impl ClientDndGrabHandler for Edel {}
 impl ServerDndGrabHandler for Edel {}
 
-impl OutputHandler for Edel {}
+impl OutputHandler for Edel {
+    /// A client's new `wl_output` joins the workspace group it sees.
+    fn output_bound(
+        &mut self,
+        _output: smithay::output::Output,
+        _wl_output: smithay::reexports::wayland_server::protocol::wl_output::WlOutput,
+    ) {
+        self.announce_workspaces();
+        self.sync_toplevels();
+    }
+}
 
 /// Opens the Wayland socket (`wayland-1` or the next free name) and
 /// serves clients from the event loop; returns the socket's name.

@@ -75,12 +75,21 @@ pub struct Tokens {
     /// shell-ui's panel (M5.1b) and the text and icons on it.
     pub panel: Colour,
     pub panel_text: Colour,
+    /// The one accent: what is chosen or shown, such as the shown
+    /// workspace's button (M5.2c).
+    pub accent: Colour,
     /// The panel's height, logical pixels.
     pub panel_height: u32,
     /// The panel's text, logical pixels per em.
     pub panel_text_size: u32,
-    /// The corner radius of rounded shapes, logical pixels.
+    /// The corner radius of rounded shapes, logical pixels: the panel's
+    /// fillets and menus; and of controls, the panel's buttons and rows.
     pub radius: u32,
+    pub radius_control: u32,
+    /// A row in a menu or list, logical pixels.
+    pub row: u32,
+    /// The interface font's family.
+    pub font: String,
 }
 
 impl Tokens {
@@ -110,6 +119,7 @@ impl Tokens {
                 )),
                 ("colour", Value::Table(colours)) => self.apply_colours(colours, notes),
                 ("size", Value::Table(sizes)) => self.apply_sizes(sizes, notes),
+                ("font", Value::Table(fonts)) => self.apply_fonts(fonts, notes),
                 (key, _) => notes.push(format!("unknown key {key} ignored")),
             }
         }
@@ -127,6 +137,7 @@ impl Tokens {
                 "title_close_hover" => &mut self.title_close_hover,
                 "panel" => &mut self.panel,
                 "panel_text" => &mut self.panel_text,
+                "accent" => &mut self.accent,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -151,6 +162,8 @@ impl Tokens {
                 "panel" => (&mut self.panel_height, 200),
                 "panel_text" => (&mut self.panel_text_size, 100),
                 "radius" => (&mut self.radius, 100),
+                "radius_control" => (&mut self.radius_control, 100),
+                "row" => (&mut self.row, 200),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -160,6 +173,23 @@ impl Tokens {
                 Some(n) => *slot = n as u32,
                 None => notes.push(format!(
                     "size.{key} = {value} is not a whole number from 0 to {max}; the built-in value is used"
+                )),
+            }
+        }
+    }
+}
+
+impl Tokens {
+    fn apply_fonts(&mut self, fonts: &Table, notes: &mut Vec<String>) {
+        for (key, value) in fonts {
+            if key != "interface" {
+                notes.push(format!("unknown key font.{key} ignored"));
+                continue;
+            }
+            match value.as_str().filter(|name| !name.trim().is_empty()) {
+                Some(name) => self.font = name.trim().to_string(),
+                None => notes.push(format!(
+                    "font.{key} = {value} is not a font's name; the built-in one is used"
                 )),
             }
         }
@@ -182,6 +212,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "title_close_hover",
                 "panel",
                 "panel_text",
+                "accent",
             ][..],
         ),
         (
@@ -194,8 +225,11 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel",
                 "panel_text",
                 "radius",
+                "radius_control",
+                "row",
             ][..],
         ),
+        ("font", &["interface"][..]),
     ] {
         let found = table.get(section).and_then(Value::as_table);
         if let Some(key) = keys
@@ -223,9 +257,13 @@ pub fn check(text: &str) -> Result<Tokens> {
         gap: 0,
         panel: BLACK,
         panel_text: BLACK,
+        accent: BLACK,
         panel_height: 0,
         panel_text_size: 0,
         radius: 0,
+        radius_control: 0,
+        row: 0,
+        font: String::new(),
     };
     tokens.apply(&table, &mut notes);
     if !notes.is_empty() {
@@ -250,6 +288,13 @@ mod tests {
         let tokens = check(BUILT_IN).unwrap();
         assert_eq!(tokens, Tokens::built_in());
         assert_eq!(tokens.title_bar_height, 28);
+        assert_eq!((tokens.radius_control, tokens.row), (7, 36));
+        assert_eq!(tokens.font, "Inter");
+        let (other, notes) = Tokens::read("[font]\ninterface = \"Noto Sans\"\n[size]\nrow = 40");
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((other.font.as_str(), other.row), ("Noto Sans", 40));
+        let (_, notes) = Tokens::read("[font]\ninterface = \" \"");
+        assert_eq!(notes.len(), 1, "an empty name is skipped");
     }
 
     #[test]

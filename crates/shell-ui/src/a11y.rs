@@ -3,7 +3,7 @@
 //! line in the widget table gives and its place in the panel. The Unix
 //! adapter serves the tree over AT-SPI on the session's D-Bus, and only
 //! once a reader has turned accessibility on (`org.a11y.Status`); until
-//! then it holds the latest tree and sends nothing.
+//! then shell-ui keeps what the panel shows and builds no tree.
 
 use std::sync::{Arc, Mutex};
 
@@ -53,15 +53,19 @@ pub fn tree(size: (f64, f64), items: &[Item]) -> TreeUpdate {
             toolkit_version: Some(env!("CARGO_PKG_VERSION").into()),
         }),
         tree_id: TreeId::ROOT,
-        // A panel takes no keyboard focus yet (the launcher does, M5.3).
+        // A panel takes no keyboard focus; the launcher, which does, is
+        // not in the tree yet.
         focus: ROOT,
     }
 }
 
+/// What a panel shows a reader: its size and its widgets.
+type Shown = ((f64, f64), Vec<Item>);
+
 /// A panel's link to screen readers.
 pub struct Reader {
     adapter: Adapter,
-    latest: Arc<Mutex<Option<TreeUpdate>>>,
+    latest: Arc<Mutex<Option<Shown>>>,
 }
 
 impl Reader {
@@ -71,26 +75,31 @@ impl Reader {
         Reader { adapter, latest }
     }
 
-    /// The panel now shows `tree`; a reader listening hears of the change.
-    pub fn update(&mut self, tree: TreeUpdate) {
+    /// The panel, `size` big, now shows `items`; a reader listening hears
+    /// of the change, and the tree is built only for one.
+    pub fn update(&mut self, size: (f64, f64), items: Vec<Item>) {
+        // Kept first, so a reader turning accessibility on meanwhile gets
+        // this, not the one before.
         if let Ok(mut latest) = self.latest.lock() {
-            *latest = Some(tree.clone());
+            *latest = Some((size, items.clone()));
         }
-        self.adapter.update_if_active(|| tree);
+        self.adapter.update_if_active(|| tree(size, &items));
     }
 }
 
 /// Gives a reader that turns accessibility on the panel's latest tree.
-struct Latest(Arc<Mutex<Option<TreeUpdate>>>);
+struct Latest(Arc<Mutex<Option<Shown>>>);
 
 impl ActivationHandler for Latest {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
-        self.0.lock().ok()?.clone()
+        let latest = self.0.lock().ok()?;
+        let (size, items) = latest.as_ref()?;
+        Some(tree(*size, items))
     }
 }
 
-/// The panel's widgets take no actions yet; the menu button opens the
-/// launcher with M5.3.
+/// The panel's widgets take no actions from a reader yet; the keyboard
+/// reaches the launcher (Super) and the layout (Super+T).
 struct Nothing;
 
 impl ActionHandler for Nothing {

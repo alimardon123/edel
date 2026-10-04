@@ -42,12 +42,17 @@ const fn action(
 /// system file.
 pub const ACTIONS: &[Action] = &[
     action("close", "Super+Q", true, "Close the focused window"),
-    action("launcher", "Super", true, "Open the launcher (M5.3)"),
+    action(
+        "launcher",
+        "Super",
+        true,
+        "Open or close the launcher, Super tapped alone",
+    ),
     action(
         "switcher",
         "Alt+Tab",
         false,
-        "Switch to the next window (M5.3)",
+        "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
     ),
     action(
         "tiling",
@@ -58,15 +63,69 @@ pub const ACTIONS: &[Action] = &[
     action("terminal", "Ctrl+Alt+T", false, "Open a terminal"),
     action("screenshot", "Print", false, "Take a screenshot (M6.3)"),
     action("lock", "Super+L", true, "Lock the screen (M5.10)"),
-    action("workspace_1", "Super+1", false, "Go to workspace 1 (M5.2)"),
-    action("workspace_2", "Super+2", false, "Go to workspace 2 (M5.2)"),
-    action("workspace_3", "Super+3", false, "Go to workspace 3 (M5.2)"),
-    action("workspace_4", "Super+4", false, "Go to workspace 4 (M5.2)"),
-    action("workspace_5", "Super+5", false, "Go to workspace 5 (M5.2)"),
-    action("workspace_6", "Super+6", false, "Go to workspace 6 (M5.2)"),
-    action("workspace_7", "Super+7", false, "Go to workspace 7 (M5.2)"),
-    action("workspace_8", "Super+8", false, "Go to workspace 8 (M5.2)"),
-    action("workspace_9", "Super+9", false, "Go to workspace 9 (M5.2)"),
+    action("workspace_1", "Super+1", false, "Go to workspace 1"),
+    action("workspace_2", "Super+2", false, "Go to workspace 2"),
+    action("workspace_3", "Super+3", false, "Go to workspace 3"),
+    action("workspace_4", "Super+4", false, "Go to workspace 4"),
+    action("workspace_5", "Super+5", false, "Go to workspace 5"),
+    action("workspace_6", "Super+6", false, "Go to workspace 6"),
+    action("workspace_7", "Super+7", false, "Go to workspace 7"),
+    action("workspace_8", "Super+8", false, "Go to workspace 8"),
+    action("workspace_9", "Super+9", false, "Go to workspace 9"),
+    action(
+        "move_to_workspace_1",
+        "Super+Shift+1",
+        false,
+        "Move the focused window to workspace 1",
+    ),
+    action(
+        "move_to_workspace_2",
+        "Super+Shift+2",
+        false,
+        "Move the focused window to workspace 2",
+    ),
+    action(
+        "move_to_workspace_3",
+        "Super+Shift+3",
+        false,
+        "Move the focused window to workspace 3",
+    ),
+    action(
+        "move_to_workspace_4",
+        "Super+Shift+4",
+        false,
+        "Move the focused window to workspace 4",
+    ),
+    action(
+        "move_to_workspace_5",
+        "Super+Shift+5",
+        false,
+        "Move the focused window to workspace 5",
+    ),
+    action(
+        "move_to_workspace_6",
+        "Super+Shift+6",
+        false,
+        "Move the focused window to workspace 6",
+    ),
+    action(
+        "move_to_workspace_7",
+        "Super+Shift+7",
+        false,
+        "Move the focused window to workspace 7",
+    ),
+    action(
+        "move_to_workspace_8",
+        "Super+Shift+8",
+        false,
+        "Move the focused window to workspace 8",
+    ),
+    action(
+        "move_to_workspace_9",
+        "Super+Shift+9",
+        false,
+        "Move the focused window to workspace 9",
+    ),
 ];
 
 /// The action called `name`.
@@ -316,7 +375,7 @@ pub fn markdown() -> String {
          or in `[shortcuts]` of the system file; `\"\"` unbinds an action, and `edel system unset shortcuts.ACTION` brings its default back. \
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
-         and `F1` to `F12`. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \
+         and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \
          An action whose step has not landed yet leaves its keys to the app that has the keyboard.\n\n\
          | Action | Keys | What it does | Way out |\n|---|---|---|---|\n",
     );

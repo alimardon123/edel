@@ -48,6 +48,8 @@ enum Action {
     /// Ctrl+Alt+F1 to F12: that virtual terminal.
     Vt(i32),
     Shortcut(crate::shortcuts::Act),
+    /// The switcher closes, switching or not (M5.3c).
+    SwitcherDone(bool),
 }
 
 /// What is under the pointer.
@@ -86,6 +88,10 @@ impl Edel {
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
+                // Every key down on the seat, this one included.
+                let down = event.count();
+                let mut tapped = None;
+                let mut ending = None;
                 let keyboard = self.seat.get_keyboard()?;
                 let action = keyboard.input(
                     self,
@@ -100,6 +106,29 @@ impl Edel {
                         // Keys where a Latin layout has them, whatever the
                         // layout.
                         let latin = keysym.raw_latin_sym_or_raw_current_sym();
+                        // A modifier pressed alone and let go with nothing
+                        // between is a tap (the launcher's Super); the app
+                        // still hears both.
+                        let modifier = keysym.modified_sym();
+                        if pressed {
+                            state.tap = (crate::shortcuts::is_tap_key(modifier) && down == 1)
+                                .then_some(modifier);
+                        } else if state.tap.take() == Some(modifier) {
+                            tapped = Some(modifier);
+                        }
+                        // The switcher, while open: Escape leaves things as
+                        // they were, and letting go of its modifiers
+                        // switches; the app still hears that release.
+                        if state.switcher.is_some() {
+                            if pressed && sym == xkb::keysyms::KEY_Escape {
+                                return FilterResult::Intercept(Action::SwitcherDone(false));
+                            }
+                            if !pressed
+                                && !crate::shortcuts::holds_switcher(&state.bindings, modifiers)
+                            {
+                                ending = Some(true);
+                            }
+                        }
                         if !pressed {
                             FilterResult::Forward
                         } else if vts.contains(&sym) {
@@ -115,15 +144,18 @@ impl Edel {
                         }
                     },
                 );
+                if let Some(act) =
+                    tapped.and_then(|sym| crate::shortcuts::tapped(&self.bindings, sym))
+                {
+                    self.shortcut(act);
+                }
+                if let Some(take) = ending {
+                    self.switcher_done(take);
+                }
                 match action? {
                     Action::Vt(vt) => return Some(vt),
-                    Action::Shortcut(Act::Close) => {
-                        if let Some(window) = self.focused_window() {
-                            self.close(&window);
-                        }
-                    }
-                    Action::Shortcut(Act::Tiling) => self.toggle_tiling(),
-                    Action::Shortcut(Act::Terminal) => crate::program::open(self, "foot"),
+                    Action::Shortcut(act) => self.shortcut(act),
+                    Action::SwitcherDone(take) => self.switcher_done(take),
                 }
             }
             InputEvent::PointerMotion { event } => {
@@ -170,6 +202,8 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerButton { event } => {
+                // Super held for a drag is no tap.
+                self.tap = None;
                 let pointer = self.seat.get_pointer()?;
                 let button = event.button_code();
                 let location = pointer.current_location();
@@ -195,7 +229,10 @@ impl Edel {
                 );
                 pointer.frame(self);
             }
-            InputEvent::PointerAxis { event } => self.scroll::<B>(event),
+            InputEvent::PointerAxis { event } => {
+                self.tap = None;
+                self.scroll::<B>(event)
+            }
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     let tablets = self.seat.tablet_seat();
@@ -289,6 +326,24 @@ impl Edel {
 
     /// A wheel turned or fingers slid on a touchpad: the window under the
     /// pointer scrolls, by wheel clicks where the device counts them.
+    /// What a shortcut does.
+    fn shortcut(&mut self, act: Act) {
+        match act {
+            Act::Close => {
+                if let Some(window) = self.focused_window() {
+                    self.close(&window);
+                }
+            }
+            Act::Tiling => self.toggle_tiling(),
+            Act::Terminal => crate::program::open(self, "foot"),
+            Act::Workspace(n) => self.switch_workspace(n),
+            Act::MoveTo(n) => self.move_to_workspace(n),
+            Act::Launcher => self.show_launcher(),
+            Act::Switcher => self.switcher_step(false),
+            Act::SwitcherBack => self.switcher_step(true),
+        }
+    }
+
     fn scroll<B: InputBackend>(&mut self, event: B::PointerAxisEvent) {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
@@ -331,6 +386,16 @@ impl Edel {
         if kept != at {
             self.move_pointer(kept, SERIAL_COUNTER.next_serial(), 0);
         }
+    }
+
+    /// What lies under the pointer changed, not the pointer: a workspace
+    /// was shown or a window left it. The pointer's focus follows.
+    pub fn repoint(&mut self) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let at = pointer.current_location();
+        self.move_pointer(at, SERIAL_COUNTER.next_serial(), 0);
     }
 
     /// Moves the pointer to `at`, as a pen does on its way.
@@ -417,6 +482,7 @@ impl Edel {
             return false;
         }
         let Some(window) = under.window().cloned() else {
+            self.take_keyboard_back();
             return false;
         };
         self.focus(&window);
@@ -486,6 +552,7 @@ impl Edel {
         match button {
             Button::Close => self.close(&window),
             Button::Maximize => self.toggle_maximized(&window),
+            Button::Minimize => self.minimize(&window),
         }
     }
 
@@ -512,8 +579,8 @@ impl Edel {
         Some(clamp(to, *home))
     }
 
-    /// The first output's area in the layout: where windows open, and what
-    /// absolute pointers such as tablets map to.
+    /// The first output's area in the layout: what absolute pointers such
+    /// as tablets map to.
     pub fn output_area(&self) -> Option<Rectangle<i32, Logical>> {
         let output = self.space.outputs().next()?;
         self.space.output_geometry(output)
@@ -521,6 +588,7 @@ impl Edel {
 
     /// Forgets `window` wherever input remembers it, once it is gone.
     pub fn forget(&mut self, window: &Window) {
+        self.switcher_forget(window);
         if self.hover.as_ref().is_some_and(|(w, _)| w == window) {
             self.hover = None;
         }

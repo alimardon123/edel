@@ -156,6 +156,31 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
 			;;
 		'close on super-w') edel system set shortcuts.close=Super+W ;;
+		# Workspaces (M5.2a): a window to send to another workspace, and
+		# closed while it is there.
+		'away window')
+			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
+			;;
+		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
+		# shell-ui's memory now, after the launcher has been open (M5.3b).
+		'shell rss')
+			pid=$(pidof edel-shell-ui)
+			say "shell_ui_rss_now_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
+			;;
+		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
+		# as the panel's switcher will, and prints what it saw.
+		# The windows as a window list sees them (M5.2d), and away
+		# activated from there.
+		'toplevels' | 'toplevels away')
+			as_ci timeout 10 edel-testclient --$command </dev/null 2>&1 |
+				while IFS= read -r line; do say "$line"; done
+			;;
+		# Where shell-ui's widgets lie (M5.2c), for clicks on them.
+		'panel places') say "places $(grep -a 'edel-shell-ui: panel places' /tmp/compositor.log | tail -n 1 | sed 's/.*panel places //')" ;;
+		'activate 3' | 'activate 1')
+			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
+				while IFS= read -r line; do say "ext $line"; done
+			;;
 		'shortcuts default') edel system unset shortcuts.close ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
@@ -183,6 +208,7 @@ commands() {
 follow() {
 	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
 	last=''
+	last_hidden=''
 	last_layers=''
 	i=0
 	while [ "$i" -lt 3000 ]; do
@@ -190,6 +216,11 @@ follow() {
 		if [ "$now" != "$last" ]; then
 			say "windows $now"
 			last=$now
+		fi
+		now=$(windows hidden)
+		if [ "$now" != "$last_hidden" ]; then
+			say "hidden $now"
+			last_hidden=$now
 		fi
 		now=$(layers)
 		if [ "$now" != "$last_layers" ]; then
@@ -202,22 +233,37 @@ follow() {
 	kill $! 2>/dev/null
 }
 
-# windows: how many windows the state file lists, then each as
-# title@x,y,widthxheight, bottom first, spaces in titles as _.
+# windows: how many windows the state file lists on the shown workspace,
+# then each as title@x,y,widthxheight, bottom first, spaces in titles as
+# _. windows hidden: the shown workspace and how many windows the others
+# hold, then each as title@workspace (M5.2a). A minimized window's entry
+# ends in - (M5.2h).
 windows() {
-	awk -F' = ' '
+	awk -F' = ' -v hidden="${1:-}" '
 		function flush() {
-			if (t != "") out = out " " t "@" x "," y "," w "x" h
-			t = ""
+			if (inside && (hidden != "") == (ws != shown)) {
+				n++
+				# A minimized window (M5.2h) ends in -.
+				if (hidden != "") out = out " " t "@" ws (m ? "-" : "")
+				else if (t != "") out = out " " t "@" x "," y "," w "x" h (m ? "-" : "")
+			}
+			inside = 0
 		}
-		/^\[/ { flush() }
-		/^\[\[windows\]\]/ { n++ }
-		$1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
-		$1 == "x" { x = $2 }
-		$1 == "y" { y = $2 }
-		$1 == "width" { w = $2 }
-		$1 == "height" { h = $2 }
-		END { flush(); print n + 0 out }
+		/^\[/ { flush(); header = 1 }
+		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = ""; m = 0 }
+		!header && $1 == "workspace" { shown = $2 }
+		inside && $1 == "workspace" { ws = $2 }
+		inside && $1 == "minimized" { m = ($2 == "true") }
+		inside && $1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
+		inside && $1 == "x" { x = $2 }
+		inside && $1 == "y" { y = $2 }
+		inside && $1 == "width" { w = $2 }
+		inside && $1 == "height" { h = $2 }
+		END {
+			flush()
+			if (hidden != "") printf "on %s, ", shown
+			print n + 0 out
+		}
 	' /run/edel/session/state.toml 2>/dev/null
 }
 

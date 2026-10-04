@@ -8,7 +8,7 @@ use std::time::Duration;
 use accesskit::Role;
 use jiff::Zoned;
 
-use super::{Canvas, Widget};
+use super::{Canvas, Live, Widget, no_input};
 
 pub const WIDGET: Widget = Widget {
     name: "clock",
@@ -16,11 +16,12 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
+    input: no_input,
     role: Role::Label,
     label: str::to_owned,
 };
 
-fn shows() -> String {
+fn shows(_: &Live) -> String {
     text(&Zoned::now())
 }
 

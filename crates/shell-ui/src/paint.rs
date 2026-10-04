@@ -12,7 +12,7 @@ use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Transform};
 use edel::presets::Edge;
 use edel::tokens::{Colour, Tokens};
 
-use crate::widgets::{Canvas, Widget};
+use crate::widgets::{Canvas, Live, Widget};
 
 /// Everything a panel shows, at one scale.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,8 +47,13 @@ impl Row {
     }
 
     /// What each widget shows now, for [`Look::shown`].
-    pub fn shows(&self) -> Vec<String> {
-        self.all().map(|w| (w.shows)()).collect()
+    pub fn shows(&self, live: &Live) -> Vec<String> {
+        self.all().map(|w| (w.shows)(live)).collect()
+    }
+
+    /// The `i`th widget, start to end.
+    pub fn widget(&self, i: usize) -> Option<&'static Widget> {
+        self.all().nth(i)
     }
 }
 
@@ -71,6 +76,8 @@ pub fn panel_top(edge: Edge, tokens: &Tokens) -> u32 {
 pub struct Text {
     fonts: FontSystem,
     glyphs: SwashCache,
+    /// The interface font's family, from the tokens.
+    family: String,
 }
 
 /// One line of text, shaped.
@@ -80,19 +87,21 @@ pub struct Line {
 }
 
 impl Text {
-    pub fn load() -> Text {
+    /// Text in `family`, the tokens' interface font.
+    pub fn load(family: &str) -> Text {
         Text {
             fonts: FontSystem::new(),
             glyphs: SwashCache::new(),
+            family: family.to_string(),
         }
     }
 
-    /// `text` shaped in Inter, falling back for other scripts, `size`
-    /// pixels high.
+    /// `text` shaped in the interface font, falling back for other
+    /// scripts, `size` pixels high.
     pub fn line(&mut self, text: &str, size: f32) -> Line {
         let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size, size * 1.25));
         buffer.set_size(None, None);
-        let attrs = Attrs::new().family(Family::Name("Inter"));
+        let attrs = Attrs::new().family(Family::Name(&self.family));
         buffer.set_text(text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut self.fonts, false);
         let width = buffer
@@ -100,6 +109,33 @@ impl Text {
             .map(|run| run.line_w)
             .fold(0.0, f32::max);
         Line { buffer, width }
+    }
+
+    /// `text` as one line `size` pixels high in at most `room` pixels:
+    /// whole, or cut short with an ellipsis, or nothing if not even that
+    /// fits.
+    pub fn fit(&mut self, text: &str, size: f32, room: f32) -> Line {
+        let whole = self.line(text, size);
+        if whole.width <= room {
+            return whole;
+        }
+        // The most characters that fit before the ellipsis, by halving.
+        let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+        let (mut fits, mut over) = (0, ends.len());
+        let mut best = self.line("\u{2026}", size);
+        while fits + 1 < over {
+            let mid = (fits + over) / 2;
+            let line = self.line(&format!("{}\u{2026}", text[..ends[mid]].trim_end()), size);
+            if line.width <= room {
+                (fits, best) = (mid, line);
+            } else {
+                over = mid;
+            }
+        }
+        if best.width > room {
+            return self.line("", size);
+        }
+        best
     }
 
     /// Draws `line` with its top left at `x`, `y`, rounded to pixels.
@@ -149,11 +185,43 @@ fn colour(c: Colour) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba(c.r, c.g, c.b, c.a).unwrap_or(tiny_skia::Color::BLACK)
 }
 
+/// `a` moved towards `b` by `t`, 0 to 1, opaque: text dimmed towards the
+/// panel it lies on.
+pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
+    Colour {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: 1.0,
+    }
+}
+
 pub fn paint_of(c: Colour) -> Paint<'static> {
     let mut paint = Paint::default();
     paint.set_color(colour(c));
     paint.anti_alias = true;
     paint
+}
+
+/// The accent, faint: under a chosen row or a switched-on button.
+pub fn lit(tokens: &Tokens) -> Colour {
+    Colour {
+        a: 0.18,
+        ..tokens.accent
+    }
+}
+
+/// Fills the rectangle with corners of radius `r` in `c`.
+pub fn fill(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colour) {
+    if let Some(path) = rounded(x, y, w, h, r) {
+        pixmap.fill_path(
+            &path,
+            &paint_of(c),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 /// A rectangle with corners of radius `r`, as a path.
@@ -196,9 +264,8 @@ fn fillet(x: f32, y: f32, r: f32, left: bool, up: bool) -> Option<Path> {
 }
 
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
-/// with `row`'s widgets showing `look.shown`, and says where each widget
-/// went: its left edge and width in the pixmap's pixels, in the row's
-/// order.
+/// with `row`'s widgets showing `look.shown`; returns where each widget
+/// lies, start to end, as its left edge and width in logical pixels.
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
@@ -261,7 +328,7 @@ pub fn paint(
     let centre = measure(&row.centre);
     let end = measure(&row.end);
     let total = |group: &[(&Widget, &str, f32)]| group.iter().map(|g| g.2).sum::<f32>();
-    let mut placed = Vec::new();
+    let mut places = Vec::new();
     for (group, from) in [
         (&start, 0.0),
         (&centre, ((w - total(&centre)) / 2.0).round()),
@@ -270,11 +337,11 @@ pub fn paint(
         let mut x = from;
         for (widget, showing, width) in group {
             (widget.draw)(&mut canvas, showing, x);
-            placed.push((x, *width));
+            places.push((x / s, width / s));
             x += width;
         }
     }
-    placed
+    places
 }
 
 /// The pixmap's premultiplied RGBA as the BGRA bytes `wl_shm`'s
@@ -312,7 +379,7 @@ mod tests {
             scale: 1,
             edge,
             fillets,
-            shown: row.shows(),
+            shown: row.shows(&Live::default()),
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, row);

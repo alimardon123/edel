@@ -1,11 +1,11 @@
 //! The menu button (M5.1b): four rounded squares in the panel text's
-//! colour, centred in a square as tall as the panel. The launcher it opens
-//! comes with M5.3.
+//! colour, centred in a square as tall as the panel. A click opens the
+//! launcher, or closes it (M5.3b).
 
 use accesskit::Role;
 use tiny_skia::{FillRule, Transform};
 
-use super::{Canvas, Widget};
+use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
@@ -14,6 +14,7 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
+    input,
     role: Role::Button,
     label,
 };
@@ -22,8 +23,13 @@ fn label(_: &str) -> String {
     "Menu".into()
 }
 
+/// A click opens or closes the launcher.
+fn input(_: &str, input: Input) -> Option<Action> {
+    matches!(input, Input::Click(..)).then_some(Action::Launcher)
+}
+
 /// It always shows the same icon.
-fn shows() -> String {
+fn shows(_: &Live) -> String {
     String::new()
 }
 

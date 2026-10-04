@@ -12,6 +12,8 @@
 mod animate;
 mod decoration;
 mod drm;
+mod edelshell;
+mod extworkspace;
 mod grabs;
 mod input;
 mod layers;
@@ -23,9 +25,12 @@ mod shellui;
 mod shortcuts;
 mod state;
 mod statefile;
+mod switcher;
 mod tiers;
+mod toplevels;
 mod watch;
 mod winit;
+mod workspaces;
 mod xwayland;
 
 use std::process::ExitCode;

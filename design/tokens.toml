@@ -2,7 +2,7 @@
 # colours and sizes the compositor, shell-ui and the GTK theme are drawn
 # with. Images carry it as /usr/share/edel/design/tokens.toml (M4.2b); the
 # compositor has this file built in for when that one is missing or
-# unreadable. M5.5 adds light and dark, the accent, spacing, type and
+# unreadable. M5.5 adds light and dark, spacing, type and
 # motion; M5.12 lets people override them in system.toml.
 format = 1
 
@@ -22,6 +22,9 @@ title_close_hover = "#c4473f"
 # text and icons.
 panel = "#1b1d22"
 panel_text = "#e8e8ea"
+# The one accent: the shown workspace's button in the panel (M5.2c); M5.5
+# gives it a light and a dark value and M5.12 lets people choose it.
+accent = "#5b8ef5"
 
 [size]
 # In logical pixels.
@@ -35,5 +38,15 @@ gap = 8
 panel = 40
 panel_text = 13
 # The corner radius of rounded shapes: the fillets where the panel meets
-# the screen (M5.1b), then windows, menus and buttons (M5.14).
+# the screen (M5.1b) and menus such as the launcher (M5.3b), then windows
+# (M5.14); and of controls: the panel's buttons and a menu's rows.
 radius = 12
+radius_control = 7
+# A row in a menu or list: the launcher's apps, the window switcher's
+# windows (M5.3).
+row = 36
+
+[font]
+# The interface font's family, for title bars and everything shell-ui
+# draws; the compositor finds its file among the system's fonts.
+interface = "Inter"

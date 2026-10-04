@@ -26,6 +26,7 @@ role_name() {
 	case "$1" in
 	23) echo frame ;;
 	29) echo label ;;
+	39) echo panel ;;
 	43) echo button ;;
 	75) echo application ;;
 	*) echo "role $1" ;;

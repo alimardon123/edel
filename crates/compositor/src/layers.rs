@@ -10,7 +10,7 @@
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output};
+use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -18,12 +18,14 @@ use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::wlr_layer::{
-    Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData, WlrLayerShellHandler,
-    WlrLayerShellState,
+    KeyboardInteractivity, Layer, LayerSurface as WlrLayerSurface, LayerSurfaceData,
+    WlrLayerShellHandler, WlrLayerShellState,
 };
 use smithay::wayland::shell::xdg::PopupSurface;
 use std::time::Duration;
 use toml::{Table, Value};
+
+use edel_compositor::desks::screen_in;
 
 use crate::state::Edel;
 
@@ -33,14 +35,52 @@ pub const ABOVE: [Layer; 2] = [Layer::Overlay, Layer::Top];
 pub const BELOW: [Layer; 2] = [Layer::Bottom, Layer::Background];
 
 impl Edel {
-    /// The first screen's area left to windows once panels have taken
-    /// their exclusive zones: where windows open, tile and maximize.
+    /// Each screen's area left to windows once panels have taken their
+    /// exclusive zones, by the screen's name, the first screen first:
+    /// where windows open, tile and maximize, each on its own (M5.2g).
+    pub fn window_areas(&self) -> Vec<(String, Rectangle<i32, Logical>)> {
+        self.space
+            .outputs()
+            .filter_map(|output| {
+                let screen = self.space.output_geometry(output)?;
+                let mut zone = layer_map_for_output(output).non_exclusive_zone();
+                zone.loc += screen.loc;
+                Some((output.name(), zone))
+            })
+            .collect()
+    }
+
+    /// The first screen's area left to windows.
     pub fn window_area(&self) -> Option<Rectangle<i32, Logical>> {
-        let output = self.space.outputs().next()?;
-        let screen = self.space.output_geometry(output)?;
-        let mut zone = layer_map_for_output(output).non_exclusive_zone();
-        zone.loc += screen.loc;
-        Some(zone)
+        self.window_areas().into_iter().next().map(|(_, area)| area)
+    }
+
+    /// The screen at `point`, by name, with its area; else the first.
+    pub fn screen_at(
+        &self,
+        point: Point<f64, Logical>,
+    ) -> Option<(String, Rectangle<i32, Logical>)> {
+        let areas = self.window_areas();
+        let name = self.space.output_under(point).next().map(|o| o.name());
+        screen_in(&areas, name.as_deref()).map(|(name, area)| (name.to_string(), area))
+    }
+
+    /// The screen the pointer is on, where a new window opens.
+    pub fn pointer_screen(&self) -> Option<(String, Rectangle<i32, Logical>)> {
+        let at = self
+            .seat
+            .get_pointer()
+            .map(|p| p.current_location())
+            .unwrap_or_default();
+        self.screen_at(at)
+    }
+
+    /// The screen `window` lies on in the shown workspace, with its area;
+    /// else the first.
+    pub fn home(&self, window: &Window) -> Option<(String, Rectangle<i32, Logical>)> {
+        let areas = self.window_areas();
+        let name = self.desks.layout().screen_of(window);
+        screen_in(&areas, name).map(|(name, area)| (name.to_string(), area))
     }
 
     /// Places every screen's layers again and tells them its scale, after
@@ -71,7 +111,7 @@ impl Edel {
         else {
             return false;
         };
-        let before = self.window_area();
+        let before = self.window_areas();
         {
             let mut map = layer_map_for_output(&output);
             map.arrange();
@@ -89,7 +129,8 @@ impl Edel {
                 }
             }
         }
-        if self.window_area() != before {
+        self.give_keyboard(&output, surface);
+        if self.window_areas() != before {
             self.relayout();
         }
         self.dirty = true;
@@ -126,6 +167,61 @@ impl Edel {
         None
     }
 
+    /// A layer above the windows that asks for the keyboard alone, such
+    /// as the launcher, gets it once, when it first shows; a click
+    /// elsewhere takes it away again, as the launcher expects.
+    fn give_keyboard(&mut self, output: &Output, surface: &WlSurface) {
+        if !crate::state::has_buffer(surface) {
+            // Hidden without being destroyed: it gives the keyboard back,
+            // and gets it again when it shows.
+            if self.keyboard_layer.as_ref() == Some(surface) {
+                self.take_keyboard_back();
+                self.keyboard_layer = None;
+            }
+            return;
+        }
+        if self.keyboard_layer.as_ref() == Some(surface) {
+            return;
+        }
+        let wants = {
+            let map = layer_map_for_output(output);
+            map.layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+                .is_some_and(|layer| {
+                    ABOVE.contains(&layer.layer())
+                        && layer.cached_state().keyboard_interactivity
+                            == KeyboardInteractivity::Exclusive
+                })
+        };
+        if !wants {
+            return;
+        }
+        self.keyboard_layer = Some(surface.clone());
+        if let Some(keyboard) = self.seat.get_keyboard() {
+            keyboard.set_focus(self, Some(surface.clone()), SERIAL_COUNTER.next_serial());
+        }
+        self.sync_toplevels();
+    }
+
+    /// A click on nothing takes the keyboard back from such a layer, as a
+    /// click on a window does: the launcher closes, and the top window
+    /// has the keyboard again.
+    pub fn take_keyboard_back(&mut self) {
+        let (Some(layer), Some(keyboard)) = (self.keyboard_layer.clone(), self.seat.get_keyboard())
+        else {
+            return;
+        };
+        if keyboard.current_focus().as_ref() != Some(&layer) {
+            return;
+        }
+        match self.space.elements().last().cloned() {
+            Some(top) => self.focus(&top),
+            None => {
+                keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+                self.sync_toplevels();
+            }
+        }
+    }
+
     /// A click on a layer that takes the keyboard gives it the keyboard.
     pub fn focus_layer(&mut self, layer: &LayerSurface) {
         if !layer.can_receive_keyboard_focus() {
@@ -135,6 +231,8 @@ impl Edel {
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
         }
+        // The window list shows no window as focused.
+        self.sync_toplevels();
     }
 
     /// The `[[layers]]` of the state file: each screen's layer surfaces,
@@ -266,6 +364,9 @@ impl WlrLayerShellHandler for Edel {
     }
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
+        if self.keyboard_layer.as_ref() == Some(surface.wl_surface()) {
+            self.keyboard_layer = None;
+        }
         // The keyboard goes back to the top window if the layer had it.
         let had_keyboard = self
             .seat
@@ -279,7 +380,7 @@ impl WlrLayerShellHandler for Edel {
                 keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
             }
         }
-        let before = self.window_area();
+        let before = self.window_areas();
         for output in self.space.outputs() {
             let mut map = layer_map_for_output(output);
             let gone = map
@@ -290,7 +391,7 @@ impl WlrLayerShellHandler for Edel {
                 map.unmap_layer(&layer);
             }
         }
-        if self.window_area() != before {
+        if self.window_areas() != before {
             self.relayout();
         }
         self.dirty = true;

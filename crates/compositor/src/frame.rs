@@ -10,6 +10,7 @@
 //! one texture per window and redraws it only when what it shows changes.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::ResizeEdge;
@@ -23,8 +24,8 @@ pub const GRIP: i32 = 6;
 /// How far from a corner a grab on an edge resizes from the corner.
 pub const CORNER: i32 = 16;
 
-/// The fonts titles are drawn with, the first one found: Inter, the
-/// interface font of the design tokens (`fonts` feature), then Noto Sans.
+/// The fonts titles fall back to when the tokens' interface font is not
+/// among the system's fonts: Inter (`fonts` feature), then Noto Sans.
 pub const FONTS: [&str; 2] = [
     "/usr/share/fonts/inter/InterVariable.ttf",
     "/usr/share/fonts/noto/NotoSans-Regular.ttf",
@@ -80,10 +81,13 @@ impl Insets {
 pub enum Button {
     Close,
     Maximize,
+    /// Since M5.2h, when the panel's window list brings a minimized
+    /// window back.
+    Minimize,
 }
 
 /// The buttons, rightmost first.
-pub const BUTTONS: [Button; 2] = [Button::Close, Button::Maximize];
+pub const BUTTONS: [Button; 3] = [Button::Close, Button::Maximize, Button::Minimize];
 
 /// A part of a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,7 +204,7 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         if look.hovered == Some(*button) {
             let hover = match button {
                 Button::Close => tokens.title_close_hover,
-                Button::Maximize => tokens.title_button_hover,
+                Button::Maximize | Button::Minimize => tokens.title_button_hover,
             };
             canvas.fill(x, 0, size, h, hover);
             icon = tokens.title_text;
@@ -261,7 +265,8 @@ impl Canvas<'_> {
     }
 
     /// A button's icon, drawn in the middle of the square at `x`: a cross
-    /// for close, a square for maximize, two for restore.
+    /// for close, a square for maximize, two for restore, a dash across
+    /// the middle for minimize.
     fn icon(&mut self, button: Button, maximized: bool, x: usize, size: usize, colour: Colour) {
         let half = (size as f32 * 0.17).round().max(3.0);
         let centre = (x as f32 + size as f32 / 2.0, size as f32 / 2.0);
@@ -286,6 +291,11 @@ impl Canvas<'_> {
                 let x0 = (centre.0 - half) as i64;
                 let y0 = (centre.1 - half) as i64;
                 self.outline(x0, y0, s, colour, None);
+            }
+            Button::Minimize => {
+                let (cx, cy) = centre;
+                let a = half - 0.5;
+                self.line((cx - a, cy), (cx + a, cy), colour);
             }
         }
     }
@@ -349,15 +359,89 @@ pub struct Text {
     descent: f32,
 }
 
+/// Where fonts live: `fonts` in each of `$XDG_DATA_DIRS`, else in
+/// `/usr/local/share` and `/usr/share`, as fontconfig looks.
+fn font_dirs() -> Vec<PathBuf> {
+    let dirs = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|d| !d.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    dirs.split(':')
+        .map(PathBuf::from)
+        .filter(|d| d.is_absolute())
+        .map(|d| d.join("fonts"))
+        .collect()
+}
+
+/// The file of `family` among the fonts under `dirs`: its variable font,
+/// else its regular one, else one named just so, by the file's name with
+/// case, spaces and dashes aside ("InterVariable.ttf", "NotoSans-
+/// Regular.ttf", "DejaVuSans.ttf"); none if it is not there.
+pub fn font_file(family: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let squash = |s: &str| -> String {
+        s.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    };
+    let family = squash(family);
+    if family.is_empty() {
+        return None;
+    }
+    let wanted = [
+        format!("{family}variable"),
+        format!("{family}regular"),
+        family,
+    ];
+    let mut best: Option<(usize, PathBuf)> = None;
+    let mut stack: Vec<(PathBuf, u32)> = dirs.iter().map(|d| (d.clone(), 0)).collect();
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // Not into linked folders, and not deep: no loop, little time.
+            if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                if depth < 4 {
+                    stack.push((path, depth + 1));
+                }
+                continue;
+            }
+            let font = path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("ttf") || e.eq_ignore_ascii_case("otf"));
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Some(rank) = wanted.iter().position(|w| *w == squash(stem)) else {
+                continue;
+            };
+            if font
+                && best
+                    .as_ref()
+                    .is_none_or(|(r, p)| rank < *r || (rank == *r && path < *p))
+            {
+                best = Some((rank, path));
+            }
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
 /// How many letters [`Text`] keeps drawn; a title in a script with many
 /// letters clears them rather than growing without end.
 const KEPT: usize = 512;
 
 impl Text {
-    /// The first of [`FONTS`] that loads, at `px` pixels per em.
-    pub fn load(px: f32) -> Result<Text> {
+    /// The tokens' interface font `family` (`font_file`), else the first
+    /// of [`FONTS`] that loads, at `px` pixels per em.
+    pub fn load(family: &str, px: f32) -> Result<Text> {
         let mut errors = Vec::new();
-        for path in FONTS {
+        let found = font_file(family, &font_dirs());
+        let paths = found.iter().map(|p| p.to_string_lossy().into_owned());
+        for path in paths.chain(FONTS.iter().map(|p| p.to_string())) {
+            let path = path.as_str();
             match std::fs::read(path)
                 .map_err(anyhow::Error::from)
                 .and_then(|data| Text::new(&data, px))
@@ -480,6 +564,32 @@ impl Text {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_family_finds_its_variable_or_regular_file() {
+        let root = std::env::temp_dir().join(format!("edel-fonts-{}", std::process::id()));
+        let inter = root.join("fonts/inter");
+        let noto = root.join("fonts/noto");
+        std::fs::create_dir_all(&inter).unwrap();
+        std::fs::create_dir_all(&noto).unwrap();
+        for file in [
+            "Inter-Italic.ttf",
+            "InterVariable.ttf",
+            "Inter-Regular.otf",
+            "notes.txt",
+        ] {
+            std::fs::write(inter.join(file), "").unwrap();
+        }
+        std::fs::write(noto.join("NotoSans-Regular.ttf"), "").unwrap();
+        let dirs = [root.join("fonts")];
+        let found =
+            |family: &str| font_file(family, &dirs).map(|p| p.file_name().unwrap().to_owned());
+        assert_eq!(found("Inter"), Some("InterVariable.ttf".into()));
+        assert_eq!(found("Noto Sans"), Some("NotoSans-Regular.ttf".into()));
+        assert_eq!(found("Fira Sans"), None);
+        assert_eq!(found(" "), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     fn tokens() -> Tokens {
         Tokens::built_in()
     }
@@ -504,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_has_the_title_then_maximize_and_close_at_the_right() {
+    fn the_bar_has_the_title_then_minimize_maximize_and_close_at_the_right() {
         let size = Size::from((302, 229));
         let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true);
         assert_eq!(at(10.0, 10.0), Some(Hit::Title));
@@ -512,7 +622,9 @@ mod tests {
         assert_eq!(at(274.0, 27.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(273.9, 14.0), Some(Hit::Button(Button::Maximize)));
         assert_eq!(at(246.0, 14.0), Some(Hit::Button(Button::Maximize)));
-        assert_eq!(at(245.9, 14.0), Some(Hit::Title));
+        assert_eq!(at(245.9, 14.0), Some(Hit::Button(Button::Minimize)));
+        assert_eq!(at(218.0, 14.0), Some(Hit::Button(Button::Minimize)));
+        assert_eq!(at(217.9, 14.0), Some(Hit::Title));
         assert_eq!(at(150.0, 100.0), None, "the window's own");
     }
 
@@ -574,6 +686,10 @@ mod tests {
             [focused[0], focused[1], focused[2]]
         );
         assert_eq!(pixel(&pixels, 302, 255, 14), [ink[0], ink[1], ink[2]]);
+        // Minimize's dash runs across its square's middle, nowhere else.
+        let bar = [focused[0], focused[1], focused[2]];
+        assert_ne!(pixel(&pixels, 302, 232, 14), bar);
+        assert_eq!(pixel(&pixels, 302, 232, 8), bar);
         let mut unfocused = vec![0; 302 * 28 * 4];
         paint(&mut unfocused, &look(302, false), &t, None);
         let bar = t.title_bar.bytes();
