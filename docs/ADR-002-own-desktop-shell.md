@@ -53,7 +53,7 @@ A layout preset is one small, readable config file that describes:
 - launcher style (menu, full-screen grid, or search bar),
 - window button side and style,
 - workspace model and hot corners,
-- default window policy (floating or tiling).
+- default window policy (floating or tiling) and tiling style (M5.16).
 
 Built-in presets: **Classic** (Cinnamon-like, the default), **Mac-like**, **Windows-like**, **Tiling**, **Tablet**, **Phone**. The one-button switch just loads a different file. The settings app edits the same file, so there is one source of truth and nothing to get out of sync. Users share a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets themselves ship in the slot (ADR-008).
 
@@ -115,6 +115,10 @@ Audio (PipeWire), networking (NetworkManager), Bluetooth (BlueZ), login screen (
 
 **shell-ui toolkit decision (2026-10-03):** shell-ui draws its own surfaces, with no GUI toolkit: layer-shell surfaces through smithay-client-toolkit, drawing with tiny-skia into shared-memory buffers, text through a shaping library, and AccessKit for screen readers (AT-SPI on Linux). Alimardon chose this (option B of three: GTK 4 with a raised memory budget, our own drawing, or Slint) on 2026-10-03, after a minimal GTK 4 window measured 54 to 182 MiB proportional memory against about 30 MiB left in the desktop budget. Settings and our apps keep GTK 4 and libadwaita (ADR-004). Alimardon also asked that shell-ui learn from shells that look beautiful and feel instant, such as Hyprland: [REVIEW-shells.md](REVIEW-shells.md) records what we take and what we skip. Asked by Alimardon.
 
+**Separable desktop decision (2026-10-04):** the compositor and shell-ui stay a desktop that could ship on its own for other distributions, should Edel OS ever want that. They reach Edel OS only through standard Wayland protocols, plain files whose places one module names (`edel::places`, falling back to the XDG base directories where Edel OS's own are absent), and the `edel` library's readers of those files; no code in them assumes Alpine, musl, OpenRC, greetd or Edel OS's disk layout, and the session's start (greetd's greeter, the health file, rollback) stays outside them. Places are found once at start, so this costs no frame and no memory that matters; on Edel OS every path stays as it is. Shipping the desktop for other distributions is a later roadmap step (M5.15b) that starts only on Alimardon's word. Principles: Simple and Versatile (files and standard protocols as the only boundary) with nothing taken from Instant or Efficient. Asked by Alimardon.
+
+**Tiling styles decision (2026-10-04):** tiling lays windows out in one of three styles, set by one key, `shell.tiling_style`: `stack` (M4.5's master-stack, the default), `split` (each new window takes half of the focused window's space, as Hyprland tiles by default) and `scroll` (windows as columns on a strip that scrolls sideways, as niri tiles). Each style is one module behind the window policy interface of section 2 and one line in the policy table; the one switch still chooses between floating and tiling, per workspace, and the style says how tiling lays the windows out, with title bars in every style. We write the styles ourselves on our own layout code, forking neither Hyprland nor niri (option C stays rejected). The layout button's right-click menu, Settings' Layout page and `edel system set` all change the same key, so each shows what the others chose (M5.16). Principles: Versatile (people used to Hyprland or niri find their tiling) and Simple (one key, no new mechanism, a style added or dropped as one module and one line); traded off: two more layouts to keep working, each tested like `stack`. Asked by Alimardon.
+
 ## Options Considered
 
 ### Option A: Own shell on smithay (Rust), recommended
@@ -172,3 +176,4 @@ Lean: GTK4 for version 1, because accessibility and input methods matter for "ev
 4. [ ] Define the preset file format; ship Classic first.
 5. [ ] shell-ui spike: panel and launcher, drawn by shell-ui itself on the layer shell (amended 2026-10-03: was gtk4-layer-shell; roadmap M5.1b).
 6. [ ] Plan screen sharing (portal backend) and input methods before version 1.
+7. [ ] Add the split and scroll tiling styles, chosen from the layout button and Settings (M5.16).

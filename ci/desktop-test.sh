@@ -492,7 +492,7 @@ case_panel() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "shell-ui (M5.1b): $rss MiB resident (budget $limit MiB)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, its layout toggle tiled the windows and floated them again, a screen reader found it, its menu button, layout button and clock over AT-SPI, it uses $rss MiB (budget $limit), and it came back after kill -9"
+	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, its layout toggle tiled the windows and floated them again, a screen reader found it, its menu button, layout button and clock over AT-SPI, it uses $rss MiB (budget $limit), $(value shell_ui_shared_kib) kB of it buffers shared with the compositor, and it came back after kill -9"
 }
 
 case_animations() {
@@ -708,7 +708,7 @@ case_launcher() {
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
-	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then used $(value shell_ui_rss_now_mib) MiB"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then used $(value shell_ui_rss_now_mib) MiB, $(value shell_ui_shared_now_kib) kB of it shared buffers"
 }
 
 case_switcher() {

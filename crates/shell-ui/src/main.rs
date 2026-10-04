@@ -26,7 +26,9 @@ mod widgets;
 mod workspaces;
 
 use anyhow::{Context, Result};
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
+use smithay_client_toolkit::compositor::{
+    CompositorHandler, CompositorState, FrameCallbackData, Region,
+};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
@@ -122,6 +124,10 @@ struct Panel {
     scale: u32,
     /// What was drawn last, so nothing is drawn twice.
     drawn: Option<Look>,
+    /// Drawn, and the compositor has not yet shown it: the next drawing
+    /// waits for its frame, so at most one waits and its buffers stay
+    /// two however fast things change.
+    waiting: bool,
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
@@ -184,6 +190,7 @@ fn run() -> Result<()> {
             width: 0,
             scale: 1,
             drawn: None,
+            waiting: false,
             places: Vec::new(),
             reader: a11y::Reader::new(),
         });
@@ -302,10 +309,11 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
 }
 
 impl Shell {
-    /// Draws panel `i` if anything it shows changed.
+    /// Draws panel `i` if anything it shows changed, once the compositor
+    /// has shown its last drawing.
     fn draw(&mut self, i: usize) {
         let panel = &self.panels[i];
-        if panel.width == 0 {
+        if panel.width == 0 || panel.waiting {
             return;
         }
         let strip = paint::fillet_height(&self.tokens);
@@ -385,8 +393,10 @@ impl Shell {
         surface.set_buffer_scale(panel.scale as i32);
         surface.damage_buffer(0, 0, w, h);
         buffer.attach_to(surface).context("attaching the buffer")?;
+        surface.frame(&self.qh, FrameCallbackData(surface.clone()));
         panel.surface.commit();
         self.panels[i].places = places;
+        self.panels[i].waiting = true;
         Ok(())
     }
 
@@ -526,7 +536,7 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
-        if menu.popup.show(view, &pixmap, "launcher") {
+        if menu.popup.show(view, &pixmap, "launcher", &self.qh) {
             eprintln!(
                 "edel-shell-ui: launcher shown, {} apps",
                 self.launcher.count()
@@ -613,7 +623,7 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
-        if flip.show(self.flipped.clone(), &pixmap, "switcher") {
+        if flip.show(self.flipped.clone(), &pixmap, "switcher", &self.qh) {
             let rows = self.flipped.titles.len();
             eprintln!("edel-shell-ui: switcher shown, {rows} windows");
         }
@@ -718,7 +728,33 @@ impl CompositorHandler for Shell {
     ) {
     }
 
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    /// The compositor showed a surface's last drawing: it draws again if
+    /// what it shows changed meanwhile.
+    fn frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        surface: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+        if self.is_launcher(surface) {
+            if let Some(menu) = &mut self.menu {
+                menu.popup.framed();
+            }
+            return self.draw_launcher();
+        }
+        if self.is_switcher(surface) {
+            if let Some(flip) = &mut self.flip {
+                flip.framed();
+            }
+            return self.draw_switcher();
+        }
+        let Some(i) = self.panel_of(surface) else {
+            return;
+        };
+        self.panels[i].waiting = false;
+        self.draw(i);
+    }
 
     fn surface_enter(
         &mut self,

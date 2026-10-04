@@ -5,6 +5,8 @@
 //! Sizes come from the tokens, so a change there reaches both. Drawing is
 //! plain and tested without a display.
 
+use smithay_client_toolkit::compositor::FrameCallbackData;
+use smithay_client_toolkit::reexports::client::QueueHandle;
 use smithay_client_toolkit::reexports::client::protocol::{wl_shm, wl_surface};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
@@ -30,6 +32,9 @@ pub struct Popup<V> {
     scale: u32,
     /// Configured, so it may draw.
     ready: bool,
+    /// Drawn and not yet shown by the compositor: the next drawing waits
+    /// for its frame, as the panel's does.
+    waiting: bool,
     drawn: Option<(V, u32)>,
 }
 
@@ -59,6 +64,7 @@ impl<V: Clone + PartialEq> Popup<V> {
             size,
             scale,
             ready: false,
+            waiting: false,
             drawn: None,
         })
     }
@@ -77,6 +83,11 @@ impl<V: Clone + PartialEq> Popup<V> {
         self.ready = true;
     }
 
+    /// The compositor showed the last drawing.
+    pub fn framed(&mut self) {
+        self.waiting = false;
+    }
+
     pub fn set_scale(&mut self, factor: i32) {
         self.scale = factor.clamp(1, 4) as u32;
     }
@@ -93,6 +104,7 @@ impl<V: Clone + PartialEq> Popup<V> {
     /// already shows it.
     pub fn canvas(&self, view: &V) -> Option<Pixmap> {
         if !self.ready
+            || self.waiting
             || self
                 .drawn
                 .as_ref()
@@ -104,7 +116,7 @@ impl<V: Clone + PartialEq> Popup<V> {
     }
 
     /// Shows `pixmap`, which draws `view`; whether it is the first time.
-    pub fn show(&mut self, view: V, pixmap: &Pixmap, name: &str) -> bool {
+    pub fn show(&mut self, view: V, pixmap: &Pixmap, name: &str, qh: &QueueHandle<Shell>) -> bool {
         let (w, h) = (pixmap.width() as i32, pixmap.height() as i32);
         let (buffer, canvas) = match self
             .pool
@@ -124,7 +136,9 @@ impl<V: Clone + PartialEq> Popup<V> {
             eprintln!("edel-shell-ui: drawing the {name} failed: {e}");
             return false;
         }
+        surface.frame(qh, FrameCallbackData(surface.clone()));
         self.surface.commit();
+        self.waiting = true;
         let first = self.drawn.is_none();
         self.drawn = Some((view, self.scale));
         first
