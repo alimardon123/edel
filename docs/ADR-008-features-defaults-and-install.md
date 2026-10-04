@@ -1,7 +1,7 @@
 # ADR-008: Features, defaults and the way in
 
 **Status:** Proposed
-**Date:** 2026-10-02, amended 2026-10-02 (every action, not only every setting, in Settings and in `edel`)
+**Date:** 2026-10-02, amended 2026-10-02 (every action, not only every setting, in Settings and in `edel`) and 2026-10-04 (easy to use; own presets)
 **Deciders:** Alimardon
 **Related:** ADR-002 (presets, no extension API; one line amended here), ADR-003 (same packages in every image), ADR-006 (system file), ADR-007 (customization levels, add-ons, developer mode), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
 
@@ -145,6 +145,10 @@ CI proves every row as it proves everything else: the images build, the boot, ab
 
 Principles: Simple and Functional for everyone, Powerful and Scalable through the file and the commands, and Versatile through presets rather than more options; traded off: a few lines in each PR that adds a setting. Asked by Alimardon.
 
+**Own presets decision (2026-10-04):** Alimardon asked that people can change the desktop, save it and use it again, and then asked why a saved layout should be picked with other commands than a preset. It is not. Every preset, built-in or a person's own, is picked the one way, `shell.preset` (a card on Settings' Layout page, `edel system set shell.preset=NAME`, a line in the file). A person's own preset is a `[presets.NAME]` table in the system file with the same keys as `[shell]`, `preset` naming the built-in it starts from, so the one file that copies a machine carries it and a fleet's file can hand one to every machine. One action makes it: Save as (Settings' Save as preset, `edel preset save NAME`) moves the `[shell]` keys a preset holds into the new table and leaves `[shell]` with `preset = "NAME"`, so the screen does not change and another preset picked later is that preset whole. `edel preset delete NAME` and `edel preset list` complete the group. These are no settings verbs: they write or remove a whole table, which `set` cannot, and every value still changes only through `edel system set|unset`. A preset holds the layout only, never appearance or shortcuts; built-in presets still ship in the slot and are checked by CI, while own presets are read leniently like the rest of the file (a base this release lacks is Classic, reported). This takes up the Revisit item "user preset files if people ask", as tables rather than files. Planned as M5.17.
+
+Principles: Simple (one key picks every preset, one action saves one), Functional (the file that copies a machine copies its presets), Scalable (fleets share a preset through the machine file), Versatile (presets of the person's own, not more options); traded off: three commands in a new `edel preset` group, and a table per saved preset in the file. Asked by Alimardon.
+
 ## Options Considered
 
 | Option | Verdict |
@@ -156,7 +160,7 @@ Principles: Simple and Functional for everyone, Powerful and Scalable through th
 | E. An append-only retired-keys file with migration verbs | The old slot never sees a file added later; `keys.txt` checked in CI and `retired` in the help table are enough until the first real bump |
 | F. A separate installer app, a text-UI installer or an ISO | The Settings page and `edel install` on a terminal cover both, with one question list and one planner |
 
-Not built, and defended: a plugin or extension API; dependencies, versions or alternatives between features; feature flags in shipped images; a schema-generated Settings UI; per-domain verbs that change settings (`edel addon add`; settings change only through `edel system set|unset`); shell completion scripts (busybox ash has no programmable completion); telemetry; a stick writer of our own for Windows or macOS; netboot; a look-change notice (see Revisit).
+Not built, and defended: a plugin or extension API; dependencies, versions or alternatives between features; feature flags in shipped images; a schema-generated Settings UI; per-domain verbs that change settings (`edel addon add`; a value changes only through `edel system set|unset`, and `edel preset` only saves, deletes and lists whole presets); shell completion scripts (busybox ash has no programmable completion); telemetry; a stick writer of our own for Windows or macOS; netboot; a look-change notice (see Revisit).
 
 ## Consequences
 
@@ -164,7 +168,7 @@ Not built, and defended: a plugin or extension API; dependencies, versions or al
 - **Harder:** at boot, a typo in a hand-edited file is reported, not refused (`check` and Settings still refuse it). A manifest format change costs a stepping-stone release, and keys only disappear at a format bump. Every package or service needs a `why`; every module that talks to the OS sits in `features/`.
 - **Cost:** about 1,800 lines; four new PRs (M4.0, M6.6b split from M6.6, M6.11, M7.2b), the rest inside planned steps. Phase 1 grows by about 400 to 600 lines with tests in M1.6, M2.1, M2.3 and M2.4, all Reliable work, with no new step and no reordering; `get` with layers and the nearest-key suggestion wait for M6.11.
 - **Amends ADR-002:** "Users can share presets as files" becomes sharing a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets ship in the slot.
-- **Revisit:** an alias table the first time a name really must change; per-feature CI tests if image tests stop isolating failures; a look-change notice with Keep my old look (limited to `[appearance]` and `[shortcuts]`) at the first visible redesign after the first public release; user preset files if people ask; Settings search once the help table exists.
+- **Revisit:** an alias table the first time a name really must change; per-feature CI tests if image tests stop isolating failures; a look-change notice with Keep my old look (limited to `[appearance]` and `[shortcuts]`) at the first visible redesign after the first public release; user preset files if people ask (taken up on 2026-10-04 as `[presets.NAME]` tables, the own presets decision); Settings search once the help table exists.
 
 ## Action Items
 
@@ -189,4 +193,4 @@ Not built, and defended: a plugin or extension API; dependencies, versions or al
 - **Beautiful:** the file holds only choices, so redesigned defaults reach everyone and are reviewed in screendumps before each release; the contrast test and the scale default make the first screen good on every panel.
 - **Functional:** fonts for the shipped scripts, a Latin layout beside a non-Latin one, add-ons that arrive without waiting for a release, and "no terminal for normal use" as a CI check.
 - **Versatile** is still served only by presets, profiles and add-ons.
-- **Traded off:** Versatile loses alternatives, user preset files and convenience verbs; strictness at boot loses to Reliable; Beautiful waits for a look-change notice; Simple pays about 1,800 lines, four PRs, a `why` per package and one module per feature per part.
+- **Traded off:** Versatile loses alternatives and convenience verbs (user preset files came back as tables on 2026-10-04); strictness at boot loses to Reliable; Beautiful waits for a look-change notice; Simple pays about 1,800 lines, four PRs, a `why` per package and one module per feature per part.
