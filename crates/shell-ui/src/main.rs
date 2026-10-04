@@ -593,7 +593,8 @@ impl Shell {
             .first()
             .map_or((Edge::Bottom, 1), |p| (p.edge, p.scale));
         let size = launcher::size(&self.tokens);
-        let Some(popup) = Popup::new(self, LAUNCHER, size, size, scale) else {
+        let room = paint::shadow_room(&self.tokens, !fillets());
+        let Some(popup) = Popup::new(self, LAUNCHER, size, size, scale, room) else {
             return;
         };
         let side = match edge {
@@ -602,7 +603,9 @@ impl Shell {
         };
         let surface = &popup.surface;
         surface.set_anchor(side | Anchor::LEFT);
-        surface.set_margin(MARGIN, MARGIN, MARGIN, MARGIN);
+        // The card keeps its place; its shadow reaches past it.
+        let m = MARGIN - room as i32;
+        surface.set_margin(m, m, m, m);
         surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         surface.commit();
         let keyboard = self.seat.seats().next().and_then(|seat| {
@@ -651,7 +654,10 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
-        if menu.popup.show(view, &pixmap, "launcher", &self.qh) {
+        if menu
+            .popup
+            .show(view, &pixmap, &self.tokens, "launcher", &self.qh)
+        {
             eprintln!(
                 "edel-shell-ui: launcher shown, {} apps",
                 self.launcher.count()
@@ -698,11 +704,12 @@ impl Shell {
         self.flipped = view;
         let size = switcher::size(rows, &self.tokens);
         match &mut self.flip {
-            Some(flip) => flip.resize(size),
+            Some(flip) => flip.resize(size, &self.compositor),
             None => {
                 let scale = self.panels.first().map_or(1, |p| p.scale);
                 let most = switcher::size(switcher::MOST, &self.tokens);
-                let Some(flip) = Popup::new(self, SWITCHER, size, most, scale) else {
+                let room = paint::shadow_room(&self.tokens, !fillets());
+                let Some(flip) = Popup::new(self, SWITCHER, size, most, scale, room) else {
                     return;
                 };
                 // No anchor: the middle of the screen.
@@ -738,7 +745,13 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
-        if flip.show(self.flipped.clone(), &pixmap, "switcher", &self.qh) {
+        if flip.show(
+            self.flipped.clone(),
+            &pixmap,
+            &self.tokens,
+            "switcher",
+            &self.qh,
+        ) {
             let rows = self.flipped.titles.len();
             eprintln!("edel-shell-ui: switcher shown, {rows} windows");
         }
@@ -967,7 +980,12 @@ impl PointerHandler for Shell {
     ) {
         for event in events {
             if self.is_launcher(&event.surface) {
-                let (x, y) = (event.position.0 as f32, event.position.1 as f32);
+                // From the card's corner, inside the shadow's room.
+                let room = self.menu.as_ref().map_or(0, |m| m.popup.room()) as f32;
+                let (x, y) = (
+                    event.position.0 as f32 - room,
+                    event.position.1 as f32 - room,
+                );
                 let row = launcher::row_at(y, &self.tokens).filter(|_| x >= 0.0);
                 match &event.kind {
                     PointerEventKind::Motion { .. } => {

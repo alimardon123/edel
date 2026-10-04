@@ -136,10 +136,16 @@ pub struct Tokens {
     pub panel_height: u32,
     /// The panel's text, logical pixels per em.
     pub panel_text_size: u32,
-    /// The corner radius of rounded shapes, logical pixels: the panel's
-    /// fillets and menus; and of controls, the panel's buttons and rows.
-    pub radius: u32,
+    /// Corner radii, logical pixels (M5.5e): windows' (M5.14), menus' and
+    /// the panel's fillets', and controls': the panel's buttons and rows.
+    pub radius_window: u32,
+    pub radius_menu: u32,
     pub radius_control: u32,
+    /// The one shadow, cast by one light above (M5.5e): its colour, how
+    /// far it blurs and how far down it falls, logical pixels.
+    pub shadow: Colour,
+    pub shadow_blur: u32,
+    pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
     pub row: u32,
     /// The interface font's family.
@@ -280,6 +286,7 @@ impl Tokens {
                 "panel" => &mut self.panel,
                 "panel_text" => &mut self.panel_text,
                 "accent" => &mut self.accent,
+                "shadow" => &mut self.shadow,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -303,8 +310,11 @@ impl Tokens {
                 "gap" => (&mut self.gap, 100),
                 "panel" => (&mut self.panel_height, 200),
                 "panel_text" => (&mut self.panel_text_size, 100),
-                "radius" => (&mut self.radius, 100),
+                "radius_window" => (&mut self.radius_window, 100),
+                "radius_menu" => (&mut self.radius_menu, 100),
                 "radius_control" => (&mut self.radius_control, 100),
+                "shadow_blur" => (&mut self.shadow_blur, 100),
+                "shadow_offset" => (&mut self.shadow_offset, 100),
                 "row" => (&mut self.row, 200),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
@@ -355,6 +365,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel",
                 "panel_text",
                 "accent",
+                "shadow",
             ][..],
         ),
         (
@@ -366,9 +377,12 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "gap",
                 "panel",
                 "panel_text",
-                "radius",
+                "radius_window",
+                "radius_menu",
                 "radius_control",
                 "row",
+                "shadow_blur",
+                "shadow_offset",
             ][..],
         ),
         ("font", &["interface"][..]),
@@ -414,8 +428,12 @@ pub fn check(text: &str) -> Result<Tokens> {
         accent: BLACK,
         panel_height: 0,
         panel_text_size: 0,
-        radius: 0,
+        radius_window: 0,
+        radius_menu: 0,
         radius_control: 0,
+        shadow: BLACK,
+        shadow_blur: 0,
+        shadow_offset: 0,
         row: 0,
         font: String::new(),
     };
@@ -513,6 +531,18 @@ mod tests {
         assert_eq!(tokens, Tokens::built_in());
         assert_eq!(tokens.title_bar_height, 28);
         assert_eq!((tokens.radius_control, tokens.row), (7, 36));
+        // The mockups' second round (M5.5e): windows 10, menus 12,
+        // controls 7, and one shadow from above.
+        assert_eq!(
+            (
+                tokens.radius_window,
+                tokens.radius_menu,
+                tokens.radius_control
+            ),
+            (10, 12, 7)
+        );
+        assert_eq!((tokens.shadow_blur, tokens.shadow_offset), (24, 6));
+        assert!(tokens.shadow.a > 0.0 && tokens.shadow.a < 1.0);
         assert_eq!(tokens.font, "Inter");
         let (other, notes) = Tokens::read("[font]\ninterface = \"Noto Sans\"\n[size]\nrow = 40");
         assert!(notes.is_empty(), "{notes:?}");

@@ -63,7 +63,7 @@ impl Row {
 /// How tall the strip beside the panel is, for the fillets, in logical
 /// pixels: the tokens' corner radius.
 pub fn fillet_height(tokens: &Tokens) -> u32 {
-    tokens.radius
+    tokens.radius_menu
 }
 
 /// How tall the strip for the fillets is on a panel of `style`: a dock
@@ -259,6 +259,98 @@ pub fn fill(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colo
             None,
         );
     }
+}
+
+/// How far a menu's shadow reaches past its card on every side, logical
+/// pixels: nothing on the Lite tier, which keeps surfaces flat (ADR-002,
+/// M5.5e).
+pub fn shadow_room(tokens: &Tokens, flat: bool) -> u32 {
+    if flat {
+        0
+    } else {
+        tokens.shadow_blur + tokens.shadow_offset
+    }
+}
+
+/// The shadow of a card `w` by `h` pixels with corners `r`, at `room`
+/// pixels in from each side of a pixmap that much bigger, at scale `s`
+/// (M5.5e): two layers cast by one light above, a close sharp one and a
+/// far soft one, in the tokens' shadow colour; drawn once per size.
+pub fn shadow(w: u32, h: u32, room: u32, r: f32, tokens: &Tokens, s: f32) -> Option<Pixmap> {
+    let (pw, ph) = (w + 2 * room, h + 2 * room);
+    let mut cover = vec![0.0f32; (pw * ph) as usize];
+    let (blur, fall) = (
+        tokens.shadow_blur as f32 * s,
+        tokens.shadow_offset as f32 * s,
+    );
+    // (how far down, how soft, how strong)
+    for (down, soft, strength) in [(fall / 3.0, blur / 4.0, 0.55), (fall, blur, 0.45)] {
+        let mut mask = Pixmap::new(pw, ph)?;
+        fill(
+            &mut mask,
+            room as f32,
+            room as f32 + down,
+            w as f32,
+            h as f32,
+            r,
+            Colour {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        );
+        let mut layer: Vec<f32> = mask
+            .data()
+            .chunks_exact(4)
+            .map(|p| f32::from(p[3]) / 255.0)
+            .collect();
+        // Three box blurs, each a third as wide, come close to a Gaussian.
+        let radius = (soft / 3.0).round() as usize;
+        for _ in 0..3 {
+            box_blur(&mut layer, pw as usize, ph as usize, radius);
+        }
+        for (c, l) in cover.iter_mut().zip(layer) {
+            *c = (*c + l * strength).min(1.0);
+        }
+    }
+    let [cr, cg, cb, ca] = tokens.shadow.bytes();
+    let mut out = Pixmap::new(pw, ph)?;
+    for (pixel, c) in out.data_mut().chunks_exact_mut(4).zip(cover) {
+        let a = c * f32::from(ca) / 255.0;
+        let mul = |v: u8| (f32::from(v) * a).round() as u8;
+        pixel.copy_from_slice(&[mul(cr), mul(cg), mul(cb), (a * 255.0).round() as u8]);
+    }
+    Some(out)
+}
+
+/// Blurs `values`, a `w` by `h` grid, by averaging each with its
+/// neighbours up to `radius` away, across and then down.
+fn box_blur(values: &mut [f32], w: usize, h: usize, radius: usize) {
+    if radius == 0 {
+        return;
+    }
+    let mut line = Vec::new();
+    let mut pass =
+        |values: &mut [f32], len: usize, count: usize, at: &dyn Fn(usize, usize) -> usize| {
+            let span = (2 * radius + 1) as f32;
+            for i in 0..count {
+                line.clear();
+                line.extend((0..len).map(|j| values[at(i, j)]));
+                let mut sum: f32 = line.iter().take(radius + 1).sum();
+                for j in 0..len {
+                    values[at(i, j)] = sum / span;
+                    if j + radius + 1 < len {
+                        sum += line[j + radius + 1];
+                    }
+                    if j >= radius {
+                        sum -= line[j - radius];
+                    }
+                }
+            }
+        };
+    pass(values, w, h, &|row, col| row * w + col);
+    pass(values, h, w, &|col, row| row * w + col);
 }
 
 /// A rectangle with corners of radius `r`, as a path.
@@ -514,7 +606,7 @@ mod tests {
         assert_eq!(pixel(&pixmap, 0, h), panel, "the left fillet's corner");
         assert_eq!(pixel(&pixmap, 1279, h), panel, "the right one's");
         assert_eq!(
-            pixel(&pixmap, tokens.radius - 1, pixmap.height() - 1)[3],
+            pixel(&pixmap, tokens.radius_menu - 1, pixmap.height() - 1)[3],
             0,
             "the curve leaves the corner's far side clear"
         );
@@ -560,6 +652,32 @@ mod tests {
         // No fillets and no strip: its buffer is the card.
         assert_eq!(strip(Style::Dock, &tokens), 0);
         assert_eq!(panel_top(Edge::Bottom, Style::Dock, &tokens), 0);
+    }
+
+    #[test]
+    fn menus_cast_a_shadow_from_above_except_on_lite() {
+        let tokens = Tokens::built_in();
+        assert_eq!(shadow_room(&tokens, true), 0, "Lite keeps menus flat");
+        let room = shadow_room(&tokens, false);
+        assert_eq!(room, tokens.shadow_blur + tokens.shadow_offset);
+        for s in [1u32, 2] {
+            let (w, h, room) = (200 * s, 100 * s, room * s);
+            let r = tokens.radius_menu as f32 * s as f32;
+            let pixmap = shadow(w, h, room, r, &tokens, s as f32).unwrap();
+            assert_eq!(pixmap.width(), w + 2 * room);
+            let alpha = |x: u32, y: u32| pixel(&pixmap, x, y)[3];
+            let mid = room + w / 2;
+            // Darker just below the card than just above it, and gone
+            // at the pixmap's edges.
+            let below = alpha(mid, room + h + 2 * s);
+            let above = alpha(mid, room - 2 * s);
+            assert!(below > above, "below {below}, above {above}");
+            assert!(below > 0);
+            assert_eq!(alpha(0, 0), 0);
+            assert_eq!(alpha(mid, pixmap.height() - 1), 0);
+            // In the shadow's colour, never deeper than it.
+            assert!(below <= tokens.shadow.bytes()[3]);
+        }
     }
 
     #[test]
