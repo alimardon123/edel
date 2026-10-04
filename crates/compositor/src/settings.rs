@@ -257,10 +257,10 @@ mod tests {
             preset: name.map(str::to_string),
             ..Settings::default()
         };
-        assert!(named(None).preset_differs(&named(Some("tiling"))));
+        assert!(named(None).preset_differs(&named(Some("hive"))));
         assert!(!named(None).preset_differs(&named(Some("classic"))));
         assert!(!named(Some("classic")).preset_differs(&named(Some("tablet"))));
-        assert!(named(Some("tiling")).preset_differs(&named(Some("tablet"))));
+        assert!(named(Some("hive")).preset_differs(&named(Some("tablet"))));
     }
 
     #[test]

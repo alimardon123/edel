@@ -1,5 +1,5 @@
 //! The focused window's title (M5.4a), for presets whose bar runs along
-//! the top, as Tiling's: one line in the panel text's colour, cut short
+//! the top, as Hive's: one line in the panel text's colour, cut short
 //! with an ellipsis, at most 40% of the panel; nothing, and no width,
 //! while no window has the keyboard. The panel draws again only when the
 //! title changes.

@@ -120,10 +120,10 @@ commands() {
 		case "$command" in
 		'tiling on') edel system set shell.tiling=true ;;
 		'tiling off') edel system set shell.tiling=false ;;
-		# Presets (M5.4a): Tiling, then back to Classic, the default;
+		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# shell.tiling, left false by the tiling case, would win over
-		# Tiling's policy, so it goes first.
-		'preset tiling') edel system unset shell.tiling && edel system set shell.preset=tiling ;;
+		# Hive's policy, so it goes first.
+		'preset hive') edel system unset shell.tiling && edel system set shell.preset=hive ;;
 		'preset default') edel system unset shell.preset ;;
 		# Window buttons on either side (M5.4b).
 		'buttons left') edel system set shell.window_buttons=left ;;

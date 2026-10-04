@@ -104,7 +104,7 @@ pub const PRESETS: &[&str] = &[
     "classic",
     "mac-like",
     "windows-like",
-    "tiling",
+    "hive",
     "tablet",
     "phone",
 ];
@@ -935,19 +935,16 @@ font_size = 11
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
-            ["shell.preset: unknown value \"tablet\"; use classic or tiling"]
+            ["shell.preset: unknown value \"tablet\"; use classic or hive"]
         );
         let error = set("format = 1\n", "shell.preset", "tablet").unwrap_err();
-        assert!(
-            error.to_string().contains("use classic or tiling"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("use classic or hive"), "{error}");
         let read = read(file).unwrap();
         assert_eq!(read.file.shell.preset, None);
         assert_eq!(read.problems[0].key, "shell.preset");
-        let set_tiling = set("format = 1\n", "shell.preset", "tiling").unwrap();
-        assert_eq!(set_tiling, "format = 1\n\n[shell]\npreset = \"tiling\"\n");
-        assert!(check(&set_tiling).unwrap().is_empty());
+        let set_hive = set("format = 1\n", "shell.preset", "hive").unwrap();
+        assert_eq!(set_hive, "format = 1\n\n[shell]\npreset = \"hive\"\n");
+        assert!(check(&set_hive).unwrap().is_empty());
     }
 
     const EDITED: &str = "format = 1\nfuture.key = 1 # kept\n\n[network]\nhostname = \"ci-seeded\"  # mine\n\n# The person who runs CI\n[users.ci]\nadmin = true\n";
