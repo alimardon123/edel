@@ -6,6 +6,7 @@
 //! its workspace through ext-workspace-v1 (`crate::workspaces`). Sizes are
 //! logical pixels, drawn at the panel's scale.
 
+use accesskit::Role;
 use tiny_skia::{FillRule, Transform};
 
 use edel::tokens::Colour;
@@ -20,7 +21,25 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input,
+    role: Role::Group,
+    label,
 };
+
+/// The shown workspace among how many: "Workspaces: 2 shown, 2 of 4".
+fn label(shown: &str) -> String {
+    let names: Vec<&str> = shown
+        .split_once(';')
+        .map_or_else(Vec::new, |(_, names)| names.split(',').collect());
+    match names.iter().position(|name| name.ends_with('*')) {
+        Some(i) => format!(
+            "Workspaces: {} shown, {} of {}",
+            names[i].trim_end_matches('*'),
+            i + 1,
+            names.len()
+        ),
+        None => "Workspaces".into(),
+    }
+}
 
 /// How many buttons show at once.
 pub const SHOWN: usize = 3;
@@ -253,5 +272,11 @@ mod tests {
             "already at the first"
         );
         assert_eq!(input("0;1*,2", Input::Scroll(1)), None);
+    }
+
+    #[test]
+    fn a_screen_reader_hears_the_shown_workspace() {
+        assert_eq!(label("0;1,2*,3,4"), "Workspaces: 2 shown, 2 of 4");
+        assert_eq!(label(""), "Workspaces");
     }
 }

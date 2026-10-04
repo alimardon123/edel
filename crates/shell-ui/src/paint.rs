@@ -38,7 +38,7 @@ pub struct Row {
 }
 
 impl Row {
-    fn all(&self) -> impl Iterator<Item = &'static Widget> + '_ {
+    pub fn all(&self) -> impl Iterator<Item = &'static Widget> + '_ {
         self.start
             .iter()
             .chain(&self.centre)

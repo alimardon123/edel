@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use accesskit::Role;
 use jiff::Zoned;
 
 use super::{Canvas, Live, Widget, no_input};
@@ -16,6 +17,8 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input: no_input,
+    role: Role::Label,
+    label: str::to_owned,
 };
 
 fn shows(_: &Live) -> String {

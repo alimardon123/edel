@@ -136,6 +136,16 @@ commands() {
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# shell-ui dies (M5.1b): the compositor should start it again.
 		'kill panel') pkill -9 -x edel-shell-ui ;;
+		# A screen reader (M5.1d): accessibility on in ci's session, and
+		# what AT-SPI holds of shell-ui, a line a node.
+		'a11y tree')
+			bus=$(tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+			(
+				as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' sh /usr/libexec/edel-a11y-tree" </dev/null 2>&1 |
+					while read -r line; do say "a11y $line"; done
+				say "a11y_done"
+			) &
+			;;
 		# appearance.motion (M5.11b), reduced and back to the default.
 		'motion reduced') edel system set appearance.motion=reduced ;;
 		'motion off') edel system set appearance.motion=off ;;

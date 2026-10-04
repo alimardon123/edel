@@ -5,6 +5,7 @@
 //! shown workspace over `edel-shell-v1` (`crate::link`), which also says
 //! the policy; without it the button is not there.
 
+use accesskit::Role;
 use tiny_skia::{FillRule, LineCap, LineJoin, Path, PathBuilder, Stroke, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
@@ -17,7 +18,14 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input,
+    role: Role::Button,
+    label,
 };
+
+/// The button says how windows are placed: "Layout: tiling".
+fn label(shown: &str) -> String {
+    format!("Layout: {shown}")
+}
 
 /// The button and the space on each side of it; its corners are the
 /// tokens' controls'.
