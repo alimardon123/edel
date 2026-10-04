@@ -128,9 +128,11 @@ pub fn title(window: &Window) -> String {
     .unwrap_or_default()
 }
 
-/// Loads the title font on a thread; the bars get their titles when it
-/// arrives, or stay without if no font loads.
-pub fn load_text(handle: &LoopHandle<'static, Edel>, px: u32) {
+/// Loads the title font, the tokens' interface `family`, on a thread; the
+/// bars get their titles when it arrives, or stay without if no font
+/// loads.
+pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
+    let family = family.to_string();
     let (sender, receiver) = channel::channel();
     let inserted = handle.insert_source(receiver, |event, _, state: &mut Edel| {
         if let Event::Msg(result) = event {
@@ -148,7 +150,7 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, px: u32) {
         return;
     }
     let started = thread::Builder::new().name("font".into()).spawn(move || {
-        let _ = sender.send(Text::load(px as f32));
+        let _ = sender.send(Text::load(&family, px as f32));
     });
     if let Err(e) = started {
         eprintln!("edel-compositor: title bars show no titles: {e}");

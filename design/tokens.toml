@@ -38,5 +38,15 @@ gap = 8
 panel = 40
 panel_text = 13
 # The corner radius of rounded shapes: the fillets where the panel meets
-# the screen (M5.1b), then windows, menus and buttons (M5.14).
+# the screen (M5.1b) and menus such as the launcher (M5.3b), then windows
+# (M5.14); and of controls: the panel's buttons and a menu's rows.
 radius = 12
+radius_control = 7
+# A row in a menu or list: the launcher's apps, the window switcher's
+# windows (M5.3).
+row = 36
+
+[font]
+# The interface font's family, for title bars and everything shell-ui
+# draws; the compositor finds its file among the system's fonts.
+interface = "Inter"

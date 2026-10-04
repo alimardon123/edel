@@ -452,6 +452,7 @@ RAUC, ostree or systemd; a shell extension API; a theme engine or third-party th
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-04: one place for the menus' look: `size.radius_control`, `size.row` and `font.interface` joined the design tokens, and the launcher and the window switcher share one popup and list painter in shell-ui; nothing looks or behaves differently. Asked by Alimardon. PR #79.
 - 2026-10-04: planned the desktop as separable (M5.15, ADR-002's separable desktop decision): one module, `edel::places`, for every Edel OS place with XDG fallbacks, a CI build and nested run on Ubuntu, and later, on Alimardon's word, the desktop's own packages for other distributions; recorded the one-place rule (CLAUDE.md), with the shell's own icons as files in `design/icons/` (M5.5). Asked by Alimardon. PR #78.
 - 2026-10-03: M5.3c done, the window switcher: Alt+Tab in the compositor, most recently used first, drawn by shell-ui over `edel-shell-v1`, checked by `desktop-test switcher`; with 3a and 3b, M5.3 is done. PR #76.
 - 2026-10-03: M5.3b done, the launcher: Super tapped alone or the menu button opens shell-ui's search over the apps' `.desktop` files, Return starts the best match, and the presets gain `[launcher] style = "menu"`; checked by `desktop-test launcher`. PR #75.
