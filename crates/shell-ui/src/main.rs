@@ -21,6 +21,7 @@ mod launcher;
 mod link;
 mod paint;
 mod popup;
+mod portal;
 mod switcher;
 mod toplevels;
 mod widgets;
@@ -107,6 +108,9 @@ struct Shell {
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
     tokens: Tokens,
+    /// The settings portal's backend on the session's bus (M5.5a),
+    /// served while this lives.
+    _portal: Option<zbus::blocking::Connection>,
     text: Text,
     icons: icons::Icons,
     fillets: bool,
@@ -269,6 +273,7 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
+        _portal: portal::serve(&tokens),
         tokens,
         fillets: fillets(),
         exit: false,
