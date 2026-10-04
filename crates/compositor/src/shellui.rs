@@ -5,13 +5,15 @@
 //! takes the windows with it. One that keeps failing within seconds of
 //! starting is given up on after a few tries, and the log says so, rather
 //! than burning the CPU. An image without it (the `shell` feature) is
-//! said once and left alone.
+//! said once and left alone. A change of preset restarts it (M5.4a), so
+//! its panels follow the new preset; that restart is no failure.
 
 use std::io::ErrorKind;
 use std::process::{Command, ExitStatus};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use rustix::process::{Pid, Signal, kill_process};
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::channel::{self, Event};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -38,6 +40,10 @@ pub struct ShellUi {
     since: Option<Instant>,
     /// Quick failures in a row.
     failures: u32,
+    /// The running one's process id.
+    pid: Option<u32>,
+    /// It was asked to end so it starts again at once.
+    restarting: bool,
 }
 
 /// Starts shell-ui the first time the desktop is on screen, unless the
@@ -72,6 +78,7 @@ fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) 
     };
     eprintln!("edel-compositor: started {NAME}, pid {}", child.id());
     state.shell_ui.since = Some(Instant::now());
+    state.shell_ui.pid = Some(child.id());
     let (sender, receiver) = channel::channel::<Option<ExitStatus>>();
     let again = handle.clone();
     let inserted = handle.insert_source(receiver, move |event, _, state: &mut Edel| {
@@ -94,14 +101,34 @@ fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) 
     }
 }
 
+/// Ends the running shell-ui so it starts again at once, reading the
+/// system files afresh: `why` goes to the log.
+pub fn restart(state: &mut Edel, why: &str) {
+    let Some(pid) = state.shell_ui.pid.and_then(|p| Pid::from_raw(p as i32)) else {
+        return;
+    };
+    eprintln!("edel-compositor: restarting {NAME}: {why}");
+    state.shell_ui.restarting = true;
+    if let Err(e) = kill_process(pid, Signal::TERM) {
+        eprintln!("edel-compositor: ending {NAME} failed: {e}");
+        state.shell_ui.restarting = false;
+    }
+}
+
 /// shell-ui ended, or could not start: start it again shortly, unless it
-/// keeps failing.
+/// keeps failing; at once, and counting no failure, when it was asked to.
 fn ended(
     handle: &LoopHandle<'static, Edel>,
     state: &mut Edel,
     wayland: String,
     status: Option<ExitStatus>,
 ) {
+    state.shell_ui.pid = None;
+    if std::mem::take(&mut state.shell_ui.restarting) {
+        state.shell_ui.since = None;
+        spawn(handle, state, wayland);
+        return;
+    }
     let quick = state
         .shell_ui
         .since

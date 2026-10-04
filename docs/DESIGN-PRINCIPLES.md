@@ -68,7 +68,7 @@ One base serves everything from a tiny container to a fleet of thousands.
 ### 9. Versatile
 Developers, creative workers, gamers, office users and servers each get a setup that fits them.
 - New needs are met with a **preset**, an **add-on** or an **app**, never by growing the base or adding options to it.
-- Presets cover layouts (Classic, Mac-like, Windows-like, Tiling, Tablet, Phone) and, later, user profiles (for example a gaming profile that turns on game mode and installs Steam).
+- Presets cover layouts (Classic, Mac-like, Windows-like, Hive, Tablet, Phone) and, later, user profiles (for example a gaming profile that turns on game mode and installs Steam).
 
 ## Why this order
 

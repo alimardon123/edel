@@ -104,7 +104,7 @@ pub const PRESETS: &[&str] = &[
     "classic",
     "mac-like",
     "windows-like",
-    "tiling",
+    "hive",
     "tablet",
     "phone",
 ];
@@ -126,7 +126,7 @@ pub const KEYS: &[Key] = &[
     later("locale.language", Kind::Text),
     later("locale.keyboard", Kind::Text),
     later("locale.timezone", Kind::Text),
-    later("shell.preset", Kind::OneOf(PRESETS)),
+    now("shell.preset", Kind::OneOf(crate::presets::NAMES)),
     now("shell.tiling", Kind::Flag),
     now(
         "shell.title_bars",
@@ -920,6 +920,27 @@ font_size = 11
         assert!(
             shown.contains(&"outputs.DP-1.transform: expected 0, 90, 180 or 270, not 45".into())
         );
+    }
+
+    /// A preset this release lacks (M5.4a): check and set refuse it and
+    /// list the ones it has, while a reader on a machine leaves it out and
+    /// says so, so the desktop starts Classic (ADR-008).
+    #[test]
+    fn a_preset_this_release_lacks_is_refused_or_reported() {
+        let file = "format = 1\n[shell]\npreset = \"tablet\"\n";
+        let lines = check(file).unwrap();
+        assert_eq!(
+            lines,
+            ["shell.preset: unknown value \"tablet\"; use classic or hive"]
+        );
+        let error = set("format = 1\n", "shell.preset", "tablet").unwrap_err();
+        assert!(error.to_string().contains("use classic or hive"), "{error}");
+        let read = read(file).unwrap();
+        assert_eq!(read.file.shell.preset, None);
+        assert_eq!(read.problems[0].key, "shell.preset");
+        let set_hive = set("format = 1\n", "shell.preset", "hive").unwrap();
+        assert_eq!(set_hive, "format = 1\n\n[shell]\npreset = \"hive\"\n");
+        assert!(check(&set_hive).unwrap().is_empty());
     }
 
     const EDITED: &str = "format = 1\nfuture.key = 1 # kept\n\n[network]\nhostname = \"ci-seeded\"  # mine\n\n# The person who runs CI\n[users.ci]\nadmin = true\n";

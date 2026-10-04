@@ -27,6 +27,7 @@
 - `toplevels.rs` (M5.2h): the wlr-foreign-toplevel-management client, through `Dispatch2` user data (`Manager`, `Handle`): each window's title, screens, focus and minimized state; `tasks` gives the windows on a screen, in order, which `activate` (with the seat) and `minimize` address by place; `windows_changed` at each `done` and `closed`; without the protocol the list shows nothing.
 - `workspaces.rs` (M5.2c): the ext-workspace-v1 client, through sctk's `Dispatch2` user data (`Manager`, `Group`, `Handle`): the workspaces by name with the shown one marked, `show` (activate, then commit), and `workspaces_changed` at each `done`; a workspace or group removed is destroyed; without the protocol the switcher shows nothing.
 - `widgets/clock.rs`: the clock, `HH:MM` with room on both sides, and the time until the next minute. Tested.
+- `widgets/title.rs` (M5.4a): the focused window's title, for bars along the top such as Hive's: the panel text's colour and size, cut short at 40% of the panel, no width while no window has the keyboard. Tested.
 - `features/NAME.rs` (none yet): code that talks to an OS feature, such as NetworkManager for `network` (M5.9); its widget's line says `needs: Some("NAME")`.
 
 ## Running it
