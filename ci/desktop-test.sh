@@ -517,7 +517,9 @@ case_animations() {
 	# weston-presentation-shm times the frames as at the start: first with
 	# motion off, what opening ten programs costs without any animation,
 	# then with the animations of the tier llvmpipe picks, Lite. M5.11's
-	# done-when asks for the frame budget there; the Full tier, which no
+	# done-when asks for the frame budget there: what the animations add
+	# to the frames at p99 over the same ten windows without them, as the
+	# runner's own speed moves both by up to 2 ms; the Full tier, which no
 	# machine without a GPU starts in, drops on its own when its frames
 	# miss (11a's cargo tests). The case says which tier each run ended at.
 	off_runs=$(count 'DESKTOP-TEST: open_ten_tier ')
@@ -543,11 +545,12 @@ case_animations() {
 	p99=$(value open_ten_p99_ms)
 	frames=$(value open_ten_frames)
 	tier=$(value open_ten_tier)
-	limit=$(budget frame_p99_ms)
-	echo "ten windows: frames p99 ${p99_off:-?} ms with motion off (tier $tier_off), ${p99:-?} ms with it full (tier $tier), budget $limit ms"
+	limit=$(budget animation_p99_ms)
+	added=$(awk -v m="$p99" -v o="$p99_off" 'BEGIN { if (m != "" && o != "") printf "%.1f", m - o }')
+	echo "ten windows: frames p99 ${p99_off:-?} ms with motion off (tier $tier_off), ${p99:-?} ms with it full (tier $tier), ${added:-?} ms added, budget $limit ms"
 	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
-	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "with ten windows opening and closing at tier $tier, frames took ${p99:-?} ms at p99, over the budget of $limit ms (${p99_off:-?} ms with motion off)"
+	awk -v a="$added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' ||
+		fail "with ten windows opening and closing at tier $tier, the animations added ${added:-?} ms to the frames at p99 (${p99_off:-?} ms with motion off, ${p99:-?} ms with it full), over the budget of $limit ms"
 	i=0
 	while [ "$(value windows)" != "$windows" ]; do
 		i=$((i + 1))
@@ -555,9 +558,9 @@ case_animations() {
 		sleep 0.2
 	done
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Ten windows opening and closing with animations (M5.11b): frames p99 $p99 ms (budget $limit ms; $p99_off ms with motion off), $frames frames, tier $tier." >>"$GITHUB_STEP_SUMMARY"
+		echo "Ten windows opening and closing with animations (M5.11b): frames p99 $p99 ms, $p99_off ms with motion off, $added ms added (budget $limit ms), $frames frames, tier $tier." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the tier's own back; ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, within $limit ms"
+	echo "PASS: appearance.motion = reduced left fades only ($reduced) and its removal brought the tier's own back; ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, $added ms more than without animations ($p99_off ms), within $limit ms"
 }
 
 case_shortcuts() {
