@@ -775,6 +775,34 @@ case_presets() {
 	echo "PASS: edel system set shell.preset=tiling restarted shell-ui with Tiling's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
 }
 
+case_buttons() {
+	# Window buttons on either side (M5.4b): with shell.window_buttons =
+	# "left", close is the bar's leftmost 28 px square, then minimize and
+	# maximize, and a click there closes the window; unset, they go back
+	# to the preset's right. Kept as buttons-left.png.
+	focused=$(token title_bar_focused)
+	guest 'buttons left'
+	wait_for 'edel-compositor: window buttons on the left' ||
+		fail "the compositor did not follow shell.window_buttons = \"left\""
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window keys at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	read -r x y <<-EOF
+		$place
+	EOF
+	shot buttons-left $((x + 5)) $((y - 24)) "$focused" >/dev/null ||
+		fail "keys at $x,$y has no focused title bar at $((x + 5)),$((y - 24))"
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py click $((x + 13)) $((y - 14))
+	wait_more 'edel-compositor: unmapped window keys' "$closed" ||
+		fail "a click on the bar's leftmost square at $((x + 13)),$((y - 14)) did not close keys"
+	guest 'buttons default'
+	wait_for 'edel-compositor: window buttons on the right' ||
+		fail "unsetting shell.window_buttons did not bring the buttons back to the right"
+	echo "PASS: shell.window_buttons = \"left\" put close at the bar's left end, a click there closed keys at $x,$y, and unsetting it brought the buttons back to the right"
+}
+
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
 # give its window list a width W for which [ W TEST ] holds, and prints
 # the list's x and W.

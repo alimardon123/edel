@@ -8,6 +8,7 @@ format = 1
 
 [windows]
 policy = "tiling"
+buttons = "right"
 
 [workspaces]
 count = 4

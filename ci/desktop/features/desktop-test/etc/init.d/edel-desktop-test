@@ -125,6 +125,9 @@ commands() {
 		# Tiling's policy, so it goes first.
 		'preset tiling') edel system unset shell.tiling && edel system set shell.preset=tiling ;;
 		'preset default') edel system unset shell.preset ;;
+		# Window buttons on either side (M5.4b).
+		'buttons left') edel system set shell.window_buttons=left ;;
+		'buttons default') edel system unset shell.window_buttons ;;
 		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
 		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the

@@ -438,7 +438,8 @@ impl Edel {
                 let outer = insets.frame(place);
                 let resizable = !self.is_maximized(window);
                 let at = point - outer.loc.to_f64();
-                if let Some(hit) = frame::hit(outer.size, insets, at, resizable) {
+                let side = self.settings.button_side();
+                if let Some(hit) = frame::hit(outer.size, insets, at, resizable, side) {
                     return Under::Frame(window.clone(), hit);
                 }
             }

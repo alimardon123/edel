@@ -183,6 +183,7 @@ pub const KEYS: &[Key] = &[
     later("updates.window", Kind::Text),
     later("apps.flatpak", Kind::Texts),
     later("addons.add", Kind::Texts),
+    now("shell.window_buttons", Kind::OneOf(&["left", "right"])),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -302,6 +303,9 @@ pub struct Shell {
     pub title_bars: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub form_factor: Option<String>,
+    /// The title bar buttons' side (M5.4b); absent is the preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_buttons: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
