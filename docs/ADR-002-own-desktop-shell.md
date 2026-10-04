@@ -55,7 +55,7 @@ A layout preset is one small, readable config file that describes:
 - workspace model and hot corners,
 - default window policy (floating or tiling) and tiling style (M5.16).
 
-Built-in presets: **Classic** (Cinnamon-like, the default), **Mac-like**, **Windows-like**, **Tiling**, **Tablet**, **Phone**. The one-button switch just loads a different file. The settings app edits the same file, so there is one source of truth and nothing to get out of sync. Users share a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets themselves ship in the slot (ADR-008).
+Built-in presets: **Classic** (Cinnamon-like, the default), **Mac-like**, **Windows-like**, **Tiling**, **Tablet**, **Phone**. The one-button switch just loads a different file. The settings app edits the same file, so there is one source of truth and nothing to get out of sync. Users share a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets themselves ship in the slot (ADR-008). A person saves their own layouts the same way, those three tables under a name in `~/.config/edel/layouts/`, and picks one again next to the presets, which writes its tables into their system file (M5.17).
 
 ### 2. Floating and tiling are two implementations of one interface
 
