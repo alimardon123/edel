@@ -20,6 +20,8 @@ default = ["cli"]
 # What only the command needs: arguments, hashing, signing and downloads.
 # The compositor, shell-ui and Settings link the library without them.
 cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "dep:ureq"]
+# The shell's own icons (M5.5d), drawn for the compositor and shell-ui.
+icons = ["dep:resvg"]
 
 [dependencies]
 anyhow = "1.0.104"
@@ -28,6 +30,7 @@ ed25519-dalek = { version = "3", optional = true }
 flate2 = { version = "1", optional = true }
 # O_NOFOLLOW and O_NONBLOCK, to read files in a user's home safely as root.
 libc = { version = "0.2", optional = true }
+resvg = { version = "0.48.1", default-features = false, optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_ignored = "0.1"
 sha2 = { version = "0.11", optional = true }

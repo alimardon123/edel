@@ -8,7 +8,8 @@
 use anyhow::{Context, Result, bail};
 use toml::{Table, Value};
 
-/// Where images keep the tokens (M4.2b).
+/// Where a machine may keep tokens of its own, which take the built-in
+/// ones' place; no image ships one yet, so the parts draw with these.
 pub const PATH: &str = "/usr/share/edel/design/tokens.toml";
 
 /// The repository's tokens, the release's defaults.
@@ -65,6 +66,45 @@ impl Colour {
     }
 }
 
+/// Light or dark (M5.5c): which colours the tokens give. `[colour]` holds
+/// the dark ones, the release's default, and `[colour.light]` the light
+/// ones; sizes and fonts are the same in both.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scheme {
+    #[default]
+    Dark,
+    Light,
+}
+
+impl Scheme {
+    /// `appearance.color_scheme`'s value: `light`, `dark`, or `auto`,
+    /// which is the release's choice, dark in this one; none for anything
+    /// else.
+    pub fn parse(value: &str) -> Option<Scheme> {
+        match value {
+            "light" => Some(Scheme::Light),
+            "dark" | "auto" => Some(Scheme::Dark),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Scheme::Dark => "dark",
+            Scheme::Light => "light",
+        }
+    }
+}
+
+/// The image's tokens in `scheme` if it has a file, else the built-in
+/// ones; what was skipped comes back as notes, never fatal (ADR-008).
+pub fn load(scheme: Scheme) -> (Tokens, Vec<String>) {
+    match std::fs::read_to_string(PATH) {
+        Ok(text) => Tokens::read_scheme(&text, scheme),
+        Err(_) => (Tokens::built_in_scheme(scheme), Vec::new()),
+    }
+}
+
 /// Where images keep GTK's colours from the tokens (M5.5b), which each
 /// person's `~/.config/gtk-4.0/gtk.css` imports.
 pub const GTK_CSS: &str = "/usr/share/edel/gtk.css";
@@ -108,13 +148,33 @@ pub struct Tokens {
 
 impl Tokens {
     /// GTK's named colours from the tokens (M5.5b), as `@define-color`
-    /// lines GTK4 and libadwaita apps read from `gtk.css`: the windows'
-    /// background and text, the header bars as our title bars, sidebars
-    /// and lists as the panel, popovers and dialogs as the title bars, and
-    /// the accent.
-    pub fn gtk_css(&self) -> String {
+    /// lines GTK4 and libadwaita apps read from `gtk.css`: `dark`'s, then
+    /// `light`'s inside `@media (prefers-color-scheme: light)` (M5.5c),
+    /// which GTK matches when the settings portal says light.
+    pub fn gtk_css(dark: &Tokens, light: &Tokens) -> String {
+        let mut css = String::from(
+            "/* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),\n   \
+             written by edel::tokens::Tokens::gtk_css; a cargo test keeps\n   \
+             this file equal to it. GTK picks the light ones when the\n   \
+             settings portal says light (M5.5c). */\n",
+        );
+        for (name, value) in dark.gtk_colours() {
+            css.push_str(&format!("@define-color {name} {value};\n"));
+        }
+        css.push_str("\n@media (prefers-color-scheme: light) {\n");
+        for (name, value) in light.gtk_colours() {
+            css.push_str(&format!("  @define-color {name} {value};\n"));
+        }
+        css.push_str("}\n");
+        css
+    }
+
+    /// GTK's named colours from these tokens: the windows' background and
+    /// text, the header bars as our title bars, sidebars and lists as the
+    /// panel, popovers and dialogs as the title bars, and the accent.
+    fn gtk_colours(&self) -> [(&'static str, String); 16] {
         let text = self.title_text.hex();
-        let colours = [
+        [
             ("accent_color", self.accent.hex()),
             ("accent_bg_color", self.accent.hex()),
             ("accent_fg_color", "#ffffff".to_string()),
@@ -131,21 +191,51 @@ impl Tokens {
             ("popover_fg_color", text.clone()),
             ("dialog_bg_color", self.title_bar.hex()),
             ("dialog_fg_color", text),
-        ];
-        let mut css = String::from(
-            "/* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),\n   \
-             written by edel::tokens::Tokens::gtk_css; a cargo test keeps\n   \
-             this file equal to it. */\n",
-        );
-        for (name, value) in colours {
-            css.push_str(&format!("@define-color {name} {value};\n"));
-        }
-        css
+        ]
     }
 
     /// The release's tokens, from [`BUILT_IN`].
     pub fn built_in() -> Tokens {
         check(BUILT_IN).expect("design/tokens.toml is checked by the tests")
+    }
+
+    /// The release's tokens in `scheme`.
+    pub fn built_in_scheme(scheme: Scheme) -> Tokens {
+        let mut tokens = Tokens::built_in();
+        if scheme == Scheme::Light {
+            let table: Table = BUILT_IN.parse().expect("checked by the tests");
+            tokens.apply_light(&table, &mut Vec::new());
+        }
+        tokens
+    }
+
+    /// [`Tokens::read`], then, for the light scheme, `[colour.light]` over
+    /// the colours.
+    pub fn read_scheme(text: &str, scheme: Scheme) -> (Tokens, Vec<String>) {
+        let mut tokens = Tokens::built_in_scheme(scheme);
+        let mut notes = Vec::new();
+        match text.parse::<Table>() {
+            Ok(table) => {
+                tokens.apply(&table, &mut notes);
+                if scheme == Scheme::Light {
+                    tokens.apply_light(&table, &mut notes);
+                }
+            }
+            Err(e) => notes.push(format!("not TOML, so the built-in tokens are used: {e}")),
+        }
+        (tokens, notes)
+    }
+
+    /// `[colour.light]`'s colours over these.
+    fn apply_light(&mut self, table: &Table, notes: &mut Vec<String>) {
+        let light = table
+            .get("colour")
+            .and_then(Value::as_table)
+            .and_then(|colours| colours.get("light"))
+            .and_then(Value::as_table);
+        if let Some(light) = light {
+            self.apply_colours(light, notes);
+        }
     }
 
     /// The built-in tokens with every value `text` sets that parses; the
@@ -178,6 +268,8 @@ impl Tokens {
     fn apply_colours(&mut self, colours: &Table, notes: &mut Vec<String>) {
         for (key, value) in colours {
             let slot = match key.as_str() {
+                // The light scheme's colours, read by `apply_light`.
+                "light" if value.is_table() => continue,
                 "background" => &mut self.background,
                 "title_bar" => &mut self.title_bar,
                 "title_bar_focused" => &mut self.title_bar_focused,
@@ -292,6 +384,18 @@ pub fn check(text: &str) -> Result<Tokens> {
     if table.get("format").and_then(Value::as_integer) != Some(FORMAT) {
         bail!("format must be {FORMAT}");
     }
+    // The light scheme names every colour too (M5.5c).
+    let colours = table.get("colour").and_then(Value::as_table);
+    let light = colours
+        .and_then(|c| c.get("light"))
+        .and_then(Value::as_table);
+    if let Some(colours) = colours {
+        for key in colours.keys().filter(|k| *k != "light") {
+            if light.is_none_or(|l| !l.contains_key(key)) {
+                bail!("colour.light.{key} is missing");
+            }
+        }
+    }
     let mut notes = Vec::new();
     let mut tokens = Tokens {
         background: BLACK,
@@ -316,6 +420,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         font: String::new(),
     };
     tokens.apply(&table, &mut notes);
+    let mut light = tokens.clone();
+    light.apply_light(&table, &mut notes);
     if !notes.is_empty() {
         bail!("{}", notes.join("; "));
     }
@@ -343,7 +449,8 @@ mod tests {
     fn the_shipped_gtk_css_is_the_tokens() {
         // With EDEL_WRITE_GTK_CSS set, the test writes the file instead,
         // after a token changed.
-        let css = Tokens::built_in().gtk_css();
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        let css = Tokens::gtk_css(&Tokens::built_in(), &light);
         if std::env::var_os("EDEL_WRITE_GTK_CSS").is_some() {
             std::fs::write(GTK_CSS_FILE, &css).unwrap();
         }
@@ -354,14 +461,44 @@ mod tests {
         );
         assert!(css.contains("@define-color accent_bg_color #5b8ef5;"));
         assert!(css.contains("@define-color window_bg_color #24272e;"));
+        assert!(css.contains("  @define-color window_bg_color #dfe3ea;"));
         // A changed token changes the file.
         let mut tokens = Tokens::built_in();
         tokens.accent = Colour::parse("#e5484d").unwrap();
         assert!(
-            tokens
-                .gtk_css()
-                .contains("@define-color accent_bg_color #e5484d;")
+            Tokens::gtk_css(&tokens, &light).contains("@define-color accent_bg_color #e5484d;")
         );
+    }
+
+    #[test]
+    fn the_light_scheme_changes_the_colours_and_nothing_else() {
+        let dark = Tokens::built_in_scheme(Scheme::Dark);
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        assert_eq!(dark, Tokens::built_in());
+        assert_eq!(light.background.hex(), "#dfe3ea");
+        assert_eq!(light.panel.hex(), "#f2f3f5");
+        assert_eq!(light.accent.hex(), "#3a73e8");
+        assert_eq!(light.panel_height, dark.panel_height);
+        assert_eq!(light.font, dark.font);
+        // A machine's file changes either scheme, and a light colour it
+        // gives wins over its dark one there.
+        let file =
+            "format = 1\n[colour]\npanel = \"#000000\"\n[colour.light]\npanel = \"#ffffff\"\n";
+        let (light, notes) = Tokens::read_scheme(file, Scheme::Light);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(light.panel.hex(), "#ffffff");
+        assert_eq!(light.background.hex(), "#dfe3ea");
+        let (dark, _) = Tokens::read_scheme(file, Scheme::Dark);
+        assert_eq!(dark.panel.hex(), "#000000");
+        assert_eq!(Scheme::parse("auto"), Some(Scheme::Dark));
+        assert_eq!(Scheme::parse("sepia"), None);
+    }
+
+    #[test]
+    fn check_wants_every_colour_in_the_light_scheme() {
+        let missing = BUILT_IN.replace("panel = \"#f2f3f5\"\n", "");
+        let e = format!("{:#}", check(&missing).unwrap_err());
+        assert!(e.contains("colour.light.panel is missing"), "{e}");
     }
 
     #[test]

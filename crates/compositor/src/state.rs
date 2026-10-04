@@ -76,6 +76,9 @@ pub struct Edel {
     pub seat: Seat<Edel>,
     /// Something on screen changed since the last frame was drawn.
     pub dirty: bool,
+    /// The background's colour changed (M5.5c), so every screen's next
+    /// frame is drawn whole, not only where something moved.
+    pub repaint: bool,
     pub telemetry: Telemetry,
     /// A timer will log the telemetry once the screen is still (`drm.rs`).
     pub report_armed: bool,
@@ -197,6 +200,7 @@ impl Edel {
             space: Space::default(),
             popups: PopupManager::default(),
             dirty: true,
+            repaint: false,
             telemetry: Telemetry::default(),
             report_armed: false,
             animation_armed: false,
@@ -382,6 +386,18 @@ impl Edel {
         if self.desks.count() != new.workspaces() {
             self.set_workspace_count(new.workspaces());
         }
+        if old.color_scheme != new.color_scheme {
+            // Light or dark (M5.5c): the tokens' other colours, the title
+            // bars drawn again with them, and shell-ui started again.
+            let (tokens, notes) = edel::tokens::load(new.color_scheme);
+            for note in notes {
+                eprintln!("edel-compositor: {}: {note}", edel::tokens::PATH);
+            }
+            self.tokens = tokens;
+            self.repaint = true;
+            self.dirty = true;
+            eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
+        }
         if old.button_side() != new.button_side() {
             eprintln!(
                 "edel-compositor: window buttons on the {}",
@@ -394,6 +410,9 @@ impl Edel {
             crate::shellui::restart(self, &format!("the preset is now {name}"));
         } else if old.panels_differ(&new) {
             crate::shellui::restart(self, "the panels changed");
+        } else if old.color_scheme != new.color_scheme {
+            let name = new.color_scheme.name();
+            crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
         }
         if old.policy() != new.policy() {
             self.switch_policy(new.policy());

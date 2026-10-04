@@ -1,9 +1,10 @@
 # Edel OS design tokens (DESIGN-PRINCIPLES, ADR-004): the one set of
 # colours and sizes the compositor, shell-ui and the GTK theme are drawn
-# with. Images carry it as /usr/share/edel/design/tokens.toml (M4.2b); the
-# compositor has this file built in for when that one is missing or
-# unreadable. M5.5 adds light and dark, spacing, type and
-# motion; M5.12 lets people override them in system.toml.
+# with. The parts have this file built in; a file at
+# /usr/share/edel/design/tokens.toml, which no image ships yet, would
+# take its place. [colour] is the dark scheme, the default, and
+# [colour.light] the light one (M5.5c, appearance.color_scheme); M5.12
+# lets people override them in system.toml.
 format = 1
 
 [colour]
@@ -22,9 +23,23 @@ title_close_hover = "#c4473f"
 # text and icons.
 panel = "#1b1d22"
 panel_text = "#e8e8ea"
-# The one accent: the shown workspace's button in the panel (M5.2c); M5.5
-# gives it a light and a dark value and M5.12 lets people choose it.
+# The one accent: the shown workspace's button in the panel (M5.2c), a
+# little deeper in the light scheme; M5.12 lets people choose it.
 accent = "#5b8ef5"
+
+# The light scheme (M5.5c, appearance.color_scheme = "light"): the same
+# keys, each one given, over the dark values above.
+[colour.light]
+background = "#dfe3ea"
+title_bar = "#e9ecf0"
+title_bar_focused = "#f7f8fa"
+title_text = "#1f2329"
+title_text_unfocused = "#7a808a"
+title_button_hover = "#d5d9df"
+title_close_hover = "#d9473f"
+panel = "#f2f3f5"
+panel_text = "#1f2329"
+accent = "#3a73e8"
 
 [size]
 # In logical pixels.

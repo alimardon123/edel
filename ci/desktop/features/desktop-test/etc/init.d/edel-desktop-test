@@ -23,6 +23,11 @@ say() {
 	echo "DESKTOP-TEST: $*" >/dev/console
 }
 
+# The session's D-Bus address, from shell-ui's environment.
+session_bus() {
+	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
+}
+
 # What process $1 holds of its own, in MiB: its private memory and the
 # buffers it shares with the compositor (RssAnon plus RssShmem), without
 # the pages it maps from files.
@@ -180,12 +185,22 @@ commands() {
 		# xdg-desktop-portal, which D-Bus starts on this first call, for the
 		# colour scheme and the accent.
 		'portal read')
-			bus=$(tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p')
+			bus=$(session_bus)
 			for key in color-scheme accent-color; do
 				out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne org.freedesktop.appearance $key" </dev/null 2>&1 | tr '\n' ' ')
 				say "portal $key $out"
 			done
 			;;
+		# What the portal tells apps when a setting changes (M5.5c), kept
+		# in a file, as dbus-monitor writes each signal as it comes.
+		'portal watch')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' dbus-monitor --session \"type='signal',interface='org.freedesktop.portal.Settings',member='SettingChanged'\"" </dev/null >/tmp/portal-signals.txt 2>&1 &
+			;;
+		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
+		# appearance.color_scheme (M5.5c), light and back to the default.
+		'scheme light') edel system set appearance.color_scheme=light ;;
+		'scheme default') edel system unset appearance.color_scheme ;;
 		# appearance.motion (M5.11b), reduced and back to the default.
 		'motion reduced') edel system set appearance.motion=reduced ;;
 		'motion off') edel system set appearance.motion=off ;;

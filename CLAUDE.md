@@ -90,7 +90,7 @@ When docs disagree, the newer ADR wins.
 | `crates/shell-ui/` | `edel-shell-ui` (M5.1b): the panel, the launcher (M5.3b) and the window switcher's list (M5.3c), and later quick settings, drawn by itself with smithay-client-toolkit, tiny-skia and cosmic-text from the design tokens ([its CLAUDE.md](crates/shell-ui/CLAUDE.md)) |
 | `crates/testclient/` | `edel-testclient` (M4.3): a window of a given size, colour and title for CI's pixel checks; only CI's images ship it |
 | `presets/` | The layout presets, one file each, built into `edel::presets` (M5.1c); Classic is the only one until M5.4 |
-| `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it) |
+| `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it), and `icons/`, the shell's own icons as SVG files (M5.5d) |
 | `images/` | Image definitions (`container.toml`, `vm.toml`, `laptop.toml`, `desktop.toml`), format 2: each lists its features and holds image facts |
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |

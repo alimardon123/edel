@@ -12,6 +12,7 @@ use std::path::Path;
 
 use edel::presets::{self, Side};
 use edel::system::{self, SystemFile};
+pub use edel::tokens::Scheme;
 
 use crate::animation::Motion;
 
@@ -41,6 +42,8 @@ pub struct Settings {
     pub outputs: BTreeMap<String, OutputSettings>,
     /// `appearance.motion` (M5.11b): absent means full.
     pub motion: Motion,
+    /// `appearance.color_scheme` (M5.5c): absent, or `auto`, means dark.
+    pub color_scheme: Scheme,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
     /// (M5.13a).
@@ -85,6 +88,14 @@ impl Settings {
             }
             if let Some(motion) = file.appearance.motion.as_deref().and_then(Motion::parse) {
                 settings.motion = motion;
+            }
+            if let Some(scheme) = file
+                .appearance
+                .color_scheme
+                .as_deref()
+                .and_then(Scheme::parse)
+            {
+                settings.color_scheme = scheme;
             }
             settings.shortcuts.extend(file.shortcuts.clone());
             for (name, output) in &file.outputs {
@@ -311,6 +322,22 @@ mod tests {
             Settings::from_files(Some(&machine), Some(&person)).motion,
             Motion::Reduced,
             "the person's wins"
+        );
+    }
+
+    #[test]
+    fn the_colour_scheme_is_dark_unless_a_file_says_light() {
+        assert_eq!(Settings::from_files(None, None).color_scheme, Scheme::Dark);
+        let machine = file("format = 1\n[appearance]\ncolor_scheme = \"light\"\n");
+        let person = file("format = 1\n[appearance]\ncolor_scheme = \"auto\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&machine), None).color_scheme,
+            Scheme::Light
+        );
+        assert_eq!(
+            Settings::from_files(Some(&machine), Some(&person)).color_scheme,
+            Scheme::Dark,
+            "the person's wins, and auto is dark in this release"
         );
     }
 

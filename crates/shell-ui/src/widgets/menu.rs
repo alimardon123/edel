@@ -1,12 +1,11 @@
-//! The menu button (M5.1b): four rounded squares in the panel text's
-//! colour, centred in a square as tall as the panel. A click opens the
-//! launcher, or closes it (M5.3b).
+//! The menu button (M5.1b): `design/icons/menu.svg`, four rounded
+//! squares, in the panel text's colour, centred in a square as tall as the
+//! panel (M5.5d). A click opens the launcher, or closes it (M5.3b).
 
 use accesskit::Role;
-use tiny_skia::{FillRule, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{paint_of, rounded};
+use crate::paint;
 
 pub const WIDGET: Widget = Widget {
     name: "menu",
@@ -48,18 +47,7 @@ pub fn icon(height: f32) -> (f32, f32, f32) {
 
 fn draw(canvas: &mut Canvas, _: &str, x: f32) {
     let (cell, gap, inset) = icon(canvas.height);
-    let paint = paint_of(canvas.tokens.panel_text);
-    for (i, j) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
-        let left = x + inset + i * (cell + gap);
-        let top = canvas.top + inset + j * (cell + gap);
-        if let Some(square) = rounded(left, top, cell, cell, cell * 0.3) {
-            canvas.pixmap.fill_path(
-                &square,
-                &paint,
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-    }
+    let (px, top) = (2.0 * cell + gap, canvas.top + inset);
+    let ink = canvas.tokens.panel_text;
+    paint::icon(canvas.pixmap, "menu", px, x + inset, top, ink);
 }

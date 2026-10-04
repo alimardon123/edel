@@ -186,6 +186,8 @@ pub struct Look {
     pub text: bool,
     /// The side the buttons sit on (M5.4b).
     pub side: Side,
+    /// Light or dark (M5.5c): a new scheme draws the bar again.
+    pub scheme: crate::tokens::Scheme,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
@@ -196,11 +198,7 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         return;
     }
     let scale = look.scale_120.max(120) as f32 / 120.0;
-    let mut canvas = Canvas {
-        pixels,
-        width: w,
-        stroke: scale,
-    };
+    let mut canvas = Canvas { pixels, width: w };
     let bar = if look.focused {
         tokens.title_bar_focused
     } else {
@@ -259,8 +257,6 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
 struct Canvas<'a> {
     pixels: &'a mut [u8],
     width: usize,
-    /// How thick lines are, in pixels: the scale, so icons keep their weight.
-    stroke: f32,
 }
 
 impl Canvas<'_> {
@@ -290,86 +286,24 @@ impl Canvas<'_> {
         }
     }
 
-    /// A button's icon, drawn in the middle of the square at `x`: a cross
-    /// for close, a square for maximize, two for restore, a dash across
-    /// the middle for minimize.
+    /// A button's icon from `design/icons/` (M5.5d), half the square at
+    /// `x` wide and in its middle: close, maximize, restore for a
+    /// maximized window, minimize.
     fn icon(&mut self, button: Button, maximized: bool, x: usize, size: usize, colour: Colour) {
-        let half = (size as f32 * 0.17).round().max(3.0);
-        let centre = (x as f32 + size as f32 / 2.0, size as f32 / 2.0);
-        match button {
-            Button::Close => {
-                let (cx, cy) = centre;
-                let a = half - 0.5;
-                self.line((cx - a, cy - a), (cx + a, cy + a), colour);
-                self.line((cx - a, cy + a), (cx + a, cy - a), colour);
-            }
-            Button::Maximize if maximized => {
-                let step = self.stroke.round().max(1.0) as i64 * 2;
-                let s = half as i64 * 2 - step;
-                let x0 = (centre.0 - half) as i64;
-                let y0 = (centre.1 - half) as i64 + step;
-                // The window behind, then the one in front over it.
-                self.outline(x0 + step, y0 - step, s, colour, Some((x0, y0, s)));
-                self.outline(x0, y0, s, colour, None);
-            }
-            Button::Maximize => {
-                let s = half as i64 * 2;
-                let x0 = (centre.0 - half) as i64;
-                let y0 = (centre.1 - half) as i64;
-                self.outline(x0, y0, s, colour, None);
-            }
-            Button::Minimize => {
-                let (cx, cy) = centre;
-                let a = half - 0.5;
-                self.line((cx - a, cy), (cx + a, cy), colour);
-            }
-        }
-    }
-
-    /// A square's outline, `s` wide and one stroke thick, leaving out
-    /// what falls inside the square `hidden` (x, y, side).
-    fn outline(
-        &mut self,
-        x0: i64,
-        y0: i64,
-        s: i64,
-        colour: Colour,
-        hidden: Option<(i64, i64, i64)>,
-    ) {
-        let t = self.stroke.round().max(1.0) as i64;
-        for y in y0..y0 + s {
-            for x in x0..x0 + s {
-                let edge = x < x0 + t || y < y0 + t || x >= x0 + s - t || y >= y0 + s - t;
-                let behind = hidden
-                    .is_some_and(|(hx, hy, hs)| x >= hx && x < hx + hs && y >= hy && y < hy + hs);
-                if edge && !behind {
-                    self.blend(x, y, colour, 1.0);
-                }
-            }
-        }
-    }
-
-    /// A smooth line 1.5 strokes wide from `a` to `b`.
-    fn line(&mut self, a: (f32, f32), b: (f32, f32), colour: Colour) {
-        let width = 1.5 * self.stroke;
-        let (x0, x1) = (
-            a.0.min(b.0).floor() as i64 - 1,
-            a.0.max(b.0).ceil() as i64 + 1,
-        );
-        let (y0, y1) = (
-            a.1.min(b.1).floor() as i64 - 1,
-            a.1.max(b.1).ceil() as i64 + 1,
-        );
-        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-        let length = (dx * dx + dy * dy).sqrt().max(f32::EPSILON);
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
-                let t = (((px - a.0) * dx + (py - a.1) * dy) / (length * length)).clamp(0.0, 1.0);
-                let (nx, ny) = (a.0 + t * dx - px, a.1 + t * dy - py);
-                let distance = (nx * nx + ny * ny).sqrt();
-                self.blend(x, y, colour, width / 2.0 + 0.5 - distance);
-            }
+        let name = match button {
+            Button::Close => "close",
+            Button::Maximize if maximized => "restore",
+            Button::Maximize => "maximize",
+            Button::Minimize => "minimize",
+        };
+        let px = (size / 2).max(1);
+        let Some(mask) = edel::icons::mask(name, px as u32) else {
+            return;
+        };
+        let (x0, y0) = ((x + (size - px) / 2) as i64, ((size - px) / 2) as i64);
+        for (i, pixel) in mask.data().chunks_exact(4).enumerate() {
+            let (dx, dy) = ((i % px) as i64, (i / px) as i64);
+            self.blend(x0 + dx, y0 + dy, colour, f32::from(pixel[3]) / 255.0);
         }
     }
 }
@@ -698,6 +632,7 @@ mod tests {
             hovered: None,
             text: false,
             side: Side::Right,
+            scheme: crate::tokens::Scheme::Dark,
         }
     }
 

@@ -74,7 +74,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 | Key | Value | From |
 |---|---|---|
 | `appearance.wallpaper` | text, a file path | M5.12 |
-| `appearance.color_scheme` | `light`, `dark` or `auto` | M5.12 |
+| `appearance.color_scheme` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, dark in this one, and absent is `auto`. A change takes effect at once: the title bars redraw and the panels start again | M5.5c |
 | `appearance.accent` | text, a token accent name or a hex colour | M5.12 |
 | `appearance.font` | text, a font family | M5.12 |
 | `appearance.font_size` | a number, in points | M5.12 |

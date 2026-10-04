@@ -320,6 +320,7 @@ impl Edel {
                 .map(|(_, b)| *b),
             text: self.text.is_some(),
             side: self.settings.button_side(),
+            scheme: self.settings.color_scheme,
         };
         let mut frame = data(window).borrow_mut();
         let bar = frame.bar(look, &self.tokens, self.text.as_mut());

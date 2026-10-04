@@ -153,7 +153,12 @@ fn on_event(window: &mut Window, state: &mut Edel, event: WinitEvent) {
 
 fn draw(window: &mut Window, state: &mut Edel) {
     let started = Instant::now();
-    let age = window.backend.buffer_age().unwrap_or(0);
+    // Age 0 draws the whole window, for a new background (M5.5c).
+    let age = if std::mem::take(&mut state.repaint) {
+        0
+    } else {
+        window.backend.buffer_age().unwrap_or(0)
+    };
     let background = state.tokens.background.rgba();
     let damage = match window.backend.bind() {
         Ok((renderer, mut framebuffer)) => {

@@ -9,7 +9,7 @@
 //! colours come from the design tokens.
 
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
-use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Transform};
+use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Rect, Transform};
 
 use edel::presets::{Edge, Style};
 use edel::tokens::{Colour, Tokens};
@@ -228,6 +228,16 @@ pub fn paint_of(c: Colour) -> Paint<'static> {
     paint.set_color(colour(c));
     paint.anti_alias = true;
     paint
+}
+
+/// The shell's icon `name` from `design/icons/` (M5.5d), `px` pixels
+/// square in `colour`, its top left corner at `x`, `y`.
+pub fn icon(pixmap: &mut Pixmap, name: &str, px: f32, x: f32, y: f32, colour: Colour) {
+    if let Some(icon) = edel::icons::draw(name, px.round() as u32, colour) {
+        let (x, y) = (x.round() as i32, y.round() as i32);
+        let paint = PixmapPaint::default();
+        pixmap.draw_pixmap(x, y, icon.as_ref(), &paint, Transform::identity(), None);
+    }
 }
 
 /// The accent, faint: under a chosen row or a switched-on button.

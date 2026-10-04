@@ -3,13 +3,15 @@
 //! `org.freedesktop.impl.portal.desktop.edel`, and xdg-desktop-portal,
 //! which D-Bus starts when an app first asks, passes on what it says: the
 //! colour scheme and the accent, from the design tokens, so GTK,
-//! libadwaita and Flatpak apps follow the desktop's look. It is no process
+//! libadwaita and Flatpak apps follow the desktop's look, and says them
+//! again whenever shell-ui starts (M5.5c). It is no process
 //! of its own: zbus answers on a thread of its own, and nothing runs
 //! while no app asks.
 
 use std::collections::HashMap;
 
 use edel::tokens::{Colour, Tokens};
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
 
 /// The name xdg-desktop-portal finds the backend by, from
@@ -108,10 +110,22 @@ impl Backend {
     fn version(&self) -> u32 {
         2
     }
+
+    /// A setting changed (M5.5c); xdg-desktop-portal passes it on to apps.
+    #[zbus(signal)]
+    async fn setting_changed(
+        emitter: &SignalEmitter<'_>,
+        namespace: &str,
+        key: &str,
+        value: Value<'_>,
+    ) -> zbus::Result<()>;
 }
 
 /// Serves the portal on the session's bus for as long as the connection
 /// it returns lives; none, with a line saying why, without a session bus.
+/// It then says each setting changed, as shell-ui starts again when the
+/// colour scheme does (M5.5c), so apps already open follow at once; an app
+/// told a value it has does nothing.
 pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
         settings: settings(tokens),
@@ -120,16 +134,32 @@ pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
         .and_then(|b| b.build());
-    match built {
-        Ok(connection) => {
-            eprintln!("edel-shell-ui: serving the settings portal as {NAME}");
-            Some(connection)
-        }
+    let connection = match built {
+        Ok(connection) => connection,
         Err(e) => {
             eprintln!("edel-shell-ui: no settings portal: {e}");
-            None
+            return None;
         }
+    };
+    eprintln!("edel-shell-ui: serving the settings portal as {NAME}");
+    let said = connection
+        .object_server()
+        .interface::<_, Backend>(PATH)
+        .and_then(|backend| {
+            let emitter = backend.signal_emitter();
+            zbus::block_on(async {
+                for (namespace, keys) in settings(tokens) {
+                    for (key, value) in keys {
+                        Backend::setting_changed(emitter, &namespace, &key, value.into()).await?;
+                    }
+                }
+                Ok(())
+            })
+        });
+    if let Err(e) = said {
+        eprintln!("edel-shell-ui: the settings portal could not say its settings: {e}");
     }
+    Some(connection)
 }
 
 #[cfg(test)]
@@ -148,16 +178,8 @@ mod tests {
         assert!((r - f64::from(accent.r)).abs() < 1e-6);
         assert!((g - f64::from(accent.g)).abs() < 1e-6);
         assert!((b - f64::from(accent.b)).abs() < 1e-6);
-        // A light background says light.
-        let light = Tokens {
-            background: Colour {
-                r: 0.95,
-                g: 0.95,
-                b: 0.96,
-                a: 1.0,
-            },
-            ..Tokens::built_in()
-        };
+        // The light scheme's tokens say light (M5.5c).
+        let light = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
         let all = settings(&light);
         assert_eq!(u32::try_from(&all[APPEARANCE]["color-scheme"]).unwrap(), 2);
     }

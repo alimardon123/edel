@@ -145,7 +145,7 @@ pub const KEYS: &[Key] = &[
     now("outputs.*.enabled", Kind::Flag),
     later("outputs.*.transform", Kind::WholeOf(&[0, 90, 180, 270])),
     later("appearance.wallpaper", Kind::Text),
-    later(
+    now(
         "appearance.color_scheme",
         Kind::OneOf(&["light", "dark", "auto"]),
     ),
@@ -1076,8 +1076,8 @@ font_size = 11
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
-            error("appearance.color_scheme", "dark"),
-            "appearance.color_scheme: not supported yet"
+            error("appearance.font_size", "11"),
+            "appearance.font_size: not supported yet"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }

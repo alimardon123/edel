@@ -477,6 +477,11 @@ impl Gpu {
                 screen.dirty = true;
             }
         }
+        if std::mem::take(&mut state.repaint) {
+            for screen in self.screens.values_mut() {
+                screen.compositor.reset_buffer_ages();
+            }
+        }
         if !self.active {
             return;
         }
