@@ -114,6 +114,39 @@ pub const TABLE: &[Widget] = &[
     clock::WIDGET,
 ];
 
+/// Scrolling added up but not yet a step: a high-resolution wheel's
+/// 120ths and a touchpad's pixels, which come a little at a time.
+#[derive(Debug, Default)]
+pub struct Scrolled {
+    v120: i32,
+    pixels: f64,
+}
+
+impl Scrolled {
+    /// The whole steps a scroll makes (a wheel's 120ths, else its notches,
+    /// else 40 pixels a step), keeping the rest for the next.
+    pub fn steps(&mut self, v120: i32, discrete: i32, pixels: f64) -> i32 {
+        if v120 != 0 {
+            self.v120 += v120;
+            let n = self.v120 / 120;
+            self.v120 -= n * 120;
+            n
+        } else if discrete != 0 {
+            discrete
+        } else {
+            self.pixels += pixels;
+            let n = (self.pixels / 40.0).trunc() as i32;
+            self.pixels -= f64::from(n) * 40.0;
+            n
+        }
+    }
+
+    /// The pointer left: nothing carries over.
+    pub fn reset(&mut self) {
+        *self = Scrolled::default();
+    }
+}
+
 /// The widget called `name`.
 #[cfg(test)]
 pub fn find(name: &str) -> Option<&'static Widget> {
@@ -157,6 +190,21 @@ fn pick(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_scrolls_add_up_to_steps() {
+        let mut scrolled = Scrolled::default();
+        // A high-resolution wheel: four quarter notches make one step.
+        let wheel: i32 = (0..4).map(|_| scrolled.steps(30, 0, 0.0)).sum();
+        assert_eq!(wheel, 1);
+        assert_eq!(scrolled.steps(-120, 0, 0.0), -1);
+        // A touchpad: twelve pixels at a time, a step every 40.
+        let pad: Vec<i32> = (0..7).map(|_| scrolled.steps(0, 0, 12.0)).collect();
+        assert_eq!(pad.iter().sum::<i32>(), 2);
+        assert_eq!(scrolled.steps(0, 2, 0.0), 2, "notches as they are");
+        scrolled.reset();
+        assert_eq!(scrolled.steps(0, 0, 39.0), 0);
+    }
 
     fn repository() -> &'static Path {
         Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))

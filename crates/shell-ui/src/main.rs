@@ -89,6 +89,8 @@ struct Shell {
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
+    /// Scrolling over a panel not yet a whole step.
+    scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
     /// what it shows.
     flip: Option<Flip>,
@@ -219,6 +221,7 @@ fn run() -> Result<()> {
         menu: None,
         flip: None,
         flipped: switcher::View::default(),
+        scrolled: widgets::Scrolled::default(),
         qh: qh.clone(),
         handle: event_loop.handle(),
         text: Text::load(),
@@ -939,23 +942,20 @@ impl PointerHandler for Shell {
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.input(i, x, Input::Click);
                 }
+                PointerEventKind::Leave { .. } => self.scrolled.reset(),
                 PointerEventKind::Axis {
                     horizontal,
                     vertical,
                     ..
                 } => {
                     // A wheel's steps, else a touchpad's pixels, a step
-                    // for every 40; down or right moves towards the end.
-                    let steps = |a: &smithay_client_toolkit::seat::pointer::AxisScroll| {
-                        if a.value120 != 0 {
-                            a.value120 / 120
-                        } else if a.discrete != 0 {
-                            a.discrete
-                        } else {
-                            (a.absolute / 40.0) as i32
-                        }
-                    };
-                    let n = steps(vertical) + steps(horizontal);
+                    // for every 40, adding up small ones; down or right
+                    // moves towards the end.
+                    let n = self.scrolled.steps(
+                        vertical.value120 + horizontal.value120,
+                        vertical.discrete + horizontal.discrete,
+                        vertical.absolute + horizontal.absolute,
+                    );
                     if n != 0 {
                         self.input(i, x, |_, _| Input::Scroll(n));
                     }

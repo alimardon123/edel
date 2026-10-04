@@ -247,9 +247,16 @@ impl Edel {
     /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
         let frame = self.insets(window).frame(place);
-        // A floating window put on another screen moves to it.
+        // A floating window put on another screen moves to it; one whose
+        // middle is off every screen stays on its own.
         let middle = frame.loc.to_f64() + frame.size.to_f64().downscale(2.0).to_point();
-        let Some((screen, area)) = self.screen_at(middle) else {
+        let on_a_screen = self.space.output_under(middle).next().is_some();
+        let found = if on_a_screen {
+            self.screen_at(middle)
+        } else {
+            self.home(window)
+        };
+        let Some((screen, area)) = found else {
             return;
         };
         let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
