@@ -153,6 +153,9 @@ pub struct Panel {
     /// A bar along the whole edge, or a dock (M5.4d).
     #[serde(default, skip_serializing_if = "Style::is_bar")]
     pub style: Style,
+    /// Whether a dock hides while a window covers it (M5.4f).
+    #[serde(default, skip_serializing_if = "Hide::is_never")]
+    pub hide: Hide,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub start: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -206,6 +209,24 @@ impl Style {
     }
 }
 
+/// When a dock steps aside (M5.4f): never, keeping its height free of
+/// windows, or while a window covers it, keeping nothing free; the
+/// compositor then stops drawing it until the pointer reaches its edge.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Hide {
+    #[default]
+    Never,
+    Covered,
+}
+
+impl Hide {
+    /// Whether it is the default, which a written panel leaves out.
+    pub fn is_never(&self) -> bool {
+        *self == Hide::Never
+    }
+}
+
 /// Reads a preset strictly: the format this release knows, every key
 /// known, 1 to [`MOST_WORKSPACES`] workspaces, at most one panel along
 /// each edge, widget names that could be names. Whether shell-ui has each
@@ -239,8 +260,21 @@ pub fn check_panels(panels: &[Panel]) -> Result<()> {
         if let Some(bad) = panel.widgets().find(|w| !crate::features::is_name(w)) {
             bail!("{bad:?} is not a widget name");
         }
+        if panel.hide != Hide::Never && panel.style != Style::Dock {
+            bail!(
+                "only a dock hides; the {} panel is a bar",
+                panel.edge.name()
+            );
+        }
     }
     Ok(())
+}
+
+/// Whether any of `panels` is a dock that hides while a window covers it.
+pub fn dock_hides(panels: &[Panel]) -> bool {
+    panels
+        .iter()
+        .any(|p| p.style == Style::Dock && p.hide == Hide::Covered)
 }
 
 /// The preset `name` names, else Classic and a note saying why. A missing
@@ -361,6 +395,16 @@ mod tests {
             &format!("{classic}\n[[panels]]\nedge = \"bottom\"\n"),
             "two panels along the bottom edge",
         );
+        refused(
+            &classic.replace("edge = \"bottom\"", "edge = \"bottom\"\nhide = \"covered\""),
+            "only a dock hides; the bottom panel is a bar",
+        );
+        let hiding = classic.replace(
+            "edge = \"bottom\"",
+            "edge = \"bottom\"\nstyle = \"dock\"\nhide = \"covered\"",
+        );
+        assert!(dock_hides(&check(&hiding).unwrap().panels));
+        assert!(!dock_hides(&check(classic).unwrap().panels));
         refused(
             &classic.replace("\"clock\"", "\"Clock Widget\""),
             "\"Clock Widget\" is not a widget name",

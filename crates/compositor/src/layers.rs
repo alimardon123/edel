@@ -31,6 +31,10 @@ use crate::state::Edel;
 
 /// The layers drawn over the windows, the topmost first.
 pub const ABOVE: [Layer; 2] = [Layer::Overlay, Layer::Top];
+/// shell-ui's dock's namespace (M5.4d), which may hide (M5.4f).
+pub const DOCK: &str = "edel-dock";
+/// How near the screen's edge the pointer brings a hidden dock back.
+const EDGE: f64 = 2.0;
 /// The layers drawn under them, the topmost first.
 pub const BELOW: [Layer; 2] = [Layer::Bottom, Layer::Background];
 
@@ -138,6 +142,65 @@ impl Edel {
         true
     }
 
+    /// Every dock, with its place and its screen's, while docks hide when
+    /// covered (M5.4f); none otherwise.
+    fn hiding_docks(&self) -> Vec<Dock> {
+        if !self.settings.dock_hides() {
+            return Vec::new();
+        }
+        let mut docks = Vec::new();
+        for output in self.space.outputs() {
+            let Some(screen) = self.space.output_geometry(output) else {
+                continue;
+            };
+            let map = layer_map_for_output(output);
+            for layer in map.layers().filter(|l| l.namespace() == DOCK) {
+                if let Some(mut place) = map.layer_geometry(layer) {
+                    place.loc += screen.loc;
+                    docks.push(Dock {
+                        surface: layer.wl_surface().clone(),
+                        place,
+                        screen,
+                    });
+                }
+            }
+        }
+        docks
+    }
+
+    /// The docks not drawn now (M5.4f): those a window's frame overlaps,
+    /// unless the pointer has brought them back.
+    pub fn hidden_layers(&self) -> Vec<WlSurface> {
+        if self.dock_shown {
+            return Vec::new();
+        }
+        self.hiding_docks()
+            .into_iter()
+            .filter(|dock| {
+                self.space.elements().any(|window| {
+                    self.space
+                        .element_geometry(window)
+                        .is_some_and(|w| self.insets(window).frame(w).overlaps(dock.place))
+                })
+            })
+            .map(|dock| dock.surface)
+            .collect()
+    }
+
+    /// The pointer at `point` brings a hidden dock back when it reaches
+    /// the dock's edge of the screen, and lets it hide again once it
+    /// leaves the dock (M5.4f).
+    pub fn reveal_docks(&mut self, point: Point<f64, Logical>) {
+        let shown = self.hiding_docks().into_iter().any(|dock| {
+            reaches_edge(point, dock.place, dock.screen)
+                || (self.dock_shown && dock.place.to_f64().contains(point))
+        });
+        if shown != self.dock_shown {
+            self.dock_shown = shown;
+            self.dirty = true;
+        }
+    }
+
     /// The layer surface under `point` among `layers`, with its place on
     /// screen.
     pub fn layer_under(
@@ -145,6 +208,7 @@ impl Edel {
         layers: &[Layer],
         point: Point<f64, Logical>,
     ) -> Option<(LayerSurface, WlSurface, Point<f64, Logical>)> {
+        let hidden = self.hidden_layers();
         for output in self.space.outputs() {
             let Some(screen) = self.space.output_geometry(output) else {
                 continue;
@@ -152,6 +216,9 @@ impl Edel {
             let map = layer_map_for_output(output);
             for layer in layers {
                 for surface in map.layers_on(*layer).rev() {
+                    if hidden.contains(surface.wl_surface()) {
+                        continue;
+                    }
                     let Some(place) = map.layer_geometry(surface) else {
                         continue;
                     };
@@ -272,6 +339,32 @@ impl Edel {
     }
 }
 
+/// A dock that may hide, with its place and its screen's, on screen.
+struct Dock {
+    surface: WlSurface,
+    place: Rectangle<i32, Logical>,
+    screen: Rectangle<i32, Logical>,
+}
+
+/// Whether `point` is within `EDGE` of the screen's edge that a dock at
+/// `place` lies along: the bottom for a dock in the lower half, else the
+/// top.
+fn reaches_edge(
+    point: Point<f64, Logical>,
+    place: Rectangle<i32, Logical>,
+    screen: Rectangle<i32, Logical>,
+) -> bool {
+    let (place, screen) = (place.to_f64(), screen.to_f64());
+    let across = point.x >= screen.loc.x && point.x < screen.loc.x + screen.size.w;
+    let lower = place.loc.y + place.size.h / 2.0 > screen.loc.y + screen.size.h / 2.0;
+    across
+        && if lower {
+            point.y >= screen.loc.y + screen.size.h - EDGE
+        } else {
+            point.y < screen.loc.y + EDGE
+        }
+}
+
 /// Tells a layer's surfaces its screen's scale, as windows hear theirs.
 fn send_scale(output: &Output, layer: &LayerSurface) {
     let scale = output.current_scale();
@@ -293,17 +386,22 @@ fn name(layer: Layer) -> &'static str {
     }
 }
 
-/// `output`'s layer surfaces on `layers`, the topmost first, for drawing.
+/// `output`'s layer surfaces on `layers`, the topmost first, for drawing,
+/// but for those `hidden`.
 pub fn elements(
     renderer: &mut GlesRenderer,
     output: &Output,
     layers: &[Layer],
     scale: f64,
+    hidden: &[WlSurface],
 ) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
     let map = layer_map_for_output(output);
     let mut elements = Vec::new();
     for layer in layers {
         for surface in map.layers_on(*layer).rev() {
+            if hidden.contains(surface.wl_surface()) {
+                continue;
+            }
             let Some(place) = map.layer_geometry(surface) else {
                 continue;
             };
@@ -396,5 +494,24 @@ impl WlrLayerShellHandler for Edel {
         }
         self.dirty = true;
         self.state_changed();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dock_comes_back_only_from_its_own_edge_of_its_own_screen() {
+        let screen = Rectangle::new((0, 0).into(), (1280, 800).into());
+        let bottom = Rectangle::new((500, 740).into(), (280, 52).into());
+        let top = Rectangle::new((500, 8).into(), (280, 52).into());
+        let at = |x: f64, y: f64| Point::from((x, y));
+        assert!(reaches_edge(at(10.0, 799.0), bottom, screen));
+        assert!(!reaches_edge(at(640.0, 790.0), bottom, screen));
+        assert!(!reaches_edge(at(640.0, 0.0), bottom, screen));
+        assert!(reaches_edge(at(640.0, 0.5), top, screen));
+        // The screen to the right is another screen.
+        assert!(!reaches_edge(at(1300.0, 799.0), bottom, screen));
     }
 }

@@ -62,7 +62,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 | `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |
 | `shell.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; absent is the preset's (right in Classic and Hive) | M5.4b |
-| `shell.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[shell.panels]]` tables, or on the command line `edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]'`; absent is the preset's. A change restarts the panel at once | M5.4e |
+| `shell.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[shell.panels]]` tables, or on the command line `edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]'`; absent is the preset's. A change restarts the panel at once | M5.4e |
 | `outputs.*.position` | two whole numbers, `[x, y]` | M4.6 |
 | `outputs.*.scale` | a number, such as `1.25` | M4.6 |
 | `outputs.*.mode` | text, such as `"1920x1080@60"` | M4.6 |

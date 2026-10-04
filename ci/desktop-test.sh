@@ -896,6 +896,42 @@ case_panels() {
 	echo "PASS: shell.panels with only the clock replaced Classic's panel at once, and unsetting it brought Classic's panel back"
 }
 
+case_dockhide() {
+	# A dock that hides while covered (M5.4f): shell.panels with one dock
+	# along the bottom, hide = "covered", holding the apps. Uncovered, it
+	# shows; a 1200x740 window over it hides it, so its left end shows
+	# the window's colour; the pointer at the screen's bottom edge brings
+	# it back, and away from it the dock hides again. Kept as
+	# dock-shown.png, dock-hidden.png and dock-back.png.
+	panel=$(token panel)
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	guest 'dock hiding'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
+		fail "setting a hiding dock in shell.panels did not restart shell-ui"
+	wait_for 'edel-shell-ui: panel places apps 6\+[0-9]+$' || fail "the dock does not hold the apps"
+	sleep 1
+	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 6+\([0-9]*\)$/\1/p' | tail -n 1)
+	x=$((640 - (w + 12) / 2 + 3))
+	python3 ci/qmp.py move 640 300
+	shot dock-shown "$x" 766 "$panel" >/dev/null || fail "the uncovered dock is not at $x,766 in the panel's colour"
+	opened=$(count 'edel-compositor: mapped window big')
+	guest 'big window'
+	wait_more 'edel-compositor: mapped window big' "$opened" || fail "the window big did not open"
+	shot dock-hidden "$x" 766 884488 >/dev/null || fail "with big over it, $x,766 is not big's colour: the dock did not hide"
+	python3 ci/qmp.py move 640 799
+	shot dock-back "$x" 766 "$panel" >/dev/null || fail "the pointer at the bottom edge did not bring the dock back"
+	python3 ci/qmp.py move 640 300
+	shot dock-hidden "$x" 766 884488 >/dev/null || fail "the pointer away from the dock did not let it hide again"
+	closed=$(count 'edel-compositor: unmapped window big')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window big' "$closed" || fail "Super+Q did not close big"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	guest 'panels default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
+		fail "unsetting shell.panels did not restart shell-ui"
+	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with shell.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
@@ -1118,13 +1154,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | dock | floating | launcher | layers | outputs | panel | panels | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, floating, launcher, layers, outputs, panel, panels, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

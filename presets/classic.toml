@@ -28,7 +28,8 @@ style = "menu"
 # Each panel is one layer-shell surface along a screen's edge, top or
 # bottom, holding shell-ui's widgets by name: from its start, in its
 # centre and towards its end. It is a bar along the whole edge, or with
-# style = "dock" a card as wide as what it holds (M5.4d).
+# style = "dock" a card as wide as what it holds (M5.4d), which with
+# hide = "covered" steps aside while a window covers it (M5.4f).
 [[panels]]
 edge = "bottom"
 start = ["menu", "windows"]

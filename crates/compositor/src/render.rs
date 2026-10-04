@@ -160,9 +160,11 @@ impl Edel {
             .into_iter()
             .map(Drawn::Plain)
             .collect();
-        // Panels over the windows, backgrounds under them (M5.1a).
+        // Panels over the windows, backgrounds under them (M5.1a); a dock
+        // a window covers is not drawn (M5.4f).
+        let hidden = self.hidden_layers();
         elements.extend(
-            crate::layers::elements(renderer, output, &crate::layers::ABOVE, scale)
+            crate::layers::elements(renderer, output, &crate::layers::ABOVE, scale, &hidden)
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );
@@ -208,7 +210,7 @@ impl Edel {
             elements.append(drawn);
         }
         elements.extend(
-            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale)
+            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale, &hidden)
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );
