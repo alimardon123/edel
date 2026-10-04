@@ -57,10 +57,11 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 
 | Key | Value | From |
 |---|---|---|
-| `shell.preset` | a preset this release has: `classic` or `hive` (M5.4a), with `mac-like` and `windows-like` to come (M5.4c, M5.4d) and `tablet` and `phone` with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel system diff` says so | M5.4a |
+| `shell.preset` | a preset this release has: `classic`, `hive` (M5.4a) or `windows-like` (M5.4c), with `mac-like` to come (M5.4d) and `tablet` and `phone` with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel system diff` says so | M5.4a |
 | `shell.tiling` | `true` or `false` | M4.5 |
 | `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |
+| `shell.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; absent is the preset's (right in Classic and Hive) | M5.4b |
 | `outputs.*.position` | two whole numbers, `[x, y]` | M4.6 |
 | `outputs.*.scale` | a number, such as `1.25` | M4.6 |
 | `outputs.*.mode` | text, such as `"1920x1080@60"` | M4.6 |

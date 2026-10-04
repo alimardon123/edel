@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use edel::presets;
+use edel::presets::{self, Side};
 use edel::system::{self, SystemFile};
 
 use crate::animation::Motion;
@@ -32,6 +32,8 @@ pub struct Settings {
     pub preset: Option<String>,
     /// `shell.title_bars`: absent means always.
     pub title_bars: TitleBars,
+    /// `shell.window_buttons` (M5.4b): absent means the preset's side.
+    pub window_buttons: Option<Side>,
     /// `[outputs.NAME]`, by output name.
     pub outputs: BTreeMap<String, OutputSettings>,
     /// `appearance.motion` (M5.11b): absent means full.
@@ -72,6 +74,9 @@ impl Settings {
                 Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
                 _ => {}
             }
+            if let Some(side) = file.shell.window_buttons.as_deref().and_then(Side::parse) {
+                settings.window_buttons = Some(side);
+            }
             if let Some(motion) = file.appearance.motion.as_deref().and_then(Motion::parse) {
                 settings.motion = motion;
             }
@@ -109,6 +114,13 @@ impl Settings {
                 .policy
                 .name(),
         }
+    }
+
+    /// The side of the title bars their buttons sit on (M5.4b):
+    /// `shell.window_buttons` if set, else the preset's.
+    pub fn button_side(&self) -> Side {
+        self.window_buttons
+            .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.windows.buttons)
     }
 
     /// How many workspaces the preset has (M5.2a).
@@ -223,6 +235,19 @@ mod tests {
             settings.policy(),
             "tiling",
             "shell.tiling wins over the preset"
+        );
+    }
+
+    #[test]
+    fn the_buttons_side_is_the_files_else_the_presets() {
+        assert_eq!(Settings::default().button_side(), Side::Right);
+        let left = file("format = 1\n[shell]\nwindow_buttons = \"left\"\n");
+        let settings = Settings::from_files(None, Some(&left));
+        assert_eq!(settings.button_side(), Side::Left);
+        let odd = file("format = 1\n[shell]\nwindow_buttons = \"top\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&left), Some(&odd)).button_side(),
+            Side::Left
         );
     }
 

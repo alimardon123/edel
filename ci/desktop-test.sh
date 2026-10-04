@@ -775,6 +775,86 @@ case_presets() {
 	echo "PASS: edel system set shell.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
 }
 
+case_taskbar() {
+	# Windows-like (M5.4c): edel system set shell.preset=windows-like
+	# restarts shell-ui with one taskbar along the bottom, the menu button
+	# at its left edge, the search field beside it and the apps in its
+	# centre. Of the apps it pins (files, browser, terminal, mail, music) the VM
+	# has only foot, the terminal, so foot's cell comes first: a click
+	# starts foot, a second minimizes it, a third brings it back. Kept as
+	# preset-windows-like.png.
+	panel=$(token panel)
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like')
+	guest 'preset windows-like'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like' "$restarts" ||
+		fail "edel system set shell.preset=windows-like did not restart shell-ui"
+	wait_for 'edel-shell-ui: panel places menu 0\+[0-9]+, search [0-9]+\+228, apps [0-9]+\+[0-9]+' ||
+		fail "Windows-like's bar does not start with the menu button and the search field before the apps"
+	# The open windows' apps join the pinned ones as shell-ui learns of
+	# them; foot's cell stays first.
+	sleep 1
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places menu 0+[0-9]*, search [0-9]*+228, apps \([0-9]*\)+\([0-9]*\).*/\1 \2/p' | tail -n 1)
+	read -r x w <<-EOF
+		$place
+	EOF
+	[ "$w" -ge 48 ] || fail "the apps widget is $w px wide, too narrow for foot's 40 px cell"
+	# The apps sit in the bar's centre, the 1280 px screen's.
+	[ $((x + w / 2 - 640)) -le 1 ] && [ $((640 - x - w / 2)) -le 1 ] ||
+		fail "the apps, at $x and $w px wide, are not centred on the bar"
+	shot preset-windows-like 1000 790 "$panel" >/dev/null || fail "Windows-like's bar is not at 1000,790 in the panel's colour"
+	cell=$((x + 24))
+	opened=$(count 'edel-compositor: mapped window foot')
+	launched=$(count 'edel-shell-ui: launched Foot \(foot\)')
+	python3 ci/qmp.py click "$cell" 774
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "a click on foot's cell at $cell,774 did not start foot"
+	wait_more 'edel-shell-ui: launched Foot \(foot\)' "$launched" || fail "foot's cell did not start foot's own command"
+	minimized=$(count 'edel-compositor: minimized window foot')
+	python3 ci/qmp.py click "$cell" 774
+	wait_more 'edel-compositor: minimized window foot' "$minimized" || fail "a second click on foot's cell did not minimize foot"
+	restored=$(count 'edel-compositor: restored window foot')
+	python3 ci/qmp.py click "$cell" 774
+	wait_more 'edel-compositor: restored window foot' "$restored" || fail "a third click on foot's cell did not bring foot back"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot, which should have had the keyboard"
+	back=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	guest 'preset default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$back" ||
+		fail "unsetting shell.preset did not bring Classic back"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Windows-like (M5.4c): preset-windows-like.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: Windows-like's taskbar lay along the bottom with the menu button at its left edge, the search field and the apps centred at $x, $w px wide; foot's cell started foot, minimized it and brought it back, and unsetting the preset brought Classic back"
+}
+
+case_buttons() {
+	# Window buttons on either side (M5.4b): with shell.window_buttons =
+	# "left", close is the bar's leftmost 28 px square, then minimize and
+	# maximize, and a click there closes the window; unset, they go back
+	# to the preset's right. Kept as buttons-left.png.
+	focused=$(token title_bar_focused)
+	guest 'buttons left'
+	wait_for 'edel-compositor: window buttons on the left' ||
+		fail "the compositor did not follow shell.window_buttons = \"left\""
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window keys at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	read -r x y <<-EOF
+		$place
+	EOF
+	shot buttons-left $((x + 5)) $((y - 24)) "$focused" >/dev/null ||
+		fail "keys at $x,$y has no focused title bar at $((x + 5)),$((y - 24))"
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py click $((x + 13)) $((y - 14))
+	wait_more 'edel-compositor: unmapped window keys' "$closed" ||
+		fail "a click on the bar's leftmost square at $((x + 13)),$((y - 14)) did not close keys"
+	guest 'buttons default'
+	wait_for 'edel-compositor: window buttons on the right' ||
+		fail "unsetting shell.window_buttons did not bring the buttons back to the right"
+	echo "PASS: shell.window_buttons = \"left\" put close at the bar's left end, a click there closed keys at $x,$y, and unsetting it brought the buttons back to the right"
+}
+
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
 # give its window list a width W for which [ W TEST ] holds, and prints
 # the list's x and W.
@@ -969,13 +1049,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

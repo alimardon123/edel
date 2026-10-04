@@ -378,6 +378,13 @@ impl Edel {
         if self.desks.count() != new.workspaces() {
             self.set_workspace_count(new.workspaces());
         }
+        if old.button_side() != new.button_side() {
+            eprintln!(
+                "edel-compositor: window buttons on the {}",
+                new.button_side().name()
+            );
+            self.dirty = true;
+        }
         if old.preset_differs(&new) {
             let name = new.preset.as_deref().unwrap_or(edel::presets::DEFAULT);
             crate::shellui::restart(self, &format!("the preset is now {name}"));

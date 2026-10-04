@@ -10,9 +10,11 @@
 //! (M5.1d). The tests fail when a line needs a feature with no file under
 //! `features/`, and when a built-in preset names a widget missing here.
 
+pub mod apps;
 pub mod clock;
 pub mod layout;
 pub mod menu;
+pub mod search;
 pub mod title;
 pub mod windows;
 pub mod workspaces;
@@ -32,6 +34,8 @@ pub struct Canvas<'a> {
     pub tokens: &'a Tokens,
     /// The fonts, if loaded; without them text measures and draws nothing.
     pub text: Option<&'a mut Text>,
+    /// App icons, if read; without them apps show their initial (M5.4c).
+    pub icons: Option<&'a mut crate::icons::Icons>,
     /// Buffer pixels per logical pixel.
     pub scale: f32,
     /// The panel's top row in the pixmap and its height, in its pixels.
@@ -60,20 +64,46 @@ pub struct Widget {
 /// What shell-ui knows that widgets show: the workspaces, by name, with
 /// the shown one marked (ext-workspace-v1), where a scroll left the
 /// workspace switcher's view, the windows on a screen
-/// (wlr-foreign-toplevel-management), and the shown workspace's policy
-/// (edel-shell-v1).
+/// (wlr-foreign-toplevel-management), the shown workspace's policy
+/// (edel-shell-v1), and the apps the preset pins and every app installed,
+/// read at start (M5.4c).
 #[derive(Debug, Default)]
 pub struct Live {
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     pub windows: Vec<Task>,
     pub policy: String,
+    pub pinned: Vec<Pin>,
+    pub installed: Vec<Pin>,
+}
+
+/// An app as the apps widget shows it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Pin {
+    /// Its desktop file id.
+    pub id: String,
+    pub name: String,
+    /// Its icon's name or path.
+    pub icon: String,
+}
+
+impl From<&crate::apps::App> for Pin {
+    /// An installed app; its id stands for its icon when it names none.
+    fn from(app: &crate::apps::App) -> Pin {
+        Pin {
+            id: app.id.clone(),
+            name: app.name.clone(),
+            icon: app.icon.clone().unwrap_or_else(|| app.id.clone()),
+        }
+    }
 }
 
 /// A window, as the window list shows it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Task {
     pub title: String,
+    /// Its app's id, to find its app's icon and pinned button (M5.4c).
+    pub app_id: String,
     pub focused: bool,
     pub minimized: bool,
 }
@@ -104,6 +134,9 @@ pub enum Action {
     TogglePolicy,
     /// Open the launcher, or close it (M5.3b).
     Launcher,
+    /// The app with this desktop file id: bring its window forward, or
+    /// minimize it if it is the focused one, or start the app (M5.4c).
+    App(String),
 }
 
 /// For widgets that take no input.
@@ -119,6 +152,8 @@ pub const TABLE: &[Widget] = &[
     layout::WIDGET,
     clock::WIDGET,
     title::WIDGET,
+    apps::WIDGET,
+    search::WIDGET,
 ];
 
 /// Scrolling added up but not yet a step: a high-resolution wheel's

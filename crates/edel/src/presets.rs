@@ -19,11 +19,15 @@ pub const FORMAT: i64 = 1;
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
     ("hive", include_str!("../../../presets/hive.toml")),
+    (
+        "windows-like",
+        include_str!("../../../presets/windows-like.toml"),
+    ),
 ];
 
 /// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
 /// so `edel system check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "hive"];
+pub const NAMES: &[&str] = &["classic", "hive", "windows-like"];
 
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -39,8 +43,22 @@ pub struct Preset {
     pub windows: Windows,
     pub workspaces: Workspaces,
     pub launcher: Launcher,
+    /// The apps the apps widget pins (M5.4c).
+    #[serde(default)]
+    pub apps: Apps,
     #[serde(default)]
     pub panels: Vec<Panel>,
+}
+
+/// The apps widget's pinned apps (M5.4c), from its start: each a role
+/// (`files`, `browser`, `mail`, `editor`, `terminal`, `music`,
+/// `settings`), meaning the installed app for it, or a desktop file id;
+/// those this machine lacks are left out.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Apps {
+    #[serde(default)]
+    pub pinned: Vec<String>,
 }
 
 /// The launcher (M5.3b), which Super or the menu button opens.
@@ -64,6 +82,38 @@ pub enum LauncherStyle {
 pub struct Windows {
     /// The policy a workspace starts in when `shell.tiling` is not set.
     pub policy: Policy,
+    /// The side of the title bar the buttons sit on when
+    /// `shell.window_buttons` is not set (M5.4b); absent is the right.
+    #[serde(default)]
+    pub buttons: Side,
+}
+
+/// A side of the title bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Left,
+    #[default]
+    Right,
+}
+
+impl Side {
+    pub fn name(self) -> &'static str {
+        match self {
+            Side::Left => "left",
+            Side::Right => "right",
+        }
+    }
+
+    /// `left` or `right`, as `shell.window_buttons` writes it; anything
+    /// else is none.
+    pub fn parse(name: &str) -> Option<Side> {
+        match name {
+            "left" => Some(Side::Left),
+            "right" => Some(Side::Right),
+            _ => None,
+        }
+    }
 }
 
 /// The workspace model (M5.2a): a fixed number of workspaces. A dynamic
@@ -211,6 +261,24 @@ mod tests {
     }
 
     #[test]
+    fn windows_like_has_a_taskbar_with_search_and_the_apps_in_its_centre() {
+        let (windows, note) = named(Some("windows-like"));
+        assert_eq!(note, None);
+        assert_eq!(windows.windows.policy, Policy::Floating);
+        assert_eq!(windows.windows.buttons, Side::Right);
+        assert_eq!(
+            windows.apps.pinned,
+            ["files", "browser", "terminal", "mail", "music"]
+        );
+        let panel = &windows.panels[0];
+        assert_eq!(panel.edge, Edge::Bottom);
+        assert_eq!(panel.start, ["menu", "search"]);
+        assert_eq!(panel.centre, ["apps"]);
+        // Classic and Hive pin nothing: they have no apps widget.
+        assert!(named(None).0.apps.pinned.is_empty());
+    }
+
+    #[test]
     fn an_unknown_name_is_classic_with_a_note() {
         let (preset, note) = named(Some("cinnamon"));
         assert_eq!(preset, named(None).0);
@@ -229,8 +297,8 @@ mod tests {
             "format 2 is not one this release reads",
         );
         refused(
-            &classic.replace("[windows]", "[windows]\nbuttons = \"left\""),
-            "unknown field `buttons`",
+            &classic.replace("[windows]", "[windows]\ncorners = \"round\""),
+            "unknown field `corners`",
         );
         refused(
             &classic.replace("policy = \"floating\"", "policy = \"stacking\""),

@@ -124,7 +124,11 @@ commands() {
 		# shell.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.
 		'preset hive') edel system unset shell.tiling && edel system set shell.preset=hive ;;
+		'preset windows-like') edel system set shell.preset=windows-like ;;
 		'preset default') edel system unset shell.preset ;;
+		# Window buttons on either side (M5.4b).
+		'buttons left') edel system set shell.window_buttons=left ;;
+		'buttons default') edel system unset shell.window_buttons ;;
 		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
 		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the

@@ -317,6 +317,7 @@ impl Edel {
                 .filter(|(w, _)| w == window)
                 .map(|(_, b)| *b),
             text: self.text.is_some(),
+            side: self.settings.button_side(),
         };
         let mut frame = data(window).borrow_mut();
         let bar = frame.bar(look, &self.tokens, self.text.as_mut());

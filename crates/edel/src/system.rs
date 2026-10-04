@@ -183,6 +183,7 @@ pub const KEYS: &[Key] = &[
     later("updates.window", Kind::Text),
     later("apps.flatpak", Kind::Texts),
     later("addons.add", Kind::Texts),
+    now("shell.window_buttons", Kind::OneOf(&["left", "right"])),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -302,6 +303,9 @@ pub struct Shell {
     pub title_bars: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub form_factor: Option<String>,
+    /// The title bar buttons' side (M5.4b); absent is the preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_buttons: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -931,10 +935,15 @@ font_size = 11
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
-            ["shell.preset: unknown value \"tablet\"; use classic or hive"]
+            ["shell.preset: unknown value \"tablet\"; use classic, hive or windows-like"]
         );
         let error = set("format = 1\n", "shell.preset", "tablet").unwrap_err();
-        assert!(error.to_string().contains("use classic or hive"), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("use classic, hive or windows-like"),
+            "{error}"
+        );
         let read = read(file).unwrap();
         assert_eq!(read.file.shell.preset, None);
         assert_eq!(read.problems[0].key, "shell.preset");
