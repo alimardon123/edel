@@ -41,6 +41,17 @@ frame_p99_ms = 4.4
 # Frames the compositor draws while nothing on screen changes.
 idle_frames = 0
 
+# What the animations add, in milliseconds, to the 99th percentile of the
+# time between frames while ten windows open and close one after another
+# (desktop-test animations, M5.11b): with motion full, less the same with
+# motion off, on the same runner and tier. The largest of 23 CI runs up to
+# 2026-10-04 was 1.2 ms, plus 20 percent, rounded up to the tenth. It
+# replaced frame_p99_ms for that check in PR #99: with motion off alone
+# those runs took 1.7 to 3.8 ms, so the absolute budget measured the
+# runner (4.5 and 4.8 ms failed changes that had not touched the
+# compositor) more than the animations (0.5 to 1.2 ms).
+animation_p99_ms = 1.5
+
 # shell-ui's resident memory (VmRSS) with the session idle and no screen
 # reader, MiB (M5.1b): 9.3 MiB measured on 2026-10-04 (desktop-test, both
 # boots) with AccessKit's D-Bus link (M5.1d) plus 20 percent. Alimardon
