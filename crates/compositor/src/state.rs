@@ -98,9 +98,8 @@ pub struct Edel {
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
     pub last_title_click: Option<(Window, u32)>,
-    /// How many keys are down, and the modifier pressed alone while
-    /// nothing else was, until another key or a button comes (M5.3b).
-    pub keys_down: u32,
+    /// The modifier pressed alone while nothing else was, until another
+    /// key or a button comes (M5.3b).
     pub tap: Option<smithay::input::keyboard::Keysym>,
     /// The layer that asked for the keyboard alone and was given it when
     /// it showed, such as shell-ui's launcher (M5.3b).
@@ -203,7 +202,6 @@ impl Edel {
             hover: None,
             pressed: None,
             last_title_click: None,
-            keys_down: 0,
             tap: None,
             keyboard_layer: None,
             settings: Settings::default(),
@@ -392,10 +390,19 @@ impl Edel {
         frame.restore = None;
         frame.shape = None;
         drop(frame);
+        // The keyboard moves only if this window had it, or nothing has
+        // it: never away from a layer such as the launcher.
+        let had_keyboard = self
+            .seat
+            .get_keyboard()
+            .and_then(|k| k.current_focus())
+            .is_none_or(|focus| window.toplevel().is_some_and(|t| t.wl_surface() == &focus));
         self.desks.close(window);
         self.space.unmap_elem(window);
-        if let Some(top) = self.space.elements().last().cloned() {
-            self.focus(&top);
+        if had_keyboard {
+            if let Some(top) = self.space.elements().last().cloned() {
+                self.focus(&top);
+            }
         }
         if self.desks.layout().rearranges() {
             self.relayout();

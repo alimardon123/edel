@@ -170,6 +170,11 @@ impl Launcher {
         self.reap();
     }
 
+    /// How many apps it offers.
+    pub fn count(&self) -> usize {
+        self.apps.len()
+    }
+
     fn matches(&self) -> Vec<&App> {
         let mut found = apps::search(&self.apps, &self.query);
         found.truncate(ROWS);

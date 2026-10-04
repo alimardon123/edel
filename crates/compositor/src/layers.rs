@@ -171,7 +171,16 @@ impl Edel {
     /// as the launcher, gets it once, when it first shows; a click
     /// elsewhere takes it away again, as the launcher expects.
     fn give_keyboard(&mut self, output: &Output, surface: &WlSurface) {
-        if self.keyboard_layer.as_ref() == Some(surface) || !crate::state::has_buffer(surface) {
+        if !crate::state::has_buffer(surface) {
+            // Hidden without being destroyed: it gives the keyboard back,
+            // and gets it again when it shows.
+            if self.keyboard_layer.as_ref() == Some(surface) {
+                self.take_keyboard_back();
+                self.keyboard_layer = None;
+            }
+            return;
+        }
+        if self.keyboard_layer.as_ref() == Some(surface) {
             return;
         }
         let wants = {
@@ -190,6 +199,7 @@ impl Edel {
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, Some(surface.clone()), SERIAL_COUNTER.next_serial());
         }
+        self.sync_toplevels();
     }
 
     /// A click on nothing takes the keyboard back from such a layer, as a
@@ -205,7 +215,10 @@ impl Edel {
         }
         match self.space.elements().last().cloned() {
             Some(top) => self.focus(&top),
-            None => keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial()),
+            None => {
+                keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
+                self.sync_toplevels();
+            }
         }
     }
 
@@ -218,6 +231,8 @@ impl Edel {
         if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
         }
+        // The window list shows no window as focused.
+        self.sync_toplevels();
     }
 
     /// The `[[layers]]` of the state file: each screen's layer surfaces,
