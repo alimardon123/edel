@@ -155,6 +155,7 @@ mod tests {
             height: tokens.panel_height + fillet_height(&tokens),
             scale: 1,
             edge: Edge::Bottom,
+            style: edel::presets::Style::Bar,
             fillets: false,
             shown: row.shows(&live),
         };

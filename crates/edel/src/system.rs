@@ -935,13 +935,13 @@ font_size = 11
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
-            ["shell.preset: unknown value \"tablet\"; use classic, hive or windows-like"]
+            ["shell.preset: unknown value \"tablet\"; use classic, hive, mac-like or windows-like"]
         );
         let error = set("format = 1\n", "shell.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("use classic, hive or windows-like"),
+                .contains("use classic, hive, mac-like or windows-like"),
             "{error}"
         );
         let read = read(file).unwrap();
