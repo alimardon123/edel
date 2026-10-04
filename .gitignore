@@ -1,6 +1,7 @@
 /target
 /out
 /.cargo-home
+__pycache__/
 # Signing secrets never enter the repository (docs/RELEASE.md).
 *.key
 /keys/

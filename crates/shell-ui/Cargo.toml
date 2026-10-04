@@ -22,8 +22,12 @@ edel = { path = "../edel", default-features = false }
 jiff = "0.2"
 # The compositor's state file, for the effect tier (M5.11a).
 toml = "1.1.6"
-# Pinned like the test client's: the layer shell and a calloop event loop
-# for the clock's timer; no xkbcommon until shell-ui takes keys (M5.3).
-smithay-client-toolkit = { version = "=0.21.1", default-features = false, features = ["calloop"] }
+# Pinned like the test client's: the layer shell, a calloop event loop
+# for the clock's timer and xkbcommon for the launcher's keys (M5.3b),
+# whose keyboard shell-ui binds only while the launcher is open.
+smithay-client-toolkit = { version = "=0.21.1", default-features = false, features = ["calloop", "xkbcommon"] }
+# The code for the compositor's private protocol, edel-shell-v1 (M5.3);
+# already in the tree through smithay-client-toolkit's protocols.
+wayland-scanner = "0.31.11"
 # 2D drawing into the panel's shared-memory buffers.
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd"] }

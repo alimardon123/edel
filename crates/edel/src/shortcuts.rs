@@ -42,12 +42,17 @@ const fn action(
 /// system file.
 pub const ACTIONS: &[Action] = &[
     action("close", "Super+Q", true, "Close the focused window"),
-    action("launcher", "Super", true, "Open the launcher (M5.3)"),
+    action(
+        "launcher",
+        "Super",
+        true,
+        "Open or close the launcher, Super tapped alone",
+    ),
     action(
         "switcher",
         "Alt+Tab",
         false,
-        "Switch to the next window (M5.3)",
+        "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
     ),
     action(
         "tiling",
@@ -370,7 +375,7 @@ pub fn markdown() -> String {
          or in `[shortcuts]` of the system file; `\"\"` unbinds an action, and `edel system unset shortcuts.ACTION` brings its default back. \
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
-         and `F1` to `F12`. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \
+         and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \
          An action whose step has not landed yet leaves its keys to the app that has the keyboard.\n\n\
          | Action | Keys | What it does | Way out |\n|---|---|---|---|\n",
     );

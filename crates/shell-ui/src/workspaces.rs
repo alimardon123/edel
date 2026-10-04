@@ -114,16 +114,19 @@ impl Dispatch2<ExtWorkspaceManagerV1, Shell> for Manager {
 }
 
 /// One group holds every workspace (M5.2b), so its events say nothing the
-/// switcher needs.
+/// switcher needs; a group removed is destroyed, as the protocol asks.
 impl Dispatch2<ExtWorkspaceGroupHandleV1, Shell> for Group {
     fn event(
         &self,
         _: &mut Shell,
-        _: &ExtWorkspaceGroupHandleV1,
-        _: ext_workspace_group_handle_v1::Event,
+        group: &ExtWorkspaceGroupHandleV1,
+        event: ext_workspace_group_handle_v1::Event,
         _: &Connection,
         _: &QueueHandle<Shell>,
     ) {
+        if let ext_workspace_group_handle_v1::Event::Removed = event {
+            group.destroy();
+        }
     }
 }
 
@@ -150,6 +153,7 @@ impl Dispatch2<ExtWorkspaceHandleV1, Shell> for Handle {
             }
             ext_workspace_handle_v1::Event::Removed => {
                 shell.workspaces.list.retain(|e| &e.handle != handle);
+                handle.destroy();
             }
             _ => {}
         }

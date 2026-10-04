@@ -12,6 +12,7 @@
 mod animate;
 mod decoration;
 mod drm;
+mod edelshell;
 mod extworkspace;
 mod grabs;
 mod input;
@@ -24,6 +25,7 @@ mod shellui;
 mod shortcuts;
 mod state;
 mod statefile;
+mod switcher;
 mod tiers;
 mod toplevels;
 mod watch;

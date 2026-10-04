@@ -7,13 +7,18 @@
 //! preset's panels (M5.1b, M5.1c): the system file's `shell.preset`, else
 //! Classic, whose one panel runs along the bottom of the first screen
 //! with the menu button, the window list (M5.2h), the workspace switcher
-//! (M5.2c) and a clock. Each
+//! (M5.2c), the layout toggle (M5.3a) and a clock. Each
 //! panel holds widgets from the table in `widgets/` and is drawn again
 //! only when what a widget shows, or the panel's size or scale, changes;
-//! a click or a scroll on a widget does what the widget says. It exits
-//! when the compositor goes away.
+//! a click or a scroll on a widget does what the widget says. Super,
+//! tapped alone, or the menu button opens the launcher (M5.3b,
+//! `launcher.rs`). It exits when the compositor goes away.
 
+mod apps;
+mod launcher;
+mod link;
 mod paint;
+mod switcher;
 mod toplevels;
 mod widgets;
 mod workspaces;
@@ -26,10 +31,13 @@ use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
 use smithay_client_toolkit::reexports::client::protocol::{
-    wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
+    wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
+use smithay_client_toolkit::seat::keyboard::{
+    KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
+};
 use smithay_client_toolkit::seat::pointer::{
     BTN_LEFT, PointerEvent, PointerEventKind, PointerHandler,
 };
@@ -52,8 +60,12 @@ use crate::paint::{Look, Row, Text};
 use crate::widgets::{Action, Input, Live};
 
 /// The panels' layer surfaces' namespace, as the compositor's state file
-/// lists it.
+/// lists it, and the launcher's.
 const NAMESPACE: &str = "edel-panel";
+const LAUNCHER: &str = "edel-launcher";
+const SWITCHER: &str = "edel-switcher";
+/// The launcher's distance from the panel and the screen's side.
+const MARGIN: i32 = 8;
 
 /// Where the compositor says how much the desktop animates (M5.11a).
 const STATE: &str = "/run/edel/session/state.toml";
@@ -63,18 +75,55 @@ struct Shell {
     outputs: OutputState,
     seat: SeatState,
     pointer: Option<wl_pointer::WlPointer>,
-    /// What widgets show beyond the clock: the workspaces and windows.
+    /// What widgets show beyond the clock: the workspaces, the windows and
+    /// the shown workspace's policy.
     live: Live,
     workspaces: workspaces::Workspaces,
     toplevels: toplevels::Toplevels,
+    link: link::Link,
     compositor: CompositorState,
+    layers: LayerShell,
     shm: Shm,
     pool: SlotPool,
     panels: Vec<Panel>,
+    launcher: launcher::Launcher,
+    /// The launcher's surface while it is open.
+    menu: Option<Menu>,
+    /// Scrolling over a panel not yet a whole step.
+    scrolled: widgets::Scrolled,
+    /// The window switcher's surface while Alt+Tab is held (M5.3c), and
+    /// what it shows.
+    flip: Option<Flip>,
+    flipped: switcher::View,
+    qh: QueueHandle<Shell>,
+    handle: LoopHandle<'static, Shell>,
     tokens: Tokens,
     text: Text,
     fillets: bool,
     exit: bool,
+}
+
+/// The open launcher's surface, its own buffers and the keyboard, all
+/// let go when it closes.
+struct Menu {
+    surface: LayerSurface,
+    pool: SlotPool,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    scale: u32,
+    /// Configured, so it may draw.
+    ready: bool,
+    drawn: Option<(launcher::View, u32)>,
+}
+
+/// The window switcher's surface and its own buffers, let go when it
+/// hides.
+struct Flip {
+    surface: LayerSurface,
+    pool: SlotPool,
+    scale: u32,
+    rows: usize,
+    ready: bool,
+    drawn: Option<(switcher::View, u32)>,
 }
 
 /// One of the preset's panels.
@@ -152,6 +201,8 @@ fn run() -> Result<()> {
     }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
         .context("creating the shared memory pool")?;
+    let mut event_loop: EventLoop<Shell> =
+        EventLoop::try_new().context("starting the event loop")?;
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -160,17 +211,24 @@ fn run() -> Result<()> {
         live: Live::default(),
         workspaces: workspaces::Workspaces::bind(&globals, &qh),
         toplevels: toplevels::Toplevels::bind(&globals, &qh),
+        link: link::Link::bind(&globals, &qh),
         compositor,
+        layers,
         shm,
         pool,
         panels,
+        launcher: launcher::Launcher::default(),
+        menu: None,
+        flip: None,
+        flipped: switcher::View::default(),
+        scrolled: widgets::Scrolled::default(),
+        qh: qh.clone(),
+        handle: event_loop.handle(),
         text: Text::load(),
         tokens,
         fillets: fillets(),
         exit: false,
     };
-    let mut event_loop: EventLoop<Shell> =
-        EventLoop::try_new().context("starting the event loop")?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -234,8 +292,9 @@ fn fillets() -> bool {
     tier.is_some_and(|t| t != "lite")
 }
 
-/// Draws the panels again when the minute changes, for the clock, then
-/// sleeps until the next one.
+/// Draws the panels again when the minute changes, for the clock, and
+/// collects the apps the launcher started that ended, then sleeps until
+/// the next one.
 fn tick(handle: &LoopHandle<'static, Shell>) {
     let next = || widgets::clock::until_next_minute(&jiff::Zoned::now());
     let result = handle.insert_source(
@@ -244,6 +303,7 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
             for i in 0..shell.panels.len() {
                 shell.draw(i);
             }
+            shell.launcher.reap();
             TimeoutAction::ToDuration(next())
         },
     );
@@ -375,8 +435,295 @@ impl Shell {
                 self.toplevels.activate(window, seat.as_ref());
             }
             Some(Action::Minimize(window)) => self.toplevels.minimize(window),
+            Some(Action::TogglePolicy) => self.link.toggle_policy(),
+            Some(Action::Launcher) => self.toggle_launcher(),
             None => {}
         }
+    }
+
+    /// Super or the menu button: the launcher opens, or closes if open.
+    fn toggle_launcher(&mut self) {
+        if self.menu.is_some() {
+            self.close_launcher();
+        } else {
+            self.open_launcher();
+        }
+    }
+
+    /// Opens the launcher beside the first panel's start, on the screen
+    /// the compositor picks, with the keyboard.
+    fn open_launcher(&mut self) {
+        let (edge, scale) = self
+            .panels
+            .first()
+            .map_or((Edge::Bottom, 1), |p| (p.edge, p.scale));
+        let size = (launcher::WIDTH * launcher::HEIGHT * 4 * scale * scale) as usize;
+        let pool = match SlotPool::new(size, &self.shm) {
+            Ok(pool) => pool,
+            Err(e) => {
+                eprintln!("edel-shell-ui: no memory for the launcher: {e}");
+                return;
+            }
+        };
+        let surface = self.compositor.create_surface(&self.qh);
+        let surface = self.layers.create_layer_surface(
+            &self.qh,
+            surface,
+            Layer::Overlay,
+            Some(LAUNCHER),
+            None,
+        );
+        let side = match edge {
+            Edge::Top => Anchor::TOP,
+            Edge::Bottom => Anchor::BOTTOM,
+        };
+        surface.set_anchor(side | Anchor::LEFT);
+        surface.set_size(launcher::WIDTH, launcher::HEIGHT);
+        surface.set_margin(MARGIN, MARGIN, MARGIN, MARGIN);
+        surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
+        surface.commit();
+        let keyboard = self.seat.seats().next().and_then(|seat| {
+            self.seat
+                .get_keyboard_with_repeat(
+                    &self.qh,
+                    &seat,
+                    None,
+                    self.handle.clone(),
+                    Box::new(|shell: &mut Shell, _, event| shell.launcher_key(event)),
+                )
+                .inspect_err(|e| eprintln!("edel-shell-ui: no keyboard for the launcher: {e}"))
+                .ok()
+        });
+        self.launcher.open();
+        self.menu = Some(Menu {
+            surface,
+            pool,
+            keyboard,
+            scale,
+            ready: false,
+            drawn: None,
+        });
+    }
+
+    /// Closes the launcher and lets go of its keyboard, buffers and apps.
+    fn close_launcher(&mut self) {
+        let Some(menu) = self.menu.take() else {
+            return;
+        };
+        if let Some(keyboard) = &menu.keyboard {
+            keyboard.release();
+        }
+        drop(menu);
+        self.launcher.close();
+        eprintln!("edel-shell-ui: launcher hidden");
+    }
+
+    /// Draws the launcher if what it shows changed.
+    fn draw_launcher(&mut self) {
+        let Some(menu) = &mut self.menu else {
+            return;
+        };
+        if !menu.ready {
+            return;
+        }
+        let view = self.launcher.view();
+        let now = (view.clone(), menu.scale);
+        if menu.drawn.as_ref() == Some(&now) {
+            return;
+        }
+        let first = menu.drawn.is_none();
+        let (w, h) = (launcher::WIDTH * menu.scale, launcher::HEIGHT * menu.scale);
+        let Some(mut pixmap) = Pixmap::new(w, h) else {
+            return;
+        };
+        launcher::paint(
+            &mut pixmap,
+            &view,
+            &self.tokens,
+            Some(&mut self.text),
+            menu.scale as f32,
+        );
+        let (w, h) = (w as i32, h as i32);
+        let (buffer, canvas) = match menu
+            .pool
+            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
+        {
+            Ok(made) => made,
+            Err(e) => {
+                eprintln!("edel-shell-ui: drawing the launcher failed: {e}");
+                return;
+            }
+        };
+        paint::to_argb(&pixmap, canvas);
+        let surface = menu.surface.wl_surface();
+        surface.set_buffer_scale(menu.scale as i32);
+        surface.damage_buffer(0, 0, w, h);
+        if let Err(e) = buffer.attach_to(surface) {
+            eprintln!("edel-shell-ui: drawing the launcher failed: {e}");
+            return;
+        }
+        menu.surface.commit();
+        menu.drawn = Some(now);
+        if first {
+            eprintln!(
+                "edel-shell-ui: launcher shown, {} apps",
+                self.launcher.count()
+            );
+        }
+    }
+
+    /// A key while the launcher is open: Escape closes, Return starts the
+    /// chosen app, Up and Down choose, Backspace erases, and text searches.
+    fn launcher_key(&mut self, event: KeyEvent) {
+        if self.menu.is_none() {
+            return;
+        }
+        match event.keysym {
+            Keysym::Escape => return self.close_launcher(),
+            Keysym::Return | Keysym::KP_Enter => {
+                if self.launcher.start(None).is_some() {
+                    return self.close_launcher();
+                }
+            }
+            Keysym::Up => self.launcher.step(-1),
+            Keysym::Down | Keysym::Tab => self.launcher.step(1),
+            Keysym::BackSpace => self.launcher.erase(),
+            _ => {
+                // Keys that type nothing (arrows, F-keys) give "".
+                if let Some(text) = event
+                    .utf8
+                    .filter(|t| !t.is_empty() && !t.chars().any(char::is_control))
+                {
+                    self.launcher.typed(&text);
+                }
+            }
+        }
+        self.draw_launcher();
+    }
+
+    /// The compositor's switcher shows `view`: its surface is made, or
+    /// sized again when the number of titles changed, then drawn.
+    fn show_switcher(&mut self, view: switcher::View) {
+        let rows = view.titles.len();
+        if rows == 0 {
+            return self.hide_switcher();
+        }
+        self.flipped = view;
+        let height = switcher::height(rows);
+        match &mut self.flip {
+            Some(flip) if flip.rows == rows => {}
+            Some(flip) => {
+                flip.rows = rows;
+                flip.ready = false;
+                flip.surface.set_size(switcher::WIDTH, height);
+                flip.surface.commit();
+            }
+            None => {
+                let scale = self.panels.first().map_or(1, |p| p.scale);
+                let size = (switcher::WIDTH * switcher::height(10) * 4 * scale * scale) as usize;
+                let pool = match SlotPool::new(size, &self.shm) {
+                    Ok(pool) => pool,
+                    Err(e) => {
+                        eprintln!("edel-shell-ui: no memory for the switcher: {e}");
+                        return;
+                    }
+                };
+                let surface = self.compositor.create_surface(&self.qh);
+                let surface = self.layers.create_layer_surface(
+                    &self.qh,
+                    surface,
+                    Layer::Overlay,
+                    Some(SWITCHER),
+                    None,
+                );
+                // No anchor: the middle of the screen.
+                surface.set_size(switcher::WIDTH, height);
+                surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+                surface.commit();
+                self.flip = Some(Flip {
+                    surface,
+                    pool,
+                    scale,
+                    rows,
+                    ready: false,
+                    drawn: None,
+                });
+            }
+        }
+        self.draw_switcher();
+    }
+
+    fn hide_switcher(&mut self) {
+        if self.flip.take().is_some() {
+            self.flipped = switcher::View::default();
+            eprintln!("edel-shell-ui: switcher hidden");
+        }
+    }
+
+    /// Draws the switcher if what it shows changed.
+    fn draw_switcher(&mut self) {
+        let Some(flip) = &mut self.flip else {
+            return;
+        };
+        if !flip.ready {
+            return;
+        }
+        let now = (self.flipped.clone(), flip.scale);
+        if flip.drawn.as_ref() == Some(&now) {
+            return;
+        }
+        let first = flip.drawn.is_none();
+        let (w, h) = (
+            switcher::WIDTH * flip.scale,
+            switcher::height(flip.rows) * flip.scale,
+        );
+        let Some(mut pixmap) = Pixmap::new(w, h) else {
+            return;
+        };
+        switcher::paint(
+            &mut pixmap,
+            &self.flipped,
+            &self.tokens,
+            Some(&mut self.text),
+            flip.scale as f32,
+        );
+        let (w, h) = (w as i32, h as i32);
+        let (buffer, canvas) = match flip
+            .pool
+            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
+        {
+            Ok(made) => made,
+            Err(e) => {
+                eprintln!("edel-shell-ui: drawing the switcher failed: {e}");
+                return;
+            }
+        };
+        paint::to_argb(&pixmap, canvas);
+        let surface = flip.surface.wl_surface();
+        surface.set_buffer_scale(flip.scale as i32);
+        surface.damage_buffer(0, 0, w, h);
+        if let Err(e) = buffer.attach_to(surface) {
+            eprintln!("edel-shell-ui: drawing the switcher failed: {e}");
+            return;
+        }
+        flip.surface.commit();
+        flip.drawn = Some(now);
+        if first {
+            eprintln!("edel-shell-ui: switcher shown, {} windows", flip.rows);
+        }
+    }
+
+    fn is_switcher(&self, surface: &wl_surface::WlSurface) -> bool {
+        self.flip
+            .as_ref()
+            .is_some_and(|f| f.surface.wl_surface() == surface)
+    }
+
+    /// Whether `surface` is the open launcher's.
+    fn is_launcher(&self, surface: &wl_surface::WlSurface) -> bool {
+        self.menu
+            .as_ref()
+            .is_some_and(|m| m.surface.wl_surface() == surface)
     }
 
     /// The panel whose surface is `surface`.
@@ -389,9 +736,16 @@ impl Shell {
 
 impl LayerShellHandler for Shell {
     /// The compositor took a panel away (its screen went): shell-ui ends,
-    /// and the compositor starts it again, every panel afresh.
-    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &LayerSurface) {
-        self.exit = true;
+    /// and the compositor starts it again, every panel afresh. The
+    /// launcher just closes.
+    fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &LayerSurface) {
+        if self.is_launcher(surface.wl_surface()) {
+            self.close_launcher();
+        } else if self.is_switcher(surface.wl_surface()) {
+            self.hide_switcher();
+        } else {
+            self.exit = true;
+        }
     }
 
     fn configure(
@@ -402,6 +756,18 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
+        if self.is_launcher(surface.wl_surface()) {
+            if let Some(menu) = &mut self.menu {
+                menu.ready = true;
+            }
+            return self.draw_launcher();
+        }
+        if self.is_switcher(surface.wl_surface()) {
+            if let Some(flip) = &mut self.flip {
+                flip.ready = true;
+            }
+            return self.draw_switcher();
+        }
         let Some(i) = self.panel_of(surface.wl_surface()) else {
             return;
         };
@@ -422,6 +788,18 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         factor: i32,
     ) {
+        if self.is_launcher(surface) {
+            if let Some(menu) = &mut self.menu {
+                menu.scale = factor.clamp(1, 4) as u32;
+            }
+            return self.draw_launcher();
+        }
+        if self.is_switcher(surface) {
+            if let Some(flip) = &mut self.flip {
+                flip.scale = factor.clamp(1, 4) as u32;
+            }
+            return self.draw_switcher();
+        }
         let Some(i) = self.panel_of(surface) else {
             return;
         };
@@ -492,8 +870,8 @@ impl SeatHandler for Shell {
 
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 
-    /// A pointer, for clicks and scrolls on the widgets; shell-ui takes no
-    /// keys until the launcher (M5.3).
+    /// A pointer, for clicks and scrolls on the widgets; the keyboard is
+    /// asked for only while the launcher is open.
     fn new_capability(
         &mut self,
         _: &Connection,
@@ -535,6 +913,27 @@ impl PointerHandler for Shell {
         events: &[PointerEvent],
     ) {
         for event in events {
+            if self.is_launcher(&event.surface) {
+                let (x, y) = (event.position.0 as f32, event.position.1 as f32);
+                let row = launcher::row_at(y).filter(|_| x >= 0.0);
+                match &event.kind {
+                    PointerEventKind::Motion { .. } => {
+                        if let Some(row) = row.filter(|r| *r < self.launcher.view().names.len()) {
+                            self.launcher.selected = row;
+                            self.draw_launcher();
+                        }
+                    }
+                    PointerEventKind::Press { button, .. }
+                        if *button == BTN_LEFT
+                            && row.is_some()
+                            && self.launcher.start(row).is_some() =>
+                    {
+                        self.close_launcher();
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
@@ -543,23 +942,20 @@ impl PointerHandler for Shell {
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.input(i, x, Input::Click);
                 }
+                PointerEventKind::Leave { .. } => self.scrolled.reset(),
                 PointerEventKind::Axis {
                     horizontal,
                     vertical,
                     ..
                 } => {
                     // A wheel's steps, else a touchpad's pixels, a step
-                    // for every 40; down or right moves towards the end.
-                    let steps = |a: &smithay_client_toolkit::seat::pointer::AxisScroll| {
-                        if a.value120 != 0 {
-                            a.value120 / 120
-                        } else if a.discrete != 0 {
-                            a.discrete
-                        } else {
-                            (a.absolute / 40.0) as i32
-                        }
-                    };
-                    let n = steps(vertical) + steps(horizontal);
+                    // for every 40, adding up small ones; down or right
+                    // moves towards the end.
+                    let n = self.scrolled.steps(
+                        vertical.value120 + horizontal.value120,
+                        vertical.discrete + horizontal.discrete,
+                        vertical.absolute + horizontal.absolute,
+                    );
                     if n != 0 {
                         self.input(i, x, |_, _| Input::Scroll(n));
                     }
@@ -567,6 +963,78 @@ impl PointerHandler for Shell {
                 _ => {}
             }
         }
+    }
+}
+
+impl KeyboardHandler for Shell {
+    fn enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+        _: &[u32],
+        _: &[Keysym],
+    ) {
+    }
+
+    /// The keyboard went elsewhere, a window clicked: the launcher closes.
+    fn leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        surface: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+        if self.is_launcher(surface) {
+            self.close_launcher();
+        }
+    }
+
+    fn press_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: KeyEvent,
+    ) {
+        self.launcher_key(event);
+    }
+
+    fn repeat_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: KeyEvent,
+    ) {
+        self.launcher_key(event);
+    }
+
+    fn release_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: KeyEvent,
+    ) {
+    }
+
+    fn update_modifiers(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: Modifiers,
+        _: RawModifiers,
+        _: u32,
+    ) {
     }
 }
 

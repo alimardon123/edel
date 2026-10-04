@@ -53,6 +53,11 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
 fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) {
     let mut command = Command::new(NAME);
     command.env("WAYLAND_DISPLAY", &wayland);
+    // The apps the launcher starts inherit it, X11 ones too.
+    match &state.x11 {
+        Some(x11) => command.env("DISPLAY", format!(":{}", x11.number)),
+        None => command.env_remove("DISPLAY"),
+    };
     let child = match command.spawn() {
         Ok(child) => child,
         Err(e) if e.kind() == ErrorKind::NotFound => {

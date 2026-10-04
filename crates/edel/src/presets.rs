@@ -31,8 +31,25 @@ pub struct Preset {
     pub format: i64,
     pub windows: Windows,
     pub workspaces: Workspaces,
+    pub launcher: Launcher,
     #[serde(default)]
     pub panels: Vec<Panel>,
+}
+
+/// The launcher (M5.3b), which Super or the menu button opens.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Launcher {
+    pub style: LauncherStyle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LauncherStyle {
+    /// A search line over a list of apps, opening beside the panel's
+    /// start, where the menu button is, as Cinnamon's menu. A full-screen
+    /// grid joins with the preset that first asks for it (M5.4).
+    Menu,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -180,7 +197,7 @@ mod tests {
         assert_eq!(panel.edge, Edge::Bottom);
         assert_eq!(
             panel.widgets().collect::<Vec<_>>(),
-            ["menu", "windows", "workspaces", "clock"]
+            ["menu", "windows", "workspaces", "layout", "clock"]
         );
     }
 

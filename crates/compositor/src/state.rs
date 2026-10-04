@@ -98,6 +98,14 @@ pub struct Edel {
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
     pub last_title_click: Option<(Window, u32)>,
+    /// The modifier pressed alone while nothing else was, until another
+    /// key or a button comes (M5.3b).
+    pub tap: Option<smithay::input::keyboard::Keysym>,
+    /// The layer that asked for the keyboard alone and was given it when
+    /// it showed, such as shell-ui's launcher (M5.3b).
+    pub keyboard_layer: Option<WlSurface>,
+    /// The window switcher while its keys are held (M5.3c).
+    pub switcher: Option<crate::switcher::Switcher>,
     /// What the system file says (`watch.rs`).
     pub settings: Settings,
     /// `[outputs]` changed: the backend scans and places its screens again
@@ -124,6 +132,8 @@ pub struct Edel {
     /// Clients that follow the windows (`toplevels.rs`, M5.2d); a cell, as
     /// they hear of changes wherever the state file is written.
     pub toplevels: std::cell::RefCell<crate::toplevels::Toplevels>,
+    /// shell-ui's private link (`edelshell.rs`, M5.3).
+    pub links: crate::edelshell::Links,
     /// Windows whose first buffer has not come yet, so their size is not
     /// known and they are not placed or shown.
     unplaced: Vec<Window>,
@@ -152,6 +162,7 @@ impl Edel {
         seat.add_pointer();
         crate::extworkspace::create_global(&display);
         crate::toplevels::create_global(&display);
+        crate::edelshell::create_global(&display);
         Ok(Edel {
             compositor: CompositorState::new::<Edel>(&display),
             // Minimize since the window list brings a window back (M5.2h);
@@ -193,6 +204,9 @@ impl Edel {
             hover: None,
             pressed: None,
             last_title_click: None,
+            tap: None,
+            keyboard_layer: None,
+            switcher: None,
             settings: Settings::default(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
@@ -208,6 +222,7 @@ impl Edel {
             desks: Desks::new(Settings::default().workspaces(), tokens.gap),
             ext_workspaces: Default::default(),
             toplevels: Default::default(),
+            links: Default::default(),
             unplaced: Vec::new(),
             state_file: StateFile::start(),
             display,
@@ -232,9 +247,16 @@ impl Edel {
     /// puts it back in its tile), and the state file says so.
     pub fn placed(&mut self, window: &Window, place: Rectangle<i32, Logical>) {
         let frame = self.insets(window).frame(place);
-        // A floating window put on another screen moves to it.
+        // A floating window put on another screen moves to it; one whose
+        // middle is off every screen stays on its own.
         let middle = frame.loc.to_f64() + frame.size.to_f64().downscale(2.0).to_point();
-        let Some((screen, area)) = self.screen_at(middle) else {
+        let on_a_screen = self.space.output_under(middle).next().is_some();
+        let found = if on_a_screen {
+            self.screen_at(middle)
+        } else {
+            self.home(window)
+        };
+        let Some((screen, area)) = found else {
             return;
         };
         let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
@@ -378,10 +400,19 @@ impl Edel {
         frame.restore = None;
         frame.shape = None;
         drop(frame);
+        // The keyboard moves only if this window had it, or nothing has
+        // it: never away from a layer such as the launcher.
+        let had_keyboard = self
+            .seat
+            .get_keyboard()
+            .and_then(|k| k.current_focus())
+            .is_none_or(|focus| window.toplevel().is_some_and(|t| t.wl_surface() == &focus));
         self.desks.close(window);
         self.space.unmap_elem(window);
-        if let Some(top) = self.space.elements().last().cloned() {
-            self.focus(&top);
+        if had_keyboard {
+            if let Some(top) = self.space.elements().last().cloned() {
+                self.focus(&top);
+            }
         }
         if self.desks.layout().rearranges() {
             self.relayout();
@@ -424,6 +455,7 @@ impl Edel {
         }
         self.state_file.send(self.state_toml());
         self.sync_toplevels();
+        self.sync_shell();
     }
 
     /// Outputs and windows, bottom of the stack first, as TOML: the shown
@@ -562,7 +594,7 @@ impl Edel {
 }
 
 /// Whether `surface` has a buffer to show.
-fn has_buffer(surface: &WlSurface) -> bool {
+pub fn has_buffer(surface: &WlSurface) -> bool {
     smithay::backend::renderer::utils::with_renderer_surface_state(surface, |s| {
         s.buffer().is_some()
     })

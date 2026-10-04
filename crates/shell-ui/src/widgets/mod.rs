@@ -11,6 +11,7 @@
 //! here.
 
 pub mod clock;
+pub mod layout;
 pub mod menu;
 pub mod windows;
 pub mod workspaces;
@@ -52,13 +53,15 @@ pub struct Widget {
 
 /// What shell-ui knows that widgets show: the workspaces, by name, with
 /// the shown one marked (ext-workspace-v1), where a scroll left the
-/// workspace switcher's view, and the windows on a screen
-/// (wlr-foreign-toplevel-management).
+/// workspace switcher's view, the windows on a screen
+/// (wlr-foreign-toplevel-management), and the shown workspace's policy
+/// (edel-shell-v1).
 #[derive(Debug, Default)]
 pub struct Live {
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     pub windows: Vec<Task>,
+    pub policy: String,
 }
 
 /// A window, as the window list shows it.
@@ -91,6 +94,10 @@ pub enum Action {
     Activate(usize),
     /// Minimize the window at this place in [`Live::windows`].
     Minimize(usize),
+    /// Switch the shown workspace's policy, as Super+T.
+    TogglePolicy,
+    /// Open the launcher, or close it (M5.3b).
+    Launcher,
 }
 
 /// For widgets that take no input.
@@ -103,8 +110,42 @@ pub const TABLE: &[Widget] = &[
     menu::WIDGET,
     windows::WIDGET,
     workspaces::WIDGET,
+    layout::WIDGET,
     clock::WIDGET,
 ];
+
+/// Scrolling added up but not yet a step: a high-resolution wheel's
+/// 120ths and a touchpad's pixels, which come a little at a time.
+#[derive(Debug, Default)]
+pub struct Scrolled {
+    v120: i32,
+    pixels: f64,
+}
+
+impl Scrolled {
+    /// The whole steps a scroll makes (a wheel's 120ths, else its notches,
+    /// else 40 pixels a step), keeping the rest for the next.
+    pub fn steps(&mut self, v120: i32, discrete: i32, pixels: f64) -> i32 {
+        if v120 != 0 {
+            self.v120 += v120;
+            let n = self.v120 / 120;
+            self.v120 -= n * 120;
+            n
+        } else if discrete != 0 {
+            discrete
+        } else {
+            self.pixels += pixels;
+            let n = (self.pixels / 40.0).trunc() as i32;
+            self.pixels -= f64::from(n) * 40.0;
+            n
+        }
+    }
+
+    /// The pointer left: nothing carries over.
+    pub fn reset(&mut self) {
+        *self = Scrolled::default();
+    }
+}
 
 /// The widget called `name`.
 #[cfg(test)]
@@ -149,6 +190,21 @@ fn pick(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn small_scrolls_add_up_to_steps() {
+        let mut scrolled = Scrolled::default();
+        // A high-resolution wheel: four quarter notches make one step.
+        let wheel: i32 = (0..4).map(|_| scrolled.steps(30, 0, 0.0)).sum();
+        assert_eq!(wheel, 1);
+        assert_eq!(scrolled.steps(-120, 0, 0.0), -1);
+        // A touchpad: twelve pixels at a time, a step every 40.
+        let pad: Vec<i32> = (0..7).map(|_| scrolled.steps(0, 0, 12.0)).collect();
+        assert_eq!(pad.iter().sum::<i32>(), 2);
+        assert_eq!(scrolled.steps(0, 2, 0.0), 2, "notches as they are");
+        scrolled.reset();
+        assert_eq!(scrolled.steps(0, 0, 39.0), 0);
+    }
 
     fn repository() -> &'static Path {
         Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
