@@ -22,15 +22,22 @@ pub struct App {
 /// The directories `.desktop` files are read from, first wins.
 pub fn dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
+    // Empty is unset, and relative paths are left out, as the spec says.
     let data_home = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)
+        .filter(|d| d.is_absolute())
         .or_else(|| home.as_ref().map(|h| h.join(".local/share")));
     let data_dirs = std::env::var("XDG_DATA_DIRS")
         .ok()
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
     let mut out: Vec<PathBuf> = data_home.iter().cloned().collect();
-    out.extend(data_dirs.split(':').map(PathBuf::from));
+    out.extend(
+        data_dirs
+            .split(':')
+            .map(PathBuf::from)
+            .filter(|d| d.is_absolute()),
+    );
     out.extend(data_home.map(|d| d.join("flatpak/exports/share")));
     out.push("/var/lib/flatpak/exports/share".into());
     let mut seen = Vec::new();
@@ -76,7 +83,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        // Directories are followed only when they are not symlinks, so a
+        // loop cannot recurse for ever; linked files, as Flatpak's
+        // exports are, are read.
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             walk(&path, out);
         } else if path.extension().is_some_and(|e| e == "desktop") {
             out.push(path);
@@ -105,7 +115,8 @@ pub fn parse(text: &str) -> Option<App> {
         let (key, value) = (key.trim(), value.trim());
         match key {
             "Type" => application = value == "Application",
-            "Name" => name = Some(unescape(value)),
+            // One line, whatever escapes it holds.
+            "Name" => name = Some(unescape(value).replace(char::is_control, " ")),
             "Exec" => exec = Some(value.to_string()),
             "Terminal" => terminal = value == "true",
             "NoDisplay" | "Hidden" if value == "true" => shown = false,
@@ -281,6 +292,8 @@ mod tests {
             None,
             "no Exec"
         );
+        let two = parse("[Desktop Entry]\nType=Application\nName=Two\\nLines\nExec=x").unwrap();
+        assert_eq!(two.name, "Two Lines", "one line");
     }
 
     #[test]
@@ -348,10 +361,18 @@ mod tests {
         std::fs::write(system.join("abc.desktop"), entry("Abc")).unwrap();
         std::fs::write(mine.join("sub/tool.desktop"), entry("Tool")).unwrap();
         std::fs::write(system.join("notes.txt"), "not an app").unwrap();
+        // A linked file is read, as Flatpak's exports are; a linked
+        // directory, here a loop, is not followed.
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::fs::write(elsewhere.join("flat.desktop"), entry("Flat")).unwrap();
+        std::os::unix::fs::symlink(elsewhere.join("flat.desktop"), system.join("flat.desktop"))
+            .unwrap();
+        std::os::unix::fs::symlink(&mine, mine.join("loop")).unwrap();
         let apps = read_all(&[mine, system]);
         std::fs::remove_dir_all(&root).unwrap();
         let names: Vec<_> = apps.iter().map(|a| a.name.as_str()).collect();
-        assert_eq!(names, ["Abc", "My Foot", "Tool"]);
+        assert_eq!(names, ["Abc", "Flat", "My Foot", "Tool"]);
     }
 
     #[test]

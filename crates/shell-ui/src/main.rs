@@ -564,7 +564,7 @@ impl Shell {
         if first {
             eprintln!(
                 "edel-shell-ui: launcher shown, {} apps",
-                self.launcher.view().names.len()
+                self.launcher.count()
             );
         }
     }
@@ -586,7 +586,11 @@ impl Shell {
             Keysym::Down | Keysym::Tab => self.launcher.step(1),
             Keysym::BackSpace => self.launcher.erase(),
             _ => {
-                if let Some(text) = event.utf8.filter(|t| !t.chars().any(char::is_control)) {
+                // Keys that type nothing (arrows, F-keys) give "".
+                if let Some(text) = event
+                    .utf8
+                    .filter(|t| !t.is_empty() && !t.chars().any(char::is_control))
+                {
                     self.launcher.typed(&text);
                 }
             }

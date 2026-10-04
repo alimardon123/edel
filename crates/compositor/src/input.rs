@@ -88,11 +88,8 @@ impl Edel {
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
-                self.keys_down = if pressed {
-                    self.keys_down + 1
-                } else {
-                    self.keys_down.saturating_sub(1)
-                };
+                // Every key down on the seat, this one included.
+                let down = event.count();
                 let mut tapped = None;
                 let mut ending = None;
                 let keyboard = self.seat.get_keyboard()?;
@@ -114,8 +111,7 @@ impl Edel {
                         // still hears both.
                         let modifier = keysym.modified_sym();
                         if pressed {
-                            state.tap = (crate::shortcuts::is_tap_key(modifier)
-                                && state.keys_down == 1)
+                            state.tap = (crate::shortcuts::is_tap_key(modifier) && down == 1)
                                 .then_some(modifier);
                         } else if state.tap.take() == Some(modifier) {
                             tapped = Some(modifier);
