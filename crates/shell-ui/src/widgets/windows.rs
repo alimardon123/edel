@@ -11,12 +11,12 @@
 //! over wlr-foreign-toplevel-management (`crate::toplevels`). App icons
 //! join with the launcher (M5.3), which reads them.
 
-use tiny_skia::{FillRule, Rect, Transform};
+use tiny_skia::{Rect, Transform};
 
 use edel::tokens::Colour;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{mix, paint_of, rounded};
+use crate::paint::{fill, mix, paint_of};
 
 pub const WIDGET: Widget = Widget {
     name: "windows",
@@ -36,9 +36,8 @@ const SHARE: f32 = 0.45;
 /// Space at each end and between buttons.
 const EDGE: f32 = 4.0;
 const GAP: f32 = 4.0;
-/// A button's height and corner radius.
+/// A button's height; its corners are the tokens' controls'.
 const HEIGHT: f32 = 30.0;
-const RADIUS: f32 = 7.0;
 /// The title's inset from each side of its button.
 const PAD: f32 = 10.0;
 /// The marks along a button's foot: the focused window's line and other
@@ -157,15 +156,8 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
             continue;
         }
         if mark == '*' {
-            if let Some(path) = rounded(bx, y, bw, height, RADIUS * s) {
-                canvas.pixmap.fill_path(
-                    &path,
-                    &paint_of(lit),
-                    FillRule::Winding,
-                    Transform::identity(),
-                    None,
-                );
-            }
+            let r = tokens.radius_control as f32 * s;
+            fill(canvas.pixmap, bx, y, bw, height, r, lit);
         }
         let (ink, foot) = match mark {
             '*' => (tokens.panel_text, Some((LINE, tokens.accent))),

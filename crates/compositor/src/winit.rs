@@ -47,7 +47,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     state.socket = name.clone();
     crate::xwayland::listen(&handle, &mut state, &name);
     state.program = program;
-    crate::decoration::load_text(&handle, state.tokens.title_text_size);
+    crate::decoration::load_text(&handle, &state.tokens.font, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
     let (mut backend, events) = winit::init::<GlesRenderer>()

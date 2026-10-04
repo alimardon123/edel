@@ -7,10 +7,8 @@
 
 use tiny_skia::{FillRule, LineCap, LineJoin, Path, PathBuilder, Stroke, Transform};
 
-use edel::tokens::Colour;
-
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{mix, paint_of, rounded};
+use crate::paint::{fill, lit, mix, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
     name: "layout",
@@ -21,10 +19,10 @@ pub const WIDGET: Widget = Widget {
     input,
 };
 
-/// The button, its corner radius and the space on each side of it.
+/// The button and the space on each side of it; its corners are the
+/// tokens' controls'.
 const WIDTH: f32 = 30.0;
 const HEIGHT: f32 = 26.0;
-const RADIUS: f32 = 7.0;
 const ROOM: f32 = 3.0;
 /// The icon's size, drawn from a 24-unit square as the mockups' are, and
 /// its lines' width in those units.
@@ -61,19 +59,8 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let by = canvas.top + ((canvas.height - bh) / 2.0).round();
     let tiled = shown == "tiling";
     let (ink, under) = if tiled {
-        let fill = Colour {
-            a: 0.18,
-            ..tokens.accent
-        };
-        if let Some(path) = rounded(bx, by, bw, bh, RADIUS * s) {
-            canvas.pixmap.fill_path(
-                &path,
-                &paint_of(fill),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
+        let r = tokens.radius_control as f32 * s;
+        fill(canvas.pixmap, bx, by, bw, bh, r, lit(tokens));
         (tokens.accent, mix(tokens.panel, tokens.accent, 0.18))
     } else {
         (mix(tokens.panel_text, tokens.panel, 0.25), tokens.panel)

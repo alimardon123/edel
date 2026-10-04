@@ -76,6 +76,8 @@ pub fn panel_top(edge: Edge, tokens: &Tokens) -> u32 {
 pub struct Text {
     fonts: FontSystem,
     glyphs: SwashCache,
+    /// The interface font's family, from the tokens.
+    family: String,
 }
 
 /// One line of text, shaped.
@@ -85,19 +87,21 @@ pub struct Line {
 }
 
 impl Text {
-    pub fn load() -> Text {
+    /// Text in `family`, the tokens' interface font.
+    pub fn load(family: &str) -> Text {
         Text {
             fonts: FontSystem::new(),
             glyphs: SwashCache::new(),
+            family: family.to_string(),
         }
     }
 
-    /// `text` shaped in Inter, falling back for other scripts, `size`
-    /// pixels high.
+    /// `text` shaped in the interface font, falling back for other
+    /// scripts, `size` pixels high.
     pub fn line(&mut self, text: &str, size: f32) -> Line {
         let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size, size * 1.25));
         buffer.set_size(None, None);
-        let attrs = Attrs::new().family(Family::Name("Inter"));
+        let attrs = Attrs::new().family(Family::Name(&self.family));
         buffer.set_text(text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut self.fonts, false);
         let width = buffer
@@ -197,6 +201,27 @@ pub fn paint_of(c: Colour) -> Paint<'static> {
     paint.set_color(colour(c));
     paint.anti_alias = true;
     paint
+}
+
+/// The accent, faint: under a chosen row or a switched-on button.
+pub fn lit(tokens: &Tokens) -> Colour {
+    Colour {
+        a: 0.18,
+        ..tokens.accent
+    }
+}
+
+/// Fills the rectangle with corners of radius `r` in `c`.
+pub fn fill(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colour) {
+    if let Some(path) = rounded(x, y, w, h, r) {
+        pixmap.fill_path(
+            &path,
+            &paint_of(c),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 /// A rectangle with corners of radius `r`, as a path.

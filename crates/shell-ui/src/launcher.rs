@@ -9,26 +9,26 @@
 
 use std::process::{Child, Command, Stdio};
 
-use tiny_skia::{FillRule, Pixmap, Transform};
+use tiny_skia::Pixmap;
 
-use edel::tokens::{Colour, Tokens};
+use edel::tokens::Tokens;
 
 use crate::apps::{self, App};
-use crate::paint::{Text, mix, paint_of, rounded};
+use crate::paint::{Text, fill, mix};
+use crate::popup::{self, INSET, PAD, middle};
 
-/// Its size in logical pixels: a search line and room for `ROWS` apps,
-/// the same however many match, so it never changes size as people type.
+/// Its width in logical pixels, its search line's height and how many
+/// apps it shows: the same however many match, so it never changes size
+/// as people type.
 pub const WIDTH: u32 = 360;
 pub const ROWS: usize = 8;
-const PAD: f32 = 8.0;
 const SEARCH: f32 = 40.0;
-const ROW: f32 = 36.0;
-pub const HEIGHT: u32 = (PAD + SEARCH + PAD + ROWS as f32 * ROW + PAD) as u32;
-/// Its corners (a menu's, by the mockups) and its controls'.
-const RADIUS: f32 = 12.0;
-const CONTROL: f32 = 7.0;
-/// Text inside a row or the search line, from its left.
-const INSET: f32 = 12.0;
+
+/// Its size in logical pixels: the search line and `ROWS` rows.
+pub fn size(tokens: &Tokens) -> (u32, u32) {
+    let rows = ROWS as f32 * tokens.row as f32;
+    (WIDTH, (PAD + SEARCH + PAD + rows + PAD) as u32)
+}
 
 /// What the launcher shows: what was typed, the matching apps' names
 /// and which is chosen.
@@ -40,51 +40,42 @@ pub struct View {
 }
 
 /// The row at `y` logical pixels from the launcher's top, if any.
-pub fn row_at(y: f32) -> Option<usize> {
+pub fn row_at(y: f32, tokens: &Tokens) -> Option<usize> {
     let top = PAD + SEARCH + PAD;
     if y < top {
         return None;
     }
-    let row = ((y - top) / ROW) as usize;
+    let row = ((y - top) / tokens.row as f32) as usize;
     (row < ROWS).then_some(row)
 }
 
-/// Draws `view` at `scale` into `pixmap`, `WIDTH` by `HEIGHT` times
-/// `scale`.
+/// Draws `view` at `scale` into `pixmap`, its size times `scale`.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
     tokens: &Tokens,
-    text: Option<&mut Text>,
+    mut text: Option<&mut Text>,
     scale: f32,
 ) {
-    pixmap.fill(tiny_skia::Color::TRANSPARENT);
     let s = scale;
-    let fill = |pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colour| {
-        if let Some(path) = rounded(x * s, y * s, w * s, h * s, r * s) {
-            pixmap.fill_path(
-                &path,
-                &paint_of(c),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-    };
-    let (w, h) = (WIDTH as f32, HEIGHT as f32);
-    fill(pixmap, 0.0, 0.0, w, h, RADIUS, tokens.panel);
+    popup::card(pixmap, tokens, s);
+    let w = WIDTH as f32;
     // The search line, a little lighter than the launcher.
     let field = mix(tokens.panel, tokens.panel_text, 0.08);
-    fill(pixmap, PAD, PAD, w - 2.0 * PAD, SEARCH, CONTROL, field);
-    let selected = Colour {
-        a: 0.18,
-        ..tokens.accent
-    };
+    let r = tokens.radius_control as f32 * s;
+    fill(
+        pixmap,
+        PAD * s,
+        PAD * s,
+        (w - 2.0 * PAD) * s,
+        SEARCH * s,
+        r,
+        field,
+    );
     let first = PAD + SEARCH + PAD;
-    if view.selected < view.names.len() {
-        let y = first + view.selected as f32 * ROW;
-        fill(pixmap, PAD, y, w - 2.0 * PAD, ROW, CONTROL, selected);
-    }
+    let chosen = (view.selected < view.names.len()).then_some(view.selected);
+    let names = view.names.iter().take(ROWS).map(String::as_str);
+    popup::rows(pixmap, tokens, text.as_deref_mut(), names, first, chosen, s);
     let Some(text) = text else {
         return;
     };
@@ -97,50 +88,21 @@ pub fn paint(
         (view.query.as_str(), tokens.panel_text)
     };
     let mut line = text.fit(words, size, room);
-    let middle = |top: f32, height: f32| (top + height / 2.0) * s - size * 0.625;
-    text.draw(
-        pixmap,
-        &mut line,
-        (PAD + INSET) * s,
-        middle(PAD, SEARCH),
-        ink,
-    );
+    let left = (PAD + INSET) * s;
+    text.draw(pixmap, &mut line, left, middle(PAD, SEARCH, size, s), ink);
     // Where the next letter goes: after the text, or just before the
     // hint.
     let x = if view.query.is_empty() {
-        (PAD + INSET - 4.0) * s
+        left - 4.0 * s
     } else {
-        (PAD + INSET) * s + line.width + s
+        left + line.width + s
     };
-    if let Some(path) = rounded(x, (PAD + 10.0) * s, 2.0 * s, (SEARCH - 20.0) * s, s) {
-        pixmap.fill_path(
-            &path,
-            &paint_of(tokens.accent),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
+    let (y, h) = ((PAD + 10.0) * s, (SEARCH - 20.0) * s);
+    fill(pixmap, x, y, 2.0 * s, h, s, tokens.accent);
     if view.names.is_empty() {
         let mut line = text.fit("No app matches", size, room);
-        text.draw(
-            pixmap,
-            &mut line,
-            (PAD + INSET) * s,
-            middle(first, ROW),
-            dim,
-        );
-    }
-    for (i, name) in view.names.iter().take(ROWS).enumerate() {
-        let mut line = text.fit(name, size, room);
-        let top = first + i as f32 * ROW;
-        text.draw(
-            pixmap,
-            &mut line,
-            (PAD + INSET) * s,
-            middle(top, ROW),
-            tokens.panel_text,
-        );
+        let y = middle(first, tokens.row as f32, size, s);
+        text.draw(pixmap, &mut line, left, y, dim);
     }
 }
 
@@ -259,25 +221,22 @@ mod tests {
             names: vec!["Foot".into(), "Foot Client".into()],
             selected: 1,
         };
-        let mut pixmap = Pixmap::new(WIDTH, HEIGHT).unwrap();
+        let (_, height) = size(&tokens);
+        let high = tokens.row;
+        let mut pixmap = Pixmap::new(WIDTH, height).unwrap();
         paint(&mut pixmap, &view, &tokens, None, 1.0);
         assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "a round corner");
-        let back = pixel(&pixmap, WIDTH / 2, HEIGHT - 4);
+        let back = pixel(&pixmap, WIDTH / 2, height - 4);
         assert_eq!(back, tokens.panel.bytes());
         // Row 1 is lit, row 0 is not; 4 px in from the left of each.
         let first = (PAD + SEARCH + PAD) as u32;
-        let row = |i: u32| {
-            pixel(
-                &pixmap,
-                PAD as u32 + 4,
-                first + i * ROW as u32 + ROW as u32 / 2,
-            )
-        };
+        let row = |i: u32| pixel(&pixmap, PAD as u32 + 4, first + i * high + high / 2);
         assert_eq!(row(0), back);
         assert_ne!(row(1), back);
-        assert_eq!(row_at(0.0), None);
-        assert_eq!(row_at(PAD + SEARCH + PAD + ROW * 1.5), Some(1));
-        assert_eq!(row_at(HEIGHT as f32), None);
+        assert_eq!(row_at(0.0, &tokens), None);
+        let y = PAD + SEARCH + PAD + high as f32 * 1.5;
+        assert_eq!(row_at(y, &tokens), Some(1));
+        assert_eq!(row_at(height as f32, &tokens), None);
     }
 
     #[test]
