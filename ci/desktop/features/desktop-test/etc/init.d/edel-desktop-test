@@ -78,6 +78,8 @@ report() {
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
 	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
+	# Of it, the buffers shared with the compositor.
+	say "shell_ui_shared_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 	say "shell_tier $(edel shell tier 2>&1)"
 	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
@@ -155,6 +157,7 @@ commands() {
 		# shell-ui's memory now, after the launcher has been open (M5.3b).
 		'shell rss')
 			pid=$(pidof edel-shell-ui)
+			say "shell_ui_shared_now_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 			say "shell_ui_rss_now_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 			;;
 		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
