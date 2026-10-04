@@ -1,0 +1,34 @@
+# Mac-like (M5.4d): a slim bar along the top with the menu button and the
+# focused window's title at its start and the workspace buttons, the
+# layout toggle and the clock at its end, and a dock along the bottom, a
+# card as wide as its apps: the pinned ones, then every other app with a
+# window open. Windows float, with their buttons on the left.
+format = 1
+
+[windows]
+policy = "floating"
+buttons = "left"
+
+[workspaces]
+count = 4
+
+[launcher]
+style = "menu"
+
+[apps]
+# The apps the dock shows first, by role (files, browser, mail, editor,
+# terminal, music, settings: the installed app for it) or by desktop
+# file id; one this machine lacks is left out.
+pinned = ["files", "browser", "mail", "music", "editor", "terminal", "settings"]
+
+[[panels]]
+edge = "top"
+start = ["menu", "title"]
+centre = []
+end = ["workspaces", "layout", "clock"]
+
+# The dock: a card along the bottom, keeping its height free of windows.
+[[panels]]
+edge = "bottom"
+style = "dock"
+centre = ["apps"]

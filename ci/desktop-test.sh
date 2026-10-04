@@ -827,6 +827,53 @@ case_taskbar() {
 	echo "PASS: Windows-like's taskbar lay along the bottom with the menu button at its left edge, the search field and the apps centred at $x, $w px wide; foot's cell started foot, minimized it and brought it back, and unsetting the preset brought Classic back"
 }
 
+case_dock() {
+	# Mac-like (M5.4d): edel system set shell.preset=mac-like restarts
+	# shell-ui with a bar along the top and a dock along the bottom, a
+	# card in the panel's colour as wide as its apps, centred, 52 px high
+	# and 8 px above the screen's bottom (740 to 792), and moves the
+	# window buttons to the left. Of the apps it pins the VM has foot, so
+	# foot's cell comes first; a click there starts foot. Kept as
+	# preset-mac-like.png.
+	panel=$(token panel)
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	docks=$(count 'edel-shell-ui: panel edel-dock along the bottom')
+	left=$(count 'edel-compositor: window buttons on the left')
+	guest 'preset mac-like'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+		fail "edel system set shell.preset=mac-like did not restart shell-ui"
+	wait_more 'edel-shell-ui: panel edel-dock along the bottom' "$docks" || fail "Mac-like has no dock along the bottom"
+	wait_more 'edel-compositor: window buttons on the left' "$left" || fail "Mac-like did not move the window buttons to the left"
+	wait_for 'edel-shell-ui: panel places apps 6\+[0-9]+$' || fail "the dock does not hold the apps 6 px from its start"
+	# The open windows' apps join the pinned ones as shell-ui learns of
+	# them, and the dock grows to hold them.
+	sleep 1
+	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 6+\([0-9]*\)$/\1/p' | tail -n 1)
+	x=$((640 - (w + 12) / 2))
+	shot preset-mac-like 640 12 "$panel" >/dev/null || fail "Mac-like's bar is not at 640,12 in the panel's colour"
+	shot preset-mac-like $((x + 3)) 766 "$panel" >/dev/null ||
+		fail "the dock, $((w + 12)) px wide, does not start at $((x + 3)),766 in the panel's colour"
+	shot preset-mac-like $((x - 3)) 766 "$background" >/dev/null || fail "$((x - 3)),766, left of the dock, is not the background"
+	shot preset-mac-like 640 797 "$background" >/dev/null || fail "640,797, under the dock, is not the background"
+	cell=$((x + 6 + 24))
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py click "$cell" 766
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "a click on foot's cell in the dock at $cell,766 did not start foot"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
+	back=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	right=$(count 'edel-compositor: window buttons on the right')
+	guest 'preset default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$back" ||
+		fail "unsetting shell.preset did not bring Classic back"
+	wait_more 'edel-compositor: window buttons on the right' "$right" || fail "back on Classic, the window buttons did not go back to the right"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Mac-like (M5.4d): preset-mac-like.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: Mac-like put a bar along the top, a dock $((w + 12)) px wide centred at $x,740 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with shell.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
@@ -1049,13 +1096,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | dock | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
