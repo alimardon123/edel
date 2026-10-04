@@ -378,6 +378,10 @@ impl Edel {
         if self.desks.count() != new.workspaces() {
             self.set_workspace_count(new.workspaces());
         }
+        if old.preset_differs(&new) {
+            let name = new.preset.as_deref().unwrap_or(edel::presets::DEFAULT);
+            crate::shellui::restart(self, &format!("the preset is now {name}"));
+        }
         if old.policy() != new.policy() {
             self.switch_policy(new.policy());
         } else if old.title_bars != new.title_bars || rescaled {

@@ -120,6 +120,11 @@ commands() {
 		case "$command" in
 		'tiling on') edel system set shell.tiling=true ;;
 		'tiling off') edel system set shell.tiling=false ;;
+		# Presets (M5.4a): Hive, then back to Classic, the default;
+		# shell.tiling, left false by the tiling case, would win over
+		# Hive's policy, so it goes first.
+		'preset hive') edel system unset shell.tiling && edel system set shell.preset=hive ;;
+		'preset default') edel system unset shell.preset ;;
 		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
 		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the

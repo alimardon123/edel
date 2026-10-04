@@ -18,7 +18,7 @@ anyhow = "1.0.104"
 edel = { path = "../edel", default-features = false }
 fontdue = "0.9.4"
 # Copies of the X11 sockets that xwayland-satellite inherits (M4.7).
-rustix = { version = "1.1.5", default-features = false, features = ["std"] }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "process"] }
 inotify = { version = "0.11.5", default-features = false }
 # Pinned (roadmap M4.2a): only what is used; the DRM, GBM, libinput, udev
 # and libseat backends join with the virtual GPU (M4.2b).

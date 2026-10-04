@@ -13,6 +13,7 @@
 pub mod clock;
 pub mod layout;
 pub mod menu;
+pub mod title;
 pub mod windows;
 pub mod workspaces;
 
@@ -117,6 +118,7 @@ pub const TABLE: &[Widget] = &[
     workspaces::WIDGET,
     layout::WIDGET,
     clock::WIDGET,
+    title::WIDGET,
 ];
 
 /// Scrolling added up but not yet a step: a high-resolution wheel's

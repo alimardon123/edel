@@ -116,6 +116,13 @@ impl Settings {
         presets::named(self.preset.as_deref()).0.workspaces.count
     }
 
+    /// Whether `other` lays the desktop out by another preset (M5.4a): a
+    /// name this release lacks is Classic, so it differs from Classic only
+    /// in name and restarts nothing.
+    pub fn preset_differs(&self, other: &Settings) -> bool {
+        presets::named(self.preset.as_deref()).0 != presets::named(other.preset.as_deref()).0
+    }
+
     /// Whether windows under `policy` get the compositor's title bars.
     pub fn bars_in(&self, policy: &str) -> bool {
         self.title_bars == TitleBars::Always || policy == "floating"
@@ -217,6 +224,18 @@ mod tests {
             "tiling",
             "shell.tiling wins over the preset"
         );
+    }
+
+    #[test]
+    fn only_another_preset_counts_as_a_change_of_preset() {
+        let named = |name: Option<&str>| Settings {
+            preset: name.map(str::to_string),
+            ..Settings::default()
+        };
+        assert!(named(None).preset_differs(&named(Some("hive"))));
+        assert!(!named(None).preset_differs(&named(Some("classic"))));
+        assert!(!named(Some("classic")).preset_differs(&named(Some("tablet"))));
+        assert!(named(Some("hive")).preset_differs(&named(Some("tablet"))));
     }
 
     #[test]
