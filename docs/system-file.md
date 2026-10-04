@@ -61,7 +61,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 | `shell.tiling` | `true` or `false` | M4.5 |
 | `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |
-| `shell.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; absent is the preset's (right in Classic and Tiling) | M5.4b |
+| `shell.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; absent is the preset's (right in Classic and Hive) | M5.4b |
 | `outputs.*.position` | two whole numbers, `[x, y]` | M4.6 |
 | `outputs.*.scale` | a number, such as `1.25` | M4.6 |
 | `outputs.*.mode` | text, such as `"1920x1080@60"` | M4.6 |
