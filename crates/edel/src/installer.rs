@@ -165,7 +165,7 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
     plan.check()?;
     print!("{plan}");
     if dry_run {
-        println!("This was a dry run; nothing was changed.");
+        println!("This was only the plan; nothing was changed.");
         return Ok(());
     }
     if !yes {

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Points the stable channel at a published release (roadmap M3.4): copies
 # the release's channel.toml and its signature to channels/stable/ on the
-# gh-pages branch, which GitHub Pages serves, so `edel update --dry-run
+# gh-pages branch, which GitHub Pages serves, so `edel update --check
 # https://alimardon123.github.io/edel/channels/stable/release.toml` finds
 # it. Pages holds only manifests; the images stay with the release.
 #

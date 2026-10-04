@@ -58,4 +58,4 @@ To install from the stick onto the laptop's disk you need a login, which arrives
 
 ## Updates
 
-A machine checks a release with `edel update --dry-run URL` and installs it with `edel update URL`, where URL is a `release.toml`; the preview's is `https://github.com/alimardon123/edel/releases/download/preview/release.toml`. The update goes into the other slot and is confirmed on the next start; a start that fails three times, hangs or freezes comes back on the previous slot by itself. `edel rollback` goes back by hand.
+A machine checks a release with `edel update --check URL` and installs it with `edel update URL`, where URL is a `release.toml`; the preview's is `https://github.com/alimardon123/edel/releases/download/preview/release.toml`. The update goes into the other slot and is confirmed on the next start; a start that fails three times, hangs or freezes comes back on the previous slot by itself. `edel rollback` goes back by hand.
