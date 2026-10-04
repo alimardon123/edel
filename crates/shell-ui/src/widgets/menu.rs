@@ -2,6 +2,7 @@
 //! colour, centred in a square as tall as the panel. A click opens the
 //! launcher, or closes it (M5.3b).
 
+use accesskit::Role;
 use tiny_skia::{FillRule, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
@@ -14,7 +15,13 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input,
+    role: Role::Button,
+    label,
 };
+
+fn label(_: &str) -> String {
+    "Menu".into()
+}
 
 /// A click opens or closes the launcher.
 fn input(_: &str, input: Input) -> Option<Action> {

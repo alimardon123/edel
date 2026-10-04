@@ -44,7 +44,8 @@
 #   panel       shell-ui's panel along the bottom in the token colour with
 #               its clock drawn, within its memory budget, and back after
 #               kill -9 (M5.1b); its layout toggle tiles the windows and
-#               floats them again (M5.3a)
+#               floats them again (M5.3a); a screen reader reads it over
+#               AT-SPI (M5.1d)
 #   animations  appearance.motion = "reduced" logs fades only and its
 #               removal logs the tier's own animations again; ten windows
 #               opening one after another and closing at the tier llvmpipe
@@ -464,7 +465,20 @@ case_panel() {
 	python3 ci/qmp.py click $((toggle + 18)) 780
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "a second click on the layout toggle did not float the windows again"
 	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle is still filled after the windows float again"
-	# Its memory, as the service read it once the desktop was idle.
+	# A screen reader (M5.1d): with accessibility turned on, AT-SPI holds
+	# shell-ui, its panel and each widget, by role and name.
+	asked=$(count 'DESKTOP-TEST: a11y_done')
+	guest 'a11y tree'
+	wait_more 'DESKTOP-TEST: a11y_done' "$asked" 30 || fail "the screen reader's walk of AT-SPI did not finish"
+	tree=$(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: a11y ' | sed 's/.*DESKTOP-TEST: a11y //')
+	for want in '1 application: edel-shell-ui' '2 frame: Panel' '3 button: Menu' '3 button: Layout: floating'; do
+		echo "$tree" | grep -qx "$want" ||
+			fail "AT-SPI does not hold \"$want\"; it holds: $(echo "$tree" | tr '\n' ';')"
+	done
+	echo "$tree" | grep -qE '^3 label: [0-9]{2}:[0-9]{2}$' ||
+		fail "AT-SPI holds no clock among the panel's widgets: $(echo "$tree" | tr '\n' ';')"
+	# Its memory, as the service read it once the desktop was idle, with
+	# no screen reader.
 	rss=$(value shell_ui_rss_mib)
 	limit=$(budget shell_ui_rss_mib)
 	awk -v m="$rss" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
@@ -478,7 +492,7 @@ case_panel() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "shell-ui (M5.1b): $rss MiB resident (budget $limit MiB)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, its layout toggle tiled the windows and floated them again, it uses $rss MiB (budget $limit), $(value shell_ui_shared_kib) kB of it buffers shared with the compositor, and it came back after kill -9"
+	echo "PASS: shell-ui's panel lies along the bottom in #$panel with its clock drawn, its layout toggle tiled the windows and floated them again, a screen reader found it, its menu button, layout button and clock over AT-SPI, it uses $rss MiB (budget $limit), $(value shell_ui_shared_kib) kB of it buffers shared with the compositor, and it came back after kill -9"
 }
 
 case_animations() {

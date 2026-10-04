@@ -6,9 +6,9 @@
 //! feature lives in `src/features/NAME.rs`, and its widget's line carries
 //! `needs: Some("NAME")`: on a machine without
 //! `/usr/share/edel/features/NAME.toml` the widget is skipped with a log
-//! line (ADR-008). The tests fail when a line needs a feature with no file
-//! under `features/`, and when a built-in preset names a widget missing
-//! here.
+//! line (ADR-008). Its role and label are what screen readers say of it
+//! (M5.1d). The tests fail when a line needs a feature with no file under
+//! `features/`, and when a built-in preset names a widget missing here.
 
 pub mod clock;
 pub mod layout;
@@ -18,6 +18,7 @@ pub mod workspaces;
 
 use std::path::Path;
 
+use accesskit::Role;
 use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
@@ -49,6 +50,10 @@ pub struct Widget {
     pub draw: fn(&mut Canvas, shown: &str, x: f32),
     /// What `input` on it does while it shows `shown`, if anything.
     pub input: fn(shown: &str, input: Input) -> Option<Action>,
+    /// What it is to a screen reader.
+    pub role: Role,
+    /// What a screen reader says it is, showing `shown`.
+    pub label: fn(shown: &str) -> String,
 }
 
 /// What shell-ui knows that widgets show: the workspaces, by name, with
@@ -265,6 +270,8 @@ mod tests {
                 width: zero,
                 draw: nothing,
                 input: no_input,
+                role: Role::Label,
+                label: str::to_owned,
             },
         ];
         let dir = std::env::temp_dir().join(format!("edel-shell-ui-test-{}", std::process::id()));

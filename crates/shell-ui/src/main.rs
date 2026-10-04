@@ -14,6 +14,7 @@
 //! tapped alone, or the menu button opens the launcher (M5.3b,
 //! `launcher.rs`). It exits when the compositor goes away.
 
+mod a11y;
 mod apps;
 mod launcher;
 mod link;
@@ -130,6 +131,8 @@ struct Panel {
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
+    /// What screen readers read of it (M5.1d).
+    reader: a11y::Reader,
 }
 
 fn main() {
@@ -189,6 +192,7 @@ fn run() -> Result<()> {
             drawn: None,
             waiting: false,
             places: Vec::new(),
+            reader: a11y::Reader::new(),
         });
     }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
@@ -328,7 +332,28 @@ impl Shell {
             eprintln!("edel-shell-ui: drawing the panel failed: {e:#}");
             return;
         }
-        self.panels[i].drawn = Some(look);
+        // Screen readers get what was drawn, in logical pixels.
+        let panel = &mut self.panels[i];
+        let top = f64::from(paint::panel_top(panel.edge, &self.tokens));
+        let bottom = top + f64::from(self.tokens.panel_height);
+        let items = panel
+            .row
+            .all()
+            .zip(&look.shown)
+            .zip(&panel.places)
+            .filter(|(_, (_, width))| *width > 0.0)
+            .map(|((widget, shown), &(x, width))| a11y::Item {
+                role: widget.role,
+                label: (widget.label)(shown),
+                bounds: accesskit::Rect::new(x.into(), top, (x + width).into(), bottom),
+            })
+            .collect();
+        let size = (
+            f64::from(panel.width),
+            f64::from(self.tokens.panel_height + strip),
+        );
+        panel.reader.update(size, items);
+        panel.drawn = Some(look);
     }
 
     fn show(&mut self, i: usize, look: &Look) -> Result<()> {

@@ -11,6 +11,7 @@
 //! over wlr-foreign-toplevel-management (`crate::toplevels`). App icons
 //! join with the launcher (M5.3), which reads them.
 
+use accesskit::Role;
 use tiny_skia::{Rect, Transform};
 
 use edel::tokens::Colour;
@@ -25,7 +26,27 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input,
+    role: Role::Group,
+    label,
 };
+
+/// The windows' titles in order, each with its state: "Windows: Files
+/// (focused), Mail (minimized)".
+fn label(shown: &str) -> String {
+    let titles: Vec<String> = shown
+        .lines()
+        .map(|line| {
+            let mut chars = line.chars();
+            let state = match chars.next() {
+                Some('*') => " (focused)",
+                Some('-') => " (minimized)",
+                _ => "",
+            };
+            format!("{}{state}", chars.as_str())
+        })
+        .collect();
+    format!("Windows: {}", titles.join(", "))
+}
 
 /// The widest a button is.
 const WIDEST: f32 = 180.0;
@@ -304,5 +325,13 @@ mod tests {
         assert_eq!(click(width + 1.0), None);
         assert_eq!(input("", Input::Click(10.0, 0.0)), None);
         assert_eq!(input(shown, Input::Scroll(1)), None);
+    }
+
+    #[test]
+    fn a_screen_reader_hears_each_title_and_its_state() {
+        assert_eq!(
+            label("*Files\n-Mail\n Notes"),
+            "Windows: Files (focused), Mail (minimized), Notes"
+        );
     }
 }

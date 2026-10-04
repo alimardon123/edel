@@ -12,6 +12,12 @@ name = "edel-shell-ui"
 path = "src/main.rs"
 
 [dependencies]
+# Screen readers (M5.1d): every widget a node in an AccessKit tree, which
+# the Unix adapter serves over AT-SPI on the session's D-Bus once a reader
+# turns accessibility on. Its zbus is the D-Bus shell-ui talks over later
+# (M5.2, M5.5, M5.9).
+accesskit = "0.25.0"
+accesskit_unix = "0.23.0"
 anyhow = "1.0.104"
 # Text for every script, shaped, with fallback fonts (ADR-002's shell-ui
 # toolkit decision, M5.1b).
