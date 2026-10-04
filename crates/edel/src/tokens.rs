@@ -53,7 +53,21 @@ impl Colour {
     pub fn bytes(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
     }
+
+    /// `#rrggbb`, or `#rrggbbaa` when not opaque, as CSS writes it.
+    pub fn hex(self) -> String {
+        let [r, g, b, a] = self.bytes();
+        if a == 255 {
+            format!("#{r:02x}{g:02x}{b:02x}")
+        } else {
+            format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
+        }
+    }
 }
+
+/// Where images keep GTK's colours from the tokens (M5.5b), which each
+/// person's `~/.config/gtk-4.0/gtk.css` imports.
+pub const GTK_CSS: &str = "/usr/share/edel/gtk.css";
 
 /// The tokens the compositor and shell-ui use.
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +107,42 @@ pub struct Tokens {
 }
 
 impl Tokens {
+    /// GTK's named colours from the tokens (M5.5b), as `@define-color`
+    /// lines GTK4 and libadwaita apps read from `gtk.css`: the windows'
+    /// background and text, the header bars as our title bars, sidebars
+    /// and lists as the panel, popovers and dialogs as the title bars, and
+    /// the accent.
+    pub fn gtk_css(&self) -> String {
+        let text = self.title_text.hex();
+        let colours = [
+            ("accent_color", self.accent.hex()),
+            ("accent_bg_color", self.accent.hex()),
+            ("accent_fg_color", "#ffffff".to_string()),
+            ("window_bg_color", self.background.hex()),
+            ("window_fg_color", text.clone()),
+            ("view_bg_color", self.panel.hex()),
+            ("view_fg_color", text.clone()),
+            ("headerbar_bg_color", self.title_bar.hex()),
+            ("headerbar_fg_color", text.clone()),
+            ("headerbar_backdrop_color", self.background.hex()),
+            ("sidebar_bg_color", self.panel.hex()),
+            ("sidebar_fg_color", text.clone()),
+            ("popover_bg_color", self.title_bar.hex()),
+            ("popover_fg_color", text.clone()),
+            ("dialog_bg_color", self.title_bar.hex()),
+            ("dialog_fg_color", text),
+        ];
+        let mut css = String::from(
+            "/* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),\n   \
+             written by edel::tokens::Tokens::gtk_css; a cargo test keeps\n   \
+             this file equal to it. */\n",
+        );
+        for (name, value) in colours {
+            css.push_str(&format!("@define-color {name} {value};\n"));
+        }
+        css
+    }
+
     /// The release's tokens, from [`BUILT_IN`].
     pub fn built_in() -> Tokens {
         check(BUILT_IN).expect("design/tokens.toml is checked by the tests")
@@ -282,6 +332,43 @@ const BLACK: Colour = Colour {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shell feature's `gtk.css`, which images carry as [`GTK_CSS`].
+    const GTK_CSS_FILE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../features/shell/usr/share/edel/gtk.css"
+    );
+
+    #[test]
+    fn the_shipped_gtk_css_is_the_tokens() {
+        // With EDEL_WRITE_GTK_CSS set, the test writes the file instead,
+        // after a token changed.
+        let css = Tokens::built_in().gtk_css();
+        if std::env::var_os("EDEL_WRITE_GTK_CSS").is_some() {
+            std::fs::write(GTK_CSS_FILE, &css).unwrap();
+        }
+        let shipped = std::fs::read_to_string(GTK_CSS_FILE).unwrap_or_default();
+        assert!(
+            shipped == css,
+            "features/shell/usr/share/edel/gtk.css differs from the tokens; run EDEL_WRITE_GTK_CSS=1 cargo test -p edel gtk_css"
+        );
+        assert!(css.contains("@define-color accent_bg_color #5b8ef5;"));
+        assert!(css.contains("@define-color window_bg_color #24272e;"));
+        // A changed token changes the file.
+        let mut tokens = Tokens::built_in();
+        tokens.accent = Colour::parse("#e5484d").unwrap();
+        assert!(
+            tokens
+                .gtk_css()
+                .contains("@define-color accent_bg_color #e5484d;")
+        );
+    }
+
+    #[test]
+    fn hex_writes_alpha_only_when_not_opaque() {
+        assert_eq!(Colour::parse("#24272e").unwrap().hex(), "#24272e");
+        assert_eq!(Colour::parse("#24272e80").unwrap().hex(), "#24272e80");
+    }
 
     #[test]
     fn the_built_in_tokens_pass_the_strict_check() {

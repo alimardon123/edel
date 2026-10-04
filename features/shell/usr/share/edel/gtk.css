@@ -1,0 +1,19 @@
+/* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),
+   written by edel::tokens::Tokens::gtk_css; a cargo test keeps
+   this file equal to it. */
+@define-color accent_color #5b8ef5;
+@define-color accent_bg_color #5b8ef5;
+@define-color accent_fg_color #ffffff;
+@define-color window_bg_color #24272e;
+@define-color window_fg_color #e8e8ea;
+@define-color view_bg_color #1b1d22;
+@define-color view_fg_color #e8e8ea;
+@define-color headerbar_bg_color #2e323a;
+@define-color headerbar_fg_color #e8e8ea;
+@define-color headerbar_backdrop_color #24272e;
+@define-color sidebar_bg_color #1b1d22;
+@define-color sidebar_fg_color #e8e8ea;
+@define-color popover_bg_color #2e323a;
+@define-color popover_fg_color #e8e8ea;
+@define-color dialog_bg_color #2e323a;
+@define-color dialog_fg_color #e8e8ea;
