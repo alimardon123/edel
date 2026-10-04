@@ -4,7 +4,9 @@
 //! accent line along its foot; another window's by a dot; a minimized
 //! window's has no mark and dimmer text. Buttons share one width, at most
 //! 180 logical pixels, and together take at most 45% of the panel, so
-//! they never jump as titles change. A click on the focused window
+//! they never jump as titles change; when even their narrowest do not
+//! fit, the last one stands for the windows left over, with their count,
+//! and brings the first of them forward. A click on the focused window
 //! minimizes it, and on any other brings it forward, back if minimized,
 //! over wlr-foreign-toplevel-management (`crate::toplevels`). App icons
 //! join with the launcher (M5.3), which reads them.
@@ -84,9 +86,23 @@ fn read(shown: &str) -> Vec<(char, &str)> {
         .collect()
 }
 
+/// The most buttons a panel `panel` logical pixels wide holds.
+fn fits(panel: f32) -> usize {
+    (((panel * SHARE - 2.0 * EDGE + GAP) / (NARROWEST + GAP)).floor() as usize).max(1)
+}
+
+/// How many buttons `count` windows get: one each while they fit.
+pub fn buttons(count: usize, panel: f32) -> usize {
+    count.min(fits(panel))
+}
+
 /// A button's width for `count` windows on a panel `panel` logical pixels
 /// wide.
 pub fn button_width(count: usize, panel: f32) -> f32 {
+    if count > fits(panel) {
+        // Left over windows: the narrowest, so a click finds its button.
+        return NARROWEST;
+    }
     if count == 0 {
         return 0.0;
     }
@@ -108,7 +124,7 @@ pub fn logical_width(count: usize, button: f32) -> f32 {
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
     let count = read(shown).len();
     let panel = canvas.pixmap.width() as f32 / canvas.scale;
-    logical_width(count, button_width(count, panel)) * canvas.scale
+    logical_width(buttons(count, panel), button_width(count, panel)) * canvas.scale
 }
 
 fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
@@ -117,6 +133,8 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let windows = read(shown);
     let panel = canvas.pixmap.width() as f32 / s;
     let button = button_width(windows.len(), panel);
+    let drawn = buttons(windows.len(), panel);
+    let more = windows.len() - drawn;
     let height = HEIGHT * s;
     let y = canvas.top + ((canvas.height - height) / 2.0).round();
     let lit = Colour {
@@ -124,9 +142,20 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         ..tokens.panel_text
     };
     let size = (tokens.panel_text_size as f32 * 0.96).round() * s;
-    for (i, (mark, title)) in windows.into_iter().enumerate() {
+    for (i, (mark, title)) in windows.into_iter().take(drawn).enumerate() {
         let bx = (x + (EDGE + i as f32 * (button + GAP)) * s).round();
         let bw = (button * s).round();
+        // The last button, when windows are left over, counts them.
+        if more > 0 && i + 1 == drawn {
+            if let Some(text) = canvas.text.as_deref_mut() {
+                let ink = mix(tokens.panel_text, tokens.panel, 0.25);
+                let mut line = text.fit(&format!("+{}", more + 1), size, bw);
+                let ty = y + (height - size * 1.25) / 2.0;
+                let lx = bx + (bw - line.width) / 2.0;
+                text.draw(canvas.pixmap, &mut line, lx, ty, ink);
+            }
+            continue;
+        }
         if mark == '*' {
             if let Some(path) = rounded(bx, y, bw, height, RADIUS * s) {
                 canvas.pixmap.fill_path(
@@ -175,15 +204,27 @@ fn input(shown: &str, input: Input) -> Option<Action> {
     if n == 0 {
         return None;
     }
-    // The button width as drawn, from the list's own width.
-    let button = (width - 2.0 * EDGE - (n as f32 - 1.0) * GAP) / n as f32;
+    // The buttons as drawn, from the list's own width: one for each
+    // window unless that would make them narrower than the narrowest.
+    let each = |k: usize| (width - 2.0 * EDGE - (k as f32 - 1.0) * GAP) / k as f32;
+    let k = if each(n) < NARROWEST - 0.5 {
+        (((width - 2.0 * EDGE + GAP) / (NARROWEST + GAP)).round() as usize).clamp(1, n)
+    } else {
+        n
+    };
+    let button = each(k);
     let along = at - EDGE;
     if along < 0.0 {
         return None;
     }
     let i = (along / (button + GAP)) as usize;
-    if i >= n || along - i as f32 * (button + GAP) >= button {
+    if i >= k || along - i as f32 * (button + GAP) >= button {
         return None;
+    }
+    // The last button, when it counts the windows left over, brings the
+    // first of them forward.
+    if k < n && i + 1 == k {
+        return Some(Action::Activate(i));
     }
     Some(match windows[i].0 {
         '*' => Action::Minimize(i),
@@ -237,6 +278,24 @@ mod tests {
         assert_eq!(logical_width(3, 180.0), 556.0);
         assert!(logical_width(10, button_width(10, 1280.0)) <= 1280.0 * SHARE);
         assert_eq!(logical_width(0, 0.0), 0.0);
+        // Forty never pass the share: fifteen buttons, the last for the
+        // rest.
+        assert_eq!(buttons(40, 1280.0), 15);
+        assert!(logical_width(15, button_width(40, 1280.0)) <= 1280.0 * SHARE);
+        assert_eq!(buttons(3, 1280.0), 3);
+    }
+
+    #[test]
+    fn the_last_button_brings_the_windows_left_over_forward() {
+        let shown: Vec<String> = (0..20).map(|i| format!(" w{i}")).collect();
+        let shown = shown.join("\n");
+        let width = logical_width(15, NARROWEST);
+        let middle = |i: f32| EDGE + i * (NARROWEST + GAP) + 16.0;
+        let click = |at| input(&shown, Input::Click(at, width));
+        assert_eq!(click(middle(0.0)), Some(Action::Activate(0)));
+        assert_eq!(click(middle(13.0)), Some(Action::Activate(13)));
+        assert_eq!(click(middle(14.0)), Some(Action::Activate(14)));
+        assert_eq!(click(middle(15.0)), None, "past the list");
     }
 
     #[test]

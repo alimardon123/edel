@@ -11,6 +11,8 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
     qmp.py key KEY...            press each chord, such as ctrl-alt-t or ret
+    qmp.py down KEY...           press and hold each key, such as alt
+    qmp.py up KEY...             let go of each key (M5.3c)
     qmp.py type TEXT             type TEXT; \\n is Return
     qmp.py pixel FILE.png X Y    print the colour at X, Y as rrggbb
     qmp.py size FILE.png         print WIDTH HEIGHT
@@ -18,7 +20,7 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  print "uniform rrggbb" or "varied", for
                                  the whole screen or the W by H box at X, Y
 
-The first seven talk to the QMP socket named by $QMP. Key names are
+The first nine talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -81,6 +83,13 @@ def keys(qmp, chords):
     for chord in chords:
         names = chord.split("-")
         qmp.run("send-key", keys=[{"type": "qcode", "data": n} for n in names])
+        time.sleep(0.05)
+
+
+def hold(qmp, names, down):
+    for name in names:
+        event = {"type": "key", "data": {"down": down, "key": {"type": "qcode", "data": name}}}
+        qmp.run("input-send-event", events=[event])
         time.sleep(0.05)
 
 
@@ -247,6 +256,8 @@ def main(argv):
         drag(qmp, *map(int, args[:4]))
     elif command == "key":
         keys(qmp, args)
+    elif command in ("down", "up"):
+        hold(qmp, args, command == "down")
     elif command == "type":
         type_text(qmp, args[0].replace("\\n", "\n"))
     else:

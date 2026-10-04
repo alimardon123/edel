@@ -1,8 +1,10 @@
 //! shell-ui's end of `edel-shell-v1` (roadmap M5.3), the compositor's
 //! private protocol (`crates/compositor/protocols/edel-shell-v1.xml`):
 //! the shown workspace's policy, for the layout toggle, and the request
-//! that switches it. Without it (another compositor) the toggle shows
-//! nothing.
+//! that switches it; the launcher's key (M5.3b); and the window
+//! switcher's titles and its end (M5.3c). Without it (another
+//! compositor) the toggle shows nothing and only the menu button opens
+//! the launcher.
 
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -60,8 +62,16 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
         _: &Connection,
         _: &QueueHandle<Shell>,
     ) {
-        let edel_shell_v1::Event::Policy { name } = event;
-        shell.live.policy = name;
-        shell.draw_all();
+        match event {
+            edel_shell_v1::Event::Policy { name } => {
+                shell.live.policy = name;
+                shell.draw_all();
+            }
+            edel_shell_v1::Event::Launcher => shell.toggle_launcher(),
+            edel_shell_v1::Event::Switcher { titles, chosen } => {
+                shell.show_switcher(crate::switcher::View::from_event(&titles, chosen));
+            }
+            edel_shell_v1::Event::SwitcherHide => shell.hide_switcher(),
+        }
     }
 }

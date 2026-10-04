@@ -2,9 +2,11 @@
 //! system files, laid over the defaults by `edel::shortcuts::resolve`, the
 //! one table `edel system check` and Settings use, and turned into the
 //! keysyms the keyboard reports. Only actions whose step has landed are
-//! bound here; the keys of the others (launcher, switcher, screenshot,
-//! lock) reach the app that has the keyboard until then.
-//! Keys match on the Latin layout's keysym, whatever the layout.
+//! bound here; the keys of the others (screenshot, lock) reach
+//! the app that has the keyboard until then. Keys match on the Latin
+//! layout's keysym, whatever the layout. A modifier alone, such as the
+//! launcher's `Super` (M5.3b), is a tap: pressed and let go with nothing
+//! else between, which `tapped` matches on the release.
 
 use std::collections::BTreeMap;
 
@@ -22,6 +24,12 @@ pub enum Act {
     Workspace(usize),
     /// Move the focused window to workspace N, from 0.
     MoveTo(usize),
+    /// Show or hide shell-ui's launcher (M5.3b).
+    Launcher,
+    /// The next window in the switcher, held open while the keys'
+    /// modifiers are (M5.3c); with Shift as well, the one before.
+    Switcher,
+    SwitcherBack,
 }
 
 impl Act {
@@ -33,6 +41,8 @@ impl Act {
         };
         match name {
             "close" => Some(Act::Close),
+            "launcher" => Some(Act::Launcher),
+            "switcher" => Some(Act::Switcher),
             "tiling" => Some(Act::Tiling),
             "terminal" => Some(Act::Terminal),
             _ => {
@@ -51,7 +61,8 @@ impl Act {
 pub struct Binding {
     pub act: Act,
     pub keys: Keys,
-    sym: xkb::Keysym,
+    /// The key with the modifiers; none for a modifier tapped alone.
+    sym: Option<xkb::Keysym>,
 }
 
 /// The bindings `[shortcuts]` (action to keys, as written) gives, and
@@ -63,8 +74,22 @@ pub fn bind(file: &BTreeMap<String, String>) -> (Vec<Binding>, Vec<String>) {
         let (Some(act), Some(keys)) = (Act::of(action.name), keys) else {
             continue;
         };
-        // A modifier tapped alone (the launcher's Super) waits for M5.3.
         let Some(name) = &keys.key else {
+            // A modifier tapped alone: one modifier, as two cannot be let
+            // go of at once.
+            let held = [keys.logo, keys.ctrl, keys.alt, keys.shift];
+            if held.iter().filter(|h| **h).count() == 1 {
+                bindings.push(Binding {
+                    act,
+                    keys,
+                    sym: None,
+                });
+            } else {
+                notes.push(format!(
+                    "shortcuts.{}: only one modifier can be tapped alone",
+                    action.name
+                ));
+            }
             continue;
         };
         let sym = xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE);
@@ -75,7 +100,11 @@ pub fn bind(file: &BTreeMap<String, String>) -> (Vec<Binding>, Vec<String>) {
             ));
             continue;
         }
-        bindings.push(Binding { act, keys, sym });
+        bindings.push(Binding {
+            act,
+            keys,
+            sym: Some(sym),
+        });
     }
     (bindings, notes)
 }
@@ -88,15 +117,80 @@ pub fn find(
     latin: Option<xkb::Keysym>,
 ) -> Option<Act> {
     let latin = latin?;
+    find_exact(bindings, modifiers, latin).or_else(|| {
+        // The switcher's keys with Shift as well go back.
+        let without = ModifiersState {
+            shift: false,
+            ..*modifiers
+        };
+        (modifiers.shift && find_exact(bindings, &without, latin) == Some(Act::Switcher))
+            .then_some(Act::SwitcherBack)
+    })
+}
+
+fn find_exact(bindings: &[Binding], modifiers: &ModifiersState, latin: xkb::Keysym) -> Option<Act> {
     bindings
         .iter()
         .find(|b| {
-            b.sym == latin
+            b.sym == Some(latin)
                 && b.keys.logo == modifiers.logo
                 && b.keys.ctrl == modifiers.ctrl
                 && b.keys.alt == modifiers.alt
                 && b.keys.shift == modifiers.shift
         })
+        .map(|b| b.act)
+}
+
+/// Whether the switcher's modifiers are still held: it stays open until
+/// they are all let go. Keys without modifiers hold it for one press.
+pub fn holds_switcher(bindings: &[Binding], modifiers: &ModifiersState) -> bool {
+    bindings
+        .iter()
+        .find(|b| b.act == Act::Switcher)
+        .is_some_and(|b| {
+            (b.keys.logo && modifiers.logo)
+                || (b.keys.ctrl && modifiers.ctrl)
+                || (b.keys.alt && modifiers.alt)
+                || (b.keys.shift && modifiers.shift)
+        })
+}
+
+/// Whether `sym` is a modifier that can be tapped alone.
+pub fn is_tap_key(sym: xkb::Keysym) -> bool {
+    use xkb::keysyms as k;
+    matches!(
+        sym.raw(),
+        k::KEY_Super_L
+            | k::KEY_Super_R
+            | k::KEY_Control_L
+            | k::KEY_Control_R
+            | k::KEY_Alt_L
+            | k::KEY_Alt_R
+            | k::KEY_Shift_L
+            | k::KEY_Shift_R
+    )
+}
+
+/// The action the modifier `sym`, tapped alone, does, if any.
+pub fn tapped(bindings: &[Binding], sym: xkb::Keysym) -> Option<Act> {
+    use xkb::keysyms as k;
+    let alone = |logo, ctrl, alt, shift| Keys {
+        logo,
+        ctrl,
+        alt,
+        shift,
+        key: None,
+    };
+    let keys = match sym.raw() {
+        k::KEY_Super_L | k::KEY_Super_R => alone(true, false, false, false),
+        k::KEY_Control_L | k::KEY_Control_R => alone(false, true, false, false),
+        k::KEY_Alt_L | k::KEY_Alt_R => alone(false, false, true, false),
+        k::KEY_Shift_L | k::KEY_Shift_R => alone(false, false, false, true),
+        _ => return None,
+    };
+    bindings
+        .iter()
+        .find(|b| b.sym.is_none() && b.keys == keys)
         .map(|b| b.act)
 }
 
@@ -164,10 +258,44 @@ mod tests {
             find(&bindings, &super_shift, sym("2")),
             Some(Act::MoveTo(1))
         );
-        // Actions still to come (the switcher) bind nothing yet.
+        // Alt+Tab steps the switcher, with Shift back; Alt alone holds it.
+        let alt = held(false, false, true, false);
+        assert_eq!(find(&bindings, &alt, sym("Tab")), Some(Act::Switcher));
         assert_eq!(
-            find(&bindings, &held(false, false, true, false), sym("Tab")),
+            find(&bindings, &held(false, false, true, true), sym("Tab")),
+            Some(Act::SwitcherBack)
+        );
+        assert_eq!(
+            find(&bindings, &held(false, true, true, false), sym("Tab")),
             None
+        );
+        assert!(holds_switcher(&bindings, &alt));
+        assert!(!holds_switcher(&bindings, &held(false, false, false, true)));
+    }
+
+    #[test]
+    fn super_tapped_alone_opens_the_launcher() {
+        let (bindings, _) = bind(&BTreeMap::new());
+        let tap = |name: &str| tapped(&bindings, xkb::keysym_from_name(name, 0));
+        assert_eq!(tap("Super_L"), Some(Act::Launcher));
+        assert_eq!(tap("Super_R"), Some(Act::Launcher));
+        assert_eq!(tap("Alt_L"), None);
+        assert_eq!(tap("q"), None);
+        assert!(is_tap_key(xkb::keysym_from_name("Super_L", 0)));
+        assert!(!is_tap_key(xkb::keysym_from_name("a", 0)));
+        // Moved to Super+Space, it is a key like any other; two modifiers
+        // alone cannot be tapped.
+        let file = BTreeMap::from([("launcher".to_string(), "Super+Space".to_string())]);
+        let (moved, notes) = bind(&file);
+        assert!(notes.is_empty(), "{notes:?}");
+        let super_ = held(true, false, false, false);
+        assert_eq!(find(&moved, &super_, sym("space")), Some(Act::Launcher));
+        assert_eq!(tapped(&moved, xkb::keysym_from_name("Super_L", 0)), None);
+        let file = BTreeMap::from([("launcher".to_string(), "Ctrl+Alt".to_string())]);
+        let (_, notes) = bind(&file);
+        assert!(
+            notes.iter().any(|n| n.contains("only one modifier")),
+            "{notes:?}"
         );
     }
 

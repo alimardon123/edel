@@ -125,6 +125,21 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
 
     /// Minimizes `window`, shown on this workspace with its frame at
     /// `frame`: it leaves the policies, so the others may fill its place.
+    /// The screen a minimized window comes back on, by name.
+    pub fn minimized_screen(&self, window: &W) -> Option<&str> {
+        self.desks.iter().find_map(|d| {
+            d.minimized
+                .iter()
+                .find(|(w, ..)| w == window)
+                .and_then(|(_, _, screen)| screen.as_deref())
+        })
+    }
+
+    /// The shown workspace's minimized windows, the latest last.
+    pub fn minimized_here(&self) -> impl Iterator<Item = &W> {
+        self.desks[self.active].minimized.iter().map(|(w, ..)| w)
+    }
+
     pub fn minimize(&mut self, window: W, frame: Rectangle<i32, Logical>) {
         let desk = &mut self.desks[self.active];
         let screen = desk.layout.screen_of(&window).map(str::to_string);
@@ -238,12 +253,15 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         self.desks[last].minimized.extend(minimized);
         let mut placed = Vec::new();
         for (window, was, screen) in joined {
-            let Some((screen, area)) = screen_in(areas, screen.as_deref()) else {
-                continue;
+            // With no screen at all, it keeps its frame on its own screen,
+            // and moves to the first that comes when they are laid out.
+            let (screen, area) = match screen_in(areas, screen.as_deref()) {
+                Some((name, area)) => (name.to_string(), area),
+                None => (screen.unwrap_or_default(), was),
             };
             let frame = self.desks[last]
                 .layout
-                .open(window.clone(), was.size, screen, area);
+                .open(window.clone(), was.size, &screen, area);
             placed.push((window, frame));
         }
         if last == self.active {
@@ -347,6 +365,26 @@ mod tests {
         desks.minimize(1, at(40));
         desks.close(&1);
         assert_eq!(desks.minimized(&1), None);
+    }
+
+    #[test]
+    fn fewer_workspaces_with_no_screen_keep_their_windows() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        let there = desks.send(1, 2, (300, 200).into(), &areas()).unwrap();
+        // Every screen gone: the window joins workspace 2, hidden, where
+        // it was.
+        assert_eq!(desks.set_count(2, &[], "floating"), Some(Vec::new()));
+        assert_eq!(desks.hidden_on(&1), Some(1));
+        assert!(
+            desks
+                .hidden()
+                .any(|(i, w, at)| (i, *w, at) == (1, 1, there))
+        );
+        // A screen comes back: the window moves onto it.
+        desks.switch(1, Vec::new());
+        assert_eq!(desks.layout_mut().arrange(&areas()).len(), 1);
+        assert_eq!(desks.layout().screen_of(&1), Some("one"));
     }
 
     #[test]

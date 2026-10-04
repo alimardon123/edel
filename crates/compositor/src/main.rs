@@ -25,6 +25,7 @@ mod shellui;
 mod shortcuts;
 mod state;
 mod statefile;
+mod switcher;
 mod tiers;
 mod toplevels;
 mod watch;

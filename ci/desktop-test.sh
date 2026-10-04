@@ -1,9 +1,9 @@
 #!/bin/sh
 # desktop-test.sh CASE... (roadmap M4.1 to M4.5): boots the CI desktop image
-# (ci/desktop/vm.toml) once, with a virtual GPU, keyboard and tablet, a
-# QMP socket for ci/qmp.py and a second serial port for commands to its
-# test service, waits for that service's results on the serial console,
-# then runs each CASE against the running VM:
+# (ci/desktop/vm.toml) once, with a virtual GPU, keyboard, tablet and
+# mouse, a QMP socket for ci/qmp.py and a second serial port for commands
+# to its test service, waits for that service's results on the serial
+# console, then runs each CASE against the running VM:
 #
 #   console     the login prompt on serial, /run/user/UID made with mode
 #               0700 by pam_rundir for the autologin, foot's window on a
@@ -31,7 +31,9 @@
 #               forced on by the image's kernel command line, at the seed
 #               system file's mode 1024x768), side by side in the state
 #               file, and the second turned off by
-#               edel system set outputs.Virtual-2.enabled=false
+#               edel system set outputs.Virtual-2.enabled=false; a
+#               window opens on the screen the mouse took the pointer to
+#               (M5.2g)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
@@ -41,7 +43,8 @@
 #               when closed (M5.1a)
 #   panel       shell-ui's panel along the bottom in the token colour with
 #               its clock drawn, within its memory budget, and back after
-#               kill -9 (M5.1b)
+#               kill -9 (M5.1b); its layout toggle tiles the windows and
+#               floats them again (M5.3a)
 #   animations  appearance.motion = "reduced" logs fades only and its
 #               removal logs the tier's own animations again; ten windows
 #               opening one after another and closing at the tier llvmpipe
@@ -63,6 +66,13 @@
 #               hidden, and activating it shows workspace 2 (M5.2d); the
 #               panel's switcher shows the first as the accent pill, and
 #               a click on its 3 shows the third (M5.2c)
+#   windows     a new window adds a button to the panel's window list,
+#               lit; its title bar's minimize button hides it and a click
+#               on its button brings it back (M5.2h)
+#   launcher    Super opens the launcher; typing foot and Return starts
+#               foot; Escape closes it (M5.3b)
+#   switcher    with Alt held, Tab shows the window switcher with the
+#               window used before chosen; letting go switches (M5.3c)
 #   scale       edel system set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -568,8 +578,9 @@ case_workspaces() {
 	# Classic's four workspaces (M5.2a). away opens on the first, over the
 	# windows there, and takes the keyboard.
 	first=$(value windows)
+	opened=$(count 'edel-compositor: mapped window away')
 	guest 'away window'
-	wait_more 'edel-compositor: mapped window away' 0 || fail "the test client away did not open: $(value windows)"
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open: $(value windows)"
 	shot workspaces 640 393 7744aa >/dev/null || fail "away is not drawn at 640,393"
 	# Super+Shift+2 sends it to the second, which the state file says;
 	# the first stays shown.
@@ -611,8 +622,9 @@ case_workspaces() {
 	wait_more "DESKTOP-TEST: windows $first\$" "$again" || fail "Super+1 did not bring workspace 1 back after the activation"
 	# away closes while hidden, and leaves the state file.
 	none=$(count 'DESKTOP-TEST: hidden on 1, 0$')
+	closed=$(count 'edel-compositor: unmapped window away')
 	guest 'away off'
-	wait_for 'edel-compositor: unmapped window away' || fail "away, closed on workspace 2, was not unmapped"
+	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away, closed on workspace 2, was not unmapped"
 	wait_more 'DESKTOP-TEST: hidden on 1, 0$' "$none" || fail "the state file still lists away: $(value hidden)"
 	# ext-workspace-v1 (M5.2b): a client sees the four workspaces, the
 	# first shown, and shows the third, as the panel's switcher will.
@@ -646,6 +658,78 @@ case_workspaces() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
+}
+
+case_launcher() {
+	# The launcher (M5.3b): Super, tapped alone, opens it beside the
+	# panel's start, 360x352 at 8,400, 8 px from the screen's side and
+	# the panel, in the panel's colour; 188,748 lies in its bottom
+	# margin, below its last row, and is the background before.
+	background=$(token background)
+	panel=$(token panel)
+	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super, tapped alone, did not open the launcher"
+	shot launcher 188 748 "$panel" >/dev/null || fail "the launcher is not drawn at 188,748 in the panel's colour"
+	apps=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, //')
+	# Typed, foot is the best match, and Return starts it.
+	opened=$(count 'edel-compositor: mapped window foot')
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py type foot
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "typing foot and Return did not open foot"
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "the launcher did not close when foot started"
+	tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: launched Foot (foot)' || fail "the launcher did not start foot's own command"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot, which should have had the keyboard"
+	# Opened again, Escape closes it.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher a second time"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher"
+	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
+	guest 'shell rss'
+	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then used $(value shell_ui_rss_now_mib) MiB"
+}
+
+case_switcher() {
+	# The window switcher (M5.3c): with away opened over one, Alt held
+	# and Tab chooses one, the window used before away; shell-ui draws
+	# the list in the middle of the screen in the panel's colour, 4 px
+	# in from its left end clear of the rows; letting go of Alt switches
+	# to one and hides the list.
+	panel=$(token panel)
+	opened=$(count 'edel-compositor: mapped window away')
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open"
+	shown=$(count 'edel-shell-ui: switcher shown')
+	python3 ci/qmp.py down alt
+	python3 ci/qmp.py key tab
+	wait_more 'edel-shell-ui: switcher shown' "$shown" ||
+		{ python3 ci/qmp.py up alt; fail "Alt+Tab did not show the switcher"; }
+	wait_for 'DESKTOP-TEST: layers [0-9]+ .*edel-switcher@[0-9]+,[0-9]+,420x[0-9]+' ||
+		{ python3 ci/qmp.py up alt; fail "the state file does not list the switcher: $(value layers)"; }
+	read -r x y h <<-EOF
+		$(value layers | sed -n 's/.*edel-switcher@\([0-9]*\),\([0-9]*\),420x\([0-9]*\).*/\1 \2 \3/p')
+	EOF
+	shot switcher $((x + 4)) $((y + h / 2)) "$panel" >/dev/null ||
+		{ python3 ci/qmp.py up alt; fail "the switcher is not drawn at $((x + 4)),$((y + h / 2)) in the panel's colour"; }
+	tr -d '\r' <"$log" | grep -a 'edel-compositor: switcher at' | tail -n 1 | grep -q 'at one$' ||
+		{ python3 ci/qmp.py up alt; fail "Alt+Tab did not choose one, the window before away"; }
+	switched=$(count 'edel-compositor: switched to window one')
+	hidden=$(count 'edel-shell-ui: switcher hidden')
+	python3 ci/qmp.py up alt
+	wait_more 'edel-compositor: switched to window one' "$switched" || fail "letting go of Alt did not switch to one"
+	wait_more 'edel-shell-ui: switcher hidden' "$hidden" || fail "the switcher did not hide"
+	closed=$(count 'edel-compositor: unmapped window away')
+	guest 'away off'
+	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
+	echo "PASS: holding Alt, Tab showed the switcher at $x,$y in the panel's colour with one chosen, the window used before away, and letting go of Alt switched to one and hid it"
 }
 
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
@@ -685,9 +769,11 @@ case_windows() {
 	panel=$(token panel)
 	accent=$(token accent)
 	opened=$(count 'edel-compositor: mapped window away')
+	# Counted before: earlier cases left such windows lines too.
+	listed=$(count 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$')
 	guest 'away window'
 	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open: $(value windows)"
-	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$' || fail "away is not on top in the state file: $(value windows)"
+	wait_more 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$' "$listed" || fail "away is not on top in the state file: $(value windows)"
 	# The width is waited for, not compared with an earlier one: the
 	# panel may still be catching up with the case before.
 	n=$(value windows | cut -d' ' -f1)
@@ -811,6 +897,8 @@ case_outputs() {
 	closed=$(count 'edel-compositor: unmapped window away')
 	guest 'away off'
 	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
+	# The pointer back on Virtual-1 before Virtual-2 goes.
+	python3 ci/qmp.py move 640 400
 	guest 'screen 2 off'
 	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
 		fail "edel system set outputs.Virtual-2.enabled=false did not run in the VM"
@@ -838,13 +926,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | respawn | scale | shortcuts | switcher | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, switcher, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

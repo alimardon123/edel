@@ -14,7 +14,8 @@
   <interface name="edel_shell_v1" version="1">
     <description summary="the shell's link to the compositor">
       Bound once by shell-ui. The compositor sends the shown workspace's
-      policy when bound and whenever it changes.
+      policy when bound and whenever it changes, and the launcher event
+      when the launcher's key is pressed.
     </description>
 
     <request name="destroy" type="destructor">
@@ -27,6 +28,32 @@
         the system file is left as it is.
       </description>
     </request>
+
+    <event name="launcher">
+      <description summary="show or hide the launcher">
+        The launcher's key was pressed (Super, tapped alone, unless
+        [shortcuts] says otherwise): shell-ui shows its launcher, or
+        hides it if it is shown.
+      </description>
+    </event>
+
+    <event name="switcher">
+      <description summary="show the window switcher">
+        The switcher's keys (Alt+Tab, unless [shortcuts] says otherwise)
+        are held: shell-ui shows the windows' titles, most recently used
+        first, with the chosen one marked. Sent again at each step; at
+        most ten titles, around the chosen one.
+      </description>
+      <arg name="titles" type="string" summary="the titles, one per line"/>
+      <arg name="chosen" type="uint" summary="the chosen title's place, from 0"/>
+    </event>
+
+    <event name="switcher_hide">
+      <description summary="hide the window switcher">
+        The switcher's keys were let go, or Escape pressed: the
+        compositor has switched, or not, and shell-ui hides the list.
+      </description>
+    </event>
 
     <event name="policy">
       <description summary="the shown workspace's policy">
