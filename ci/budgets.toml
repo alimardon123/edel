@@ -41,10 +41,16 @@ frame_p99_ms = 4.4
 # Frames the compositor draws while nothing on screen changes.
 idle_frames = 0
 
-# shell-ui's resident memory (VmRSS) with the session idle and no screen
-# reader, MiB (M5.1b): 9.3 MiB measured on 2026-10-04 (desktop-test, both
-# boots) with AccessKit's D-Bus link (M5.1d) plus 20 percent. Alimardon
-# chose this (option A in PR #62) over keeping 7.2 MiB: that budget was
-# set before the D-Bus that screen readers, the tray (M5.2), the portal
-# (M5.5) and notifications (M5.9) all need.
-shell_ui_rss_mib = 11.2
+# What shell-ui holds of its own with the session idle and no screen
+# reader (RssAnon plus RssShmem: its heap and the buffers it shares with
+# the compositor), MiB (M5.1b): 1.5 MiB measured on 2026-10-04 in PR #96
+# (both desktop-test boots) plus 20 percent. Until then this budgeted all
+# of its resident memory (VmRSS) as shell_ui_rss_mib, 11.2 MiB, the
+# 9.3 MiB measured with AccessKit's D-Bus link (M5.1d) plus 20 percent,
+# which Alimardon chose (option A in PR #62) over keeping 7.2 MiB. VmRSS
+# also counts the pages shell-ui maps from its binary, libraries and
+# fonts, 8.8 to 10.7 MiB of it, which the kernel shares with the page
+# cache and maps more or fewer of from run to run: VmRSS read 9.8 to
+# 12.2 MiB on the same code, so the gate failed changes that had not
+# touched shell-ui. The test still reports VmRSS and the file pages.
+shell_ui_own_mib = 1.8

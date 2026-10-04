@@ -28,6 +28,13 @@ session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
 }
 
+# What process $1 holds of its own, in MiB: its private memory and the
+# buffers it shares with the compositor (RssAnon plus RssShmem), without
+# the pages it maps from files.
+own_mib() {
+	awk '/^RssAnon:|^RssShmem:/ { k += $2 } END { if (k) printf "%.1f", k / 1024 }' "/proc/$1/status" 2>/dev/null
+}
+
 # Everything that tells why the session did not come up.
 dump() {
 	{
@@ -85,6 +92,11 @@ report() {
 	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	# Of it, the buffers shared with the compositor.
 	say "shell_ui_shared_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
+	# What it holds of its own, the budgeted number, and the pages mapped
+	# from files (its binary, libraries and fonts), which the kernel
+	# shares and maps more or fewer of from run to run.
+	say "shell_ui_own_mib $(own_mib "$pid")"
+	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	say "shell_tier $(edel shell tier 2>&1)"
 	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
@@ -212,6 +224,7 @@ commands() {
 			pid=$(pidof edel-shell-ui)
 			say "shell_ui_shared_now_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 			say "shell_ui_rss_now_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
+			say "shell_ui_own_now_mib $(own_mib "$pid")"
 			;;
 		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
 		# as the panel's switcher will, and prints what it saw.
