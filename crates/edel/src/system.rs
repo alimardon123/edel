@@ -69,6 +69,9 @@ pub enum Kind {
     /// Keys for a shortcut, such as `"Super+Q"`, or `""` for none
     /// ([`crate::shortcuts::parse`])
     Keys,
+    /// Panels, as a preset's `[[panels]]` (M5.4e,
+    /// [`crate::presets::check_panels`])
+    Panels,
 }
 
 /// One key of the system file. `*` in a path stands for any name, such as a
@@ -184,6 +187,7 @@ pub const KEYS: &[Key] = &[
     later("apps.flatpak", Kind::Texts),
     later("addons.add", Kind::Texts),
     now("shell.window_buttons", Kind::OneOf(&["left", "right"])),
+    now("shell.panels", Kind::Panels),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -306,6 +310,10 @@ pub struct Shell {
     /// The title bar buttons' side (M5.4b); absent is the preset's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_buttons: Option<String>,
+    /// The panels in place of the preset's (M5.4e); absent is the
+    /// preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panels: Option<Vec<crate::presets::Panel>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -603,10 +611,20 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
     let mut table = Table::new();
     table.insert("v".into(), value.clone());
     let doc: DocumentMut = toml::to_string(&table)?.parse()?;
+    // A list of tables, such as shell.panels, comes back as [[v]]
+    // tables; it is written inline, on the key's one line.
     doc.get("v")
-        .and_then(toml_edit::Item::as_value)
         .cloned()
+        .and_then(|item| item.into_value().ok())
         .map(|mut v| {
+            if let toml_edit::Value::Array(items) = &mut v {
+                items.fmt();
+                for item in items.iter_mut() {
+                    if let toml_edit::Value::InlineTable(table) = item {
+                        table.fmt();
+                    }
+                }
+            }
             v.decor_mut().clear();
             v
         })
@@ -756,6 +774,17 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::Shell, _) => fail("a login shell's full path, such as \"/bin/sh\""),
         (Kind::Keys, Value::String(s)) => crate::shortcuts::normalize(s).map(Value::String),
         (Kind::Keys, _) => fail("keys in quotes, such as \"Super+Q\""),
+        (Kind::Panels, Value::Array(_)) => {
+            let panels: Vec<crate::presets::Panel> =
+                value.clone().try_into().map_err(|e: toml::de::Error| {
+                    format!("expected panels as a preset writes them: {}", e.message())
+                })?;
+            crate::presets::check_panels(&panels).map_err(|e| e.to_string())?;
+            Ok(value.clone())
+        }
+        (Kind::Panels, _) => {
+            fail("a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]")
+        }
     }
 }
 
@@ -818,6 +847,7 @@ mod tests {
             Kind::Hostname => Value::String("x".into()),
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+W".into()),
+            Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
         }
     }
 
@@ -929,6 +959,49 @@ font_size = 11
     /// A preset this release lacks (M5.4a): check and set refuse it and
     /// list the ones it has, while a reader on a machine leaves it out and
     /// says so, so the desktop starts Classic (ADR-008).
+    #[test]
+    fn panels_are_checked_as_a_presets_and_read_as_tables_or_inline() {
+        let set_one = set(
+            "format = 1\n",
+            "shell.panels",
+            r#"[{ edge = "bottom", end = ["clock"] }]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            set_one,
+            "format = 1\n\n[shell]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
+        );
+        let tables = "format = 1\n[[shell.panels]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[shell.panels]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
+        assert!(check(tables).unwrap().is_empty());
+        let panels = read(tables).unwrap().file.shell.panels.unwrap();
+        assert_eq!(panels.len(), 2);
+        assert_eq!(panels[1].style, crate::presets::Style::Dock);
+        // Two along one edge, a name no widget could have, a key a panel
+        // lacks: refused by set, left out and reported by a lenient read.
+        for (bad, why) in [
+            (
+                r#"[{ edge = "top" }, { edge = "top" }]"#,
+                "two panels along the top edge",
+            ),
+            (
+                r#"[{ edge = "top", end = ["Clock!"] }]"#,
+                "is not a widget name",
+            ),
+            (
+                r#"[{ edge = "top", colour = "red" }]"#,
+                "expected panels as a preset writes them",
+            ),
+            (r#""clock""#, "expected a list of panels"),
+        ] {
+            let error = set("format = 1\n", "shell.panels", bad).unwrap_err();
+            assert!(error.to_string().contains(why), "{bad}: {error}");
+            let file = format!("format = 1\n[shell]\npanels = {bad}\n");
+            let read = read(&file).unwrap();
+            assert_eq!(read.file.shell.panels, None, "{bad}");
+            assert_eq!(read.problems[0].key, "shell.panels");
+        }
+    }
+
     #[test]
     fn a_preset_this_release_lacks_is_refused_or_reported() {
         let file = "format = 1\n[shell]\npreset = \"tablet\"\n";

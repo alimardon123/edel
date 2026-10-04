@@ -127,6 +127,9 @@ commands() {
 		'preset windows-like') edel system set shell.preset=windows-like ;;
 		'preset mac-like') edel system set shell.preset=mac-like ;;
 		'preset default') edel system unset shell.preset ;;
+		# The panels as a setting (M5.4e): one panel with only the clock.
+		'panels clock') edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		'panels default') edel system unset shell.panels ;;
 		# Window buttons on either side (M5.4b).
 		'buttons left') edel system set shell.window_buttons=left ;;
 		'buttons default') edel system unset shell.window_buttons ;;

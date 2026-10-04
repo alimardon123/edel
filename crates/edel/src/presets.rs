@@ -8,7 +8,7 @@
 //! file) gives Classic, with a note.
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// The only preset format so far.
 pub const FORMAT: i64 = 1;
@@ -146,18 +146,18 @@ impl Policy {
 /// One panel: a layer-shell surface along a screen's edge holding
 /// shell-ui's widgets, by name, from its start, in its centre and towards
 /// its end.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Panel {
     pub edge: Edge,
     /// A bar along the whole edge, or a dock (M5.4d).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Style::is_bar")]
     pub style: Style,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub start: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub centre: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub end: Vec<String>,
 }
 
@@ -172,7 +172,7 @@ impl Panel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Edge {
     Top,
@@ -191,12 +191,19 @@ impl Edge {
 /// What a panel looks like (M5.4d): a bar along the whole edge, keeping
 /// that much of the screen free of windows, or a dock, a card as wide as
 /// what it holds, centred along the edge a little away from it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Style {
     #[default]
     Bar,
     Dock,
+}
+
+impl Style {
+    /// Whether it is the default, which a written panel leaves out.
+    pub fn is_bar(&self) -> bool {
+        *self == Style::Bar
+    }
 }
 
 /// Reads a preset strictly: the format this release knows, every key
@@ -217,15 +224,23 @@ pub fn check(text: &str) -> Result<Preset> {
             preset.workspaces.count
         );
     }
-    for (i, panel) in preset.panels.iter().enumerate() {
-        if preset.panels[..i].iter().any(|p| p.edge == panel.edge) {
+    check_panels(&preset.panels)?;
+    Ok(preset)
+}
+
+/// What a preset's panels, or `[[shell.panels]]` in a system file
+/// (M5.4e), must be: at most one along each edge, holding widget names
+/// that could be names.
+pub fn check_panels(panels: &[Panel]) -> Result<()> {
+    for (i, panel) in panels.iter().enumerate() {
+        if panels[..i].iter().any(|p| p.edge == panel.edge) {
             bail!("two panels along the {} edge", panel.edge.name());
         }
         if let Some(bad) = panel.widgets().find(|w| !crate::features::is_name(w)) {
             bail!("{bad:?} is not a widget name");
         }
     }
-    Ok(preset)
+    Ok(())
 }
 
 /// The preset `name` names, else Classic and a note saying why. A missing
