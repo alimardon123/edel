@@ -57,7 +57,7 @@ The compositor follows these keys at once (M4.5, M4.6): it reads the machine's f
 
 | Key | Value | From |
 |---|---|---|
-| `shell.preset` | a preset this release has: `classic` or `tiling` (M5.4a), with `mac-like` and `windows-like` to come (M5.4c, M5.4d) and `tablet` and `phone` with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel system diff` says so | M5.4a |
+| `shell.preset` | a preset this release has: `classic` or `hive` (M5.4a), with `mac-like` and `windows-like` to come (M5.4c, M5.4d) and `tablet` and `phone` with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel system diff` says so | M5.4a |
 | `shell.tiling` | `true` or `false` | M4.5 |
 | `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |

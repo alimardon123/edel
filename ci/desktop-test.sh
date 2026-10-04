@@ -747,21 +747,21 @@ case_switcher() {
 }
 
 case_presets() {
-	# Presets (M5.4a): edel system set shell.preset=tiling restarts
-	# shell-ui with Tiling's bar along the top and tiles the windows, and
+	# Presets (M5.4a): edel system set shell.preset=hive restarts
+	# shell-ui with Hive's bar along the top and tiles the windows, and
 	# unsetting it brings Classic back, the panel along the bottom and the
 	# windows floating, live; each is kept as preset-NAME.png with the
 	# screenshots, for Alimardon to look at.
 	panel=$(token panel)
 	top=$(count 'edel-shell-ui: panel edel-panel along the top')
 	tiled=$(count 'edel-compositor: windows now tiling')
-	guest 'preset tiling'
+	guest 'preset hive'
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
-		fail "edel system set shell.preset=tiling did not bring shell-ui's bar to the top"
-	tr -d '\r' <"$log" | grep -aq 'edel-compositor: restarting edel-shell-ui: the preset is now tiling' ||
-		fail "the compositor did not restart shell-ui for the Tiling preset"
-	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Tiling preset did not tile the windows"
-	shot preset-tiling 640 12 "$panel" >/dev/null || fail "Tiling's bar is not at 640,12 in the panel's colour"
+		fail "edel system set shell.preset=hive did not bring shell-ui's bar to the top"
+	tr -d '\r' <"$log" | grep -aq 'edel-compositor: restarting edel-shell-ui: the preset is now hive' ||
+		fail "the compositor did not restart shell-ui for the Hive preset"
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
+	shot preset-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -770,9 +770,9 @@ case_presets() {
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "back on Classic, the windows did not float"
 	shot preset-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Presets (M5.4a): preset-tiling.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel system set shell.preset=tiling restarted shell-ui with Tiling's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel system set shell.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
 }
 
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
@@ -969,13 +969,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | respawn | scale | shortcuts | switcher | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, switcher, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

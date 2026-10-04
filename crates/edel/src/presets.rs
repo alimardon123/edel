@@ -18,12 +18,12 @@ pub const FORMAT: i64 = 1;
 /// same order; its name must be in [`crate::system::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
-    ("tiling", include_str!("../../../presets/tiling.toml")),
+    ("hive", include_str!("../../../presets/hive.toml")),
 ];
 
 /// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
 /// so `edel system check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "tiling"];
+pub const NAMES: &[&str] = &["classic", "hive"];
 
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
