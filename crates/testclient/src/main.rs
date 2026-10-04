@@ -8,7 +8,9 @@
 //! 0, on the top layer, keeping its height free of windows. With
 //! `--workspace N` it draws nothing and shows workspace N instead
 //! (`workspaces.rs`, M5.2b); with `--toplevels` it lists the windows, and
-//! activates one given its title (`toplevels.rs`, M5.2d).
+//! activates one given its title (`toplevels.rs`, M5.2d). `--app-id` sets
+//! the window's app id, `edel-testclient` without it, so a test can stand
+//! in for an app the panel pins (M5.4c).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -41,6 +43,7 @@ struct Args {
     /// Little-endian ARGB8888, the bytes as they go into the buffer.
     pixel: [u8; 4],
     title: String,
+    app_id: String,
     /// The screen edge a panel runs along.
     layer: Option<Anchor>,
 }
@@ -49,6 +52,7 @@ fn args() -> Result<Args> {
     let mut size = (300, 200);
     let mut pixel = [0x33, 0x33, 0xcc, 0xff];
     let mut title = "edel-testclient".to_string();
+    let mut app_id = "edel-testclient".to_string();
     let mut layer = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
@@ -71,6 +75,7 @@ fn args() -> Result<Args> {
                 pixel = [rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8, 0xff];
             }
             "--title" => title = value,
+            "--app-id" => app_id = value,
             "--layer" => {
                 layer = Some(match value.as_str() {
                     "top" => Anchor::TOP,
@@ -79,7 +84,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title and --layer, or --workspace or --toplevels alone"
+                "unknown argument {word}; use --size, --colour, --title, --app-id and --layer, or --workspace or --toplevels alone"
             ),
         }
     }
@@ -91,6 +96,7 @@ fn args() -> Result<Args> {
         height: size.1,
         pixel,
         title,
+        app_id,
         layer,
     })
 }
@@ -162,7 +168,7 @@ fn main() -> Result<()> {
             let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
             let window = shell.create_window(surface, WindowDecorations::ServerDefault, &qh);
             window.set_title(args.title);
-            window.set_app_id("edel-testclient");
+            window.set_app_id(args.app_id);
             Shown::Window(window)
         }
     };

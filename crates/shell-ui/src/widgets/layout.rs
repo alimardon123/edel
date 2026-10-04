@@ -159,7 +159,7 @@ mod tests {
             shown: row.shows(&live),
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        paint(&mut pixmap, &look, &tokens, None, &row);
+        paint(&mut pixmap, &look, &tokens, None, None, &row);
         (pixmap, tokens)
     }
 

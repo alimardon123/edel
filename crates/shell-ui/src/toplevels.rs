@@ -35,6 +35,8 @@ pub struct Toplevels {
 struct Entry {
     handle: ZwlrForeignToplevelHandleV1,
     title: String,
+    /// Its app's id, as the app gave it (M5.4c).
+    app_id: String,
     screens: Vec<wl_output::WlOutput>,
     focused: bool,
     minimized: bool,
@@ -63,6 +65,7 @@ impl Toplevels {
         self.shown()
             .map(|e| Task {
                 title: e.title.clone(),
+                app_id: e.app_id.clone(),
                 focused: e.focused,
                 minimized: e.minimized,
             })
@@ -107,6 +110,7 @@ impl Dispatch2<ZwlrForeignToplevelManagerV1, Shell> for Manager {
                 shell.toplevels.list.push(Entry {
                     handle: toplevel,
                     title: String::new(),
+                    app_id: String::new(),
                     screens: Vec::new(),
                     focused: false,
                     minimized: false,
@@ -141,6 +145,11 @@ impl Dispatch2<ZwlrForeignToplevelHandleV1, Shell> for Handle {
             Event::Title { title } => {
                 if let Some(entry) = shell.toplevels.entry(handle) {
                     entry.title = title;
+                }
+            }
+            Event::AppId { app_id } => {
+                if let Some(entry) = shell.toplevels.entry(handle) {
+                    entry.app_id = app_id;
                 }
             }
             Event::OutputEnter { output } => {

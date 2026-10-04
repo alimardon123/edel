@@ -74,6 +74,7 @@ mod tests {
     fn task(title: &str, focused: bool, minimized: bool) -> Task {
         Task {
             title: title.into(),
+            app_id: String::new(),
             focused,
             minimized,
         }

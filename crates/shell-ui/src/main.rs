@@ -16,6 +16,7 @@
 
 mod a11y;
 mod apps;
+mod icons;
 mod launcher;
 mod link;
 mod paint;
@@ -104,6 +105,7 @@ struct Shell {
     handle: LoopHandle<'static, Shell>,
     tokens: Tokens,
     text: Text,
+    icons: icons::Icons,
     fillets: bool,
     exit: bool,
 }
@@ -153,7 +155,8 @@ fn run() -> Result<()> {
     let strip = paint::fillet_height(&tokens);
     let features = std::path::Path::new(edel::features::DIR);
     let mut panels = Vec::new();
-    for spec in &preset().panels {
+    let preset = preset();
+    for spec in &preset.panels {
         let pick = |names: &[String]| {
             let (found, notes) = widgets::usable(names, features);
             for note in notes {
@@ -195,6 +198,20 @@ fn run() -> Result<()> {
             reader: a11y::Reader::new(),
         });
     }
+    // The apps a panel's apps widget shows, read once (M5.4c); none read
+    // when no panel holds one.
+    let mut live = Live::default();
+    if panels.iter().any(|p| p.row.all().any(|w| w.name == "apps")) {
+        let installed = apps::read_all(&apps::dirs());
+        live.pinned = preset
+            .apps
+            .pinned
+            .iter()
+            .filter_map(|pin| apps::pinned(&installed, pin))
+            .map(widgets::Pin::from)
+            .collect();
+        live.installed = installed.iter().map(widgets::Pin::from).collect();
+    }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
         .context("creating the shared memory pool")?;
     let mut event_loop: EventLoop<Shell> =
@@ -204,7 +221,7 @@ fn run() -> Result<()> {
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
         pointer: None,
-        live: Live::default(),
+        live,
         workspaces: workspaces::Workspaces::bind(&globals, &qh),
         toplevels: toplevels::Toplevels::bind(&globals, &qh),
         link: link::Link::bind(&globals, &qh),
@@ -221,6 +238,7 @@ fn run() -> Result<()> {
         qh: qh.clone(),
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
+        icons: icons::Icons::new(apps::data_dirs()),
         tokens,
         fillets: fillets(),
         exit: false,
@@ -364,6 +382,7 @@ impl Shell {
             look,
             &self.tokens,
             Some(&mut self.text),
+            Some(&mut self.icons),
             &panel.row,
         );
         if places != panel.places {
@@ -457,7 +476,31 @@ impl Shell {
             Some(Action::Minimize(window)) => self.toplevels.minimize(window),
             Some(Action::TogglePolicy) => self.link.toggle_policy(),
             Some(Action::Launcher) => self.toggle_launcher(),
+            Some(Action::App(id)) => self.open_app(&id),
             None => {}
+        }
+    }
+
+    /// A click on an app in the apps widget (M5.4c): its window comes
+    /// forward, or goes down if it is the focused one, or the app starts.
+    fn open_app(&mut self, id: &str) {
+        let tasks = self.toplevels.tasks();
+        let mine: Vec<usize> = (0..tasks.len())
+            .filter(|&i| widgets::apps::belongs(&tasks[i].app_id, id))
+            .collect();
+        if let Some(&i) = mine
+            .iter()
+            .find(|&&i| tasks[i].focused && !tasks[i].minimized)
+        {
+            self.toplevels.minimize(i);
+        } else if let Some(&i) = mine.first() {
+            let seat = self.seat.seats().next();
+            self.toplevels.activate(i, seat.as_ref());
+        } else if let Some(app) = apps::read_all(&apps::dirs())
+            .into_iter()
+            .find(|a| a.id == id)
+        {
+            self.launcher.run(&app);
         }
     }
 
