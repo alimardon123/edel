@@ -104,6 +104,8 @@ pub struct Edel {
     /// The layer that asked for the keyboard alone and was given it when
     /// it showed, such as shell-ui's launcher (M5.3b).
     pub keyboard_layer: Option<WlSurface>,
+    /// The window switcher while its keys are held (M5.3c).
+    pub switcher: Option<crate::switcher::Switcher>,
     /// What the system file says (`watch.rs`).
     pub settings: Settings,
     /// `[outputs]` changed: the backend scans and places its screens again
@@ -204,6 +206,7 @@ impl Edel {
             last_title_click: None,
             tap: None,
             keyboard_layer: None,
+            switcher: None,
             settings: Settings::default(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),

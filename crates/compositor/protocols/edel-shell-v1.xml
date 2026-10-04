@@ -37,6 +37,24 @@
       </description>
     </event>
 
+    <event name="switcher">
+      <description summary="show the window switcher">
+        The switcher's keys (Alt+Tab, unless [shortcuts] says otherwise)
+        are held: shell-ui shows the windows' titles, most recently used
+        first, with the chosen one marked. Sent again at each step; at
+        most ten titles, around the chosen one.
+      </description>
+      <arg name="titles" type="string" summary="the titles, one per line"/>
+      <arg name="chosen" type="uint" summary="the chosen title's place, from 0"/>
+    </event>
+
+    <event name="switcher_hide">
+      <description summary="hide the window switcher">
+        The switcher's keys were let go, or Escape pressed: the
+        compositor has switched, or not, and shell-ui hides the list.
+      </description>
+    </event>
+
     <event name="policy">
       <description summary="the shown workspace's policy">
         How the shown workspace places its windows.

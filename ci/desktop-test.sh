@@ -685,6 +685,41 @@ case_launcher() {
 	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then used $(value shell_ui_rss_now_mib) MiB"
 }
 
+case_switcher() {
+	# The window switcher (M5.3c): with away opened over one, Alt held
+	# and Tab chooses one, the window used before away; shell-ui draws
+	# the list in the middle of the screen in the panel's colour, 4 px
+	# in from its left end clear of the rows; letting go of Alt switches
+	# to one and hides the list.
+	panel=$(token panel)
+	opened=$(count 'edel-compositor: mapped window away')
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open"
+	shown=$(count 'edel-shell-ui: switcher shown')
+	python3 ci/qmp.py down alt
+	python3 ci/qmp.py key tab
+	wait_more 'edel-shell-ui: switcher shown' "$shown" ||
+		{ python3 ci/qmp.py up alt; fail "Alt+Tab did not show the switcher"; }
+	wait_for 'DESKTOP-TEST: layers [0-9]+ .*edel-switcher@[0-9]+,[0-9]+,420x[0-9]+' ||
+		{ python3 ci/qmp.py up alt; fail "the state file does not list the switcher: $(value layers)"; }
+	read -r x y h <<-EOF
+		$(value layers | sed -n 's/.*edel-switcher@\([0-9]*\),\([0-9]*\),420x\([0-9]*\).*/\1 \2 \3/p')
+	EOF
+	shot switcher $((x + 4)) $((y + h / 2)) "$panel" >/dev/null ||
+		{ python3 ci/qmp.py up alt; fail "the switcher is not drawn at $((x + 4)),$((y + h / 2)) in the panel's colour"; }
+	tr -d '\r' <"$log" | grep -a 'edel-compositor: switcher at' | tail -n 1 | grep -q 'at one$' ||
+		{ python3 ci/qmp.py up alt; fail "Alt+Tab did not choose one, the window before away"; }
+	switched=$(count 'edel-compositor: switched to window one')
+	hidden=$(count 'edel-shell-ui: switcher hidden')
+	python3 ci/qmp.py up alt
+	wait_more 'edel-compositor: switched to window one' "$switched" || fail "letting go of Alt did not switch to one"
+	wait_more 'edel-shell-ui: switcher hidden' "$hidden" || fail "the switcher did not hide"
+	closed=$(count 'edel-compositor: unmapped window away')
+	guest 'away off'
+	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
+	echo "PASS: holding Alt, Tab showed the switcher at $x,$y in the panel's colour with one chosen, the window used before away, and letting go of Alt switched to one and hid it"
+}
+
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
 # give its window list a width W for which [ W TEST ] holds, and prints
 # the list's x and W.
@@ -875,13 +910,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | respawn | scale | shortcuts | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | console | compositor | floating | launcher | layers | outputs | panel | pointer | respawn | scale | shortcuts | switcher | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, console, compositor, floating, launcher, layers, outputs, panel, pointer, respawn, rollback, scale, shortcuts, switcher, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

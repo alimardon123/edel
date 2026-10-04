@@ -52,7 +52,7 @@ pub const ACTIONS: &[Action] = &[
         "switcher",
         "Alt+Tab",
         false,
-        "Switch to the next window (M5.3)",
+        "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
     ),
     action(
         "tiling",

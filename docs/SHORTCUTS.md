@@ -6,7 +6,7 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 |---|---|---|---|
 | `close` | `Super+Q` | Close the focused window | yes |
 | `launcher` | `Super` | Open or close the launcher, Super tapped alone | yes |
-| `switcher` | `Alt+Tab` | Switch to the next window (M5.3) |  |
+| `switcher` | `Alt+Tab` | Switch windows, the most recently used first, while the modifiers are held; with Shift, back |  |
 | `tiling` | `Super+T` | Switch this workspace between floating and tiling |  |
 | `terminal` | `Ctrl+Alt+T` | Open a terminal |  |
 | `screenshot` | `Print` | Take a screenshot (M6.3) |  |
