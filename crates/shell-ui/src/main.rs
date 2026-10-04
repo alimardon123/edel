@@ -18,6 +18,7 @@ mod apps;
 mod launcher;
 mod link;
 mod paint;
+mod popup;
 mod switcher;
 mod toplevels;
 mod widgets;
@@ -57,6 +58,7 @@ use edel::system;
 use edel::tokens::{self, Tokens};
 
 use crate::paint::{Look, Row, Text};
+use crate::popup::Popup;
 use crate::widgets::{Action, Input, Live};
 
 /// The panels' layer surfaces' namespace, as the compositor's state file
@@ -93,7 +95,7 @@ struct Shell {
     scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
     /// what it shows.
-    flip: Option<Flip>,
+    flip: Option<Popup<switcher::View>>,
     flipped: switcher::View,
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
@@ -103,27 +105,10 @@ struct Shell {
     exit: bool,
 }
 
-/// The open launcher's surface, its own buffers and the keyboard, all
-/// let go when it closes.
+/// The open launcher's surface and the keyboard, let go when it closes.
 struct Menu {
-    surface: LayerSurface,
-    pool: SlotPool,
+    popup: Popup<launcher::View>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
-    scale: u32,
-    /// Configured, so it may draw.
-    ready: bool,
-    drawn: Option<(launcher::View, u32)>,
-}
-
-/// The window switcher's surface and its own buffers, let go when it
-/// hides.
-struct Flip {
-    surface: LayerSurface,
-    pool: SlotPool,
-    scale: u32,
-    rows: usize,
-    ready: bool,
-    drawn: Option<(switcher::View, u32)>,
 }
 
 /// One of the preset's panels.
@@ -224,7 +209,7 @@ fn run() -> Result<()> {
         scrolled: widgets::Scrolled::default(),
         qh: qh.clone(),
         handle: event_loop.handle(),
-        text: Text::load(),
+        text: Text::load(&tokens.font),
         tokens,
         fillets: fillets(),
         exit: false,
@@ -457,28 +442,16 @@ impl Shell {
             .panels
             .first()
             .map_or((Edge::Bottom, 1), |p| (p.edge, p.scale));
-        let size = (launcher::WIDTH * launcher::HEIGHT * 4 * scale * scale) as usize;
-        let pool = match SlotPool::new(size, &self.shm) {
-            Ok(pool) => pool,
-            Err(e) => {
-                eprintln!("edel-shell-ui: no memory for the launcher: {e}");
-                return;
-            }
+        let size = launcher::size(&self.tokens);
+        let Some(popup) = Popup::new(self, LAUNCHER, size, size, scale) else {
+            return;
         };
-        let surface = self.compositor.create_surface(&self.qh);
-        let surface = self.layers.create_layer_surface(
-            &self.qh,
-            surface,
-            Layer::Overlay,
-            Some(LAUNCHER),
-            None,
-        );
         let side = match edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
         };
+        let surface = &popup.surface;
         surface.set_anchor(side | Anchor::LEFT);
-        surface.set_size(launcher::WIDTH, launcher::HEIGHT);
         surface.set_margin(MARGIN, MARGIN, MARGIN, MARGIN);
         surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         surface.commit();
@@ -495,14 +468,7 @@ impl Shell {
                 .ok()
         });
         self.launcher.open();
-        self.menu = Some(Menu {
-            surface,
-            pool,
-            keyboard,
-            scale,
-            ready: false,
-            drawn: None,
-        });
+        self.menu = Some(Menu { popup, keyboard });
     }
 
     /// Closes the launcher and lets go of its keyboard, buffers and apps.
@@ -523,48 +489,19 @@ impl Shell {
         let Some(menu) = &mut self.menu else {
             return;
         };
-        if !menu.ready {
-            return;
-        }
         let view = self.launcher.view();
-        let now = (view.clone(), menu.scale);
-        if menu.drawn.as_ref() == Some(&now) {
-            return;
-        }
-        let first = menu.drawn.is_none();
-        let (w, h) = (launcher::WIDTH * menu.scale, launcher::HEIGHT * menu.scale);
-        let Some(mut pixmap) = Pixmap::new(w, h) else {
+        let Some(mut pixmap) = menu.popup.canvas(&view) else {
             return;
         };
+        let scale = menu.popup.scale();
         launcher::paint(
             &mut pixmap,
             &view,
             &self.tokens,
             Some(&mut self.text),
-            menu.scale as f32,
+            scale,
         );
-        let (w, h) = (w as i32, h as i32);
-        let (buffer, canvas) = match menu
-            .pool
-            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
-        {
-            Ok(made) => made,
-            Err(e) => {
-                eprintln!("edel-shell-ui: drawing the launcher failed: {e}");
-                return;
-            }
-        };
-        paint::to_argb(&pixmap, canvas);
-        let surface = menu.surface.wl_surface();
-        surface.set_buffer_scale(menu.scale as i32);
-        surface.damage_buffer(0, 0, w, h);
-        if let Err(e) = buffer.attach_to(surface) {
-            eprintln!("edel-shell-ui: drawing the launcher failed: {e}");
-            return;
-        }
-        menu.surface.commit();
-        menu.drawn = Some(now);
-        if first {
+        if menu.popup.show(view, &pixmap, "launcher") {
             eprintln!(
                 "edel-shell-ui: launcher shown, {} apps",
                 self.launcher.count()
@@ -604,50 +541,25 @@ impl Shell {
     /// The compositor's switcher shows `view`: its surface is made, or
     /// sized again when the number of titles changed, then drawn.
     fn show_switcher(&mut self, view: switcher::View) {
-        let rows = view.titles.len();
+        let rows = view.titles.len().min(switcher::MOST);
         if rows == 0 {
             return self.hide_switcher();
         }
         self.flipped = view;
-        let height = switcher::height(rows);
+        let size = switcher::size(rows, &self.tokens);
         match &mut self.flip {
-            Some(flip) if flip.rows == rows => {}
-            Some(flip) => {
-                flip.rows = rows;
-                flip.ready = false;
-                flip.surface.set_size(switcher::WIDTH, height);
-                flip.surface.commit();
-            }
+            Some(flip) => flip.resize(size),
             None => {
                 let scale = self.panels.first().map_or(1, |p| p.scale);
-                let size = (switcher::WIDTH * switcher::height(10) * 4 * scale * scale) as usize;
-                let pool = match SlotPool::new(size, &self.shm) {
-                    Ok(pool) => pool,
-                    Err(e) => {
-                        eprintln!("edel-shell-ui: no memory for the switcher: {e}");
-                        return;
-                    }
+                let most = switcher::size(switcher::MOST, &self.tokens);
+                let Some(flip) = Popup::new(self, SWITCHER, size, most, scale) else {
+                    return;
                 };
-                let surface = self.compositor.create_surface(&self.qh);
-                let surface = self.layers.create_layer_surface(
-                    &self.qh,
-                    surface,
-                    Layer::Overlay,
-                    Some(SWITCHER),
-                    None,
-                );
                 // No anchor: the middle of the screen.
-                surface.set_size(switcher::WIDTH, height);
-                surface.set_keyboard_interactivity(KeyboardInteractivity::None);
-                surface.commit();
-                self.flip = Some(Flip {
-                    surface,
-                    pool,
-                    scale,
-                    rows,
-                    ready: false,
-                    drawn: None,
-                });
+                flip.surface
+                    .set_keyboard_interactivity(KeyboardInteractivity::None);
+                flip.surface.commit();
+                self.flip = Some(flip);
             }
         }
         self.draw_switcher();
@@ -665,65 +577,30 @@ impl Shell {
         let Some(flip) = &mut self.flip else {
             return;
         };
-        if !flip.ready {
-            return;
-        }
-        let now = (self.flipped.clone(), flip.scale);
-        if flip.drawn.as_ref() == Some(&now) {
-            return;
-        }
-        let first = flip.drawn.is_none();
-        let (w, h) = (
-            switcher::WIDTH * flip.scale,
-            switcher::height(flip.rows) * flip.scale,
-        );
-        let Some(mut pixmap) = Pixmap::new(w, h) else {
+        let Some(mut pixmap) = flip.canvas(&self.flipped) else {
             return;
         };
+        let scale = flip.scale();
         switcher::paint(
             &mut pixmap,
             &self.flipped,
             &self.tokens,
             Some(&mut self.text),
-            flip.scale as f32,
+            scale,
         );
-        let (w, h) = (w as i32, h as i32);
-        let (buffer, canvas) = match flip
-            .pool
-            .create_buffer(w, h, w * 4, wl_shm::Format::Argb8888)
-        {
-            Ok(made) => made,
-            Err(e) => {
-                eprintln!("edel-shell-ui: drawing the switcher failed: {e}");
-                return;
-            }
-        };
-        paint::to_argb(&pixmap, canvas);
-        let surface = flip.surface.wl_surface();
-        surface.set_buffer_scale(flip.scale as i32);
-        surface.damage_buffer(0, 0, w, h);
-        if let Err(e) = buffer.attach_to(surface) {
-            eprintln!("edel-shell-ui: drawing the switcher failed: {e}");
-            return;
-        }
-        flip.surface.commit();
-        flip.drawn = Some(now);
-        if first {
-            eprintln!("edel-shell-ui: switcher shown, {} windows", flip.rows);
+        if flip.show(self.flipped.clone(), &pixmap, "switcher") {
+            let rows = self.flipped.titles.len();
+            eprintln!("edel-shell-ui: switcher shown, {rows} windows");
         }
     }
 
     fn is_switcher(&self, surface: &wl_surface::WlSurface) -> bool {
-        self.flip
-            .as_ref()
-            .is_some_and(|f| f.surface.wl_surface() == surface)
+        self.flip.as_ref().is_some_and(|f| f.is(surface))
     }
 
     /// Whether `surface` is the open launcher's.
     fn is_launcher(&self, surface: &wl_surface::WlSurface) -> bool {
-        self.menu
-            .as_ref()
-            .is_some_and(|m| m.surface.wl_surface() == surface)
+        self.menu.as_ref().is_some_and(|m| m.popup.is(surface))
     }
 
     /// The panel whose surface is `surface`.
@@ -758,13 +635,13 @@ impl LayerShellHandler for Shell {
     ) {
         if self.is_launcher(surface.wl_surface()) {
             if let Some(menu) = &mut self.menu {
-                menu.ready = true;
+                menu.popup.configured();
             }
             return self.draw_launcher();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
-                flip.ready = true;
+                flip.configured();
             }
             return self.draw_switcher();
         }
@@ -790,13 +667,13 @@ impl CompositorHandler for Shell {
     ) {
         if self.is_launcher(surface) {
             if let Some(menu) = &mut self.menu {
-                menu.scale = factor.clamp(1, 4) as u32;
+                menu.popup.set_scale(factor);
             }
             return self.draw_launcher();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
-                flip.scale = factor.clamp(1, 4) as u32;
+                flip.set_scale(factor);
             }
             return self.draw_switcher();
         }
@@ -915,7 +792,7 @@ impl PointerHandler for Shell {
         for event in events {
             if self.is_launcher(&event.surface) {
                 let (x, y) = (event.position.0 as f32, event.position.1 as f32);
-                let row = launcher::row_at(y).filter(|_| x >= 0.0);
+                let row = launcher::row_at(y, &self.tokens).filter(|_| x >= 0.0);
                 match &event.kind {
                     PointerEventKind::Motion { .. } => {
                         if let Some(row) = row.filter(|r| *r < self.launcher.view().names.len()) {

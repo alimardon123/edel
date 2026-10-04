@@ -5,20 +5,17 @@
 //! choice, so this is only a picture. Drawing is plain and tested
 //! without a display.
 
-use tiny_skia::{FillRule, Pixmap, Transform};
+use tiny_skia::Pixmap;
 
-use edel::tokens::{Colour, Tokens};
+use edel::tokens::Tokens;
 
-use crate::paint::{Text, paint_of, rounded};
+use crate::paint::Text;
+use crate::popup::{self, PAD};
 
-/// Its width, a row's height and the room around the rows, in logical
-/// pixels; its height follows the titles, at most ten.
+/// Its width in logical pixels; its height follows the titles, at most
+/// ten.
 pub const WIDTH: u32 = 420;
-const ROW: f32 = 36.0;
-const PAD: f32 = 8.0;
-const RADIUS: f32 = 12.0;
-const CONTROL: f32 = 7.0;
-const INSET: f32 = 12.0;
+pub const MOST: usize = 10;
 
 /// What the switcher shows.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -38,13 +35,12 @@ impl View {
     }
 }
 
-/// Its height for `rows` titles.
-pub fn height(rows: usize) -> u32 {
-    (2.0 * PAD + rows as f32 * ROW) as u32
+/// Its size for `rows` titles, in logical pixels.
+pub fn size(rows: usize, tokens: &Tokens) -> (u32, u32) {
+    (WIDTH, (2.0 * PAD) as u32 + rows as u32 * tokens.row)
 }
 
-/// Draws `view` at `scale` into `pixmap`, `WIDTH` by its height times
-/// `scale`.
+/// Draws `view` at `scale` into `pixmap`, its size times `scale`.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -52,41 +48,10 @@ pub fn paint(
     text: Option<&mut Text>,
     scale: f32,
 ) {
-    pixmap.fill(tiny_skia::Color::TRANSPARENT);
-    let s = scale;
-    let fill = |pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colour| {
-        if let Some(path) = rounded(x * s, y * s, w * s, h * s, r * s) {
-            pixmap.fill_path(
-                &path,
-                &paint_of(c),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-    };
-    let w = WIDTH as f32;
-    let h = height(view.titles.len()) as f32;
-    fill(pixmap, 0.0, 0.0, w, h, RADIUS, tokens.panel);
-    if view.chosen < view.titles.len() {
-        let chosen = Colour {
-            a: 0.18,
-            ..tokens.accent
-        };
-        let y = PAD + view.chosen as f32 * ROW;
-        fill(pixmap, PAD, y, w - 2.0 * PAD, ROW, CONTROL, chosen);
-    }
-    let Some(text) = text else {
-        return;
-    };
-    let size = tokens.panel_text_size as f32 * s;
-    let room = (w - 2.0 * (PAD + INSET)) * s;
-    for (i, title) in view.titles.iter().enumerate() {
-        let mut line = text.fit(title, size, room);
-        let top = PAD + i as f32 * ROW;
-        let y = (top + ROW / 2.0) * s - size * 0.625;
-        text.draw(pixmap, &mut line, (PAD + INSET) * s, y, tokens.panel_text);
-    }
+    popup::card(pixmap, tokens, scale);
+    let chosen = (view.chosen < view.titles.len()).then_some(view.chosen);
+    let titles = view.titles.iter().map(String::as_str);
+    popup::rows(pixmap, tokens, text, titles, PAD, chosen, scale);
 }
 
 #[cfg(test)]
@@ -103,13 +68,13 @@ mod tests {
         let tokens = Tokens::built_in();
         let view = View::from_event("away\none\nfoot", 1);
         assert_eq!(view.titles, ["away", "one", "foot"]);
-        assert_eq!(height(3), 124);
-        let mut pixmap = Pixmap::new(WIDTH, height(3)).unwrap();
+        assert_eq!(size(3, &tokens), (WIDTH, 124));
+        let mut pixmap = Pixmap::new(WIDTH, 124).unwrap();
         paint(&mut pixmap, &view, &tokens, None, 1.0);
         assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "a round corner");
         let back = tokens.panel.bytes();
         assert_eq!(pixel(&pixmap, WIDTH / 2, 4), back);
-        let row = |i: u32| pixel(&pixmap, PAD as u32 + 4, PAD as u32 + i * ROW as u32 + 18);
+        let row = |i: u32| pixel(&pixmap, PAD as u32 + 4, PAD as u32 + i * tokens.row + 18);
         assert_eq!(row(0), back);
         assert_ne!(row(1), back);
         assert_eq!(row(2), back);
