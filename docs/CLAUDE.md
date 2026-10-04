@@ -60,7 +60,7 @@ Every new doc gets a row in the `| File | Topic | Status |` table in the same PR
 
 ## Known inconsistencies: do not copy them
 
-- ADR-006 says applied settings make a new deployment and that the last few deployments stay in the boot menu; since ADR-008 settings apply at once on `/data`, and there are two slots plus `edel update rollback` (M1.1).
+- ADR-006 says applied settings make a new deployment and that the last few deployments stay in the boot menu; since ADR-008 settings apply at once on `/data`, and there are two slots plus `edel rollback` (M1.1).
 - ADR-006's "from a USB stick or a URL" is now a path or an `https://` URL only.
 - DESIGN-PRINCIPLES.md (edited by #6, #7 and #9) and ADR-007 (action item 1 edited by #7) do not show those edits on their Date lines.
 - Done but unticked: ADR-008 action item 9 (PR #7) and ADR-001 items 4 and 5. ADR-003 item 2 is done by PR #1 (both images built from Alpine v3.24, the VM booted in CI); item 1 is partly done (the image builder exists, our own overlay package repository does not).

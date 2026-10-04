@@ -2,7 +2,7 @@
 //! release with their sha256 and size; `release.toml.sig` is an ed25519
 //! signature over its exact bytes. Every image carries two public keys in
 //! `/usr/share/edel/keys/`, so a key can be replaced without stranding a
-//! machine. `edel update install` refuses a manifest no key signed, an
+//! machine. `edel update` refuses a manifest no key signed, an
 //! image whose sha256 differs and a version that is not newer.
 //!
 //! The manifest is the one file an old slot reads from the future, so its
@@ -303,7 +303,7 @@ pub fn open_checked(location: &str, allow_downgrade: bool) -> Result<Checked> {
     })
 }
 
-/// `edel update check`: the running version and the one at `location`.
+/// `edel update --dry-run`: the running version and the one at `location`.
 pub fn check(location: &str) -> Result<()> {
     let manifest = verified_manifest(location)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();

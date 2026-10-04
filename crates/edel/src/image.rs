@@ -543,7 +543,7 @@ impl Build<'_> {
     }
 
     /// Shrinks the update image to its file system, so it fits any slot at
-    /// least that big; `edel update install` grows it again (M1.7).
+    /// least that big; `edel update` grows it again (M1.7).
     fn shrink(&self, image: &Path) -> Result<()> {
         self.runner
             .run(Command::new("e2fsck").arg("-fp").arg(image))?;

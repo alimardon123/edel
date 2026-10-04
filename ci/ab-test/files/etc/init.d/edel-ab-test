@@ -46,7 +46,7 @@ ab_end() {
 	(sleep 1 && poweroff) &
 }
 
-# ab_expect LINE...: each LINE must start a line of `edel update status`.
+# ab_expect LINE...: each LINE must start a line of `edel status`.
 ab_expect() {
 	for line in "$@"; do
 		echo "$slots" | grep -q "^$line" || {
@@ -85,7 +85,7 @@ root_is_ro() {
 # last try, and add a service there whose start runs COMMAND in the
 # default runlevel.
 ab_break_b() {
-	/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
+	/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
 	# The same length, so the 1024-byte block stays whole.
 	sed -i 's/^B_TRY=0$/B_TRY=2/' "$esp/EFI/edel/grubenv"
 	grep -q '^B_TRY=2$' "$esp/EFI/edel/grubenv" || { ab_end "FAIL: setting slot B's last try for $1"; return 1; }
@@ -122,7 +122,7 @@ start() {
 	mkdir -p "$esp"
 	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" "$esp"
 	step=$(cat "$esp/ab-test-step" 2>/dev/null || echo 1)
-	slots=$(/usr/bin/edel update status)
+	slots=$(/usr/bin/edel status)
 	ab_say "step $step"
 	echo "$slots"
 
@@ -139,7 +139,7 @@ start() {
 		ab_check "slot A grown to its full size" slot_is_full || return 0
 		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
-		if refused=$(/usr/bin/edel update install http://10.0.2.2:8000/bad.toml 2>&1); then
+		if refused=$(/usr/bin/edel update http://10.0.2.2:8000/bad.toml 2>&1); then
 			ab_end "FAIL: step 1 installed a tampered release.toml"
 			return 0
 		fi
@@ -156,7 +156,7 @@ start() {
 		adduser -D abuser
 		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped
 		sed -i "/^$(cat /data/ab-dropped):/d" /etc/passwd
-		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
+		/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
 		ab_next 2
 		;;
 	2)
@@ -171,14 +171,14 @@ start() {
 		ab_check "the same ssh host key" cmp -s /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey || return 0
 		ab_check "user abuser" grep -q '^abuser:' /etc/passwd || return 0
 		ab_check "system user $(cat /data/ab-dropped) back" grep -q "^$(cat /data/ab-dropped):" /etc/passwd || return 0
-		/usr/bin/edel update rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
+		/usr/bin/edel rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
 	3)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker || return 0
 		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
-		/usr/bin/edel update install "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
+		/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
 		slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 		mkdir -p /run/ab-test/slot
 		mount "$slot_b" /run/ab-test/slot
@@ -193,7 +193,7 @@ start() {
 			ab_end "FAIL: step 4 expected the fallback from slot B to be recorded"
 			return 0
 		}
-		if /usr/bin/edel update rollback; then
+		if /usr/bin/edel rollback; then
 			ab_end "FAIL: step 4 rolled back to slot B, which is off"
 			return 0
 		fi
