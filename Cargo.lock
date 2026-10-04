@@ -976,6 +976,7 @@ dependencies = [
  "tiny-skia",
  "toml",
  "wayland-scanner",
+ "zbus",
 ]
 
 [[package]]

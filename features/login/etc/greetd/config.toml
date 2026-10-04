@@ -2,11 +2,13 @@
 # running agreety, the text greeter, in foot, so the login screen is drawn
 # by the compositor and comes back whenever a session ends, a crashed one
 # included. After login agreety starts our compositor as the person, with
-# a session bus, and exits, which ends the greeter's compositor. The
+# a session bus, and exits, which ends the greeter's compositor; the
+# session is named Edel (XDG_CURRENT_DESKTOP), which apps and the portals
+# go by (M5.5a). The
 # compositor greets people itself from M5.10.
 [terminal]
 vt = 7
 
 [default_session]
-command = "edel-compositor -- foot agreety --cmd 'dbus-run-session -- edel-compositor'"
+command = "edel-compositor -- foot agreety --cmd 'env XDG_CURRENT_DESKTOP=Edel dbus-run-session -- edel-compositor'"
 user = "greetd"

@@ -935,6 +935,24 @@ case_dockhide() {
 	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
 }
 
+case_portal() {
+	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
+	# the colour scheme and the accent hears shell-ui's answer, from the
+	# tokens: prefer dark, 1, as the tokens are dark, and the accent
+	# #5b8ef5 as three numbers from 0 to 1.
+	guest 'portal read'
+	wait_for 'DESKTOP-TEST: portal accent-color ' 60 || fail "the service did not hear back from the portal"
+	scheme=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal color-scheme //p' | tail -n 1)
+	accent=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal accent-color //p' | tail -n 1)
+	case "$scheme" in
+	"(<uint32 1>,)"*) ;;
+	*) fail "the portal's colour scheme is not prefer dark: $scheme" ;;
+	esac
+	echo "$accent" | grep -qE '^\(<\(0\.35[0-9]*, 0\.55[0-9]*, 0\.96[0-9]*\)>,\)' ||
+		fail "the portal's accent is not the tokens' #5b8ef5: $accent"
+	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with shell.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
@@ -1157,13 +1175,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
