@@ -874,6 +874,28 @@ case_dock() {
 	echo "PASS: Mac-like put a bar along the top, a dock $((w + 12)) px wide centred at $x,740 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
 }
 
+case_panels() {
+	# The panels as a setting (M5.4e): shell.panels with one panel along
+	# the bottom holding only the clock restarts shell-ui with it in place
+	# of Classic's, so 20,768, inside the menu button's first square, is
+	# the panel's colour; unsetting it brings Classic's panel back. Kept
+	# as panels-clock.png.
+	panel=$(token panel)
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	guest 'panels clock'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
+		fail "edel system set shell.panels did not restart shell-ui"
+	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
+	shot panels-clock 20 768 "$panel" >/dev/null || fail "20,768 is not the panel's colour: the menu button is still there"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	classic=$(count 'edel-shell-ui: panel places menu 0\+')
+	guest 'panels default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
+		fail "edel system unset shell.panels did not restart shell-ui"
+	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting shell.panels did not bring Classic's menu button back"
+	echo "PASS: shell.panels with only the clock replaced Classic's panel at once, and unsetting it brought Classic's panel back"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with shell.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
@@ -1096,13 +1118,13 @@ case_scale() {
 	echo "PASS: outputs.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock scale respawn
+[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | dock | floating | launcher | layers | outputs | panel | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | console | compositor | dock | floating | launcher | layers | outputs | panel | panels | pointer | presets | respawn | scale | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, floating, launcher, layers, outputs, panel, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, floating, launcher, layers, outputs, panel, panels, pointer, presets, respawn, rollback, scale, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

@@ -297,24 +297,31 @@ fn load_tokens() -> Tokens {
 /// else Classic; a broken file or an unknown name is reported, never fatal
 /// (ADR-008).
 fn preset() -> presets::Preset {
-    let mut name = None;
+    let (mut name, mut panels) = (None, None);
     let files = [Some(system::MACHINE_FILE.into()), system::person_file()];
     for path in files.into_iter().flatten() {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
         match system::read(&text) {
-            Ok(read) if read.file.shell.preset.is_some() => name = read.file.shell.preset,
-            Ok(_) => {}
+            Ok(read) => {
+                let shell = read.file.shell;
+                name = shell.preset.or(name);
+                panels = shell.panels.or(panels);
+            }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",
                 path.display()
             ),
         }
     }
-    let (preset, note) = presets::named(name.as_deref());
+    let (mut preset, note) = presets::named(name.as_deref());
     if let Some(note) = note {
         eprintln!("edel-shell-ui: {note}");
+    }
+    // shell.panels, when set, in place of the preset's (M5.4e).
+    if let Some(panels) = panels {
+        preset.panels = panels;
     }
     preset
 }

@@ -34,6 +34,9 @@ pub struct Settings {
     pub title_bars: TitleBars,
     /// `shell.window_buttons` (M5.4b): absent means the preset's side.
     pub window_buttons: Option<Side>,
+    /// `shell.panels` (M5.4e): absent means the preset's; shell-ui reads
+    /// them, and the compositor only restarts it when they change.
+    pub panels: Option<Vec<edel::presets::Panel>>,
     /// `[outputs.NAME]`, by output name.
     pub outputs: BTreeMap<String, OutputSettings>,
     /// `appearance.motion` (M5.11b): absent means full.
@@ -76,6 +79,9 @@ impl Settings {
             }
             if let Some(side) = file.shell.window_buttons.as_deref().and_then(Side::parse) {
                 settings.window_buttons = Some(side);
+            }
+            if file.shell.panels.is_some() {
+                settings.panels.clone_from(&file.shell.panels);
             }
             if let Some(motion) = file.appearance.motion.as_deref().and_then(Motion::parse) {
                 settings.motion = motion;
@@ -133,6 +139,12 @@ impl Settings {
     /// in name and restarts nothing.
     pub fn preset_differs(&self, other: &Settings) -> bool {
         presets::named(self.preset.as_deref()).0 != presets::named(other.preset.as_deref()).0
+    }
+
+    /// Whether `shell.panels` changed (M5.4e), which shell-ui follows by
+    /// starting again, as for a preset.
+    pub fn panels_differ(&self, other: &Settings) -> bool {
+        self.panels != other.panels
     }
 
     /// Whether windows under `policy` get the compositor's title bars.
@@ -261,6 +273,20 @@ mod tests {
         assert!(!named(None).preset_differs(&named(Some("classic"))));
         assert!(!named(Some("classic")).preset_differs(&named(Some("tablet"))));
         assert!(named(Some("hive")).preset_differs(&named(Some("tablet"))));
+    }
+
+    #[test]
+    fn the_persons_panels_win_and_only_a_change_of_them_counts() {
+        let machine =
+            file("format = 1\n[shell]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n");
+        let person = file("format = 1\n[[shell.panels]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        let panels = both.panels.clone().unwrap();
+        assert_eq!(panels[0].edge, edel::presets::Edge::Bottom);
+        let only_machine = Settings::from_files(Some(&machine), None);
+        assert!(both.panels_differ(&only_machine));
+        assert!(!both.panels_differ(&both.clone()));
+        assert!(Settings::default().panels_differ(&only_machine));
     }
 
     #[test]
