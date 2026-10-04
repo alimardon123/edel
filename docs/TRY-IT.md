@@ -43,7 +43,7 @@ EOF
 mkfs.vfat -C seed.img 1024 -n EDEL-SEED && mcopy -i seed.img system.toml ::/
 ```
 
-Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel system export` works as `me`. Commands that change the machine, such as `edel update status`, `edel update install` and `edel system set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
+Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel system export` works as `me`. Commands that change the machine, such as `edel status`, `edel update` and `edel system set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
 
 ## On a laptop
 
@@ -58,4 +58,4 @@ To install from the stick onto the laptop's disk you need a login, which arrives
 
 ## Updates
 
-A machine checks a release with `edel update check URL` and installs it with `edel update install URL`, where URL is a `release.toml`; the preview's is `https://github.com/alimardon123/edel/releases/download/preview/release.toml`. The update goes into the other slot and is confirmed on the next start; a start that fails three times, hangs or freezes comes back on the previous slot by itself. `edel update rollback` goes back by hand.
+A machine checks a release with `edel update --dry-run URL` and installs it with `edel update URL`, where URL is a `release.toml`; the preview's is `https://github.com/alimardon123/edel/releases/download/preview/release.toml`. The update goes into the other slot and is confirmed on the next start; a start that fails three times, hangs or freezes comes back on the previous slot by itself. `edel rollback` goes back by hand.

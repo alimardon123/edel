@@ -37,11 +37,30 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Build and inspect Edel OS images
-    Image {
-        #[command(subcommand)]
-        command: ImageCommands,
+    /// Install a newer Edel OS into the other slot from RELEASE; it starts
+    /// at the next restart, and falls back on its own if it fails
+    Update {
+        /// The release: its release.toml, a path or an http(s) URL (its .sig
+        /// and image beside it), or with --unsigned a slot image or a block
+        /// device holding one
+        #[arg(value_name = "RELEASE")]
+        location: String,
+        /// Only show the version RELEASE holds next to this one; change
+        /// nothing
+        #[arg(long, conflicts_with = "unsigned")]
+        dry_run: bool,
+        /// Install even when the release is not newer than this system
+        #[arg(long)]
+        allow_downgrade: bool,
+        /// Install a slot image without a signed release.toml (for testing)
+        #[arg(long)]
+        unsigned: bool,
     },
+    /// Go back to the version in the other slot, the one before the last
+    /// update; it starts at the next restart
+    Rollback,
+    /// Show the version running now and the one in the other slot
+    Status,
     /// Steps the boot services run
     #[command(hide = true)]
     Boot {
@@ -53,11 +72,6 @@ enum Commands {
     Release {
         #[command(subcommand)]
         command: ReleaseCommands,
-    },
-    /// Install updates into the A/B slots and roll back
-    Update {
-        #[command(subcommand)]
-        command: UpdateCommands,
     },
     /// Install Edel OS on another disk, erasing it: the running system
     /// becomes slot A, and FILE the new machine's system file
@@ -93,6 +107,11 @@ enum Commands {
     Shell {
         #[command(subcommand)]
         command: ShellCommands,
+    },
+    /// Build and inspect Edel OS images
+    Image {
+        #[command(subcommand)]
+        command: ImageCommands,
     },
 }
 
@@ -153,6 +172,9 @@ enum BootCommands {
     /// Watch this slot until it is healthy, then confirm it; a slot that
     /// hangs is restarted by the watchdog and falls back
     Guard,
+    /// Confirm that the running slot works, as the guard does once the
+    /// system is up
+    MarkGood,
 }
 
 #[derive(Subcommand)]
@@ -197,35 +219,6 @@ enum ReleaseCommands {
         keys: PathBuf,
         file: PathBuf,
     },
-}
-
-#[derive(Subcommand)]
-enum UpdateCommands {
-    /// Show both slots and which one is running
-    Status,
-    /// Install a signed release into the slot that is not running; it
-    /// starts next
-    Install {
-        /// The release's release.toml, a path or an http(s) URL (its .sig
-        /// and image beside it), or with --unsigned a slot image or a block
-        /// device holding one
-        location: String,
-        /// Install even when the release is not newer than this system
-        #[arg(long)]
-        allow_downgrade: bool,
-        /// Install a slot image without a signed release.toml (for testing)
-        #[arg(long)]
-        unsigned: bool,
-    },
-    /// Show the version of the release at a path or URL next to this one
-    Check {
-        /// The release's release.toml, a path or an http(s) URL
-        location: String,
-    },
-    /// Confirm that the running slot works (run once the system is up)
-    MarkGood,
-    /// Start the other slot again at the next boot
-    Rollback,
 }
 
 #[derive(Subcommand)]
@@ -357,6 +350,7 @@ fn main() -> Result<()> {
         Commands::Boot { command } => match command {
             BootCommands::MountData => data::mount_data(),
             BootCommands::Guard => guard::guard(),
+            BootCommands::MarkGood => update::mark_good(),
         },
         Commands::Release { command } => match command {
             ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),
@@ -377,17 +371,19 @@ fn main() -> Result<()> {
             ReleaseCommands::Sign { key, file } => release::sign(&key, &file),
             ReleaseCommands::Verify { keys, file } => release::verify(&keys, &file),
         },
-        Commands::Update { command } => match command {
-            UpdateCommands::Status => update::status(),
-            UpdateCommands::Install {
-                location,
-                allow_downgrade,
-                unsigned,
-            } => update::install(&location, allow_downgrade, unsigned),
-            UpdateCommands::Check { location } => release::check(&location),
-            UpdateCommands::MarkGood => update::mark_good(),
-            UpdateCommands::Rollback => update::rollback(),
-        },
+        Commands::Update {
+            location,
+            dry_run: true,
+            ..
+        } => release::check(&location),
+        Commands::Update {
+            location,
+            dry_run: false,
+            allow_downgrade,
+            unsigned,
+        } => update::install(&location, allow_downgrade, unsigned),
+        Commands::Rollback => update::rollback(),
+        Commands::Status => update::status(),
         Commands::Install {
             disk,
             system,
@@ -442,7 +438,9 @@ mod tests {
     #[test]
     fn help_lists_what_people_run() {
         let help = Cli::command().render_help().to_string();
-        for shown in ["image", "update", "install", "report", "system", "shell"] {
+        for shown in [
+            "update", "rollback", "status", "install", "report", "system", "shell", "image",
+        ] {
             assert!(
                 help.contains(&format!("  {shown} ")),
                 "{shown} missing:\n{help}"

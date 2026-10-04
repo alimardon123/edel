@@ -16,7 +16,7 @@ if [ ! -b /dev/vdb ]; then
 	exit 0
 fi
 tries=0
-until edel update status | grep -q '^A: ok=1'; do
+until edel status | grep -q '^A: ok=1'; do
 	tries=$((tries + 1))
 	if [ "$tries" -ge 120 ]; then
 		say "FAIL: slot A was never confirmed"
