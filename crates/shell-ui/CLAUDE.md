@@ -7,7 +7,7 @@
 - What people use to find and switch things: the panel (M5.1b), its workspace switcher (M5.2c), window list (M5.2h) and layout toggle (M5.3a), the launcher (M5.3b) and the window switcher's list (M5.3c), and later the tray (M5.2e), notifications and quick settings (M5.9), the lock screen and greeter (M5.10). Windows, title bars and effects belong to the compositor; settings pages to Settings.
 - It draws its own surfaces (ADR-002's shell-ui toolkit decision of 2026-10-03): layer-shell surfaces through smithay-client-toolkit, drawing with tiny-skia into shared memory, text shaped by cosmic-text. No GTK, no GLib, no scripting, no theme engine. [docs/REVIEW-shells.md](../../docs/REVIEW-shells.md) is what its look and motion learn from.
 - Colours and sizes come only from the design tokens (`edel::tokens`); never hard-code one in drawing code.
-- Redraw only what changed, and only when it changed: an idle panel draws nothing between minutes.
+- Redraw only what changed, and only when it changed: an idle panel draws nothing between minutes. Draw a surface at most once per frame: after each drawing it waits for the compositor's frame callback, then draws what shows by then, so its shared buffers stay two however fast things change.
 
 ## Layout
 
