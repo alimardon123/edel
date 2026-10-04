@@ -44,7 +44,12 @@ impl Edel {
         } else {
             (switcher.chosen + 1) % n
         };
-        let start = switcher.chosen.saturating_sub(SHOWN - 1);
+        // The chosen title in the middle of those shown, when there are
+        // more.
+        let start = switcher
+            .chosen
+            .saturating_sub(SHOWN / 2)
+            .min(n.saturating_sub(SHOWN));
         let titles: Vec<String> = switcher.windows[start..n.min(start + SHOWN)]
             .iter()
             .map(|w| {
@@ -52,7 +57,7 @@ impl Edel {
                     .chars()
                     .take(LONGEST)
                     .collect::<String>()
-                    .replace('\n', " ")
+                    .replace(char::is_control, " ")
             })
             .collect();
         let chosen = switcher.chosen - start;

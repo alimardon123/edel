@@ -28,10 +28,11 @@ pub struct View {
 }
 
 impl View {
-    /// From the compositor's event: titles one per line.
+    /// From the compositor's event: titles one per line, an untitled
+    /// window's empty, the last one too.
     pub fn from_event(titles: &str, chosen: u32) -> View {
         View {
-            titles: titles.lines().map(str::to_string).collect(),
+            titles: titles.split('\n').map(str::to_string).collect(),
             chosen: chosen as usize,
         }
     }
@@ -112,6 +113,8 @@ mod tests {
         assert_eq!(row(0), back);
         assert_ne!(row(1), back);
         assert_eq!(row(2), back);
-        assert_eq!(View::from_event("", 0).titles.len(), 0);
+        // An untitled window keeps its row, the last one too.
+        assert_eq!(View::from_event("away\n", 1).titles, ["away", ""]);
+        assert_eq!(View::from_event("", 0).titles, [""]);
     }
 }
