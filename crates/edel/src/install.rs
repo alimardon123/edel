@@ -1,5 +1,5 @@
 //! The install plan (roadmap M2.4): what `edel install` erases and what it
-//! writes, built once and shown three ways (ADR-008): `--dry-run` prints
+//! writes, built once and shown three ways (ADR-008): `--plan` prints
 //! it, a terminal run shows it before the person types the disk's name,
 //! and a run with neither a terminal nor `--yes` prints it and exits 3.
 //! Settings' installer page shows the same plan (M6.6a), so it lives in the

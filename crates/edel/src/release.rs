@@ -303,7 +303,7 @@ pub fn open_checked(location: &str, allow_downgrade: bool) -> Result<Checked> {
     })
 }
 
-/// `edel update --dry-run`: the running version and the one at `location`.
+/// `edel update --check`: the running version and the one at `location`.
 pub fn check(location: &str) -> Result<()> {
     let manifest = verified_manifest(location)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();

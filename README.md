@@ -49,7 +49,7 @@ That produces, in `out/`:
 To see every step without changing anything:
 
 ```sh
-cargo run -- image build images/vm.toml --dry-run
+cargo run -- image build images/vm.toml --plan
 ```
 
 To boot the VM disk (the firmware path differs between distributions):

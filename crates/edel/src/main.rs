@@ -45,10 +45,10 @@ enum Commands {
         /// device holding one
         #[arg(value_name = "RELEASE")]
         location: String,
-        /// Only show the version RELEASE holds next to this one; change
+        /// Only check the version RELEASE holds against this one; change
         /// nothing
         #[arg(long, conflicts_with = "unsigned")]
-        dry_run: bool,
+        check: bool,
         /// Install even when the release is not newer than this system
         #[arg(long)]
         allow_downgrade: bool,
@@ -81,9 +81,10 @@ enum Commands {
         /// The system file the new machine starts with
         #[arg(long, value_name = "FILE")]
         system: PathBuf,
-        /// Show what would be erased and written, and change nothing
+        /// Only show the plan: what would be erased and written; change
+        /// nothing
         #[arg(long)]
-        dry_run: bool,
+        plan: bool,
         /// Erase the disk without asking, for unattended installs; without
         /// it and without a terminal, install shows its plan and exits 3
         #[arg(long)]
@@ -275,9 +276,9 @@ struct BuildArgs {
     /// update image, is always made); for test images
     #[arg(long)]
     no_compress: bool,
-    /// Print every step without changing anything
+    /// Only show the plan: every step, changing nothing
     #[arg(long)]
-    dry_run: bool,
+    plan: bool,
 }
 
 fn main() -> Result<()> {
@@ -296,7 +297,7 @@ fn main() -> Result<()> {
                     channel,
                     apk_cache,
                     no_compress,
-                    dry_run,
+                    plan,
                 } = *args;
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
                     anyhow::bail!("version {v:?} is not numbers joined by dots, such as 2026.10.3");
@@ -305,7 +306,7 @@ fn main() -> Result<()> {
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
                 // apk and mount get absolute paths, so nothing depends on
                 // which directory a tool happens to run in.
-                let out = if dry_run {
+                let out = if plan {
                     out
                 } else {
                     std::fs::create_dir_all(&out)?;
@@ -313,7 +314,7 @@ fn main() -> Result<()> {
                 };
                 // apk opens a relative cache directory inside the new root.
                 let apk_cache = match apk_cache {
-                    Some(cache) if !dry_run => {
+                    Some(cache) if !plan => {
                         std::fs::create_dir_all(&cache)?;
                         Some(std::fs::canonicalize(&cache)?)
                     }
@@ -332,7 +333,7 @@ fn main() -> Result<()> {
                     apk_cache,
                     compress: !no_compress,
                     out,
-                    runner: Runner { dry_run },
+                    runner: Runner { dry_run: plan },
                 }
                 .run()
             }
@@ -373,12 +374,12 @@ fn main() -> Result<()> {
         },
         Commands::Update {
             location,
-            dry_run: true,
+            check: true,
             ..
         } => release::check(&location),
         Commands::Update {
             location,
-            dry_run: false,
+            check: false,
             allow_downgrade,
             unsigned,
         } => update::install(&location, allow_downgrade, unsigned),
@@ -387,9 +388,9 @@ fn main() -> Result<()> {
         Commands::Install {
             disk,
             system,
-            dry_run,
+            plan,
             yes,
-        } => installer::install(&disk, &system, dry_run, yes),
+        } => installer::install(&disk, &system, plan, yes),
         Commands::Report { esp } => report::report(esp),
         Commands::Shell { command } => match command {
             ShellCommands::Tier => shell::tier(),
@@ -454,5 +455,22 @@ mod tests {
             let asked = Cli::try_parse_from(["edel", hidden, "--help"]);
             assert!(asked.is_err_and(|e| e.kind() == ErrorKind::DisplayHelp));
         }
+    }
+
+    /// Showing first reads plainly (Alimardon's choice): update checks,
+    /// install and image build show their plan.
+    #[test]
+    fn show_first_flags() {
+        for args in [
+            &["edel", "update", "--check", "release.toml"][..],
+            &[
+                "edel", "install", "/dev/sda", "--system", "s.toml", "--plan",
+            ],
+            &["edel", "image", "build", "images/vm.toml", "--plan"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_ok(), "{args:?}");
+        }
+        let both = Cli::try_parse_from(["edel", "update", "--check", "--unsigned", "slot.img"]);
+        assert!(both.is_err());
     }
 }
