@@ -57,7 +57,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
-use edel::presets::{self, Edge};
+use edel::presets::{self, Edge, Style};
 use edel::system;
 use edel::tokens::{self, Tokens};
 
@@ -68,6 +68,9 @@ use crate::widgets::{Action, Input, Live};
 /// The panels' layer surfaces' namespace, as the compositor's state file
 /// lists it, and the launcher's.
 const NAMESPACE: &str = "edel-panel";
+/// A dock's (M5.4d), which sits `DOCK_MARGIN` from its edge.
+const DOCK: &str = "edel-dock";
+const DOCK_MARGIN: i32 = 8;
 const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
 /// The launcher's distance from the panel and the screen's side.
@@ -119,10 +122,13 @@ struct Menu {
 /// One of the preset's panels.
 struct Panel {
     edge: Edge,
+    style: Style,
     surface: LayerSurface,
     row: Row,
     /// Its logical width, once the compositor has said it.
     width: u32,
+    /// The width a dock last asked for, as wide as what it holds.
+    asked: u32,
     scale: u32,
     /// What was drawn last, so nothing is drawn twice.
     drawn: Option<Look>,
@@ -170,27 +176,44 @@ fn run() -> Result<()> {
             end: pick(&spec.end),
         };
         // Along the edge of the first screen; the strip on its inner side
-        // for the fillets is drawn but takes no space and no clicks.
+        // for the fillets is drawn but takes no space and no clicks. A
+        // dock is centred along its edge, a little away from it, and
+        // keeps that much free of windows too; its width follows what it
+        // holds once drawn, square until then.
+        let dock = spec.style == Style::Dock;
+        let namespace = if dock { DOCK } else { NAMESPACE };
         let surface = compositor.create_surface(&qh);
-        let surface = layers.create_layer_surface(&qh, surface, Layer::Top, Some(NAMESPACE), None);
+        let surface = layers.create_layer_surface(&qh, surface, Layer::Top, Some(namespace), None);
         let edge = match spec.edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
         };
-        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, tokens.panel_height + strip);
+        if dock {
+            surface.set_anchor(edge);
+            surface.set_size(tokens.panel_height, tokens.panel_height);
+            let (top, bottom) = match spec.edge {
+                Edge::Top => (DOCK_MARGIN, 0),
+                Edge::Bottom => (0, DOCK_MARGIN),
+            };
+            surface.set_margin(top, 0, bottom, 0);
+        } else {
+            surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+            surface.set_size(0, tokens.panel_height + strip);
+        }
         surface.set_exclusive_zone(tokens.panel_height as i32);
         surface.set_keyboard_interactivity(KeyboardInteractivity::None);
         surface.commit();
         eprintln!(
-            "edel-shell-ui: panel {NAMESPACE} along the {}",
+            "edel-shell-ui: panel {namespace} along the {}",
             spec.edge.name()
         );
         panels.push(Panel {
             edge: spec.edge,
+            style: spec.style,
             surface,
             row,
             width: 0,
+            asked: 0,
             scale: 1,
             drawn: None,
             waiting: false,
@@ -334,14 +357,39 @@ impl Shell {
         if panel.width == 0 || panel.waiting {
             return;
         }
-        let strip = paint::fillet_height(&self.tokens);
+        let strip = paint::strip(panel.style, &self.tokens);
+        let shown = panel.row.shows(&self.live);
+        if panel.style == Style::Dock {
+            // A dock is as wide as what it holds: when that changes it
+            // asks for the new width and draws once the compositor
+            // agrees.
+            let natural = paint::natural_width(
+                &self.tokens,
+                Some(&mut self.text),
+                Some(&mut self.icons),
+                &panel.row,
+                &shown,
+                panel.scale,
+            );
+            if natural != panel.width {
+                let panel = &mut self.panels[i];
+                if natural != panel.asked {
+                    panel.asked = natural;
+                    panel.surface.set_size(natural, self.tokens.panel_height);
+                    panel.surface.commit();
+                }
+                return;
+            }
+        }
+        let panel = &self.panels[i];
         let look = Look {
             width: panel.width * panel.scale,
             height: (self.tokens.panel_height + strip) * panel.scale,
             scale: panel.scale,
             edge: panel.edge,
+            style: panel.style,
             fillets: self.fillets,
-            shown: panel.row.shows(&self.live),
+            shown,
         };
         if panel.drawn.as_ref() == Some(&look) {
             return;
@@ -352,7 +400,7 @@ impl Shell {
         }
         // Screen readers get what was drawn, in logical pixels.
         let panel = &mut self.panels[i];
-        let top = f64::from(paint::panel_top(panel.edge, &self.tokens));
+        let top = f64::from(paint::panel_top(panel.edge, panel.style, &self.tokens));
         let bottom = top + f64::from(self.tokens.panel_height);
         let items = panel
             .row
@@ -401,12 +449,15 @@ impl Shell {
         paint::to_argb(&pixmap, canvas);
         let surface = panel.surface.wl_surface();
         // Only the panel itself is opaque and takes clicks; the fillets'
-        // strip beside it lets both through.
-        let top = paint::panel_top(panel.edge, &self.tokens) as i32;
+        // strip beside it lets both through. A dock's rounded corners
+        // are not opaque.
+        let top = paint::panel_top(panel.edge, panel.style, &self.tokens) as i32;
         let panel_h = self.tokens.panel_height as i32;
         if let Ok(region) = Region::new(&self.compositor) {
             region.add(0, top, panel.width as i32, panel_h);
-            surface.set_opaque_region(Some(region.wl_region()));
+            if panel.style == Style::Bar {
+                surface.set_opaque_region(Some(region.wl_region()));
+            }
             surface.set_input_region(Some(region.wl_region()));
         }
         surface.set_buffer_scale(panel.scale as i32);

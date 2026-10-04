@@ -3,13 +3,15 @@
 //! its widgets laid out from the preset (from its start, in its centre and
 //! towards its end) and, on the Full and Balanced tiers, rounded fillets
 //! where the panel meets the screen's sides, so the area beside it reads
-//! as one rounded shape (REVIEW-shells.md). Sizes are logical pixels times
-//! the buffer's scale; colours come from the design tokens.
+//! as one rounded shape (REVIEW-shells.md). A dock (M5.4d) is a card in
+//! the panel's colour, as wide as what it holds and rounded all round,
+//! with no fillets. Sizes are logical pixels times the buffer's scale;
+//! colours come from the design tokens.
 
 use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
 use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, Rect, Transform};
 
-use edel::presets::Edge;
+use edel::presets::{Edge, Style};
 use edel::tokens::{Colour, Tokens};
 
 use crate::widgets::{Canvas, Live, Widget};
@@ -23,6 +25,7 @@ pub struct Look {
     pub height: u32,
     pub scale: u32,
     pub edge: Edge,
+    pub style: Style,
     /// Whether the fillets are drawn (not on the Lite tier).
     pub fillets: bool,
     /// What each widget shows, in the row's order.
@@ -63,14 +66,26 @@ pub fn fillet_height(tokens: &Tokens) -> u32 {
     tokens.radius
 }
 
+/// How tall the strip for the fillets is on a panel of `style`: a dock
+/// has none.
+pub fn strip(style: Style, tokens: &Tokens) -> u32 {
+    match style {
+        Style::Bar => fillet_height(tokens),
+        Style::Dock => 0,
+    }
+}
+
 /// The panel's top row in its buffer, in logical pixels; the strip lies
 /// on the side towards the screen's middle.
-pub fn panel_top(edge: Edge, tokens: &Tokens) -> u32 {
+pub fn panel_top(edge: Edge, style: Style, tokens: &Tokens) -> u32 {
     match edge {
-        Edge::Bottom => fillet_height(tokens),
+        Edge::Bottom => strip(style, tokens),
         Edge::Top => 0,
     }
 }
+
+/// The room inside a dock's card at each end, in logical pixels.
+pub const DOCK_PAD: f32 = 6.0;
 
 /// The fonts and glyph cache text is drawn with, loaded once.
 pub struct Text {
@@ -276,15 +291,26 @@ pub fn paint(
 ) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
-    let strip = fillet_height(tokens) as f32 * s;
+    let strip = strip(look.style, tokens) as f32 * s;
     let panel_h = h - strip;
-    let top = panel_top(look.edge, tokens) as f32 * s;
+    let top = panel_top(look.edge, look.style, tokens) as f32 * s;
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     let panel = paint_of(tokens.panel);
-    if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
+    let dock = look.style == Style::Dock;
+    if dock {
+        fill(
+            pixmap,
+            0.0,
+            top,
+            w,
+            panel_h,
+            tokens.radius as f32 * s,
+            tokens.panel,
+        );
+    } else if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
         pixmap.fill_rect(rect, &panel, Transform::identity(), None);
     }
-    if look.fillets {
+    if look.fillets && !dock {
         let (inner, up) = match look.edge {
             Edge::Bottom => (strip, true),
             Edge::Top => (panel_h, false),
@@ -330,11 +356,12 @@ pub fn paint(
     let centre = measure(&row.centre);
     let end = measure(&row.end);
     let total = |group: &[(&Widget, &str, f32)]| group.iter().map(|g| g.2).sum::<f32>();
+    let pad = if dock { (DOCK_PAD * s).round() } else { 0.0 };
     let mut places = Vec::new();
     for (group, from) in [
-        (&start, 0.0),
+        (&start, pad),
         (&centre, ((w - total(&centre)) / 2.0).round()),
-        (&end, w - total(&end)),
+        (&end, w - pad - total(&end)),
     ] {
         let mut x = from;
         for (widget, showing, width) in group {
@@ -344,6 +371,38 @@ pub fn paint(
         }
     }
     places
+}
+
+/// How wide a dock holding `row`, showing `shown`, is in logical pixels:
+/// its widgets side by side and the card's room at both ends.
+pub fn natural_width(
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    icons: Option<&mut crate::icons::Icons>,
+    row: &Row,
+    shown: &[String],
+    scale: u32,
+) -> u32 {
+    let s = scale.max(1) as f32;
+    let Some(mut pixmap) = Pixmap::new(1, (tokens.panel_height as f32 * s) as u32) else {
+        return 0;
+    };
+    let height = pixmap.height() as f32;
+    let mut canvas = Canvas {
+        pixmap: &mut pixmap,
+        tokens,
+        text,
+        icons,
+        scale: s,
+        top: 0.0,
+        height,
+    };
+    let widgets: f32 = row
+        .all()
+        .zip(shown)
+        .map(|(widget, showing)| (widget.width)(&mut canvas, showing))
+        .sum();
+    (widgets / s + 2.0 * DOCK_PAD).ceil() as u32
 }
 
 /// The pixmap's premultiplied RGBA as the BGRA bytes `wl_shm`'s
@@ -380,6 +439,7 @@ mod tests {
             height: tokens.panel_height + fillet_height(&tokens),
             scale: 1,
             edge,
+            style: Style::Bar,
             fillets,
             shown: row.shows(&Live::default()),
         };
@@ -426,6 +486,42 @@ mod tests {
             0,
             "the curve leaves the corner's far side clear"
         );
+    }
+
+    #[test]
+    fn a_dock_is_a_card_as_wide_as_what_it_holds_rounded_all_round() {
+        let tokens = Tokens::built_in();
+        let menu = find("menu").unwrap();
+        let row = Row {
+            start: vec![],
+            centre: vec![menu, menu],
+            end: vec![],
+        };
+        let shown = row.shows(&Live::default());
+        let width = natural_width(&tokens, None, None, &row, &shown, 1);
+        let h = tokens.panel_height;
+        assert_eq!(width, 2 * h + 2 * DOCK_PAD as u32);
+        let look = Look {
+            width,
+            height: h,
+            scale: 1,
+            edge: Edge::Bottom,
+            style: Style::Dock,
+            fillets: true,
+            shown,
+        };
+        let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
+        let places = paint(&mut pixmap, &look, &tokens, None, None, &row);
+        assert_eq!(
+            places,
+            [(DOCK_PAD, h as f32), (DOCK_PAD + h as f32, h as f32)]
+        );
+        assert_eq!(pixel(&pixmap, width / 2, 1), tokens.panel.bytes());
+        assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "its corners are round");
+        assert_eq!(pixel(&pixmap, width - 1, h - 1)[3], 0);
+        // No fillets and no strip: its buffer is the card.
+        assert_eq!(strip(Style::Dock, &tokens), 0);
+        assert_eq!(panel_top(Edge::Bottom, Style::Dock, &tokens), 0);
     }
 
     #[test]

@@ -125,6 +125,7 @@ commands() {
 		# Hive's policy, so it goes first.
 		'preset hive') edel system unset shell.tiling && edel system set shell.preset=hive ;;
 		'preset windows-like') edel system set shell.preset=windows-like ;;
+		'preset mac-like') edel system set shell.preset=mac-like ;;
 		'preset default') edel system unset shell.preset ;;
 		# Window buttons on either side (M5.4b).
 		'buttons left') edel system set shell.window_buttons=left ;;

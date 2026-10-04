@@ -19,6 +19,7 @@ pub const FORMAT: i64 = 1;
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
     ("hive", include_str!("../../../presets/hive.toml")),
+    ("mac-like", include_str!("../../../presets/mac-like.toml")),
     (
         "windows-like",
         include_str!("../../../presets/windows-like.toml"),
@@ -27,7 +28,7 @@ pub const BUILT_IN: &[(&str, &str)] = &[
 
 /// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
 /// so `edel system check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "hive", "windows-like"];
+pub const NAMES: &[&str] = &["classic", "hive", "mac-like", "windows-like"];
 
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -149,6 +150,9 @@ impl Policy {
 #[serde(deny_unknown_fields)]
 pub struct Panel {
     pub edge: Edge,
+    /// A bar along the whole edge, or a dock (M5.4d).
+    #[serde(default)]
+    pub style: Style,
     #[serde(default)]
     pub start: Vec<String>,
     #[serde(default)]
@@ -182,6 +186,17 @@ impl Edge {
             Edge::Bottom => "bottom",
         }
     }
+}
+
+/// What a panel looks like (M5.4d): a bar along the whole edge, keeping
+/// that much of the screen free of windows, or a dock, a card as wide as
+/// what it holds, centred along the edge a little away from it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Style {
+    #[default]
+    Bar,
+    Dock,
 }
 
 /// Reads a preset strictly: the format this release knows, every key
@@ -276,6 +291,21 @@ mod tests {
         assert_eq!(panel.centre, ["apps"]);
         // Classic and Hive pin nothing: they have no apps widget.
         assert!(named(None).0.apps.pinned.is_empty());
+    }
+
+    #[test]
+    fn mac_like_has_a_bar_on_top_a_dock_below_and_buttons_on_the_left() {
+        let (mac, note) = named(Some("mac-like"));
+        assert_eq!(note, None);
+        assert_eq!(mac.windows.buttons, Side::Left);
+        let edges: Vec<(Edge, Style)> = mac.panels.iter().map(|p| (p.edge, p.style)).collect();
+        assert_eq!(
+            edges,
+            [(Edge::Top, Style::Bar), (Edge::Bottom, Style::Dock)]
+        );
+        assert_eq!(mac.panels[1].centre, ["apps"]);
+        // A panel names its style only when it is a dock.
+        assert!(named(None).0.panels.iter().all(|p| p.style == Style::Bar));
     }
 
     #[test]
