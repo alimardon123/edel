@@ -14,9 +14,16 @@ use serde::Deserialize;
 pub const FORMAT: i64 = 1;
 
 /// The presets this release has, by name, the default first. A new one is
-/// a file under `presets/` and a line here; its name must be in
-/// [`crate::system::PRESETS`].
-pub const BUILT_IN: &[(&str, &str)] = &[("classic", include_str!("../../../presets/classic.toml"))];
+/// a file under `presets/`, a line here and its name in [`NAMES`], in the
+/// same order; its name must be in [`crate::system::PRESETS`].
+pub const BUILT_IN: &[(&str, &str)] = &[
+    ("classic", include_str!("../../../presets/classic.toml")),
+    ("tiling", include_str!("../../../presets/tiling.toml")),
+];
+
+/// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
+/// so `edel system check` and `set` refuse any other and list these.
+pub const NAMES: &[&str] = &["classic", "tiling"];
 
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -177,6 +184,8 @@ mod tests {
     #[test]
     fn every_built_in_preset_is_valid_and_known_to_the_system_file() {
         assert_eq!(BUILT_IN[0].0, DEFAULT, "the default comes first");
+        let names: Vec<&str> = BUILT_IN.iter().map(|(name, _)| *name).collect();
+        assert_eq!(names, NAMES, "NAMES lists BUILT_IN's names in order");
         for (name, text) in BUILT_IN {
             check(text).unwrap_or_else(|e| panic!("presets/{name}.toml: {e:#}"));
             assert!(
