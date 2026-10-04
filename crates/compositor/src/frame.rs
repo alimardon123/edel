@@ -2,8 +2,9 @@
 //! that asks for one through xdg-decoration or lets the compositor choose,
 //! and a thin border round the rest. Apps that draw their own bars, as
 //! libadwaita apps do, get none, so nothing is drawn twice. The bar holds
-//! the title and, at the right, maximize and close; minimize joins them
-//! with the window list that brings a minimized window back (M5.2).
+//! the title and the buttons, minimize, maximize and close, at the right
+//! or, as on a Mac, at the left (M5.4b): close outermost either way, and
+//! minimize before maximize reading left to right.
 //!
 //! Geometry, hit tests and the bar's pixels are plain data and functions
 //! here, tested without a display; the compositor turns the pixels into
@@ -17,6 +18,8 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::Res
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::tokens::{Colour, Tokens};
+
+pub use edel::presets::Side;
 
 /// How far outside its frame a window's edge can still be grabbed.
 pub const GRIP: i32 = 6;
@@ -76,7 +79,7 @@ impl Insets {
     }
 }
 
-/// A button on the bar, from the right.
+/// A button on the bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Button {
     Close,
@@ -86,8 +89,15 @@ pub enum Button {
     Minimize,
 }
 
-/// The buttons, rightmost first.
-pub const BUTTONS: [Button; 3] = [Button::Close, Button::Maximize, Button::Minimize];
+/// The buttons on `side`, from the bar's end inwards: close outermost,
+/// then, reading left to right, minimize before maximize, as on the
+/// desktops people know.
+pub fn buttons(side: Side) -> [Button; 3] {
+    match side {
+        Side::Right => [Button::Close, Button::Maximize, Button::Minimize],
+        Side::Left => [Button::Close, Button::Minimize, Button::Maximize],
+    }
+}
 
 /// A part of a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,14 +110,15 @@ pub enum Hit {
 }
 
 /// The part of a frame of `size` at `point`, measured from the frame's top
-/// left; none inside the window or beyond the grips. A window that cannot
-/// be resized (a maximized one) has no grips, and its border counts as its
-/// bar.
+/// left, its buttons on `buttons_side`; none inside the window or beyond the
+/// grips. A window that cannot be resized (a maximized one) has no grips,
+/// and its border counts as its bar.
 pub fn hit(
     size: Size<i32, Logical>,
     insets: Insets,
     point: Point<f64, Logical>,
     resizable: bool,
+    buttons_side: Side,
 ) -> Option<Hit> {
     let (w, h) = (f64::from(size.w), f64::from(size.h));
     let (x, y) = (point.x, point.y);
@@ -119,11 +130,15 @@ pub fn hit(
     let top = f64::from(insets.top);
     let bottom = f64::from(insets.bottom);
     if x >= 0.0 && x < w && y >= 0.0 && y < top {
-        // Close is 0, the square ending at the right edge; then leftwards.
-        let from_right = ((w - x) / top).ceil() as usize - 1;
+        // Close is 0, the square at the bar's end on that side; then
+        // inwards.
+        let from_end = match buttons_side {
+            Side::Right => ((w - x) / top).ceil() as usize - 1,
+            Side::Left => (x / top).floor() as usize,
+        };
         return Some(
-            BUTTONS
-                .get(from_right)
+            buttons(buttons_side)
+                .get(from_end)
                 .map_or(Hit::Title, |b| Hit::Button(*b)),
         );
     }
@@ -169,6 +184,8 @@ pub struct Look {
     pub hovered: Option<Button>,
     /// Whether the font had loaded.
     pub text: bool,
+    /// The side the buttons sit on (M5.4b).
+    pub side: Side,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
@@ -196,9 +213,14 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         tokens.title_text_unfocused
     };
     let size = h;
-    for (i, button) in BUTTONS.iter().enumerate() {
-        let Some(x) = w.checked_sub((i + 1) * size) else {
+    let set = buttons(look.side);
+    for (i, button) in set.iter().enumerate() {
+        if (i + 1) * size > w {
             break;
+        }
+        let x = match look.side {
+            Side::Right => w - (i + 1) * size,
+            Side::Left => i * size,
         };
         let mut icon = ink;
         if look.hovered == Some(*button) {
@@ -214,18 +236,22 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
     let Some(text) = text else {
         return;
     };
-    // The title is centred on the bar, moved left if it would reach the
+    // The title is centred on the bar, moved aside if it would reach the
     // buttons, and cut short with an ellipsis if it is still too long.
     let pad = (h / 2) as f32;
-    let right = w as f32 - (BUTTONS.len() * size) as f32 - pad;
-    let room = right - pad;
+    let used = (set.len() * size) as f32;
+    let (left, right) = match look.side {
+        Side::Right => (pad, w as f32 - used - pad),
+        Side::Left => (used + pad, w as f32 - pad),
+    };
+    let room = right - left;
     if room <= 0.0 || look.title.is_empty() {
         return;
     }
     text.set_size(tokens.title_text_size as f32 * scale);
     let title = text.fit(&look.title, room);
     let width = text.width(&title);
-    let x = ((w as f32 - width) / 2.0).min(right - width).max(pad);
+    let x = ((w as f32 - width) / 2.0).min(right - width).max(left);
     let baseline = ((h as f32 + text.ascent + text.descent) / 2.0).round();
     text.draw(&mut canvas, &title, x, baseline, ink, right);
 }
@@ -616,7 +642,7 @@ mod tests {
     #[test]
     fn the_bar_has_the_title_then_minimize_maximize_and_close_at_the_right() {
         let size = Size::from((302, 229));
-        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true);
+        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Right);
         assert_eq!(at(10.0, 10.0), Some(Hit::Title));
         assert_eq!(at(301.0, 0.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(274.0, 27.0), Some(Hit::Button(Button::Close)));
@@ -629,9 +655,21 @@ mod tests {
     }
 
     #[test]
+    fn on_the_left_close_comes_first_then_minimize_and_maximize() {
+        let size = Size::from((302, 229));
+        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Left);
+        assert_eq!(at(0.0, 0.0), Some(Hit::Button(Button::Close)));
+        assert_eq!(at(27.9, 27.0), Some(Hit::Button(Button::Close)));
+        assert_eq!(at(28.0, 14.0), Some(Hit::Button(Button::Minimize)));
+        assert_eq!(at(56.0, 14.0), Some(Hit::Button(Button::Maximize)));
+        assert_eq!(at(84.0, 14.0), Some(Hit::Title));
+        assert_eq!(at(301.0, 0.0), Some(Hit::Title));
+    }
+
+    #[test]
     fn edges_and_corners_resize_and_a_maximized_window_has_none() {
         let size = Size::from((302, 229));
-        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true);
+        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Right);
         assert_eq!(at(-3.0, 100.0), Some(Hit::Edge(ResizeEdge::Left)));
         assert_eq!(at(0.5, 100.0), Some(Hit::Edge(ResizeEdge::Left)));
         assert_eq!(at(304.0, 100.0), Some(Hit::Edge(ResizeEdge::Right)));
@@ -643,7 +681,7 @@ mod tests {
         assert_eq!(at(295.0, 233.0), Some(Hit::Edge(ResizeEdge::BottomRight)));
         assert_eq!(at(305.0, 5.0), Some(Hit::Edge(ResizeEdge::TopRight)));
         assert_eq!(at(-7.0, 100.0), None, "beyond the grip");
-        let fixed = |x: f64, y: f64| hit(size, insets(), (x, y).into(), false);
+        let fixed = |x: f64, y: f64| hit(size, insets(), (x, y).into(), false, Side::Right);
         assert_eq!(fixed(-3.0, 100.0), None);
         assert_eq!(fixed(0.0, 100.0), Some(Hit::Title));
         assert_eq!(fixed(301.0, 5.0), Some(Hit::Button(Button::Close)));
@@ -659,6 +697,7 @@ mod tests {
             maximized: false,
             hovered: None,
             text: false,
+            side: Side::Right,
         }
     }
 
@@ -699,6 +738,22 @@ mod tests {
         paint(&mut unfocused, &hovered, &t, None);
         let red = t.title_close_hover.bytes();
         assert_eq!(pixel(&unfocused, 302, 276, 2), [red[0], red[1], red[2]]);
+    }
+
+    #[test]
+    fn on_the_left_the_buttons_are_drawn_from_the_left_end() {
+        let t = tokens();
+        let mut pixels = vec![0; 302 * 28 * 4];
+        let mut left = look(302, false);
+        left.side = Side::Left;
+        left.hovered = Some(Button::Close);
+        paint(&mut pixels, &left, &t, None);
+        let red = t.title_close_hover.bytes();
+        assert_eq!(pixel(&pixels, 302, 2, 2), [red[0], red[1], red[2]]);
+        let bar = t.title_bar.bytes();
+        assert_eq!(pixel(&pixels, 302, 276, 2), [bar[0], bar[1], bar[2]]);
+        // Minimize's dash crosses the second square's middle.
+        assert_ne!(pixel(&pixels, 302, 42, 14), [bar[0], bar[1], bar[2]]);
     }
 
     /// A font from the image, or one most build machines have; without one

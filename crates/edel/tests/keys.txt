@@ -46,3 +46,4 @@ updates.auto
 updates.window
 apps.flatpak
 addons.add
+shell.window_buttons

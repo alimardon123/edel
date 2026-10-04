@@ -64,6 +64,38 @@ pub enum LauncherStyle {
 pub struct Windows {
     /// The policy a workspace starts in when `shell.tiling` is not set.
     pub policy: Policy,
+    /// The side of the title bar the buttons sit on when
+    /// `shell.window_buttons` is not set (M5.4b); absent is the right.
+    #[serde(default)]
+    pub buttons: Side,
+}
+
+/// A side of the title bar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Side {
+    Left,
+    #[default]
+    Right,
+}
+
+impl Side {
+    pub fn name(self) -> &'static str {
+        match self {
+            Side::Left => "left",
+            Side::Right => "right",
+        }
+    }
+
+    /// `left` or `right`, as `shell.window_buttons` writes it; anything
+    /// else is none.
+    pub fn parse(name: &str) -> Option<Side> {
+        match name {
+            "left" => Some(Side::Left),
+            "right" => Some(Side::Right),
+            _ => None,
+        }
+    }
 }
 
 /// The workspace model (M5.2a): a fixed number of workspaces. A dynamic
@@ -229,8 +261,8 @@ mod tests {
             "format 2 is not one this release reads",
         );
         refused(
-            &classic.replace("[windows]", "[windows]\nbuttons = \"left\""),
-            "unknown field `buttons`",
+            &classic.replace("[windows]", "[windows]\ncorners = \"round\""),
+            "unknown field `corners`",
         );
         refused(
             &classic.replace("policy = \"floating\"", "policy = \"stacking\""),
