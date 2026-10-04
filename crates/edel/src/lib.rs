@@ -8,6 +8,8 @@
 //! `cli` feature.
 
 pub mod features;
+#[cfg(feature = "icons")]
+pub mod icons;
 pub mod install;
 pub mod presets;
 pub mod shortcuts;

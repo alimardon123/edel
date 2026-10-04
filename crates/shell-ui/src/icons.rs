@@ -2,7 +2,8 @@
 //! every app installs into, hicolor, and in `/usr/share/pixmaps`: a PNG at
 //! least as big as wanted, else an SVG, else the biggest smaller PNG. Each
 //! is drawn once at the size the panel asks and kept, PNGs through
-//! tiny-skia and SVGs through resvg, which draws with the same tiny-skia.
+//! tiny-skia and SVGs through `edel::icons` (resvg, which draws with the
+//! same tiny-skia).
 //! A name that finds nothing is remembered as nothing, so it is looked
 //! for once. Plain files, tested without a display.
 
@@ -86,35 +87,21 @@ pub fn find(dirs: &[PathBuf], icon: &str, px: u32) -> Option<PathBuf> {
 }
 
 /// The icon at `path` drawn `px` pixels square, kept to its shape and
-/// centred.
+/// centred; an SVG through `edel::icons`, as the shell's own icons are.
 pub fn draw(path: &Path, px: u32) -> Option<Pixmap> {
-    let mut out = Pixmap::new(px, px)?;
     if path.extension().is_some_and(|e| e == "svg") {
-        let data = std::fs::read(path).ok()?;
-        let tree = resvg::usvg::Tree::from_data(&data, &resvg::usvg::Options::default()).ok()?;
-        let size = tree.size();
-        let (scale, dx, dy) = fit(size.width(), size.height(), px);
-        let at = Transform::from_translate(dx, dy).pre_scale(scale, scale);
-        resvg::render(&tree, at, &mut out.as_mut());
-    } else {
-        let image = Pixmap::load_png(path).ok()?;
-        let (scale, dx, dy) = fit(image.width() as f32, image.height() as f32, px);
-        let paint = PixmapPaint {
-            quality: FilterQuality::Bicubic,
-            ..PixmapPaint::default()
-        };
-        let at = Transform::from_translate(dx, dy).pre_scale(scale, scale);
-        out.draw_pixmap(0, 0, image.as_ref(), &paint, at, None);
+        return edel::icons::svg_pixmap(&std::fs::read(path).ok()?, px);
     }
+    let mut out = Pixmap::new(px, px)?;
+    let image = Pixmap::load_png(path).ok()?;
+    let (scale, dx, dy) = edel::icons::fit(image.width() as f32, image.height() as f32, px);
+    let paint = PixmapPaint {
+        quality: FilterQuality::Bicubic,
+        ..PixmapPaint::default()
+    };
+    let at = Transform::from_translate(dx, dy).pre_scale(scale, scale);
+    out.draw_pixmap(0, 0, image.as_ref(), &paint, at, None);
     Some(out)
-}
-
-/// The scale that fits a `w` by `h` picture in `px` square, and where it
-/// starts, centred.
-fn fit(w: f32, h: f32, px: u32) -> (f32, f32, f32) {
-    let px = px as f32;
-    let scale = px / w.max(h).max(1.0);
-    (scale, (px - w * scale) / 2.0, (px - h * scale) / 2.0)
 }
 
 #[cfg(test)]

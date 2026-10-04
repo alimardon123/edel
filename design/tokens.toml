@@ -1,8 +1,8 @@
 # Edel OS design tokens (DESIGN-PRINCIPLES, ADR-004): the one set of
 # colours and sizes the compositor, shell-ui and the GTK theme are drawn
-# with. Images carry it as /usr/share/edel/design/tokens.toml (M4.2b); the
-# compositor has this file built in for when that one is missing or
-# unreadable. [colour] is the dark scheme, the default, and
+# with. The parts have this file built in; a file at
+# /usr/share/edel/design/tokens.toml, which no image ships yet, would
+# take its place. [colour] is the dark scheme, the default, and
 # [colour.light] the light one (M5.5c, appearance.color_scheme); M5.12
 # lets people override them in system.toml.
 format = 1

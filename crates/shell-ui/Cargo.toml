@@ -23,7 +23,7 @@ anyhow = "1.0.104"
 # toolkit decision, M5.1b).
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "fontconfig", "swash"] }
 # The design tokens and, later, the system file, read as every part does.
-edel = { path = "../edel", default-features = false }
+edel = { path = "../edel", default-features = false, features = ["icons"] }
 # The clock's local time, from /etc/localtime when a zone is set.
 jiff = "0.2"
 # The compositor's state file, for the effect tier (M5.11a).
@@ -37,7 +37,6 @@ smithay-client-toolkit = { version = "=0.21.1", default-features = false, featur
 wayland-scanner = "0.31.11"
 # 2D drawing into the panel's shared-memory buffers.
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd", "png-format"] }
-resvg = { version = "0.48.1", default-features = false }
 # The settings portal's backend (M5.5a), on the zbus AccessKit already
 # brings, with its blocking API: it answers on a thread of its own.
 zbus = { version = "5.5", default-features = false, features = ["async-io", "blocking-api"] }

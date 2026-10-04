@@ -8,7 +8,8 @@
 use anyhow::{Context, Result, bail};
 use toml::{Table, Value};
 
-/// Where images keep the tokens (M4.2b).
+/// Where a machine may keep tokens of its own, which take the built-in
+/// ones' place; no image ships one yet, so the parts draw with these.
 pub const PATH: &str = "/usr/share/edel/design/tokens.toml";
 
 /// The repository's tokens, the release's defaults.

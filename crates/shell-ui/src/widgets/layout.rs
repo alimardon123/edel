@@ -6,10 +6,9 @@
 //! the policy; without it the button is not there.
 
 use accesskit::Role;
-use tiny_skia::{FillRule, LineCap, LineJoin, Path, PathBuilder, Stroke, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{fill, lit, mix, paint_of, rounded};
+use crate::paint::{self, fill, lit, mix};
 
 pub const WIDGET: Widget = Widget {
     name: "layout",
@@ -32,10 +31,10 @@ fn label(shown: &str) -> String {
 const WIDTH: f32 = 30.0;
 const HEIGHT: f32 = 26.0;
 const ROOM: f32 = 3.0;
-/// The icon's size, drawn from a 24-unit square as the mockups' are, and
-/// its lines' width in those units.
+/// The icon's size; `design/icons/layout-floating.svg` and
+/// `layout-tiling.svg` are drawn on a 24-unit square, as the mockups' are
+/// (M5.5d).
 const ICON: f32 = 15.0;
-const LINE: f32 = 1.6;
 
 /// What it shows: the shown workspace's policy, `floating` or `tiling`,
 /// or nothing before the compositor has said.
@@ -66,61 +65,21 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let bx = (x + ROOM * s).round();
     let by = canvas.top + ((canvas.height - bh) / 2.0).round();
     let tiled = shown == "tiling";
-    let (ink, under) = if tiled {
+    let ink = if tiled {
         let r = tokens.radius_control as f32 * s;
         fill(canvas.pixmap, bx, by, bw, bh, r, lit(tokens));
-        (tokens.accent, mix(tokens.panel, tokens.accent, 0.18))
+        tokens.accent
     } else {
-        (mix(tokens.panel_text, tokens.panel, 0.25), tokens.panel)
+        mix(tokens.panel_text, tokens.panel, 0.25)
     };
-    // The icon's 24 units, centred on the button.
-    let unit = ICON * s / 24.0;
-    let at = |ux: f32, uy: f32| {
-        (
-            bx + bw / 2.0 + (ux - 12.0) * unit,
-            by + bh / 2.0 + (uy - 12.0) * unit,
-        )
-    };
-    let rect = |ux: f32, uy: f32, uw: f32, uh: f32| {
-        let (px, py) = at(ux, uy);
-        rounded(px, py, uw * unit, uh * unit, 1.8 * unit)
-    };
-    let mut strokes: Vec<Path> = Vec::new();
-    if tiled {
-        strokes.extend(rect(3.0, 4.5, 18.0, 15.0));
-        let mut lines = PathBuilder::new();
-        let (a, b) = (at(12.0, 4.5), at(12.0, 19.5));
-        lines.move_to(a.0, a.1);
-        lines.line_to(b.0, b.1);
-        let (c, d) = (at(12.0, 12.0), at(21.0, 12.0));
-        lines.move_to(c.0, c.1);
-        lines.line_to(d.0, d.1);
-        strokes.extend(lines.finish());
+    let name = if tiled {
+        "layout-tiling"
     } else {
-        strokes.extend(rect(3.0, 4.5, 11.5, 9.5));
-        // The front window hides the back one where they overlap.
-        if let Some(front) = rect(9.5, 10.0, 11.5, 9.5) {
-            canvas.pixmap.fill_path(
-                &front,
-                &paint_of(under),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-            strokes.push(front);
-        }
-    }
-    let stroke = Stroke {
-        width: LINE * unit,
-        line_cap: LineCap::Round,
-        line_join: LineJoin::Round,
-        ..Stroke::default()
+        "layout-floating"
     };
-    for path in strokes {
-        canvas
-            .pixmap
-            .stroke_path(&path, &paint_of(ink), &stroke, Transform::identity(), None);
-    }
+    let px = ICON * s;
+    let (ix, iy) = (bx + (bw - px) / 2.0, by + (bh - px) / 2.0);
+    paint::icon(canvas.pixmap, name, px, ix, iy, ink);
 }
 
 /// A click switches the shown workspace's policy.
