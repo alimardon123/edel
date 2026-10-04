@@ -43,11 +43,13 @@ enum Commands {
         command: ImageCommands,
     },
     /// Steps the boot services run
+    #[command(hide = true)]
     Boot {
         #[command(subcommand)]
         command: BootCommands,
     },
     /// Make, sign and check release manifests
+    #[command(hide = true)]
     Release {
         #[command(subcommand)]
         command: ReleaseCommands,
@@ -81,7 +83,8 @@ enum Commands {
         #[arg(long)]
         esp: bool,
     },
-    /// Check the file that describes a whole machine (system.toml)
+    /// This machine's settings, kept in one file (system.toml): check,
+    /// change, apply and export them
     System {
         #[command(subcommand)]
         command: SystemCommands,
@@ -128,13 +131,15 @@ enum SystemCommands {
     /// Print this machine as a system file, and the /etc files it changed
     Export,
     /// Change one key in the machine's system file, keeping everything
-    /// else in it byte for byte; apply makes it take effect
+    /// else in it byte for byte. Window, screen and shortcut settings take
+    /// effect at once; apply makes the rest take effect
     Set {
         /// KEY=VALUE, such as network.hostname=lab-1
         assignment: String,
     },
     /// Remove one key from the machine's system file, so the release
-    /// decides it again; apply makes it take effect
+    /// decides it again. Window, screen and shortcut settings take effect
+    /// at once; apply makes the rest take effect
     Unset {
         /// The key, such as network.hostname
         key: String,
@@ -423,4 +428,33 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
         println!("{problem}");
     }
     bail!("{} has {} problems", file.display(), problems.len())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::error::ErrorKind;
+    use clap::{CommandFactory, Parser};
+
+    use super::Cli;
+
+    /// The help lists what people run (ADR-008's easy to use decision);
+    /// the boot services' and CI's own commands still work, unlisted.
+    #[test]
+    fn help_lists_what_people_run() {
+        let help = Cli::command().render_help().to_string();
+        for shown in ["image", "update", "install", "report", "system", "shell"] {
+            assert!(
+                help.contains(&format!("  {shown} ")),
+                "{shown} missing:\n{help}"
+            );
+        }
+        for hidden in ["boot", "release"] {
+            assert!(
+                !help.contains(&format!("  {hidden} ")),
+                "{hidden} listed:\n{help}"
+            );
+            let asked = Cli::try_parse_from(["edel", hidden, "--help"]);
+            assert!(asked.is_err_and(|e| e.kind() == ErrorKind::DisplayHelp));
+        }
+    }
 }
