@@ -55,7 +55,7 @@ A layout preset is one small, readable config file that describes:
 - workspace model and hot corners,
 - default window policy (floating or tiling) and tiling style (M5.16).
 
-Built-in presets: **Classic** (Cinnamon-like, the default), **Mac-like**, **Windows-like**, **Hive** (tiling, named on 2026-10-04), **Tablet**, **Phone**. The one-button switch just loads a different file. The settings app edits the same file, so there is one source of truth and nothing to get out of sync. Users share a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets themselves ship in the slot (ADR-008).
+Built-in presets: **Classic** (Cinnamon-like, the default), **Mac-like**, **Windows-like**, **Hive** (tiling, named on 2026-10-04), **Zen** (tiling without title bars, M5.18), **Tablet**, **Phone**. The one-button switch just loads a different file. The settings app edits the same file, so there is one source of truth and nothing to get out of sync. Users share a layout as the `[shell]`, `[appearance]` and `[shortcuts]` tables of an exported system file; presets themselves ship in the slot (ADR-008). A person's own presets are `[presets.NAME]` tables in their system file, made with Save as and picked with the same `shell.preset` as the built-in ones (ADR-008's own presets decision, M5.17).
 
 ### 2. Floating and tiling are two implementations of one interface
 
@@ -108,6 +108,8 @@ Alimardon's reference for smoothness is Hyprland, which looks great but leans on
 Wayland apps either draw their own title bar (GTK and libadwaita apps do, with their own close button) or ask the compositor to draw one. Hyprland doesn't draw compositor title bars by default, which is why the X button is missing there.
 
 Here, the compositor draws a slim title bar with close, minimize and maximize for every app that asks for one, **in both floating and tiling mode**. Apps that draw their own keep theirs. Keyboard users can hide title bars in tiling mode with one setting, and close always works from the keyboard too.
+
+**Title bars decision (2026-10-04):** Alimardon asked that people can turn title bars and each of their buttons on or off, whatever the layout, so those used to Hyprland or niri feel at home. `shell.title_bars` takes `always`, `floating-only` or `never`, and `shell.close_button`, `shell.minimize_button` and `shell.maximize_button` each show or hide one button; a preset may set its own title bars, and the Zen preset has none. Every other preset keeps title bars with all three buttons, and Super+Q and Super with a drag always close and move a window. Principles: Versatile (people keep the habits they bring), Functional (closing and moving never depend on a button); traded off: four Settings rows and a preset more to test (M5.18).
 
 ### Not building (reuse instead)
 

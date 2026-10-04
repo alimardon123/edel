@@ -49,7 +49,7 @@ Ranked, from [docs/DESIGN-PRINCIPLES.md](docs/DESIGN-PRINCIPLES.md). When two co
 - Very few parts.
 - An instant, smooth UI that runs well on old hardware.
 - A Cinnamon-like default, with one-button Mac-like and Windows-like presets.
-- Title bars with close buttons, even in tiling.
+- Title bars with close buttons, even in tiling. Added on 2026-10-04 (ADR-002's title bars decision): each person can turn title bars, or any one of their buttons, off in any layout, and the Zen preset has none, for people used to Hyprland or niri.
 - The same app on phone, tablet and laptop.
 - Frequent releases, and 10 to 20 years of app compatibility.
 - Atomic updates with rollback.
@@ -77,7 +77,7 @@ When docs disagree, the newer ADR wins.
 - **Updates (ADR-006, [AerynOS review](docs/REVIEW-aerynos.md)):** A/B root slots; every change is a new deployment that falls back on its own. The updater is our own `edel update`; RAUC is not packaged, but GRUB keeps RAUC's variable names (`ORDER`, `<slot>_OK`, `<slot>_TRY`).
 - **One system file (ADR-006):** one TOML file describes a whole machine (`edel system export`, `diff`, `apply`). It never holds personal files or secrets; it only refers to secrets.
 - **Immutability (ADR-007):** three customization levels: 1 settings (any value in the system file, for everyone), 2 signed add-ons and profiles, 3 developer mode for the OS's own bits (off by default on phones).
-- **Features, readers and defaults (ADR-008):** a feature is one `features/NAME.toml` plus one module per part, and an add-on is a feature with `addon = true`; checkers and writers are strict, unattended readers on a machine are lenient; a default is the absence of a key; every setting works the same in Settings, `edel system get|set|unset` and the system file.
+- **Features, readers and defaults (ADR-008):** a feature is one `features/NAME.toml` plus one module per part, and an add-on is a feature with `addon = true`; checkers and writers are strict, unattended readers on a machine are lenient; a default is the absence of a key; every setting works the same in Settings, `edel system get|set|unset` and the system file. One key, `shell.preset`, picks every preset, built-in or a person's own; own presets are `[presets.NAME]` tables in the system file, made by Save as (`edel preset save NAME`, M5.17).
 - **Out of scope:** everything under "What is deliberately not in the plan" in the roadmap (systemd, ostree, RAUC, a plugin API, telemetry, an ISO, delta updates and more). Check it before adding a component.
 - **Defaults already taken:** the roadmap's "Decisions taken by default" table. Follow it unless Alimardon overrules a row.
 
@@ -186,7 +186,7 @@ For docs, code comments, commits, PRs and replies:
 - No em-dashes or en-dashes; use commas, full stops or colons. Write ranges in words: "1 to 5". Before committing, this must print nothing: `LC_ALL=C git grep --untracked -n "$(printf '\342\200[\223\224]')"`
 - British spelling for -our words (colour, behaviour); keep -ize (customization). Code identifiers stay as they are (`color_scheme`).
 - "We" for the project; Alimardon in the third person, they/them.
-- Fixed terms: Edel OS, `edel`, **developer mode** (never "unlocked mode"), add-on (hyphenated, lowercase), the system file (`system.toml`), slot A and slot B, Settings (the app), the presets Classic, Mac-like, Windows-like, Hive (tiling), Tablet and Phone.
+- Fixed terms: Edel OS, `edel`, **developer mode** (never "unlocked mode"), add-on (hyphenated, lowercase), the system file (`system.toml`), slot A and slot B, Settings (the app), the presets Classic, Mac-like, Windows-like, Hive (tiling), Zen (tiling without title bars), Tablet and Phone.
 - Tables for options and comparisons; backticks for code, keys, paths and commands; ISO dates (2026-10-02). Numbers come from measurements; say when something is from memory.
 
 ## Current state (2026-10-04, after PR #62)

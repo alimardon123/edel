@@ -654,20 +654,22 @@ case_workspaces() {
 	wait_more 'DESKTOP-TEST: ext workspaces 1\* 2 3 4$' "$seen" || fail "edel-testclient --workspace 1 did not bring workspace 1 back"
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "workspace 1 is not back as it was: $(value windows)"
 	# The panel's switcher (M5.2c): three round buttons, the shown one the
-	# accent pill, then a dot for the fourth; a click on its 3 shows the
-	# third. Each button is 20 px, the pill 32, 5 apart, after 6 px of
-	# room and the 8 px where a dot would say more lie to the left.
+	# accent pill, then the fourth peeking in, faded; a click on its 3
+	# shows the third. Each button is 20 px, the pill 32, 5 apart, after
+	# 6 px of room and the 14 px, and a gap, where the button before them
+	# would peek in; the fourth's strip starts 112 px in.
 	guest 'panel places'
 	wait_for 'DESKTOP-TEST: places .*workspaces [0-9]+\+' || fail "shell-ui did not say where its widgets lie"
 	x=$(value places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
 	accent=$(token accent)
 	# Each pill is checked 4 px in from its left end, clear of its digit.
-	shot switcher $((x + 18)) 780 "$accent" >/dev/null || fail "the switcher's 1, at $((x + 18)),780, is not the accent pill"
+	shot switcher $((x + 29)) 780 "$accent" >/dev/null || fail "the switcher's 1, at $((x + 29)),780, is not the accent pill"
+	shot switcher $((x + 115)) 780 "!$(token panel)" >/dev/null || fail "the fourth workspace does not peek in at $((x + 115)),780"
 	shows=$(count 'edel-compositor: workspace 3')
-	python3 ci/qmp.py click $((x + 86)) 780
+	python3 ci/qmp.py click $((x + 97)) 780
 	wait_more 'edel-compositor: workspace 3' "$shows" || fail "a click on the switcher's 3 did not show workspace 3"
 	# The view follows: 2, then 3 as the pill, then 4.
-	shot switcher $((x + 43)) 780 "$accent" >/dev/null || fail "after the click, the pill at $((x + 43)),780 is not the accent"
+	shot switcher $((x + 54)) 780 "$accent" >/dev/null || fail "after the click, the pill at $((x + 54)),780 is not the accent"
 	back=$(count "DESKTOP-TEST: windows $first\$")
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
@@ -788,12 +790,12 @@ case_taskbar() {
 	guest 'preset windows-like'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like' "$restarts" ||
 		fail "edel system set shell.preset=windows-like did not restart shell-ui"
-	wait_for 'edel-shell-ui: panel places menu 0\+[0-9]+, search [0-9]+\+228, apps [0-9]+\+[0-9]+' ||
+	wait_for 'edel-shell-ui: panel places menu 0\+[0-9]+, search [0-9]+\+188, apps [0-9]+\+[0-9]+' ||
 		fail "Windows-like's bar does not start with the menu button and the search field before the apps"
 	# The open windows' apps join the pinned ones as shell-ui learns of
 	# them; foot's cell stays first.
 	sleep 1
-	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places menu 0+[0-9]*, search [0-9]*+228, apps \([0-9]*\)+\([0-9]*\).*/\1 \2/p' | tail -n 1)
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places menu 0+[0-9]*, search [0-9]*+188, apps \([0-9]*\)+\([0-9]*\).*/\1 \2/p' | tail -n 1)
 	read -r x w <<-EOF
 		$place
 	EOF
@@ -830,8 +832,8 @@ case_taskbar() {
 case_dock() {
 	# Mac-like (M5.4d): edel system set shell.preset=mac-like restarts
 	# shell-ui with a bar along the top and a dock along the bottom, a
-	# card in the panel's colour as wide as its apps, centred, 52 px high
-	# and 8 px above the screen's bottom (740 to 792), and moves the
+	# card in the panel's colour as wide as its apps, centred, 60 px high
+	# and 8 px above the screen's bottom (732 to 792), and moves the
 	# window buttons to the left. Of the apps it pins the VM has foot, so
 	# foot's cell comes first; a click there starts foot. Kept as
 	# preset-mac-like.png.
@@ -844,21 +846,22 @@ case_dock() {
 		fail "edel system set shell.preset=mac-like did not restart shell-ui"
 	wait_more 'edel-shell-ui: panel edel-dock along the bottom' "$docks" || fail "Mac-like has no dock along the bottom"
 	wait_more 'edel-compositor: window buttons on the left' "$left" || fail "Mac-like did not move the window buttons to the left"
-	wait_for 'edel-shell-ui: panel places apps 6\+[0-9]+$' || fail "the dock does not hold the apps 6 px from its start"
+	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps 8 px from its start"
 	# The open windows' apps join the pinned ones as shell-ui learns of
 	# them, and the dock grows to hold them.
 	sleep 1
-	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 6+\([0-9]*\)$/\1/p' | tail -n 1)
-	x=$((640 - (w + 12) / 2))
+	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 8+\([0-9]*\)$/\1/p' | tail -n 1)
+	x=$((640 - (w + 16) / 2))
 	shot preset-mac-like 640 12 "$panel" >/dev/null || fail "Mac-like's bar is not at 640,12 in the panel's colour"
-	shot preset-mac-like $((x + 3)) 766 "$panel" >/dev/null ||
-		fail "the dock, $((w + 12)) px wide, does not start at $((x + 3)),766 in the panel's colour"
-	shot preset-mac-like $((x - 3)) 766 "$background" >/dev/null || fail "$((x - 3)),766, left of the dock, is not the background"
+	shot preset-mac-like $((x + 3)) 762 "$panel" >/dev/null ||
+		fail "the dock, $((w + 16)) px wide, does not start at $((x + 3)),762 in the panel's colour"
+	shot preset-mac-like $((x - 3)) 762 "$background" >/dev/null || fail "$((x - 3)),762, left of the dock, is not the background"
 	shot preset-mac-like 640 797 "$background" >/dev/null || fail "640,797, under the dock, is not the background"
-	cell=$((x + 6 + 24))
+	# Foot's cell, 52 px, 4 px into the apps, which start 8 px in.
+	cell=$((x + 8 + 4 + 26))
 	opened=$(count 'edel-compositor: mapped window foot')
-	python3 ci/qmp.py click "$cell" 766
-	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "a click on foot's cell in the dock at $cell,766 did not start foot"
+	python3 ci/qmp.py click "$cell" 762
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "a click on foot's cell in the dock at $cell,762 did not start foot"
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
@@ -871,7 +874,7 @@ case_dock() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Mac-like (M5.4d): preset-mac-like.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: Mac-like put a bar along the top, a dock $((w + 12)) px wide centred at $x,740 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
+	echo "PASS: Mac-like put a bar along the top, a dock $((w + 16)) px wide centred at $x,732 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
 }
 
 case_panels() {
@@ -908,20 +911,20 @@ case_dockhide() {
 	guest 'dock hiding'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
 		fail "setting a hiding dock in shell.panels did not restart shell-ui"
-	wait_for 'edel-shell-ui: panel places apps 6\+[0-9]+$' || fail "the dock does not hold the apps"
+	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps"
 	sleep 1
-	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 6+\([0-9]*\)$/\1/p' | tail -n 1)
-	x=$((640 - (w + 12) / 2 + 3))
+	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 8+\([0-9]*\)$/\1/p' | tail -n 1)
+	x=$((640 - (w + 16) / 2 + 3))
 	python3 ci/qmp.py move 640 300
-	shot dock-shown "$x" 766 "$panel" >/dev/null || fail "the uncovered dock is not at $x,766 in the panel's colour"
+	shot dock-shown "$x" 762 "$panel" >/dev/null || fail "the uncovered dock is not at $x,762 in the panel's colour"
 	opened=$(count 'edel-compositor: mapped window big')
 	guest 'big window'
 	wait_more 'edel-compositor: mapped window big' "$opened" || fail "the window big did not open"
-	shot dock-hidden "$x" 766 884488 >/dev/null || fail "with big over it, $x,766 is not big's colour: the dock did not hide"
+	shot dock-hidden "$x" 762 884488 >/dev/null || fail "with big over it, $x,762 is not big's colour: the dock did not hide"
 	python3 ci/qmp.py move 640 799
-	shot dock-back "$x" 766 "$panel" >/dev/null || fail "the pointer at the bottom edge did not bring the dock back"
+	shot dock-back "$x" 762 "$panel" >/dev/null || fail "the pointer at the bottom edge did not bring the dock back"
 	python3 ci/qmp.py move 640 300
-	shot dock-hidden "$x" 766 884488 >/dev/null || fail "the pointer away from the dock did not let it hide again"
+	shot dock-hidden "$x" 762 884488 >/dev/null || fail "the pointer away from the dock did not let it hide again"
 	closed=$(count 'edel-compositor: unmapped window big')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window big' "$closed" || fail "Super+Q did not close big"

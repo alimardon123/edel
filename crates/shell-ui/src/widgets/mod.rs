@@ -41,6 +41,8 @@ pub struct Canvas<'a> {
     /// The panel's top row in the pixmap and its height, in its pixels.
     pub top: f32,
     pub height: f32,
+    /// Whether the panel is a dock (M5.4d), whose widgets may draw bigger.
+    pub dock: bool,
 }
 
 pub struct Widget {
