@@ -12,15 +12,31 @@ use std::path::{Path, PathBuf};
 /// One app people can start.
 #[derive(Debug, Clone, PartialEq)]
 pub struct App {
+    /// Its desktop file id, `foot` for `foot.desktop`, which is also the
+    /// app id its windows usually carry.
+    pub id: String,
     pub name: String,
     /// What to run, split into words with the field codes taken out.
     pub argv: Vec<String>,
     pub terminal: bool,
+    /// Its icon: a name in the icon themes, or a file's path (M5.4c).
+    pub icon: Option<String>,
+    /// What it is for, as the spec's categories (`WebBrowser`).
+    pub categories: Vec<String>,
     keywords: Vec<String>,
 }
 
 /// The directories `.desktop` files are read from, first wins.
 pub fn dirs() -> Vec<PathBuf> {
+    data_dirs()
+        .into_iter()
+        .map(|d| d.join("applications"))
+        .collect()
+}
+
+/// The XDG data directories, first wins: the person's, then
+/// `$XDG_DATA_DIRS`, then Flatpak's exports; apps and icons live below.
+pub fn data_dirs() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     // Empty is unset, and relative paths are left out, as the spec says.
     let data_home = std::env::var_os("XDG_DATA_HOME")
@@ -42,9 +58,8 @@ pub fn dirs() -> Vec<PathBuf> {
     out.push("/var/lib/flatpak/exports/share".into());
     let mut seen = Vec::new();
     for dir in out {
-        let apps = dir.join("applications");
-        if !seen.contains(&apps) {
-            seen.push(apps);
+        if !seen.contains(&dir) {
+            seen.push(dir);
         }
     }
     seen
@@ -67,10 +82,11 @@ pub fn read_all(dirs: &[PathBuf]) -> Vec<App> {
             if ids.contains(&id) {
                 continue;
             }
-            ids.push(id);
-            if let Some(app) = std::fs::read_to_string(&file).ok().and_then(|t| parse(&t)) {
+            if let Some(mut app) = std::fs::read_to_string(&file).ok().and_then(|t| parse(&t)) {
+                app.id = id.trim_end_matches(".desktop").to_string();
                 apps.push(app);
             }
+            ids.push(id);
         }
     }
     apps.sort_by_key(|a| a.name.to_lowercase());
@@ -99,6 +115,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 pub fn parse(text: &str) -> Option<App> {
     let mut inside = false;
     let (mut name, mut exec, mut keywords) = (None, None, Vec::new());
+    let (mut icon, mut categories) = (None, Vec::new());
     let (mut terminal, mut shown, mut application) = (false, true, false);
     for line in text.lines() {
         let line = line.trim();
@@ -119,6 +136,14 @@ pub fn parse(text: &str) -> Option<App> {
             "Name" => name = Some(unescape(value).replace(char::is_control, " ")),
             "Exec" => exec = Some(value.to_string()),
             "Terminal" => terminal = value == "true",
+            "Icon" if !value.is_empty() => icon = Some(value.to_string()),
+            "Categories" => {
+                categories = value
+                    .split(';')
+                    .filter(|c| !c.is_empty())
+                    .map(str::to_string)
+                    .collect();
+            }
             "NoDisplay" | "Hidden" if value == "true" => shown = false,
             // Shown only on other desktops.
             "OnlyShowIn" => shown &= value.split(';').any(|d| d == "Edel"),
@@ -139,11 +164,38 @@ pub fn parse(text: &str) -> Option<App> {
         return None;
     }
     Some(App {
+        id: String::new(),
         name,
         argv,
         terminal,
+        icon,
+        categories,
         keywords,
     })
+}
+
+/// What each role a preset can pin stands for (M5.4c): the apps whose
+/// `.desktop` files give that category. People's own choice of default
+/// apps comes with M6.2 and M6.10.
+const ROLES: &[(&str, &str)] = &[
+    ("files", "FileManager"),
+    ("browser", "WebBrowser"),
+    ("mail", "Email"),
+    ("editor", "TextEditor"),
+    ("terminal", "TerminalEmulator"),
+    ("music", "Audio"),
+    ("settings", "Settings"),
+];
+
+/// The app `pin` names: a role (`browser`) or a desktop file id
+/// (`org.mozilla.firefox`); none when nothing installed fits.
+pub fn pinned<'a>(apps: &'a [App], pin: &str) -> Option<&'a App> {
+    match ROLES.iter().find(|(role, _)| *role == pin) {
+        Some((_, category)) => apps
+            .iter()
+            .find(|a| a.categories.iter().any(|c| c == category)),
+        None => apps.iter().find(|a| a.id == pin),
+    }
 }
 
 /// A string value's escapes: `\s`, `\n`, `\t`, `\r` and `\\`.

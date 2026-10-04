@@ -271,6 +271,7 @@ pub fn paint(
     look: &Look,
     tokens: &Tokens,
     text: Option<&mut Text>,
+    icons: Option<&mut crate::icons::Icons>,
     row: &Row,
 ) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
@@ -308,6 +309,7 @@ pub fn paint(
         pixmap,
         tokens,
         text,
+        icons,
         scale: s,
         top,
         height: panel_h,
@@ -382,7 +384,7 @@ mod tests {
             shown: row.shows(&Live::default()),
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        paint(&mut pixmap, &look, &tokens, None, row);
+        paint(&mut pixmap, &look, &tokens, None, None, row);
         (pixmap, tokens)
     }
 

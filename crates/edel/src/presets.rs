@@ -19,11 +19,15 @@ pub const FORMAT: i64 = 1;
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
     ("hive", include_str!("../../../presets/hive.toml")),
+    (
+        "windows-like",
+        include_str!("../../../presets/windows-like.toml"),
+    ),
 ];
 
 /// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
 /// so `edel system check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "hive"];
+pub const NAMES: &[&str] = &["classic", "hive", "windows-like"];
 
 /// The preset a missing `shell.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -39,8 +43,22 @@ pub struct Preset {
     pub windows: Windows,
     pub workspaces: Workspaces,
     pub launcher: Launcher,
+    /// The apps the apps widget pins (M5.4c).
+    #[serde(default)]
+    pub apps: Apps,
     #[serde(default)]
     pub panels: Vec<Panel>,
+}
+
+/// The apps widget's pinned apps (M5.4c), from its start: each a role
+/// (`files`, `browser`, `mail`, `editor`, `terminal`, `music`,
+/// `settings`), meaning the installed app for it, or a desktop file id;
+/// those this machine lacks are left out.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Apps {
+    #[serde(default)]
+    pub pinned: Vec<String>,
 }
 
 /// The launcher (M5.3b), which Super or the menu button opens.
@@ -240,6 +258,24 @@ mod tests {
             panel.widgets().collect::<Vec<_>>(),
             ["menu", "windows", "workspaces", "layout", "clock"]
         );
+    }
+
+    #[test]
+    fn windows_like_has_a_taskbar_with_search_and_the_apps_in_its_centre() {
+        let (windows, note) = named(Some("windows-like"));
+        assert_eq!(note, None);
+        assert_eq!(windows.windows.policy, Policy::Floating);
+        assert_eq!(windows.windows.buttons, Side::Right);
+        assert_eq!(
+            windows.apps.pinned,
+            ["files", "browser", "terminal", "mail", "music"]
+        );
+        let panel = &windows.panels[0];
+        assert_eq!(panel.edge, Edge::Bottom);
+        assert_eq!(panel.start, ["menu", "search"]);
+        assert_eq!(panel.centre, ["apps"]);
+        // Classic and Hive pin nothing: they have no apps widget.
+        assert!(named(None).0.apps.pinned.is_empty());
     }
 
     #[test]

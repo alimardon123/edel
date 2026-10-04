@@ -174,7 +174,13 @@ impl Launcher {
     pub fn start(&mut self, row: Option<usize>) -> Option<String> {
         let row = row.unwrap_or(self.selected);
         let app = (*self.matches().get(row)?).clone();
-        let argv = apps::command(&app);
+        self.run(&app).then_some(app.name)
+    }
+
+    /// Starts `app`, kept as a child to collect when it ends; whether it
+    /// started.
+    pub fn run(&mut self, app: &App) -> bool {
+        let argv = apps::command(app);
         let mut command = Command::new(&argv[0]);
         command
             .args(&argv[1..])
@@ -188,11 +194,11 @@ impl Launcher {
             Ok(child) => {
                 self.children.push(child);
                 eprintln!("edel-shell-ui: launched {} ({})", app.name, argv.join(" "));
-                Some(app.name)
+                true
             }
             Err(e) => {
                 eprintln!("edel-shell-ui: {} did not start: {e}", app.name);
-                None
+                false
             }
         }
     }
