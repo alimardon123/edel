@@ -86,6 +86,9 @@ impl Edel {
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
+                // Every key down on the seat, this one included.
+                let down = event.count();
+                let mut tapped = None;
                 let keyboard = self.seat.get_keyboard()?;
                 let action = keyboard.input(
                     self,
@@ -100,6 +103,16 @@ impl Edel {
                         // Keys where a Latin layout has them, whatever the
                         // layout.
                         let latin = keysym.raw_latin_sym_or_raw_current_sym();
+                        // A modifier pressed alone and let go with nothing
+                        // between is a tap (the launcher's Super); the app
+                        // still hears both.
+                        let modifier = keysym.modified_sym();
+                        if pressed {
+                            state.tap = (crate::shortcuts::is_tap_key(modifier) && down == 1)
+                                .then_some(modifier);
+                        } else if state.tap.take() == Some(modifier) {
+                            tapped = Some(modifier);
+                        }
                         if !pressed {
                             FilterResult::Forward
                         } else if vts.contains(&sym) {
@@ -115,17 +128,14 @@ impl Edel {
                         }
                     },
                 );
+                if let Some(act) =
+                    tapped.and_then(|sym| crate::shortcuts::tapped(&self.bindings, sym))
+                {
+                    self.shortcut(act);
+                }
                 match action? {
                     Action::Vt(vt) => return Some(vt),
-                    Action::Shortcut(Act::Close) => {
-                        if let Some(window) = self.focused_window() {
-                            self.close(&window);
-                        }
-                    }
-                    Action::Shortcut(Act::Tiling) => self.toggle_tiling(),
-                    Action::Shortcut(Act::Terminal) => crate::program::open(self, "foot"),
-                    Action::Shortcut(Act::Workspace(n)) => self.switch_workspace(n),
-                    Action::Shortcut(Act::MoveTo(n)) => self.move_to_workspace(n),
+                    Action::Shortcut(act) => self.shortcut(act),
                 }
             }
             InputEvent::PointerMotion { event } => {
@@ -172,6 +182,8 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerButton { event } => {
+                // Super held for a drag is no tap.
+                self.tap = None;
                 let pointer = self.seat.get_pointer()?;
                 let button = event.button_code();
                 let location = pointer.current_location();
@@ -197,7 +209,10 @@ impl Edel {
                 );
                 pointer.frame(self);
             }
-            InputEvent::PointerAxis { event } => self.scroll::<B>(event),
+            InputEvent::PointerAxis { event } => {
+                self.tap = None;
+                self.scroll::<B>(event)
+            }
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
                     let tablets = self.seat.tablet_seat();
@@ -291,6 +306,22 @@ impl Edel {
 
     /// A wheel turned or fingers slid on a touchpad: the window under the
     /// pointer scrolls, by wheel clicks where the device counts them.
+    /// What a shortcut does.
+    fn shortcut(&mut self, act: Act) {
+        match act {
+            Act::Close => {
+                if let Some(window) = self.focused_window() {
+                    self.close(&window);
+                }
+            }
+            Act::Tiling => self.toggle_tiling(),
+            Act::Terminal => crate::program::open(self, "foot"),
+            Act::Workspace(n) => self.switch_workspace(n),
+            Act::MoveTo(n) => self.move_to_workspace(n),
+            Act::Launcher => self.show_launcher(),
+        }
+    }
+
     fn scroll<B: InputBackend>(&mut self, event: B::PointerAxisEvent) {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
@@ -429,6 +460,7 @@ impl Edel {
             return false;
         }
         let Some(window) = under.window().cloned() else {
+            self.take_keyboard_back();
             return false;
         };
         self.focus(&window);

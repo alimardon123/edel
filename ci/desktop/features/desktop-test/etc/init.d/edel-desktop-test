@@ -152,6 +152,11 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
 			;;
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
+		# shell-ui's memory now, after the launcher has been open (M5.3b).
+		'shell rss')
+			pid=$(pidof edel-shell-ui)
+			say "shell_ui_rss_now_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
+			;;
 		# ext-workspace-v1 (M5.2b): a client shows workspace 3, then 1,
 		# as the panel's switcher will, and prints what it saw.
 		# The windows as a window list sees them (M5.2d), and away
