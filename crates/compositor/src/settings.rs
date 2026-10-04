@@ -141,6 +141,15 @@ impl Settings {
         presets::named(self.preset.as_deref()).0 != presets::named(other.preset.as_deref()).0
     }
 
+    /// Whether a dock hides while a window covers it (M5.4f): from
+    /// `shell.panels` if set, else the preset's panels.
+    pub fn dock_hides(&self) -> bool {
+        match &self.panels {
+            Some(panels) => presets::dock_hides(panels),
+            None => presets::dock_hides(&presets::named(self.preset.as_deref()).0.panels),
+        }
+    }
+
     /// Whether `shell.panels` changed (M5.4e), which shell-ui follows by
     /// starting again, as for a preset.
     pub fn panels_differ(&self, other: &Settings) -> bool {

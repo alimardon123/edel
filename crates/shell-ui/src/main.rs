@@ -57,7 +57,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
-use edel::presets::{self, Edge, Style};
+use edel::presets::{self, Edge, Hide, Style};
 use edel::system;
 use edel::tokens::{self, Tokens};
 
@@ -200,7 +200,14 @@ fn run() -> Result<()> {
             surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
             surface.set_size(0, tokens.panel_height + strip);
         }
-        surface.set_exclusive_zone(tokens.panel_height as i32);
+        // A dock that hides while a window covers it (M5.4f) keeps
+        // nothing free; the compositor hides it.
+        let zone = if dock && spec.hide == Hide::Covered {
+            0
+        } else {
+            tokens.panel_height as i32
+        };
+        surface.set_exclusive_zone(zone);
         surface.set_keyboard_interactivity(KeyboardInteractivity::None);
         surface.commit();
         eprintln!(

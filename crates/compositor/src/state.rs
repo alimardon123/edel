@@ -94,6 +94,9 @@ pub struct Edel {
     pub cursors: Cursors,
     /// The title bar button under the pointer.
     pub hover: Option<(Window, Button)>,
+    /// A dock that hides while covered (M5.4f) is shown anyway: the
+    /// pointer reached its edge and has not left it since.
+    pub dock_shown: bool,
     /// The title bar button the left button went down on.
     pub pressed: Option<(Window, Button)>,
     /// The last click on a title bar, and when, for double clicks.
@@ -202,6 +205,7 @@ impl Edel {
             text: None,
             cursors: Cursors::new(),
             hover: None,
+            dock_shown: false,
             pressed: None,
             last_title_click: None,
             tap: None,

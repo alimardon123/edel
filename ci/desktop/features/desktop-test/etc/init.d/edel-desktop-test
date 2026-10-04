@@ -130,6 +130,11 @@ commands() {
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
 		'panels default') edel system unset shell.panels ;;
+		# A dock that hides while covered (M5.4f), and a window to cover it.
+		'dock hiding') edel system set 'shell.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		'big window')
+			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
+			;;
 		# Window buttons on either side (M5.4b).
 		'buttons left') edel system set shell.window_buttons=left ;;
 		'buttons default') edel system unset shell.window_buttons ;;

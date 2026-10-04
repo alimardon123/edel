@@ -456,6 +456,7 @@ impl Edel {
         &mut self,
         point: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        self.reveal_docks(point);
         let under = self.under(point);
         let hover = match &under {
             Under::Frame(window, Hit::Button(button)) => Some((window.clone(), *button)),
