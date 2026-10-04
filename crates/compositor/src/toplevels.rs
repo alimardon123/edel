@@ -17,6 +17,7 @@ use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwl
 use smithay::reexports::wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_manager_v1::{
     self, ZwlrForeignToplevelManagerV1,
 };
+use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -43,6 +44,9 @@ struct Entry {
     window: Window,
     handle: ZwlrForeignToplevelHandleV1,
     sent: Seen,
+    /// Told nothing yet: the first `done` goes out even when there is
+    /// nothing to say, as the protocol asks.
+    fresh: bool,
 }
 
 /// What a client was last told of a window.
@@ -93,13 +97,27 @@ impl Edel {
             let (desk, frame) = minimized?;
             (desk == self.desks.active()).then(|| self.insets(window).window(frame))
         });
-        let outputs = self
+        let mut screens: Vec<&Output> = self
             .space
             .outputs()
             .filter(|output| {
                 let screen = self.space.output_geometry(output);
                 matches!((place, screen), (Some(p), Some(s)) if p.overlaps(s))
             })
+            .collect();
+        // A window minimized here whose screen went is on the one it would
+        // come back on, so the window list still offers it.
+        if screens.is_empty() && minimized.is_some_and(|(desk, _)| desk == self.desks.active()) {
+            let name = self.desks.minimized_screen(window);
+            screens.extend(
+                self.space
+                    .outputs()
+                    .find(|o| Some(o.name().as_str()) == name)
+                    .or_else(|| self.space.outputs().next()),
+            );
+        }
+        let outputs = screens
+            .into_iter()
             .flat_map(|output| output.client_outputs(client))
             .collect();
         let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
@@ -165,6 +183,7 @@ impl Edel {
                     window: window.clone(),
                     handle,
                     sent: Seen::default(),
+                    fresh: true,
                 });
             }
         }
@@ -173,9 +192,10 @@ impl Edel {
                 continue;
             };
             let now = self.seen(&entry.window, &client);
-            if now == entry.sent {
+            if now == entry.sent && !entry.fresh {
                 continue;
             }
+            entry.fresh = false;
             if now.title != entry.sent.title {
                 entry.handle.title(now.title.clone());
             }
