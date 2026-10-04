@@ -26,6 +26,9 @@ panel_text = "#e8e8ea"
 # The one accent: the shown workspace's button in the panel (M5.2c), a
 # little deeper in the light scheme; M5.12 lets people choose it.
 accent = "#5b8ef5"
+# The one shadow, cast by one light above, under menus on the Full and
+# Balanced tiers (M5.5e) and windows from M5.14; its alpha is its depth.
+shadow = "#00000073"
 
 # The light scheme (M5.5c, appearance.color_scheme = "light"): the same
 # keys, each one given, over the dark values above.
@@ -40,6 +43,7 @@ title_close_hover = "#d9473f"
 panel = "#f2f3f5"
 panel_text = "#1f2329"
 accent = "#3a73e8"
+shadow = "#0000003d"
 
 [size]
 # In logical pixels.
@@ -52,14 +56,19 @@ gap = 8
 # shell-ui's panel along the screen's edge, and its clock's letters (M5.1b).
 panel = 40
 panel_text = 13
-# The corner radius of rounded shapes: the fillets where the panel meets
-# the screen (M5.1b) and menus such as the launcher (M5.3b), then windows
-# (M5.14); and of controls: the panel's buttons and a menu's rows.
-radius = 12
+# Corner radii (M5.5e, the mockups' second round): windows (M5.14); menus
+# such as the launcher (M5.3b) and the fillets where the panel meets the
+# screen (M5.1b); and controls: the panel's buttons and a menu's rows.
+radius_window = 10
+radius_menu = 12
 radius_control = 7
 # A row in a menu or list: the launcher's apps, the window switcher's
 # windows (M5.3).
 row = 36
+# How far the shadow blurs and how far below its surface it falls; it is
+# drawn in two layers, a close sharp one and a far soft one (M5.5e).
+shadow_blur = 24
+shadow_offset = 6
 
 [font]
 # The interface font's family, for title bars and everything shell-ui

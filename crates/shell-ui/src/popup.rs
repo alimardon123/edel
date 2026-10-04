@@ -1,17 +1,18 @@
 //! What the launcher and the window switcher share (M5.3b, M5.3c): a
 //! surface of their own above everything, made when shown and let go when
 //! hidden, so shell-ui's idle memory stays the panel's; and a card in the
-//! menus' colour and corners holding rows of text, the chosen one lit.
-//! Sizes come from the tokens, so a change there reaches both. Drawing is
-//! plain and tested without a display.
+//! menus' colour and corners holding rows of text, the chosen one lit,
+//! and on the Full and Balanced tiers its shadow round it (M5.5e). Sizes
+//! come from the tokens, so a change there reaches both. Drawing is plain
+//! and tested without a display.
 
-use smithay_client_toolkit::compositor::FrameCallbackData;
+use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData, Region};
 use smithay_client_toolkit::reexports::client::QueueHandle;
 use smithay_client_toolkit::reexports::client::protocol::{wl_shm, wl_surface};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
 use smithay_client_toolkit::shm::slot::SlotPool;
-use tiny_skia::Pixmap;
+use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 use edel::tokens::Tokens;
 
@@ -27,9 +28,14 @@ pub const INSET: f32 = 12.0;
 pub struct Popup<V> {
     pub surface: LayerSurface,
     pool: SlotPool,
-    /// Its size in logical pixels, and its screen's scale.
+    /// Its card's size in logical pixels, and its screen's scale.
     size: (u32, u32),
     scale: u32,
+    /// The room for the shadow on every side of the card, logical pixels:
+    /// none on Lite (M5.5e). The surface is the card and this round it.
+    room: u32,
+    /// The shadow, drawn once for a card size and scale.
+    shadow: Option<((u32, u32, u32), Pixmap)>,
     /// Configured, so it may draw.
     ready: bool,
     /// Drawn and not yet shown by the compositor: the next drawing waits
@@ -39,16 +45,19 @@ pub struct Popup<V> {
 }
 
 impl<V: Clone + PartialEq> Popup<V> {
-    /// A surface named `name`, `size` big, with buffers for up to `most`
-    /// at `scale`; the caller places it and commits.
+    /// A surface named `name` for a card `size` big with `room` round it
+    /// for its shadow, with buffers for cards up to `most` at `scale`; the
+    /// caller places it and commits.
     pub fn new(
         shell: &Shell,
         name: &'static str,
         size: (u32, u32),
         most: (u32, u32),
         scale: u32,
+        room: u32,
     ) -> Option<Popup<V>> {
-        let bytes = (most.0 * most.1 * 4 * scale * scale) as usize;
+        let (mw, mh) = (most.0 + 2 * room, most.1 + 2 * room);
+        let bytes = (mw * mh * 4 * scale * scale) as usize;
         let pool = SlotPool::new(bytes, &shell.shm)
             .inspect_err(|e| eprintln!("edel-shell-ui: no memory for the {name}: {e}"))
             .ok()?;
@@ -57,26 +66,48 @@ impl<V: Clone + PartialEq> Popup<V> {
             shell
                 .layers
                 .create_layer_surface(&shell.qh, surface, Layer::Overlay, Some(name), None);
-        surface.set_size(size.0, size.1);
-        Some(Popup {
+        let popup = Popup {
             surface,
             pool,
             size,
             scale,
+            room,
+            shadow: None,
             ready: false,
             waiting: false,
             drawn: None,
-        })
+        };
+        popup.set_size(&shell.compositor);
+        Some(popup)
     }
 
-    /// A new size, drawn once the compositor agrees.
-    pub fn resize(&mut self, size: (u32, u32)) {
+    /// The surface's size, the card's and the room round it, and where it
+    /// takes clicks: on the card alone.
+    fn set_size(&self, compositor: &CompositorState) {
+        let (w, h) = self.size;
+        let room = self.room;
+        self.surface.set_size(w + 2 * room, h + 2 * room);
+        if let Ok(region) = Region::new(compositor) {
+            region.add(room as i32, room as i32, w as i32, h as i32);
+            self.surface
+                .wl_surface()
+                .set_input_region(Some(region.wl_region()));
+        }
+    }
+
+    /// A new card size, drawn once the compositor agrees.
+    pub fn resize(&mut self, size: (u32, u32), compositor: &CompositorState) {
         if size != self.size {
             self.size = size;
             self.ready = false;
-            self.surface.set_size(size.0, size.1);
+            self.set_size(compositor);
             self.surface.commit();
         }
+    }
+
+    /// The room round the card, logical pixels: where the card starts.
+    pub fn room(&self) -> u32 {
+        self.room
     }
 
     pub fn configured(&mut self) {
@@ -115,8 +146,39 @@ impl<V: Clone + PartialEq> Popup<V> {
         Pixmap::new(self.size.0 * self.scale, self.size.1 * self.scale)
     }
 
-    /// Shows `pixmap`, which draws `view`; whether it is the first time.
-    pub fn show(&mut self, view: V, pixmap: &Pixmap, name: &str, qh: &QueueHandle<Shell>) -> bool {
+    /// The card in `pixmap` with its shadow round it, when it has room
+    /// for one; the shadow is drawn once per card size and scale.
+    fn framed_card(&mut self, pixmap: &Pixmap, tokens: &Tokens) -> Option<Pixmap> {
+        if self.room == 0 {
+            return None;
+        }
+        let s = self.scale;
+        let key = (pixmap.width(), pixmap.height(), s);
+        if self.shadow.as_ref().is_none_or(|(k, _)| *k != key) {
+            let r = tokens.radius_menu as f32 * s as f32;
+            let shadow = paint::shadow(key.0, key.1, self.room * s, r, tokens, s as f32)?;
+            self.shadow = Some((key, shadow));
+        }
+        let (_, shadow) = self.shadow.as_ref()?;
+        let mut out = shadow.clone();
+        let at = (self.room * s) as i32;
+        let paint = PixmapPaint::default();
+        out.draw_pixmap(at, at, pixmap.as_ref(), &paint, Transform::identity(), None);
+        Some(out)
+    }
+
+    /// Shows `pixmap`, the card drawing `view`, with its shadow round it;
+    /// whether it is the first time.
+    pub fn show(
+        &mut self,
+        view: V,
+        pixmap: &Pixmap,
+        tokens: &Tokens,
+        name: &str,
+        qh: &QueueHandle<Shell>,
+    ) -> bool {
+        let framed = self.framed_card(pixmap, tokens);
+        let pixmap = framed.as_ref().unwrap_or(pixmap);
         let (w, h) = (pixmap.width() as i32, pixmap.height() as i32);
         let (buffer, canvas) = match self
             .pool
@@ -155,7 +217,7 @@ pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
         0.0,
         w,
         h,
-        tokens.radius as f32 * s,
+        tokens.radius_menu as f32 * s,
         tokens.panel,
     );
 }
