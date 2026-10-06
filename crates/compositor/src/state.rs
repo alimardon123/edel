@@ -68,6 +68,8 @@ use crate::statefile::{self, StateFile};
 
 pub struct Edel {
     pub display: DisplayHandle,
+    /// Apps' GPU buffers (M5.19), offered by the DRM backend.
+    pub dmabuf: crate::dmabuf::Dmabufs,
     pub signal: LoopSignal,
     pub tokens: Tokens,
     pub space: Space<Window>,
@@ -169,6 +171,7 @@ impl Edel {
         crate::toplevels::create_global(&display);
         crate::edelshell::create_global(&display);
         Ok(Edel {
+            dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
             // Minimize since the window list brings a window back (M5.2h);
             // fullscreen and the window menu wait for their own steps, and
