@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+# Started from a USB stick, or in a virtual machine nobody has set up yet,
+# the desktop logs a person called live in by itself, so it shows without
+# a login (roadmap M3.6). edel boot live makes the account, a system one
+# kept in /etc's overlay on the data partition, never in the slot or the
+# system file, and writes /run/edel/greetd.toml, greetd's config with that
+# session, which conf.d/greetd then uses. On an installed machine, whose
+# people have accounts, it does nothing and the greeter asks who logs in.
+
+description="Log the live person in on a USB stick"
+
+depend() {
+	need localmount
+	after edel-system
+	before greetd
+}
+
+start() {
+	ebegin "Checking for a USB stick"
+	/usr/bin/edel boot live
+	eend $?
+}

@@ -86,6 +86,32 @@ fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
 
+/// Whether `passwd` has a person who could log in at the greeter: an
+/// account with a uid from 1000 below `nobody`'s, root aside.
+pub fn has_person(passwd: &str) -> bool {
+    accounts(passwd).iter().any(|a| a.uid != 0 && is_person(a))
+}
+
+/// Adds the account the desktop logs in by itself from a stick (M3.6,
+/// `edel boot live`): a system account, so the system file never lists
+/// it and apply and export leave it alone, with the shell greetd starts
+/// the session through, no password (`*`) and the seat.
+pub fn add_live_account(name: &str) -> Result<()> {
+    if !accounts(&fs::read_to_string("/etc/passwd")?)
+        .iter()
+        .any(|a| a.name == name)
+    {
+        let home = format!("/home/{name}");
+        run(Command::new("adduser").args(["-S", "-D", "-s", DEFAULT_SHELL, "-h", &home, name]))?;
+        unlock(name)?;
+    }
+    let group = fs::read_to_string("/etc/group")?;
+    if members(&group, SEAT_GROUP).is_some_and(|m| !m.iter().any(|m| m == name)) {
+        run(Command::new("addgroup").args([name, SEAT_GROUP]))?;
+    }
+    Ok(())
+}
+
 /// The members of `group` in `/etc/group`, or `None` without the group.
 fn members(group_file: &str, group: &str) -> Option<Vec<String>> {
     group_file.lines().find_map(|line| {

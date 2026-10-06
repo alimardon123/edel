@@ -1,12 +1,15 @@
 # The login screen. features/login/ holds greetd's config (our compositor
 # running agreety, the text greeter, in foot, M4.7b, until the compositor
-# greets people itself in M5.10), its PAM file with pam_rundir, and its
-# conf.d, which runs greetd under supervise-daemon; greetd, not a
-# supervisor, starts the compositor again when a session ends.
+# greets people itself in M5.10), the person's session (edel-session), its
+# PAM file with pam_rundir, its conf.d, which runs greetd under
+# supervise-daemon, and edel-live, which logs the person called live in on
+# a USB stick (M3.6); greetd, not a supervisor, starts the compositor
+# again when a session ends.
 format = 1
 summary = "Login: greetd and its greeter, with a private runtime directory per session"
-why = "greetd starts the session after login and the greeter again when it ends, a crash included; its greeter runs in foot (feature terminal) on edel-compositor (feature compositor); pam_rundir gives every session, the greeter's too, /run/user/UID (mode 0700) without logind, which Wayland needs for its socket."
+why = "greetd starts the session after login and the greeter again when it ends, a crash included; its greeter runs in foot (feature terminal) on edel-compositor (feature compositor); pam_rundir gives every session, the greeter's too, /run/user/UID (mode 0700) without logind, which Wayland needs for its socket. edel-live runs edel boot live at boot, so a USB stick, or a virtual machine nobody has set up yet, logs a person in by itself."
 packages = ["greetd", "greetd-openrc", "greetd-agreety", "pam-rundir"]
 
 [services]
+boot = ["edel-live"]
 default = ["greetd"]

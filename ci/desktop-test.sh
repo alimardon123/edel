@@ -83,6 +83,14 @@
 #               health file; typing ci and a password into
 #               its agreety starts ci's compositor again; last, as it
 #               ends the first session
+#   live        alone (CI runs it in the VM test lane, as it boots another
+#               image): the desktop image as released, out/edel-desktop-
+#               x86_64.img, started as a removable USB stick (QEMU's
+#               usb-storage, removable=on) on a plain screen (-vga std),
+#               with no seed and no test service; edel boot live says the
+#               stick logs live in, the slot is confirmed, and the panel
+#               lies along the bottom in the token colour, so the desktop
+#               showed with nobody logging in (M3.6)
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
 #               it restarts the VM): the test service installs the update
 #               ci/build.sh signs, served here on port 8001, puts a
@@ -1252,12 +1260,46 @@ for c in "$@"; do
 	case "$c" in
 	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
+	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
 done
+
+# live (M3.6): the released desktop image as a USB stick, on a screen
+# without 3D, which Mesa draws on with llvmpipe by itself; edel-boot-ok's
+# "Started in" line comes once the session's compositor showed a frame.
+if [ "$*" = live ]; then
+	dir=out/desktop-live
+	log=out/desktop-live.log
+	QMP="$dir/qmp.sock"
+	mkdir -p "$dir"
+	rm -f "$QMP" "$dir"/*.png
+	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot -snapshot \
+		-m 2048 -smp 4 -vga std \
+		-qmp unix:"$QMP",server=on,wait=off \
+		-device qemu-xhci,id=xhci \
+		-drive if=none,id=stick,format=raw,file=out/edel-desktop-x86_64.img \
+		-device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=0
+	if [ "$found" = 0 ]; then
+		cat "$log"
+		fail "the desktop image started from a USB stick did not confirm its slot"
+	fi
+	grep -a 'edel boot live: ' "$log" | tr -d '\r'
+	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
+		fail "edel boot live did not take the USB stick for one"
+	python3 ci/qmp.py screendump "$dir/live.png"
+	size=$(python3 ci/qmp.py size "$dir/live.png")
+	w=${size% *} h=${size#* }
+	panel=$(token panel)
+	shot live $((w / 2)) $((h - 10)) "$panel" >/dev/null ||
+		fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
+	stop_vm
+	echo "PASS: the desktop image started from a USB stick logged live in by itself: its panel lies along the bottom of the ${w}x$h screen"
+	exit 0
+fi
 
 # Any restart ends the VM, so a crash is never missed, except in rollback,
 # whose VM restarts on purpose and fetches the update from this host, the

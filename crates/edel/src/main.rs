@@ -11,6 +11,7 @@ mod grubenv;
 mod guard;
 mod image;
 mod installer;
+mod live;
 mod loader;
 mod machine;
 mod release;
@@ -176,6 +177,9 @@ enum BootCommands {
     /// Confirm that the running slot works, as the guard does once the
     /// system is up
     MarkGood,
+    /// On a USB stick, or with nobody set up yet, log the person called
+    /// live in to the desktop by itself
+    Live,
 }
 
 #[derive(Subcommand)]
@@ -352,6 +356,7 @@ fn main() -> Result<()> {
             BootCommands::MountData => data::mount_data(),
             BootCommands::Guard => guard::guard(),
             BootCommands::MarkGood => update::mark_good(),
+            BootCommands::Live => live::live(),
         },
         Commands::Release { command } => match command {
             ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),

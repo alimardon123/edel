@@ -1,3 +1,8 @@
 # greetd (roadmap M4.1): under supervise-daemon, which starts it again if
 # it dies, and with it the greeter.
 supervisor=supervise-daemon
+# On a USB stick, edel boot live (the edel-live service, M3.6) writes
+# greetd's config with a session that logs the person called live in.
+if [ -e /run/edel/greetd.toml ]; then
+	cfgfile=/run/edel/greetd.toml
+fi
