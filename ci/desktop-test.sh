@@ -1294,8 +1294,16 @@ if [ "$*" = live ]; then
 	size=$(python3 ci/qmp.py size "$dir/live.png")
 	w=${size% *} h=${size#* }
 	panel=$(token panel)
-	shot live $((w / 2)) $((h - 10)) "$panel" >/dev/null ||
-		fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
+	# The session starts after the slot is confirmed, and a runner busy
+	# with the other lane draws late: up to a minute for the panel.
+	i=0
+	until shot live $((w / 2)) $((h - 10)) "$panel" >/dev/null; do
+		i=$((i + 1))
+		if [ "$i" -ge 6 ]; then
+			tr -d '\r' <"$log" | tail -n 100
+			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
+		fi
+	done
 	stop_vm
 	echo "PASS: the desktop image started from a USB stick logged live in by itself: its panel lies along the bottom of the ${w}x$h screen"
 	exit 0
