@@ -7,11 +7,6 @@ arch = "x86_64"
 hostname = "edel"
 features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak-test"]
 
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]
-
 [vm]
 kernel = "virt"
 slot_mib = 1024

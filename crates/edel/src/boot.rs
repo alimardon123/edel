@@ -37,7 +37,7 @@ pub const DATA_PARTITION: u32 = 4;
 /// grow; 64 MiB is close to the smallest FAT32 that firmware accepts.
 pub const ESP_MIB: u64 = 64;
 /// Where GRUB looks for its config and env, on the EFI system partition.
-pub const GRUB_PREFIX: &str = "/EFI/edel";
+pub const GRUB_PREFIX: &str = edel::places::ESP_DIR;
 /// Boot attempts a slot gets before GRUB moves on to the next one. More
 /// than one, so a single power cut during boot does not undo an update.
 pub const TRIES: u32 = 3;

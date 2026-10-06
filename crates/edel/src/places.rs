@@ -19,15 +19,120 @@ pub const SETTINGS: &str = "settings.toml";
 /// on disk, so a machine set up before a rename keeps its settings.
 pub const FORMER_SETTINGS: &[&str] = &["system.toml"];
 
-/// Edel OS's directory on the data partition, shared by both slots.
-pub const DATA_DIR: &str = "/data/edel";
+// Each root below is written once, in its macro; every place under it is
+// built from the macro, so moving a root is one line.
+macro_rules! data {
+    ($path:literal) => {
+        concat!("/data", $path)
+    };
+}
+macro_rules! run {
+    ($path:literal) => {
+        concat!("/run/edel", $path)
+    };
+}
+macro_rules! share {
+    ($path:literal) => {
+        concat!("/usr/share/edel", $path)
+    };
+}
+
+/// Where the data partition, shared by both slots, is mounted.
+pub const DATA_MOUNT: &str = data!("");
+/// Edel OS's directory on the data partition.
+pub const DATA_DIR: &str = data!("/edel");
+/// What this machine changed in `/etc`: a file here differs from the
+/// slot's (the overlay's upper directory, M1.4).
+pub const ETC_UPPER: &str = data!("/etc/upper");
+/// Developer mode is on while this file exists (ADR-007).
+pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
+/// The last fallback from a slot that did not start, for shell-ui to show
+/// once (M1.1, M5.9).
+pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
+
+/// Edel OS's directory for this boot only.
+pub const RUN_DIR: &str = run!("");
+/// What the person's session leaves for root (M4.8).
+pub const SESSION_DIR: &str = run!("/session");
+/// What the compositor shows: windows, layers, the effect tier (M4.3).
+pub const STATE_FILE: &str = run!("/session/state.toml");
+/// The desktop's health: the compositor's first frame (M4.8).
+pub const READY_FILE: &str = run!("/session/ready");
+/// The default runlevel's health (M1.5).
+pub const DEFAULT_REACHED: &str = run!("/default-reached");
+/// Written once the guard confirmed this boot's slot (M1.5).
+pub const CONFIRMED: &str = run!("/confirmed");
+/// The boot's "Started in" line, for `edel report` (M3.2).
+pub const STARTED: &str = run!("/started");
+/// One updater at a time (M1.1).
+pub const UPDATE_LOCK: &str = run!("/update.lock");
+/// greetd's config with the live session (M3.6).
+pub const GREETD_LIVE: &str = run!("/greetd.toml");
+/// Where a seed stick or partition is mounted while it is read (M2.2).
+pub const SEED_MOUNT: &str = run!("/seed");
+/// Where the installer mounts the new disk's partitions (M2.4).
+pub const INSTALL_DIR: &str = run!("/install");
 
 /// Where a slot keeps Edel OS's own files.
-pub const SHARE_DIR: &str = "/usr/share/edel";
+pub const SHARE_DIR: &str = share!("");
+/// The image's feature files (M4.0).
+pub const FEATURES_DIR: &str = share!("/features");
+/// The public keys releases are checked against (M1.6).
+pub const KEYS_DIR: &str = share!("/keys");
+/// Every package in the slot, one per line (M3.1).
+pub const PACKAGES_FILE: &str = share!("/packages");
+/// The design tokens a slot may carry in place of the built-in ones.
+pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
+/// GTK's colours from the tokens (M5.5b).
+pub const GTK_CSS: &str = share!("/gtk.css");
+/// These places as shell variables, for the slot's own scripts (M5.27).
+pub const PLACES_SH: &str = share!("/places.sh");
+
+/// The boot loader the slot carries, which rides along with updates (M1.8).
+pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
+/// Edel OS's directory on the EFI system partition: GRUB, its counters and
+/// a seed settings file.
+pub const ESP_DIR: &str = "/EFI/edel";
 
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
+
+/// The places shell scripts use, as `NAME=VALUE` lines: `ci/names.sh` for
+/// CI and `/usr/share/edel/places.sh` in every image, both written from
+/// here (M5.27).
+pub fn shell_vars() -> Vec<(&'static str, String)> {
+    vec![
+        ("settings_name", SETTINGS.to_string()),
+        ("data_dir", DATA_DIR.to_string()),
+        ("run_dir", RUN_DIR.to_string()),
+        ("session_dir", SESSION_DIR.to_string()),
+        ("state_file", STATE_FILE.to_string()),
+        ("ready_file", READY_FILE.to_string()),
+        ("default_reached", DEFAULT_REACHED.to_string()),
+        ("confirmed_file", CONFIRMED.to_string()),
+        ("started_file", STARTED.to_string()),
+        ("greetd_live", GREETD_LIVE.to_string()),
+        ("last_fallback", LAST_FALLBACK.to_string()),
+        ("share_dir", SHARE_DIR.to_string()),
+        ("esp_dir", ESP_DIR.to_string()),
+    ]
+}
+
+/// `shell_vars` as a sourced shell file, with a header saying what wrote
+/// it.
+pub fn shell_file(what: &str) -> String {
+    let mut text = format!(
+        "# {what}.\n\
+         # Written by edel::places (crates/edel/src/places.rs); never edit it\n\
+         # by hand. Sourced, not run.\n\
+         # shellcheck disable=SC2034\n"
+    );
+    for (name, value) in shell_vars() {
+        text.push_str(&format!("{name}={value}\n"));
+    }
+    text
+}
 
 /// The machine's settings file, on the data partition.
 pub fn machine_settings() -> PathBuf {
@@ -117,12 +222,19 @@ mod tests {
         assert!(!is_settings_name("state.toml"));
     }
 
-    /// `ci/names.sh` says what this module says, for CI's shell scripts.
+    /// `ci/names.sh` says what this module says, for CI's shell scripts;
+    /// with EDEL_WRITE_DOCS set, the test writes it.
     #[test]
     fn ci_names_are_these() {
-        let names = include_str!("../../../ci/names.sh");
-        let line = format!("settings_name={SETTINGS}\n");
-        assert!(names.contains(&line), "ci/names.sh lacks {line:?}");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/names.sh");
+        let want = shell_file("The places CI's scripts share with the code (ADR-010, M5.27)");
+        if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
+            fs::write(&path, &want).unwrap();
+        }
+        assert!(
+            fs::read_to_string(&path).unwrap_or_default() == want,
+            "ci/names.sh differs from edel::places; run EDEL_WRITE_DOCS=1 cargo test -p edel ci_names"
+        );
     }
 
     /// The settings file's name, and every name it had, is written here

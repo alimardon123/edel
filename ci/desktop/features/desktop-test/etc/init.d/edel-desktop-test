@@ -14,6 +14,9 @@
 
 description="Edel OS desktop test"
 
+# Edel OS's places, written by edel::places (M5.27).
+. /usr/share/edel/places.sh
+
 depend() {
 	after edel-settings
 	before greetd
@@ -39,7 +42,7 @@ own_mib() {
 dump() {
 	{
 		id ci
-		ls -l /run/user /run/edel/session /dev/dri
+		ls -l /run/user "$session_dir" /dev/dri
 		ps | grep -v ' \['
 		tail -n 30 /var/log/messages
 		cat /var/log/greetd.log /tmp/compositor.log
@@ -49,14 +52,14 @@ dump() {
 report() {
 	dir=/run/user/$(id -u ci)
 	i=0
-	while [ ! -s /run/edel/session/ready ] && [ "$i" -lt 600 ]; do
+	while [ ! -s "$ready_file" ] && [ "$i" -lt 600 ]; do
 		sleep 0.2
 		i=$((i + 1))
 	done
 	ready=$(cut -d' ' -f1 /proc/uptime)
 	say "rundir $(stat -c '%a %U' "$dir" 2>&1)"
-	if [ ! -s /run/edel/session/ready ]; then
-		say "FAIL: no /run/edel/session/ready after 120 s; what follows is for finding out why"
+	if [ ! -s "$ready_file" ]; then
+		say "FAIL: no $ready_file after 120 s; what follows is for finding out why"
 		dump
 		return
 	fi
@@ -65,7 +68,7 @@ report() {
 	for c in /sys/class/drm/card*-*/status; do
 		[ -e "$c" ] && say "connector $(basename "$(dirname "$c")") $(cat "$c")"
 	done
-	say "ready_line $(cat /run/edel/session/ready)"
+	say "ready_line $(cat "$ready_file")"
 	socket=$(ls "$dir" | grep -E '^wayland-[0-9]+$' | head -n 1)
 	as_ci() {
 		su -s /bin/sh ci -c "XDG_RUNTIME_DIR=$dir WAYLAND_DISPLAY=$socket $*"
@@ -126,7 +129,7 @@ report() {
 	shown 3
 	while IFS= read -r line; do
 		say "state $line"
-	done </run/edel/session/state.toml
+	done <"$state_file"
 	say "done"
 	commands &
 	follow
@@ -328,7 +331,7 @@ windows() {
 			if (hidden != "") printf "on %s, ", shown
 			print n + 0 out
 		}
-	' /run/edel/session/state.toml 2>/dev/null
+	' "$state_file" 2>/dev/null
 }
 
 # respawned SINCE: waits up to 15 s for the greeter's compositor to log
@@ -350,14 +353,14 @@ respawned() {
 	now=$(cut -d' ' -f1 /proc/uptime)
 	say "greeter $(grep 'edel-compositor: output .* ready' /tmp/greeter.log | head -n 1)"
 	say "greeter_tier $(grep 'edel-compositor: tier=' /tmp/greeter.log | head -n 1)"
-	say "ready_owner $(stat -c %U /run/edel/session/ready)"
+	say "ready_owner $(stat -c %U "$ready_file")"
 	say "respawn_seconds $(awk -v a="$1" -v b="$now" 'BEGIN { printf "%.2f", b - a }')"
 	i=0
-	while [ "$(stat -c %U /run/edel/session/ready)" != ci ] && [ "$i" -lt 600 ]; do
+	while [ "$(stat -c %U "$ready_file")" != ci ] && [ "$i" -lt 600 ]; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	say "login_ready $(stat -c %U /run/edel/session/ready) $(cat /run/edel/session/ready)"
+	say "login_ready $(stat -c %U "$ready_file") $(cat "$ready_file")"
 }
 
 # frame_ms FILE P: the Pth percentile, in ms, of the frame times
@@ -379,7 +382,7 @@ open_ten() {
 	as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-ten.txt 2>&1 &
 	timer=$!
 	sleep 1
-	before=$(grep -c '^\[\[windows\]\]' /run/edel/session/state.toml 2>/dev/null || true)
+	before=$(grep -c '^\[\[windows\]\]' "$state_file" 2>/dev/null || true)
 	for n in 1 2 3 4 5 6 7 8 9 10; do
 		as_ci edel-testclient --size 200x150 --colour 33aa55 --title "ten$n" </dev/null >/dev/null 2>&1 &
 		shown $((${before:-0} + n))
@@ -414,14 +417,14 @@ layers() {
 		inside && $1 == "width" { w = $2 }
 		inside && $1 == "height" { h = $2 }
 		END { flush(); print n + 0 out }
-	' /run/edel/session/state.toml 2>/dev/null
+	' "$state_file" 2>/dev/null
 }
 
 # shown N: waits up to 30 s for the state file to list N windows.
 shown() {
 	i=0
 	while [ "$i" -lt 150 ]; do
-		n=$(grep -c '^\[\[windows\]\]' /run/edel/session/state.toml 2>/dev/null || true)
+		n=$(grep -c '^\[\[windows\]\]' "$state_file" 2>/dev/null || true)
 		[ "${n:-0}" -ge "$1" ] && return
 		sleep 0.2
 		i=$((i + 1))
@@ -470,18 +473,18 @@ rolled_back() {
 		return
 	fi
 	i=0
-	while [ ! -e /run/edel/confirmed ] && [ "$i" -lt 900 ]; do
+	while [ ! -e "$confirmed_file" ] && [ "$i" -lt 900 ]; do
 		sleep 0.2
 		i=$((i + 1))
 	done
 	slots=$(edel status)
 	echo "$slots" >/dev/console
 	if echo "$slots" | grep -q '^running: A' && echo "$slots" | grep -q '^B: ok=0' &&
-		grep -q '^from = "B"' /data/edel/last-fallback.toml 2>/dev/null; then
+		grep -q '^from = "B"' "$last_fallback" 2>/dev/null; then
 		say "rollback: PASS: back on slot A, slot B switched off and the fallback recorded"
 	else
 		say "rollback: FAIL: not back on slot A with slot B off"
-		cat /data/edel/last-fallback.toml >/dev/console 2>&1
+		cat "$last_fallback" >/dev/console 2>&1
 	fi
 }
 

@@ -21,6 +21,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
+use edel::places;
+
 use crate::release::os_release_value;
 use crate::update;
 
@@ -34,7 +36,7 @@ const SENTINELS: [(&str, &str); 2] = [
 ];
 /// How long a slot may take to become healthy when the image says nothing.
 pub const DEFAULT_TIMEOUT: u64 = 120;
-const CONFIRMED: &str = "/run/edel/confirmed";
+const CONFIRMED: &str = places::CONFIRMED;
 /// Where the kernel lists watchdogs, each with its `identity`.
 const WATCHDOG_CLASS: &str = "/sys/class/watchdog";
 /// softdog's identity; every other watchdog is hardware.
@@ -191,7 +193,7 @@ pub fn guard() -> Result<()> {
 /// watchdog meanwhile: the machine is healthy, so it is never reset here.
 /// Gives up after 30 minutes.
 fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
-    let lock = Path::new("/run/edel/update.lock");
+    let lock = Path::new(places::UPDATE_LOCK);
     let start = Instant::now();
     loop {
         match update::confirm_running() {
@@ -217,7 +219,7 @@ mod tests {
     #[test]
     fn reads_health_names_and_timeout_and_skips_unknown_ones() {
         let (files, timeout, unknown) = health_plan(OS_RELEASE, Path::new("/run"));
-        assert_eq!(files, [PathBuf::from("/run/edel/default-reached")]);
+        assert_eq!(files, [PathBuf::from(places::DEFAULT_REACHED)]);
         assert_eq!(timeout, 30);
         assert_eq!(unknown, ["newer-thing"]);
         let (files, timeout, _) = health_plan("NAME=x\n", Path::new("/run"));

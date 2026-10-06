@@ -5,7 +5,7 @@
 use std::fs;
 
 /// Where the compositor keeps what it shows (M4.3).
-pub const STATE: &str = "/run/edel/session/state.toml";
+pub const STATE: &str = edel::places::STATE_FILE;
 
 /// The session's effect tier, `lite`, `balanced` or `full`, while a
 /// desktop session runs.

@@ -21,7 +21,7 @@ use crate::grubenv::{Env, Slot};
 use crate::release::os_release_value;
 
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
-const RUN_DIR: &str = "/run/edel";
+const RUN_DIR: &str = edel::places::RUN_DIR;
 /// The environment block, relative to the EFI system partition.
 const ENV_FILE: &str = "EFI/edel/grubenv";
 
@@ -566,7 +566,7 @@ fn fallback_record(from: Slot, to: Slot, date: &str) -> String {
 /// Writes `/data/edel/last-fallback.toml`, when the data partition is
 /// mounted (M1.3).
 fn record_fallback(from: Slot, to: Slot) -> Result<()> {
-    if !crate::data::is_mounted("/data")? {
+    if !crate::data::is_mounted(edel::places::DATA_MOUNT)? {
         return Ok(());
     }
     let date = Command::new("date")
@@ -575,9 +575,9 @@ fn record_fallback(from: Slot, to: Slot) -> Result<()> {
         .output()
         .context("starting date")?;
     let date = String::from_utf8_lossy(&date.stdout).trim().to_string();
-    fs::create_dir_all("/data/edel")?;
+    fs::create_dir_all(edel::places::DATA_DIR)?;
     fs::write(
-        "/data/edel/last-fallback.toml",
+        edel::places::LAST_FALLBACK,
         fallback_record(from, to, &date),
     )?;
     Ok(())

@@ -10,7 +10,7 @@ use toml::{Table, Value};
 
 /// Where a machine may keep tokens of its own, which take the built-in
 /// ones' place; no image ships one yet, so the parts draw with these.
-pub const PATH: &str = "/usr/share/edel/design/tokens.toml";
+pub const PATH: &str = crate::places::TOKENS_FILE;
 
 /// The repository's tokens, the release's defaults.
 pub const BUILT_IN: &str = include_str!("../../../design/tokens.toml");
@@ -107,7 +107,7 @@ pub fn load(scheme: Scheme) -> (Tokens, Vec<String>) {
 
 /// Where images keep GTK's colours from the tokens (M5.5b), which each
 /// person's `~/.config/gtk-4.0/gtk.css` imports.
-pub const GTK_CSS: &str = "/usr/share/edel/gtk.css";
+pub const GTK_CSS: &str = crate::places::GTK_CSS;
 
 /// The tokens the compositor and shell-ui use.
 #[derive(Debug, Clone, PartialEq)]
@@ -509,6 +509,26 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../features/shell/usr/share/edel/gtk.css"
     );
+
+    /// Every new person's `~/.config/gtk-4.0/gtk.css` imports [`GTK_CSS`]
+    /// by its place in `edel::places` (M5.27); with EDEL_WRITE_GTK_CSS set,
+    /// the test writes it.
+    #[test]
+    fn a_person_imports_the_shipped_gtk_css() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../features/shell/etc/skel/.config/gtk-4.0/gtk.css"
+        );
+        let want = format!(
+            "/* GTK4 and libadwaita apps read this file. It takes Edel OS's colours\n   \
+             from the design tokens (M5.5b); add your own rules below it. */\n\
+             @import url(\"file://{GTK_CSS}\");\n"
+        );
+        if std::env::var_os("EDEL_WRITE_GTK_CSS").is_some() {
+            std::fs::write(path, &want).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(path).unwrap_or_default(), want);
+    }
 
     #[test]
     fn the_shipped_gtk_css_is_the_tokens() {

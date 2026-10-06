@@ -7,22 +7,25 @@
 
 description="Confirm that this Edel OS slot starts"
 
+# Edel OS's places, written by edel::places (M5.27).
+. /usr/share/edel/places.sh
+
 depend() {
 	after *
 }
 
 start() {
 	ebegin "Confirming that this Edel OS slot works"
-	mkdir -p /run/edel
-	touch /run/edel/default-reached
+	mkdir -p "$run_dir"
+	touch "$default_reached"
 	# Ten looks a second for 30 s, so the Started line is the boot's
 	# time, not up to a second of waiting on top.
 	i=0
-	while [ ! -s /run/edel/confirmed ] && [ "$i" -lt 300 ]; do
+	while [ ! -s "$confirmed_file" ] && [ "$i" -lt 300 ]; do
 		sleep 0.1
 		i=$((i + 1))
 	done
-	cat /run/edel/confirmed 2>/dev/null
+	cat "$confirmed_file" 2>/dev/null
 	# The version on serial, for the boot test (M3.1).
 	. /usr/lib/os-release
 	echo "$PRETTY_NAME, channel $EDEL_CHANNEL, loader $EDEL_LOADER_VERSION"
@@ -34,8 +37,8 @@ start() {
 	started="Started in $up s, $mem MiB of memory in use, $root MiB used on the root"
 	echo "$started"
 	# edel report reads it (M3.3b).
-	echo "$started" >/run/edel/started
+	echo "$started" >"$started_file"
 	# A slot the guard could not confirm is reported as a failure.
-	[ -s /run/edel/confirmed ] && ! grep -q 'could not confirm' /run/edel/confirmed
+	[ -s "$confirmed_file" ] && ! grep -q 'could not confirm' "$confirmed_file"
 	eend $?
 }

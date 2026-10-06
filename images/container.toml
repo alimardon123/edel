@@ -6,7 +6,3 @@ variant = "container"
 arch = "x86_64"
 features = ["base", "container"]
 
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]

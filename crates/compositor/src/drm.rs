@@ -57,7 +57,7 @@ use crate::program::Program;
 use crate::state::{Edel, listen};
 
 /// Where the session tells root it is up (M4.1, M4.8).
-const READY: &str = "/run/edel/session/ready";
+const READY: &str = edel::places::READY_FILE;
 
 /// How long the screen stays still before the telemetry is logged.
 const QUIET: Duration = Duration::from_secs(2);

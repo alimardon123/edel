@@ -1,5 +1,5 @@
 //! Keyboard shortcuts (roadmap M5.13, ADR-008): `[shortcuts]` in the
-//! settings file maps an action to keys, such as `close = "Super+W"`. An
+//! settings file maps an action to keys, such as `close_window = "Super+W"`. An
 //! action the file leaves out keeps its default from [`ACTIONS`]; `""`
 //! unbinds one. Checkers refuse an unknown action, two actions on one key
 //! and a rescue action (close, launcher, lock) left without keys, so a
