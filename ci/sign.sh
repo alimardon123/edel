@@ -5,7 +5,7 @@
 # cargo, apk and the image build run code from the network, which must
 # never see the key.
 #
-#   docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:3.24 sh ci/sign.sh
+#   docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:VERSION sh ci/sign.sh
 #
 # With the key, every bootable image must carry every public key in
 # images/keys/ (at least two, so one can replace the other) and both lists
@@ -24,12 +24,13 @@ if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
 		echo "FAIL: EDEL_RELEASE_KEY is set but images/keys/ holds $count public key(s); two are needed (docs/RELEASE.md, step 1)"
 		exit 1
 	fi
+	. ci/names.sh
 	for def in images/*.toml; do
 		grep -q '^kernel = ' "$def" || continue
 		name=$(sed -n 's/^name = "\(.*\)"$/\1/p' "$def")
 		arch=$(sed -n 's/^arch = "\(.*\)"$/\1/p' "$def")
 		for pub in images/keys/*.pub; do
-			cmp -s "$pub" "out/work/$name-$arch/rootfs/usr/share/edel/keys/$(basename "$pub")" || {
+			cmp -s "$pub" "out/work/$name-$arch/rootfs$share_dir/keys/$(basename "$pub")" || {
 				echo "FAIL: $name does not carry $pub, so its machines could never take an update; name it in $def's [release] public_keys"
 				exit 1
 			}

@@ -79,7 +79,7 @@ const SWITCHER: &str = "edel-switcher";
 const MARGIN: i32 = 8;
 
 /// Where the compositor says how much the desktop animates (M5.11a).
-const STATE: &str = "/run/edel/session/state.toml";
+const STATE: &str = places::STATE_FILE;
 
 struct Shell {
     registry: RegistryState,

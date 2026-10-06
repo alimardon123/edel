@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use crate::release::{os_release_value, to_hex};
 
 /// Where a slot keeps the loader it was built with.
-pub const SLOT_DIR: &str = "/usr/lib/edel/boot";
+pub const SLOT_DIR: &str = edel::places::SLOT_BOOT_DIR;
 
 /// `loader.toml` for a GRUB binary and its config: the version is a hash
 /// of both, so any change to either is a new loader.

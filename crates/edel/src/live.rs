@@ -22,7 +22,7 @@ const LIVE_USER: &str = "live";
 /// The login feature's greetd config, the slot's.
 const GREETD: &str = "/etc/greetd/config.toml";
 /// greetd's config with the live session, which `conf.d/greetd` prefers.
-const GREETD_LIVE: &str = "/run/edel/greetd.toml";
+const GREETD_LIVE: &str = edel::places::GREETD_LIVE;
 /// The person's session: the one command greetd starts after a login.
 const SESSION: &str = "/usr/libexec/edel-session";
 

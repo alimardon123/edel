@@ -4,7 +4,7 @@
 # supervise-daemon, which starts it again if it dies.
 format = 1
 summary = "Seats: the screen and input for the person at the machine"
-why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes /run/edel/session, where the compositor, running as the person, leaves its health file for the boot guard."
+why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes the session's directory for root, where the compositor, running as the person, leaves its health file for the boot guard."
 packages = ["seatd", "seatd-openrc"]
 
 [services]

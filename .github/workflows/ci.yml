@@ -33,8 +33,13 @@ jobs:
         run: for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
       - name: The system file library builds without the command's dependencies
         run: cargo build --locked --lib --no-default-features
-      - name: No system file key removed within a format
+      - name: No settings file key removed within a format
         run: sh ci/keys-check.sh
+      - name: Every fact is written at its owner
+        # ADR-010's one owner decision (M5.27): places, colours and the
+        # Alpine branch only at their owners, and the check catching one
+        # of each planted elsewhere.
+        run: sh ci/one-place.sh && sh ci/one-place.sh --self-test
       - name: Keep mdBook between runs
         uses: actions/cache@v4
         with:
@@ -83,8 +88,13 @@ jobs:
             fi
           fi
 
-      - name: Build images inside Alpine 3.24
-        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+      - name: The Alpine release to build in
+        # The base feature owns the Alpine branch (M5.27): the build and
+        # signing containers are that release, so nothing else names it.
+        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
+
+      - name: Build images inside Alpine
+        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
 
       - name: Sign the release in a container of its own
         env:
@@ -92,7 +102,7 @@ jobs:
           # always empty for pull requests: only this step of a push to
           # main or of a tag sees the key; the rest sign with a throwaway.
           EDEL_RELEASE_KEY: ${{ github.event_name == 'push' && secrets.EDEL_RELEASE_KEY || '' }}
-        run: docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src alpine:3.24 sh ci/sign.sh
+        run: docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src "$ALPINE" sh ci/sign.sh
 
       - name: Test the container image
         run: sh ci/container-test.sh
@@ -202,8 +212,12 @@ jobs:
         # Numbered as the images job numbers a pull request or main.
         run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Build the desktop test image inside Alpine 3.24
-        run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh desktop-test
+      - name: The Alpine release to build in
+        # The base feature owns the Alpine branch (M5.27).
+        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
+
+      - name: Build the desktop test image inside Alpine
+        run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh desktop-test
 
       - name: Enable KVM
         run: |

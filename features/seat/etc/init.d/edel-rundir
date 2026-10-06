@@ -10,13 +10,15 @@
 # where root writes its own (the update lock, the confirmation of the
 # slot).
 
-description="Let the session leave files for root in /run/edel/session"
+description="Let the session leave files for root"
 
 depend() {
 	before seatd greetd
 }
 
 start() {
-	checkpath -d -m 0755 -o root:root /run/edel
-	checkpath -d -m 0770 -o root:seat /run/edel/session
+	# Edel OS's places, written by edel::places (M5.27).
+	. /usr/share/edel/places.sh
+	checkpath -d -m 0755 -o root:root "$run_dir"
+	checkpath -d -m 0770 -o root:seat "$session_dir"
 }

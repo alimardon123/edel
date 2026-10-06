@@ -291,7 +291,7 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     {
         let esp = Mounted::new(
             &part(1),
-            Path::new("/run/edel/install/esp"),
+            &Path::new(edel::places::INSTALL_DIR).join("esp"),
             &["-t", "vfat", "-o", "iocharset=iso8859-1"],
         )?;
         let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
@@ -314,15 +314,17 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     {
         let data = Mounted::new(
             &part(4),
-            Path::new("/run/edel/install/data"),
+            &Path::new(edel::places::INSTALL_DIR).join("data"),
             &["-t", "ext4"],
         )?;
         // The machine's settings file, where the installed machine finds
         // it once the data partition is mounted at /data.
         let machine = edel::places::machine_settings();
-        let target = data
-            .0
-            .join(machine.strip_prefix("/data").unwrap_or(&machine));
+        let target = data.0.join(
+            machine
+                .strip_prefix(edel::places::DATA_MOUNT)
+                .unwrap_or(&machine),
+        );
         fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
         fs::copy(system_file, target)?;
     }

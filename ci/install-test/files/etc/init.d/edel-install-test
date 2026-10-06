@@ -5,7 +5,8 @@
 # /usr/share/edel/ci/install-test.sh.
 
 description="Edel OS install test"
-command=/usr/share/edel/ci/install-test.sh
+. /usr/share/edel/places.sh
+command=$share_dir/ci/install-test.sh
 command_background=yes
 pidfile=/run/edel-install-test.pid
 output_log=/dev/console

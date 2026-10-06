@@ -35,7 +35,9 @@ struct DefFile {
     /// Switchable features shipped with their services off.
     #[serde(default)]
     off: Vec<String>,
-    alpine: Alpine,
+    /// Refused with a pointer to the owner: the Alpine branch is the
+    /// `base` feature's (M5.27).
+    alpine: Option<toml::Value>,
     vm: Option<Vm>,
     #[serde(default)]
     image: ImageFacts,
@@ -124,14 +126,7 @@ pub enum Variant {
     Vm,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Alpine {
-    /// Alpine stable branch, for example "v3.24".
-    pub branch: String,
-    pub mirror: String,
-    pub repositories: Vec<String>,
-}
+pub use edel::features::Alpine;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -351,13 +346,29 @@ impl ImageDef {
             }
         }
         initramfs.sort();
+        if file.alpine.is_some() {
+            bail!(
+                "[alpine] belongs to the base feature (features/base.toml), which every image lists, so the branch is written once (M5.27); remove it here"
+            );
+        }
+        let owners: Vec<(&str, &Alpine)> = listed
+            .iter()
+            .filter_map(|l| l.feature.alpine.as_ref().map(|a| (l.name.as_str(), a)))
+            .collect();
+        let alpine = match owners.as_slice() {
+            [(_, alpine)] => (*alpine).clone(),
+            [(one, _), (two, _), ..] => {
+                bail!("both {one} and {two} name the Alpine branch; only the base feature does")
+            }
+            [] => bail!("no feature names the Alpine branch; list the base feature first"),
+        };
 
         let def = ImageDef {
             name: file.name,
             variant: file.variant,
             arch: file.arch,
             hostname: file.hostname,
-            alpine: file.alpine,
+            alpine,
             vm: file.vm,
             image: file.image,
             release: file.release,
@@ -486,11 +497,6 @@ mod tests {
         hostname = "edel"
         features = ["base", "boot", "ssh"]
 
-        [alpine]
-        branch = "v3.24"
-        mirror = "https://dl-cdn.alpinelinux.org/alpine/"
-        repositories = ["main", "community"]
-
         [vm]
         kernel = "virt"
         slot_mib = 1024
@@ -507,6 +513,10 @@ mod tests {
             modules = ["ext4", "overlay"]
             [services]
             sysinit = ["devfs"]
+            [alpine]
+            branch = "v3.24"
+            mirror = "https://dl-cdn.alpinelinux.org/alpine/"
+            repositories = ["main", "community"]
             "#,
         ),
         (
@@ -608,7 +618,7 @@ mod tests {
 
     #[test]
     fn off_keeps_the_packages_and_drops_the_services() {
-        let def = parse(&VM.replace("[alpine]", "off = [\"ssh\"]\n[alpine]")).unwrap();
+        let def = parse(&VM.replace("[vm]", "off = [\"ssh\"]\n[vm]")).unwrap();
         assert!(def.packages.contains(&"openssh-server".to_string()));
         assert!(def.services.default.is_empty());
         assert_eq!(def.off, ["ssh"]);
@@ -623,11 +633,11 @@ mod tests {
             ),
             (VM.replace(r#""ssh"]"#, r#""ssh", "ssh"]"#), "listed twice"),
             (
-                VM.replace("[alpine]", "off = [\"dbus-user\"]\n[alpine]"),
+                VM.replace("[vm]", "off = [\"dbus-user\"]\n[vm]"),
                 "off lists dbus-user, which is not in features",
             ),
             (
-                VM.replace("[alpine]", "off = [\"base\"]\n[alpine]"),
+                VM.replace("[vm]", "off = [\"base\"]\n[vm]"),
                 "off lists base, which is not switchable",
             ),
         ];
@@ -778,7 +788,7 @@ mod tests {
     #[test]
     fn rejects_unknown_fields() {
         assert!(parse(&format!("{VM}\nsurprise = true")).is_err());
-        let packages = VM.replace("[alpine]", "[packages]\ninstall = [\"x\"]\n[alpine]");
+        let packages = VM.replace("[vm]", "[packages]\ninstall = [\"x\"]\n[vm]");
         assert!(parse(&packages).is_err());
     }
 
@@ -799,6 +809,19 @@ mod tests {
         let mut items = items.to_vec();
         items.sort();
         items
+    }
+
+    /// M5.27: the Alpine branch has one owner, the base feature.
+    #[test]
+    fn only_the_base_feature_names_the_alpine_branch() {
+        assert_eq!(parse(VM).unwrap().alpine.branch, "v3.24");
+        let own = VM.replace("[vm]", "[alpine]\nbranch = \"v3.25\"\n[vm]");
+        assert!(
+            parse(&own)
+                .unwrap_err()
+                .to_string()
+                .contains("belongs to the base feature")
+        );
     }
 
     /// Roadmap M4.0: each image made of features installs and enables what

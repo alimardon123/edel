@@ -102,7 +102,7 @@ Not built, and defended: a plugin API, runtime-loaded modules, a component regis
 2. [ ] `ci/seams.sh` in the Rust checks job (M8.13).
 3. [ ] A "Stands alone" line in each crate's CLAUDE.md (M8.13).
 4. [x] The fewest-parts map in DESIGN-PRINCIPLES.md shows what each part could stand alone as (done 2026-10-06 in this ADR's PR).
-5. [ ] One owner for every fact: what is written twice today moved to its owner, owner and generated-file headers, and `ci/one-place.sh` (M5.27).
+5. [x] One owner for every fact (done 2026-10-06, M5.27): what is written twice today moved to its owner, owner and generated-file headers, and `ci/one-place.sh` (M5.27).
 
 ## Principles check
 

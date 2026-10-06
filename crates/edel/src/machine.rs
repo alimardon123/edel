@@ -28,9 +28,9 @@ fn machine_file() -> PathBuf {
     places::found(&places::machine_settings())
 }
 /// Developer mode is on while this file exists (ADR-007; M7.1 acts on it).
-const DEVELOPER_FLAG: &str = "/data/edel/developer";
+const DEVELOPER_FLAG: &str = places::DEVELOPER_FLAG;
 /// What this machine changed in `/etc`: a file here differs from the slot's.
-const ETC_UPPER: &str = "/data/etc/upper";
+const ETC_UPPER: &str = places::ETC_UPPER;
 /// A volume with this label holding the settings file seeds a first boot.
 const SEED_LABEL: &str = "EDEL-SEED";
 /// The EFI system partition's number on the running disk.
@@ -997,7 +997,7 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
 /// a former one, mounted read-only for as long as it takes to read it. `fs` names the file system when it is known: early
 /// in boot the FAT driver is not loaded yet, so mount cannot guess it.
 fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
-    let dir = Path::new("/run/edel/seed");
+    let dir = Path::new(places::SEED_MOUNT);
     fs::create_dir_all(dir).ok()?;
     // FAT needs a charset the virt kernel has; other file systems refuse
     // the option, so they get a second try without it.
