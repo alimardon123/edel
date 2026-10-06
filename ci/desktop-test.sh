@@ -646,10 +646,49 @@ case_settings() {
 	python3 ci/qmp.py click $((radio + 60)) "$classic"
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
 		fail "a click on Classic did not bring Classic back"
+	# Reset (M5.6b), in the Preset group's header at the page's right
+	# edge, 60 px above Classic's row: Mac-like again, then Reset takes
+	# the key out of ci's file, and the desktop goes back to Classic.
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	python3 ci/qmp.py click $((radio + 60)) $((classic + 110))
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+		fail "a second click on Mac-like did not switch the desktop to Mac-like"
+	sleep 1
+	right=$((radio - 26 + (w - w / 4 > 600 ? 556 : w - w / 4)))
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	python3 ci/qmp.py click $((right - 72)) $((classic - 60))
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+		fail "a click on Reset at $((right - 72)),$((classic - 60)) did not bring Classic back"
+	guest 'settings file'
+	sleep 1
+	value settings_file | grep -q 'preset' &&
+		fail "Reset left layout.preset in ci's file: $(value settings_file)"
+	# Narrow (M5.6b): tiled alone on a screen 512 px wide (scale 2.5),
+	# Settings folds its sidebar away and shows the pages' list across
+	# the window, in the sidebar's colour where the page was.
+	tiled=$(count 'edel-compositor: windows now tiling')
+	guest 'tiling on'
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile Settings"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 2.5')
+	guest 'scale 2.5'
+	wait_more 'edel-compositor: output Virtual-1 scale 2.5' "$scaled" || fail "displays.Virtual-1.scale = 2.5 was not followed"
+	sleep 3
+	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
+	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
+	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
+	nx=$(((($1 + $3) * 5 / 2) - 40)) ny=$(((($2 + $4) * 5 / 2) - 40))
+	shot settings-narrow "$nx" "$ny" "$panel" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$panel"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
+	guest 'scale default'
+	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
+	floated=$(count 'edel-compositor: windows now floating')
+	guest 'tiling off'
+	wait_more 'edel-compositor: windows now floating' "$floated" || fail "layout.tiling = false did not float the windows again"
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: Settings opened at $x,$y ${w}x$h with its sidebar and page in the token colours, Mac-like wrote layout.preset and moved the bar to the top at once, and Classic took the key out again"
+	echo "PASS: Settings opened at $x,$y ${w}x$h with its sidebar and page in the token colours, Mac-like wrote layout.preset and moved the bar to the top at once, Classic and Reset took the key out again, and on a 512 px screen it folded its sidebar away"
 }
 
 case_keyboard() {

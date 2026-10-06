@@ -1002,6 +1002,7 @@ dependencies = [
  "edel",
  "gtk4",
  "libadwaita",
+ "toml",
 ]
 
 [[package]]

@@ -10,9 +10,11 @@ Settings, the app for every setting (ADR-008, roadmap M5.6): GTK4 and libadwaita
 
 ## Layout
 
+- Pages name the feature they talk to (`Page::needs`) and are hidden when the machine has no `features/NAME.toml` in `edel::features::DIR` (`pages_in`); tests hide one in a temp directory and fail when a page names a feature with no file under `features/`.
 - `main.rs`: the application (`APP_ID`, which `features/settings/usr/share/applications/APP_ID.desktop` is named after; a test holds them together), the window: an `AdwNavigationSplitView`, a sidebar listing `pages()` and the chosen page with a header bar; below 600sp (`NARROW`) the split view collapses and pages open one at a time (ADR-004's size classes).
 - `files.rs`: `Files` (the machine's file and the person's), `layout()` (the person's `[layout]` over the machine's, then the preset), `choose_preset` and `choose_tiling` (written, or taken out when the default), `set`, `title` (a preset's name as people read it). Tested on files in a temp directory: never a default written, the file equal to `edel settings set`'s, a refused value's text equal to the command's.
-- `layout.rs`: the Layout page: a row per preset (`edel::presets::NAMES`) and the Tile windows switch, which follows the chosen preset's policy unless `layout.tiling` is set.
+- `layout.rs`: the Layout page: a row per preset (`edel::presets::NAMES`) and the Tile windows switch, which follows the chosen preset's policy unless `layout.tiling` is set; each group's header says where its value comes from, with Reset (only for the person's own value) and Copy as command (M5.6b); `Ui::update` shows the files' state after every change.
+- `rows.rs` (M5.6b): `ROWS`, every row with its key (a test holds each to a supported key of `edel::system::KEYS`), `describe` (`Your choice`, `Set by this machine`, `Automatic (VALUE)`, from `edel::system::source`), `command` (the `edel settings set KEY=VALUE` line) and `resettable`.
 - `about.rs`: the About page: the release from `/usr/lib/os-release` (`PRETTY_NAME`, `VERSION_ID`, `EDEL_CHANNEL`).
 
 ## Checks
@@ -21,4 +23,4 @@ The root CLAUDE.md's Rust checks cover it (the runner needs `libgtk-4-dev libadw
 
 ## Coming (roadmap)
 
-6b: each row says where its value comes from (`Automatic`, `Set by this machine`, `Set by profile NAME`) with Reset and Copy as command, `rows.rs` and `features/NAME.rs` pages hidden without their feature; 6c: `docs/layout-guide.md`. Make each change only in its step.
+6c: `docs/layout-guide.md`; `Set by profile NAME` with profiles (M7.6); the pages of M5.7 to M5.10 and M5.12, each a module with its rows in `rows.rs`. Make each change only in its step.

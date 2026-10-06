@@ -610,6 +610,39 @@ pub fn format(text: &str) -> Result<i64> {
     format_of(&table)
 }
 
+/// Where a key's value comes from, in the order every reader resolves it
+/// (ADR-008): the person's own file, then the machine's, else the release
+/// decides. Settings shows it on each row (M5.6b), as `edel settings
+/// get` does.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Source {
+    /// The person's own file sets it.
+    Person(Value),
+    /// The machine's file sets it, and the person's does not.
+    Machine(Value),
+    /// Neither: the preset or the release decides.
+    Release,
+}
+
+/// Where `key` (such as `layout.preset`) comes from, given the machine's
+/// and the person's files' text; a file that is missing or not TOML sets
+/// nothing.
+pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source {
+    let find = |text: Option<&str>| -> Option<Value> {
+        let table: Table = toml::from_str(text?).ok()?;
+        let mut value = Value::Table(table);
+        for part in key.split('.') {
+            value = value.as_table()?.get(part)?.clone();
+        }
+        Some(value)
+    };
+    match (find(person), find(machine)) {
+        (Some(v), _) => Source::Person(v),
+        (None, Some(v)) => Source::Machine(v),
+        (None, None) => Source::Release,
+    }
+}
+
 /// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
 /// the key and value as strictly as `check`, then changes that one value in
 /// place, so comments, order and keys this release does not know survive
@@ -1023,6 +1056,28 @@ mod tests {
         let start = adr.find("```toml\n").expect("ADR-006 has a toml example") + 8;
         let len = adr[start..].find("```").expect("the example ends");
         &adr[start..start + len]
+    }
+
+    #[test]
+    fn a_value_comes_from_the_person_then_the_machine_then_the_release() {
+        let machine = "format = 1\n[layout]\npreset = \"hive\"\n";
+        let person = "format = 1\n[layout]\ntiling = false\n";
+        assert_eq!(
+            source("layout.preset", Some(machine), Some(person)),
+            Source::Machine(Value::String("hive".into()))
+        );
+        assert_eq!(
+            source("layout.tiling", Some(machine), Some(person)),
+            Source::Person(Value::Boolean(false))
+        );
+        assert_eq!(
+            source("layout.panels", Some(machine), None),
+            Source::Release
+        );
+        assert_eq!(
+            source("layout.preset", Some("not toml ["), None),
+            Source::Release
+        );
     }
 
     fn sample(kind: Kind) -> Value {

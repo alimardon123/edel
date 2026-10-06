@@ -92,6 +92,17 @@ impl Files {
         }
     }
 
+    /// Where `key`'s value comes from: the person's file, the machine's,
+    /// or neither (M5.6b).
+    pub fn source(&self, key: &str) -> system::Source {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        system::source(
+            key,
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
+    }
+
     /// Sets `key` to `value` in the person's file, or takes it out with
     /// none, with the functions `edel settings set` and `reset` use, so a
     /// refused value reads the same in both; the message when it cannot.
@@ -208,6 +219,31 @@ mod tests {
         let command = system::set("format = 1\n", "layout.preset", "hiv").unwrap_err();
         assert_eq!(row, format!("{command:#}"));
         assert!(row.contains("did you mean"), "{row}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_after_mac_like_takes_the_key_out() {
+        let dir = scratch("reset");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        files.choose_preset("mac-like").unwrap();
+        assert!(matches!(
+            files.source("layout.preset"),
+            system::Source::Person(_)
+        ));
+        files.set("layout.preset", None).unwrap();
+        assert!(!std::fs::read_to_string(&person).unwrap().contains("preset"));
+        assert_eq!(files.source("layout.preset"), system::Source::Release);
+        assert_eq!(files.layout().preset, "classic");
+        std::fs::write(&files.machine, "format = 1\n[layout]\npreset = \"hive\"\n").unwrap();
+        assert!(matches!(
+            files.source("layout.preset"),
+            system::Source::Machine(_)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

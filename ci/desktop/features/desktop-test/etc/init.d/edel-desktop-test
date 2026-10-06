@@ -168,6 +168,8 @@ commands() {
 		'buttons left') edel settings set layout.window_buttons=left ;;
 		'buttons default') edel settings reset layout.window_buttons ;;
 		'scale 2') edel settings set displays.Virtual-1.scale=2 ;;
+		'scale 2.5') edel settings set displays.Virtual-1.scale=2.5 ;;
+		'scale default') edel settings reset displays.Virtual-1.scale ;;
 		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
