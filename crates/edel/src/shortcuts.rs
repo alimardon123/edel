@@ -131,6 +131,12 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Move the focused window to workspace 9",
     ),
+    action(
+        "toggle_fullscreen",
+        "Super+F",
+        false,
+        "Make the focused window fill its screen, or leave fullscreen (M5.20)",
+    ),
 ];
 
 /// The action called `name`.

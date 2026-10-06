@@ -15,6 +15,7 @@ mod dmabuf;
 mod drm;
 mod edelshell;
 mod extworkspace;
+mod fullscreen;
 mod grabs;
 mod input;
 mod layers;

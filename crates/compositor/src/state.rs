@@ -14,6 +14,7 @@ use anyhow::{Context, Result};
 use smithay::desktop::{PopupManager, Space, Window, find_popup_root_surface};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
+use smithay::output::Output;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{
     Interest, LoopHandle, LoopSignal, Mode as TriggerMode, PostAction,
@@ -22,6 +23,7 @@ use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::{
     ResizeEdge, State, WmCapabilities,
 };
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::{wl_buffer, wl_seat, wl_surface::WlSurface};
 use smithay::reexports::wayland_server::{Client, Display, DisplayHandle, Resource as _};
 use smithay::utils::{Clock, Logical, Monotonic, Point, Rectangle, SERIAL_COUNTER, Serial};
@@ -327,7 +329,9 @@ impl Edel {
         if !areas.is_empty() {
             let stack: Vec<Window> = self.space.elements().cloned().collect();
             for (window, frame) in self.desks.layout_mut().arrange(&areas) {
-                if self.is_maximized(&window) {
+                if self.is_fullscreen(&window) {
+                    self.fullscreen(&window, None);
+                } else if self.is_maximized(&window) {
                     self.maximize(&window);
                 } else {
                     self.put(&window, frame);
@@ -436,6 +440,7 @@ impl Edel {
         self.animations.forget(window);
         let mut frame = data(window).borrow_mut();
         frame.restore = None;
+        frame.before_fullscreen = None;
         frame.shape = None;
         drop(frame);
         // The keyboard moves only if this window had it, or nothing has
@@ -468,6 +473,11 @@ impl Edel {
         };
         let shape = (place.size, server_side(window));
         if data(window).borrow_mut().shape.replace(shape) == Some(shape) {
+            return;
+        }
+        // A fullscreen window's place is its screen's, not the policy's.
+        if self.is_fullscreen(window) {
+            self.state_changed();
             return;
         }
         let frame = self.insets(window).frame(place);
@@ -570,6 +580,10 @@ impl Edel {
                     Value::Boolean(self.is_maximized(window)),
                 );
                 t.insert(
+                    "fullscreen".into(),
+                    Value::Boolean(self.is_fullscreen(window)),
+                );
+                t.insert(
                     "minimized".into(),
                     Value::Boolean(self.desks.minimized(window).is_some()),
                 );
@@ -616,7 +630,11 @@ impl Edel {
         };
         // A maximized window moves once dragged far enough (`grabs.rs`),
         // but keeps its size.
-        if !asked || (kind != Kind::Move && self.is_maximized(&window)) {
+        // A fullscreen window stays where it is.
+        if !asked
+            || self.is_fullscreen(&window)
+            || (kind != Kind::Move && self.is_maximized(&window))
+        {
             return;
         }
         let grab = WindowGrab {
@@ -754,6 +772,10 @@ impl CompositorHandler for Edel {
             if maximize {
                 self.maximize(&window);
             }
+            let fullscreen = std::mem::take(&mut data(&window).borrow_mut().fullscreen_when_placed);
+            if fullscreen {
+                self.fullscreen(&window, None);
+            }
             if self.desks.layout().rearranges() {
                 self.relayout();
             }
@@ -822,6 +844,36 @@ impl XdgShellHandler for Edel {
         data(&window).borrow_mut().maximize_when_placed = false;
         if self.is_maximized(&window) {
             self.unmaximize(&window);
+        } else if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
+
+    /// A window asks to fill a screen, its own unless it names one
+    /// (M5.20).
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, output: Option<WlOutput>) {
+        let output = output.as_ref().and_then(Output::from_resource);
+        match self.window_of(surface.wl_surface()) {
+            Some(window) if self.space.element_geometry(&window).is_some() => {
+                self.fullscreen(&window, output);
+            }
+            Some(window) => {
+                data(&window).borrow_mut().fullscreen_when_placed = true;
+                if surface.is_initial_configure_sent() {
+                    surface.send_configure();
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        let Some(window) = self.window_of(surface.wl_surface()) else {
+            return;
+        };
+        data(&window).borrow_mut().fullscreen_when_placed = false;
+        if self.is_fullscreen(&window) {
+            self.unfullscreen(&window);
         } else if surface.is_initial_configure_sent() {
             surface.send_configure();
         }

@@ -19,6 +19,8 @@ use edel::shortcuts::{Keys, resolve};
 pub enum Act {
     Close,
     Tiling,
+    /// The focused window in or out of fullscreen (M5.20).
+    Fullscreen,
     Terminal,
     /// Go to workspace N, from 0 (M5.2a).
     Workspace(usize),
@@ -44,6 +46,7 @@ impl Act {
             "open_launcher" => Some(Act::Launcher),
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
+            "toggle_fullscreen" => Some(Act::Fullscreen),
             "open_terminal" => Some(Act::Terminal),
             _ => {
                 if let Some(rest) = name.strip_prefix("move_to_workspace_") {
@@ -239,6 +242,7 @@ mod tests {
         let super_ = held(true, false, false, false);
         assert_eq!(find(&bindings, &super_, sym("q")), Some(Act::Close));
         assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Tiling));
+        assert_eq!(find(&bindings, &super_, sym("f")), Some(Act::Fullscreen));
         let ctrl_alt = held(false, true, true, false);
         assert_eq!(find(&bindings, &ctrl_alt, sym("t")), Some(Act::Terminal));
         // Other modifiers, or none, leave the key to the app.

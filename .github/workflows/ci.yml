@@ -229,7 +229,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
 
       - name: Test the desktop image on a virtual GPU
-        run: sh ci/desktop-test.sh floating titlebar tiling console pointer dmabuf outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme completion scale respawn
+        run: sh ci/desktop-test.sh floating titlebar tiling console pointer dmabuf outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen portal scheme completion scale respawn
 
       - name: Keep the log and the screenshots
         if: always()
