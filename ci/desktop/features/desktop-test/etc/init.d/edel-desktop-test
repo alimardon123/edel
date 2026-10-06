@@ -94,8 +94,13 @@ report() {
 	say "shell_ui_shared_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 	# What it holds of its own, the budgeted number, and the pages mapped
 	# from files (its binary, libraries and fonts), which the kernel
-	# shares and maps more or fewer of from run to run.
-	say "shell_ui_own_mib $(own_mib "$pid")"
+	# shares and maps more or fewer of from run to run. Read three times a
+	# second apart: the least is what it keeps once settled, the budgeted
+	# number, and the most is reported, as one read during start-up once
+	# caught it at 3.4 MiB against 1.5 in every other run of the same image.
+	samples=$(for i in 1 2 3; do own_mib "$pid"; echo; sleep 1; done)
+	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
+	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	say "status_tier $(edel status 2>&1 | sed -n 's/^effects: //p')"
 	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"

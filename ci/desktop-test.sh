@@ -493,10 +493,11 @@ case_panel() {
 	# no screen reader: what it holds of its own, without the pages it
 	# maps from files, whose count swings from run to run.
 	own=$(value shell_ui_own_mib)
+	peak=$(value shell_ui_own_peak_mib)
 	rss=$(value shell_ui_rss_mib)
 	limit=$(budget shell_ui_own_mib)
 	awk -v m="$own" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "edel-shell-ui holds ${own:-?} MiB of its own ($rss MiB resident), over its budget of $limit MiB"
+		fail "edel-shell-ui keeps ${own:-?} MiB of its own once settled (${peak:-?} MiB at most over 3 s, $rss MiB resident), over its budget of $limit MiB"
 	# Killed, it comes back: the compositor starts it again.
 	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'kill panel'
