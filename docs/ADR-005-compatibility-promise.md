@@ -1,7 +1,7 @@
 # ADR-005: The long-term compatibility promise (platform levels)
 
 **Status:** Proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-06 (the long channel's goal, ADR-009)
 **Deciders:** Alimardon
 **Extends:** ADR-003 (which decouples apps from the base)
 
@@ -55,7 +55,7 @@ Why not promise 20 years forward: no operating system has done it, and over 20 y
 
 A base past its two years of fixes still runs apps, but it no longer gets security fixes, and the system says so clearly. The real goal is that nobody *needs* to stay on an old base: because every update is atomic and can be rolled back (ADR-006), updating is safe, and because apps don't depend on the base (ADR-003), updating doesn't break them. The 10-year forward promise is a safety net for frozen fleets and for devices that can no longer get new kernels, such as some phones.
 
-A longer-support base channel for servers and fleets (for example, five years) can be added later. It costs real maintenance, so it should wait until there are users asking for it.
+A longer-support base channel for enterprises, servers and fleets, with ten years as its goal, can be added later. It costs real maintenance, so it waits until someone can carry it (ADR-009, roadmap M11.5).
 
 ### 5. Other CPU types
 

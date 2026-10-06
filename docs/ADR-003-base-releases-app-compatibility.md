@@ -1,7 +1,7 @@
 # ADR-003: Base fork, release model and long-term app compatibility
 
 **Status:** Proposed
-**Date:** 2026-10-01, amended 2026-10-02 (a seed volume instead of cloud-init, roadmap M2.2)
+**Date:** 2026-10-01, amended 2026-10-02 (a seed volume instead of cloud-init, roadmap M2.2) and 2026-10-06 (the long channel's goal, ADR-009)
 **Deciders:** Alimardon
 **Supersedes:** the base decision in ADR-001 (postmarketOS downstream). postmarketOS stays the source for phone device ports later.
 
@@ -83,7 +83,7 @@ Either one, plus portals (the stable APIs apps use for files, screenshots and no
 - **Monthly security image updates**, plus urgent fixes as needed.
 - **Each yearly release supported for two years**, matching Alpine's main repository.
 - For any base package that comes from Alpine's community repository, we backport security fixes ourselves for the full two years. Keeping the base small keeps this list short.
-- A longer-support channel for servers can come later, once there are users who need it.
+- A longer-support channel for enterprises, with ten years as its goal, comes later, once someone can carry it (ADR-009, roadmap M11.5).
 
 Because apps don't depend on the base, most users can simply take every update. Stability comes from testing, A/B rollback and decoupling, not from freezing everything.
 

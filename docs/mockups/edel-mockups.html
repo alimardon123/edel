@@ -307,7 +307,7 @@ function files() {
   <div class="crumbs">${I.home()}<span>Home</span>${I.chev}<b>Pictures</b><div style="margin-left:auto;display:flex;gap:6px"><div class="chip">${I.search(14)}</div></div></div>
   <div class="thumbs">${pics.map(p => `<div class="thumb"><div class="pic" style="background:linear-gradient(160deg,${p[0]})"></div>${p[1]}</div>`).join('')}</div>`;
 }
-const termFor = preset => `<div class="term"><div><span class="p">ali@edel</span> <span class="c">~</span> $ edel update status</div>
+const termFor = preset => `<div class="term"><div><span class="p">ali@edel</span> <span class="c">~</span> $ edel status</div>
 <div>slot A  <span class="m">2026.10.175</span>  running, good</div>
 <div>slot B  <span class="m">2026.10.171</span>  kept for rollback</div>
 <div><span class="p">ali@edel</span> <span class="c">~</span> $ edel system get shell.preset</div>
