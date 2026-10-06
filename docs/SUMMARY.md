@@ -16,6 +16,7 @@
 - [Features and images](FEATURES.md)
 - [File formats](FORMATS.md)
 - [Releases](RELEASE.md)
+- [Messages and logs](MESSAGES.md)
 - [The look](mockups/README.md)
 - [Writing these docs](guide/writing-docs.md)
 
