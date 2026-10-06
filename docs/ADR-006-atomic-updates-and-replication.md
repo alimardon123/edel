@@ -55,23 +55,25 @@ A plain data file, not a programming language:
 format = 1
 
 [system]
-channel  = "stable"      # later: "lts"
-version  = "2027.1"      # optional pin; omit to follow the channel
 variant  = "desktop"     # container | server | desktop | phone
 
-[shell]
-preset = "classic"       # classic | mac-like | windows-like | tiling | ...
+[updates]
+channel  = "stable"      # later: "lts"
+version  = "2027.1"      # optional pin; omit to follow the channel
+
+[layout]
+preset = "classic"       # classic | mac-like | windows-like | hive | ...
 tiling = false
 
 [apps]
-flatpak = [
+installed = [
   "org.mozilla.firefox",
   "org.libreoffice.LibreOffice",
   "com.valvesoftware.Steam",
 ]
 
 [addons]                 # signed add-ons (ADR-007)
-add = ["virtualization"]
+installed = ["virtualization"]
 
 [users.ali]
 admin = true

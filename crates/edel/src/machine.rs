@@ -217,7 +217,7 @@ impl fmt::Display for Change {
             Change::Hostname(h) => write!(f, "network.hostname: set to {h}"),
             Change::HostnameDefault => write!(f, "network.hostname: back to the release's"),
             Change::AddUser { name, shell } => write!(f, "users.{name}: add, with shell {shell}"),
-            Change::Shell { name, shell } => write!(f, "users.{name}.shell: set to {shell}"),
+            Change::Shell { name, shell } => write!(f, "users.{name}.login_shell: set to {shell}"),
             Change::Unlock(name) => write!(f, "users.{name}: allow key logins"),
             Change::AdminGroup => write!(f, "group {ADMIN_GROUP}: add"),
             Change::Admin { name, on } => {
@@ -227,7 +227,11 @@ impl fmt::Display for Change {
                 write!(f, "users.{name}.ssh_keys: write {} keys", keys.len())
             }
             Change::Developer(on) => {
-                write!(f, "system.developer: {}", if *on { "on" } else { "off" })
+                write!(
+                    f,
+                    "system.developer_mode: {}",
+                    if *on { "on" } else { "off" }
+                )
             }
             Change::Seat(name) => write!(f, "group {SEAT_GROUP}: add {name}"),
         }
@@ -265,7 +269,7 @@ impl Machine {
         let shells = file
             .users
             .values()
-            .filter_map(|u| u.shell.clone())
+            .filter_map(|u| u.login_shell.clone())
             .filter(|s| {
                 fs::metadata(s).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
             })
@@ -301,10 +305,10 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         let account = all.iter().find(|a| &a.name == name);
         // A shell the machine lacks would lock the user out: OpenSSH and
         // login refuse a shell that does not exist. The current one stays.
-        let shell = match user.shell.as_deref() {
+        let shell = match user.login_shell.as_deref() {
             Some(s) if !machine.shells.contains(s) => {
                 notes.push(format!(
-                    "kept users.{name}.shell as it is: {s} is not a program on this machine"
+                    "kept users.{name}.login_shell as it is: {s} is not a program on this machine"
                 ));
                 account.map_or(DEFAULT_SHELL, |a| a.shell.as_str())
             }
@@ -364,7 +368,7 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
             }
         }
     }
-    let developer = file.system.developer == Some(true);
+    let developer = file.system.developer_mode == Some(true);
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
     }
@@ -747,7 +751,7 @@ pub fn set(assignments: &[String]) -> Result<()> {
 /// screen, look and shortcut keys (M4.5, M4.6, M5.5c, M5.13a); `edel
 /// settings apply` applies the rest.
 fn desktop_follows(key: &str) -> bool {
-    ["shell.", "outputs.", "appearance.", "shortcuts."]
+    ["layout.", "displays.", "appearance.", "shortcuts."]
         .iter()
         .any(|section| key.starts_with(section))
 }
@@ -1099,7 +1103,7 @@ fn describe(
     developer: bool,
 ) {
     file.network.hostname = hostname.map(|h| h.trim().to_string());
-    file.system.developer = developer.then_some(true);
+    file.system.developer_mode = developer.then_some(true);
     let admins = members(group, ADMIN_GROUP).unwrap_or_default();
     file.users.clear();
     for account in accounts(passwd).iter().filter(|a| is_person(a)) {
@@ -1118,7 +1122,7 @@ fn describe(
         let user = User {
             admin: admins.contains(&account.name).then_some(true),
             ssh_keys: keys,
-            shell: (account.shell != DEFAULT_SHELL).then(|| account.shell.clone()),
+            login_shell: (account.shell != DEFAULT_SHELL).then(|| account.shell.clone()),
         };
         file.users.insert(account.name.clone(), user);
     }
@@ -1199,7 +1203,7 @@ mod tests {
     #[test]
     fn plans_each_difference_once() {
         let file = system::read(
-            "format = 1\n[system]\ndeveloper = true\n[users.ali]\nadmin = true\n[users.new]\nshell = \"/bin/ash\"\n",
+            "format = 1\n[system]\ndeveloper_mode = true\n[users.ali]\nadmin = true\n[users.new]\nlogin_shell = \"/bin/ash\"\n",
         )
         .unwrap()
         .file;
@@ -1209,11 +1213,11 @@ mod tests {
             shown,
             [
                 "network.hostname: back to the release's",
-                "users.ali.shell: set to /bin/sh",
+                "users.ali.login_shell: set to /bin/sh",
                 "users.ali: allow key logins",
                 "users.ali.admin: on",
                 "users.new: add, with shell /bin/ash",
-                "system.developer: on",
+                "system.developer_mode: on",
             ]
         );
     }
@@ -1315,15 +1319,15 @@ mod tests {
 
     #[test]
     fn the_desktop_follows_shell_keys_and_apply_the_rest() {
-        assert!(desktop_follows("shell.tiling"));
-        assert!(desktop_follows("outputs.eDP-1.scale"));
+        assert!(desktop_follows("layout.tiling"));
+        assert!(desktop_follows("displays.eDP-1.scale"));
         assert!(!desktop_follows("network.hostname"));
     }
 
     #[test]
     fn keeps_the_shell_when_the_file_names_one_the_machine_lacks() {
         let file = system::read(
-            "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nshell = \"/bin/zsh\"\n[users.new]\nshell = \"/bin/zsh\"\n",
+            "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nlogin_shell = \"/bin/zsh\"\n[users.new]\nlogin_shell = \"/bin/zsh\"\n",
         )
         .unwrap()
         .file;
@@ -1336,8 +1340,8 @@ mod tests {
         assert_eq!(
             notes,
             [
-                "kept users.ci.shell as it is: /bin/zsh is not a program on this machine",
-                "kept users.new.shell as it is: /bin/zsh is not a program on this machine",
+                "kept users.ci.login_shell as it is: /bin/zsh is not a program on this machine",
+                "kept users.new.login_shell as it is: /bin/zsh is not a program on this machine",
             ]
         );
     }
@@ -1403,11 +1407,10 @@ mod tests {
 
     #[test]
     fn describes_the_machine_without_defaults() {
-        let mut file = system::read(
-            "format = 1\n[appearance]\ncolor_scheme = \"dark\"\n[users.gone]\nadmin = true\n",
-        )
-        .unwrap()
-        .file;
+        let mut file =
+            system::read("format = 1\n[appearance]\nmode = \"dark\"\n[users.gone]\nadmin = true\n")
+                .unwrap()
+                .file;
         describe(
             &mut file,
             PASSWD,
@@ -1419,17 +1422,17 @@ mod tests {
             false,
         );
         assert_eq!(file.network.hostname.as_deref(), Some("lab-1"));
-        assert_eq!(file.appearance.color_scheme.as_deref(), Some("dark"));
-        assert_eq!(file.system.developer, None);
+        assert_eq!(file.appearance.mode.as_deref(), Some("dark"));
+        assert_eq!(file.system.developer_mode, None);
         assert_eq!(file.users.keys().collect::<Vec<_>>(), ["ali", "ci"]);
         assert_eq!(file.users["ci"].admin, Some(true));
         assert_eq!(
             file.users["ci"].ssh_keys,
             Some(vec!["ssh-ed25519 AAAA ci@edel".into()])
         );
-        assert_eq!(file.users["ci"].shell, None);
+        assert_eq!(file.users["ci"].login_shell, None);
         assert_eq!(file.users["ali"].admin, None);
-        assert_eq!(file.users["ali"].shell.as_deref(), Some("/bin/ash"));
+        assert_eq!(file.users["ali"].login_shell.as_deref(), Some("/bin/ash"));
         let text = toml::to_string(&file).unwrap();
         assert!(system::read(&text).unwrap().problems.is_empty(), "{text}");
     }

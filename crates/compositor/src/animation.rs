@@ -1,6 +1,6 @@
 //! Window animations (roadmap M5.11b, ADR-002 section 5): how long and how
 //! far windows animate when they open, close and move, by effect tier and
-//! the person's `appearance.motion`. Every animation is short and tied to
+//! the person's `appearance.animations`. Every animation is short and tied to
 //! the display clock: its progress is the time since it began over its
 //! length, read when a frame is drawn, so a late frame skips ahead and
 //! never makes it run long. A slide that interrupts a slide starts from
@@ -12,7 +12,7 @@ use smithay::utils::{Logical, Point};
 
 use crate::effects::Tier;
 
-/// `appearance.motion`: everything (the default), fades only (nothing
+/// `appearance.animations`: everything (the default), fades only (nothing
 /// grows, shrinks or slides), or nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Motion {

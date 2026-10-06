@@ -65,7 +65,7 @@ the old slot starts again and switches the new one off
 
 ## One file describes the machine
 
-The **settings file** is one TOML file that describes a whole machine: its name, its people and their ssh keys, its layout and look, its screens, its shortcuts ([The settings file](../system-file.md)). It never holds personal files or passwords.
+The **settings file** is one TOML file that describes a whole machine: its name, its people and their ssh keys, its layout and look, its screens, its shortcuts ([The settings file](../settings.md)). It never holds personal files or passwords.
 
 - At the first start a machine takes its file from a USB stick labelled `EDEL-SEED`, from the boot partition or from the image, and keeps it on the data partition.
 - At every start the `edel-settings` service applies it: the hostname, the people, their keys.
@@ -86,7 +86,7 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 | greetd | Logs people in; its greeter runs on our compositor and comes back if a session ends |
 | Mesa, and from roadmap M6 PipeWire, NetworkManager and Flatpak | Graphics, sound, networks and apps, reused as they are |
 
-**Layouts are presets.** One setting, `shell.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like and Hive (tiling), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
+**Layouts are presets.** One setting, `layout.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like and Hive (tiling), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
 
 **One look, in one place.** Every colour, size, corner and the font come from one file of design tokens, `design/tokens.toml`, and the shell's icons are SVG files in `design/icons/`. The compositor, the panel, GTK apps and these pages all read them, so changing one token changes everything that shows it ([The look](../mockups/README.md)).
 

@@ -2,17 +2,17 @@
 # the bottom with the menu button and the window list at its start and
 # the workspace switcher, the layout toggle and the clock at its end,
 # floating windows and four workspaces. Presets are built into edel, the compositor and
-# shell-ui; the system file picks one by name with shell.preset, and its
+# shell-ui; the settings file picks one by name with layout.preset, and its
 # own keys win over the preset's (ADR-008). Keys join this file with the
 # steps that read them: the session's services (M5.7).
 format = 1
 
 [windows]
-# The policy a workspace starts in when shell.tiling is not set:
+# The policy a workspace starts in when layout.tiling is not set:
 # floating or tiling.
 policy = "floating"
 # The side of the title bar its buttons sit on when
-# shell.window_buttons is not set: left or right.
+# layout.window_buttons is not set: left or right.
 buttons = "right"
 
 [workspaces]

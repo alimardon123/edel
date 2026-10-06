@@ -40,16 +40,16 @@ impl Act {
             _ => None,
         };
         match name {
-            "close" => Some(Act::Close),
-            "launcher" => Some(Act::Launcher),
-            "switcher" => Some(Act::Switcher),
-            "tiling" => Some(Act::Tiling),
-            "terminal" => Some(Act::Terminal),
+            "close_window" => Some(Act::Close),
+            "open_launcher" => Some(Act::Launcher),
+            "switch_windows" => Some(Act::Switcher),
+            "toggle_tiling" => Some(Act::Tiling),
+            "open_terminal" => Some(Act::Terminal),
             _ => {
                 if let Some(rest) = name.strip_prefix("move_to_workspace_") {
                     number(rest).map(Act::MoveTo)
                 } else {
-                    number(name.strip_prefix("workspace_")?).map(Act::Workspace)
+                    number(name.strip_prefix("go_to_workspace_")?).map(Act::Workspace)
                 }
             }
         }
@@ -285,13 +285,13 @@ mod tests {
         assert!(!is_tap_key(xkb::keysym_from_name("a", 0)));
         // Moved to Super+Space, it is a key like any other; two modifiers
         // alone cannot be tapped.
-        let file = BTreeMap::from([("launcher".to_string(), "Super+Space".to_string())]);
+        let file = BTreeMap::from([("open_launcher".to_string(), "Super+Space".to_string())]);
         let (moved, notes) = bind(&file);
         assert!(notes.is_empty(), "{notes:?}");
         let super_ = held(true, false, false, false);
         assert_eq!(find(&moved, &super_, sym("space")), Some(Act::Launcher));
         assert_eq!(tapped(&moved, xkb::keysym_from_name("Super_L", 0)), None);
-        let file = BTreeMap::from([("launcher".to_string(), "Ctrl+Alt".to_string())]);
+        let file = BTreeMap::from([("open_launcher".to_string(), "Ctrl+Alt".to_string())]);
         let (_, notes) = bind(&file);
         assert!(
             notes.iter().any(|n| n.contains("only one modifier")),
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn a_rebound_close_moves_and_the_log_says_so() {
         let (old, _) = bind(&BTreeMap::new());
-        let file = BTreeMap::from([("close".to_string(), "Super+W".to_string())]);
+        let file = BTreeMap::from([("close_window".to_string(), "Super+W".to_string())]);
         let (new, notes) = bind(&file);
         assert!(notes.is_empty(), "{notes:?}");
         let super_ = held(true, false, false, false);
@@ -312,12 +312,12 @@ mod tests {
             None,
             "Super+Q no longer closes"
         );
-        assert_eq!(changes(&old, &new), ["shortcut close is Super+W"]);
+        assert_eq!(changes(&old, &new), ["shortcut close_window is Super+W"]);
         assert!(changes(&new, &new).is_empty());
-        let unbound = BTreeMap::from([("terminal".to_string(), String::new())]);
+        let unbound = BTreeMap::from([("open_terminal".to_string(), String::new())]);
         assert_eq!(
             changes(&old, &bind(&unbound).0),
-            ["shortcut terminal has no keys"]
+            ["shortcut open_terminal has no keys"]
         );
     }
 }

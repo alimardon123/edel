@@ -1,5 +1,5 @@
 //! Screens and their scale (roadmap M4.6): each output gets the scale
-//! `outputs.NAME.scale` gives it in the settings file, or the one worked out
+//! `displays.NAME.scale` gives it in the settings file, or the one worked out
 //! from its size when it appeared (`layout::auto_scale`), and a change in
 //! the file applies at once. Windows hear the scale through
 //! `wl_surface.preferred_buffer_scale` and `wp_fractional_scale_v1`, and

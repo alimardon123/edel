@@ -31,7 +31,7 @@ size = 187695104
 
 ## `settings.toml` (format 1, M2.1)
 
-The file that describes a whole machine, `/data/edel/settings.toml`; [system-file.md](system-file.md) lists every key. `edel::system` in `crates/edel` is its one parser, for `edel` and for every later part.
+The file that describes a whole machine, `/data/edel/settings.toml`; [settings.md](settings.md) lists every key. `edel::system` in `crates/edel` is its one parser, for `edel` and for every later part.
 
 | Reader | Unknown key | Value of the wrong kind or an unknown value | Newer `format` |
 |---|---|---|---|

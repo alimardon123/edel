@@ -1,0 +1,154 @@
+# The settings file
+
+**Date:** 2026-10-02, amended 2026-10-06 (M5.25: the Settings app's names)
+
+One TOML file describes a whole machine (ADR-006): the settings file, `settings.toml`, kept on the data partition and linked from `/etc/edel/settings.toml`. It holds only what a person chose; a missing key means the release decides (ADR-008). It never holds personal files or passwords. Its sections are the pages of the Settings app and its keys their rows, named the way the app names them (ADR-008's same names decision), so whoever knows the app can read the file and the command line, and back.
+
+```toml
+format = 1
+
+[layout]
+preset = "mac-like"
+
+[appearance]
+mode = "dark"
+
+[network]
+hostname = "ali-laptop"
+
+[users.ali]
+admin = true
+ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
+```
+
+## The command
+
+`edel settings` is the command line's Settings app ([Commands](guide/commands.md)):
+
+| Command | What it does |
+|---|---|
+| `edel settings` | Lists the pages, in the app's order |
+| `edel settings get [KEY or PAGE]` | Shows settings with their values and where each comes from; `--toml` prints the file's own TOML |
+| `edel settings set KEY=VALUE...` | Changes one or more settings, keeping every other byte of the file |
+| `edel settings reset KEY...` | Gives settings back to the release, as the app's Reset does |
+| `edel settings diff [FILE]` | Shows what apply would change; exits 1 when anything would |
+| `edel settings apply` | Makes the machine match its file |
+| `edel settings import FILE` | Applies FILE and keeps it as the machine's file |
+| `edel settings export` | Prints the machine as a settings file, to import on another one |
+| `edel settings check FILE` | Checks a file strictly |
+
+A mistyped key or value is answered with the nearest one: `edel settings set layout.presset=hive` says "did you mean layout.preset?". Every part reads the file with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows; the reading rules are in [FORMATS.md](FORMATS.md).
+
+## Where it lives
+
+On the first boot, `edel settings apply` seeds the machine's file from the first of: a volume labelled `EDEL-SEED` holding a settings file, the EFI system partition's `/EFI/edel/`, and the slot's own in `/usr/share/edel/`. Without any, nothing is applied. The `edel-settings` service applies it at every boot, before the hostname is set. A person's own file in `~/.config/edel/` has the same keys, and for the pages the desktop follows at once (Layout, Displays, Appearance, Shortcuts) its values win over the machine's. The file's name is written once, in `edel::places`; a file by a name it had before is still read, and the next apply renames it.
+
+"From" names the roadmap step that first acts on a key. Until then `edel settings check` and `set` refuse the key with "not supported yet", and the boot apply skips it and says so. `NAME` is any name: a person, a screen's connector, an action, a feature. A person's name has up to 32 lowercase letters, digits, `-` and `_`, and starts with a letter or `_`.
+
+## Layout: `[layout]`
+
+The desktop follows these keys at once (M4.5): it reads the machine's file and the person's, and reads both again whenever either is written.
+
+| Key | Value | From |
+|---|---|---|
+| `layout.preset` | a preset this release has: `classic`, `hive` (M5.4a), `windows-like` (M5.4c) or `mac-like` (M5.4d), with `tablet` and `phone` to come with M9; missing is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel settings diff` says so | M5.4a |
+| `layout.tiling` | `true` or `false` | M4.5 |
+| `layout.title_bars` | `always` or `floating-only` | M4.5 |
+| `layout.device_type` | `desktop`, `tablet` or `phone`; missing detects it | M9.3 |
+| `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive) | M5.4b |
+| `layout.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[layout.panels]]` tables, or on the command line `edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]'`; missing is the preset's. A change restarts the panel at once | M5.4e |
+
+## Displays: `[displays.NAME]`
+
+Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; the desktop follows these at once (M4.6).
+
+| Key | Value | From |
+|---|---|---|
+| `displays.*.position` | two whole numbers, `[x, y]` | M4.6 |
+| `displays.*.scale` | a number, such as `1.25` | M4.6 |
+| `displays.*.resolution` | `WIDTHxHEIGHT`, such as `"1920x1080"`; missing is the screen's own | M4.6 |
+| `displays.*.refresh_rate` | a number of Hz, such as `60`; missing is the resolution's best | M4.6 |
+| `displays.*.enabled` | `true` or `false` | M4.6 |
+| `displays.*.rotation` | `0`, `90`, `180` or `270` | M9.8 |
+
+## Appearance: `[appearance]`
+
+| Key | Value | From |
+|---|---|---|
+| `appearance.wallpaper` | text, a file path | M5.12 |
+| `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, dark in this one, and missing is `auto`. A change takes effect at once | M5.5c |
+| `appearance.accent` | text, a token accent name or a hex colour | M5.12 |
+| `appearance.font` | text, a font family | M5.12 |
+| `appearance.font_size` | a number, in points | M5.12 |
+| `appearance.cursor_size` | a whole number, in pixels | M5.12 |
+| `appearance.icon_size` | a whole number, in pixels | M5.12 |
+| `appearance.animations` | `full`, `reduced` (fades only) or `off`; missing is `full`. The desktop follows it at once | M5.11b |
+
+## Shortcuts: `[shortcuts]`
+
+| Key | Value | From |
+|---|---|---|
+| `shortcuts.*` | keys for the action `*`, such as `close_window = "Super+W"`, or `""` for none; the actions, their default keys and the key names are in [Keyboard shortcuts](SHORTCUTS.md). Check and set refuse an unknown action, two actions on one key and a way out (close a window, the launcher, the lock) without keys. The desktop follows them at once | M5.13a |
+
+## Region: `[region]`
+
+| Key | Value | From |
+|---|---|---|
+| `region.language` | text, such as `"en_GB"` | M6.6a |
+| `region.keyboard` | text, an XKB layout such as `"us"` | M5.21 |
+| `region.timezone` | text, such as `"Europe/London"` | M6.6a |
+
+## Users: `[users.NAME]`
+
+| Key | Value | From |
+|---|---|---|
+| `users.*.admin` | `true` or `false`: member of the `admin` group; missing is `false` | M2.2 |
+| `users.*.ssh_keys` | list of public keys for `~/.ssh/authorized_keys`; missing leaves the file as it is | M2.2 |
+| `users.*.login_shell` | a login shell's full path, such as `/bin/ash`, with no `:`; missing is `/bin/sh`. Apply leaves the shell as it is, and says so, when the path is not a program on the machine | M2.2 |
+
+On a desktop (an image with the `seat` feature), apply also puts every person in `[users]` and the greeter's account in the `seat` group, so they may use the screen and input; there is no key for it (M4.2b). `reset users.NAME.admin` keeps `[users.NAME]`, so apply takes back what the key gave.
+
+## Network: `[network]`
+
+| Key | Value | From |
+|---|---|---|
+| `network.hostname` | the row "Device name (hostname)": letters, digits and hyphens, up to 63. Missing at the next apply removes the machine's own `/etc/hostname`, so the slot's shows again | M2.2 |
+
+## Default apps, Startup, Power and Services
+
+| Key | Value | From |
+|---|---|---|
+| `default_apps.browser` | text, a `.desktop` id | M6.10 |
+| `default_apps.files` | text, a `.desktop` id | M6.10 |
+| `default_apps.editor` | text, a `.desktop` id | M6.10 |
+| `default_apps.terminal` | text, a `.desktop` id | M6.10 |
+| `default_apps.mail` | text, a `.desktop` id | M6.10 |
+| `startup.apps` | list of `.desktop` ids started with the session | M6.10 |
+| `power.lid_close` | `suspend`, `lock`, `nothing` or `poweroff` | M7.8 |
+| `power.lock_after_minutes` | a whole number of minutes without input before the screen locks; `0` never | M7.8 |
+| `power.power_button` | `suspend`, `poweroff`, `ask` or `nothing` | M7.8 |
+| `power.on_battery` | `power-saver`, `balanced` or `performance` | M7.8 |
+| `services.*` | `true` or `false`: the switchable feature `NAME` on or off | M6.10 |
+
+## Updates, Apps and Add-ons
+
+| Key | Value | From |
+|---|---|---|
+| `updates.channel` | text, such as `"stable"` | M3.4 |
+| `updates.version` | text, a release to stay on; missing follows the channel | M3.4 |
+| `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
+| `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |
+| `apps.installed` | list of Flathub app ids, installed per admin user | M6.1 |
+| `addons.installed` | list of add-on names (ADR-007) | M7.2b |
+
+## System: `[system]`
+
+| Key | Value | From |
+|---|---|---|
+| `system.variant` | `container`, `server`, `desktop` or `phone` | M7.3 |
+| `system.developer_mode` | `true` or `false`: developer mode (ADR-007) | M2.2 |
+| `system.profiles` | list of profile names, applied in order | M7.6 |
+
+## Adding a key
+
+Name it after its row in Settings: the label in lowercase with `_` for spaces, its section the page's name, its values the options' labels in lowercase with `-` for spaces (ADR-008's same names decision). Add it to `KEYS` and the structs in `system.rs`, append it to `crates/edel/tests/keys.txt`, add its row here, and set `supported` in the step that acts on it. A key is never removed or renamed within a format (ADR-008).
