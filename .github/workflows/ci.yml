@@ -114,11 +114,6 @@ jobs:
         # flatpak-test; ci/vm-tests.sh says why they can share the runner.
         run: sh ci/vm-tests.sh
 
-      - name: Test the desktop image on a virtual GPU
-        # After the other VMs, alone, so the frame times and memory it
-        # checks against ci/budgets.toml are measured on a quiet runner.
-        run: sh ci/desktop-test.sh floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
-
       - name: List the desktop and laptop images to try
         # The images CI just booted (M3.6): the laptop's in boot-test, the
         # desktop's as a USB stick in desktop-test live. A push to main
@@ -181,8 +176,56 @@ jobs:
             out/*.tar.gz
             out/*.log
             out/*.packages
-            out/desktop-test/*.png
             out/desktop-live/*.png
+
+  # The desktop tests on a runner of their own, beside the VM tests, so a
+  # run takes about 3 minutes less (Alimardon asked for faster CI on
+  # 2026-10-06). It builds only the programs and the desktop test image,
+  # and has the runner to itself, so the frame times and memory it
+  # checks against ci/budgets.toml are measured on a quiet machine.
+  desktop:
+    name: Desktop tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Keep the Rust build between runs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-home
+            target
+          key: alpine-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: alpine-cargo-
+
+      - name: Number this build
+        # Numbered as the images job numbers a pull request or main.
+        run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Build the desktop test image inside Alpine 3.24
+        run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh desktop-test
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install QEMU and UEFI firmware
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
+
+      - name: Test the desktop image on a virtual GPU
+        run: sh ci/desktop-test.sh floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
+
+      - name: Keep the log and the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edel-desktop-test
+          if-no-files-found: ignore
+          path: |
+            out/desktop-test.log
+            out/desktop-test/*.png
 
   # Publishes the docs site to the gh-pages branch, which GitHub Pages
   # serves at https://alimardon123.github.io/edel/ (M8.10a), after every
@@ -190,7 +233,7 @@ jobs:
   # repository variable EDEL_SITE to yes (docs/RELEASE.md).
   site:
     name: Publish the docs site
-    needs: [rust, images]
+    needs: [rust, images, desktop]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.EDEL_SITE == 'yes'
     concurrency:
       group: site
@@ -212,7 +255,7 @@ jobs:
   # sets the repository variable EDEL_PUBLISH to yes (docs/RELEASE.md).
   publish:
     name: Publish the release
-    needs: [rust, images]
+    needs: [rust, images, desktop]
     if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
     # One publish per ref at a time, never cancelled halfway: two merges in
     # a row upload one after the other, and ci/release.sh keeps the newer.

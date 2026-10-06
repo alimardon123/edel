@@ -4,7 +4,19 @@
 # proc, sys and dev inside it):
 #
 #   docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
+#
+# With the argument desktop-test it builds only the programs and the
+# desktop test image, for CI's "Desktop tests" job, which runs beside the
+# VM tests on a runner of its own.
 set -eu
+what=${1:-all}
+case "$what" in
+all | desktop-test) ;;
+*)
+	echo "ci/build.sh: unknown argument $what; give none to build everything, or desktop-test" >&2
+	exit 2
+	;;
+esac
 
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
@@ -27,20 +39,52 @@ build() {
 	./target/release/edel image build --version "$build_version" --channel "${EDEL_CHANNEL:-ci}" \
 		--apk-cache out/apk-cache "$@"
 }
-for def in images/*.toml; do
-	build "$version" "$def" --out out
-done
+. ci/names.sh
 # Two throwaway signing keys, new on every run; the real keys arrive with
 # the first preview (roadmap M3.4).
 rm -rf out/keys
 ./target/release/edel release keygen out/keys ci-1
 ./target/release/edel release keygen out/keys ci-2
 
+# The desktop test image (roadmap M4.1): the desktop image plus the test
+# feature in ci/desktop/features, which logs user ci in to the compositor
+# at once and measures it (ci/desktop-test.sh). It takes CI's first key
+# and a 30 s health timeout. Its seed settings file, ci/desktop/seed.toml,
+# goes where a slot keeps its own, by the name ci/names.sh gives it.
+desktop_test_image() {
+	rm -rf out/desktop-seed
+	mkdir -p out/desktop-seed/usr/share/edel
+	cp ci/desktop/seed.toml "out/desktop-seed/usr/share/edel/$settings_name"
+	build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
+		--no-compress --out out/desktop-test
+}
+
+# This container runs as root. Hand the finished images back to whoever
+# owns the checkout, so the host can boot, read and delete them without
+# root. The work directories stay root's: they hold the built root
+# filesystems. hand_back DIR...
+hand_back() {
+	owner=$(stat -c %u:%g .)
+	for dir in "$@"; do
+		chown "$owner" "$dir"
+		find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
+	done
+}
+
+if [ "$what" = desktop-test ]; then
+	desktop_test_image
+	hand_back out out/desktop-test out/keys
+	exit 0
+fi
+
+for def in images/*.toml; do
+	build "$version" "$def" --out out
+done
+
 # The system test image (roadmap M2.2, M2.3): the VM image with a seed
 # settings file in its slot that names the machine and adds user ci, who logs
 # in with a fresh ssh key, as root does. The unknown key and the comment
 # must survive `edel settings set` and `reset` byte for byte.
-. ci/names.sh
 seed=out/system-test/seed
 rm -rf "$seed"
 mkdir -p "$seed/usr/share/edel"
@@ -92,18 +136,10 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 # service that installs and runs a Flathub runtime (roadmap M1.9).
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
-# The desktop test image (roadmap M4.1): the desktop image plus the test
-# feature in ci/desktop/features, which logs user ci in to the compositor
-# at once and measures it (ci/desktop-test.sh). It takes CI's first key
-# and a 30 s health timeout, and its own update image, signed, is the
-# update `desktop-test.sh rollback` installs and breaks (roadmap M4.8).
-# Its seed settings file, ci/desktop/seed.toml, goes where a slot keeps
-# its own, by the name ci/names.sh gives it.
-rm -rf out/desktop-seed
-mkdir -p out/desktop-seed/usr/share/edel
-cp ci/desktop/seed.toml "out/desktop-seed/usr/share/edel/$settings_name"
-build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
-	--no-compress --out out/desktop-test
+# The desktop test image here too, for desktop-test.sh rollback, which
+# runs in the VM test lane: its own update image, signed, is the update
+# that case installs and breaks (roadmap M4.8).
+desktop_test_image
 update=out/desktop-test/update
 rm -rf "$update"
 mkdir -p "$update"
@@ -128,12 +164,6 @@ done
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
 
-# This container runs as root. Hand the finished images back to whoever owns
-# the checkout, so the host can boot, read and delete them without root.
-# The work directories stay root's: they hold the built root filesystems.
-owner=$(stat -c %u:%g .)
-for dir in out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/desktop-test/update out/flatpak out/install-test out/keys out/release out/system-test; do
-	chown "$owner" "$dir"
-	find "$dir" -maxdepth 1 -type f -exec chown "$owner" {} \;
-done
+hand_back out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/desktop-test/update \
+	out/flatpak out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test
