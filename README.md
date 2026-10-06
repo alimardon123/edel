@@ -2,7 +2,7 @@
 
 A lightweight, fast and beautiful operating system for everyone: developers, creative workers, gamers, office users, and later servers, cloud VMs and containers. One base, built on a soft fork of [Alpine Linux](https://alpinelinux.org/), runs as a container, a VM, a desktop and a phone.
 
-**Status:** early. The architecture is written down; the first images are being built.
+**Status:** early. The update path, the system file and the installer work and are tested in CI. The desktop (our compositor and panel, four layout presets, light and dark) runs in CI's virtual machine and has not met real hardware yet. The first target is a light, beautiful desktop for AMD and Intel laptops, on the same base as the container and VM images; servers, edge devices and phones follow ([roadmap](docs/ROADMAP.md)).
 
 ## How decisions are made
 

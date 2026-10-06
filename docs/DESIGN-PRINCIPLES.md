@@ -1,7 +1,7 @@
 # Design principles
 
 **Status:** Order of principles 1 to 5 confirmed by Alimardon on 2026-10-01; principles 6 to 9 (the split of "Capable") proposed.
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-06 (what each part could stand alone as, ADR-010)
 
 These are Alimardon's general principles, and they are the rules for **every decision** in the project, not only visual design: architecture, technology and tool choices, process, and what to build or cut, from the kernel configuration to the corner radius of a button. Each principle comes with a rule that can be checked, so it isn't just a nice word.
 
@@ -97,12 +97,14 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 
 **We write four parts.** All in Rust, all configured with plain TOML files.
 
-| Part | What it does |
-|------|--------------|
-| **compositor** | Windows, floating and tiling, form factors, effects, title bars |
-| **shell-ui** | Panel, dock, launcher, switcher, notifications, quick settings, lock screen |
-| **settings** | The settings app, including layout presets, appearance, shortcuts, behaviour, add-ons, developer mode and one-button export/apply of the whole system |
-| **edel** (command-line tool) | Updates and rollback, add-ons, system file export/diff/apply, format migrations, and building images in CI |
+| Part | What it does | Could stand alone as (ADR-010) |
+|------|--------------|------|
+| **compositor** | Windows, floating and tiling, form factors, effects, title bars | With shell-ui, a desktop for other distributions (M5.15) |
+| **shell-ui** | Panel, dock, launcher, switcher, notifications, quick settings, lock screen | Part of that desktop |
+| **settings** | The settings app, including layout presets, appearance, shortcuts, behaviour, add-ons, developer mode and one-button export/apply of the whole system | The desktop's settings app |
+| **edel** (command-line tool) | Updates and rollback, add-ons, system file export/diff/apply, format migrations, and building images in CI | A/B updates for other small systems; images from feature files; a library for one-file machine descriptions |
+
+Parts meet only through plain files with a format number and standard protocols, name Edel OS's places through one module (`edel::places`), and grow through doors that exist (features, add-ons, keys, presets, tokens, modules behind an interface), so any part can be changed, dropped or lifted out; CI checks the seams (ADR-010, M8.13).
 
 **One of each, everywhere:**
 

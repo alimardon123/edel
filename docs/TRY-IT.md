@@ -1,6 +1,6 @@
 # Try Edel OS
 
-**This is a preview.** It makes no promise yet: it is a text console with updates, rollback, the system file and the installer, and no desktop. Since milestone 1, `/home`, `/var` and the system file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
+**This is a preview.** It makes no promise yet. The VM and laptop images are a text console with updates, rollback, the system file and the installer; the desktop image adds our desktop, early and not yet tried on real hardware. Since milestone 1, `/home`, `/var` and the system file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
 
 ## The files
 
