@@ -77,7 +77,7 @@ pub enum Scheme {
 }
 
 impl Scheme {
-    /// `appearance.color_scheme`'s value: `light`, `dark`, or `auto`,
+    /// `appearance.mode`'s value: `light`, `dark`, or `auto`,
     /// which is the release's choice, dark in this one; none for anything
     /// else.
     pub fn parse(value: &str) -> Option<Scheme> {

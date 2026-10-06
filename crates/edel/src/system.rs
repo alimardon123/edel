@@ -38,12 +38,12 @@ pub struct Page {
 /// one of them. Settings (M5.6) reads the same table.
 pub const PAGES: &[Page] = &[
     Page {
-        section: "shell",
+        section: "layout",
         title: "Layout",
         about: "the preset, tiling, title bars and panels",
     },
     Page {
-        section: "outputs",
+        section: "displays",
         title: "Displays",
         about: "each screen's place, scale and resolution",
     },
@@ -58,7 +58,7 @@ pub const PAGES: &[Page] = &[
         about: "the keys for each action",
     },
     Page {
-        section: "locale",
+        section: "region",
         title: "Region",
         about: "language, keyboard and time zone",
     },
@@ -73,7 +73,7 @@ pub const PAGES: &[Page] = &[
         about: "the device's name",
     },
     Page {
-        section: "defaults",
+        section: "default_apps",
         title: "Default apps",
         about: "the browser, files, editor, terminal and mail",
     },
@@ -149,6 +149,8 @@ pub enum Kind {
     /// Panels, as a preset's `[[panels]]` (M5.4e,
     /// [`crate::presets::check_panels`])
     Panels,
+    /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
+    Resolution,
 }
 
 /// One key of the settings file. `*` in a path stands for any name, such as a
@@ -191,62 +193,60 @@ pub const PRESETS: &[&str] = &[
 
 /// Every key of format 1. Append only; `tests/keys.txt` must list each one.
 pub const KEYS: &[Key] = &[
-    later("system.channel", Kind::Text),
-    later("system.version", Kind::Text),
     later(
         "system.variant",
         Kind::OneOf(&["container", "server", "desktop", "phone"]),
     ),
-    now("system.developer", Kind::Flag),
+    now("system.developer_mode", Kind::Flag),
     later("system.profiles", Kind::Texts),
     now("users.*.admin", Kind::Flag),
     now("users.*.ssh_keys", Kind::Texts),
-    now("users.*.shell", Kind::Shell),
+    now("users.*.login_shell", Kind::Shell),
     now("network.hostname", Kind::Hostname),
-    later("locale.language", Kind::Text),
-    later("locale.keyboard", Kind::Text),
-    later("locale.timezone", Kind::Text),
-    now("shell.preset", Kind::OneOf(crate::presets::NAMES)),
-    now("shell.tiling", Kind::Flag),
+    later("region.language", Kind::Text),
+    later("region.keyboard", Kind::Text),
+    later("region.timezone", Kind::Text),
+    now("layout.preset", Kind::OneOf(crate::presets::NAMES)),
+    now("layout.tiling", Kind::Flag),
     now(
-        "shell.title_bars",
+        "layout.title_bars",
         Kind::OneOf(&["always", "floating-only"]),
     ),
     later(
-        "shell.form_factor",
+        "layout.device_type",
         Kind::OneOf(&["desktop", "tablet", "phone"]),
     ),
-    now("outputs.*.position", Kind::Pair),
-    now("outputs.*.scale", Kind::Number),
-    now("outputs.*.mode", Kind::Text),
-    now("outputs.*.enabled", Kind::Flag),
-    later("outputs.*.transform", Kind::WholeOf(&[0, 90, 180, 270])),
+    now("layout.window_buttons", Kind::OneOf(&["left", "right"])),
+    now("layout.panels", Kind::Panels),
+    now("displays.*.position", Kind::Pair),
+    now("displays.*.scale", Kind::Number),
+    now("displays.*.resolution", Kind::Resolution),
+    now("displays.*.refresh_rate", Kind::Number),
+    now("displays.*.enabled", Kind::Flag),
+    later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
     later("appearance.wallpaper", Kind::Text),
-    now(
-        "appearance.color_scheme",
-        Kind::OneOf(&["light", "dark", "auto"]),
-    ),
+    now("appearance.mode", Kind::OneOf(&["light", "dark", "auto"])),
     later("appearance.accent", Kind::Text),
     later("appearance.font", Kind::Text),
     later("appearance.font_size", Kind::Number),
     later("appearance.cursor_size", Kind::Whole),
     later("appearance.icon_size", Kind::Whole),
     now(
-        "appearance.motion",
+        "appearance.animations",
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
     now("shortcuts.*", Kind::Keys),
-    later("defaults.browser", Kind::Text),
-    later("defaults.files", Kind::Text),
-    later("defaults.editor", Kind::Text),
-    later("defaults.terminal", Kind::Text),
-    later("defaults.mail", Kind::Text),
+    later("default_apps.browser", Kind::Text),
+    later("default_apps.files", Kind::Text),
+    later("default_apps.editor", Kind::Text),
+    later("default_apps.terminal", Kind::Text),
+    later("default_apps.mail", Kind::Text),
     later("startup.apps", Kind::Texts),
     later(
-        "power.lid",
+        "power.lid_close",
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
     ),
-    later("power.idle", Kind::Whole),
+    later("power.lock_after_minutes", Kind::Whole),
     later(
         "power.power_button",
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
@@ -256,41 +256,40 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
     later("services.*", Kind::Flag),
+    later("updates.channel", Kind::Text),
+    later("updates.version", Kind::Text),
     later(
-        "updates.auto",
-        Kind::OneOf(&["off", "check", "install", "boot"]),
+        "updates.automatic",
+        Kind::OneOf(&["off", "check", "install", "install-and-restart"]),
     ),
-    later("updates.window", Kind::Text),
-    later("apps.flatpak", Kind::Texts),
-    later("addons.add", Kind::Texts),
-    now("shell.window_buttons", Kind::OneOf(&["left", "right"])),
-    now("shell.panels", Kind::Panels),
+    later("updates.restart_window", Kind::Text),
+    later("apps.installed", Kind::Texts),
+    later("addons.installed", Kind::Texts),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
 /// decides (ADR-008, section 3), so nothing here has a default of its own.
+/// Each section is a page of the Settings app ([`PAGES`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SystemFile {
     pub format: i64,
     #[serde(default, skip_serializing_if = "is_default")]
-    pub system: System,
+    pub layout: Layout,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub displays: BTreeMap<String, Display>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub appearance: Appearance,
+    /// Action name to keys, such as `close_window = "Super+Q"`
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcuts: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub region: Region,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub users: BTreeMap<String, User>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub network: Network,
     #[serde(default, skip_serializing_if = "is_default")]
-    pub locale: Locale,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub shell: Shell,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub outputs: BTreeMap<String, Output>,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub appearance: Appearance,
-    /// Action name to keys, such as `close = "Super+Q"`
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub shortcuts: BTreeMap<String, String>,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub defaults: Defaults,
+    pub default_apps: DefaultApps,
     #[serde(default, skip_serializing_if = "is_default")]
     pub startup: Startup,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -304,6 +303,8 @@ pub struct SystemFile {
     pub apps: Apps,
     #[serde(default, skip_serializing_if = "is_default")]
     pub addons: Addons,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub system: System,
 }
 
 impl Default for SystemFile {
@@ -311,21 +312,21 @@ impl Default for SystemFile {
     fn default() -> Self {
         SystemFile {
             format: FORMAT,
-            system: System::default(),
-            users: BTreeMap::new(),
-            network: Network::default(),
-            locale: Locale::default(),
-            shell: Shell::default(),
-            outputs: BTreeMap::new(),
+            layout: Layout::default(),
+            displays: BTreeMap::new(),
             appearance: Appearance::default(),
             shortcuts: BTreeMap::new(),
-            defaults: Defaults::default(),
+            region: Region::default(),
+            users: BTreeMap::new(),
+            network: Network::default(),
+            default_apps: DefaultApps::default(),
             startup: Startup::default(),
             power: Power::default(),
             services: BTreeMap::new(),
             updates: Updates::default(),
             apps: Apps::default(),
             addons: Addons::default(),
+            system: System::default(),
         }
     }
 }
@@ -334,20 +335,19 @@ fn is_default<T: Default + PartialEq>(value: &T) -> bool {
     *value == T::default()
 }
 
+/// The System page: what kind of system this is, developer mode
+/// (ADR-007) and profiles.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct System {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub developer: Option<bool>,
+    pub developer_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profiles: Option<Vec<String>>,
 }
 
+/// One person on the Users page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct User {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -355,17 +355,20 @@ pub struct User {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_keys: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub shell: Option<String>,
+    pub login_shell: Option<String>,
 }
 
+/// The Network page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Network {
+    /// The row "Device name (hostname)"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
 }
 
+/// The Region page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Locale {
+pub struct Region {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -374,8 +377,9 @@ pub struct Locale {
     pub timezone: Option<String>,
 }
 
+/// The Layout page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Shell {
+pub struct Layout {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -383,7 +387,7 @@ pub struct Shell {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title_bars: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub form_factor: Option<String>,
+    pub device_type: Option<String>,
     /// The title bar buttons' side (M5.4b); absent is the preset's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_buttons: Option<String>,
@@ -393,26 +397,45 @@ pub struct Shell {
     pub panels: Option<Vec<crate::presets::Panel>>,
 }
 
+/// One screen on the Displays page, by its connector's name.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Output {
+pub struct Display {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<[i64; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scale: Option<f64>,
+    /// `WIDTHxHEIGHT`, such as `1920x1080`; absent is the screen's own
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
+    pub resolution: Option<String>,
+    /// In Hz, such as `60` or `59.94`; absent is the resolution's best
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_rate: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub transform: Option<u32>,
+    pub rotation: Option<u32>,
 }
 
+impl Display {
+    /// The mode to ask the screen for, `WIDTHxHEIGHT` or
+    /// `WIDTHxHEIGHT@HZ`, from the resolution and the refresh rate.
+    pub fn mode(&self) -> Option<String> {
+        let resolution = self.resolution.as_deref()?;
+        Some(match self.refresh_rate {
+            Some(hz) => format!("{resolution}@{hz}"),
+            None => resolution.to_string(),
+        })
+    }
+}
+
+/// The Appearance page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Appearance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallpaper: Option<String>,
+    /// Light, dark or automatic
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub color_scheme: Option<String>,
+    pub mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -423,12 +446,14 @@ pub struct Appearance {
     pub cursor_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon_size: Option<u32>,
+    /// Full, reduced or off
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub motion: Option<String>,
+    pub animations: Option<String>,
 }
 
+/// The Default apps page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct Defaults {
+pub struct DefaultApps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -441,43 +466,52 @@ pub struct Defaults {
     pub mail: Option<String>,
 }
 
+/// The Startup page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Startup {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub apps: Option<Vec<String>>,
 }
 
+/// The Power page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Power {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lid: Option<String>,
+    pub lid_close: Option<String>,
     /// Minutes without input before the screen locks; 0 never locks
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub idle: Option<u32>,
+    pub lock_after_minutes: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_battery: Option<String>,
 }
 
+/// The Updates page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Updates {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto: Option<String>,
+    pub channel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub window: Option<String>,
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub automatic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub restart_window: Option<String>,
 }
 
+/// The Apps page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Apps {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flatpak: Option<Vec<String>>,
+    pub installed: Option<Vec<String>>,
 }
 
+/// The Add-ons page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Addons {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub add: Option<Vec<String>>,
+    pub installed: Option<Vec<String>>,
 }
 
 /// Something a reader left out: an unknown key, or a value of the wrong
@@ -680,7 +714,7 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
         })
 }
 
-/// The known key nearest to the mistyped `key`, such as `shell.preset` for
+/// The known key nearest to the mistyped `key`, such as `layout.preset` for
 /// `shell.presset`, when one is close enough to be meant; a name standing
 /// for `*`, such as a user's or a screen's, is kept as typed.
 pub fn nearest_key(key: &str) -> Option<String> {
@@ -742,7 +776,7 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
     let mut table = Table::new();
     table.insert("v".into(), value.clone());
     let doc: DocumentMut = toml::to_string(&table)?.parse()?;
-    // A list of tables, such as shell.panels, comes back as [[v]]
+    // A list of tables, such as layout.panels, comes back as [[v]]
     // tables; it is written inline, on the key's one line.
     doc.get("v")
         .cloned()
@@ -917,6 +951,8 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             crate::presets::check_panels(&panels).map_err(|e| e.to_string())?;
             Ok(value.clone())
         }
+        (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
+        (Kind::Resolution, _) => fail("a resolution such as \"1920x1080\""),
         (Kind::Panels, _) => {
             fail("a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]")
         }
@@ -938,6 +974,18 @@ pub fn is_shell_path(path: &str) -> bool {
         && path.len() <= 255
         && !path.contains(':')
         && !path.chars().any(char::is_control)
+}
+
+/// `WIDTHxHEIGHT` in pixels, such as `1920x1080`.
+fn is_resolution(text: &str) -> bool {
+    text.split_once('x').is_some_and(|(w, h)| {
+        [w, h].iter().all(|n| {
+            !n.is_empty()
+                && n.len() <= 5
+                && n.bytes().all(|b| b.is_ascii_digit())
+                && !n.starts_with('0')
+        })
+    })
 }
 
 /// A name busybox `adduser` accepts and every tool handles.
@@ -983,6 +1031,7 @@ mod tests {
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+W".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
+            Kind::Resolution => Value::String("1920x1080".into()),
         }
     }
 
@@ -1025,7 +1074,7 @@ hostname = "lab-1"
 
 [appearance]
 acent = "red"
-color_scheme = "sepia"
+mode = "sepia"
 font_size = 11
 "#;
 
@@ -1035,8 +1084,11 @@ font_size = 11
         assert_eq!(read.problems, []);
         assert_eq!(read.file.network.hostname.as_deref(), Some("ali-laptop"));
         assert_eq!(read.file.users["ali"].admin, Some(true));
-        assert_eq!(read.file.addons.add, Some(vec!["virtualization".into()]));
-        assert_eq!(read.file.shell.preset.as_deref(), Some("classic"));
+        assert_eq!(
+            read.file.addons.installed,
+            Some(vec!["virtualization".into()])
+        );
+        assert_eq!(read.file.layout.preset.as_deref(), Some("classic"));
     }
 
     #[test]
@@ -1048,12 +1100,9 @@ font_size = 11
     #[test]
     fn check_lists_the_allowed_values() {
         let lines = check(MIXED).unwrap();
-        assert!(
-            lines.contains(
-                &"appearance.color_scheme: unknown value \"sepia\"; use light, dark or auto"
-                    .to_string()
-            )
-        );
+        assert!(lines.contains(
+            &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
+        ));
         assert!(lines.contains(&"appearance.font_size: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
@@ -1069,25 +1118,28 @@ font_size = 11
     fn a_lenient_read_keeps_the_rest_and_reports() {
         let read = read(MIXED).unwrap();
         assert_eq!(read.file.network.hostname.as_deref(), Some("lab-1"));
-        assert_eq!(read.file.appearance.color_scheme, None);
+        assert_eq!(read.file.appearance.mode, None);
         assert_eq!(read.file.appearance.font_size, Some(11.0));
         let keys: Vec<&str> = read.problems.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, ["appearance.acent", "appearance.color_scheme"]);
+        assert_eq!(keys, ["appearance.acent", "appearance.mode"]);
     }
 
     #[test]
     fn values_of_the_wrong_kind_fall_back() {
         let read = read(
-            "format = 1\n[users.ci]\nadmin = \"yes\"\nshell = \"/bin/sh\"\n[outputs.DP-1]\ntransform = 45\n[network]\nhostname = [1]\n",
+            "format = 1\n[users.ci]\nadmin = \"yes\"\nlogin_shell = \"/bin/sh\"\n[displays.DP-1]\nrotation = 45\n[network]\nhostname = [1]\n",
         )
         .unwrap();
         assert_eq!(read.file.users["ci"].admin, None);
-        assert_eq!(read.file.users["ci"].shell.as_deref(), Some("/bin/sh"));
+        assert_eq!(
+            read.file.users["ci"].login_shell.as_deref(),
+            Some("/bin/sh")
+        );
         assert_eq!(read.file.network.hostname, None);
         let shown: Vec<String> = read.problems.iter().map(|p| p.to_string()).collect();
         assert!(shown.contains(&"users.ci.admin: expected true or false, not \"yes\"".into()));
         assert!(
-            shown.contains(&"outputs.DP-1.transform: expected 0, 90, 180 or 270, not 45".into())
+            shown.contains(&"displays.DP-1.rotation: expected 0, 90, 180 or 270, not 45".into())
         );
     }
 
@@ -1098,17 +1150,17 @@ font_size = 11
     fn panels_are_checked_as_a_presets_and_read_as_tables_or_inline() {
         let set_one = set(
             "format = 1\n",
-            "shell.panels",
+            "layout.panels",
             r#"[{ edge = "bottom", end = ["clock"] }]"#,
         )
         .unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[shell]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
+            "format = 1\n\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
         );
-        let tables = "format = 1\n[[shell.panels]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[shell.panels]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
+        let tables = "format = 1\n[[layout.panels]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[layout.panels]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
         assert!(check(tables).unwrap().is_empty());
-        let panels = read(tables).unwrap().file.shell.panels.unwrap();
+        let panels = read(tables).unwrap().file.layout.panels.unwrap();
         assert_eq!(panels.len(), 2);
         assert_eq!(panels[1].style, crate::presets::Style::Dock);
         // Two along one edge, a name no widget could have, a key a panel
@@ -1128,24 +1180,26 @@ font_size = 11
             ),
             (r#""clock""#, "expected a list of panels"),
         ] {
-            let error = set("format = 1\n", "shell.panels", bad).unwrap_err();
+            let error = set("format = 1\n", "layout.panels", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");
-            let file = format!("format = 1\n[shell]\npanels = {bad}\n");
+            let file = format!("format = 1\n[layout]\npanels = {bad}\n");
             let read = read(&file).unwrap();
-            assert_eq!(read.file.shell.panels, None, "{bad}");
-            assert_eq!(read.problems[0].key, "shell.panels");
+            assert_eq!(read.file.layout.panels, None, "{bad}");
+            assert_eq!(read.problems[0].key, "layout.panels");
         }
     }
 
     #[test]
     fn a_preset_this_release_lacks_is_refused_or_reported() {
-        let file = "format = 1\n[shell]\npreset = \"tablet\"\n";
+        let file = "format = 1\n[layout]\npreset = \"tablet\"\n";
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
-            ["shell.preset: unknown value \"tablet\"; use classic, hive, mac-like or windows-like"]
+            [
+                "layout.preset: unknown value \"tablet\"; use classic, hive, mac-like or windows-like"
+            ]
         );
-        let error = set("format = 1\n", "shell.preset", "tablet").unwrap_err();
+        let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
@@ -1153,10 +1207,10 @@ font_size = 11
             "{error}"
         );
         let read = read(file).unwrap();
-        assert_eq!(read.file.shell.preset, None);
-        assert_eq!(read.problems[0].key, "shell.preset");
-        let set_hive = set("format = 1\n", "shell.preset", "hive").unwrap();
-        assert_eq!(set_hive, "format = 1\n\n[shell]\npreset = \"hive\"\n");
+        assert_eq!(read.file.layout.preset, None);
+        assert_eq!(read.problems[0].key, "layout.preset");
+        let set_hive = set("format = 1\n", "layout.preset", "hive").unwrap();
+        assert_eq!(set_hive, "format = 1\n\n[layout]\npreset = \"hive\"\n");
         assert!(check(&set_hive).unwrap().is_empty());
     }
 
@@ -1169,9 +1223,9 @@ font_size = 11
         let added = set(&changed, "users.ali.admin", "true").unwrap();
         assert!(added.starts_with(&changed), "{added}");
         assert!(added.ends_with("\n[users.ali]\nadmin = true\n"), "{added}");
-        let developer = set(EDITED, "system.developer", "false").unwrap();
+        let developer = set(EDITED, "system.developer_mode", "false").unwrap();
         assert!(
-            developer.ends_with("[system]\ndeveloper = false\n"),
+            developer.ends_with("[system]\ndeveloper_mode = false\n"),
             "{developer}"
         );
     }
@@ -1179,14 +1233,22 @@ font_size = 11
     #[test]
     fn shortcuts_are_written_one_way_and_never_clash() {
         let text = "format = 1\n";
-        let set_one = set(text, "shortcuts.close", "super+w").unwrap();
-        assert_eq!(set_one, "format = 1\n\n[shortcuts]\nclose = \"Super+W\"\n");
+        let set_one = set(text, "shortcuts.close_window", "super+w").unwrap();
+        assert_eq!(
+            set_one,
+            "format = 1\n\n[shortcuts]\nclose_window = \"Super+W\"\n"
+        );
         assert!(check(&set_one).unwrap().is_empty());
-        let clash = set(text, "shortcuts.terminal", "Super+Q")
+        let clash = set(text, "shortcuts.open_terminal", "Super+Q")
             .unwrap_err()
             .to_string();
-        assert_eq!(clash, "shortcuts.terminal: Super+Q is already close's");
-        let unbound = set(text, "shortcuts.lock", "").unwrap_err().to_string();
+        assert_eq!(
+            clash,
+            "shortcuts.open_terminal: Super+Q is already close_window's"
+        );
+        let unbound = set(text, "shortcuts.lock_screen", "")
+            .unwrap_err()
+            .to_string();
         assert!(
             unbound.contains("a way out must keep its keys"),
             "{unbound}"
@@ -1195,10 +1257,13 @@ font_size = 11
             .unwrap_err()
             .to_string();
         assert!(unknown.contains("unknown action"), "{unknown}");
-        assert!(set(text, "shortcuts.close", "Super+Q+W").is_err());
+        assert!(set(text, "shortcuts.close_window", "Super+Q+W").is_err());
         // check says the same of a file written by hand.
-        let lines = check("format = 1\n[shortcuts]\nterminal = \"super+q\"\n").unwrap();
-        assert_eq!(lines, ["shortcuts.terminal: Super+Q is already close's"]);
+        let lines = check("format = 1\n[shortcuts]\nopen_terminal = \"super+q\"\n").unwrap();
+        assert_eq!(
+            lines,
+            ["shortcuts.open_terminal: Super+Q is already close_window's"]
+        );
     }
 
     #[test]
@@ -1209,14 +1274,14 @@ font_size = 11
             "network.hostnme: unknown key; did you mean network.hostname?"
         );
         assert!(error("nothing.near", "a").contains("edel settings lists the pages"));
-        assert!(error("appearance.color_scheme", "drak").contains("did you mean dark?"));
+        assert!(error("appearance.mode", "drak").contains("did you mean dark?"));
         assert_eq!(
-            nearest_key("shell.presset").as_deref(),
-            Some("shell.preset")
+            nearest_key("layout.presset").as_deref(),
+            Some("layout.preset")
         );
         assert_eq!(
-            nearest_key("outputs.eDP-1.scal").as_deref(),
-            Some("outputs.eDP-1.scale")
+            nearest_key("displays.eDP-1.scal").as_deref(),
+            Some("displays.eDP-1.scale")
         );
         assert_eq!(nearest_key("network.hostname"), None);
         // Every section is one page of the Settings app, and back.
@@ -1264,16 +1329,16 @@ font_size = 11
     #[test]
     fn a_login_shell_is_a_full_path_passwd_can_hold() {
         let error = |value: &str| {
-            set("format = 1\n", "users.ali.shell", value)
+            set("format = 1\n", "users.ali.login_shell", value)
                 .unwrap_err()
                 .to_string()
         };
-        assert!(set("format = 1\n", "users.ali.shell", "/bin/ash").is_ok());
+        assert!(set("format = 1\n", "users.ali.login_shell", "/bin/ash").is_ok());
         assert!(error("bash").contains("full path"));
         assert!(error("/bin/sh:x").contains("full path"));
         assert!(error("\"/bin/sh\\n\"").contains("full path"));
-        let read = read("format = 1\n[users.ali]\nshell = \"/bin/a:b\"\n").unwrap();
-        assert_eq!(read.file.users["ali"].shell, None);
+        let read = read("format = 1\n[users.ali]\nlogin_shell = \"/bin/a:b\"\n").unwrap();
+        assert_eq!(read.file.users["ali"].login_shell, None);
         assert_eq!(read.problems.len(), 1);
     }
 
@@ -1354,11 +1419,11 @@ font_size = 11
 
     #[test]
     fn the_reference_page_lists_every_key() {
-        let page = include_str!("../../../docs/system-file.md");
+        let page = include_str!("../../../docs/settings.md");
         for key in KEYS {
             assert!(
                 page.contains(&format!("`{}`", key.path)),
-                "document {} in docs/system-file.md",
+                "document {} in docs/settings.md",
                 key.path
             );
         }

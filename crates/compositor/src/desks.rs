@@ -88,7 +88,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     }
 
     /// Every workspace's policies, for a change that applies to all of
-    /// them, such as `shell.tiling`.
+    /// them, such as `layout.tiling`.
     pub fn layouts_mut(&mut self) -> impl Iterator<Item = &mut Workspace<W>> {
         self.desks.iter_mut().map(|d| &mut d.layout)
     }
@@ -425,7 +425,7 @@ mod tests {
         assert!(desks.layout_mut().switch("tiling"));
         desks.switch(1, Vec::new());
         assert_eq!(desks.layout().name(), "floating");
-        // shell.tiling switches every workspace.
+        // layout.tiling switches every workspace.
         for layout in desks.layouts_mut() {
             layout.switch("tiling");
         }

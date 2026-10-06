@@ -85,18 +85,18 @@ echo "PASS: diff empty after apply; set changed only the hostname; reset brought
 
 # M5.25a: several settings in one set, a page in the app's words, --toml
 # for scripts, a typo answered with the nearest key, and import.
-ssh_root edel settings set network.hostname=two system.developer=true || fail "set with two assignments failed"
+ssh_root edel settings set network.hostname=two system.developer_mode=true || fail "set with two assignments failed"
 ssh_root edel settings get network >out/settings-get.log || fail "edel settings get network failed"
 grep -q '^Network (network)' out/settings-get.log && grep -q 'network.hostname  *"two"  (this machine)' out/settings-get.log ||
 	fail "get network does not show the Network page's row: $(cat out/settings-get.log)"
 ssh_root edel settings get system --toml >out/settings-get.toml || fail "edel settings get system --toml failed"
-python3 -c 'import sys, tomllib; assert tomllib.load(open(sys.argv[1], "rb"))["system"]["developer"] is True' out/settings-get.toml ||
+python3 -c 'import sys, tomllib; assert tomllib.load(open(sys.argv[1], "rb"))["system"]["developer_mode"] is True' out/settings-get.toml ||
 	fail "get --toml did not read back: $(cat out/settings-get.toml)"
 if ssh_root edel settings set network.hostnme=x >out/settings-typo.log 2>&1; then
 	fail "set took the unknown key network.hostnme"
 fi
 grep -q 'did you mean network.hostname?' out/settings-typo.log || fail "a typo got no suggestion: $(cat out/settings-typo.log)"
-ssh_root edel settings reset network.hostname system.developer || fail "reset with two keys failed"
+ssh_root edel settings reset network.hostname system.developer_mode || fail "reset with two keys failed"
 ssh_root edel settings export >out/settings-copy.toml || fail "export as root failed"
 # After the reset and apply above, the file names no hostname.
 grep -q '^\[network\]' out/settings-copy.toml && fail "the export still names a hostname: $(cat out/settings-copy.toml)"

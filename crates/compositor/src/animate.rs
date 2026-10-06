@@ -3,7 +3,7 @@
 //! picture fades out, shrinking a little; a window the layout moves slides
 //! to its new place; on a workspace switch (M5.2f) the shown windows'
 //! pictures slide off the screen while the other workspace's slide in. `edel_compositor::animation` holds the rules (how
-//! long and how far, by tier and `appearance.motion`); this keeps what is
+//! long and how far, by tier and `appearance.animations`); this keeps what is
 //! animating, starts it from the window events and gives `render.rs` each
 //! window's look. While anything animates the backends draw a frame every
 //! screen refresh; when it ends they stop, so an idle desktop still draws
@@ -196,7 +196,7 @@ impl Edel {
         self.restyle();
     }
 
-    /// The tier or `appearance.motion` may have changed: the style follows,
+    /// The tier or `appearance.animations` may have changed: the style follows,
     /// and the log says so whenever either changes, even when the style
     /// stays (Lite already only fades, so reduced motion changes nothing
     /// there).

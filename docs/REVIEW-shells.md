@@ -90,7 +90,7 @@ The question is narrow: what makes a desktop look beautiful, what makes it feel 
 ## What we skip
 
 - **Scripted shells** (QML, JavaScript extensions): a theme engine and extension API by another name (ADR-002).
-- **Per-animation knobs:** one `appearance.motion` (full, reduced, off) and the presets, not dozens of curves.
+- **Per-animation knobs:** one `appearance.animations` (full, reduced, off) and the presets, not dozens of curves.
 - **Live blur everywhere,** wobbly windows and other effects that cost frames on old hardware for little.
 - **Bouncy motion** for anything a person waits on.
 

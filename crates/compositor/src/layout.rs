@@ -9,7 +9,7 @@ use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use crate::tiling::Tiling;
 
-/// Every policy, the default first: what `shell.tiling` and Super+T choose
+/// Every policy, the default first: what `layout.tiling` and Super+T choose
 /// between. Their names are what people see (ADR-008), never the
 /// algorithm's, so a later tiling algorithm keeps everyone's setting.
 pub fn policies<W: Clone + PartialEq + 'static>(gap: u32) -> Vec<Box<dyn WindowPolicy<W>>> {
@@ -317,7 +317,7 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Floating<W> {
 pub const BUILT_IN_PPI: f64 = 125.0;
 pub const EXTERNAL_PPI: f64 = 110.0;
 
-/// The scale a screen gets when `outputs.NAME.scale` is absent (M4.6,
+/// The scale a screen gets when `displays.NAME.scale` is absent (M4.6,
 /// ADR-008): its pixels per inch, from the EDID's physical width, over
 /// [`BUILT_IN_PPI`] or [`EXTERNAL_PPI`], rounded to 0.25 and kept from 1
 /// to 3; 1 when the screen does not say its size. Worked out whenever a
@@ -343,7 +343,7 @@ pub fn snap_scale(scale: f64) -> f64 {
     f64::from(scale_120(scale)) / 120.0
 }
 
-/// `outputs.NAME.mode` read: `1920x1080` or `1920x1080@60` (Hz, which
+/// `displays.NAME.resolution` and `refresh_rate` read: `1920x1080` or `1920x1080@60` (Hz, which
 /// may have decimals).
 pub fn parse_mode(text: &str) -> Option<(i32, i32, Option<f64>)> {
     let (size, refresh) = match text.trim().split_once('@') {
@@ -375,7 +375,7 @@ pub fn pick_mode(modes: &[(i32, i32, i32)], wanted: (i32, i32, Option<f64>)) -> 
 /// A screen's logical size and the place the settings file gives it.
 pub type ScreenPlace = (Size<i32, Logical>, Option<Point<i32, Logical>>);
 
-/// Where screens go: each at its `outputs.NAME.position` if it has one,
+/// Where screens go: each at its `displays.NAME.position` if it has one,
 /// else to the right of the screens before it, tops at 0, in the order
 /// given (the GPU's connector order).
 pub fn place_screens(screens: &[ScreenPlace]) -> Vec<Point<i32, Logical>> {
@@ -391,7 +391,7 @@ pub fn place_screens(screens: &[ScreenPlace]) -> Vec<Point<i32, Logical>> {
 }
 
 /// One screen as the compositor lays it out. M4.6 adds its position,
-/// transform and whether it is on, from `[outputs.NAME]` in the settings file.
+/// transform and whether it is on, from `[displays.NAME]` in the settings file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputLayout {
     /// The connector's name, such as `eDP-1` or `Virtual-1`.

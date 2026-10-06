@@ -41,37 +41,42 @@ const fn action(
 /// presets ship their own, M5.4). Append only: a name is a key of the
 /// settings file.
 pub const ACTIONS: &[Action] = &[
-    action("close", "Super+Q", true, "Close the focused window"),
+    action("close_window", "Super+Q", true, "Close the focused window"),
     action(
-        "launcher",
+        "open_launcher",
         "Super",
         true,
         "Open or close the launcher, Super tapped alone",
     ),
     action(
-        "switcher",
+        "switch_windows",
         "Alt+Tab",
         false,
         "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
     ),
     action(
-        "tiling",
+        "toggle_tiling",
         "Super+T",
         false,
         "Switch this workspace between floating and tiling",
     ),
-    action("terminal", "Ctrl+Alt+T", false, "Open a terminal"),
-    action("screenshot", "Print", false, "Take a screenshot (M6.3)"),
-    action("lock", "Super+L", true, "Lock the screen (M5.10)"),
-    action("workspace_1", "Super+1", false, "Go to workspace 1"),
-    action("workspace_2", "Super+2", false, "Go to workspace 2"),
-    action("workspace_3", "Super+3", false, "Go to workspace 3"),
-    action("workspace_4", "Super+4", false, "Go to workspace 4"),
-    action("workspace_5", "Super+5", false, "Go to workspace 5"),
-    action("workspace_6", "Super+6", false, "Go to workspace 6"),
-    action("workspace_7", "Super+7", false, "Go to workspace 7"),
-    action("workspace_8", "Super+8", false, "Go to workspace 8"),
-    action("workspace_9", "Super+9", false, "Go to workspace 9"),
+    action("open_terminal", "Ctrl+Alt+T", false, "Open a terminal"),
+    action(
+        "take_screenshot",
+        "Print",
+        false,
+        "Take a screenshot (M6.3)",
+    ),
+    action("lock_screen", "Super+L", true, "Lock the screen (M5.10)"),
+    action("go_to_workspace_1", "Super+1", false, "Go to workspace 1"),
+    action("go_to_workspace_2", "Super+2", false, "Go to workspace 2"),
+    action("go_to_workspace_3", "Super+3", false, "Go to workspace 3"),
+    action("go_to_workspace_4", "Super+4", false, "Go to workspace 4"),
+    action("go_to_workspace_5", "Super+5", false, "Go to workspace 5"),
+    action("go_to_workspace_6", "Super+6", false, "Go to workspace 6"),
+    action("go_to_workspace_7", "Super+7", false, "Go to workspace 7"),
+    action("go_to_workspace_8", "Super+8", false, "Go to workspace 8"),
+    action("go_to_workspace_9", "Super+9", false, "Go to workspace 9"),
     action(
         "move_to_workspace_1",
         "Super+Shift+1",
@@ -371,7 +376,7 @@ pub fn markdown() -> String {
     let mut text = String::from(
         "# Shortcuts\n\n\
          Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. \
-         Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close=Super+W`, \
+         Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+W`, \
          or in `[shortcuts]` of the settings file; `\"\"` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. \
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
@@ -448,12 +453,17 @@ mod tests {
 
     #[test]
     fn check_refuses_a_conflict_an_unbound_way_out_and_an_unknown_action() {
-        let lines = check(&file(&[("terminal", "Super+Q")]));
-        assert_eq!(lines, ["shortcuts.terminal: Super+Q is already close's"]);
-        let lines = check(&file(&[("close", "")]));
+        let lines = check(&file(&[("open_terminal", "Super+Q")]));
         assert_eq!(
             lines,
-            ["shortcuts.close: a way out must keep its keys; unset it to go back to Super+Q"]
+            ["shortcuts.open_terminal: Super+Q is already close_window's"]
+        );
+        let lines = check(&file(&[("close_window", "")]));
+        assert_eq!(
+            lines,
+            [
+                "shortcuts.close_window: a way out must keep its keys; unset it to go back to Super+Q"
+            ]
         );
         let lines = check(&file(&[("cloze", "Super+W")]));
         assert_eq!(
@@ -463,9 +473,9 @@ mod tests {
         // Moving close off Super+Q frees it, and unbinding others is fine.
         assert!(
             check(&file(&[
-                ("close", "Super+W"),
-                ("terminal", "Super+Q"),
-                ("switcher", "")
+                ("close_window", "Super+W"),
+                ("open_terminal", "Super+Q"),
+                ("switch_windows", "")
             ]))
             .is_empty()
         );
@@ -479,25 +489,32 @@ mod tests {
                 .find(|(a, _)| a.name == name)
                 .and_then(|(_, k)| k.as_ref().map(Keys::to_string))
         };
-        let (resolved, notes) = resolve(&file(&[("close", "Super+W")]));
-        assert_eq!(keys(&resolved, "close").as_deref(), Some("Super+W"));
+        let (resolved, notes) = resolve(&file(&[("close_window", "Super+W")]));
+        assert_eq!(keys(&resolved, "close_window").as_deref(), Some("Super+W"));
         assert!(notes.is_empty(), "{notes:?}");
         // The terminal asks for close's keys: close keeps them.
-        let (resolved, notes) = resolve(&file(&[("terminal", "Super+Q")]));
-        assert_eq!(keys(&resolved, "close").as_deref(), Some("Super+Q"));
-        assert_eq!(keys(&resolved, "terminal"), None);
+        let (resolved, notes) = resolve(&file(&[("open_terminal", "Super+Q")]));
+        assert_eq!(keys(&resolved, "close_window").as_deref(), Some("Super+Q"));
+        assert_eq!(keys(&resolved, "open_terminal"), None);
         assert_eq!(
             notes,
-            ["shortcuts.terminal: Super+Q belongs to another action, so it has no keys"]
+            ["shortcuts.open_terminal: Super+Q belongs to another action, so it has no keys"]
         );
         // A way out unbound gets its default back; an action the file set
         // wins a default's keys.
-        let (resolved, notes) = resolve(&file(&[("lock", ""), ("switcher", "Super+T")]));
-        assert_eq!(keys(&resolved, "lock").as_deref(), Some("Super+L"));
-        assert_eq!(keys(&resolved, "switcher").as_deref(), Some("Super+T"));
-        assert_eq!(keys(&resolved, "tiling"), None);
+        let (resolved, notes) =
+            resolve(&file(&[("lock_screen", ""), ("switch_windows", "Super+T")]));
+        assert_eq!(keys(&resolved, "lock_screen").as_deref(), Some("Super+L"));
+        assert_eq!(
+            keys(&resolved, "switch_windows").as_deref(),
+            Some("Super+T")
+        );
+        assert_eq!(keys(&resolved, "toggle_tiling"), None);
         assert_eq!(notes.len(), 2, "{notes:?}");
-        let (_, notes) = resolve(&file(&[("cloze", "Super+W"), ("tiling", "Super+Q+W")]));
+        let (_, notes) = resolve(&file(&[
+            ("cloze", "Super+W"),
+            ("toggle_tiling", "Super+Q+W"),
+        ]));
         assert_eq!(notes.len(), 2, "{notes:?}");
     }
 

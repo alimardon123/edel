@@ -159,7 +159,7 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
 
 impl Edel {
     /// What the frame adds round `window`: nothing for a window that draws
-    /// its own, nor in tiling when `shell.title_bars = "floating-only"`.
+    /// its own, nor in tiling when `layout.title_bars = "floating-only"`.
     pub fn insets(&self, window: &Window) -> Insets {
         if server_side(window) && self.bars_shown() {
             Insets::server_side(&self.tokens)
