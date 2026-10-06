@@ -1138,6 +1138,19 @@ case_windows() {
 	echo "PASS: away's opening added a button to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
 }
 
+case_completion() {
+	# Tab completion (M5.26): bash, ci's login shell where the completion
+	# feature is, completes edel's commands and a key one part at a time.
+	before=$(count 'DESKTOP-TEST: complete ')
+	guest complete
+	wait_more 'DESKTOP-TEST: complete ' $((before + 2)) || fail "no completion answers: $(value complete)"
+	[ "$(value login_shell)" = /bin/bash ] || fail "ci's login shell is \"$(value login_shell)\", not bash"
+	answers=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: complete //p' | tail -n 3 | tr '\n' '|')
+	[ "$answers" = "loader yes|settings|layout.|" ] ||
+		fail "bash completed \"$answers\", not loader yes, settings and layout."
+	echo "PASS: ci's login shell is bash, bash-completion loaded edel's completion, edel se completed to settings and edel settings set lay to layout."
+}
+
 case_rollback() {
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
@@ -1256,14 +1269,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, console, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

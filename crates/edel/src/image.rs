@@ -283,9 +283,18 @@ impl Build<'_> {
     /// links against the image's musl.
     fn install_edel(&self, root: &Path) -> Result<()> {
         self.runner.step("copy this edel binary to /usr/bin/edel");
+        self.runner.step(&format!(
+            "write edel's tab completion, from its own command table, to {}",
+            crate::completion::PATH
+        ));
         if self.runner.dry_run {
             return Ok(());
         }
+        // The completion (M5.26): bash reads it where the completion
+        // feature brings bash; elsewhere it is a few kilobytes unused.
+        let completion = root.join(crate::completion::PATH.trim_start_matches('/'));
+        fs::create_dir_all(completion.parent().unwrap_or(root))?;
+        fs::write(&completion, crate::completion::bash(&crate::cli_command()))?;
         // The data partition's mount point; / may be read-only at boot.
         fs::create_dir_all(root.join("data"))?;
         let exe = std::env::current_exe().context("finding the running edel binary")?;

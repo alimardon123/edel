@@ -35,8 +35,21 @@ const ETC_UPPER: &str = places::ETC_UPPER;
 const SEED_LABEL: &str = "EDEL-SEED";
 /// The EFI system partition's number on the running disk.
 const ESP_PARTITION: u32 = 1;
-/// The login shell of a user whose entry names none.
+/// The login shell of a user whose entry names none, on an image without
+/// bash.
 pub const DEFAULT_SHELL: &str = "/bin/sh";
+/// The login shell where the completion feature brings bash (M5.26).
+const BASH: &str = "/bin/bash";
+
+/// New people's login shell on this machine: bash where it is, so tab
+/// completes `edel`, else busybox's shell.
+pub fn default_shell() -> &'static str {
+    if Path::new(BASH).exists() {
+        BASH
+    } else {
+        DEFAULT_SHELL
+    }
+}
 /// Members of this group are admins.
 const ADMIN_GROUP: &str = "admin";
 /// The group seatd lets use the screen and input (the `seat` feature,
@@ -104,7 +117,7 @@ pub fn add_live_account(name: &str) -> Result<()> {
         .any(|a| a.name == name)
     {
         let home = format!("/home/{name}");
-        run(Command::new("adduser").args(["-S", "-D", "-s", DEFAULT_SHELL, "-h", &home, name]))?;
+        run(Command::new("adduser").args(["-S", "-D", "-s", default_shell(), "-h", &home, name]))?;
         unlock(name)?;
     }
     let group = fs::read_to_string("/etc/group")?;
@@ -252,6 +265,8 @@ struct Machine {
     keys: BTreeMap<String, String>,
     /// The shells the file names that are programs on this machine
     shells: BTreeSet<String>,
+    /// New people's login shell here ([`default_shell`])
+    default_shell: String,
     developer: bool,
 }
 
@@ -282,6 +297,7 @@ impl Machine {
             shadow: fs::read_to_string("/etc/shadow").ok(),
             keys,
             shells,
+            default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
         })
     }
@@ -310,10 +326,10 @@ fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
                 notes.push(format!(
                     "kept users.{name}.login_shell as it is: {s} is not a program on this machine"
                 ));
-                account.map_or(DEFAULT_SHELL, |a| a.shell.as_str())
+                account.map_or(machine.default_shell.as_str(), |a| a.shell.as_str())
             }
             Some(s) => s,
-            None => DEFAULT_SHELL,
+            None => &machine.default_shell,
         }
         .to_string();
         let is_admin =
@@ -1060,6 +1076,7 @@ pub fn export() -> Result<()> {
         hostname.as_deref(),
         read_keys,
         Path::new(DEVELOPER_FLAG).exists(),
+        default_shell(),
     );
     print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
@@ -1101,6 +1118,7 @@ fn describe(
     hostname: Option<&str>,
     authorized_keys: impl Fn(&Account) -> Option<String>,
     developer: bool,
+    default_shell: &str,
 ) {
     file.network.hostname = hostname.map(|h| h.trim().to_string());
     file.system.developer_mode = developer.then_some(true);
@@ -1122,7 +1140,7 @@ fn describe(
         let user = User {
             admin: admins.contains(&account.name).then_some(true),
             ssh_keys: keys,
-            login_shell: (account.shell != DEFAULT_SHELL).then(|| account.shell.clone()),
+            login_shell: (account.shell != default_shell).then(|| account.shell.clone()),
         };
         file.users.insert(account.name.clone(), user);
     }
@@ -1184,6 +1202,7 @@ mod tests {
             shadow: Some("ci:*:1::::::\nali:!:1::::::\n".into()),
             keys: BTreeMap::from([("ci".into(), "ssh-ed25519 AAAA ci@edel\n".into())]),
             shells: BTreeSet::from(["/bin/ash".into()]),
+            default_shell: DEFAULT_SHELL.into(),
             developer: false,
         }
     }
@@ -1420,6 +1439,7 @@ mod tests {
                 (a.home == "/home/ci").then(|| "# mine\nssh-ed25519 AAAA ci@edel\n".into())
             },
             false,
+            DEFAULT_SHELL,
         );
         assert_eq!(file.network.hostname.as_deref(), Some("lab-1"));
         assert_eq!(file.appearance.mode.as_deref(), Some("dark"));

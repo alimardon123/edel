@@ -5,6 +5,7 @@
 //! learn. The settings file parser is the library half (`edel::system`).
 
 mod boot;
+mod completion;
 mod data;
 mod def;
 mod grubenv;
@@ -34,6 +35,13 @@ use crate::run::Runner;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+/// `edel`'s command table, for what is written from it: the completion
+/// (M5.26) and the command reference (M8.10a).
+pub(crate) fn cli_command() -> clap::Command {
+    use clap::CommandFactory;
+    Cli::command()
 }
 
 #[derive(Subcommand)]

@@ -839,8 +839,11 @@ mod tests {
                 .map(|s| s.clone().try_into().unwrap())
                 .unwrap_or_default();
             let mut old_services: Vec<(&str, &str)> = services.entries();
+            let mut install = install;
             if name == "laptop" {
                 old_services.retain(|(_, s)| *s != "sshd");
+                // M5.26 added the completion feature to the laptop.
+                install.extend(["bash".to_string(), "bash-completion".to_string()]);
             }
             let new = repo_def(name);
             assert_eq!(sorted(&new.packages), sorted(&install), "{name}: packages");
