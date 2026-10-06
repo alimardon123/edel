@@ -26,11 +26,11 @@ pub const BUILT_IN: &[(&str, &str)] = &[
     ),
 ];
 
-/// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
+/// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,
 /// so `edel settings check` and `set` refuse any other and list these.
 pub const NAMES: &[&str] = &["classic", "hive", "mac-like", "windows-like"];
 
-/// The preset a missing `shell.preset` means.
+/// The preset a missing `layout.preset` means.
 pub const DEFAULT: &str = "classic";
 
 /// The most workspaces a preset can ask for: one for each of Super+1 to
@@ -81,10 +81,10 @@ pub enum LauncherStyle {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Windows {
-    /// The policy a workspace starts in when `shell.tiling` is not set.
+    /// The policy a workspace starts in when `layout.tiling` is not set.
     pub policy: Policy,
     /// The side of the title bar the buttons sit on when
-    /// `shell.window_buttons` is not set (M5.4b); absent is the right.
+    /// `layout.window_buttons` is not set (M5.4b); absent is the right.
     #[serde(default)]
     pub buttons: Side,
 }
@@ -106,7 +106,7 @@ impl Side {
         }
     }
 
-    /// `left` or `right`, as `shell.window_buttons` writes it; anything
+    /// `left` or `right`, as `layout.window_buttons` writes it; anything
     /// else is none.
     pub fn parse(name: &str) -> Option<Side> {
         match name {
@@ -249,7 +249,7 @@ pub fn check(text: &str) -> Result<Preset> {
     Ok(preset)
 }
 
-/// What a preset's panels, or `[[shell.panels]]` in a settings file
+/// What a preset's panels, or `[[layout.panels]]` in a settings file
 /// (M5.4e), must be: at most one along each edge, holding widget names
 /// that could be names.
 pub fn check_panels(panels: &[Panel]) -> Result<()> {
@@ -304,7 +304,7 @@ mod tests {
             check(text).unwrap_or_else(|e| panic!("presets/{name}.toml: {e:#}"));
             assert!(
                 crate::system::PRESETS.contains(name),
-                "{name} is not in system::PRESETS, so shell.preset could not name it"
+                "{name} is not in system::PRESETS, so layout.preset could not name it"
             );
         }
     }

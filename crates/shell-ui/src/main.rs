@@ -4,7 +4,7 @@
 //! toolkit decision of 2026-10-03): layer-shell surfaces through
 //! smithay-client-toolkit, drawn with tiny-skia into shared memory, text
 //! shaped by cosmic-text, all from the design tokens. Today it draws the
-//! preset's panels (M5.1b, M5.1c): the settings file's `shell.preset`, else
+//! preset's panels (M5.1b, M5.1c): the settings file's `layout.preset`, else
 //! Classic, whose one panel runs along the bottom of the first screen
 //! with the menu button, the window list (M5.2h), the workspace switcher
 //! (M5.2c), the layout toggle (M5.3a) and a clock. Each
@@ -315,10 +315,10 @@ fn from_system_files() -> (presets::Preset, Scheme) {
         };
         match system::read(&text) {
             Ok(read) => {
-                let shell = read.file.shell;
-                name = shell.preset.or(name);
-                panels = shell.panels.or(panels);
-                scheme = read.file.appearance.color_scheme.or(scheme);
+                let layout = read.file.layout;
+                name = layout.preset.or(name);
+                panels = layout.panels.or(panels);
+                scheme = read.file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",
@@ -330,7 +330,7 @@ fn from_system_files() -> (presets::Preset, Scheme) {
     if let Some(note) = note {
         eprintln!("edel-shell-ui: {note}");
     }
-    // shell.panels, when set, in place of the preset's (M5.4e).
+    // layout.panels, when set, in place of the preset's (M5.4e).
     if let Some(panels) = panels {
         preset.panels = panels;
     }

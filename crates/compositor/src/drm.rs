@@ -3,8 +3,8 @@
 //! primary GPU and the input devices; GBM allocates the buffers, EGL and
 //! GLES draw them (one renderer, no fallback), and smithay's DRM compositor
 //! puts them on every connected screen, each with a CRTC of its own, at
-//! `outputs.NAME.mode` or its preferred mode, at `outputs.NAME.position` or
-//! right of the screens before it, unless `outputs.NAME.enabled` is false.
+//! `displays.NAME.resolution` and `refresh_rate` or its preferred mode, at `displays.NAME.position` or
+//! right of the screens before it, unless `displays.NAME.enabled` is false.
 //! Screens plugged in or out while running, and changes to those keys,
 //! scan the connectors again.
 //!
@@ -74,7 +74,7 @@ struct Screen {
     output: Output,
     connector: connector::Handle,
     compositor: Compositor,
-    /// The mode it runs at, to notice a new `outputs.NAME.mode`.
+    /// The mode it runs at, to notice a new `displays.NAME.resolution` and `refresh_rate`.
     mode: smithay::reexports::drm::control::Mode,
     /// Something on screen changed since its last frame.
     dirty: bool,
@@ -660,7 +660,7 @@ impl Gpu {
     }
 }
 
-/// The mode `outputs.NAME.mode` names, if the screen has it, else the
+/// The mode `displays.NAME.resolution` and `refresh_rate` names, if the screen has it, else the
 /// screen's preferred mode, else its first.
 fn choose_mode(info: &connector::Info, state: &Edel) -> smithay::reexports::drm::control::Mode {
     let modes = info.modes();

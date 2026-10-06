@@ -9,6 +9,6 @@ admin = false
 
 # The second screen (M4.6c): the kernel turns it on with no list of
 # modes it prefers, so it would get the largest, 5120x2160; this tests
-# the mode key too.
-[outputs.Virtual-2]
-mode = "1024x768"
+# the resolution key too.
+[displays.Virtual-2]
+resolution = "1024x768"

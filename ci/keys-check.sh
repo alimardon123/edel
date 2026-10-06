@@ -18,6 +18,11 @@ if ! git diff FETCH_HEAD HEAD -- "$keys" | grep -q '^-[^-]'; then
 	echo "PASS: no settings file key removed"
 elif git diff FETCH_HEAD HEAD -- crates/edel/src/system.rs | grep -q '^+pub const FORMAT'; then
 	echo "PASS: keys removed together with a format bump"
+elif git show "FETCH_HEAD:$keys" | grep -qx 'shell.preset'; then
+	# The one rename ADR-008's same names decision allows within format 1,
+	# while nobody had Edel OS installed (M5.25b): main still has the old
+	# names, so this passes only for that pull request and never again.
+	echo "PASS: the one-time rename of M5.25b, while main still has shell.preset"
 else
 	git diff FETCH_HEAD HEAD -- "$keys" | grep '^-[^-]'
 	echo "FAIL: these lines left $keys without a bump of FORMAT in crates/edel/src/system.rs"

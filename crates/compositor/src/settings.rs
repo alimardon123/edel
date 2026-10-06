@@ -27,22 +27,22 @@ pub enum TitleBars {
 /// The settings the compositor follows, all live.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Settings {
-    /// `shell.tiling`: workspaces tile; absent means the preset's policy.
+    /// `layout.tiling`: workspaces tile; absent means the preset's policy.
     pub tiling: Option<bool>,
-    /// `shell.preset`: absent means Classic.
+    /// `layout.preset`: absent means Classic.
     pub preset: Option<String>,
-    /// `shell.title_bars`: absent means always.
+    /// `layout.title_bars`: absent means always.
     pub title_bars: TitleBars,
-    /// `shell.window_buttons` (M5.4b): absent means the preset's side.
+    /// `layout.window_buttons` (M5.4b): absent means the preset's side.
     pub window_buttons: Option<Side>,
-    /// `shell.panels` (M5.4e): absent means the preset's; shell-ui reads
+    /// `layout.panels` (M5.4e): absent means the preset's; shell-ui reads
     /// them, and the compositor only restarts it when they change.
     pub panels: Option<Vec<edel::presets::Panel>>,
-    /// `[outputs.NAME]`, by output name.
+    /// `[displays.NAME]`, by output name.
     pub outputs: BTreeMap<String, OutputSettings>,
-    /// `appearance.motion` (M5.11b): absent means full.
+    /// `appearance.animations` (M5.11b): absent means full.
     pub motion: Motion,
-    /// `appearance.color_scheme` (M5.5c): absent, or `auto`, means dark.
+    /// `appearance.mode` (M5.5c): absent, or `auto`, means dark.
     pub color_scheme: Scheme,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
@@ -69,36 +69,36 @@ impl Settings {
     pub fn from_files(machine: Option<&SystemFile>, person: Option<&SystemFile>) -> Settings {
         let mut settings = Settings::default();
         for file in [machine, person].into_iter().flatten() {
-            if file.shell.tiling.is_some() {
-                settings.tiling = file.shell.tiling;
+            if file.layout.tiling.is_some() {
+                settings.tiling = file.layout.tiling;
             }
-            if file.shell.preset.is_some() {
-                settings.preset.clone_from(&file.shell.preset);
+            if file.layout.preset.is_some() {
+                settings.preset.clone_from(&file.layout.preset);
             }
-            match file.shell.title_bars.as_deref() {
+            match file.layout.title_bars.as_deref() {
                 Some("always") => settings.title_bars = TitleBars::Always,
                 Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
                 _ => {}
             }
-            if let Some(side) = file.shell.window_buttons.as_deref().and_then(Side::parse) {
+            if let Some(side) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
                 settings.window_buttons = Some(side);
             }
-            if file.shell.panels.is_some() {
-                settings.panels.clone_from(&file.shell.panels);
+            if file.layout.panels.is_some() {
+                settings.panels.clone_from(&file.layout.panels);
             }
-            if let Some(motion) = file.appearance.motion.as_deref().and_then(Motion::parse) {
+            if let Some(motion) = file
+                .appearance
+                .animations
+                .as_deref()
+                .and_then(Motion::parse)
+            {
                 settings.motion = motion;
             }
-            if let Some(scheme) = file
-                .appearance
-                .color_scheme
-                .as_deref()
-                .and_then(Scheme::parse)
-            {
+            if let Some(scheme) = file.appearance.mode.as_deref().and_then(Scheme::parse) {
                 settings.color_scheme = scheme;
             }
             settings.shortcuts.extend(file.shortcuts.clone());
-            for (name, output) in &file.outputs {
+            for (name, output) in &file.displays {
                 let into = settings.outputs.entry(name.clone()).or_default();
                 if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
                     into.scale = Some(scale);
@@ -108,8 +108,8 @@ impl Settings {
                         into.position = Some((x, y));
                     }
                 }
-                if output.mode.is_some() {
-                    into.mode.clone_from(&output.mode);
+                if let Some(mode) = output.mode() {
+                    into.mode = Some(mode);
                 }
                 if output.enabled.is_some() {
                     into.enabled = output.enabled;
@@ -119,8 +119,8 @@ impl Settings {
         settings
     }
 
-    /// The policy workspaces start in, or switch to when `shell.tiling`
-    /// or the preset changes: `shell.tiling` if set, else the preset's.
+    /// The policy workspaces start in, or switch to when `layout.tiling`
+    /// or the preset changes: `layout.tiling` if set, else the preset's.
     pub fn policy(&self) -> &'static str {
         match self.tiling {
             Some(true) => "tiling",
@@ -134,7 +134,7 @@ impl Settings {
     }
 
     /// The side of the title bars their buttons sit on (M5.4b):
-    /// `shell.window_buttons` if set, else the preset's.
+    /// `layout.window_buttons` if set, else the preset's.
     pub fn button_side(&self) -> Side {
         self.window_buttons
             .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.windows.buttons)
@@ -153,7 +153,7 @@ impl Settings {
     }
 
     /// Whether a dock hides while a window covers it (M5.4f): from
-    /// `shell.panels` if set, else the preset's panels.
+    /// `layout.panels` if set, else the preset's panels.
     pub fn dock_hides(&self) -> bool {
         match &self.panels {
             Some(panels) => presets::dock_hides(panels),
@@ -161,7 +161,7 @@ impl Settings {
         }
     }
 
-    /// Whether `shell.panels` changed (M5.4e), which shell-ui follows by
+    /// Whether `layout.panels` changed (M5.4e), which shell-ui follows by
     /// starting again, as for a preset.
     pub fn panels_differ(&self, other: &Settings) -> bool {
         self.panels != other.panels
@@ -239,8 +239,8 @@ mod tests {
 
     #[test]
     fn the_persons_file_wins_key_by_key() {
-        let machine = file("format = 1\n[shell]\ntiling = true\ntitle_bars = \"floating-only\"\n");
-        let person = file("format = 1\n[shell]\ntiling = false\n");
+        let machine = file("format = 1\n[layout]\ntiling = true\ntitle_bars = \"floating-only\"\n");
+        let person = file("format = 1\n[layout]\ntiling = false\n");
         let settings = Settings::from_files(Some(&machine), Some(&person));
         assert_eq!(settings.tiling, Some(false), "the person's tiling wins");
         assert_eq!(
@@ -260,31 +260,31 @@ mod tests {
         // Classic too.
         for text in [
             "format = 1\n",
-            "format = 1\n[shell]\npreset = \"classic\"\n",
-            "format = 1\n[shell]\npreset = \"mac-like\"\n",
+            "format = 1\n[layout]\npreset = \"classic\"\n",
+            "format = 1\n[layout]\npreset = \"mac-like\"\n",
         ] {
             let settings = Settings::from_files(Some(&file(text)), None);
             assert_eq!(settings.tiling, None);
             assert_eq!(settings.policy(), "floating", "{text}");
         }
-        let preset = file("format = 1\n[shell]\npreset = \"classic\"\n");
-        let person = file("format = 1\n[shell]\ntiling = true\n");
+        let preset = file("format = 1\n[layout]\npreset = \"classic\"\n");
+        let person = file("format = 1\n[layout]\ntiling = true\n");
         let settings = Settings::from_files(Some(&preset), Some(&person));
         assert_eq!(settings.preset.as_deref(), Some("classic"));
         assert_eq!(
             settings.policy(),
             "tiling",
-            "shell.tiling wins over the preset"
+            "layout.tiling wins over the preset"
         );
     }
 
     #[test]
     fn the_buttons_side_is_the_files_else_the_presets() {
         assert_eq!(Settings::default().button_side(), Side::Right);
-        let left = file("format = 1\n[shell]\nwindow_buttons = \"left\"\n");
+        let left = file("format = 1\n[layout]\nwindow_buttons = \"left\"\n");
         let settings = Settings::from_files(None, Some(&left));
         assert_eq!(settings.button_side(), Side::Left);
-        let odd = file("format = 1\n[shell]\nwindow_buttons = \"top\"\n");
+        let odd = file("format = 1\n[layout]\nwindow_buttons = \"top\"\n");
         assert_eq!(
             Settings::from_files(Some(&left), Some(&odd)).button_side(),
             Side::Left
@@ -306,8 +306,8 @@ mod tests {
     #[test]
     fn the_persons_panels_win_and_only_a_change_of_them_counts() {
         let machine =
-            file("format = 1\n[shell]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n");
-        let person = file("format = 1\n[[shell.panels]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
+            file("format = 1\n[layout]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n");
+        let person = file("format = 1\n[[layout.panels]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         let panels = both.panels.clone().unwrap();
         assert_eq!(panels[0].edge, edel::presets::Edge::Bottom);
@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn motion_is_full_unless_a_file_says_otherwise() {
         assert_eq!(Settings::from_files(None, None).motion, Motion::Full);
-        let machine = file("format = 1\n[appearance]\nmotion = \"off\"\n");
-        let person = file("format = 1\n[appearance]\nmotion = \"reduced\"\n");
+        let machine = file("format = 1\n[appearance]\nanimations = \"off\"\n");
+        let person = file("format = 1\n[appearance]\nanimations = \"reduced\"\n");
         assert_eq!(
             Settings::from_files(Some(&machine), None).motion,
             Motion::Off
@@ -336,8 +336,8 @@ mod tests {
     #[test]
     fn the_colour_scheme_is_dark_unless_a_file_says_light() {
         assert_eq!(Settings::from_files(None, None).color_scheme, Scheme::Dark);
-        let machine = file("format = 1\n[appearance]\ncolor_scheme = \"light\"\n");
-        let person = file("format = 1\n[appearance]\ncolor_scheme = \"auto\"\n");
+        let machine = file("format = 1\n[appearance]\nmode = \"light\"\n");
+        let person = file("format = 1\n[appearance]\nmode = \"auto\"\n");
         assert_eq!(
             Settings::from_files(Some(&machine), None).color_scheme,
             Scheme::Light
@@ -362,8 +362,8 @@ mod tests {
     #[test]
     fn output_scales_come_by_name_and_the_persons_win() {
         let machine =
-            file("format = 1\n[outputs.eDP-1]\nscale = 1.5\n[outputs.HDMI-A-1]\nscale = 1\n");
-        let person = file("format = 1\n[outputs.eDP-1]\nscale = 2\n[outputs.DP-1]\nscale = -1\n");
+            file("format = 1\n[displays.eDP-1]\nscale = 1.5\n[displays.HDMI-A-1]\nscale = 1\n");
+        let person = file("format = 1\n[displays.eDP-1]\nscale = 2\n[displays.DP-1]\nscale = -1\n");
         let outputs = Settings::from_files(Some(&machine), Some(&person)).outputs;
         assert_eq!(outputs["eDP-1"].scale, Some(2.0));
         assert_eq!(outputs["HDMI-A-1"].scale, Some(1.0));
@@ -372,9 +372,10 @@ mod tests {
 
     #[test]
     fn a_screens_keys_merge_one_by_one() {
-        let machine =
-            file("format = 1\n[outputs.HDMI-A-1]\nposition = [1920, 0]\nmode = \"2560x1440@60\"\n");
-        let person = file("format = 1\n[outputs.HDMI-A-1]\nenabled = false\n");
+        let machine = file(
+            "format = 1\n[displays.HDMI-A-1]\nposition = [1920, 0]\nresolution = \"2560x1440\"\nrefresh_rate = 60\n",
+        );
+        let person = file("format = 1\n[displays.HDMI-A-1]\nenabled = false\n");
         let hdmi = &Settings::from_files(Some(&machine), Some(&person)).outputs["HDMI-A-1"];
         assert_eq!(hdmi.position, Some((1920, 0)));
         assert_eq!(hdmi.mode.as_deref(), Some("2560x1440@60"));
@@ -395,7 +396,7 @@ mod tests {
         let odd = dir.join("odd.toml");
         std::fs::write(
             &odd,
-            "format = 1\n[shell]\ntiling = \"yes\"\ntitle_bars = \"never\"\n",
+            "format = 1\n[layout]\ntiling = \"yes\"\ntitle_bars = \"never\"\n",
         )
         .unwrap();
         let (settings, notes) = load(&dir.join("missing.toml"), Some(&broken));

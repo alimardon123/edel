@@ -140,28 +140,28 @@ commands() {
 	say "commands: reading ttyS1"
 	while read -r command <&3; do
 		case "$command" in
-		'tiling on') edel settings set shell.tiling=true ;;
-		'tiling off') edel settings set shell.tiling=false ;;
+		'tiling on') edel settings set layout.tiling=true ;;
+		'tiling off') edel settings set layout.tiling=false ;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
-		# shell.tiling, left false by the tiling case, would win over
+		# layout.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.
-		'preset hive') edel settings reset shell.tiling && edel settings set shell.preset=hive ;;
-		'preset windows-like') edel settings set shell.preset=windows-like ;;
-		'preset mac-like') edel settings set shell.preset=mac-like ;;
-		'preset default') edel settings reset shell.preset ;;
+		'preset hive') edel settings reset layout.tiling && edel settings set layout.preset=hive ;;
+		'preset windows-like') edel settings set layout.preset=windows-like ;;
+		'preset mac-like') edel settings set layout.preset=mac-like ;;
+		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
-		'panels clock') edel settings set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
-		'panels default') edel settings reset shell.panels ;;
+		'panels clock') edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		'panels default') edel settings reset layout.panels ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
-		'dock hiding') edel settings set 'shell.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		'dock hiding') edel settings set 'layout.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
 		'big window')
 			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
 			;;
 		# Window buttons on either side (M5.4b).
-		'buttons left') edel settings set shell.window_buttons=left ;;
-		'buttons default') edel settings reset shell.window_buttons ;;
-		'scale 2') edel settings set outputs.Virtual-1.scale=2 ;;
-		'screen 2 off') edel settings set outputs.Virtual-2.enabled=false ;;
+		'buttons left') edel settings set layout.window_buttons=left ;;
+		'buttons default') edel settings reset layout.window_buttons ;;
+		'scale 2') edel settings set displays.Virtual-1.scale=2 ;;
+		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
 		xclock)
@@ -203,13 +203,13 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' dbus-monitor --session \"type='signal',interface='org.freedesktop.portal.Settings',member='SettingChanged'\"" </dev/null >/tmp/portal-signals.txt 2>&1 &
 			;;
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
-		# appearance.color_scheme (M5.5c), light and back to the default.
-		'scheme light') edel settings set appearance.color_scheme=light ;;
-		'scheme default') edel settings reset appearance.color_scheme ;;
-		# appearance.motion (M5.11b), reduced and back to the default.
-		'motion reduced') edel settings set appearance.motion=reduced ;;
-		'motion off') edel settings set appearance.motion=off ;;
-		'motion default') edel settings reset appearance.motion ;;
+		# appearance.mode (M5.5c), light and back to the default.
+		'scheme light') edel settings set appearance.mode=light ;;
+		'scheme default') edel settings reset appearance.mode ;;
+		# appearance.animations (M5.11b), reduced and back to the default.
+		'motion reduced') edel settings set appearance.animations=reduced ;;
+		'motion off') edel settings set appearance.animations=off ;;
+		'motion default') edel settings reset appearance.animations ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to
@@ -217,7 +217,7 @@ commands() {
 		'shortcut window')
 			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
 			;;
-		'close on super-w') edel settings set shortcuts.close=Super+W ;;
+		'close on super-w') edel settings set shortcuts.close_window=Super+W ;;
 		# Workspaces (M5.2a): a window to send to another workspace, and
 		# closed while it is there.
 		'away window')
@@ -245,7 +245,7 @@ commands() {
 			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
 				while IFS= read -r line; do say "ext $line"; done
 			;;
-		'shortcuts default') edel settings reset shortcuts.close ;;
+		'shortcuts default') edel settings reset shortcuts.close_window ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its

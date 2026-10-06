@@ -1,6 +1,6 @@
 //! Following the settings file (roadmap M4.5): the compositor reads the
 //! machine's and the person's when it starts, and again whenever either
-//! is written, so `edel settings set shell.tiling=true`
+//! is written, so `edel settings set layout.tiling=true`
 //! (or Settings, from M5) applies at once. inotify watches the two
 //! directories, because writers replace the file through a rename; its
 //! descriptor is one more source in the event loop, so following costs no

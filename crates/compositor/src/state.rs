@@ -113,7 +113,7 @@ pub struct Edel {
     pub switcher: Option<crate::switcher::Switcher>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
-    /// `[outputs]` changed: the backend scans and places its screens again
+    /// `[displays]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
@@ -338,7 +338,7 @@ impl Edel {
         self.state_changed();
     }
 
-    /// `shell.tiling` or the preset changed: `name` is every workspace's
+    /// `layout.tiling` or the preset changed: `name` is every workspace's
     /// policy, and the shown one's windows are laid out again.
     pub fn switch_policy(&mut self, name: &str) {
         let shown = self.desks.layout().name();
