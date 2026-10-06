@@ -953,6 +953,50 @@ case_dockhide() {
 	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
 }
 
+case_fullscreen() {
+	# Fullscreen (M5.20): a test client that asks for fullscreen before
+	# it is shown covers the whole 1280x800 screen, panel too, in its
+	# colour with no title bar, and the windows line ends its entry in !;
+	# Super+F takes it out, back to its own size with the panel, and in
+	# again; Super+Q closes it. Then Super+F does the same for foot.
+	# Kept as fullscreen.png and fullscreen-left.png.
+	panel=$(token panel)
+	opened=$(count 'edel-compositor: window full fullscreen')
+	guest 'full window'
+	wait_more 'edel-compositor: window full fullscreen' "$opened" || fail "the window full did not go fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
+	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
+	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	left=$(count 'edel-compositor: window full not fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window full not fullscreen' "$left" || fail "Super+F did not take full out of fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* full@[0-9]+,[0-9]+,300x200( |$)' || fail "full did not go back to 300x200: $(value windows)"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back at 640,790"
+	again=$(count 'edel-compositor: window full fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window full fullscreen' "$again" || fail "Super+F did not make full fullscreen again"
+	closed=$(count 'edel-compositor: unmapped window full')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window full' "$closed" || fail "Super+Q did not close full"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back after full closed"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key ctrl-alt-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T did not open foot"
+	went=$(count 'edel-compositor: window foot fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window foot fullscreen' "$went" || fail "Super+F did not make foot fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* foot@0,0,1280x800!' || fail "foot does not cover the screen: $(value windows)"
+	shot fullscreen 640 790 "!$panel" >/dev/null || fail "the panel still shows over fullscreen foot"
+	left=$(count 'edel-compositor: window foot not fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window foot not fullscreen' "$left" || fail "Super+F did not take foot out of fullscreen"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back after foot left fullscreen"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+F took it out and back; foot went fullscreen and back with Super+F"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -1282,14 +1326,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

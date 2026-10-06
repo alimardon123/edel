@@ -10,7 +10,8 @@
 //! (`workspaces.rs`, M5.2b); with `--toplevels` it lists the windows, and
 //! activates one given its title (`toplevels.rs`, M5.2d). `--app-id` sets
 //! the window's app id, `edel-testclient` without it, so a test can stand
-//! in for an app the panel pins (M5.4c).
+//! in for an app the panel pins (M5.4c). `--fullscreen` asks to fill the
+//! screen before the window is shown (M5.20).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -46,6 +47,8 @@ struct Args {
     app_id: String,
     /// The screen edge a panel runs along.
     layer: Option<Anchor>,
+    /// A window that asks to fill its screen before it is shown (M5.20).
+    fullscreen: bool,
 }
 
 fn args() -> Result<Args> {
@@ -54,8 +57,13 @@ fn args() -> Result<Args> {
     let mut title = "edel-testclient".to_string();
     let mut app_id = "edel-testclient".to_string();
     let mut layer = None;
+    let mut fullscreen = false;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
+        if word == "--fullscreen" {
+            fullscreen = true;
+            continue;
+        }
         let value = words
             .next()
             .with_context(|| format!("{word} needs a value"))?;
@@ -84,7 +92,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title, --app-id and --layer, or --workspace or --toplevels alone"
+                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen and --layer, or --workspace or --toplevels alone"
             ),
         }
     }
@@ -98,6 +106,7 @@ fn args() -> Result<Args> {
         title,
         app_id,
         layer,
+        fullscreen,
     })
 }
 
@@ -169,6 +178,9 @@ fn main() -> Result<()> {
             let window = shell.create_window(surface, WindowDecorations::ServerDefault, &qh);
             window.set_title(args.title);
             window.set_app_id(args.app_id);
+            if args.fullscreen {
+                window.set_fullscreen(None);
+            }
             Shown::Window(window)
         }
     };
