@@ -7,6 +7,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 - Ends with a **Principles check** (defined in the root CLAUDE.md). In an ADR it is a `## Principles check` section, either one paragraph naming the principles (ADR-007) or one bullet per principle in rank order, name in bold, then a "**Traded off:**" bullet (ADR-008). Roadmap milestones use an inline "**Principles check:**" paragraph. ADR-001 to ADR-006 predate the rule; ticking an item or fixing a line in them does not need one.
 - When Alimardon's wish drives a doc, say in Context when they asked and quote their words ("On 2026-10-02 they added that ...").
 - Cite decisions as "(ADR-006)" at the end of the clause and steps by id ("M5.12", "M7.2a"); link docs with relative links (`[roadmap](ROADMAP.md)`).
+- Name a fact by linking to its owner, or generate the text from it (ADR-010's one owner decision): prose says "the settings file", the tokens, the budgets, and never copies their values, so a change at the owner leaves no doc wrong.
 - Hedge what you have not checked ("as far as I know"). A `## Sources` section, when there is one, goes just before `## Principles check` and ends with a line saying which claims come from general knowledge.
 
 ## ADRs
