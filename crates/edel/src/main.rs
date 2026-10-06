@@ -478,4 +478,116 @@ mod tests {
         let both = Cli::try_parse_from(["edel", "update", "--check", "--unsigned", "slot.img"]);
         assert!(both.is_err());
     }
+
+    /// The docs site's command reference (M8.10a), written from this
+    /// command table, so the page says what `--help` says.
+    const COMMANDS_FILE: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/guide/commands.md");
+
+    /// One line of help text, its `|` escaped for a table cell.
+    fn cell(text: impl ToString) -> String {
+        text.to_string()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace('|', "\\|")
+    }
+
+    /// `edel NAME ARGS`: the command line a person types.
+    fn usage(path: &str, cmd: &clap::Command) -> String {
+        let mut line = path.to_string();
+        for arg in cmd.get_positionals().filter(|a| !a.is_hide_set()) {
+            let name = arg.get_value_names().and_then(|n| n.first()).map_or_else(
+                || arg.get_id().to_string().to_uppercase(),
+                |n| n.to_string(),
+            );
+            let required = arg.is_required_set();
+            line.push_str(&if required {
+                format!(" {name}")
+            } else {
+                format!(" [{name}]")
+            });
+        }
+        if cmd.get_opts().any(|a| !a.is_hide_set()) {
+            line.push_str(" [OPTIONS]");
+        }
+        line
+    }
+
+    /// The reference for `cmd`, called `path`, and for its subcommands.
+    fn describe(path: &str, cmd: &clap::Command, depth: usize, out: &mut String) {
+        let subcommands: Vec<&clap::Command> =
+            cmd.get_subcommands().filter(|c| !c.is_hide_set()).collect();
+        if depth > 0 {
+            let hashes = "#".repeat(depth + 1);
+            out.push_str(&format!("\n{hashes} `{}`\n\n", usage(path, cmd)));
+            if let Some(about) = cmd.get_about() {
+                out.push_str(&format!("{}.\n", cell(about)));
+            }
+            let args: Vec<&clap::Arg> = cmd.get_arguments().filter(|a| !a.is_hide_set()).collect();
+            if !args.is_empty() {
+                out.push_str("\n| | What it does |\n|---|---|\n");
+                for arg in args {
+                    let value = arg
+                        .get_value_names()
+                        .and_then(|n| n.first())
+                        .map(|n| n.to_string());
+                    let name = match (arg.get_long(), value) {
+                        (Some(long), Some(value)) if arg.get_action().takes_values() => {
+                            format!("--{long} {value}")
+                        }
+                        (Some(long), _) => format!("--{long}"),
+                        (None, Some(value)) => value,
+                        (None, None) => arg.get_id().to_string().to_uppercase(),
+                    };
+                    let help = arg.get_help().map(cell).unwrap_or_default();
+                    out.push_str(&format!("| `{name}` | {help} |\n"));
+                }
+            }
+        }
+        for sub in subcommands {
+            describe(&format!("{path} {}", sub.get_name()), sub, depth + 1, out);
+        }
+    }
+
+    fn command_reference() -> String {
+        let cli = Cli::command();
+        let mut out = String::from(
+            "<!-- Written by a cargo test from edel's own command table,\n     \
+             crates/edel/src/main.rs; never edit it by hand: change the\n     \
+             table and run EDEL_WRITE_DOCS=1 cargo test -p edel command_reference. -->\n\n\
+             # Commands\n\n\
+             `edel` is the one tool of Edel OS: it updates and rolls back the system, \
+             applies and describes the system file, installs Edel OS on a disk and \
+             reports on the hardware. Each command below says what `edel COMMAND --help` \
+             says. Commands that change the machine need root until `doas` arrives \
+             (roadmap M6.5).\n\n\
+             | Command | What it does |\n|---|---|\n",
+        );
+        for sub in cli.get_subcommands().filter(|c| !c.is_hide_set()) {
+            let name = format!("edel {}", sub.get_name());
+            let about = sub.get_about().map(cell).unwrap_or_default();
+            out.push_str(&format!("| `{name}` | {about} |\n"));
+        }
+        describe("edel", &cli, 0, &mut out);
+        out
+    }
+
+    #[test]
+    fn the_command_reference_is_the_command_table() {
+        let reference = command_reference();
+        if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
+            std::fs::write(COMMANDS_FILE, &reference).unwrap();
+        }
+        let shipped = std::fs::read_to_string(COMMANDS_FILE).unwrap_or_default();
+        assert!(
+            shipped == reference,
+            "docs/guide/commands.md differs from the command table; run EDEL_WRITE_DOCS=1 cargo test -p edel command_reference"
+        );
+        assert!(reference.contains("## `edel update RELEASE [OPTIONS]`"));
+        assert!(
+            !reference.contains("edel boot"),
+            "a hidden command is listed"
+        );
+    }
 }

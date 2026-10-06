@@ -1,0 +1,35 @@
+/* Edel OS: the docs site's colours and sizes from design/tokens.toml,
+   written by edel::tokens::Tokens::site_css; a cargo test keeps this
+   file equal to it (EDEL_WRITE_DOCS=1 cargo test -p edel site_css).
+   Never edit it by hand: change the tokens. */
+
+:root, .coal, .navy, .ayu {
+  --edel-page: #1b1d22;
+  --edel-sidebar: #24272e;
+  --edel-raised: #2e323a;
+  --edel-hover: #3a404b;
+  --edel-border: #4b5260;
+  --edel-text: #e8e8ea;
+  --edel-text-muted: #9a9da5;
+  --edel-accent: #5b8ef5;
+  --edel-shadow: #00000073;
+}
+
+.light, .rust {
+  --edel-page: #f2f3f5;
+  --edel-sidebar: #dfe3ea;
+  --edel-raised: #e9ecf0;
+  --edel-hover: #f7f8fa;
+  --edel-border: #d5d9df;
+  --edel-text: #1f2329;
+  --edel-text-muted: #7a808a;
+  --edel-accent: #3a73e8;
+  --edel-shadow: #0000003d;
+}
+
+:root {
+  --edel-radius-window: 10px;
+  --edel-radius-menu: 12px;
+  --edel-radius-control: 7px;
+  --edel-font: "Inter";
+}

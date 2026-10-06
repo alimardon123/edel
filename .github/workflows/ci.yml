@@ -35,6 +35,15 @@ jobs:
         run: cargo build --locked --lib --no-default-features
       - name: No system file key removed within a format
         run: sh ci/keys-check.sh
+      - name: Keep mdBook between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdbook
+          key: mdbook-${{ hashFiles('ci/site.sh') }}
+      - name: The docs site builds and its links land
+        # mdBook, at the version ci/site.sh names, builds docs/ into
+        # out/site (M8.10a); publishing it waits for EDEL_SITE below.
+        run: sh ci/site.sh build
 
   images:
     name: Build and boot images
@@ -174,6 +183,29 @@ jobs:
             out/*.packages
             out/desktop-test/*.png
             out/desktop-live/*.png
+
+  # Publishes the docs site to the gh-pages branch, which GitHub Pages
+  # serves at https://alimardon123.github.io/edel/ (M8.10a), after every
+  # merge to main whose checks passed. Off until Alimardon sets the
+  # repository variable EDEL_SITE to yes (docs/RELEASE.md).
+  site:
+    name: Publish the docs site
+    needs: [rust, images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.EDEL_SITE == 'yes'
+    concurrency:
+      group: site
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Keep mdBook between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdbook
+          key: mdbook-${{ hashFiles('ci/site.sh') }}
+      - run: sh ci/site.sh publish
 
   # Publishes what the images job built and tested (M3.4): the preview on
   # every merge to main, a draft release for a v* tag. Off until Alimardon

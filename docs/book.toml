@@ -1,0 +1,33 @@
+# The docs site (roadmap M8.10a): mdBook builds docs/ into a website, its
+# pages and their order listed in SUMMARY.md. `sh ci/site.sh serve` shows
+# it at http://localhost:3000 while you write; CI builds it on every pull
+# request (`sh ci/site.sh build`). Its colours and font come from the
+# design tokens through theme/tokens.css (docs/guide/writing-docs.md).
+[book]
+title = "Edel OS"
+description = "A lightweight, fast and beautiful Linux operating system for everyone"
+authors = ["Alimardon"]
+language = "en"
+src = "."
+
+[build]
+build-dir = "../out/site"
+create-missing = false
+# README.md is the index of the design docs when the repository is read on
+# GitHub; on the site the welcome page is the front page, so mdBook's
+# index step, which would turn README.md into index.html, stays off.
+use-default-preprocessors = false
+
+[preprocessor.links]
+
+[output.html]
+site-url = "/edel/"
+default-theme = "light"
+preferred-dark-theme = "coal"
+additional-css = ["theme/tokens.css", "theme/edel.css"]
+git-repository-url = "https://github.com/alimardon123/edel"
+edit-url-template = "https://github.com/alimardon123/edel/edit/main/docs/{path}"
+no-section-label = true
+
+[output.html.search]
+limit-results = 20

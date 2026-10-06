@@ -33,6 +33,8 @@ Publishing is off until both steps are done. Each is a repository setting or a s
 
 To stop publishing, delete the variable; nothing already published changes.
 
+**The docs site (M8.10a)** is a third, separate switch: add the repository variable `EDEL_SITE` with the value `yes`, and turn on GitHub Pages from the `gh-pages` branch (Settings, Pages, Deploy from a branch, `gh-pages`, `/ (root)`). From the next merge to `main` on, CI publishes the site to <https://alimardon123.github.io/edel/> next to the update channels, which it never touches. GitHub Pages is free for a public repository. To stop, delete the variable.
+
 ## Principles check
 
 - **Reliable:** only tested files are published, every manifest is signed and checked before upload, a throwaway signature can never be published, and old releases stay downloadable for every machine still on them.
