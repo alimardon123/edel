@@ -84,6 +84,33 @@ struct Screen {
     ready: bool,
 }
 
+/// Opens the seat, trying for up to 10 s: at boot greetd may start a
+/// session (the live stick's, M3.6) the moment seatd's service is marked
+/// started, before seatd listens, and libseat then fails at once.
+fn open_seat() -> Result<(
+    LibSeatSession,
+    smithay::backend::session::libseat::LibSeatSessionNotifier,
+)> {
+    let mut tries = 0;
+    loop {
+        match LibSeatSession::new() {
+            Ok(opened) => return Ok(opened),
+            Err(err) if tries < 20 => {
+                if tries == 0 {
+                    eprintln!("edel-compositor: waiting for the seat: {err}");
+                }
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(err) => {
+                return Err(err).context(
+                    "opening a seat session (is seatd running and is this user in group seat?)",
+                );
+            }
+        }
+    }
+}
+
 struct Gpu {
     handle: LoopHandle<'static, Edel>,
     _session: LibSeatSession,
@@ -114,8 +141,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     crate::decoration::load_text(&handle, &state.tokens.font, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
-    let (mut session, session_events) = LibSeatSession::new()
-        .context("opening a seat session (is seatd running and is this user in group seat?)")?;
+    let (mut session, session_events) = open_seat()?;
     let seat = session.seat();
     let path = match primary_gpu(&seat).context("looking for the primary GPU")? {
         Some(path) => path,
