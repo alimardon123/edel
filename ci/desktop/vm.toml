@@ -22,5 +22,5 @@ slot_mib = 1536
 # listed last, also gets the boot messages, as the CI tests read them.
 # QEMU shows only the first of virtio-vga's two screens as plugged in
 # when it has no window to show the second in, so the kernel is told the
-# second is plugged in too (M4.6c); the seed system file sets its mode.
+# second is plugged in too (M4.6c); the seed settings file sets its mode.
 cmdline = "console=tty0 console=ttyS0,115200 video=Virtual-2:e"

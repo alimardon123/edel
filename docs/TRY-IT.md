@@ -1,6 +1,6 @@
 # Try Edel OS
 
-**This is a preview, for testing only.** It makes no promise yet. The VM and laptop images are a text console with updates, rollback, the system file and the installer; the desktop image adds our desktop, early and only now meeting real hardware. Since milestone 1, `/home`, `/var` and the system file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
+**This is a preview, for testing only.** It makes no promise yet. The VM and laptop images are a text console with updates, rollback, the settings file and the installer; the desktop image adds our desktop, early and only now meeting real hardware. Since milestone 1, `/home`, `/var` and the settings file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
 
 ## Get the images
 
@@ -72,10 +72,10 @@ qemu-system-x86_64 -machine q35,accel=kvm -m 1024 -smp 2 \
   -nographic
 ```
 
-The image has no user and no password: you bring them in a system file. Make one with your ssh key, and give it to the first boot on a small disk labelled `EDEL-SEED`:
+The image has no user and no password: you bring them in a settings file. Make one with your ssh key, and give it to the first boot on a small disk labelled `EDEL-SEED`:
 
 ```sh
-cat >system.toml <<EOF
+cat >settings.toml <<EOF
 format = 1
 
 [users.me]
@@ -85,10 +85,10 @@ ssh_keys = ["$(cat ~/.ssh/id_ed25519.pub)"]
 [users.root]
 ssh_keys = ["$(cat ~/.ssh/id_ed25519.pub)"]
 EOF
-mkfs.vfat -C seed.img 1024 -n EDEL-SEED && mcopy -i seed.img system.toml ::/
+mkfs.vfat -C seed.img 1024 -n EDEL-SEED && mcopy -i seed.img settings.toml ::/
 ```
 
-Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel system export` works as `me`. Commands that change the machine, such as `edel status`, `edel update` and `edel system set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
+Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel settings export` works as `me`. Commands that change the machine, such as `edel status`, `edel update` and `edel settings set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
 
 ## Updates
 

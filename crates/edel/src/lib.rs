@@ -1,5 +1,5 @@
-//! The library half of `edel`: the system file parser, which the compositor,
-//! shell-ui and Settings link so every part reads `system.toml` with the
+//! The library half of `edel`: the settings file parser, which the compositor,
+//! shell-ui and Settings link so every part reads the settings file with the
 //! same code (ADR-008), the feature file reader, which tells them what a
 //! machine has, the install plan Settings' installer page shows, the
 //! keyboard shortcuts every part agrees on (M5.13), the design tokens the
@@ -11,6 +11,7 @@ pub mod features;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod install;
+pub mod places;
 pub mod presets;
 pub mod shortcuts;
 pub mod system;

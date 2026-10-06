@@ -1,5 +1,5 @@
 //! Keyboard shortcuts (roadmap M5.13, ADR-008): `[shortcuts]` in the
-//! system file maps an action to keys, such as `close = "Super+W"`. An
+//! settings file maps an action to keys, such as `close = "Super+W"`. An
 //! action the file leaves out keeps its default from [`ACTIONS`]; `""`
 //! unbinds one. Checkers refuse an unknown action, two actions on one key
 //! and a rescue action (close, launcher, lock) left without keys, so a
@@ -39,7 +39,7 @@ const fn action(
 
 /// Every action, with the Classic preset's keys (the defaults until the
 /// presets ship their own, M5.4). Append only: a name is a key of the
-/// system file.
+/// settings file.
 pub const ACTIONS: &[Action] = &[
     action("close", "Super+Q", true, "Close the focused window"),
     action(
@@ -371,8 +371,8 @@ pub fn markdown() -> String {
     let mut text = String::from(
         "# Shortcuts\n\n\
          Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. \
-         Change a shortcut with `edel system set shortcuts.ACTION=KEYS`, such as `edel system set shortcuts.close=Super+W`, \
-         or in `[shortcuts]` of the system file; `\"\"` unbinds an action, and `edel system unset shortcuts.ACTION` brings its default back. \
+         Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close=Super+W`, \
+         or in `[shortcuts]` of the settings file; `\"\"` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. \
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
          and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \

@@ -12,7 +12,7 @@ Edel OS is one small system that never changes under you. It runs as a container
 |---|---|
 | Try it on a laptop, in VirtualBox or in QEMU | [Try it](TRY-IT.md) |
 | Understand how it works, from the disk to the desktop | [How Edel OS works](guide/how-it-works.md) |
-| Describe a machine in one file, or copy one | [The system file](system-file.md) |
+| Describe a machine in one file, or copy one | [The settings file](system-file.md) |
 | Learn the keys of the desktop | [Keyboard shortcuts](SHORTCUTS.md) |
 | Use the `edel` command | [Commands](guide/commands.md) |
 | Know why it is built the way it is | [Design principles](DESIGN-PRINCIPLES.md) and [the decisions](README.md) |

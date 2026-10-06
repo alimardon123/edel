@@ -1,5 +1,5 @@
 //! Screens and their scale (roadmap M4.6): each output gets the scale
-//! `outputs.NAME.scale` gives it in the system file, or the one worked out
+//! `outputs.NAME.scale` gives it in the settings file, or the one worked out
 //! from its size when it appeared (`layout::auto_scale`), and a change in
 //! the file applies at once. Windows hear the scale through
 //! `wl_surface.preferred_buffer_scale` and `wp_fractional_scale_v1`, and
@@ -16,10 +16,10 @@ use edel_compositor::layout::snap_scale;
 
 use crate::state::Edel;
 
-/// The scale an output gets when the system file names none.
+/// The scale an output gets when the settings file names none.
 struct AutoScale(Cell<f64>);
 
-/// Remembers the scale `output`'s size gives it, for when the system file
+/// Remembers the scale `output`'s size gives it, for when the settings file
 /// names none.
 pub fn set_auto_scale(output: &Output, scale: f64) {
     output

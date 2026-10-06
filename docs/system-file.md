@@ -1,10 +1,10 @@
-# The system file
+# The settings file
 
-From M5.25 this file is `settings.toml`, its command `edel settings`, and several sections and keys take the Settings app's names (`[shell]` becomes `[layout]`, `[outputs.NAME]` becomes `[displays.NAME]`, `[locale]` becomes `[region]` and more): ADR-008's same names decision lists them all. Until then the names below hold.
+Since M5.25a this file is `settings.toml` (`/etc/edel/settings.toml` links the machine's) and its command `edel settings`; M5.25b gives several sections and keys the Settings app's names (`[shell]` becomes `[layout]`, `[outputs.NAME]` becomes `[displays.NAME]`, `[locale]` becomes `[region]` and more): ADR-008's same names decision lists them all. Until it lands the sections and keys below hold.
 
 **Date:** 2026-10-02
 
-One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, `edel system diff [FILE]` shows what apply would change (exit 1 when anything would), `edel system set KEY=VALUE` and `unset KEY` change one key of the machine's file in place (unsetting a user's last key keeps `[users.NAME]`, so apply takes back what the key gave), and `edel system export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
+One TOML file describes a whole machine (ADR-006): `/data/edel/settings.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel settings check FILE` checks one strictly, `edel settings apply [FILE]` makes the machine match it, `edel settings diff [FILE]` shows what apply would change (exit 1 when anything would), `edel settings set KEY=VALUE` and `unset KEY` change one key of the machine's file in place (unsetting a user's last key keeps `[users.NAME]`, so apply takes back what the key gave), and `edel settings export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).
 
 ```toml
 format = 1
@@ -20,9 +20,9 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 color_scheme = "dark"
 ```
 
-On the first boot, `edel system apply` seeds the file from the first of: a volume labelled `EDEL-SEED` holding `system.toml`, `/EFI/edel/system.toml` on the EFI system partition, and the slot's `/usr/share/edel/system.toml`. Without any, nothing is applied. The `edel-system` service applies it at every boot, before the hostname is set; `apply FILE` applies another file and makes it the machine's own. An absent key gets the release's value at the next apply: an absent `network.hostname` removes the machine's own `/etc/hostname`, so the slot's shows again.
+On the first boot, `edel settings apply` seeds the file from the first of: a volume labelled `EDEL-SEED` holding `settings.toml`, `/EFI/edel/settings.toml` on the EFI system partition, and the slot's `/usr/share/edel/settings.toml`. Without any, nothing is applied. The `edel-settings` service applies it at every boot, before the hostname is set; `apply FILE` applies another file and makes it the machine's own. An absent key gets the release's value at the next apply: an absent `network.hostname` removes the machine's own `/etc/hostname`, so the slot's shows again.
 
-"From" names the roadmap step that first acts on the key. Until then `edel system check` refuses the key with "not supported yet" and the boot apply skips it and says so. `NAME` is any name: a user, an output, an action, a feature. A user name has up to 32 lowercase letters, digits, `-` and `_`, and starts with a letter or `_`.
+"From" names the roadmap step that first acts on the key. Until then `edel settings check` refuses the key with "not supported yet" and the boot apply skips it and says so. `NAME` is any name: a user, an output, an action, a feature. A user name has up to 32 lowercase letters, digits, `-` and `_`, and starts with a letter or `_`.
 
 ## `[system]`
 
@@ -55,16 +55,16 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 
 ## `[shell]` and `[outputs.NAME]`
 
-The compositor follows these keys at once (M4.5, M4.6): it reads the machine's file and the person's `~/.config/edel/system.toml`, where a key set wins over the machine's, and reads both again whenever either is written. `edel system apply` leaves them to it.
+The compositor follows these keys at once (M4.5, M4.6): it reads the machine's file and the person's `~/.config/edel/settings.toml`, where a key set wins over the machine's, and reads both again whenever either is written. `edel settings apply` leaves them to it.
 
 | Key | Value | From |
 |---|---|---|
-| `shell.preset` | a preset this release has: `classic`, `hive` (M5.4a), `windows-like` (M5.4c) or `mac-like` (M5.4d), with `tablet` and `phone` to come with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel system diff` says so | M5.4a |
+| `shell.preset` | a preset this release has: `classic`, `hive` (M5.4a), `windows-like` (M5.4c) or `mac-like` (M5.4d), with `tablet` and `phone` to come with M9; absent is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel settings diff` says so | M5.4a |
 | `shell.tiling` | `true` or `false` | M4.5 |
 | `shell.title_bars` | `always` or `floating-only` | M4.5 |
 | `shell.form_factor` | `desktop`, `tablet` or `phone`; absent detects it | M9.3 |
 | `shell.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; absent is the preset's (right in Classic and Hive) | M5.4b |
-| `shell.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[shell.panels]]` tables, or on the command line `edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]'`; absent is the preset's. A change restarts the panel at once | M5.4e |
+| `shell.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[shell.panels]]` tables, or on the command line `edel settings set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]'`; absent is the preset's. A change restarts the panel at once | M5.4e |
 | `outputs.*.position` | two whole numbers, `[x, y]` | M4.6 |
 | `outputs.*.scale` | a number, such as `1.25` | M4.6 |
 | `outputs.*.mode` | text, such as `"1920x1080@60"` | M4.6 |

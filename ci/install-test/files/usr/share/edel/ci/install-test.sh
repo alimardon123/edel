@@ -37,7 +37,7 @@ ends() {
 }
 file=/usr/share/edel/ci/install.toml
 before=$(ends)
-edel install /dev/vdb --system "$file" </dev/null
+edel install /dev/vdb --settings "$file" </dev/null
 code=$?
 after=$(ends)
 if [ "$before" = "$after" ]; then
@@ -45,7 +45,7 @@ if [ "$before" = "$after" ]; then
 else
 	say "exit code $code without --yes, disk CHANGED"
 fi
-if edel install /dev/vdb --system "$file" --yes </dev/null; then
+if edel install /dev/vdb --settings "$file" --yes </dev/null; then
 	sync
 	say "installed"
 else

@@ -4,17 +4,16 @@
 
 # Commands
 
-`edel` is the one tool of Edel OS: it updates and rolls back the system, applies and describes the system file, installs Edel OS on a disk and reports on the hardware. Each command below says what `edel COMMAND --help` says. Commands that change the machine need root until `doas` arrives (roadmap M6.5).
+`edel` is the one tool of Edel OS: it updates and rolls back the system, applies and describes the settings file, installs Edel OS on a disk and reports on the hardware. Each command below says what `edel COMMAND --help` says. Commands that change the machine need root until `doas` arrives (roadmap M6.5).
 
 | Command | What it does |
 |---|---|
 | `edel update` | Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails |
 | `edel rollback` | Go back to the version in the other slot, the one before the last update; it starts at the next restart |
-| `edel status` | Show the version running now and the one in the other slot |
-| `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's system file |
+| `edel status` | Show the version running now and the one in the other slot, and the desktop's effect tier while a session runs |
+| `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings |
 | `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices and the kernel log |
-| `edel system` | This machine's settings, kept in one file (system.toml): check, change, apply and export them |
-| `edel shell` | What the desktop session is doing |
+| `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
 
 ## `edel update RELEASE [OPTIONS]`
@@ -34,16 +33,16 @@ Go back to the version in the other slot, the one before the last update; it sta
 
 ## `edel status`
 
-Show the version running now and the one in the other slot.
+Show the version running now and the one in the other slot, and the desktop's effect tier while a session runs.
 
 ## `edel install DISK [OPTIONS]`
 
-Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's system file.
+Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings.
 
 | | What it does |
 |---|---|
 | `DISK` | The disk, such as /dev/sda |
-| `--system FILE` | The system file the new machine starts with |
+| `--settings FILE` | The settings file the new machine starts with |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 
@@ -55,62 +54,66 @@ Print what an issue about this machine needs, as TOML: the release, kernel, boot
 |---|---|
 | `--esp` | Write it to /EFI/edel/report.toml on the EFI system partition instead, where any computer can read it from the disk or stick |
 
-## `edel system`
+## `edel settings`
 
-This machine's settings, kept in one file (system.toml): check, change, apply and export them.
+settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages.
 
-### `edel system check FILE`
+### `edel settings get [KEY|PAGE] [OPTIONS]`
 
-Check a system file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused.
-
-| | What it does |
-|---|---|
-| `FILE` | The system file, for example /data/edel/system.toml |
-
-### `edel system apply [FILE] [OPTIONS]`
-
-Make this machine match a system file: hostname, users, their ssh keys and developer mode. A given file becomes the machine's own.
+Show settings with their values and where each comes from: one key, one page (such as layout), or every page.
 
 | | What it does |
 |---|---|
-| `FILE` | The system file; without one, the machine's own (/data/edel/system.toml), seeded first if it is missing |
-| `--boot` | Leave setting the running hostname to the hostname service; for the edel-system boot service |
+| `KEY|PAGE` | A key such as network.hostname, or a page such as layout |
+| `--toml` | Print the settings file's own TOML, for scripts |
 
-### `edel system diff [FILE]`
+### `edel settings set KEY=VALUE...`
+
+Change settings, keeping everything else in the file as it was; the desktop follows its settings at once, apply makes the rest take effect.
+
+| | What it does |
+|---|---|
+| `KEY=VALUE` | KEY=VALUE, one or more, such as network.hostname=lab-1 |
+
+### `edel settings reset KEY...`
+
+Give settings back to the release, as the Settings app's Reset does.
+
+| | What it does |
+|---|---|
+| `KEY` | The keys, such as network.hostname |
+
+### `edel settings diff [FILE]`
 
 Show what apply would change, changing nothing; exits 1 when there is anything to change.
 
 | | What it does |
 |---|---|
-| `FILE` | The system file; without one, the machine's own |
+| `FILE` | A settings file; without one, the machine's own |
 
-### `edel system export`
+### `edel settings apply`
 
-Print this machine as a system file, and the /etc files it changed.
+Make this machine match its settings: the hostname, people, their ssh keys and developer mode.
 
-### `edel system set ASSIGNMENT`
+### `edel settings import FILE`
 
-Change one key in the machine's system file, keeping everything else in it byte for byte. Window, screen and shortcut settings take effect at once; apply makes the rest take effect.
-
-| | What it does |
-|---|---|
-| `ASSIGNMENT` | KEY=VALUE, such as network.hostname=lab-1 |
-
-### `edel system unset KEY`
-
-Remove one key from the machine's system file, so the release decides it again. Window, screen and shortcut settings take effect at once; apply makes the rest take effect.
+Make FILE this machine's settings and apply it, such as a file exported on another machine.
 
 | | What it does |
 |---|---|
-| `KEY` | The key, such as network.hostname |
+| `FILE` | The settings file |
 
-## `edel shell`
+### `edel settings export`
 
-What the desktop session is doing.
+Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed.
 
-### `edel shell tier`
+### `edel settings check FILE`
 
-Print the effect tier the compositor runs at: lite, balanced or full.
+Check a settings file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused.
+
+| | What it does |
+|---|---|
+| `FILE` | The settings file |
 
 ## `edel image`
 

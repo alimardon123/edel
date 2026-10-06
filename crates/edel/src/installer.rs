@@ -1,10 +1,10 @@
-//! `edel install DISK --system FILE` (roadmap M2.4): makes a blank or old
+//! `edel install DISK --settings FILE` (roadmap M2.4): makes a blank or old
 //! disk an Edel OS machine. It lays out the disk as images are laid out
 //! (`boot.rs`) with slots of `SLOT_MIB` (M3.3b), copies the running slot
 //! into slot A, grows its file system to the slot and gives it a fresh UUID,
 //! writes the EFI system partition from the slot's own boot loader with an
 //! initial environment block, and creates the data partition holding the
-//! system file. It never writes the disk it runs from. The plan it shows is
+//! settings file. It never writes the disk it runs from. The plan it shows is
 //! `edel::install::Plan`.
 
 use std::fs::{self, File};
@@ -124,7 +124,7 @@ fn describe(name: &str) -> Result<Disk> {
     })
 }
 
-/// `edel install DISK --system FILE`.
+/// `edel install DISK --settings FILE`.
 pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Result<()> {
     let name = disk_name(disk);
     let running = update::Disk::find()?;
@@ -317,8 +317,14 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
             Path::new("/run/edel/install/data"),
             &["-t", "ext4"],
         )?;
-        fs::create_dir_all(data.0.join("edel"))?;
-        fs::copy(system_file, data.0.join("edel/system.toml"))?;
+        // The machine's settings file, where the installed machine finds
+        // it once the data partition is mounted at /data.
+        let machine = edel::places::machine_settings();
+        let target = data
+            .0
+            .join(machine.strip_prefix("/data").unwrap_or(&machine));
+        fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
+        fs::copy(system_file, target)?;
     }
     run(&mut Command::new("sync"))?;
     println!(

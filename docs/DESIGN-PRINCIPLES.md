@@ -63,7 +63,7 @@ When the user asks for it, the system uses the hardware to its limit.
 One base serves everything from a tiny container to a fleet of thousands.
 - Every base change builds and boots **all** images (container, server/VM, desktop, phone) in CI.
 - Nothing in the base may assume a screen, a GPU or a person in front of it; anything that does belongs in the desktop or phone image.
-- The same system file (ADR-006) deploys one machine or ten thousand.
+- The same settings file (ADR-006) deploys one machine or ten thousand.
 
 ### 9. Versatile
 Developers, creative workers, gamers, office users and servers each get a setup that fits them.
@@ -102,7 +102,7 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 | **compositor** | Windows, floating and tiling, form factors, effects, title bars | With shell-ui, a desktop for other distributions (M5.15) |
 | **shell-ui** | Panel, dock, launcher, switcher, notifications, quick settings, lock screen | Part of that desktop |
 | **settings** | The settings app, including layout presets, appearance, shortcuts, behaviour, add-ons, developer mode and one-button export/apply of the whole system | The desktop's settings app |
-| **edel** (command-line tool) | Updates and rollback, add-ons, system file export/diff/apply, format migrations, and building images in CI | A/B updates for other small systems; images from feature files; a library for one-file machine descriptions |
+| **edel** (command-line tool) | Updates and rollback, add-ons, settings file export/diff/apply, format migrations, and building images in CI | A/B updates for other small systems; images from feature files; a library for one-file machine descriptions |
 
 Parts meet only through plain files with a format number and standard protocols, name Edel OS's places through one module (`edel::places`), and grow through doors that exist (features, add-ons, keys, presets, tokens, modules behind an interface), so any part can be changed, dropped or lifted out; CI checks the seams (ADR-010, M8.13).
 
@@ -111,7 +111,7 @@ Parts meet only through plain files with a format number and standard protocols,
 | Concern | The one choice |
 |---------|----------------|
 | Language for our code | Rust |
-| Configuration format | TOML (presets, system file, shell settings), versioned from version 1 |
+| Configuration format | TOML (presets, settings file, shell settings), versioned from version 1 |
 | How users get apps | Flatpak, plus installable web apps |
 | How servers get apps | Containers |
 | Base packages | apk, used to build images; people meet it only inside the container image and in developer mode (ADR-007) |

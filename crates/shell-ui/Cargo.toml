@@ -22,7 +22,7 @@ anyhow = "1.0.104"
 # Text for every script, shaped, with fallback fonts (ADR-002's shell-ui
 # toolkit decision, M5.1b).
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "fontconfig", "swash"] }
-# The design tokens and, later, the system file, read as every part does.
+# The design tokens and, later, the settings file, read as every part does.
 edel = { path = "../edel", default-features = false, features = ["icons"] }
 # The clock's local time, from /etc/localtime when a zone is set.
 jiff = "0.2"

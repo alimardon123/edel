@@ -1,5 +1,5 @@
-//! The system file, `system.toml`: one TOML file that describes a whole
-//! machine (ADR-006). This is the one parser for it: `edel` today, and the
+//! The settings file: one TOML file that describes a whole machine
+//! (ADR-006), named in `edel::places` (ADR-008's same names decision). This is the one parser for it: `edel` today, and the
 //! compositor, shell-ui and Settings later, read it with the same code and
 //! the same key table, so this module needs no network or signing (ADR-008).
 //!
@@ -18,28 +18,105 @@ use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
-/// The system file format this release reads and writes. A key is never
+/// The settings file format this release reads and writes. A key is never
 /// removed or renamed within a format: `tests/keys.txt` lists every key a
 /// format has had, and a cargo test holds the structs to it.
 pub const FORMAT: i64 = 1;
 
-/// The machine's system file, on the data partition. A person's own file,
-/// `~/.config/edel/system.toml`, has the same schema; for the keys the
-/// shell reads (`[shell]`, `[outputs]`, `[appearance]`), its values win.
-pub const MACHINE_FILE: &str = "/data/edel/system.toml";
+/// One page of the Settings app and the section of the settings file it
+/// shows: `edel settings` lists them in this order, and `edel settings get
+/// SECTION` shows one in the app's words (ADR-008's same names decision).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Page {
+    pub section: &'static str,
+    pub title: &'static str,
+    /// What the page holds, in a few words
+    pub about: &'static str,
+}
 
-/// The person's file: `$XDG_CONFIG_HOME/edel/system.toml`, else
-/// `~/.config/edel/system.toml`; none without either variable.
-pub fn person_file() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
-                .map(|home| PathBuf::from(home).join(".config"))
-        })?;
-    Some(config.join("edel/system.toml"))
+/// The Settings app's pages, in its order; every section of the file is
+/// one of them. Settings (M5.6) reads the same table.
+pub const PAGES: &[Page] = &[
+    Page {
+        section: "shell",
+        title: "Layout",
+        about: "the preset, tiling, title bars and panels",
+    },
+    Page {
+        section: "outputs",
+        title: "Displays",
+        about: "each screen's place, scale and resolution",
+    },
+    Page {
+        section: "appearance",
+        title: "Appearance",
+        about: "light or dark, the accent, fonts and animations",
+    },
+    Page {
+        section: "shortcuts",
+        title: "Shortcuts",
+        about: "the keys for each action",
+    },
+    Page {
+        section: "locale",
+        title: "Region",
+        about: "language, keyboard and time zone",
+    },
+    Page {
+        section: "users",
+        title: "Users",
+        about: "the people who log in, and their ssh keys",
+    },
+    Page {
+        section: "network",
+        title: "Network",
+        about: "the device's name",
+    },
+    Page {
+        section: "defaults",
+        title: "Default apps",
+        about: "the browser, files, editor, terminal and mail",
+    },
+    Page {
+        section: "startup",
+        title: "Startup",
+        about: "apps that start after login",
+    },
+    Page {
+        section: "power",
+        title: "Power",
+        about: "the lid, the power button and the screen lock",
+    },
+    Page {
+        section: "services",
+        title: "Services",
+        about: "optional services, on or off",
+    },
+    Page {
+        section: "updates",
+        title: "Updates",
+        about: "when updates are installed",
+    },
+    Page {
+        section: "apps",
+        title: "Apps",
+        about: "the apps installed from Flathub",
+    },
+    Page {
+        section: "addons",
+        title: "Add-ons",
+        about: "signed extras to the system",
+    },
+    Page {
+        section: "system",
+        title: "System",
+        about: "developer mode and profiles",
+    },
+];
+
+/// The page holding `section`.
+pub fn page(section: &str) -> Option<&'static Page> {
+    PAGES.iter().find(|p| p.section == section)
 }
 
 /// What a key's value must be.
@@ -74,7 +151,7 @@ pub enum Kind {
     Panels,
 }
 
-/// One key of the system file. `*` in a path stands for any name, such as a
+/// One key of the settings file. `*` in a path stands for any name, such as a
 /// user or an output.
 #[derive(Clone, Copy, Debug)]
 pub struct Key {
@@ -428,7 +505,7 @@ pub struct Read {
     pub later: Vec<String>,
 }
 
-/// Reads a system file leniently: unknown keys and values of the wrong
+/// Reads a settings file leniently: unknown keys and values of the wrong
 /// kind are left out and reported, and every other key is kept. Only a file
 /// that is not TOML, or not in this release's format, is refused.
 pub fn read(text: &str) -> Result<Read> {
@@ -440,7 +517,7 @@ pub fn read(text: &str) -> Result<Read> {
     read_table(&table)
 }
 
-/// `edel system check`: what a strict checker refuses in a file, one line
+/// `edel settings check`: what a strict checker refuses in a file, one line
 /// per problem; empty when the file is fine. Keys no part acts on yet are
 /// refused too, so a file never promises what the machine will not do.
 pub fn check(text: &str) -> Result<Vec<String>> {
@@ -456,8 +533,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     Ok(lines)
 }
 
-/// Reads the machine's system file the way an unattended reader must
-/// (ADR-008): a file in a newer format is not read; `system.toml.v<N>`
+/// Reads the machine's settings file the way an unattended reader must
+/// (ADR-008): a file in a newer format is not read; the file's `.v<N>`
 /// beside it, left by `edel migrate` for this release's format, is read
 /// instead. Without one this fails, and the caller applies nothing.
 pub fn read_on_machine(path: &Path) -> Result<Read> {
@@ -490,13 +567,13 @@ pub fn read_on_machine(path: &Path) -> Result<Read> {
     Ok(read)
 }
 
-/// The `format` of a system file's text.
+/// The `format` of a settings file's text.
 pub fn format(text: &str) -> Result<i64> {
     let table: Table = toml::from_str(text).context("the file is not valid TOML")?;
     format_of(&table)
 }
 
-/// `edel system set KEY=VALUE` on a file's text (ADR-008, writers): checks
+/// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
 /// the key and value as strictly as `check`, then changes that one value in
 /// place, so comments, order and keys this release does not know survive
 /// byte for byte. VALUE is TOML when it reads as TOML (`true`, `2`,
@@ -547,7 +624,7 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
     Ok(text)
 }
 
-/// `edel system unset KEY` on a file's text: removes the key, and tables
+/// `edel settings reset KEY` on a file's text: removes the key, and tables
 /// left empty by it, so the release decides again (ADR-008). Every other
 /// byte stays. A key this release does not know can be removed too. A
 /// user's table stays when its last key goes, so apply still looks after
@@ -597,7 +674,61 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
     }
     KEYS.iter()
         .find(|k| matches(k.path, &names, false))
-        .ok_or_else(|| anyhow!("{key}: unknown key; docs/system-file.md lists every key"))
+        .ok_or_else(|| match nearest_key(key) {
+            Some(near) => anyhow!("{key}: unknown key; did you mean {near}?"),
+            None => anyhow!("{key}: unknown key; edel settings lists the pages, and edel settings get PAGE their keys"),
+        })
+}
+
+/// The known key nearest to the mistyped `key`, such as `shell.preset` for
+/// `shell.presset`, when one is close enough to be meant; a name standing
+/// for `*`, such as a user's or a screen's, is kept as typed.
+pub fn nearest_key(key: &str) -> Option<String> {
+    let typed: Vec<&str> = key.split('.').collect();
+    KEYS.iter()
+        .filter_map(|k| {
+            let parts: Vec<&str> = k.path.split('.').collect();
+            (parts.len() == typed.len()).then(|| {
+                parts
+                    .iter()
+                    .zip(&typed)
+                    .map(|(p, t)| if *p == "*" { *t } else { *p })
+                    .collect::<Vec<_>>()
+                    .join(".")
+            })
+        })
+        .chain(PAGES.iter().map(|p| p.section.to_string()))
+        .map(|candidate| (distance(key, &candidate), candidate))
+        .filter(|(d, candidate)| *d > 0 && *d <= (candidate.len() / 4).max(2))
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, candidate)| candidate)
+}
+
+/// The value among `allowed` nearest to the mistyped `value`.
+fn nearest_value<'a>(value: &str, allowed: &[&'a str]) -> Option<&'a str> {
+    allowed
+        .iter()
+        .map(|a| (distance(value, a), *a))
+        .filter(|(d, a)| *d > 0 && *d <= (a.len() / 3).max(2))
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, a)| a)
+}
+
+/// How many letters to add, drop or change to turn `a` into `b`
+/// (Levenshtein's distance).
+fn distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let replaced = previous + usize::from(ca != *cb);
+            previous = row[j + 1];
+            row[j + 1] = replaced.min(row[j] + 1).min(previous + 1);
+        }
+    }
+    row[b.len()]
 }
 
 fn value_from_arg(raw: &str) -> Value {
@@ -631,7 +762,7 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
         .context("cannot write the value")
 }
 
-/// `system.toml.v1` for `system.toml` and format 1.
+/// The settings file `path` with `.v1` added, for format 1.
 pub fn versioned(path: &Path, format: i64) -> PathBuf {
     PathBuf::from(format!("{}.v{format}", path.display()))
 }
@@ -758,9 +889,13 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::OneOf(allowed), Value::String(s)) if allowed.contains(&s.as_str()) => {
             Ok(value.clone())
         }
-        (Kind::OneOf(allowed), Value::String(s)) => {
-            Err(format!("unknown value {s:?}; use {}", or_list(allowed)))
-        }
+        (Kind::OneOf(allowed), Value::String(s)) => Err(match nearest_value(s, allowed) {
+            Some(near) => format!(
+                "unknown value {s:?}; did you mean {near}? Use {}",
+                or_list(allowed)
+            ),
+            None => format!("unknown value {s:?}; use {}", or_list(allowed)),
+        }),
         (Kind::OneOf(allowed), _) => fail(&or_list(allowed)),
         (Kind::WholeOf(allowed), Value::Integer(n)) if allowed.contains(n) => Ok(value.clone()),
         (Kind::WholeOf(allowed), _) => {
@@ -1071,8 +1206,24 @@ font_size = 11
         let error = |key, value| set(EDITED, key, value).unwrap_err().to_string();
         assert_eq!(
             error("network.hostnme", "a"),
-            "network.hostnme: unknown key; docs/system-file.md lists every key"
+            "network.hostnme: unknown key; did you mean network.hostname?"
         );
+        assert!(error("nothing.near", "a").contains("edel settings lists the pages"));
+        assert!(error("appearance.color_scheme", "drak").contains("did you mean dark?"));
+        assert_eq!(
+            nearest_key("shell.presset").as_deref(),
+            Some("shell.preset")
+        );
+        assert_eq!(
+            nearest_key("outputs.eDP-1.scal").as_deref(),
+            Some("outputs.eDP-1.scale")
+        );
+        assert_eq!(nearest_key("network.hostname"), None);
+        // Every section is one page of the Settings app, and back.
+        for key in KEYS {
+            let section = key.path.split('.').next().unwrap_or_default();
+            assert!(page(section).is_some(), "{section} is on no page");
+        }
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
@@ -1144,7 +1295,7 @@ font_size = 11
         let dir = std::env::temp_dir().join(format!("edel-versioned-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("system.toml");
+        let path = crate::places::settings_in(&dir);
         fs::write(&path, "format = 2\n[network]\nhostname = \"new\"\n").unwrap();
         let error = read_on_machine(&path).unwrap_err().to_string();
         assert!(error.contains("nothing is applied"), "{error}");

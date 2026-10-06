@@ -30,7 +30,7 @@ An installed machine's disk has four parts ([the disk layout](../FORMATS.md#the-
 ```
 
 - **The slots** each hold one complete system. The running one is mounted read-only, so nothing, not even a program run by mistake as root, can change the system's own files. The other slot holds the next update or the version before.
-- **The data partition** holds everything that is yours or this machine's: people's homes, logs and caches under `/var`, the system file, and the few files in `/etc` this machine changed, which lie over the slot's own. It is shared by both slots, so it survives every update and every rollback.
+- **The data partition** holds everything that is yours or this machine's: people's homes, logs and caches under `/var`, the settings file, and the few files in `/etc` this machine changed, which lie over the slot's own. It is shared by both slots, so it survives every update and every rollback.
 - **The boot partition** holds GRUB, which picks the slot to start, and a tiny file of counters that says which slot is good and how many times a new one has been tried.
 
 ## Updates that go back by themselves
@@ -65,12 +65,12 @@ the old slot starts again and switches the new one off
 
 ## One file describes the machine
 
-The **system file** is one TOML file that describes a whole machine: its name, its people and their ssh keys, its layout and look, its screens, its shortcuts ([The system file](../system-file.md)). It never holds personal files or passwords.
+The **settings file** is one TOML file that describes a whole machine: its name, its people and their ssh keys, its layout and look, its screens, its shortcuts ([The settings file](../system-file.md)). It never holds personal files or passwords.
 
 - At the first start a machine takes its file from a USB stick labelled `EDEL-SEED`, from the boot partition or from the image, and keeps it on the data partition.
-- At every start the `edel-system` service applies it: the hostname, the people, their keys.
-- `edel system set KEY=VALUE` changes one line and keeps everything else in the file as it was, comments included; the desktop follows window, screen and shortcut settings at once.
-- `edel system export` writes this machine as a file, and `edel system diff` and `apply` make another machine match one. One file can set up a fleet.
+- At every start the `edel-settings` service applies it: the hostname, the people, their keys.
+- `edel settings set KEY=VALUE` changes one line and keeps everything else in the file as it was, comments included; the desktop follows window, screen and shortcut settings at once.
+- `edel settings export` writes this machine as a file, and `edel settings diff` and `apply` make another machine match one. One file can set up a fleet.
 
 A setting is never a second mechanism: each one is a line in the file, a command, and, from roadmap M5.6, a row in Settings (ADR-008). A missing line means the release's default, so a machine's file holds only what was chosen.
 
@@ -94,7 +94,7 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 
 How much a person can change follows three levels (ADR-007):
 
-1. **Settings:** any value in the system file, for everyone, from Settings or `edel system set`.
+1. **Settings:** any value in the settings file, for everyone, from Settings or `edel settings set`.
 2. **Add-ons and profiles:** signed extras that ride the same update path and roll back with the slot (roadmap M7.2).
 3. **Developer mode:** for the system's own files, off by default, where `apk` and the like are allowed (roadmap M7.1).
 

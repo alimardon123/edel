@@ -84,6 +84,64 @@ struct Screen {
     ready: bool,
 }
 
+/// Opens the seat, trying for up to 10 s: at boot greetd may start a
+/// session (the live stick's, M3.6) the moment seatd's service is marked
+/// started, before seatd listens, and libseat then fails at once.
+fn open_seat() -> Result<(
+    LibSeatSession,
+    smithay::backend::session::libseat::LibSeatSessionNotifier,
+)> {
+    let mut tries = 0;
+    loop {
+        match LibSeatSession::new() {
+            Ok(opened) => return Ok(opened),
+            Err(err) if tries < 20 => {
+                if tries == 0 {
+                    eprintln!("edel-compositor: waiting for the seat: {err}");
+                }
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("could not open the seat: {}", seat_diagnosis()));
+            }
+        }
+    }
+}
+
+/// Why the seat may not open, in words a person can act on: whether
+/// seatd's socket takes a connection, and whether this user is in group
+/// seat, as the socket wants.
+fn seat_diagnosis() -> String {
+    let socket = std::env::var("SEATD_SOCK").unwrap_or_else(|_| "/run/seatd.sock".into());
+    let connect = match std::os::unix::net::UnixStream::connect(&socket) {
+        Ok(_) => format!("seatd's socket {socket} takes connections"),
+        Err(e) => format!("seatd's socket {socket}: {e}"),
+    };
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let groups: Vec<&str> = status
+        .lines()
+        .find_map(|l| l.strip_prefix("Groups:"))
+        .map(|g| g.split_whitespace().collect())
+        .unwrap_or_default();
+    let group_file = std::fs::read_to_string("/etc/group").unwrap_or_default();
+    let seat_gid = group_file
+        .lines()
+        .find_map(|l| l.strip_prefix("seat:"))
+        .and_then(|rest| rest.split(':').nth(1).map(str::to_string));
+    let membership = match seat_gid {
+        Some(gid) if groups.contains(&gid.as_str()) => "this user is in group seat".to_string(),
+        Some(gid) => format!(
+            "this user is not in group seat (GID {gid}); its groups are {}",
+            groups.join(" ")
+        ),
+        None => "there is no group seat".to_string(),
+    };
+    let vt = std::env::var("XDG_VTNR").unwrap_or_else(|_| "unset".into());
+    format!("{connect}; {membership}; XDG_VTNR is {vt}")
+}
+
 struct Gpu {
     handle: LoopHandle<'static, Edel>,
     _session: LibSeatSession,
@@ -99,6 +157,24 @@ struct Gpu {
     /// The health file was written.
     announced: bool,
     started: Instant,
+    /// Every frame is drawn whole: the screen's driver shows only the
+    /// areas a frame says changed, onto one picture of its own
+    /// (`draws_whole`).
+    whole_frames: bool,
+}
+
+/// Whether frames on a screen driven by `driver` must be drawn whole. The
+/// firmware's framebuffer (simpledrm, efidrm, vesadrm) and the plain
+/// virtual cards (bochs, cirrus) keep one picture and copy into it only
+/// the areas a frame names; our frames name only what changed since that
+/// buffer was last drawn, so the screen showed black where nothing had
+/// changed and old pointers where one had (the live stick on -vga std,
+/// M3.6). A GPU driver flips whole buffers and keeps the fast path.
+fn draws_whole(driver: &str) -> bool {
+    matches!(
+        driver,
+        "simpledrm" | "efidrm" | "vesadrm" | "bochs" | "bochs-drm" | "cirrus" | "cirrus-qemu"
+    )
 }
 
 pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
@@ -114,8 +190,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     crate::decoration::load_text(&handle, &state.tokens.font, state.tokens.title_text_size);
     crate::watch::start(&handle, &mut state);
 
-    let (mut session, session_events) = LibSeatSession::new()
-        .context("opening a seat session (is seatd running and is this user in group seat?)")?;
+    let (mut session, session_events) = open_seat()?;
     let seat = session.seat();
     let path = match primary_gpu(&seat).context("looking for the primary GPU")? {
         Some(path) => path,
@@ -132,6 +207,17 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         )
         .with_context(|| format!("opening {}", path.display()))?;
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
+    let driver = smithay::reexports::drm::Device::get_driver(&fd)
+        .map(|d| d.name().to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let whole_frames = draws_whole(&driver);
+    if whole_frames {
+        eprintln!(
+            "edel-compositor: screen driver {driver}: drawing every frame whole, as it shows only the areas a frame names"
+        );
+    } else {
+        eprintln!("edel-compositor: screen driver {driver}");
+    }
     let (drm, drm_events) =
         DrmDevice::new(fd.clone(), true).context("opening the GPU for display")?;
     let gbm = GbmDevice::new(fd).context("opening the GPU for buffers")?;
@@ -177,6 +263,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         active: true,
         announced: false,
         started: Instant::now(),
+        whole_frames,
     }));
     gpu.borrow_mut().scan(&mut state);
     if gpu.borrow().screens.is_empty() {
@@ -285,7 +372,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     Ok(())
 }
 
-/// A connector's name as the system file and the state file use it, such
+/// A connector's name as the settings file and the state file use it, such
 /// as `eDP-1` or `HDMI-A-1`.
 fn connector_name(info: &connector::Info) -> String {
     format!("{}-{}", info.interface().as_str(), info.interface_id())
@@ -477,7 +564,7 @@ impl Gpu {
                 screen.dirty = true;
             }
         }
-        if std::mem::take(&mut state.repaint) {
+        if std::mem::take(&mut state.repaint) || self.whole_frames {
             for screen in self.screens.values_mut() {
                 screen.compositor.reset_buffer_ages();
             }
@@ -736,5 +823,19 @@ fn arm_report(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     if let Err(e) = result {
         eprintln!("edel-compositor: the telemetry timer did not start: {e}");
         state.report_armed = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn framebuffer_drivers_draw_whole_frames_and_gpus_do_not() {
+        assert!(draws_whole("simpledrm"));
+        assert!(draws_whole("bochs-drm"));
+        assert!(!draws_whole("i915"));
+        assert!(!draws_whole("virtio_gpu"));
+        assert!(!draws_whole(""));
     }
 }

@@ -20,7 +20,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
   **Status:** Proposed
   **Date:** 2026-10-02
   **Deciders:** Alimardon
-  **Related:** ADR-006 (system file), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
+  **Related:** ADR-006 (settings file), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
   ```
 
   Use `**Supersedes:**` or `**Extends:**`, with a parenthetical saying what, instead of Related when that is the relation.

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Roadmap M2.2 and M2.3: boots the system test image, whose slot carries a
-# seed system file (made by ci/build.sh) that names the machine ci-seeded
+# seed settings file (made by ci/build.sh) that names the machine ci-seeded
 # and adds user ci with a fresh ssh key. Passes when the first boot reaches
 # the login prompt under that hostname, ci logs in over ssh and exports the
 # machine, and then, as root: diff is empty after apply, set changes exactly
@@ -36,11 +36,11 @@ fail() {
 	exit 1
 }
 tries=0
-until ssh_ci edel system export >out/system-export.toml 2>out/ssh.log; do
+until ssh_ci edel settings export >out/system-export.toml 2>out/ssh.log; do
 	tries=$((tries + 1))
 	if [ "$tries" -ge 10 ]; then
 		cat "$log" out/ssh.log
-		echo "FAIL: ci could not log in over ssh and run edel system export"
+		echo "FAIL: ci could not log in over ssh and run edel settings export"
 		exit 1
 	fi
 	sleep 3
@@ -56,27 +56,56 @@ fi
 
 # M2.3, as root.
 without_hostname() { printf '%s\n' "$1" | grep -v '^hostname = '; }
-before=$(ssh_root cat /data/edel/system.toml)
-ssh_root edel system apply || fail "edel system apply failed"
-ssh_root edel system diff >out/system-diff.log || fail "diff is not empty after apply: $(cat out/system-diff.log)"
-ssh_root edel system set network.hostname=other || fail "edel system set failed"
-after=$(ssh_root cat /data/edel/system.toml)
+. ci/names.sh
+# The machine's file, through the link in /etc/edel where admins look.
+link=$(ssh_root readlink "/etc/edel/$settings_name") || fail "no /etc/edel/$settings_name"
+[ "$link" = "/data/edel/$settings_name" ] || fail "/etc/edel/$settings_name points at $link"
+grep -q '^# Edel OS settings' out/system-export.toml || fail "export does not begin with its header comment"
+before=$(ssh_root cat "/etc/edel/$settings_name")
+ssh_root edel settings apply || fail "edel settings apply failed"
+ssh_root edel settings diff >out/system-diff.log || fail "diff is not empty after apply: $(cat out/system-diff.log)"
+ssh_root edel settings set network.hostname=other || fail "edel settings set failed"
+after=$(ssh_root cat "/etc/edel/$settings_name")
 printf '%s\n' "$after" | grep -qx 'hostname = "other"' || fail "set did not write the hostname"
 [ "$(without_hostname "$before")" = "$(without_hostname "$after")" ] || fail "set changed more than the hostname line"
-if ssh_root edel system diff >out/system-diff.log; then
+if ssh_root edel settings diff >out/system-diff.log; then
 	fail "diff after set exited 0"
 fi
 [ "$(grep -c '^change: ' out/system-diff.log)" = 1 ] &&
 	grep -qx 'change: network.hostname: set to other' out/system-diff.log ||
 	fail "diff after set is not exactly the hostname: $(cat out/system-diff.log)"
-ssh_root edel system unset network.hostname || fail "edel system unset failed"
-ssh_root edel system apply || fail "edel system apply after unset failed"
+ssh_root edel settings reset network.hostname || fail "edel settings reset failed"
+ssh_root edel settings apply || fail "edel settings apply after reset failed"
 [ "$(ssh_root hostname)" = edel ] || fail "the hostname did not go back to the image's"
-final=$(ssh_root cat /data/edel/system.toml)
-printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "unset lost future.key"
+final=$(ssh_root cat "/etc/edel/$settings_name")
+printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "reset lost future.key"
 printf '%s\n' "$final" | grep -A1 -xF '# The person who runs CI' | grep -qxF '[users.ci]' ||
-	fail "unset lost the comment above [users.ci]"
-echo "PASS: diff empty after apply; set changed only the hostname; unset brought back edel; future.key and the comment kept"
+	fail "reset lost the comment above [users.ci]"
+echo "PASS: diff empty after apply; set changed only the hostname; reset brought back edel; future.key and the comment kept"
+
+# M5.25a: several settings in one set, a page in the app's words, --toml
+# for scripts, a typo answered with the nearest key, and import.
+ssh_root edel settings set network.hostname=two system.developer=true || fail "set with two assignments failed"
+ssh_root edel settings get network >out/settings-get.log || fail "edel settings get network failed"
+grep -q '^Network (network)' out/settings-get.log && grep -q 'network.hostname  *"two"  (this machine)' out/settings-get.log ||
+	fail "get network does not show the Network page's row: $(cat out/settings-get.log)"
+ssh_root edel settings get system --toml >out/settings-get.toml || fail "edel settings get system --toml failed"
+python3 -c 'import sys, tomllib; assert tomllib.load(open(sys.argv[1], "rb"))["system"]["developer"] is True' out/settings-get.toml ||
+	fail "get --toml did not read back: $(cat out/settings-get.toml)"
+if ssh_root edel settings set network.hostnme=x >out/settings-typo.log 2>&1; then
+	fail "set took the unknown key network.hostnme"
+fi
+grep -q 'did you mean network.hostname?' out/settings-typo.log || fail "a typo got no suggestion: $(cat out/settings-typo.log)"
+ssh_root edel settings reset network.hostname system.developer || fail "reset with two keys failed"
+ssh_root edel settings export >out/settings-copy.toml || fail "export as root failed"
+# After the reset and apply above, the file names no hostname.
+grep -q '^\[network\]' out/settings-copy.toml && fail "the export still names a hostname: $(cat out/settings-copy.toml)"
+printf '\n[network]\nhostname = "imported"\n' >>out/settings-copy.toml
+ssh_root 'cat >/tmp/copy.toml' <out/settings-copy.toml || fail "copying the exported file failed"
+ssh_root edel settings import /tmp/copy.toml || fail "edel settings import failed"
+[ "$(ssh_root hostname)" = imported ] || fail "import did not apply the file's hostname"
+ssh_root edel settings diff >out/system-diff.log || fail "diff is not empty after import: $(cat out/system-diff.log)"
+echo "PASS: /etc/edel/$settings_name links the machine's file, export begins with its header, set took two settings, get showed the Network page and read back as TOML, a typo got the nearest key, and import applied an exported file"
 
 # M3.3b: edel report prints TOML a reader can parse, with this boot's line.
 ssh_root edel report >out/report.toml || fail "edel report failed"

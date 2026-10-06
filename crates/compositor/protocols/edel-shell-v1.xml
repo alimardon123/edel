@@ -25,7 +25,7 @@
     <request name="toggle_policy">
       <description summary="switch the shown workspace's policy">
         The other policy for the shown workspace only, as Super+T does;
-        the system file is left as it is.
+        the settings file is left as it is.
       </description>
     </request>
 

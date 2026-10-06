@@ -1,7 +1,7 @@
 #!/sbin/openrc-run
 # Test only (roadmap M4.1 to M4.5): CI builds this into
-# ci/desktop/vm.toml. greetd logs user ci (from the seed system file, put
-# in the seat group by edel system apply) in to the compositor at once.
+# ci/desktop/vm.toml. greetd logs user ci (from the seed settings file, put
+# in the seat group by edel settings apply) in to the compositor at once.
 # This service waits for the compositor's health file, then, as ci, times
 # 10 s of frames with weston-presentation-shm, reads the compositor's
 # telemetry and memory, and opens foot and two test clients, each once the
@@ -15,7 +15,7 @@
 description="Edel OS desktop test"
 
 depend() {
-	after edel-system
+	after edel-settings
 	before greetd
 }
 
@@ -83,7 +83,7 @@ report() {
 	pid=$(pidof edel-compositor)
 	say "compositor_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status")"
 	# The effect tier (M5.11): the first logged, which CI forces to Full,
-	# the last, after any drop, and edel shell tier's, from the state
+	# the last, after any drop, and edel status's, from the state
 	# file; then the animations it gives (M5.11b).
 	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
 	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
@@ -94,10 +94,15 @@ report() {
 	say "shell_ui_shared_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 	# What it holds of its own, the budgeted number, and the pages mapped
 	# from files (its binary, libraries and fonts), which the kernel
-	# shares and maps more or fewer of from run to run.
-	say "shell_ui_own_mib $(own_mib "$pid")"
+	# shares and maps more or fewer of from run to run. Read three times a
+	# second apart: the least is what it keeps once settled, the budgeted
+	# number, and the most is reported, as one read during start-up once
+	# caught it at 3.4 MiB against 1.5 in every other run of the same image.
+	samples=$(for i in 1 2 3; do own_mib "$pid"; echo; sleep 1; done)
+	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
+	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
-	say "shell_tier $(edel shell tier 2>&1)"
+	say "status_tier $(edel status 2>&1 | sed -n 's/^effects: //p')"
 	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
 	# X11 process yet: they start with the first X11 app.
@@ -135,28 +140,28 @@ commands() {
 	say "commands: reading ttyS1"
 	while read -r command <&3; do
 		case "$command" in
-		'tiling on') edel system set shell.tiling=true ;;
-		'tiling off') edel system set shell.tiling=false ;;
+		'tiling on') edel settings set shell.tiling=true ;;
+		'tiling off') edel settings set shell.tiling=false ;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# shell.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.
-		'preset hive') edel system unset shell.tiling && edel system set shell.preset=hive ;;
-		'preset windows-like') edel system set shell.preset=windows-like ;;
-		'preset mac-like') edel system set shell.preset=mac-like ;;
-		'preset default') edel system unset shell.preset ;;
+		'preset hive') edel settings reset shell.tiling && edel settings set shell.preset=hive ;;
+		'preset windows-like') edel settings set shell.preset=windows-like ;;
+		'preset mac-like') edel settings set shell.preset=mac-like ;;
+		'preset default') edel settings reset shell.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
-		'panels clock') edel system set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
-		'panels default') edel system unset shell.panels ;;
+		'panels clock') edel settings set 'shell.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		'panels default') edel settings reset shell.panels ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
-		'dock hiding') edel system set 'shell.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		'dock hiding') edel settings set 'shell.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
 		'big window')
 			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
 			;;
 		# Window buttons on either side (M5.4b).
-		'buttons left') edel system set shell.window_buttons=left ;;
-		'buttons default') edel system unset shell.window_buttons ;;
-		'scale 2') edel system set outputs.Virtual-1.scale=2 ;;
-		'screen 2 off') edel system set outputs.Virtual-2.enabled=false ;;
+		'buttons left') edel settings set shell.window_buttons=left ;;
+		'buttons default') edel settings reset shell.window_buttons ;;
+		'scale 2') edel settings set outputs.Virtual-1.scale=2 ;;
+		'screen 2 off') edel settings set outputs.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
 		xclock)
@@ -199,12 +204,12 @@ commands() {
 			;;
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
 		# appearance.color_scheme (M5.5c), light and back to the default.
-		'scheme light') edel system set appearance.color_scheme=light ;;
-		'scheme default') edel system unset appearance.color_scheme ;;
+		'scheme light') edel settings set appearance.color_scheme=light ;;
+		'scheme default') edel settings reset appearance.color_scheme ;;
 		# appearance.motion (M5.11b), reduced and back to the default.
-		'motion reduced') edel system set appearance.motion=reduced ;;
-		'motion off') edel system set appearance.motion=off ;;
-		'motion default') edel system unset appearance.motion ;;
+		'motion reduced') edel settings set appearance.motion=reduced ;;
+		'motion off') edel settings set appearance.motion=off ;;
+		'motion default') edel settings reset appearance.motion ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to
@@ -212,7 +217,7 @@ commands() {
 		'shortcut window')
 			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
 			;;
-		'close on super-w') edel system set shortcuts.close=Super+W ;;
+		'close on super-w') edel settings set shortcuts.close=Super+W ;;
 		# Workspaces (M5.2a): a window to send to another workspace, and
 		# closed while it is there.
 		'away window')
@@ -240,7 +245,7 @@ commands() {
 			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
 				while IFS= read -r line; do say "ext $line"; done
 			;;
-		'shortcuts default') edel system unset shortcuts.close ;;
+		'shortcuts default') edel settings reset shortcuts.close ;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its
@@ -383,7 +388,7 @@ open_ten() {
 	wait "$timer"
 	say "open_ten_p99_ms $(frame_ms /tmp/frames-ten.txt 99)"
 	say "open_ten_frames $(frame_ms /tmp/frames-ten.txt count)"
-	say "open_ten_tier $(edel shell tier 2>&1)"
+	say "open_ten_tier $(edel status 2>&1 | sed -n 's/^effects: //p')"
 }
 
 # x11_rss: the memory XWayland and xwayland-satellite use, in MiB.
