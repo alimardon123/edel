@@ -110,6 +110,36 @@ jobs:
         # checks against ci/budgets.toml are measured on a quiet runner.
         run: sh ci/desktop-test.sh floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
 
+      - name: List the desktop and laptop images to try
+        # The images CI just booted (M3.6): the laptop's in boot-test, the
+        # desktop's as a USB stick in desktop-test live. A push to main
+        # keeps them as a download; every run lists them with their sizes.
+        run: |
+          mkdir -p out/try
+          ln -f out/edel-desktop-x86_64.img.gz out/edel-laptop-x86_64.img.gz out/try/
+          (cd out/try && sha256sum *.img.gz >SHA256SUMS)
+          {
+            echo "### Images to try"
+            echo
+            echo "A push to main keeps these for 14 days as the artifact \`edel-try-x86_64\` (docs/TRY-IT.md)."
+            echo
+            echo "| Image | Size | sha256 |"
+            echo "|---|---|---|"
+            for f in out/try/*.img.gz; do
+              echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) | \`$(sha256sum "$f" | cut -c1-16)...\` |"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the desktop and laptop images to try
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: edel-try-x86_64
+          retention-days: 14
+          # Already gzipped: zipping them again gains nothing.
+          compression-level: 0
+          path: out/try/
+
       - name: Check the release, and show what would be published
         run: |
           sh ci/release.sh dry-run preview
@@ -143,6 +173,7 @@ jobs:
             out/*.log
             out/*.packages
             out/desktop-test/*.png
+            out/desktop-live/*.png
 
   # Publishes what the images job built and tested (M3.4): the preview on
   # every merge to main, a draft release for a v* tag. Off until Alimardon

@@ -2,7 +2,8 @@
 # Checks the kernel of every bootable image in images/ against
 # ci/kernel-options.toml, and lists the modules in each image's initramfs,
 # failing when the laptop's lacks a driver it needs to find its disk or
-# light its screen (roadmap M3.3a). Reads the built root filesystems in
+# light its screen (roadmap M3.3a), or an image with a screen lacks
+# VirtualBox's (M3.6). Reads the built root filesystems in
 # out/work/, which are root's, so it uses sudo.
 set -eu
 
@@ -60,6 +61,18 @@ for def in images/*.toml; do
 	for dir in $(needed_firmware "$flavor"); do
 		echo "$files" | grep -qE "(^|/)lib/firmware/$dir/" || absent="$absent firmware/$dir"
 	done
+	# An image with a screen lights VirtualBox's and VMware's (VMSVGA)
+	# early too, and carries Mesa's driver for it, svga, whose DRI name is
+	# vmwgfx (M3.6).
+	if grep -q '"graphics"' "$def"; then
+		echo "$modules" | grep -qx vmwgfx || absent="$absent vmwgfx"
+		root=out/work/$name-$arch/rootfs
+		if sudo sh -c "grep -qa vmwgfx $root/usr/lib/libgallium-*.so $root/usr/lib/xorg/modules/dri/* 2>/dev/null"; then
+			echo "$name: vmwgfx in the initramfs and Mesa's svga driver (vmwgfx) in the slot, for VirtualBox"
+		else
+			absent="$absent Mesa's-svga-driver"
+		fi
+	fi
 	count=$(echo "$modules" | grep -c . || true)
 	size=$(sudo du -h "$boot/initramfs-$flavor" | cut -f1)
 	echo "$name ($flavor): initramfs $size with $count modules and $firmware firmware files, including$(for m in $(needed_modules "$flavor"); do echo "$modules" | grep -qx "$m" && printf ' %s' "$m"; done)"

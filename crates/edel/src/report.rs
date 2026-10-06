@@ -116,7 +116,7 @@ fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>) {
 
 /// Whether the disk `name` is a stick or another removable disk: on USB,
 /// or marked removable by the kernel. `sys` is `/sys`.
-fn is_removable(sys: &Path, name: &str) -> bool {
+pub(crate) fn is_removable(sys: &Path, name: &str) -> bool {
     let block = sys.join("block").join(name);
     let removable = fs::read_to_string(block.join("removable")).is_ok_and(|r| r.trim() == "1");
     let on_usb = fs::canonicalize(&block).is_ok_and(|path| {
