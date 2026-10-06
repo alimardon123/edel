@@ -91,7 +91,7 @@ The first out-of-box state; `docs/defaults.md` holds it once generated:
 | Language, keyboard | Asked first at install; a non-Latin layout gets `us` as a second layout | M6.6a |
 | Hostname | Prefilled as user and form factor (`ali-laptop`), under More options | M6.6a |
 | Apps | Browser, files, editor and store, offline in the slot; a replaced default app stays for every user whose `~/.var/app/<id>` exists | M6.2 |
-| Services | ssh off on desktop and laptop (`off = ["ssh"]`), on for vm and server; bluetooth and avahi on where present | M4.0, M6.10 |
+| Services | ssh off on the desktop (`off = ["ssh"]`), on for vm and server; bluetooth and avahi on where present | M4.0, M6.10 |
 | Power | Lid locks then suspends; on AC, idle dims at 5 minutes and locks at 10 | M6.10, M7.8 |
 | Updates | Desktops check and flag; servers install in their window | M5.9, M7.5 |
 | Users | None in the slot; the installer, a seed or the console first boot creates the first admin; never a default password; the live session's user is created at boot only when `/` is on removable media, never in the slot | M6.6a, M6.6b |
@@ -153,7 +153,7 @@ Principles: Simple and Functional for everyone, Powerful and Scalable through th
 - **One place for the page names:** a table in `edel::system` of the sections and their pages, which `edel settings` and the Settings app both read, and a test that holds every key, section and value to the rule, with the exceptions above listed.
 - **A one-time exception to "a key is never renamed within a format":** nobody has Edel OS installed yet, so M5.25 renames within format 1 and rewrites `crates/edel/tests/keys.txt` once. From the first preview on, a rename reads both names and steps through a new format, as section 2 says.
 - **The app teaches the command:** each Settings row offers Copy as command, its exact `edel settings set` line (M5.6). Keys and commands stay English while the app is translated, as in every operating system, and Copy as command bridges the two.
-- **Tab completion:** the desktop and laptop images carry a shell that completes `edel` commands, keys and values (M5.26), kept only if it adds little to the image, as measured there.
+- **Tab completion:** the desktop image carries a shell that completes `edel` commands, keys and values (M5.26), kept only if it adds little to the image, as measured there.
 
 Principles: Simple (one name for each thing in the app, the command line and the file, and one door for changing settings), Functional (a person who knows the app can use the command line, and back), Scalable (the same names on a phone, a laptop, a server and a fleet); traded off: one large rename PR before the Settings app, and one exception to the rename rule, taken while it breaks nobody. Asked by Alimardon.
 

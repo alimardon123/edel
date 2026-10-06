@@ -129,7 +129,7 @@ Build an image from its definition file (run as root on Alpine).
 | `--out OUT` | Directory for the finished images and the work area |
 | `--files DIR` | Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once |
 | `--health-timeout SECS` | Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images |
-| `--slot-mib MIB` | Size of each slot in MiB, instead of the definition's; for test images, such as the install test's live disk, which has the laptop stick's small slots |
+| `--slot-mib MIB` | Size of each slot in MiB, instead of the definition's; for test images, such as the install test's live disk, which has the desktop stick's small slots |
 | `--public-key FILE` | Another public key that may sign updates, after the definition's own; for test images. Can be given more than once |
 | `--loader-tag TAG` | A tag written into grub.cfg so the boot loader differs from an untagged build; for test images |
 | `--version VERSION` | The release version written into the image, such as 2026.10.3; without it the image keeps its development version |

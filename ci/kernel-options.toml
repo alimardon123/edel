@@ -55,7 +55,7 @@ reason = "the SD and eMMC controllers of most laptops"
 kernels = ["lts"]
 
 [USB_STORAGE]
-reason = "the laptop image boots from a USB stick (M3.4)"
+reason = "the desktop image boots from a USB stick (M3.6)"
 
 [DRM_VIRTIO_GPU]
 reason = "the virtual GPU the desktop tests draw on (M4.1)"

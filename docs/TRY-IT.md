@@ -1,14 +1,14 @@
 # Try Edel OS
 
-**This is a preview, for testing only.** It makes no promise yet. The VM and laptop images are a text console with updates, rollback, the settings file and the installer; the desktop image adds our desktop, early and only now meeting real hardware. Since milestone 1, `/home`, `/var` and the settings file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
+**This is a preview, for testing only.** It makes no promise yet. The VM image is a text console with updates, rollback, the settings file and the installer; the desktop image adds our desktop, early and only now meeting real hardware. Since milestone 1, `/home`, `/var` and the settings file live on the data partition and survive every update and rollback, but a preview can still break, so never install it on a disk holding anything you need. Each merge to `main` replaces the preview.
 
 ## Get the images
 
-Until the first preview is published (roadmap M3.4), the newest images come from CI (M3.6). Every merge to `main` keeps the desktop and laptop images it has just started in its tests, for 14 days:
+Until the first preview is published (roadmap M3.4), the newest images come from CI (M3.6). Every merge to `main` keeps the desktop image it has just started in its tests, for 14 days:
 
 1. Open [the CI runs on `main`](https://github.com/alimardon123/edel/actions/workflows/ci.yml?query=branch%3Amain) and click the newest run with a green tick. You need to be logged in to GitHub.
-2. Under **Artifacts** at the bottom, download `edel-try-x86_64`. It is a zip holding `edel-desktop-x86_64.img.gz`, `edel-laptop-x86_64.img.gz` and `SHA256SUMS`, and the run's summary lists their sizes.
-3. Unzip it. Keep the `.img.gz` files as they are for a USB stick; unpack one (with 7-Zip on Windows, `gunzip` elsewhere) for VirtualBox or QEMU.
+2. Under **Artifacts** at the bottom, download `edel-try-x86_64`. It is a zip holding `edel-desktop-x86_64.img.gz` and `SHA256SUMS`, and the run's summary lists its size.
+3. Unzip it. Keep the `.img.gz` file as it is for a USB stick; unpack one (with 7-Zip on Windows, `gunzip` elsewhere) for VirtualBox or QEMU.
 
 Once a preview exists, the same files are on its release page.
 
@@ -20,7 +20,6 @@ Each release has these files:
 |---|---|
 | `edel-vm-x86_64.img.gz` | A disk for a virtual machine (UEFI) |
 | `edel-desktop-x86_64.img.gz` | The desktop, to write to a USB stick of 4 GB or more, or to start in VirtualBox or QEMU |
-| `edel-laptop-x86_64.img.gz` | A text console to write to a USB stick of 4 GB or more and start a laptop from |
 | `edel-container-x86_64.tar.gz` | The base as a container image (`docker import`) |
 | `*.ext4.gz`, `release.toml`, `release.toml.sig` | The update images and their signed list, which `edel update` reads |
 | `*.packages` | Every package inside each image |
@@ -38,8 +37,6 @@ The stick touches only itself: nothing is written to the laptop's disk.
 5. Turn the laptop off and put the stick into any computer: its small FAT partition holds `EFI/edel/report.toml`, a report of your hardware written at every start. Attach it to an issue at <https://github.com/alimardon123/edel/issues> with the laptop's model, and say what worked: the screen, the touchpad, Wi-Fi, sound, sleep.
 
 The report holds the release, the kernel, how long the start took, the memory in use, every PCI device with its driver, and the kernel log. It never holds your files.
-
-`edel-laptop-x86_64.img.gz` is the same without the desktop: it stops at the `edel login:` prompt, with nobody to log in as, and writes the same report.
 
 ## The desktop in VirtualBox
 

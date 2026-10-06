@@ -3,8 +3,8 @@
 # A) and waits for the Edel OS login prompt on the serial console. The disk
 # is opened in snapshot mode, so the tested image stays exactly as built.
 # Then boots a copy of the disk made 3 GiB larger and checks that the data
-# partition grew to fill it (roadmap M1.2). Boots the laptop image the
-# same way in between (M3.3a).
+# partition grew to fill it (roadmap M1.2). The desktop image is booted
+# as a USB stick by desktop-test.sh live (M3.6).
 set -eu
 . ci/vm.sh
 
@@ -33,32 +33,6 @@ else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
 fi
-
-# The laptop image (roadmap M3.3a): the same checks with linux-lts and its
-# firmware, booted from a USB stick as a person would; a VM has none of
-# the laptop's hardware, so this proves the kernel, initramfs and slots,
-# and Alimardon's laptops prove the drivers. The report line is the one
-# edel prints after writing it, so a failed report fails the test.
-boot out/boot-laptop.log out/edel-laptop-x86_64.img \
-	-device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=disk0,bootindex=0
-if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot-laptop.log &&
-	grep -q 'edel update: slot A confirmed' out/boot-laptop.log &&
-	grep -q 'edel-data: mounted /data' out/boot-laptop.log &&
-	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot-laptop.log &&
-	grep -q 'edel report: wrote /EFI/edel/report.toml on the EFI system partition' out/boot-laptop.log &&
-	grep -q 'edel guard: using the hardware watchdog .* (watchdog1)' out/boot-laptop.log; then
-	echo "PASS: the laptop image booted Edel OS ${EDEL_VERSION:-0.1} with linux-lts from USB to the login prompt, moved the guard from softdog to the hardware watchdog, was confirmed and left its report in ${waited}s"
-else
-	echo "FAIL: no confirmed boot of the laptop image to the login prompt"
-	exit 1
-fi
-# The laptop lists ssh in off (M4.0): openssh-server is installed, sshd
-# is not started.
-if grep -q 'Starting sshd' out/boot-laptop.log; then
-	echo "FAIL: the laptop image started sshd, but laptop.toml ships ssh off"
-	exit 1
-fi
-echo "PASS: the laptop image shipped ssh off; sshd did not start"
 
 grown=out/grown.img
 cp --sparse=always out/edel-vm-x86_64.img "$grown"

@@ -58,5 +58,5 @@ A machine's disk is GPT: partition 1 is the EFI system partition (64 MiB, label 
 
 - Every slot of an installed machine is 4096 MiB (`edel::install::SLOT_MIB`), whatever it was installed from, and the VM image's slots are too, because a VM runs from that disk as it is. A machine installed from the first preview must be able to take every later update.
 - An update image is the slot's file system shrunk to its contents (`resize2fs -M`); `edel update` writes it into the other slot and grows it to fill the slot. So a release may grow until its files fill 4096 MiB, and no release may need more.
-- The laptop image, a stick to try Edel OS and install it from, keeps 1024 MiB slots so it fits a common 8 GB stick (about 7.45 GiB); `edel install` copies its running slot into a 4096 MiB slot and grows it.
+- The desktop image, a stick to try Edel OS and install it from, keeps 1536 MiB slots so it fits a common 8 GB stick (about 7.45 GiB); `edel install` copies its running slot into a 4096 MiB slot and grows it. (The laptop image, a text console with 1024 MiB slots, did this until 2026-10-06.)
 - Changing the slot size later means moving every installed machine's data partition, so it waits for a format change of the disk itself, with a migration in `edel update`.
