@@ -3,8 +3,8 @@
 # with. The parts have this file built in; a file at
 # /usr/share/edel/design/tokens.toml, which no image ships yet, would
 # take its place. [colour] is the dark scheme, the default, and
-# [colour.light] the light one (M5.5c, appearance.color_scheme); M5.12
-# lets people override them in system.toml.
+# [colour.light] the light one (M5.5c, appearance.mode); M5.12 lets
+# people override them in the settings file.
 format = 1
 
 [colour]
@@ -29,6 +29,12 @@ accent = "#5b8ef5"
 # The one shadow, cast by one light above, under menus on the Full and
 # Balanced tiers (M5.5e) and windows from M5.14; its alpha is its depth.
 shadow = "#00000073"
+# Apps' own surfaces (M5.6a), Settings first and GTK's windows through
+# gtk.css: a window's page, the cards and grouped rows raised on it, and
+# the hairlines round cards and between rows.
+window = "#212429"
+card = "#2b2f36"
+line = "#383d46"
 
 # The light scheme (M5.5c, appearance.color_scheme = "light"): the same
 # keys, each one given, over the dark values above.
@@ -44,6 +50,9 @@ panel = "#f2f3f5"
 panel_text = "#1f2329"
 accent = "#3a73e8"
 shadow = "#0000003d"
+window = "#f6f7f9"
+card = "#ffffff"
+line = "#dfe3e9"
 
 [size]
 # In logical pixels.
@@ -62,6 +71,8 @@ panel_text = 13
 radius_window = 10
 radius_menu = 12
 radius_control = 7
+# Apps' text (M5.6a), Settings first; headings are drawn larger from it.
+text = 13
 # A row in a menu or list: the launcher's apps, the window switcher's
 # windows (M5.3).
 row = 36

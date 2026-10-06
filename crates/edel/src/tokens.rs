@@ -144,10 +144,17 @@ pub struct Tokens {
     /// The one shadow, cast by one light above (M5.5e): its colour, how
     /// far it blurs and how far down it falls, logical pixels.
     pub shadow: Colour,
+    /// Apps' own surfaces (M5.6a): a window's page, the cards raised on
+    /// it, and the hairlines round cards and between rows.
+    pub window: Colour,
+    pub card: Colour,
+    pub line: Colour,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
     pub row: u32,
+    /// Apps' text, in logical pixels (M5.6a).
+    pub text_size: u32,
     /// The interface font's family.
     pub font: String,
 }
@@ -222,30 +229,30 @@ impl Tokens {
         ]
     }
 
-    /// GTK's named colours from these tokens: the windows' background and
-    /// text, the header bars as our title bars, sidebars and lists as the
-    /// panel, popovers and dialogs as the title bars, and the accent.
+    /// GTK's named colours from these tokens: the windows' page and
+    /// text, lists, cards, popovers and dialogs as raised cards, the
+    /// header bars as our title bars, sidebars as the panel, and the
+    /// accent.
     fn gtk_colours(&self) -> [(&'static str, String); 18] {
         let text = self.title_text.hex();
         [
             ("accent_color", self.accent.hex()),
             ("accent_bg_color", self.accent.hex()),
             ("accent_fg_color", "#ffffff".to_string()),
-            ("window_bg_color", self.background.hex()),
+            ("window_bg_color", self.window.hex()),
             ("window_fg_color", text.clone()),
-            ("view_bg_color", self.panel.hex()),
+            ("view_bg_color", self.card.hex()),
             ("view_fg_color", text.clone()),
             ("headerbar_bg_color", self.title_bar.hex()),
             ("headerbar_fg_color", text.clone()),
             ("headerbar_backdrop_color", self.background.hex()),
             ("sidebar_bg_color", self.panel.hex()),
             ("sidebar_fg_color", text.clone()),
-            ("popover_bg_color", self.title_bar.hex()),
+            ("popover_bg_color", self.card.hex()),
             ("popover_fg_color", text.clone()),
-            ("dialog_bg_color", self.title_bar.hex()),
+            ("dialog_bg_color", self.window.hex()),
             ("dialog_fg_color", text.clone()),
-            // Settings' boxed rows (M5.6a), raised as a title bar is.
-            ("card_bg_color", self.title_bar.hex()),
+            ("card_bg_color", self.card.hex()),
             ("card_fg_color", text),
         ]
     }
@@ -337,6 +344,9 @@ impl Tokens {
                 "panel_text" => &mut self.panel_text,
                 "accent" => &mut self.accent,
                 "shadow" => &mut self.shadow,
+                "window" => &mut self.window,
+                "card" => &mut self.card,
+                "line" => &mut self.line,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -366,6 +376,7 @@ impl Tokens {
                 "shadow_blur" => (&mut self.shadow_blur, 100),
                 "shadow_offset" => (&mut self.shadow_offset, 100),
                 "row" => (&mut self.row, 200),
+                "text" => (&mut self.text_size, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -416,6 +427,9 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel_text",
                 "accent",
                 "shadow",
+                "window",
+                "card",
+                "line",
             ][..],
         ),
         (
@@ -431,6 +445,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "radius_menu",
                 "radius_control",
                 "row",
+                "text",
                 "shadow_blur",
                 "shadow_offset",
             ][..],
@@ -482,9 +497,13 @@ pub fn check(text: &str) -> Result<Tokens> {
         radius_menu: 0,
         radius_control: 0,
         shadow: BLACK,
+        window: BLACK,
+        card: BLACK,
+        line: BLACK,
         shadow_blur: 0,
         shadow_offset: 0,
         row: 0,
+        text_size: 0,
         font: String::new(),
     };
     tokens.apply(&table, &mut notes);
@@ -548,8 +567,10 @@ mod tests {
             "features/shell/usr/share/edel/gtk.css differs from the tokens; run EDEL_WRITE_GTK_CSS=1 cargo test -p edel gtk_css"
         );
         assert!(css.contains("@define-color accent_bg_color #5b8ef5;"));
-        assert!(css.contains("@define-color window_bg_color #24272e;"));
-        assert!(css.contains("  @define-color window_bg_color #dfe3ea;"));
+        // Apps' windows are the window token's colour in each scheme.
+        let window = |t: &Tokens| format!("@define-color window_bg_color {};", t.window.hex());
+        assert!(css.contains(&format!("\n{}", window(&Tokens::built_in()))));
+        assert!(css.contains(&format!("  {}", window(&light))));
         // A changed token changes the file.
         let mut tokens = Tokens::built_in();
         tokens.accent = Colour::parse("#e5484d").unwrap();

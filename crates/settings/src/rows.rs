@@ -20,11 +20,46 @@ pub const ROWS: &[Row] = &[
         key: "layout.tiling",
         title: "Tile windows",
     },
+    Row {
+        key: "layout.title_bars",
+        title: "Title bars",
+    },
+    Row {
+        key: "layout.window_buttons",
+        title: "Window buttons",
+    },
 ];
 
 /// The title of `key`'s row.
 pub fn title(key: &str) -> &'static str {
     ROWS.iter().find(|r| r.key == key).map_or("", |r| r.title)
+}
+
+/// The rows on the page for `section`, such as `layout`, which search
+/// looks through as well as the pages' titles.
+pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {
+    ROWS.iter().filter(move |r| {
+        r.key
+            .split_once('.')
+            .is_some_and(|(page, _)| page == section)
+    })
+}
+
+/// The values `key` may take, as the key table lists them, so a row's
+/// choices are always the ones `edel settings set` takes.
+pub fn values(key: &str) -> &'static [&'static str] {
+    match edel::system::KEYS.iter().find(|k| k.path == key) {
+        Some(edel::system::Key {
+            kind: edel::system::Kind::OneOf(values),
+            ..
+        }) => values,
+        _ => &[],
+    }
+}
+
+/// A value as a row shows it: `floating-only` is Floating only.
+pub fn label(value: &str) -> String {
+    crate::files::title(&value.replace('-', " "))
 }
 
 /// What a row says under its title about where its value comes from:
@@ -66,6 +101,16 @@ mod tests {
                 .unwrap_or_else(|| panic!("{} is not a settings file key", row.key));
             assert!(key.supported, "{} is not supported yet", row.key);
         }
+    }
+
+    #[test]
+    fn a_row_offers_the_values_the_key_table_lists() {
+        assert_eq!(values("layout.title_bars"), ["always", "floating-only"]);
+        assert_eq!(values("layout.window_buttons"), ["left", "right"]);
+        assert_eq!(label("floating-only"), "Floating only");
+        let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
+        assert_eq!(titles.len(), 4);
+        assert_eq!(on_page("about").count(), 0);
     }
 
     #[test]

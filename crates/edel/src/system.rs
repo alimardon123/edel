@@ -1260,14 +1260,14 @@ font_size = 11
         assert_eq!(
             lines,
             [
-                "layout.preset: unknown value \"tablet\"; use classic, hive, mac-like or windows-like"
+                "layout.preset: unknown value \"tablet\"; use classic, mac-like, windows-like or hive"
             ]
         );
         let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("use classic, hive, mac-like or windows-like"),
+                .contains("use classic, mac-like, windows-like or hive"),
             "{error}"
         );
         let read = read(file).unwrap();

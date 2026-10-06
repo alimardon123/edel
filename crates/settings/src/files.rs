@@ -1,6 +1,7 @@
 //! The settings files Settings reads and writes (M5.6a): the machine's,
 //! which `edel settings set` writes as root, and the person's, in their
-//! own config folder, which the app writes with no privilege; the desktop reads the person's over the machine's. A choice
+//! own config folder, which the app writes with no privilege; the desktop
+//! reads the person's over the machine's. A choice
 //! that is what would apply anyway is taken out of the file rather than
 //! written, as writers never write a default (ADR-008).
 
@@ -9,11 +10,27 @@ use std::path::PathBuf;
 use edel::presets::{self, Policy};
 use edel::{places, system};
 
-/// What the Layout page shows.
+/// What the Layout page shows: each key's value as the desktop applies
+/// it, from the person's file, the machine's, the preset or the release.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Layout {
     pub preset: String,
     pub tiling: bool,
+    pub title_bars: String,
+    pub window_buttons: String,
+}
+
+impl Layout {
+    /// `key`'s value as `edel settings set` writes it.
+    pub fn value(&self, key: &str) -> Option<String> {
+        match key {
+            "layout.preset" => Some(self.preset.clone()),
+            "layout.tiling" => Some(self.tiling.to_string()),
+            "layout.title_bars" => Some(self.title_bars.clone()),
+            "layout.window_buttons" => Some(self.window_buttons.clone()),
+            _ => None,
+        }
+    }
 }
 
 pub struct Files {
@@ -30,29 +47,48 @@ impl Files {
         }
     }
 
-    /// One file's `[layout]`, read leniently as the desktop reads it
-    /// (ADR-008); nothing for a file that is missing or not TOML.
-    fn layout_of(path: Option<&PathBuf>) -> system::Layout {
+    /// One file read leniently as the desktop reads it (ADR-008); nothing
+    /// for a file that is missing or not TOML.
+    fn read(path: Option<&PathBuf>) -> Option<system::SystemFile> {
         path.and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|text| system::read(&text).ok())
-            .map(|read| read.file.layout)
-            .unwrap_or_default()
+            .map(|read| read.file)
+    }
+
+    /// One file's `[layout]`, empty when there is no file.
+    fn layout_of(path: Option<&PathBuf>) -> system::Layout {
+        Self::read(path).map(|f| f.layout).unwrap_or_default()
     }
 
     /// The layout from the machine's keys with `person`'s laid over them,
-    /// the preset and its policy under both.
+    /// the preset and the release under both.
     fn layout_from(machine: &system::Layout, person: &system::Layout) -> Layout {
         let chosen = person.preset.clone().or(machine.preset.clone());
         let (preset, _) = presets::named(chosen.as_deref());
         let name = chosen
             .filter(|n| presets::NAMES.contains(&n.as_str()))
-            .unwrap_or_else(|| presets::NAMES[0].to_string());
+            .unwrap_or_else(|| presets::DEFAULT.to_string());
+        let known = |key: &str, value: Option<&String>| {
+            value
+                .filter(|v| crate::rows::values(key).contains(&v.as_str()))
+                .cloned()
+        };
+        let title_bars = person.title_bars.as_ref().or(machine.title_bars.as_ref());
+        let buttons = person
+            .window_buttons
+            .as_ref()
+            .or(machine.window_buttons.as_ref());
         Layout {
             preset: name,
             tiling: person
                 .tiling
                 .or(machine.tiling)
                 .unwrap_or(preset.windows.policy == Policy::Tiling),
+            // Absent, every window has its bar (docs/settings.md).
+            title_bars: known("layout.title_bars", title_bars)
+                .unwrap_or_else(|| "always".to_string()),
+            window_buttons: known("layout.window_buttons", buttons)
+                .unwrap_or_else(|| preset.windows.buttons.name().to_string()),
         }
     }
 
@@ -64,32 +100,39 @@ impl Files {
         Self::layout_from(&machine, &person)
     }
 
-    /// Chooses preset `name`: written to the person's file, or taken out
-    /// of it when it is what would apply without it.
-    pub fn choose_preset(&self, name: &str) -> Result<(), String> {
+    /// Chooses `value` for the layout key `key`: written to the person's
+    /// file, or taken out of it when it is what would apply without it,
+    /// as writers never write a default (ADR-008).
+    pub fn choose(&self, key: &str, value: &str) -> Result<(), String> {
         let machine = Self::layout_of(Some(&self.machine));
         let mut person = Self::layout_of(self.person.as_ref());
-        let had = person.preset.take().is_some();
+        let had = match key {
+            "layout.preset" => person.preset.take().is_some(),
+            "layout.tiling" => person.tiling.take().is_some(),
+            "layout.title_bars" => person.title_bars.take().is_some(),
+            "layout.window_buttons" => person.window_buttons.take().is_some(),
+            _ => return Err(format!("{key} is not on the Layout page")),
+        };
         let without = Self::layout_from(&machine, &person);
-        match (without.preset != name, had) {
-            (true, _) => self.set("layout.preset", Some(name)),
-            (false, true) => self.set("layout.preset", None),
+        match (without.value(key).as_deref() != Some(value), had) {
+            (true, _) => self.set(key, Some(value)),
+            (false, true) => self.set(key, None),
             (false, false) => Ok(()),
         }
     }
 
-    /// Whether windows tile: written, or taken out when the machine's file
-    /// or the preset already says so.
-    pub fn choose_tiling(&self, on: bool) -> Result<(), String> {
-        let machine = Self::layout_of(Some(&self.machine));
-        let mut person = Self::layout_of(self.person.as_ref());
-        let had = person.tiling.take().is_some();
-        let without = Self::layout_from(&machine, &person);
-        match (without.tiling != on, had) {
-            (true, _) => self.set("layout.tiling", Some(if on { "true" } else { "false" })),
-            (false, true) => self.set("layout.tiling", None),
-            (false, false) => Ok(()),
-        }
+    /// The keys of `action` as the desktop follows them: the person's
+    /// `[shortcuts]` over the machine's over the release's.
+    pub fn shortcut(&self, action: &str) -> Option<String> {
+        let shortcuts = |path| Self::read(path).map(|f| f.shortcuts).unwrap_or_default();
+        let mut table = shortcuts(Some(&self.machine));
+        table.extend(shortcuts(self.person.as_ref()));
+        let (resolved, _) = edel::shortcuts::resolve(&table);
+        resolved
+            .into_iter()
+            .find(|(a, _)| a.name == action)
+            .and_then(|(_, keys)| keys)
+            .map(|keys| keys.to_string())
     }
 
     /// Where `key`'s value comes from: the person's file, the machine's,
@@ -160,13 +203,13 @@ mod tests {
         };
         let read = || std::fs::read_to_string(&person).unwrap_or_default();
         // Mac-like is written; Classic, the default, takes it out again.
-        files.choose_preset("mac-like").unwrap();
+        files.choose("layout.preset", "mac-like").unwrap();
         assert!(
             read().contains("[layout]\npreset = \"mac-like\""),
             "{}",
             read()
         );
-        files.choose_preset("classic").unwrap();
+        files.choose("layout.preset", "classic").unwrap();
         assert!(!read().contains("preset"), "{}", read());
         // With the machine on Windows-like, Classic must be written.
         std::fs::write(
@@ -174,16 +217,16 @@ mod tests {
             "format = 1\n[layout]\npreset = \"windows-like\"\n",
         )
         .unwrap();
-        files.choose_preset("classic").unwrap();
+        files.choose("layout.preset", "classic").unwrap();
         assert!(read().contains("classic"));
         assert_eq!(files.layout().preset, "classic");
-        files.choose_preset("windows-like").unwrap();
+        files.choose("layout.preset", "windows-like").unwrap();
         assert!(!read().contains("preset"));
         // Hive tiles: turning tiling on there writes nothing, off writes.
-        files.choose_preset("hive").unwrap();
-        files.choose_tiling(true).unwrap();
+        files.choose("layout.preset", "hive").unwrap();
+        files.choose("layout.tiling", "true").unwrap();
         assert!(!read().contains("tiling"));
-        files.choose_tiling(false).unwrap();
+        files.choose("layout.tiling", "false").unwrap();
         assert!(read().contains("tiling = false"));
         assert!(!files.layout().tiling);
         let _ = std::fs::remove_dir_all(&dir);
@@ -197,7 +240,7 @@ mod tests {
             machine: dir.join("machine.toml"),
             person: Some(person.clone()),
         };
-        files.choose_preset("mac-like").unwrap();
+        files.choose("layout.preset", "mac-like").unwrap();
         let by_command = system::set(
             &format!("format = {}\n", system::FORMAT),
             "layout.preset",
@@ -230,7 +273,7 @@ mod tests {
             machine: dir.join("machine.toml"),
             person: Some(person.clone()),
         };
-        files.choose_preset("mac-like").unwrap();
+        files.choose("layout.preset", "mac-like").unwrap();
         assert!(matches!(
             files.source("layout.preset"),
             system::Source::Person(_)

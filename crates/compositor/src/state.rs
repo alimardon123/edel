@@ -40,6 +40,8 @@ use smithay::wayland::selection::SelectionHandler;
 use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
 };
+use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as KdeDefaultMode;
+use smithay::wayland::shell::kde::decoration::KdeDecorationState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::{
@@ -52,6 +54,7 @@ use smithay::wayland::tablet_manager::{TabletManagerState, TabletSeatHandler};
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::{
     delegate_compositor, delegate_cursor_shape, delegate_data_device, delegate_fractional_scale,
+    delegate_kde_decoration,
     delegate_layer_shell, delegate_output, delegate_presentation, delegate_seat, delegate_shm,
     delegate_tablet_manager, delegate_viewporter, delegate_xdg_decoration, delegate_xdg_shell,
 };
@@ -155,6 +158,8 @@ pub struct Edel {
     seat_state: SeatState<Edel>,
     data_device: DataDeviceState,
     _decorations: XdgDecorationState,
+    /// GTK's way to ask for our title bar (`decoration.rs`, M5.6a).
+    pub kde_decorations: KdeDecorationState,
     _fractional_scale: FractionalScaleManagerState,
     _viewporter: ViewporterState,
     _tablets: TabletManagerState,
@@ -186,6 +191,9 @@ impl Edel {
             layer_shell: WlrLayerShellState::new::<Edel>(&display),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
+            // Server: GTK windows without a header bar of their own take
+            // ours, with the buttons where the person put them.
+            kde_decorations: KdeDecorationState::new::<Edel>(&display, KdeDefaultMode::Server),
             _fractional_scale: FractionalScaleManagerState::new::<Edel>(&display),
             _viewporter: ViewporterState::new::<Edel>(&display),
             // Pens and drawing tablets (M4.6b), and cursors named by shape,
@@ -1008,6 +1016,7 @@ delegate_compositor!(Edel);
 delegate_shm!(Edel);
 delegate_xdg_shell!(Edel);
 delegate_xdg_decoration!(Edel);
+delegate_kde_decoration!(Edel);
 delegate_fractional_scale!(Edel);
 delegate_viewporter!(Edel);
 delegate_tablet_manager!(Edel);

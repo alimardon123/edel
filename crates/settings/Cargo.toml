@@ -11,10 +11,16 @@ description = "Settings, Edel OS's app for every setting (roadmap M5.6)"
 # The settings file's reader and writer, the presets and the page table,
 # the same code edel settings uses, so a row and the command agree
 # (ADR-008); without the command's network and signing.
-edel = { path = "../edel", default-features = false }
+# Its icons too, drawn from design/icons by the code the shell uses, so
+# one file changes every place that shows it (feature `icons`, M5.5d).
+edel = { path = "../edel", default-features = false, features = ["icons"] }
 # Settings is the one app of ours on libadwaita (ADR-004); 1.4 brings the
 # navigation split view and breakpoints that collapse it on narrow screens.
-gtk = { package = "gtk4", version = "0.11" }
+# 4.12 brings loading a stylesheet from a string, written from the tokens
+# at start and again when the scheme changes; GTK is kept to the widgets
+# module and the files beside it (widgets.rs, icon.rs, preview.rs,
+# style.rs), so another toolkit could take its place (ADR-004).
+gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_4"] }
 # The values edel::system's sources hold; the version edel already uses.
 toml = "1.1.6"

@@ -1,11 +1,13 @@
 //! Title bars on screen (M4.4): xdg-decoration with the server side
-//! preferred, each window's frame (its bar's texture, its border and where
+//! preferred, and KDE's server decoration protocol for GTK, which knows
+//! only that one (M5.6a), each window's frame (its bar's texture, its border and where
 //! it was before it was maximized), maximizing, and closing. The bar's
 //! geometry and pixels are `edel_compositor::frame`'s; the title's font
 //! loads on a thread of its own, so the first window never waits for it,
 //! and bars drawn before it arrives are drawn again with their titles.
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use smithay::backend::allocator::Fourcc;
@@ -16,8 +18,14 @@ use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::channel::{self, Event};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
+use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{
+    Mode as KdeMode, OrgKdeKwinServerDecoration,
+};
+use smithay::reexports::wayland_server::WEnum;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Rectangle, Transform};
 use smithay::wayland::compositor::with_states;
+use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
 
@@ -100,7 +108,8 @@ pub fn data(window: &Window) -> &RefCell<FrameData> {
 }
 
 /// Whether the compositor draws `window`'s bar: it asked for that, or let
-/// the compositor choose.
+/// the compositor choose, through xdg-decoration or, as GTK does, through
+/// KDE's protocol.
 pub fn server_side(window: &Window) -> bool {
     let Some(toplevel) = window.toplevel() else {
         return false;
@@ -112,10 +121,19 @@ pub fn server_side(window: &Window) -> bool {
             .get::<XdgToplevelSurfaceData>()?
             .lock()
             .ok()?;
-        Some(data.current.decoration_mode == Some(Mode::ServerSide))
+        Some(match data.current.decoration_mode {
+            Some(mode) => mode == Mode::ServerSide,
+            None => states
+                .data_map
+                .get::<KdeServerSide>()
+                .is_some_and(|kde| kde.0.load(Ordering::Relaxed)),
+        })
     })
     .unwrap_or(false)
 }
+
+/// A surface's choice through KDE's protocol: our bar or its own.
+struct KdeServerSide(AtomicBool);
 
 /// The window's title, or nothing.
 pub fn title(window: &Window) -> String {
@@ -307,6 +325,40 @@ impl XdgDecorationHandler for Edel {
     /// A window that leaves the choice to the compositor gets our bar.
     fn unset_mode(&mut self, toplevel: ToplevelSurface) {
         set_mode(&toplevel, Mode::ServerSide);
+    }
+}
+
+/// GTK 4 and 3 ask through KDE's protocol, not xdg-decoration: a window
+/// without a header bar of its own asks for ours, and one with a header
+/// bar (libadwaita's apps, Firefox) for its own, as with xdg-decoration.
+impl KdeDecorationHandler for Edel {
+    fn kde_decoration_state(&self) -> &KdeDecorationState {
+        &self.kde_decorations
+    }
+
+    fn request_mode(
+        &mut self,
+        surface: &WlSurface,
+        decoration: &OrgKdeKwinServerDecoration,
+        mode: WEnum<KdeMode>,
+    ) {
+        let WEnum::Value(mode) = mode else {
+            return;
+        };
+        let server = mode == KdeMode::Server;
+        decoration.mode(mode);
+        with_states(surface, |states| {
+            states
+                .data_map
+                .insert_if_missing_threadsafe(|| KdeServerSide(AtomicBool::new(false)));
+            if let Some(kde) = states.data_map.get::<KdeServerSide>() {
+                kde.0.store(server, Ordering::Relaxed);
+            }
+        });
+        // A window already placed gets or loses its bar now.
+        if self.window_of(surface).is_some() {
+            self.relayout();
+        }
     }
 }
 
