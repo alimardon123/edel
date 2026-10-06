@@ -261,6 +261,22 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
+		# Keyboard layouts (M5.21): German first, then US; a layout
+		# xkeyboard-config lacks, refused with its message; and the file
+		# typing "touch y" in foot made, named after the key's letter.
+		'keyboard de') edel settings set region.keyboard=de,us ;;
+		'keyboard bad') say "keyboard_bad $(edel settings set region.keyboard=xx 2>&1 | tr '\n' ' ')" ;;
+		'keyboard default') edel settings reset region.keyboard ;;
+		'key file')
+			if [ -e /home/ci/z ]; then
+				say "keyfile z"
+			elif [ -e /home/ci/y ]; then
+				say "keyfile y"
+			else
+				say "keyfile none"
+			fi
+			rm -f /home/ci/z /home/ci/y
+			;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its

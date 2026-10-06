@@ -151,6 +151,9 @@ pub enum Kind {
     Panels,
     /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
     Resolution,
+    /// Keyboard layouts as xkb names them, such as `"us,ru"` or
+    /// `"de(nodeadkeys)"` ([`crate::keyboard::normalize`], M5.21)
+    Keyboard,
 }
 
 /// One key of the settings file. `*` in a path stands for any name, such as a
@@ -204,7 +207,7 @@ pub const KEYS: &[Key] = &[
     now("users.*.login_shell", Kind::Shell),
     now("network.hostname", Kind::Hostname),
     later("region.language", Kind::Text),
-    later("region.keyboard", Kind::Text),
+    now("region.keyboard", Kind::Keyboard),
     later("region.timezone", Kind::Text),
     now("layout.preset", Kind::OneOf(crate::presets::NAMES)),
     now("layout.tiling", Kind::Flag),
@@ -953,6 +956,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         }
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
         (Kind::Resolution, _) => fail("a resolution such as \"1920x1080\""),
+        (Kind::Keyboard, Value::String(s)) => {
+            let rules = std::fs::read_to_string(crate::keyboard::RULES).ok();
+            crate::keyboard::normalize(s, rules.as_deref()).map(Value::String)
+        }
+        (Kind::Keyboard, _) => fail("keyboard layouts in quotes, such as \"us\" or \"us,ru\""),
         (Kind::Panels, _) => {
             fail("a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]")
         }
@@ -1032,6 +1040,7 @@ mod tests {
             Kind::Keys => Value::String("Super+W".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
+            Kind::Keyboard => Value::String("us".into()),
         }
     }
 

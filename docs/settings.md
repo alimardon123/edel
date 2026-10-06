@@ -95,7 +95,7 @@ Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; 
 | Key | Value | From |
 |---|---|---|
 | `region.language` | text, such as `"en_GB"` | M6.6a |
-| `region.keyboard` | text, an XKB layout such as `"us"` | M5.21 |
+| `region.keyboard` | keyboard layouts as xkb names them: one, such as `"de"`, or up to four, such as `"us,ru"`, each with a variant if wanted, such as `"de(nodeadkeys)"`; missing is US. Check and set refuse a layout or variant xkeyboard-config lacks where its list is on the machine. The desktop follows it at once, and Super+Space (`shortcuts.next_keyboard_layout`) goes to the next layout | M5.21a |
 | `region.timezone` | text, such as `"Europe/London"` | M6.6a |
 
 ## Users: `[users.NAME]`

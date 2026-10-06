@@ -335,6 +335,7 @@ impl Edel {
                 }
             }
             Act::Tiling => self.toggle_tiling(),
+            Act::NextLayout => self.next_keyboard_layout(),
             Act::Fullscreen => {
                 if let Some(window) = self.focused_window() {
                     self.toggle_fullscreen(&window);
