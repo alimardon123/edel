@@ -1,0 +1,226 @@
+/* Edel OS: the docs site's look (M8.10a). Every colour, radius and the
+   font come from tokens.css, which a cargo test writes from
+   design/tokens.toml, so a changed token changes the site too; this file
+   only says where each goes. Write no colour here. Every one of mdBook's
+   themes takes our colours: Light and Rust the light scheme, Coal, Navy
+   and Ayu the dark one. */
+
+.light, .rust, .coal, .navy, .ayu {
+    --bg: var(--edel-page);
+    --fg: var(--edel-text);
+
+    --sidebar-bg: var(--edel-sidebar);
+    --sidebar-fg: var(--edel-text);
+    --sidebar-non-existant: var(--edel-text-muted);
+    --sidebar-active: var(--edel-accent);
+    --sidebar-spacer: var(--edel-border);
+    --sidebar-header-border-color: var(--edel-accent);
+
+    --scrollbar: var(--edel-text-muted);
+    --icons: var(--edel-text-muted);
+    --icons-hover: var(--edel-text);
+    --links: var(--edel-accent);
+    --inline-code-color: var(--edel-text);
+
+    --theme-popup-bg: var(--edel-raised);
+    --theme-popup-border: var(--edel-border);
+    --theme-hover: var(--edel-hover);
+
+    --quote-bg: var(--edel-raised);
+    --quote-border: var(--edel-accent);
+    --warning-border: var(--edel-accent);
+
+    --table-border-color: var(--edel-border);
+    --table-header-bg: var(--edel-raised);
+    --table-alternate-bg: color-mix(in srgb, var(--edel-raised) 45%, transparent);
+
+    --searchbar-border-color: var(--edel-border);
+    --searchbar-bg: var(--edel-raised);
+    --searchbar-fg: var(--edel-text);
+    --searchbar-shadow-color: var(--edel-shadow);
+    --searchresults-header-fg: var(--edel-text-muted);
+    --searchresults-border-color: var(--edel-border);
+    --searchresults-li-bg: var(--edel-raised);
+    --search-mark-bg: color-mix(in srgb, var(--edel-accent) 35%, transparent);
+
+    --footnote-highlight: var(--edel-accent);
+    --overlay-bg: color-mix(in srgb, var(--edel-shadow) 60%, transparent);
+
+    --blockquote-note-color: var(--edel-accent);
+    --blockquote-tip-color: var(--edel-accent);
+    --blockquote-important-color: var(--edel-accent);
+    --blockquote-warning-color: var(--edel-accent);
+    --blockquote-caution-color: var(--edel-accent);
+
+    --content-max-width: 780px;
+}
+
+/* Calm, readable text in the interface font, as the desktop draws it. */
+html {
+    font-family: var(--edel-font), system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif;
+    font-feature-settings: "cv11", "ss01";
+}
+
+.content {
+    line-height: 1.65;
+}
+
+.content main {
+    padding-block-end: 4rem;
+}
+
+.content h1,
+.content h2,
+.content h3 {
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.content h1 {
+    font-size: 2.1em;
+    font-weight: 700;
+    margin-block-start: 0.6em;
+}
+
+.content h2 {
+    font-size: 1.45em;
+    font-weight: 650;
+    margin-block-start: 2em;
+    padding-block-end: 0.3em;
+    border-block-end: 1px solid var(--edel-border);
+}
+
+.content h3 {
+    font-size: 1.15em;
+    font-weight: 650;
+    margin-block-start: 1.6em;
+}
+
+.content a,
+.content a:visited {
+    color: var(--edel-accent);
+    text-decoration: none;
+}
+
+.content a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+}
+
+/* Code, tables and quotes are raised a step, as title bars are, with the
+   controls' and menus' corners. */
+.content code {
+    border-radius: var(--edel-radius-control);
+}
+
+.content :not(pre) > code {
+    background: var(--edel-raised);
+    padding: 0.1em 0.35em;
+}
+
+.content pre {
+    border-radius: var(--edel-radius-menu);
+    border: 1px solid var(--edel-border);
+}
+
+.content pre > code {
+    background: var(--edel-raised);
+    border-radius: var(--edel-radius-menu);
+    padding: 1em 1.2em;
+    /* Tight enough for the diagrams' box lines to join. */
+    line-height: 1.3;
+}
+
+.content table {
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid var(--edel-border);
+    border-radius: var(--edel-radius-menu);
+    overflow: hidden;
+    margin-block: 1.4em;
+    margin-inline: 0;
+    min-width: 60%;
+}
+
+.content table td,
+.content table th {
+    border: none;
+    border-block-end: 1px solid var(--edel-border);
+    padding: 0.55em 0.9em;
+    vertical-align: top;
+}
+
+.content table tr:last-child td {
+    border-block-end: none;
+}
+
+.content table thead th {
+    text-align: start;
+    font-weight: 600;
+}
+
+.content blockquote {
+    border-radius: var(--edel-radius-control);
+    border-inline-start: 3px solid var(--edel-accent);
+    border-block: none;
+    border-inline-end: none;
+    padding: 0.4em 1.1em;
+}
+
+/* The sidebar: chapter titles in the text colour, the open page marked
+   with the accent, as the panel marks the shown workspace. */
+.sidebar {
+    font-size: 0.95em;
+}
+
+.sidebar .sidebar-scrollbox {
+    padding: 14px 10px;
+}
+
+.chapter li.chapter-item {
+    line-height: 1.6;
+}
+
+.chapter li a {
+    border-radius: var(--edel-radius-control);
+    padding: 3px 8px;
+}
+
+.chapter li a:hover {
+    background: var(--edel-hover);
+    color: var(--edel-text);
+}
+
+.chapter li a.active {
+    background: color-mix(in srgb, var(--edel-accent) 16%, transparent);
+    color: var(--edel-accent);
+    font-weight: 600;
+}
+
+.chapter li.part-title {
+    color: var(--edel-text-muted);
+    font-size: 0.78em;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-block: 1.4em 0.4em;
+    padding-inline-start: 8px;
+}
+
+/* The bar on top and the previous and next arrows stay quiet. */
+#menu-bar {
+    border-block-end: 1px solid var(--edel-border);
+}
+
+.menu-title {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.nav-chapters {
+    border-radius: var(--edel-radius-menu);
+}
+
+.nav-chapters:hover {
+    background: var(--edel-hover);
+}

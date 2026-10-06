@@ -175,6 +175,53 @@ impl Tokens {
         css
     }
 
+    /// The docs site's colours, radii and font from the tokens (the docs
+    /// site, M8.10a), as CSS custom properties, `dark`'s and then
+    /// `light`'s, for mdBook's dark and light themes: the page is drawn
+    /// as a GTK app's view is, the sidebar as its window, so the site
+    /// looks like the desktop's own apps. `docs/theme/tokens.css` must
+    /// equal it, and `docs/theme/edel.css` lays the site out with it.
+    pub fn site_css(dark: &Tokens, light: &Tokens) -> String {
+        let mut css = String::from(
+            "/* Edel OS: the docs site's colours and sizes from design/tokens.toml,\n   \
+             written by edel::tokens::Tokens::site_css; a cargo test keeps this\n   \
+             file equal to it (EDEL_WRITE_DOCS=1 cargo test -p edel site_css).\n   \
+             Never edit it by hand: change the tokens. */\n",
+        );
+        for (selector, tokens) in [
+            (":root, .coal, .navy, .ayu", dark),
+            (".light, .rust", light),
+        ] {
+            css.push_str(&format!("\n{selector} {{\n"));
+            for (name, value) in tokens.site_colours() {
+                css.push_str(&format!("  --edel-{name}: {value};\n"));
+            }
+            css.push_str("}\n");
+        }
+        css.push_str(&format!(
+            "\n:root {{\n  --edel-radius-window: {}px;\n  --edel-radius-menu: {}px;\n  --edel-radius-control: {}px;\n  --edel-font: \"{}\";\n}}\n",
+            dark.radius_window, dark.radius_menu, dark.radius_control, dark.font
+        ));
+        css
+    }
+
+    /// The site's colour roles, the same as GTK's in [`Tokens::gtk_css`]:
+    /// the page as a view (the panel's colour), the sidebar as a window
+    /// (the background), code and tables as header bars (the title bar).
+    fn site_colours(&self) -> [(&'static str, String); 9] {
+        [
+            ("page", self.panel.hex()),
+            ("sidebar", self.background.hex()),
+            ("raised", self.title_bar.hex()),
+            ("hover", self.title_bar_focused.hex()),
+            ("border", self.title_button_hover.hex()),
+            ("text", self.title_text.hex()),
+            ("text-muted", self.title_text_unfocused.hex()),
+            ("accent", self.accent.hex()),
+            ("shadow", self.shadow.hex()),
+        ]
+    }
+
     /// GTK's named colours from these tokens: the windows' background and
     /// text, the header bars as our title bars, sidebars and lists as the
     /// panel, popovers and dialogs as the title bars, and the accent.
@@ -486,6 +533,28 @@ mod tests {
         assert!(
             Tokens::gtk_css(&tokens, &light).contains("@define-color accent_bg_color #e5484d;")
         );
+    }
+
+    /// The docs site's `docs/theme/tokens.css` (M8.10a).
+    const SITE_CSS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/theme/tokens.css");
+
+    #[test]
+    fn the_site_css_is_the_tokens() {
+        // With EDEL_WRITE_DOCS set, the test writes the file instead,
+        // after a token changed.
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        let css = Tokens::site_css(&Tokens::built_in(), &light);
+        if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
+            std::fs::write(SITE_CSS_FILE, &css).unwrap();
+        }
+        let shipped = std::fs::read_to_string(SITE_CSS_FILE).unwrap_or_default();
+        assert!(
+            shipped == css,
+            "docs/theme/tokens.css differs from the tokens; run EDEL_WRITE_DOCS=1 cargo test -p edel site_css"
+        );
+        assert!(css.contains("  --edel-accent: #5b8ef5;"));
+        assert!(css.contains("  --edel-page: #f2f3f5;"));
+        assert!(css.contains("  --edel-radius-menu: 12px;"));
     }
 
     #[test]

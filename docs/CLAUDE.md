@@ -8,6 +8,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 - When Alimardon's wish drives a doc, say in Context when they asked and quote their words ("On 2026-10-02 they added that ...").
 - Cite decisions as "(ADR-006)" at the end of the clause and steps by id ("M5.12", "M7.2a"); link docs with relative links (`[roadmap](ROADMAP.md)`).
 - Name a fact by linking to its owner, or generate the text from it (ADR-010's one owner decision): prose says "the settings file", the tokens, the budgets, and never copies their values, so a change at the owner leaves no doc wrong.
+- Write for the docs site as well as for GitHub (M8.10a): link pages by relative path, never with a link that leaves `docs/` (the site holds only `docs/`; link to GitHub's copy for code), and keep `docs/index.md`, the front page, and `docs/guide/how-it-works.md` true when a step changes what they describe. `docs/guide/commands.md` and `docs/theme/tokens.css` are written by cargo tests; never edit them by hand.
 - Hedge what you have not checked ("as far as I know"). A `## Sources` section, when there is one, goes just before `## Principles check` and ends with a line saying which claims come from general knowledge.
 
 ## ADRs
@@ -55,9 +56,9 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 ## Index (README.md)
 
-Every new doc gets a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
+Every new doc gets a line in `SUMMARY.md`, the docs site's table of contents (M8.10a; a page not listed there is not on the site, and `sh ci/site.sh build` checks every link and anchor between pages), and a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
 
-`FORMATS.md` exists since M1.6, `SPIKE-flatpak.md` since M1.9, `system-file.md` since M2.1, and `TRY-IT.md` (also every release's notes) and `RELEASE.md` since M3.4, and `FEATURES.md` since M4.0; M2.1 added the system-file rules and M3.3b the slot size. Docs the roadmap will add, each in its step: `system-file.md` generated from M6.11 on, `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10).
+`FORMATS.md` exists since M1.6, `SPIKE-flatpak.md` since M1.9, `system-file.md` since M2.1, and `TRY-IT.md` (also every release's notes) and `RELEASE.md` since M3.4, and `FEATURES.md` since M4.0; M2.1 added the system-file rules and M3.3b the slot size. Docs the roadmap will add, each in its step: `system-file.md` generated from M6.11 on, `layout-guide.md` (M5.6), `SHORTCUTS.md` (M5.13), `INSTALL.md` (M6.6b), the generated `defaults.md` (M6.11), `FLEET.md` (M7.3), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8) and `backports.md` (M8.10b).
 
 ## Known inconsistencies: do not copy them
 
