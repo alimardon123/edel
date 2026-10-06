@@ -1304,6 +1304,11 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	# The whole screen drawn, not only what changed: the framebuffer
+	# driver the stick may run on shows only the areas a frame names.
+	background=$(token background)
+	shot live $((w / 2)) $((h / 2)) "$background" >/dev/null ||
+		fail "$((w / 2)),$((h / 2)) is not the background's #$background: the screen was drawn only in part"
 	stop_vm
 	echo "PASS: the desktop image started from a USB stick logged live in by itself: its panel lies along the bottom of the ${w}x$h screen"
 	exit 0

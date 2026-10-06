@@ -126,6 +126,24 @@ struct Gpu {
     /// The health file was written.
     announced: bool,
     started: Instant,
+    /// Every frame is drawn whole: the screen's driver shows only the
+    /// areas a frame says changed, onto one picture of its own
+    /// (`draws_whole`).
+    whole_frames: bool,
+}
+
+/// Whether frames on a screen driven by `driver` must be drawn whole. The
+/// firmware's framebuffer (simpledrm, efidrm, vesadrm) and the plain
+/// virtual cards (bochs, cirrus) keep one picture and copy into it only
+/// the areas a frame names; our frames name only what changed since that
+/// buffer was last drawn, so the screen showed black where nothing had
+/// changed and old pointers where one had (the live stick on -vga std,
+/// M3.6). A GPU driver flips whole buffers and keeps the fast path.
+fn draws_whole(driver: &str) -> bool {
+    matches!(
+        driver,
+        "simpledrm" | "efidrm" | "vesadrm" | "bochs" | "bochs-drm" | "cirrus" | "cirrus-qemu"
+    )
 }
 
 pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
@@ -158,6 +176,17 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         )
         .with_context(|| format!("opening {}", path.display()))?;
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
+    let driver = smithay::reexports::drm::Device::get_driver(&fd)
+        .map(|d| d.name().to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let whole_frames = draws_whole(&driver);
+    if whole_frames {
+        eprintln!(
+            "edel-compositor: screen driver {driver}: drawing every frame whole, as it shows only the areas a frame names"
+        );
+    } else {
+        eprintln!("edel-compositor: screen driver {driver}");
+    }
     let (drm, drm_events) =
         DrmDevice::new(fd.clone(), true).context("opening the GPU for display")?;
     let gbm = GbmDevice::new(fd).context("opening the GPU for buffers")?;
@@ -203,6 +232,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         active: true,
         announced: false,
         started: Instant::now(),
+        whole_frames,
     }));
     gpu.borrow_mut().scan(&mut state);
     if gpu.borrow().screens.is_empty() {
@@ -503,7 +533,7 @@ impl Gpu {
                 screen.dirty = true;
             }
         }
-        if std::mem::take(&mut state.repaint) {
+        if std::mem::take(&mut state.repaint) || self.whole_frames {
             for screen in self.screens.values_mut() {
                 screen.compositor.reset_buffer_ages();
             }
@@ -762,5 +792,19 @@ fn arm_report(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     if let Err(e) = result {
         eprintln!("edel-compositor: the telemetry timer did not start: {e}");
         state.report_armed = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn framebuffer_drivers_draw_whole_frames_and_gpus_do_not() {
+        assert!(draws_whole("simpledrm"));
+        assert!(draws_whole("bochs-drm"));
+        assert!(!draws_whole("i915"));
+        assert!(!draws_whole("virtio_gpu"));
+        assert!(!draws_whole(""));
     }
 }
