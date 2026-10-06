@@ -1,7 +1,7 @@
 # ADR-010: Every part can be changed, dropped or stand on its own
 
 **Status:** Proposed
-**Date:** 2026-10-06
+**Date:** 2026-10-06, amended 2026-10-06 (one owner for every fact)
 **Deciders:** Alimardon
 **Extends:** ADR-002 (its separable desktop decision becomes the rule for every part; one line amended here)
 **Related:** ADR-007 (add-ons), ADR-008 (features, keys and presets as the ways to change things), [ADR-009](ADR-009-enterprise-the-same-system-at-work.md) (enterprise pieces added later), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
@@ -49,6 +49,30 @@ Code stays in this one repository with one CI until a part has a user outside Ed
 
 CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Edel OS path outside `edel::places`, and each library building on its own. A PR that adds a part, a file format or a dependency names the seam it uses in its Principles check.
 
+
+### 5. One owner for every fact
+
+**One owner decision (2026-10-06):** Alimardon added that "everything in the whole repo, everything in this whole project should be modular, traceable, easily flexible and fixable and changeable, droppable from one place", so that "we will develop rapidly even with some changes even with big changes". So every fact has one owner: a name, a path, a value, a version, a list, a budget, a key, a page, a command, a feature, an image, a preset, a token, an icon or a shortcut is written in exactly one file, and everything else reads it from there or is generated from it. Code reads the owner; shell scripts read it through `edel` or one shared file a test holds equal; docs link to the owner or are generated from it, and say "the settings file", not its name, in prose. Changing a fact is one edit at its owner, dropping it is deleting it there (readers report a name that is gone, ADR-008), and a test catches anything left behind. Each owner file begins with a line saying what it owns and who reads it, and each generated file says what generated it, so every fact can be traced.
+
+| Fact | Owner | Read by |
+|---|---|---|
+| Colours, sizes, radii, fonts, motion | `design/tokens.toml` | the compositor, shell-ui, Settings, GTK's colour file (generated) |
+| The shell's own icons | `design/icons/` | `edel::icons` |
+| Layouts | `presets/*.toml` | `edel::presets` |
+| What an image contains | `features/*.toml` | `edel image build` |
+| An image's facts (name, kernel, slot size) | `images/*.toml` | `edel image build`, CI |
+| Budgets | `ci/budgets.toml` | `ci/sizes.sh`, desktop-test |
+| Settings keys, defaults, values, pages | `edel::system` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
+| Shortcuts | `edel::shortcuts` | the compositor, Settings, `docs/SHORTCUTS.md` (generated) |
+| Paths and file names, the settings file's name included | `edel::places` | every part; `ci/names.sh`, held equal by a test (M5.25, M5.27) |
+| Commands and their help | `edel`'s command table (`crates/edel/src/main.rs`) | a command reference (generated, M5.27) |
+| The Alpine branch and the build container | one owner M5.27 names (today written in 24 files) | the image definitions, CI, docs |
+| Decisions | the ADRs | everything |
+| The plan | `docs/ROADMAP.md` | every session |
+| How we work | the CLAUDE.md files | every session |
+
+M5.27 moves what is written twice today to its owner and adds the check; M5.25 does it first for the settings file and the names. A fact with no owner gets one before anyone writes it a second time.
+
 ## Options Considered
 
 | Option | Verdict |
@@ -70,7 +94,7 @@ Not built, and defended: a plugin API, runtime-loaded modules, a component regis
 - **Harder:** a few paths move behind `edel::places`; each PR keeps a little discipline about its seams.
 - **Revisit:** when a part gets a user outside Edel OS (its own repository and package), and when a seam check proves too strict for a real need.
 - **Amends ADR-002:** the separable desktop decision becomes the first case of this rule.
-- **Cost:** one CI script, one module grown and one line in each crate's CLAUDE.md (M8.13); M5.15a already planned the rest for the desktop.
+- **Cost:** one CI script, one module grown and one line in each crate's CLAUDE.md (M8.13); M5.15a already planned the rest for the desktop. One owner for every fact is one more step (M5.27) and one more check, and saves every later rename from a search through the repository.
 
 ## Action Items
 
@@ -78,11 +102,12 @@ Not built, and defended: a plugin API, runtime-loaded modules, a component regis
 2. [ ] `ci/seams.sh` in the Rust checks job (M8.13).
 3. [ ] A "Stands alone" line in each crate's CLAUDE.md (M8.13).
 4. [x] The fewest-parts map in DESIGN-PRINCIPLES.md shows what each part could stand alone as (done 2026-10-06 in this ADR's PR).
+5. [ ] One owner for every fact: what is written twice today moved to its owner, owner and generated-file headers, and `ci/one-place.sh` (M5.27).
 
 ## Principles check
 
-- **Reliable:** a seam that CI checks keeps a change in one part from breaking another.
-- **Simple:** one repository, the doors we already have, no plugin API; a part's whole boundary is files and protocols.
+- **Reliable:** a seam that CI checks keeps a change in one part from breaking another, and a fact with one owner cannot drift out of step with its copies.
+- **Simple:** one repository, the doors we already have, no plugin API; a part's whole boundary is files and protocols; one place to change each fact.
 - **Efficient:** places are found once at start, and there is no run-time layer between parts.
 - **Scalable:** parts can serve other projects and devices, and enterprise pieces arrive as add-ons.
 - **Versatile:** things change by swapping or adding a part through a door that exists, not by adding options.
