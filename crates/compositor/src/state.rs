@@ -4,7 +4,7 @@
 //! The shown workspace's windows live in one smithay `Space`
 //! (`workspaces.rs`, M5.2a); its active policy,
 //! floating (M4.3) or tiling (M4.5), decides where each frame goes, the
-//! window sits inside its frame (M4.4), the settings from the system file
+//! window sits inside its frame (M4.4), the settings from the settings file
 //! apply live (M4.5), and every change of what is on screen is written to
 //! the state file.
 
@@ -55,7 +55,6 @@ use smithay::{
 };
 use toml::{Table, Value};
 
-use edel::system::MACHINE_FILE;
 use edel_compositor::desks::Desks;
 use edel_compositor::frame::{Button, Text};
 use edel_compositor::settings::{self, Settings};
@@ -112,7 +111,7 @@ pub struct Edel {
     pub keyboard_layer: Option<WlSurface>,
     /// The window switcher while its keys are held (M5.3c).
     pub switcher: Option<crate::switcher::Switcher>,
-    /// What the system file says (`watch.rs`).
+    /// What the settings file says (`watch.rs`).
     pub settings: Settings,
     /// `[outputs]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
@@ -352,7 +351,7 @@ impl Edel {
         }
     }
 
-    /// Super+T: the other policy, for this workspace only; the system file
+    /// Super+T: the other policy, for this workspace only; the settings file
     /// is left as it is.
     pub fn toggle_tiling(&mut self) {
         let next = self.desks.layout().next();
@@ -362,10 +361,10 @@ impl Edel {
         }
     }
 
-    /// Reads both system files again and applies what changed.
+    /// Reads both settings files again and applies what changed.
     pub fn reload_settings(&mut self) {
         let person = settings::person_file();
-        let (new, notes) = settings::load(std::path::Path::new(MACHINE_FILE), person.as_deref());
+        let (new, notes) = settings::load(&settings::machine_file(), person.as_deref());
         for note in notes {
             eprintln!("edel-compositor: {note}");
         }

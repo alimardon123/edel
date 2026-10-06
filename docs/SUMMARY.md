@@ -6,7 +6,7 @@
 
 - [Try it](TRY-IT.md)
 - [How Edel OS works](guide/how-it-works.md)
-- [The system file](system-file.md)
+- [The settings file](system-file.md)
 - [Keyboard shortcuts](SHORTCUTS.md)
 - [Commands](guide/commands.md)
 

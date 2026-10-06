@@ -84,11 +84,11 @@ Three commands:
 
 | Command | What it does |
 |---------|--------------|
-| `edel system export` | Writes the current machine's setup to a file |
-| `edel system diff file` | Shows what applying the file would change |
-| `edel system apply file` | Makes this machine match the file, as a new deployment that can roll back |
+| `edel settings export` | Writes the current machine's setup to a file |
+| `edel settings diff file` | Shows what applying the file would change |
+| `edel settings apply file` | Makes this machine match the file, as a new deployment that can roll back |
 
-From M5.25 the file is `settings.toml` and the commands are `edel settings export`, `edel settings diff FILE` and `edel settings import FILE`, the Settings app's own names (ADR-008).
+Since M5.25a the file is `settings.toml` and the commands are `edel settings export`, `edel settings diff FILE` and `edel settings import FILE`, the Settings app's own names (ADR-008).
 
 The same file works at install time: the installer accepts it from a USB stick or a URL, so a new machine comes up already set up. The settings app can do export and apply with a button, so nobody has to touch a terminal.
 
@@ -107,7 +107,7 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 
 | Option | Verdict |
 |--------|---------|
-| A. Data-only system file plus A/B deployments | **Recommended.** Simple to read, simple to share. |
+| A. Data-only settings file plus A/B deployments | **Recommended.** Simple to read, simple to share. |
 | B. NixOS-style configuration in a programming language | Very powerful, but the learning curve is steep. Fails "easy to use". |
 | C. OS defined as a container image (Fedora bootc style) | Great for administrators; kept as the fleet option in section 2. |
 | D. Configuration scripts (Ansible style) | Machines drift over time. Rejected as the main path. |
@@ -115,8 +115,8 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 
 ## Additions from the AerynOS review
 
-- **Stateless configuration:** the OS ships its defaults in `/usr`; `/etc` holds only what the administrator changed. Rollback stays clean, and `edel system export` only needs the system file plus that small difference.
-- **Versioned formats:** the deployment layout, the system file and presets carry a format version from version 1, and the `edel` tool migrates old formats on update, so no machine is ever stranded by a format change.
+- **Stateless configuration:** the OS ships its defaults in `/usr`; `/etc` holds only what the administrator changed. Rollback stays clean, and `edel settings export` only needs the settings file plus that small difference.
+- **Versioned formats:** the deployment layout, the settings file and presets carry a format version from version 1, and the `edel` tool migrates old formats on update, so no machine is ever stranded by a format change.
 - **Fresh installs are tested as seriously as updates** (see principle 1).
 
 ## Consequences
@@ -130,9 +130,9 @@ Anyone who builds an image from the same source gets the exact same bits, so use
 1. [x] Spike A/B slots with automatic fallback on an Alpine VM image (see the spike result above; RAUC itself is not packaged for Alpine stable).
 2. [x] Choose the updater: our own `edel update` (decided 2026-10-01; RAUC is not packaged).
 3. [x] Sign updates, and add a watchdog so a hanging slot also falls back (M1.5 and M1.6, PRs #15 and #16).
-4. [ ] Define version 1 of the system file format.
+4. [ ] Define version 1 of the settings file format.
 5. [ ] Implement export, diff and apply against the VM image.
-6. [ ] Teach the installer to accept a system file.
+6. [ ] Teach the installer to accept a settings file.
 
 ## Sources
 

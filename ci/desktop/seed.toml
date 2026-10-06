@@ -1,8 +1,8 @@
-# Test only (roadmap M4.1, M4.2b): the seed system file of CI's desktop
+# Test only (roadmap M4.1, M4.2b): the seed settings file of CI's desktop
 # image.
 format = 1
 
-# The person CI logs in to the compositor; edel system apply puts them in
+# The person CI logs in to the compositor; edel settings apply puts them in
 # the seat group, as it does everyone on a desktop.
 [users.ci]
 admin = false

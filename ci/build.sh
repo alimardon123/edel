@@ -37,14 +37,15 @@ rm -rf out/keys
 ./target/release/edel release keygen out/keys ci-2
 
 # The system test image (roadmap M2.2, M2.3): the VM image with a seed
-# system file in its slot that names the machine and adds user ci, who logs
+# settings file in its slot that names the machine and adds user ci, who logs
 # in with a fresh ssh key, as root does. The unknown key and the comment
-# must survive `edel system set` and `unset` byte for byte.
+# must survive `edel settings set` and `reset` byte for byte.
+. ci/names.sh
 seed=out/system-test/seed
 rm -rf "$seed"
 mkdir -p "$seed/usr/share/edel"
 ssh-keygen -q -t ed25519 -N '' -C ci@edel -f out/keys/ci-ssh
-cat >"$seed/usr/share/edel/system.toml" <<EOF
+cat >"$seed/usr/share/edel/$settings_name" <<EOF
 format = 1
 future.key = 1
 
@@ -96,7 +97,12 @@ build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 # at once and measures it (ci/desktop-test.sh). It takes CI's first key
 # and a 30 s health timeout, and its own update image, signed, is the
 # update `desktop-test.sh rollback` installs and breaks (roadmap M4.8).
-build "$version" ci/desktop/vm.toml --health-timeout 30 --public-key out/keys/ci-1.pub \
+# Its seed settings file, ci/desktop/seed.toml, goes where a slot keeps
+# its own, by the name ci/names.sh gives it.
+rm -rf out/desktop-seed
+mkdir -p out/desktop-seed/usr/share/edel
+cp ci/desktop/seed.toml "out/desktop-seed/usr/share/edel/$settings_name"
+build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
 	--no-compress --out out/desktop-test
 update=out/desktop-test/update
 rm -rf "$update"

@@ -1,7 +1,7 @@
 //! Layout presets (ADR-002, M5.1c): each one file under `presets/`, built
 //! into the library, so the compositor, shell-ui and Settings read the same
-//! preset with the same code. A preset gives the values the system file
-//! leaves out; a key the system file sets wins (ADR-008). Presets are part
+//! preset with the same code. A preset gives the values the settings file
+//! leaves out; a key the settings file sets wins (ADR-008). Presets are part
 //! of the release, never written on a machine, so [`check`] reads them
 //! strictly and the tests check every one; a name this release does not
 //! have (a preset a later release dropped, or a typo in a hand-edited
@@ -27,7 +27,7 @@ pub const BUILT_IN: &[(&str, &str)] = &[
 ];
 
 /// The names in [`BUILT_IN`]: what `shell.preset` may be on this release,
-/// so `edel system check` and `set` refuse any other and list these.
+/// so `edel settings check` and `set` refuse any other and list these.
 pub const NAMES: &[&str] = &["classic", "hive", "mac-like", "windows-like"];
 
 /// The preset a missing `shell.preset` means.
@@ -249,7 +249,7 @@ pub fn check(text: &str) -> Result<Preset> {
     Ok(preset)
 }
 
-/// What a preset's panels, or `[[shell.panels]]` in a system file
+/// What a preset's panels, or `[[shell.panels]]` in a settings file
 /// (M5.4e), must be: at most one along each edge, holding widget names
 /// that could be names.
 pub fn check_panels(panels: &[Panel]) -> Result<()> {

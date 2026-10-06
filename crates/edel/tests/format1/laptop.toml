@@ -47,7 +47,7 @@ install = [
 
 [services]
 sysinit = ["devfs", "dmesg", "mdev", "hwdrivers", "edel-guard", "edel-data"]
-boot = ["modules", "sysctl", "edel-system", "hostname", "bootmisc", "syslog", "networking"]
+boot = ["modules", "sysctl", "edel-settings", "hostname", "bootmisc", "syslog", "networking"]
 # edel-report leaves the hardware report on the stick (M3.4).
 default = ["sshd", "edel-boot-ok", "edel-report"]
 shutdown = ["mount-ro", "killprocs", "savecache"]

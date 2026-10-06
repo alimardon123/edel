@@ -1,6 +1,6 @@
-//! What the compositor takes from the system file (roadmap M4.5): the
-//! machine's `/data/edel/system.toml` and the person's
-//! `~/.config/edel/system.toml`, the same schema, read with `edel::system`
+//! What the compositor takes from the settings file (roadmap M4.5): the
+//! machine's and the person's, the same schema, found through
+//! `edel::places` and read with `edel::system`
 //! so the defaults and the leniency are `edel`'s (ADR-008). A key the
 //! person's file sets wins; a key neither sets is the preset's (M5.1c),
 //! then the default. Reading is
@@ -173,7 +173,15 @@ impl Settings {
     }
 }
 
-pub use edel::system::person_file;
+/// The person's settings file, by its name or a former one.
+pub fn person_file() -> Option<std::path::PathBuf> {
+    edel::places::person_settings().map(|p| edel::places::found(&p))
+}
+
+/// The machine's settings file, by its name or a former one.
+pub fn machine_file() -> std::path::PathBuf {
+    edel::places::found(&edel::places::machine_settings())
+}
 
 /// Reads one file the way an unattended reader must: missing is nothing,
 /// what cannot be used is left out and noted, a file it cannot read at all

@@ -4,7 +4,7 @@
 //! toolkit decision of 2026-10-03): layer-shell surfaces through
 //! smithay-client-toolkit, drawn with tiny-skia into shared memory, text
 //! shaped by cosmic-text, all from the design tokens. Today it draws the
-//! preset's panels (M5.1b, M5.1c): the system file's `shell.preset`, else
+//! preset's panels (M5.1b, M5.1c): the settings file's `shell.preset`, else
 //! Classic, whose one panel runs along the bottom of the first screen
 //! with the menu button, the window list (M5.2h), the workspace switcher
 //! (M5.2c), the layout toggle (M5.3a) and a clock. Each
@@ -58,6 +58,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
+use edel::places;
 use edel::presets::{self, Edge, Hide, Style};
 use edel::system;
 use edel::tokens::{self, Scheme, Tokens};
@@ -302,13 +303,13 @@ fn load_tokens(scheme: Scheme) -> Tokens {
     tokens
 }
 
-/// The preset the system files name, else Classic, and the colour scheme
+/// The preset the settings files name, else Classic, and the colour scheme
 /// they pick (M5.5c), the person's over the machine's; a broken file or an
 /// unknown name is reported, never fatal (ADR-008).
 fn from_system_files() -> (presets::Preset, Scheme) {
     let (mut name, mut panels, mut scheme) = (None, None, None);
-    let files = [Some(system::MACHINE_FILE.into()), system::person_file()];
-    for path in files.into_iter().flatten() {
+    let files = [Some(places::machine_settings()), places::person_settings()];
+    for path in files.into_iter().flatten().map(|p| places::found(&p)) {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };

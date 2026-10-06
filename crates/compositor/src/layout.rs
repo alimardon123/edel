@@ -18,7 +18,7 @@ pub fn policies<W: Clone + PartialEq + 'static>(gap: u32) -> Vec<Box<dyn WindowP
 
 /// Where windows go on one workspace.
 pub trait WindowPolicy<W> {
-    /// The name `system.toml` and the state file use: `floating` or
+    /// The name the settings file and the state file use: `floating` or
     /// `tiling`.
     fn name(&self) -> &'static str;
 
@@ -321,7 +321,7 @@ pub const EXTERNAL_PPI: f64 = 110.0;
 /// ADR-008): its pixels per inch, from the EDID's physical width, over
 /// [`BUILT_IN_PPI`] or [`EXTERNAL_PPI`], rounded to 0.25 and kept from 1
 /// to 3; 1 when the screen does not say its size. Worked out whenever a
-/// screen appears and never written to the system file.
+/// screen appears and never written to the settings file.
 pub fn auto_scale(mode: Size<i32, Physical>, size_mm: Size<i32, Physical>, built_in: bool) -> f64 {
     if mode.w <= 0 || size_mm.w <= 0 || size_mm.h <= 0 {
         return 1.0;
@@ -372,7 +372,7 @@ pub fn pick_mode(modes: &[(i32, i32, i32)], wanted: (i32, i32, Option<f64>)) -> 
     }
 }
 
-/// A screen's logical size and the place the system file gives it.
+/// A screen's logical size and the place the settings file gives it.
 pub type ScreenPlace = (Size<i32, Logical>, Option<Point<i32, Logical>>);
 
 /// Where screens go: each at its `outputs.NAME.position` if it has one,
@@ -391,7 +391,7 @@ pub fn place_screens(screens: &[ScreenPlace]) -> Vec<Point<i32, Logical>> {
 }
 
 /// One screen as the compositor lays it out. M4.6 adds its position,
-/// transform and whether it is on, from `[outputs.NAME]` in `system.toml`.
+/// transform and whether it is on, from `[outputs.NAME]` in the settings file.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputLayout {
     /// The connector's name, such as `eDP-1` or `Virtual-1`.

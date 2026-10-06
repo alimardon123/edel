@@ -102,7 +102,7 @@ fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) 
 }
 
 /// Ends the running shell-ui so it starts again at once, reading the
-/// system files afresh: `why` goes to the log.
+/// settings files afresh: `why` goes to the log.
 pub fn restart(state: &mut Edel, why: &str) {
     let Some(pid) = state.shell_ui.pid.and_then(|p| Pid::from_raw(p as i32)) else {
         return;

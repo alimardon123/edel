@@ -1,7 +1,7 @@
-//! `edel system apply` and `edel system export` (roadmap M2.2): makes this
-//! machine match its system file, and describes the machine as one. Apply
-//! runs at every boot from the `edel-system` service, seeding the file on
-//! the first, and on demand. It applies the sections that need no network:
+//! `edel settings` (roadmap M2.2, M2.3, M5.25a): makes this machine match
+//! its settings file, describes the machine as one, and reads and changes
+//! the file. Apply runs at every boot from the `edel-settings` service,
+//! seeding the file on the first, and on demand. It applies the sections that need no network:
 //! the hostname, users, their ssh keys and developer mode. It adds and
 //! changes, and never deletes a user (ADR-006).
 
@@ -15,24 +15,26 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use edel::places;
 use edel::system::{self, SystemFile, User};
 
 use crate::boot::GRUB_PREFIX;
 use crate::release::os_release_value;
 use crate::update::{Disk, Lock, run};
 
-/// The machine's system file, on the data partition.
-pub const SYSTEM_FILE: &str = system::MACHINE_FILE;
+/// The machine's settings file as it is found now: by its name, or by a
+/// name it had before (`edel::places`), until apply renames it.
+fn machine_file() -> PathBuf {
+    places::found(&places::machine_settings())
+}
 /// Developer mode is on while this file exists (ADR-007; M7.1 acts on it).
 const DEVELOPER_FLAG: &str = "/data/edel/developer";
 /// What this machine changed in `/etc`: a file here differs from the slot's.
 const ETC_UPPER: &str = "/data/etc/upper";
-/// A volume with this label holding `system.toml` seeds a first boot.
+/// A volume with this label holding the settings file seeds a first boot.
 const SEED_LABEL: &str = "EDEL-SEED";
 /// The EFI system partition's number on the running disk.
 const ESP_PARTITION: u32 = 1;
-/// The slot's own seed, used when no volume holds one.
-const SLOT_SEED: &str = "/usr/share/edel/system.toml";
 /// The login shell of a user whose entry names none.
 pub const DEFAULT_SHELL: &str = "/bin/sh";
 /// Members of this group are admins.
@@ -93,7 +95,7 @@ pub fn has_person(passwd: &str) -> bool {
 }
 
 /// Adds the account the desktop logs in by itself from a stick (M3.6,
-/// `edel boot live`): a system account, so the system file never lists
+/// `edel boot live`): a system account, so the settings file never lists
 /// it and apply and export leave it alone, with the shell greetd starts
 /// the session through, no password (`*`) and the seat.
 pub fn add_live_account(name: &str) -> Result<()> {
@@ -177,7 +179,7 @@ fn replace(path: &Path, text: &str) -> Result<()> {
     fs::rename(&new, path).with_context(|| format!("replacing {}", path.display()))
 }
 
-/// One change apply makes; `edel system diff` lists them without making them.
+/// One change apply makes; `edel settings diff` lists them without making them.
 #[derive(Debug, PartialEq)]
 enum Change {
     /// Write `/etc/hostname`
@@ -406,7 +408,7 @@ fn read_keys(account: &Account) -> Option<String> {
     let meta = file.metadata().ok()?;
     if !meta.is_file() || meta.uid() != account.uid || meta.len() > KEYS_MAX {
         eprintln!(
-            "edel system: ignored {}: not a regular file of {} up to 1 MiB",
+            "edel settings: ignored {}: not a regular file of {} up to 1 MiB",
             path.display(),
             account.name
         );
@@ -508,59 +510,110 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
 /// The file to apply or diff, read leniently, with its problems and the
 /// keys this release skips printed first; `None` when there is none.
 fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<system::Read>> {
-    let path = file.unwrap_or(Path::new(SYSTEM_FILE));
+    let machine = machine_file();
+    let path = file.unwrap_or(&machine);
     if file.is_none() && !path.exists() {
         match seed_if_missing.then(|| seed(path)).transpose()?.flatten() {
-            Some(from) => println!("edel system: seeded {SYSTEM_FILE} from {from}"),
+            Some(from) => println!("edel settings: seeded {} from {from}", path.display()),
             None => {
-                println!("edel system: no system file, so nothing to apply");
+                println!("edel settings: no settings file, so nothing to apply");
                 return Ok(None);
             }
         }
     }
     let read = system::read_on_machine(path)?;
     for problem in &read.problems {
-        println!("edel system: left out {problem}");
+        println!("edel settings: left out {problem}");
     }
     for key in &read.later {
-        println!("edel system: skipped {key}: not supported yet");
+        println!("edel settings: skipped {key}: not supported yet");
     }
     Ok(Some(read))
 }
 
-/// `edel system apply [FILE]`: applies the system file, by default the
-/// machine's own, which is seeded first when it is missing. A given FILE
-/// becomes the machine's file once applied, so the next boot keeps it.
-pub fn apply(file: Option<&Path>, boot: bool) -> Result<()> {
-    let _lock = Lock::take("system", "edel system")?;
+/// Gives the machine's settings file its name when it still has a former
+/// one (`edel::places::FORMER_SETTINGS`), with the `.v<N>` beside it, and
+/// makes `/etc/edel/`'s link to it, where admins look first.
+fn settle_names() -> Result<()> {
+    let machine = places::machine_settings();
+    let found = machine_file();
+    if found != machine {
+        for format in 1..=system::FORMAT {
+            let old = system::versioned(&found, format);
+            if old.exists() {
+                fs::rename(&old, system::versioned(&machine, format))?;
+            }
+        }
+        fs::rename(&found, &machine)
+            .with_context(|| format!("renaming {} to {}", found.display(), machine.display()))?;
+        println!(
+            "edel settings: renamed {} to {}",
+            found.display(),
+            machine.display()
+        );
+    }
+    let link = places::etc_settings();
+    if fs::read_link(&link).ok().as_deref() != Some(machine.as_path()) {
+        fs::create_dir_all(places::ETC_DIR)?;
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(&machine, &link)
+            .with_context(|| format!("linking {} to {}", link.display(), machine.display()))?;
+        println!(
+            "edel settings: linked {} to {}",
+            link.display(),
+            machine.display()
+        );
+    }
+    Ok(())
+}
+
+/// `edel settings apply`: applies the machine's own settings file, which
+/// is seeded first when it is missing.
+pub fn apply(boot: bool) -> Result<()> {
+    apply_file(None, boot)
+}
+
+/// `edel settings import FILE`: applies FILE, which then becomes the
+/// machine's settings file, so the next boot keeps it.
+pub fn import(file: &Path) -> Result<()> {
+    apply_file(Some(file), false)
+}
+
+fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
+    let _lock = Lock::take("settings", "edel settings")?;
+    // A file by a former name is renamed first, so it is read and kept by
+    // the name this release writes; a failure here never stops the apply.
+    if let Err(err) = settle_names() {
+        eprintln!("warning: {err:#}");
+    }
     let Some(read) = load(file, true)? else {
         return Ok(());
     };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
     for note in &notes {
-        println!("edel system: {note}");
+        println!("edel settings: {note}");
     }
     // One change that fails never stops the others (Reliable): each is
     // reported, and apply fails at the end.
     let mut failed = 0;
     for change in &changes {
         match execute(change, boot) {
-            Ok(()) => println!("edel system: {change}"),
+            Ok(()) => println!("edel settings: {change}"),
             Err(err) => {
                 failed += 1;
-                eprintln!("edel system: could not apply {change}: {err:#}");
+                eprintln!("edel settings: could not apply {change}: {err:#}");
             }
         }
     }
-    let machine = Path::new(SYSTEM_FILE);
-    if let Some(path) = file.filter(|f| !same_file(f, machine)) {
-        keep_as_machine_file(path, machine)?;
+    let machine = places::machine_settings();
+    if let Some(path) = file.filter(|f| !same_file(f, &machine)) {
+        keep_as_machine_file(path, &machine)?;
         println!(
-            "edel system: {} is now this machine's system file",
+            "edel settings: {} is now this machine's settings file",
             path.display()
         );
     } else if changes.is_empty() {
-        println!("edel system: nothing to change");
+        println!("edel settings: nothing to change");
     }
     if failed > 0 {
         bail!("{failed} of {} changes could not be applied", changes.len());
@@ -602,7 +655,7 @@ fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
     write_whole(to, &text).with_context(|| format!("saving {}", to.display()))
 }
 
-/// `edel system diff [FILE]`: what apply would change, one `change:` line
+/// `edel settings diff [FILE]`: what apply would change, one `change:` line
 /// each, changing nothing. Returns whether there is anything to change.
 pub fn diff(file: Option<&Path>) -> Result<bool> {
     let Some(read) = load(file, false)? else {
@@ -610,7 +663,7 @@ pub fn diff(file: Option<&Path>) -> Result<bool> {
     };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
     for note in &notes {
-        println!("edel system: {note}");
+        println!("edel settings: {note}");
     }
     for change in &changes {
         println!("change: {change}");
@@ -618,18 +671,19 @@ pub fn diff(file: Option<&Path>) -> Result<bool> {
     Ok(!changes.is_empty())
 }
 
-/// Edits the machine's system file through `change`, or for a file in a
-/// newer format the `system.toml.v<N>` this release reads (ADR-008,
+/// Edits the machine's settings file through `change`, or for a file in a
+/// newer format the `.v<N>` beside it this release reads (ADR-008,
 /// writers). Never applies it.
-fn edit(what: &str, key: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
-    let _lock = Lock::take("system", "edel system")?;
-    let machine = Path::new(SYSTEM_FILE);
-    let mut path = machine.to_path_buf();
+fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> Result<()> {
+    let _lock = Lock::take("settings", "edel settings")?;
+    let machine = machine_file();
+    let shown = machine.display().to_string();
+    let mut path = machine.clone();
     let mut newer = None;
-    if let Ok(text) = fs::read_to_string(machine) {
-        let format = system::format(&text).with_context(|| format!("reading {SYSTEM_FILE}"))?;
+    if let Ok(text) = fs::read_to_string(&machine) {
+        let format = system::format(&text).with_context(|| format!("reading {shown}"))?;
         if format > system::FORMAT {
-            path = system::versioned(machine, system::FORMAT);
+            path = system::versioned(&machine, system::FORMAT);
             newer = Some(format);
         }
     }
@@ -637,63 +691,258 @@ fn edit(what: &str, key: &str, change: impl Fn(&str) -> Result<String>) -> Resul
         Ok(text) => text,
         Err(_) if newer.is_none() => format!("format = {}\n", system::FORMAT),
         Err(_) => bail!(
-            "{SYSTEM_FILE} is format {}, newer than this release, and there is no {} beside it to change",
+            "{shown} is format {}, newer than this release, and there is no {} beside it to change",
             newer.unwrap_or_default(),
             path.display()
         ),
     };
     let edited = change(&text)?;
     for problem in system::read(&edited)?.problems {
-        println!("edel system: kept, not used by this release: {problem}");
+        println!("edel settings: kept, not used by this release: {problem}");
     }
     fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
     fs::write(&new, &edited)?;
     fs::File::open(&new)?.sync_all()?;
     fs::rename(&new, &path).with_context(|| format!("replacing {}", path.display()))?;
+    let desktop = keys.iter().all(|k| desktop_follows(k));
     println!(
-        "edel system: {what} in {}; {}",
+        "edel settings: {what} in {}; {}",
         path.display(),
-        who_applies(key)
+        if desktop {
+            "the desktop follows it at once"
+        } else {
+            "edel settings apply applies it"
+        }
     );
     if let Some(format) = newer {
         println!(
-            "edel system: {SYSTEM_FILE} is format {format}, so the change applies to this release only"
+            "edel settings: {shown} is format {format}, so the change applies to this release only"
         );
     }
     Ok(())
 }
 
-/// `edel system set KEY=VALUE`
-pub fn set(assignment: &str) -> Result<()> {
-    let (key, value) = assignment
-        .split_once('=')
-        .context("write KEY=VALUE, such as network.hostname=lab-1")?;
-    let (key, value) = (key.trim(), value.trim());
-    edit(&format!("set {key}"), key, |text| {
-        system::set(text, key, value)
+/// `edel settings set KEY=VALUE...`: every assignment is checked before
+/// any is written, and all are written at once, or none.
+pub fn set(assignments: &[String]) -> Result<()> {
+    let mut pairs = Vec::new();
+    for assignment in assignments {
+        let (key, value) = assignment.split_once('=').with_context(|| {
+            format!("{assignment:?}: write KEY=VALUE, such as network.hostname=lab-1")
+        })?;
+        pairs.push((key.trim(), value.trim()));
+    }
+    let keys: Vec<&str> = pairs.iter().map(|(k, _)| *k).collect();
+    edit(&format!("set {}", keys.join(", ")), &keys, |text| {
+        let mut text = text.to_string();
+        for (key, value) in &pairs {
+            text = system::set(&text, key, value)?;
+        }
+        Ok(text)
     })
 }
 
-/// What makes a change to `key` take effect: the desktop follows the shell
-/// and output keys at once (M4.5, M4.6); `edel system apply` applies the
-/// rest.
-fn who_applies(key: &str) -> &'static str {
-    if key.starts_with("shell.") || key.starts_with("outputs.") {
-        "the desktop follows it at once"
-    } else {
-        "edel system apply applies it"
+/// Whether the desktop follows `key` at once, as it does the layout,
+/// screen, look and shortcut keys (M4.5, M4.6, M5.5c, M5.13a); `edel
+/// settings apply` applies the rest.
+fn desktop_follows(key: &str) -> bool {
+    ["shell.", "outputs.", "appearance.", "shortcuts."]
+        .iter()
+        .any(|section| key.starts_with(section))
+}
+
+/// `edel settings reset KEY...`: removes each key, so the release decides
+/// it again.
+pub fn reset(keys: &[String]) -> Result<()> {
+    let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+    edit(&format!("reset {}", keys.join(", ")), &keys, |text| {
+        let mut text = text.to_string();
+        for key in &keys {
+            text = system::unset(&text, key)?;
+        }
+        Ok(text)
+    })
+}
+
+/// A page's name as people type it: its title in lowercase, `_` for a
+/// space, such as `default_apps` (ADR-008's same names decision).
+fn page_word(page: &system::Page) -> String {
+    page.title.to_lowercase().replace(' ', "_").replace('-', "")
+}
+
+/// `edel settings` alone: the pages, in the Settings app's order.
+pub fn pages() {
+    println!("Settings, page by page, as the Settings app shows them:\n");
+    let width = system::PAGES
+        .iter()
+        .map(|p| page_word(p).len())
+        .max()
+        .unwrap_or(0);
+    for page in system::PAGES {
+        println!(
+            "  {:width$}  {}: {}",
+            page_word(page),
+            page.title,
+            page.about
+        );
+    }
+    println!(
+        "\nedel settings get PAGE shows a page's settings and where each comes from;\n\
+         edel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
+    );
+}
+
+/// Every value in `table`, by its dotted key; a list is one value.
+fn flatten(table: &toml::Table, prefix: &str, out: &mut Vec<(String, toml::Value)>) {
+    for (name, value) in table {
+        let key = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        match value {
+            toml::Value::Table(inner) => flatten(inner, &key, out),
+            _ if key == "format" => {}
+            _ => out.push((key, value.clone())),
+        }
     }
 }
 
-/// `edel system unset KEY`
-pub fn unset(key: &str) -> Result<()> {
-    edit(&format!("removed {key}"), key, |text| {
-        system::unset(text, key)
-    })
+/// The values a settings file at `path` sets, by key; none when there is
+/// no file or it cannot be read.
+fn values_in(path: Option<PathBuf>) -> Vec<(String, toml::Value)> {
+    let mut out = Vec::new();
+    let file = path
+        .filter(|p| p.exists())
+        .and_then(|p| system::read_on_machine(&p).ok());
+    if let Some(toml::Value::Table(table)) = file.and_then(|r| toml::Value::try_from(r.file).ok()) {
+        flatten(&table, "", &mut out);
+    }
+    out
 }
 
-/// Looks for a first system file: on a volume labelled EDEL-SEED, then on
+/// `edel settings get [KEY|PAGE] [--toml]`: the settings with their
+/// values and where each comes from: a person's own file for what the
+/// desktop reads, then the machine's, else the release's default.
+pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
+    let machine = values_in(Some(machine_file()));
+    let person: Vec<(String, toml::Value)> =
+        values_in(places::person_settings().map(|p| places::found(&p)))
+            .into_iter()
+            .filter(|(k, _)| desktop_follows(k))
+            .collect();
+    // The section asked for, by its page's word or its own name, or a key.
+    let (section, key) = match what {
+        None => (None, None),
+        Some(w) => match system::PAGES
+            .iter()
+            .find(|p| page_word(p) == w || p.section == w)
+        {
+            Some(page) => (Some(page.section), None),
+            None if system::KEYS.iter().any(|k| key_fits(k.path, w)) => (None, Some(w)),
+            None if machine
+                .iter()
+                .chain(&person)
+                .any(|(k, _)| k.starts_with(&format!("{w}."))) =>
+            {
+                (None, Some(w))
+            }
+            None => match system::nearest_key(w) {
+                Some(near) => bail!("{w}: no such page or key; did you mean {near}?"),
+                None => bail!("{w}: no such page or key; edel settings lists the pages"),
+            },
+        },
+    };
+    let wanted = |k: &str| match (section, key) {
+        (Some(s), _) => k.starts_with(&format!("{s}.")),
+        (_, Some(key)) => k == key || k.starts_with(&format!("{key}.")),
+        _ => true,
+    };
+    // The person's value wins over the machine's for the same key.
+    let mut rows: Vec<(String, toml::Value, &str)> = Vec::new();
+    for (k, v) in &person {
+        if wanted(k) {
+            rows.push((k.clone(), v.clone(), "your own file"));
+        }
+    }
+    for (k, v) in &machine {
+        if wanted(k) && !rows.iter().any(|(r, _, _)| r == k) {
+            rows.push((k.clone(), v.clone(), "this machine"));
+        }
+    }
+    if as_toml {
+        let mut table = toml::Table::new();
+        for (k, v, _) in &rows {
+            insert_path(&mut table, k, v.clone());
+        }
+        print!("{}", toml::to_string(&table)?);
+        return Ok(());
+    }
+    // The keys a page has that nobody set, so the release decides them.
+    for entry in system::KEYS.iter().filter(|k| !k.path.contains('*')) {
+        if wanted(entry.path) && !rows.iter().any(|(r, _, _)| r == entry.path) {
+            rows.push((
+                entry.path.to_string(),
+                toml::Value::String(String::new()),
+                "",
+            ));
+        }
+    }
+    let width = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0);
+    for page in system::PAGES {
+        let mut mine: Vec<&(String, toml::Value, &str)> = rows
+            .iter()
+            .filter(|(k, _, _)| k.split('.').next() == Some(page.section))
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+        mine.sort_by(|a, b| (a.2.is_empty(), &a.0).cmp(&(b.2.is_empty(), &b.0)));
+        println!("{} ({}): {}", page.title, page_word(page), page.about);
+        for (k, v, from) in mine {
+            let later = system::KEYS
+                .iter()
+                .any(|e| !e.supported && key_fits(e.path, k));
+            let shown = if from.is_empty() {
+                "not set: the release decides".to_string()
+            } else {
+                format!("{v}  ({from})")
+            };
+            let later = if later { "  (not supported yet)" } else { "" };
+            println!("  {k:width$}  {shown}{later}");
+        }
+        println!();
+    }
+    Ok(())
+}
+
+/// Whether `key` is `pattern`, where `*` in the pattern stands for a name.
+fn key_fits(pattern: &str, key: &str) -> bool {
+    let (a, b): (Vec<&str>, Vec<&str>) = (pattern.split('.').collect(), key.split('.').collect());
+    a.len() == b.len() && a.iter().zip(&b).all(|(p, k)| *p == "*" || p == k)
+}
+
+/// Puts `value` at the dotted `key` in `table`, making tables on the way.
+fn insert_path(table: &mut toml::Table, key: &str, value: toml::Value) {
+    let mut parts: Vec<&str> = key.split('.').collect();
+    let Some(last) = parts.pop() else {
+        return;
+    };
+    let mut at = table;
+    for part in parts {
+        let entry = at
+            .entry(part.to_string())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        let toml::Value::Table(inner) = entry else {
+            return;
+        };
+        at = inner;
+    }
+    at.insert(last.to_string(), value);
+}
+
+/// Looks for a first settings file: on a volume labelled EDEL-SEED, then on
 /// this disk's EFI system partition, then in the slot. Copies the first one
 /// this release can read to `target` and says where it came from; one it
 /// cannot read is reported and passed over, so a fixed seed is read at the
@@ -701,32 +950,33 @@ pub fn unset(key: &str) -> Result<()> {
 /// found from the running disk, not by label: an installer stick and the
 /// disk it installed both have an EDEL-ESP.
 fn seed(target: &Path) -> Result<Option<String>> {
-    let esp_file = format!("{}/system.toml", GRUB_PREFIX.trim_start_matches('/'));
+    let esp_dir = Path::new(GRUB_PREFIX.trim_start_matches('/'));
     // The first source that holds a file this release can read wins.
     let adopt = |text: Option<String>, from: &str| -> Result<Option<String>> {
         let Some(text) = text else {
             return Ok(None);
         };
         if let Err(err) = system::read(&text) {
-            println!("edel system: passed over the system file on {from}: {err:#}");
+            println!("edel settings: passed over the settings file on {from}: {err:#}");
             return Ok(None);
         }
         write_whole(target, text.as_bytes())?;
         Ok(Some(from.to_string()))
     };
     let volume =
-        find_by_label(SEED_LABEL).and_then(|device| read_from(&device, "system.toml", None));
+        find_by_label(SEED_LABEL).and_then(|device| read_from(&device, Path::new(""), None));
     if let Some(from) = adopt(volume, &format!("the {SEED_LABEL} volume"))? {
         return Ok(Some(from));
     }
     let esp = Disk::find()
         .and_then(|disk| disk.device(ESP_PARTITION))
         .ok()
-        .and_then(|device| read_from(&device, &esp_file, Some("vfat")));
+        .and_then(|device| read_from(&device, esp_dir, Some("vfat")));
     if let Some(from) = adopt(esp, "the EFI system partition")? {
         return Ok(Some(from));
     }
-    adopt(fs::read_to_string(SLOT_SEED).ok(), SLOT_SEED)
+    let slot = places::found(&places::slot_settings());
+    adopt(fs::read_to_string(&slot).ok(), &slot.display().to_string())
 }
 
 /// The device of the file system labelled `label`, if one is attached.
@@ -739,10 +989,10 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
     (out.status.success() && !device.is_empty()).then(|| PathBuf::from(device))
 }
 
-/// The text of `inner` on `device`, mounted read-only for as long as it
-/// takes to read it. `fs` names the file system when it is known: early
+/// The settings file in the directory `inner` on `device`, by its name or
+/// a former one, mounted read-only for as long as it takes to read it. `fs` names the file system when it is known: early
 /// in boot the FAT driver is not loaded yet, so mount cannot guess it.
-fn read_from(device: &Path, inner: &str, fs: Option<&str>) -> Option<String> {
+fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
     let dir = Path::new("/run/edel/seed");
     fs::create_dir_all(dir).ok()?;
     // FAT needs a charset the virt kernel has; other file systems refuse
@@ -761,23 +1011,34 @@ fn read_from(device: &Path, inner: &str, fs: Option<&str>) -> Option<String> {
     };
     if !mounted {
         eprintln!(
-            "warning: cannot mount {} to look for a system file",
+            "warning: cannot mount {} to look for a settings file",
             device.display()
         );
         return None;
     }
-    let text = fs::read_to_string(dir.join(inner)).ok();
+    let text = fs::read_to_string(places::found(&places::settings_in(&dir.join(inner)))).ok();
     let _ = Command::new("umount").arg(dir).status();
     text
 }
 
-/// `edel system export`: prints this machine as a system file. It starts
-/// from the machine's file and replaces what apply owns with what the
-/// machine has, writing no defaults (ADR-008).
+/// What `export` begins the file with: what it is, and how to use it.
+pub const EXPORT_HEADER: &str = "\
+# Edel OS settings: this machine as one file (ADR-006). Every line is a
+# setting the Settings app shows; a line that is missing means the
+# release's default. To set up another machine the same way, run
+#   edel settings import THIS-FILE
+# on it, or give it to the installer with edel install DISK --settings
+# THIS-FILE. It never holds passwords or personal files.
+";
+
+/// `edel settings export`: prints this machine as a settings file. It
+/// starts from the machine's file and replaces what apply owns with what
+/// the machine has, writing no defaults (ADR-008).
 pub fn export() -> Result<()> {
-    let mut file = match system::read_on_machine(Path::new(SYSTEM_FILE)) {
+    let machine = machine_file();
+    let mut file = match system::read_on_machine(&machine) {
         Ok(read) => read.file,
-        Err(_) if !Path::new(SYSTEM_FILE).exists() => SystemFile::default(),
+        Err(_) if !machine.exists() => SystemFile::default(),
         Err(err) => {
             eprintln!("warning: {err:#}; exporting only what the machine has");
             SystemFile::default()
@@ -796,7 +1057,7 @@ pub fn export() -> Result<()> {
         read_keys,
         Path::new(DEVELOPER_FLAG).exists(),
     );
-    print!("{}", toml::to_string(&file)?);
+    print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
     if !changed.is_empty() {
         println!("\n# Files this machine changed in /etc, kept on /data and not described above:");
@@ -1054,18 +1315,9 @@ mod tests {
 
     #[test]
     fn the_desktop_follows_shell_keys_and_apply_the_rest() {
-        assert_eq!(
-            who_applies("shell.tiling"),
-            "the desktop follows it at once"
-        );
-        assert_eq!(
-            who_applies("outputs.eDP-1.scale"),
-            "the desktop follows it at once"
-        );
-        assert_eq!(
-            who_applies("network.hostname"),
-            "edel system apply applies it"
-        );
+        assert!(desktop_follows("shell.tiling"));
+        assert!(desktop_follows("outputs.eDP-1.scale"));
+        assert!(!desktop_follows("network.hostname"));
     }
 
     #[test]
@@ -1115,15 +1367,22 @@ mod tests {
         let from = dir.join("new.toml");
         fs::write(&from, "format = 9\n").unwrap();
         fs::write(dir.join("new.toml.v1"), "format = 1\n").unwrap();
-        let to = dir.join("data/system.toml");
+        let to = places::settings_in(&dir.join("data"));
         keep_as_machine_file(&from, &to).unwrap();
         assert_eq!(fs::read_to_string(&to).unwrap(), "format = 9\n");
         assert_eq!(
-            fs::read_to_string(dir.join("data/system.toml.v1")).unwrap(),
+            fs::read_to_string(system::versioned(
+                &places::settings_in(&dir.join("data")),
+                1
+            ))
+            .unwrap(),
             "format = 1\n"
         );
         // The same file by another name is left alone, never emptied.
-        assert!(same_file(&to, &dir.join("data/../data/system.toml")));
+        assert!(same_file(
+            &to,
+            &places::settings_in(&dir.join("data/../data"))
+        ));
         assert!(!same_file(&to, &from));
         fs::remove_dir_all(&dir).unwrap();
     }

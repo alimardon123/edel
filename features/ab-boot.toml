@@ -1,10 +1,10 @@
 # The A/B disk (ADR-006). features/ab-boot/ holds the read-only root's
 # fstab and the services: edel-data (mount /data, grow it on first boot),
-# edel-guard (the watchdog until the slot is healthy), edel-system (apply
-# the system file) and edel-boot-ok (confirm the slot).
+# edel-guard (the watchdog until the slot is healthy), edel-settings (apply
+# the settings) and edel-boot-ok (confirm the slot).
 format = 1
-summary = "Updates that roll back: two root slots, the data partition and the system file"
-why = "The A/B disk needs vfat and ext4 tools for the EFI system partition, the slots and /data (e2fsprogs-extra gives edel update its tune2fs and the installer its resize2fs), partx and sfdisk to grow /data and to install, and libgcc, which the edel binary links; its services mount /data, guard the boot, apply the system file and confirm the slot."
+summary = "Updates that roll back: two root slots, the data partition and the settings file"
+why = "The A/B disk needs vfat and ext4 tools for the EFI system partition, the slots and /data (e2fsprogs-extra gives edel update its tune2fs and the installer its resize2fs), partx and sfdisk to grow /data and to install, and libgcc, which the edel binary links; its services mount /data, guard the boot, apply the settings file and confirm the slot."
 packages = ["dosfstools", "e2fsprogs", "e2fsprogs-extra", "libgcc", "partx", "sfdisk"]
 # softdog, which the guard pets on kernels that have it (linux-lts; not
 # linux-virt) until a hardware watchdog loads by its hardware ID (QEMU's
@@ -21,5 +21,5 @@ health = ["default-runlevel"]
 
 [services]
 sysinit = ["edel-guard", "edel-data"]
-boot = ["edel-system"]
+boot = ["edel-settings"]
 default = ["edel-boot-ok"]

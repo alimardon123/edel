@@ -25,19 +25,19 @@ Alimardon asked whether we really need an immutable system, perhaps with some se
 ### Why immutable
 
 - **Reliable** (principle 1): nothing can half-change the OS. Updates and rollbacks are whole and clean.
-- **Replicable** (ADR-006): every machine on the same version runs identical OS bits, so copying a setup is just the system file plus your `/etc` changes.
+- **Replicable** (ADR-006): every machine on the same version runs identical OS bits, so copying a setup is just the settings file plus your `/etc` changes.
 - **Secure:** malware and mistakes can't quietly modify the OS.
 - **Long compatibility** (ADR-005): apps can't come to depend on someone's local OS hacks.
 - **Supportable:** when someone reports a bug, we know exactly which bits they run.
 
 ### What a user may change, and where it goes
 
-Customization comes in three levels. The rule that sorts a change into a level: **if it can be written as a value in the system file, it is a setting and anyone may make it; if it changes the OS's own bits, it is developer mode.**
+Customization comes in three levels. The rule that sorts a change into a level: **if it can be written as a value in the settings file, it is a setting and anyone may make it; if it changes the OS's own bits, it is developer mode.**
 
-| Level | Who | What | Where it lives | Survives updates | Copied to another machine by the system file |
+| Level | Who | What | Where it lives | Survives updates | Copied to another machine by the settings file |
 |-------|-----|------|----------------|------------------|----------------------------------------------|
-| 1. Settings | Everyone, from the Settings app or `edel system set` | Look: wallpaper, light or dark, accent colour, fonts, cursor and icon sizes, motion. Layout: presets, tiling, title bars, outputs, keyboard shortcuts. Behaviour: default apps, startup apps, power actions (lid, idle, power button, on battery), login, language and keyboard, update policy, optional services such as ssh, printing or Bluetooth on or off | `system.toml`, per machine and per user, plus the `/etc` overlay | Yes | Yes |
-| 2. Add-ons and profiles | Everyone, one click | Drivers, tools and services built and signed by us or the community (virtualization, containers, printing, gaming) | Signed images on the data partition, named in the system file | Yes, they roll back with the slot | Yes, by name |
+| 1. Settings | Everyone, from the Settings app or `edel settings set` | Look: wallpaper, light or dark, accent colour, fonts, cursor and icon sizes, motion. Layout: presets, tiling, title bars, outputs, keyboard shortcuts. Behaviour: default apps, startup apps, power actions (lid, idle, power button, on battery), login, language and keyboard, update policy, optional services such as ssh, printing or Bluetooth on or off | `settings.toml`, per machine and per user, plus the `/etc` overlay | Yes | Yes |
+| 2. Add-ons and profiles | Everyone, one click | Drivers, tools and services built and signed by us or the community (virtualization, containers, printing, gaming) | Signed images on the data partition, named in the settings file | Yes, they roll back with the slot | Yes, by name |
 | 3. Developer mode | Tinkerers and OS developers, behind a warning | Anything: OS files, packages installed with `apk`, custom services | A separate layer over `/usr` on the data partition | Yes, until reset; it may break an update, and reset is the fix | No: the export lists how much was changed, it does not carry it |
 
 Adding a setting is always cheaper than adding a part, and a setting that fifteen people want differently becomes a preset (DESIGN-PRINCIPLES, "Simple over Versatile"). Nothing in level 1 or 2 ever changes the OS's bits, so every machine on a version still runs identical code.
@@ -73,7 +73,7 @@ Adding a setting is always cheaper than adding a part, and a setting that fiftee
 ## Consequences
 
 - **Easier:** everything in principles 1 to 3; support and replication.
-- **Harder:** we must build the add-on mechanism and developer mode; a few apps that expect to install files into the OS need an add-on or a container; every new setting is a table in the system file with an apply, an export and a test.
+- **Harder:** we must build the add-on mechanism and developer mode; a few apps that expect to install files into the OS need an add-on or a container; every new setting is a table in the settings file with an apply, an export and a test.
 - **Revisit:** which drivers and tools should be add-ons we provide ourselves.
 
 ## Action Items
@@ -81,7 +81,7 @@ Adding a setting is always cheaper than adding a part, and a setting that fiftee
 1. [ ] Define the add-on format: signed, versioned, tied to a base version, rolls back with it (roadmap M7.2a; the format is a feature file with `addon = true`, ADR-008).
 2. [ ] Design developer mode: separate change layer, `apk` inside it, reset button, warning text (roadmap M7.1).
 3. [ ] Pick the first add-ons: virtualization, and an NVIDIA driver path once NVK or a glibc-compatible option is proven.
-4. [ ] Define the level 1 settings as tables of the system file: appearance, shortcuts, default apps, startup, power, services (roadmap M2.1, M5.12, M5.13, M6.10).
+4. [ ] Define the level 1 settings as tables of the settings file: appearance, shortcuts, default apps, startup, power, services (roadmap M2.1, M5.12, M5.13, M6.10).
 
 ## Principles check
 

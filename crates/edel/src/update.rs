@@ -398,6 +398,10 @@ pub fn status() -> Result<()> {
             device.display()
         );
     }
+    // The desktop's effect tier (M5.11), while a session runs.
+    if let Some(tier) = crate::shell::tier_now() {
+        println!("effects: {tier}");
+    }
     Ok(())
 }
 

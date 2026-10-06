@@ -10,7 +10,7 @@
 
 On 2026-10-06 Alimardon asked that "overall our code, our system ... the architecture ... everything is flexible and modular to be changed, easy to be changed later. So that in the future we can change, add, modify, drop and do some extra things without a headache." They added: "if some of the things that we are building is really good and can be used for other projects, then if it's modular, then that means it can those can be a separate project that can be run on its own", recalled that they had asked the same of the desktop, and asked that the "same philosophy, same goal should be applied to any other places that we are building".
 
-Much of this exists. ADR-008 made features, presets and settings things we add, swap or drop as files. ADR-002's separable desktop decision (2026-10-04) keeps the compositor and shell-ui able to ship on their own, and M5.15 checks it. But the rule covers only the desktop, and nothing checks it yet for the other parts we write: the updater and boot guard, the image builder, the system file library, the design tokens and the CI harness. ADR-009 also leaves doors open for later (a long channel, a systemd adapter add-on, enterprise security), and those doors are only cheap if the parts stay apart.
+Much of this exists. ADR-008 made features, presets and settings things we add, swap or drop as files. ADR-002's separable desktop decision (2026-10-04) keeps the compositor and shell-ui able to ship on their own, and M5.15 checks it. But the rule covers only the desktop, and nothing checks it yet for the other parts we write: the updater and boot guard, the image builder, the settings file library, the design tokens and the CI harness. ADR-009 also leaves doors open for later (a long channel, a systemd adapter add-on, enterprise security), and those doors are only cheap if the parts stay apart.
 
 ## Decision
 
@@ -19,8 +19,8 @@ Much of this exists. ADR-008 made features, presets and settings things we add, 
 | Part | Where it lives | Could stand alone as | Its seam |
 |---|---|---|---|
 | The desktop: compositor, shell-ui, design tokens and icons | `crates/compositor`, `crates/shell-ui`, `design/` | A desktop for other distributions (M5.15) | Wayland and D-Bus protocols; the files `edel::places` names |
-| Settings | `crates/settings` (M5.6) | The desktop's settings app | The system file, through `edel::system` |
-| The system file library: `edel::system`, `features`, `presets`, `shortcuts`, `tokens` | `crates/edel` (library target) | A library for one-file machine descriptions | TOML files with a format number |
+| Settings | `crates/settings` (M5.6) | The desktop's settings app | The settings file, through `edel::system` |
+| The settings file library: `edel::system`, `features`, `presets`, `shortcuts`, `tokens` | `crates/edel` (library target) | A library for one-file machine descriptions | TOML files with a format number |
 | The updater and the boot guard: `edel update`, `rollback`, `status`, `boot guard`, the GRUB environment | `crates/edel` | A/B updates for other small distributions and devices | GPT partition labels, GRUB's environment block with RAUC's names, `release.toml` |
 | The image builder: `edel image build` and feature files | `crates/edel`, `features/`, `images/` | Images from feature files on Alpine | Feature and image TOML files, apk |
 | The test harness: `ci/qmp.py`, `desktop-test`, `edel-testclient` | `ci/`, `crates/testclient` | Testing a Wayland desktop in QEMU | QMP, the session's state file |

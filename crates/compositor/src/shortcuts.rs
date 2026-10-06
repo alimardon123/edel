@@ -1,6 +1,6 @@
 //! Keyboard shortcuts on screen (roadmap M5.13a): `[shortcuts]` from both
-//! system files, laid over the defaults by `edel::shortcuts::resolve`, the
-//! one table `edel system check` and Settings use, and turned into the
+//! settings files, laid over the defaults by `edel::shortcuts::resolve`, the
+//! one table `edel settings check` and Settings use, and turned into the
 //! keysyms the keyboard reports. Only actions whose step has landed are
 //! bound here; the keys of the others (screenshot, lock) reach
 //! the app that has the keyboard until then. Keys match on the Latin

@@ -363,8 +363,8 @@ impl Build<'_> {
 
     /// The image facts for os-release (one standard file for them, roadmap
     /// default row "Image facts"): the health keys, the switchable features
-    /// shipped off (M4.0), and the hostname that `edel system apply` goes
-    /// back to when the system file has none; none for containers.
+    /// shipped off (M4.0), and the hostname that `edel settings apply` goes
+    /// back to when the settings file has none; none for containers.
     fn health_keys(&self) -> Option<String> {
         if self.def.health.is_empty() {
             return None;
@@ -772,7 +772,7 @@ fn copy_sparse(src: &Path, dst: &Path, offset: u64) -> Result<()> {
 }
 
 /// Replaces root's password hash with `*`, so nobody can log in as root with
-/// a password. Access is granted later by keys or the system file.
+/// a password. Access is granted later by keys or the settings file.
 fn lock_root(shadow: &str) -> Result<String> {
     let mut found = false;
     let mut out = String::with_capacity(shadow.len() + 1);

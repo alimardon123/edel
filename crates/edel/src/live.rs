@@ -2,7 +2,7 @@
 //! stick, or in a virtual machine nobody has set up yet, logs a person
 //! called `live` in by itself, so the desktop shows without a login. It
 //! makes the account, a system one kept in `/etc`'s overlay on the data
-//! partition, so the slot and the system file never hold it, and writes
+//! partition, so the slot and the settings file never hold it, and writes
 //! greetd's config with a session that logs it in once at boot; the login
 //! feature's `conf.d/greetd` uses that file when it exists. An installed
 //! machine, which has its people, keeps the greeter.

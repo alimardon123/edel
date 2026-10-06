@@ -2,7 +2,7 @@
 //!
 //! It builds images, updates and rolls back A/B slots and checks system
 //! files. Add-ons (ADR-007) will live here too, so there is one tool to
-//! learn. The system file parser is the library half (`edel::system`).
+//! learn. The settings file parser is the library half (`edel::system`).
 
 mod boot;
 mod data;
@@ -60,7 +60,8 @@ enum Commands {
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
     Rollback,
-    /// Show the version running now and the one in the other slot
+    /// Show the version running now and the one in the other slot, and
+    /// the desktop's effect tier while a session runs
     Status,
     /// Steps the boot services run
     #[command(hide = true)]
@@ -75,13 +76,13 @@ enum Commands {
         command: ReleaseCommands,
     },
     /// Install Edel OS on another disk, erasing it: the running system
-    /// becomes slot A, and FILE the new machine's system file
+    /// becomes slot A, and FILE the new machine's settings
     Install {
         /// The disk, such as /dev/sda
         disk: String,
-        /// The system file the new machine starts with
+        /// The settings file the new machine starts with
         #[arg(long, value_name = "FILE")]
-        system: PathBuf,
+        settings: PathBuf,
         /// Only show the plan: what would be erased and written; change
         /// nothing
         #[arg(long)]
@@ -99,16 +100,11 @@ enum Commands {
         #[arg(long)]
         esp: bool,
     },
-    /// This machine's settings, kept in one file (system.toml): check,
-    /// change, apply and export them
-    System {
+    /// settings: this machine's settings (its configuration), the same
+    /// as in the Settings app; alone, it lists the pages
+    Settings {
         #[command(subcommand)]
-        command: SystemCommands,
-    },
-    /// What the desktop session is doing
-    Shell {
-        #[command(subcommand)]
-        command: ShellCommands,
+        command: Option<SettingsCommands>,
     },
     /// Build and inspect Edel OS images
     Image {
@@ -118,52 +114,60 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
-enum ShellCommands {
-    /// Print the effect tier the compositor runs at: lite, balanced or
-    /// full
-    Tier,
-}
-
-#[derive(Subcommand)]
-enum SystemCommands {
-    /// Check a system file strictly: every unknown key, value or format,
-    /// and every key this release does not act on yet, is refused
-    Check {
-        /// The system file, for example /data/edel/system.toml
-        file: PathBuf,
-    },
-    /// Make this machine match a system file: hostname, users, their ssh
-    /// keys and developer mode. A given file becomes the machine's own
-    Apply {
-        /// The system file; without one, the machine's own
-        /// (/data/edel/system.toml), seeded first if it is missing
-        file: Option<PathBuf>,
-        /// Leave setting the running hostname to the hostname service; for
-        /// the edel-system boot service
+enum SettingsCommands {
+    /// Show settings with their values and where each comes from: one
+    /// key, one page (such as layout), or every page
+    Get {
+        /// A key such as network.hostname, or a page such as layout
+        #[arg(value_name = "KEY|PAGE")]
+        what: Option<String>,
+        /// Print the settings file's own TOML, for scripts
         #[arg(long)]
-        boot: bool,
+        toml: bool,
+    },
+    /// Change settings, keeping everything else in the file as it was;
+    /// the desktop follows its settings at once, apply makes the rest
+    /// take effect
+    Set {
+        /// KEY=VALUE, one or more, such as network.hostname=lab-1
+        #[arg(value_name = "KEY=VALUE", required = true)]
+        assignments: Vec<String>,
+    },
+    /// Give settings back to the release, as the Settings app's Reset
+    /// does
+    Reset {
+        /// The keys, such as network.hostname
+        #[arg(value_name = "KEY", required = true)]
+        keys: Vec<String>,
     },
     /// Show what apply would change, changing nothing; exits 1 when
     /// there is anything to change
     Diff {
-        /// The system file; without one, the machine's own
+        /// A settings file; without one, the machine's own
         file: Option<PathBuf>,
     },
-    /// Print this machine as a system file, and the /etc files it changed
-    Export,
-    /// Change one key in the machine's system file, keeping everything
-    /// else in it byte for byte. Window, screen and shortcut settings take
-    /// effect at once; apply makes the rest take effect
-    Set {
-        /// KEY=VALUE, such as network.hostname=lab-1
-        assignment: String,
+    /// Make this machine match its settings: the hostname, people, their
+    /// ssh keys and developer mode
+    Apply {
+        /// Leave setting the running hostname to the hostname service; for
+        /// the edel-settings boot service
+        #[arg(long, hide = true)]
+        boot: bool,
     },
-    /// Remove one key from the machine's system file, so the release
-    /// decides it again. Window, screen and shortcut settings take effect
-    /// at once; apply makes the rest take effect
-    Unset {
-        /// The key, such as network.hostname
-        key: String,
+    /// Make FILE this machine's settings and apply it, such as a file
+    /// exported on another machine
+    Import {
+        /// The settings file
+        file: PathBuf,
+    },
+    /// Print this machine as a settings file, to keep or to import on
+    /// another machine, and the /etc files it changed
+    Export,
+    /// Check a settings file strictly: every unknown key, value or format,
+    /// and every key this release does not act on yet, is refused
+    Check {
+        /// The settings file
+        file: PathBuf,
     },
 }
 
@@ -392,31 +396,34 @@ fn main() -> Result<()> {
         Commands::Status => update::status(),
         Commands::Install {
             disk,
-            system,
+            settings,
             plan,
             yes,
-        } => installer::install(&disk, &system, plan, yes),
+        } => installer::install(&disk, &settings, plan, yes),
         Commands::Report { esp } => report::report(esp),
-        Commands::Shell { command } => match command {
-            ShellCommands::Tier => shell::tier(),
-        },
-        Commands::System { command } => match command {
-            SystemCommands::Check { file } => check_system_file(&file),
-            SystemCommands::Apply { file, boot } => machine::apply(file.as_deref(), boot),
-            SystemCommands::Diff { file } => {
+        Commands::Settings { command } => match command {
+            None => {
+                machine::pages();
+                Ok(())
+            }
+            Some(SettingsCommands::Get { what, toml }) => machine::get(what.as_deref(), toml),
+            Some(SettingsCommands::Set { assignments }) => machine::set(&assignments),
+            Some(SettingsCommands::Reset { keys }) => machine::reset(&keys),
+            Some(SettingsCommands::Diff { file }) => {
                 if machine::diff(file.as_deref())? {
                     std::process::exit(1);
                 }
                 Ok(())
             }
-            SystemCommands::Export => machine::export(),
-            SystemCommands::Set { assignment } => machine::set(&assignment),
-            SystemCommands::Unset { key } => machine::unset(&key),
+            Some(SettingsCommands::Apply { boot }) => machine::apply(boot),
+            Some(SettingsCommands::Import { file }) => machine::import(&file),
+            Some(SettingsCommands::Export) => machine::export(),
+            Some(SettingsCommands::Check { file }) => check_system_file(&file),
         },
     }
 }
 
-/// `edel system check FILE`: prints one line per problem and fails when
+/// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
 fn check_system_file(file: &std::path::Path) -> Result<()> {
     let text =
@@ -445,7 +452,7 @@ mod tests {
     fn help_lists_what_people_run() {
         let help = Cli::command().render_help().to_string();
         for shown in [
-            "update", "rollback", "status", "install", "report", "system", "shell", "image",
+            "update", "rollback", "status", "install", "report", "settings", "image",
         ] {
             assert!(
                 help.contains(&format!("  {shown} ")),
@@ -469,7 +476,12 @@ mod tests {
         for args in [
             &["edel", "update", "--check", "release.toml"][..],
             &[
-                "edel", "install", "/dev/sda", "--system", "s.toml", "--plan",
+                "edel",
+                "install",
+                "/dev/sda",
+                "--settings",
+                "s.toml",
+                "--plan",
             ],
             &["edel", "image", "build", "images/vm.toml", "--plan"],
         ] {
@@ -502,6 +514,11 @@ mod tests {
                 |n| n.to_string(),
             );
             let required = arg.is_required_set();
+            let name = if matches!(arg.get_action(), clap::ArgAction::Append) {
+                format!("{name}...")
+            } else {
+                name
+            };
             line.push_str(&if required {
                 format!(" {name}")
             } else {
@@ -558,7 +575,7 @@ mod tests {
              table and run EDEL_WRITE_DOCS=1 cargo test -p edel command_reference. -->\n\n\
              # Commands\n\n\
              `edel` is the one tool of Edel OS: it updates and rolls back the system, \
-             applies and describes the system file, installs Edel OS on a disk and \
+             applies and describes the settings file, installs Edel OS on a disk and \
              reports on the hardware. Each command below says what `edel COMMAND --help` \
              says. Commands that change the machine need root until `doas` arrives \
              (roadmap M6.5).\n\n\

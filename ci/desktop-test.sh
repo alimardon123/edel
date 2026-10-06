@@ -10,8 +10,8 @@
 #               screenshot that is not one colour, and typing `exit` after
 #               a click into foot closes it
 #   compositor  the compositor's ready line, its effect tier (Full, which
-#               CI's session forces, logged, and the same from edel shell
-#               tier), the top left corner in the background colour of
+#               CI's session forces, logged, and the same from edel
+#               status), the top left corner in the background colour of
 #               design/tokens.toml, and its numbers (boot to ready, memory,
 #               its RSS, frame p99, idle frames) within ci/budgets.toml,
 #               written to the step summary
@@ -20,7 +20,7 @@
 #   titlebar    every window with a title bar in the token colours and its
 #               title on it; a click on two's close button closes it, and
 #               dragging one's bar moves it
-#   tiling      edel system set shell.tiling=true, sent to the VM, tiles
+#   tiling      edel settings set shell.tiling=true, sent to the VM, tiles
 #               foot and one side by side with their bars; Super+T puts
 #               them back where they floated, overlapping
 #   pointer     the cursor where the pointer is (drawn into the frame in
@@ -29,9 +29,9 @@
 #               protocols
 #   outputs     both screens of virtio-vga,max_outputs=2 lit (the second
 #               forced on by the image's kernel command line, at the seed
-#               system file's mode 1024x768), side by side in the state
+#               settings file's mode 1024x768), side by side in the state
 #               file, and the second turned off by
-#               edel system set outputs.Virtual-2.enabled=false; a
+#               edel settings set outputs.Virtual-2.enabled=false; a
 #               window opens on the screen the mouse took the pointer to
 #               (M5.2g)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
@@ -50,7 +50,7 @@
 #               removal logs the tier's own animations again; ten windows
 #               opening one after another and closing at the tier llvmpipe
 #               picks keep the frame budget (M5.11b)
-#   shortcuts   edel system set shortcuts.close=Super+W, sent to the VM,
+#   shortcuts   edel settings set shortcuts.close=Super+W, sent to the VM,
 #               moves close: Super+Q then leaves a window open and Super+W
 #               closes it; Ctrl+Alt+T opens a terminal; removing the key
 #               brings Super+Q back (M5.13a)
@@ -74,7 +74,7 @@
 #               foot; Escape closes it (M5.3b)
 #   switcher    with Alt held, Tab shows the window switcher with the
 #               window used before chosen; letting go switches (M5.3c)
-#   scale       edel system set outputs.Virtual-1.scale=2 halves the
+#   scale       edel settings set outputs.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
@@ -227,15 +227,15 @@ case_compositor() {
 	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
 	esac
 	# llvmpipe draws on the CPU, so the compositor picks the Lite tier
-	# itself (M5.11); edel shell tier reads the tier now from the state
+	# itself (M5.11); edel status reads the tier now from the state
 	# file, and the animations follow it.
 	case "$(value tier)" in
 	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
 	*) fail "the compositor did not pick tier=lite under llvmpipe: \"$(value tier)\"" ;;
 	esac
 	now=$(value tier_now)
-	[ "tier=$(value shell_tier)" = "$now" ] ||
-		fail "edel shell tier said \"$(value shell_tier)\", but the compositor logged $now last"
+	[ "tier=$(value status_tier)" = "$now" ] ||
+		fail "edel status said effects \"$(value status_tier)\", but the compositor logged $now last"
 	case "$(value animations)" in
 	"edel-compositor: animations at tier ${now#tier=}, motion full: "*) ;;
 	*) fail "the animations are not the ${now#tier=} tier's: \"$(value animations)\"" ;;
@@ -412,7 +412,7 @@ case_layers() {
 		fail "the test panel is not above shell-ui's along the bottom in the state file: $(value layers)"
 	shot layers 640 740 2f343f >/dev/null || fail "640,740 is not the test panel's #2f343f"
 	# Windows tile, and would maximize, in the area above both. Super+T
-	# switches whatever the system file says: the tiling case leaves
+	# switches whatever the settings file says: the tiling case leaves
 	# shell.tiling at true with the windows floating.
 	python3 ci/qmp.py key meta_l-t
 	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x675' ||
@@ -576,7 +576,7 @@ case_animations() {
 }
 
 case_shortcuts() {
-	# [shortcuts] (M5.13a), live from the system file: a window of its own,
+	# [shortcuts] (M5.13a), live from the settings file: a window of its own,
 	# which takes the keyboard as it opens.
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' 0 || fail "the test client keys did not open: $(value windows)"
@@ -766,7 +766,7 @@ case_switcher() {
 }
 
 case_presets() {
-	# Presets (M5.4a): edel system set shell.preset=hive restarts
+	# Presets (M5.4a): edel settings set shell.preset=hive restarts
 	# shell-ui with Hive's bar along the top and tiles the windows, and
 	# unsetting it brings Classic back, the panel along the bottom and the
 	# windows floating, live; each is kept as preset-NAME.png with the
@@ -776,7 +776,7 @@ case_presets() {
 	tiled=$(count 'edel-compositor: windows now tiling')
 	guest 'preset hive'
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
-		fail "edel system set shell.preset=hive did not bring shell-ui's bar to the top"
+		fail "edel settings set shell.preset=hive did not bring shell-ui's bar to the top"
 	tr -d '\r' <"$log" | grep -aq 'edel-compositor: restarting edel-shell-ui: the preset is now hive' ||
 		fail "the compositor did not restart shell-ui for the Hive preset"
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
@@ -791,11 +791,11 @@ case_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel system set shell.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set shell.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
 }
 
 case_taskbar() {
-	# Windows-like (M5.4c): edel system set shell.preset=windows-like
+	# Windows-like (M5.4c): edel settings set shell.preset=windows-like
 	# restarts shell-ui with one taskbar along the bottom, the menu button
 	# at its left edge, the search field beside it and the apps in its
 	# centre. Of the apps it pins (files, browser, terminal, mail, music) the VM
@@ -806,7 +806,7 @@ case_taskbar() {
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like')
 	guest 'preset windows-like'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like' "$restarts" ||
-		fail "edel system set shell.preset=windows-like did not restart shell-ui"
+		fail "edel settings set shell.preset=windows-like did not restart shell-ui"
 	wait_for 'edel-shell-ui: panel places menu 0\+[0-9]+, search [0-9]+\+188, apps [0-9]+\+[0-9]+' ||
 		fail "Windows-like's bar does not start with the menu button and the search field before the apps"
 	# The open windows' apps join the pinned ones as shell-ui learns of
@@ -847,7 +847,7 @@ case_taskbar() {
 }
 
 case_dock() {
-	# Mac-like (M5.4d): edel system set shell.preset=mac-like restarts
+	# Mac-like (M5.4d): edel settings set shell.preset=mac-like restarts
 	# shell-ui with a bar along the top and a dock along the bottom, a
 	# card in the panel's colour as wide as its apps, centred, 60 px high
 	# and 8 px above the screen's bottom (732 to 792), and moves the
@@ -860,7 +860,7 @@ case_dock() {
 	left=$(count 'edel-compositor: window buttons on the left')
 	guest 'preset mac-like'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
-		fail "edel system set shell.preset=mac-like did not restart shell-ui"
+		fail "edel settings set shell.preset=mac-like did not restart shell-ui"
 	wait_more 'edel-shell-ui: panel edel-dock along the bottom' "$docks" || fail "Mac-like has no dock along the bottom"
 	wait_more 'edel-compositor: window buttons on the left' "$left" || fail "Mac-like did not move the window buttons to the left"
 	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps 8 px from its start"
@@ -904,14 +904,14 @@ case_panels() {
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	guest 'panels clock'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "edel system set shell.panels did not restart shell-ui"
+		fail "edel settings set shell.panels did not restart shell-ui"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 768 "$panel" >/dev/null || fail "20,768 is not the panel's colour: the menu button is still there"
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
 	guest 'panels default'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "edel system unset shell.panels did not restart shell-ui"
+		fail "edel settings reset shell.panels did not restart shell-ui"
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting shell.panels did not bring Classic's menu button back"
 	echo "PASS: shell.panels with only the clock replaced Classic's panel at once, and unsetting it brought Classic's panel back"
 }
@@ -971,7 +971,7 @@ case_portal() {
 }
 
 case_scheme() {
-	# Light and dark (M5.5c): edel system set appearance.color_scheme=light
+	# Light and dark (M5.5c): edel settings set appearance.color_scheme=light
 	# gives the compositor the tokens' [colour.light], drawing the title
 	# bars and the background again, and restarts shell-ui, whose panel
 	# and portal follow; the portal tells apps already open with
@@ -1152,12 +1152,12 @@ case_rollback() {
 }
 
 case_tiling() {
-	# Through the system file, as Settings and people will: the compositor
+	# Through the settings file, as Settings and people will: the compositor
 	# follows it and re-lays the windows out at once. foot is the master on
 	# the left, one the stack on the right, 8 px apart and from the edges.
 	guest 'tiling on'
 	wait_for 'DESKTOP-TEST: ran tiling on: 0' ||
-		fail "edel system set shell.tiling=true did not run in the VM"
+		fail "edel settings set shell.tiling=true did not run in the VM"
 	wait_for 'edel-compositor: windows now tiling' ||
 		fail "the compositor did not follow shell.tiling = true"
 	wait_for 'DESKTOP-TEST: windows 2 foot@9,36,[0-9]+x[0-9]+ one@645,36,626x715' ||
@@ -1182,7 +1182,7 @@ case_tiling() {
 	wait_for 'edel-compositor: windows now floating' || fail "Super+T did not switch back to floating"
 	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
-	echo "PASS: edel system set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+	echo "PASS: edel settings set shell.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
 
 case_pointer() {
@@ -1230,16 +1230,16 @@ case_outputs() {
 	python3 ci/qmp.py move 640 400
 	guest 'screen 2 off'
 	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
-		fail "edel system set outputs.Virtual-2.enabled=false did not run in the VM"
+		fail "edel settings set outputs.Virtual-2.enabled=false did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-2 off' ||
 		fail "the compositor did not turn Virtual-2 off"
-	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the system file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and outputs.Virtual-2.enabled = false turned the second off"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and outputs.Virtual-2.enabled = false turned the second off"
 }
 
 case_scale() {
 	guest 'scale 2'
 	wait_for 'DESKTOP-TEST: ran scale 2: 0' ||
-		fail "edel system set outputs.Virtual-1.scale=2 did not run in the VM"
+		fail "edel settings set outputs.Virtual-1.scale=2 did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-1 scale 2' ||
 		fail "the compositor did not follow outputs.Virtual-1.scale = 2"
 	# The screen is 640x400 logical pixels now, so one's frame, last at

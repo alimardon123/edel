@@ -29,20 +29,20 @@ size = 187695104
 - **The stepping-stone rule:** a breaking change publishes the new format under a new file name and keeps `release.toml` pointing at a release whose `edel` reads both formats. A machine two formats behind installs that stepping stone, then the newer release at its next check, with no extra command from the person (AerynOS users rerun theirs by hand).
 - **Keys today:** until the first preview (M3.4) no image carries a real key. CI makes two throwaway keys on every run and bakes them into its test images with `edel image build --public-key`. The real key goes into the `EDEL_RELEASE_KEY` secret, which waits for Alimardon.
 
-## `system.toml` (format 1, M2.1)
+## `settings.toml` (format 1, M2.1)
 
-The file that describes a whole machine, `/data/edel/system.toml`; [system-file.md](system-file.md) lists every key. `edel::system` in `crates/edel` is its one parser, for `edel` and for every later part.
+The file that describes a whole machine, `/data/edel/settings.toml`; [system-file.md](system-file.md) lists every key. `edel::system` in `crates/edel` is its one parser, for `edel` and for every later part.
 
 | Reader | Unknown key | Value of the wrong kind or an unknown value | Newer `format` |
 |---|---|---|---|
-| `edel system check`, the installer, CI | Refused, naming the key | Refused, listing the allowed values | Refused |
-| On a machine: boot apply, compositor, shell-ui, Settings | Left out and reported | Left out, so the default is used, and reported | `system.toml.v<N>` beside it is read for the reader's own format N; without it nothing is applied, and the reader says so |
+| `edel settings check`, the installer, CI | Refused, naming the key | Refused, listing the allowed values | Refused |
+| On a machine: boot apply, compositor, shell-ui, Settings | Left out and reported | Left out, so the default is used, and reported | `settings.toml.v<N>` beside it is read for the reader's own format N; without it nothing is applied, and the reader says so |
 
 - **Absent means default:** every key is optional, and a file holds only what a person chose (ADR-008). A file with no `format` is refused.
-- **Keys not acted on yet** are parsed, so adding them later is not a format bump. `edel system check` refuses them with "not supported yet"; the boot apply skips them and says so.
+- **Keys not acted on yet** are parsed, so adding them later is not a format bump. `edel settings check` refuses them with "not supported yet"; the boot apply skips them and says so.
 - **A key is never removed or renamed within a format.** `crates/edel/tests/keys.txt` lists every key, append only; a cargo test fails when the key table lacks one, and `ci/keys-check.sh` fails a change that deletes a line without bumping `FORMAT`. A dropped key stays parsed and is reported as no longer used; an unavoidable rename reads both names.
 - **Names this release lacks** (a preset, profile, add-on or feature) are values like any other: the checker refuses them, a reader on a machine uses the default and reports it, and boot never fails over one.
-- **Writers** (`edel system set` and `unset` since M2.3, Settings later) edit the file in place with `toml_edit`, so comments, order and keys this slot does not know survive.
+- **Writers** (`edel settings set` and `reset` since M2.3, Settings later) edit the file in place with `toml_edit`, so comments, order and keys this slot does not know survive.
 
 ## Feature files (format 1) and image definitions (format 2), M4.0
 

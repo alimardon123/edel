@@ -285,7 +285,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     Ok(())
 }
 
-/// A connector's name as the system file and the state file use it, such
+/// A connector's name as the settings file and the state file use it, such
 /// as `eDP-1` or `HDMI-A-1`.
 fn connector_name(info: &connector::Info) -> String {
     format!("{}-{}", info.interface().as_str(), info.interface_id())

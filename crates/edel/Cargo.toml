@@ -3,7 +3,7 @@ name = "edel"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-description = "The Edel OS system tool: builds images today; updates, add-ons and system files later"
+description = "The Edel OS system tool: builds images today; updates, add-ons and settings files later"
 license = "GPL-3.0-or-later"
 publish = false
 

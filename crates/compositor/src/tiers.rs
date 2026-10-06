@@ -1,7 +1,7 @@
 //! The session's effect tier (roadmap M5.11): picked once the renderer is
 //! known (`edel_compositor::effects` holds the rules), lowered by the
 //! frame-deadline monitor as frames are drawn, logged as `tier=NAME` and
-//! written to the state file, where `edel shell tier` reads it.
+//! written to the state file, where `edel status` reads it.
 //! `EDEL_EFFECTS=lite|balanced|full` sets the starting tier instead, for
 //! tests.
 

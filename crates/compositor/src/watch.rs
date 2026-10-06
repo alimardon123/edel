@@ -1,6 +1,6 @@
-//! Following the system file (roadmap M4.5): the compositor reads the
-//! machine's and the person's `system.toml` when it starts, and again
-//! whenever either is written, so `edel system set shell.tiling=true`
+//! Following the settings file (roadmap M4.5): the compositor reads the
+//! machine's and the person's when it starts, and again whenever either
+//! is written, so `edel settings set shell.tiling=true`
 //! (or Settings, from M5) applies at once. inotify watches the two
 //! directories, because writers replace the file through a rename; its
 //! descriptor is one more source in the event loop, so following costs no
@@ -8,19 +8,15 @@
 
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use inotify::{Inotify, WatchMask};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
-use edel::system::MACHINE_FILE;
-use edel_compositor::settings;
+use edel::places;
 
 use crate::state::Edel;
-
-/// The name both files have.
-const NAME: &str = "system.toml";
 
 /// Reads the settings now and follows both files from here on.
 pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
@@ -28,7 +24,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     let inotify = match Inotify::init() {
         Ok(inotify) => inotify,
         Err(e) => {
-            eprintln!("edel-compositor: changes to {NAME} are not followed: {e}");
+            eprintln!("edel-compositor: changes to the settings are not followed: {e}");
             return;
         }
     };
@@ -37,10 +33,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         | WatchMask::MOVED_FROM
         | WatchMask::CREATE
         | WatchMask::DELETE;
-    let machine = Path::new(MACHINE_FILE).parent().map(Path::to_path_buf);
+    let machine = Some(PathBuf::from(places::DATA_DIR));
     // The person's directory is made if it is missing, so a file written
     // there later is seen too.
-    let person = settings::person_file().and_then(|f| f.parent().map(PathBuf::from));
+    let person = places::person_dir();
     if let Some(dir) = &person {
         let _ = fs::create_dir_all(dir);
     }
@@ -66,7 +62,9 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
                         let mut any = false;
                         for event in events {
                             any = true;
-                            changed |= event.name.is_some_and(|n| n == NAME);
+                            changed |= event
+                                .name
+                                .is_some_and(|n| places::is_settings_name(&n.to_string_lossy()));
                         }
                         if !any {
                             break;
@@ -86,6 +84,6 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         },
     );
     if let Err(e) = inserted {
-        eprintln!("edel-compositor: changes to {NAME} are not followed: {e}");
+        eprintln!("edel-compositor: changes to the settings are not followed: {e}");
     }
 }

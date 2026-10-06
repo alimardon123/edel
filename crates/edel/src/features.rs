@@ -6,7 +6,7 @@
 //! every image carries the files of its features in
 //! `/usr/share/edel/features/`, so the parts can ask what a machine has.
 //!
-//! Two readers, as for the system file: [`check`] is strict, for `edel
+//! Two readers, as for the settings file: [`check`] is strict, for `edel
 //! image build` and `image check`; [`read`] is lenient, for readers on a
 //! machine, and returns what it ignored so the caller can report it.
 

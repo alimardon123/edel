@@ -48,7 +48,7 @@ pub struct Plan {
     pub disk: Disk,
     /// Each slot's size, `SLOT_MIB`
     pub slot_mib: u64,
-    /// The system file the new machine starts with
+    /// The settings file the new machine starts with
     pub system_file: String,
 }
 
@@ -153,7 +153,7 @@ impl fmt::Display for Plan {
         )?;
         writeln!(
             f,
-            "  4: data, {} MiB, starting from the system file {}",
+            "  4: data, {} MiB, starting from the settings file {}",
             self.data_mib(),
             self.system_file
         )
@@ -183,7 +183,7 @@ mod tests {
                 partitions,
             },
             slot_mib: SLOT_MIB,
-            system_file: "/run/media/system.toml".into(),
+            system_file: "/run/media/seed.toml".into(),
         }
     }
 

@@ -24,10 +24,10 @@ Start with the design principles, then the decisions in order. The principles go
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |
 | [SHORTCUTS.md](SHORTCUTS.md) | Every keyboard shortcut's action, default keys and whether it is a way out; generated from `crates/edel/src/shortcuts.rs` | Reference |
 | [mockups/](mockups/README.md) | Pictures of the target look, each preset in light or dark, the effect tiers, a tablet and a phone; not binding, the real values are tokens | Reference |
-| [system-file.md](system-file.md) | Every key of `system.toml`, its values and the step that acts on it | Reference |
+| [system-file.md](system-file.md) | Every key of `settings.toml`, its values and the step that acts on it | Reference |
 | [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
 | [index.md](index.md) | The docs site's front page: what Edel OS is and where to start (M8.10a) | Guide |
-| [guide/how-it-works.md](guide/how-it-works.md) | How the whole system works, from the disk and updates to the system file and the desktop | Guide |
+| [guide/how-it-works.md](guide/how-it-works.md) | How the whole system works, from the disk and updates to the settings file and the desktop | Guide |
 | [guide/commands.md](guide/commands.md) | Every `edel` command and option; generated from `crates/edel/src/main.rs` | Reference |
 | [guide/writing-docs.md](guide/writing-docs.md) | Writing these docs: pages, the table of contents, previewing, generated pages, the look | Guide |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |

@@ -151,7 +151,7 @@ start() {
 		echo marker >/home/ab-marker
 		echo marker >/var/ab-marker
 		rm -r /var/lib/ci-new
-		/usr/bin/edel system set network.hostname=ab-host && /usr/bin/edel system apply
+		/usr/bin/edel settings set network.hostname=ab-host && /usr/bin/edel settings apply
 		cp /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey
 		adduser -D abuser
 		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped
