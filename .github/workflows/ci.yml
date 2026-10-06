@@ -124,13 +124,13 @@ jobs:
         # flatpak-test; ci/vm-tests.sh says why they can share the runner.
         run: sh ci/vm-tests.sh
 
-      - name: List the desktop and laptop images to try
-        # The images CI just booted (M3.6): the laptop's in boot-test, the
-        # desktop's as a USB stick in desktop-test live. A push to main
-        # keeps them as a download; every run lists them with their sizes.
+      - name: List the desktop image to try
+        # The image CI just booted as a USB stick in desktop-test live
+        # (M3.6). A push to main keeps it as a download; every run lists
+        # it with its size.
         run: |
           mkdir -p out/try
-          ln -f out/edel-desktop-x86_64.img.gz out/edel-laptop-x86_64.img.gz out/try/
+          ln -f out/edel-desktop-x86_64.img.gz out/try/
           (cd out/try && sha256sum *.img.gz >SHA256SUMS)
           {
             echo "### Images to try"
@@ -144,7 +144,7 @@ jobs:
             done
           } >>"$GITHUB_STEP_SUMMARY"
 
-      - name: Keep the desktop and laptop images to try
+      - name: Keep the desktop image to try
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:

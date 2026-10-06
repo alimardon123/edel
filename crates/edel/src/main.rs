@@ -266,7 +266,7 @@ struct BuildArgs {
     health_timeout: Option<u64>,
     /// Size of each slot in MiB, instead of the definition's; for test
     /// images, such as the install test's live disk, which has the
-    /// laptop stick's small slots
+    /// desktop stick's small slots
     #[arg(long, value_name = "MIB", value_parser = clap::value_parser!(u64).range(64..))]
     slot_mib: Option<u64>,
     /// Another public key that may sign updates, after the definition's

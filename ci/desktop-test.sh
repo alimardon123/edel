@@ -90,7 +90,9 @@
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
-#               showed with nobody logging in (M3.6)
+#               showed with nobody logging in (M3.6); and the checks the
+#               laptop stick had in boot-test: /data, the hardware
+#               watchdog, the report on the EFI system partition, ssh off
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
 #               it restarts the VM): the test service installs the update
 #               ci/build.sh signs, served here on port 8001, puts a
@@ -1380,8 +1382,23 @@ if [ "$*" = live ]; then
 	background=$(token background)
 	shot live $((w / 2)) $((h / 2)) "$background" >/dev/null ||
 		fail "$((w / 2)),$((h / 2)) is not the background's #$background: the screen was drawn only in part"
+	# What boot-test checked on the laptop stick until the desktop took
+	# its place (2026-10-06): linux-lts from USB, /data, the version, the
+	# guard on the hardware watchdog, the report on the EFI system
+	# partition (printed after the write), and ssh shipped off.
+	for line in 'Welcome to Edel OS' 'edel update: slot A confirmed' 'edel-data: mounted /data' \
+		"Edel OS ${EDEL_VERSION:-0.1}, channel " 'edel guard: using the hardware watchdog' \
+		'edel report: wrote /EFI/edel/report.toml on the EFI system partition'; do
+		i=0
+		while ! tr -d '\r' <"$log" | grep -qaF "$line" && [ "$i" -lt 60 ]; do
+			i=$((i + 1))
+			sleep 1
+		done
+		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
+	done
+	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
 	stop_vm
-	echo "PASS: the desktop image started from a USB stick logged live in by itself: its panel lies along the bottom of the ${w}x$h screen"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off"
 	exit 0
 fi
 

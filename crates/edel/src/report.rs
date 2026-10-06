@@ -145,7 +145,7 @@ fn render(report: &Report) -> Result<String> {
 }
 
 /// `edel report`, or with `esp` written to `/EFI/edel/report.toml` on the
-/// EFI system partition, where the laptop stick leaves it at every boot.
+/// EFI system partition, where the desktop stick leaves it at every boot.
 pub fn report(esp: bool) -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let dmesg = Command::new("dmesg")

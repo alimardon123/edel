@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks the kernel of every bootable image in images/ against
 # ci/kernel-options.toml, and lists the modules in each image's initramfs,
-# failing when the laptop's lacks a driver it needs to find its disk or
+# failing when an lts image's (the desktop's) lacks a driver it needs to find its disk or
 # light its screen (roadmap M3.3a), or an image with a screen lacks
 # VirtualBox's (M3.6). Reads the built root filesystems in
 # out/work/, which are root's, so it uses sudo.
