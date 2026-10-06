@@ -11,6 +11,7 @@
 
 mod animate;
 mod decoration;
+mod dmabuf;
 mod drm;
 mod edelshell;
 mod extworkspace;

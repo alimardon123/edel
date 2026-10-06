@@ -26,10 +26,13 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
-use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime};
+use smithay::backend::drm::{
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
+use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::default_primary_scanout_output_compare;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
@@ -265,6 +268,30 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         started: Instant::now(),
         whole_frames,
     }));
+    // Apps' GPU buffers (M5.19): the renderer's formats on the GPU's render
+    // node, each buffer checked by importing it once.
+    let device =
+        DrmNode::from_path(&path)
+            .ok()
+            .map(|node| match node.node_with_type(NodeType::Render) {
+                Some(Ok(render)) => render,
+                _ => node,
+            });
+    if let Some(device) = device {
+        let formats = gpu.borrow().renderer.dmabuf_formats().into_iter().collect();
+        let importer = Rc::clone(&gpu);
+        state.offer_dmabuf(
+            device.dev_id(),
+            formats,
+            Rc::new(move |dmabuf| {
+                importer
+                    .borrow_mut()
+                    .renderer
+                    .import_dmabuf(dmabuf, None)
+                    .is_ok()
+            }),
+        );
+    }
     gpu.borrow_mut().scan(&mut state);
     if gpu.borrow().screens.is_empty() {
         // Healthy all the same (M4.8): with the screen unplugged or off,

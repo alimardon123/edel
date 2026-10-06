@@ -1199,6 +1199,19 @@ case_tiling() {
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
 
+case_dmabuf() {
+	# Apps draw on the GPU (M5.19): the compositor offers
+	# zwp_linux_dmabuf_v1, version 4 with feedback, in the formats its
+	# renderer imports, at least one.
+	case " $(value globals) " in
+	*" zwp_linux_dmabuf_v1 "*) ;;
+	*) fail "the compositor does not offer zwp_linux_dmabuf_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	line=$(tr -d '\r' <"$log" | grep -a -o 'apps may hand over GPU buffers in [0-9]* formats' | tail -n 1)
+	[ -n "$line" ] || fail "the compositor offers no GPU buffer formats: $(tr -d '\r' <"$log" | grep -a 'GPU buffers' | tail -n 1)"
+	echo "PASS: the compositor offers zwp_linux_dmabuf_v1: $line"
+}
+
 case_pointer() {
 	globals=$(value globals)
 	for protocol in zwp_tablet_manager_v2 wp_cursor_shape_manager_v1 wp_fractional_scale_manager_v1 wp_viewporter zxdg_decoration_manager_v1; do
@@ -1269,14 +1282,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
