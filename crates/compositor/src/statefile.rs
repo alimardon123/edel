@@ -12,7 +12,7 @@ use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
 /// Where the session keeps the file (M4.1 made the directory).
-pub const PATH: &str = "/run/edel/session/state.toml";
+pub const PATH: &str = edel::places::STATE_FILE;
 
 /// The only state file format so far.
 pub const FORMAT: i64 = 1;

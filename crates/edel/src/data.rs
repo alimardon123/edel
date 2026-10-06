@@ -20,7 +20,7 @@ use anyhow::{Context, Result};
 use crate::boot::DATA_PARTITION;
 use crate::update::{Disk, run};
 
-const MOUNT_POINT: &str = "/data";
+const MOUNT_POINT: &str = edel::places::DATA_MOUNT;
 /// Leave the partition alone when less than this lies after it, in
 /// 512-byte sectors (2 MiB): sfdisk aligns to 1 MiB, and GPT keeps its
 /// backup copy in the last sectors of the disk.

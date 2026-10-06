@@ -55,6 +55,7 @@ default = ["sshd"]  # also sysinit, boot, shutdown
 | `modules`, `initramfs` | Only a-z, 0-9, `_` and `-`. Images without a kernel ignore them |
 | `programs` | Programs of this repository's workspace the feature ships in `/usr/bin`, such as `edel-compositor`; `edel image build` copies each from beside itself, where `cargo build --release --workspace` leaves it, so list the libraries it links in `packages`, which apk cannot see. A program needs a `why` |
 | `flatpak`, `flatpak_dropped` | Only in the `apps` feature (M6.2) |
+| `[alpine]` | `branch`, `mirror` and `repositories`: only in the `base` feature, the one owner of the Alpine branch every image is built from and CI's build container follows (M5.27) |
 
 No dependencies, versions, scripts or alternatives between features: apk resolves packages. A package one image needs alone goes into a feature named after that image (`vm`, `laptop`, `container`).
 
@@ -68,11 +69,6 @@ arch = "x86_64"
 hostname = "edel"
 features = ["base", "machine", "mdev", "ab-boot", "ssh", "laptop"]
 off = ["ssh"]
-
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]
 
 [vm]
 kernel = "lts"      # a listed feature must install linux-lts

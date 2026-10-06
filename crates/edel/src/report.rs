@@ -18,7 +18,7 @@ use crate::release::os_release_value;
 
 /// Where `edel-boot-ok` keeps the line it printed when the slot was
 /// confirmed.
-pub const STARTED: &str = "/run/edel/started";
+pub const STARTED: &str = edel::places::STARTED;
 
 /// The report's format, for the reader of a pasted report.
 const FORMAT: u32 = 1;

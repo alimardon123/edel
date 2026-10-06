@@ -7,11 +7,6 @@ arch = "x86_64"
 hostname = "edel"
 features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm"]
 
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]
-
 [vm]
 # linux-virt, from the vm feature (its why says why not lts).
 kernel = "virt"

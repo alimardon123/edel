@@ -224,7 +224,7 @@ case_compositor() {
 	line=$(value ready_line)
 	case "$line" in
 	"output "*" ready") ;;
-	*) fail "the compositor wrote no ready line to /run/edel/session/ready: \"$line\"" ;;
+	*) fail "the compositor wrote no ready line to its health file: \"$line\"" ;;
 	esac
 	# llvmpipe draws on the CPU, so the compositor picks the Lite tier
 	# itself (M5.11); edel status reads the tier now from the state

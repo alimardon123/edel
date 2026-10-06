@@ -59,7 +59,7 @@ without_hostname() { printf '%s\n' "$1" | grep -v '^hostname = '; }
 . ci/names.sh
 # The machine's file, through the link in /etc/edel where admins look.
 link=$(ssh_root readlink "/etc/edel/$settings_name") || fail "no /etc/edel/$settings_name"
-[ "$link" = "/data/edel/$settings_name" ] || fail "/etc/edel/$settings_name points at $link"
+[ "$link" = "$data_dir/$settings_name" ] || fail "/etc/edel/$settings_name points at $link"
 grep -q '^# Edel OS settings' out/system-export.toml || fail "export does not begin with its header comment"
 before=$(ssh_root cat "/etc/edel/$settings_name")
 ssh_root edel settings apply || fail "edel settings apply failed"

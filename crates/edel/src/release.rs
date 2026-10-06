@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 /// The only manifest format this edel reads.
 pub const FORMAT: i64 = 1;
 /// Where images keep the public keys that may sign their updates.
-pub const KEYS_DIR: &str = "/usr/share/edel/keys";
+pub const KEYS_DIR: &str = edel::places::KEYS_DIR;
 
 /// `release.toml`. No `deny_unknown_fields`: a newer release may add keys.
 #[derive(Debug, Clone, Serialize, Deserialize)]

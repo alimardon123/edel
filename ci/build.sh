@@ -1,13 +1,9 @@
 #!/bin/sh
-# Builds the edel tool and every image. Runs inside the alpine:3.24
-# container (privileged, because building a root filesystem mounts
+# Builds the edel tool and every image. Runs inside the Alpine release
+# the base feature names, in a container (privileged, because building a root filesystem mounts
 # proc, sys and dev inside it):
 #
-#   docker run --rm --privileged -v "$PWD:/src" -w /src alpine:3.24 sh ci/build.sh
-#
-# With the argument desktop-test it builds only the programs and the
-# desktop test image, for CI's "Desktop tests" job, which runs beside the
-# VM tests on a runner of its own.
+#   docker run --rm --privileged -v "$PWD:/src" -w /src alpine:VERSION sh ci/build.sh
 set -eu
 what=${1:-all}
 case "$what" in
@@ -53,8 +49,8 @@ rm -rf out/keys
 # goes where a slot keeps its own, by the name ci/names.sh gives it.
 desktop_test_image() {
 	rm -rf out/desktop-seed
-	mkdir -p out/desktop-seed/usr/share/edel
-	cp ci/desktop/seed.toml "out/desktop-seed/usr/share/edel/$settings_name"
+	mkdir -p "out/desktop-seed$share_dir"
+	cp ci/desktop/seed.toml "out/desktop-seed$share_dir/$settings_name"
 	build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
 		--no-compress --out out/desktop-test
 }
@@ -87,9 +83,9 @@ done
 # must survive `edel settings set` and `reset` byte for byte.
 seed=out/system-test/seed
 rm -rf "$seed"
-mkdir -p "$seed/usr/share/edel"
+mkdir -p "$seed$share_dir"
 ssh-keygen -q -t ed25519 -N '' -C ci@edel -f out/keys/ci-ssh
-cat >"$seed/usr/share/edel/$settings_name" <<EOF
+cat >"$seed$share_dir/$settings_name" <<EOF
 format = 1
 future.key = 1
 

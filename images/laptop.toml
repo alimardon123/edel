@@ -10,11 +10,6 @@ hostname = "edel"
 features = ["base", "machine", "mdev", "ab-boot", "ssh", "laptop"]
 off = ["ssh"]
 
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]
-
 [vm]
 kernel = "lts"
 # The stick a laptop boots and installs from keeps small slots, so it

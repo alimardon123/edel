@@ -22,7 +22,8 @@ start() {
 	say "polkitd running: $(pgrep polkitd >/dev/null && echo yes || echo no)"
 	adduser -D ci
 	rm -f /tmp/flatpak-newest
-	su ci -s /bin/sh -c /usr/share/edel/ci/flatpak-steps.sh
+	. /usr/share/edel/places.sh
+	su ci -s /bin/sh -c "$share_dir/ci/flatpak-steps.sh"
 	if grep -qx ok /tmp/flatpak-newest 2>/dev/null; then
 		say "PASS"
 	else

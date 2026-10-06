@@ -13,11 +13,6 @@ hostname = "edel"
 features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "xwayland"]
 off = ["ssh"]
 
-[alpine]
-branch = "v3.24"
-mirror = "https://dl-cdn.alpinelinux.org/alpine"
-repositories = ["main", "community"]
-
 [vm]
 kernel = "lts"
 # Small slots, as on the laptop stick, so the disk fits a common 8 GB

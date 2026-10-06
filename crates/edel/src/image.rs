@@ -100,6 +100,7 @@ impl Build<'_> {
         // Our files first: some of them are services to enable.
         self.copy_files(&root)?;
         self.install_features(&root)?;
+        self.install_places(&root)?;
         if def.variant == Variant::Vm {
             self.install_edel(&root)?;
             self.install_keys(&root)?;
@@ -205,7 +206,8 @@ impl Build<'_> {
     fn record_packages(&self, root: &Path) -> Result<()> {
         let beside = self.out.join(format!("{}.packages", self.def.stem()));
         self.runner.step(&format!(
-            "record the installed packages in /usr/share/edel/packages and {}",
+            "record the installed packages in {} and {}",
+            edel::places::PACKAGES_FILE,
             beside.display()
         ));
         if self.runner.dry_run {
@@ -226,7 +228,7 @@ impl Build<'_> {
         let mut packages: Vec<&str> = std::str::from_utf8(&out.stdout)?.lines().collect();
         packages.sort_unstable();
         let text: String = packages.iter().map(|p| format!("{p}\n")).collect();
-        let inside = root.join("usr/share/edel/packages");
+        let inside = root.join(edel::places::PACKAGES_FILE.trim_start_matches('/'));
         fs::create_dir_all(inside.parent().unwrap_or(root))?;
         fs::write(&inside, &text)?;
         fs::write(&beside, &text)?;
@@ -277,7 +279,7 @@ impl Build<'_> {
     }
 
     /// Copies the running `edel` into the image as `/usr/bin/edel`, the
-    /// updater of a bootable image. CI builds it inside `alpine:3.24`, so it
+    /// updater of a bootable image. CI builds it inside the Alpine release the base feature names, so it
     /// links against the image's musl.
     fn install_edel(&self, root: &Path) -> Result<()> {
         self.runner.step("copy this edel binary to /usr/bin/edel");
@@ -344,14 +346,15 @@ impl Build<'_> {
                 );
             }
             self.runner.step(&format!(
-                "copy the public key {} to /usr/share/edel/keys/",
-                key.display()
+                "copy the public key {} to {}/",
+                key.display(),
+                edel::places::KEYS_DIR
             ));
         }
         if self.runner.dry_run {
             return Ok(());
         }
-        let dir = root.join("usr/share/edel/keys");
+        let dir = root.join(edel::places::KEYS_DIR.trim_start_matches('/'));
         fs::create_dir_all(&dir)?;
         for key in &keys {
             crate::release::read_public_key(key)?;
@@ -404,6 +407,26 @@ impl Build<'_> {
         for feature in &self.def.features {
             fs::write(dir.join(format!("{}.toml", feature.name)), &feature.text)?;
         }
+        Ok(())
+    }
+
+    /// Writes Edel OS's places as shell variables to `places.sh`, which
+    /// the slot's own scripts source, so a path is written once, in
+    /// `edel::places` (ADR-010, M5.27).
+    fn install_places(&self, root: &Path) -> Result<()> {
+        self.runner.step(&format!(
+            "write Edel OS's places to {}",
+            edel::places::PLACES_SH
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let file = root.join(edel::places::PLACES_SH.trim_start_matches('/'));
+        fs::create_dir_all(file.parent().unwrap_or(root))?;
+        fs::write(
+            file,
+            edel::places::shell_file("Edel OS's places, for the slot's own scripts (M5.27)"),
+        )?;
         Ok(())
     }
 

@@ -17,7 +17,7 @@ use serde::Deserialize;
 pub const FORMAT: u32 = 1;
 
 /// Where every image keeps the files of its features.
-pub const DIR: &str = "/usr/share/edel/features";
+pub const DIR: &str = crate::places::FEATURES_DIR;
 
 /// One feature file.
 #[derive(Debug, Default, Deserialize)]
@@ -60,6 +60,20 @@ pub struct Feature {
     /// Default apps a release dropped, kept for those who used them.
     #[serde(default)]
     pub flatpak_dropped: Vec<String>,
+    /// The Alpine branch, mirror and repositories every image is built
+    /// from: only the `base` feature names them, so the branch is written
+    /// once (M5.27).
+    #[serde(default)]
+    pub alpine: Option<Alpine>,
+}
+
+/// Where an image's packages come from (ADR-003).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Alpine {
+    /// The Alpine stable branch, such as `v3.24`.
+    pub branch: String,
+    pub mirror: String,
+    pub repositories: Vec<String>,
 }
 
 /// OpenRC services to enable, by runlevel.

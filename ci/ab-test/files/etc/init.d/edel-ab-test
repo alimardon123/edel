@@ -188,8 +188,9 @@ start() {
 		;;
 	4)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
-		ab_has /home/ab-marker /var/ab-marker /data/edel/last-fallback.toml || return 0
-		grep -q '^from = "B"' /data/edel/last-fallback.toml || {
+		. /usr/share/edel/places.sh
+		ab_has /home/ab-marker /var/ab-marker "$last_fallback" || return 0
+		grep -q '^from = "B"' "$last_fallback" || {
 			ab_end "FAIL: step 4 expected the fallback from slot B to be recorded"
 			return 0
 		}

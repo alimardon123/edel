@@ -35,7 +35,8 @@ ends() {
 		dd if=/dev/vdb bs=512 skip=$((sectors - 2048)) count=2048 2>/dev/null
 	} | sha256sum | cut -d' ' -f1
 }
-file=/usr/share/edel/ci/install.toml
+. /usr/share/edel/places.sh
+file=$share_dir/ci/install.toml
 before=$(ends)
 edel install /dev/vdb --settings "$file" </dev/null
 code=$?
