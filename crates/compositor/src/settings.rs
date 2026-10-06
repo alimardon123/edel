@@ -48,6 +48,9 @@ pub struct Settings {
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
     /// (M5.13a).
     pub shortcuts: BTreeMap<String, String>,
+    /// `region.keyboard` (M5.21), as `edel::keyboard` writes it: absent
+    /// means xkb's default, the US layout.
+    pub keyboard: Option<String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -98,6 +101,9 @@ impl Settings {
                 settings.color_scheme = scheme;
             }
             settings.shortcuts.extend(file.shortcuts.clone());
+            if file.region.keyboard.is_some() {
+                settings.keyboard.clone_from(&file.region.keyboard);
+            }
             for (name, output) in &file.displays {
                 let into = settings.outputs.entry(name.clone()).or_default();
                 if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {

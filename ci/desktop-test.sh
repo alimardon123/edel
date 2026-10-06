@@ -608,6 +608,42 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close_window = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_keyboard() {
+	# Keyboard layouts (M5.21): region.keyboard = "de,us" loads German
+	# then US at once; in foot the key QEMU calls y then types z, as on a
+	# German keyboard, so typing "touch y" makes a file named z; Super+Space
+	# goes to the next layout; a layout xkeyboard-config lacks is refused
+	# with a message that names its list; unset, the layout is US again.
+	guest 'keyboard bad'
+	wait_for 'DESKTOP-TEST: keyboard_bad ' || fail "the service did not report the refused layout"
+	value keyboard_bad | grep -q 'is not a keyboard layout this machine knows' ||
+		fail "edel settings set region.keyboard=xx was not refused with its message: $(value keyboard_bad)"
+	guest 'keyboard de'
+	wait_for 'edel-compositor: keyboard layouts de, us' || fail "the compositor did not load the layouts de and us"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key ctrl-alt-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
+	sleep 2
+	python3 ci/qmp.py type 'cd'
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type 'touch y'
+	python3 ci/qmp.py key ret
+	sleep 1
+	guest 'key file'
+	wait_for 'DESKTOP-TEST: keyfile ' || fail "the service did not look for the file"
+	[ "$(value keyfile)" = z ] || fail "with the German layout, typing y in foot made $(value keyfile), not z"
+	switched=$(count 'edel-compositor: keyboard layout now')
+	python3 ci/qmp.py key meta_l-spc
+	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
+		fail "Super+Space did not go to the next layout, English (US)"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
+	guest 'keyboard default'
+	wait_for "edel-compositor: keyboard layout us, xkb's default" || fail "unsetting region.keyboard did not bring the US layout back"
+	echo "PASS: region.keyboard = \"de,us\" loaded at once, y typed z in foot, Super+Space went to English (US), xx was refused with its message, and unsetting it brought US back"
+}
+
 case_workspaces() {
 	# Classic's four workspaces (M5.2a). away opens on the first, over the
 	# windows there, and takes the keyboard.
@@ -1328,14 +1364,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

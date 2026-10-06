@@ -30,3 +30,4 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `move_to_workspace_8` | `Super+Shift+8` | Move the focused window to workspace 8 |  |
 | `move_to_workspace_9` | `Super+Shift+9` | Move the focused window to workspace 9 |  |
 | `toggle_fullscreen` | `Super+F` | Make the focused window fill its screen, or leave fullscreen (M5.20) |  |
+| `next_keyboard_layout` | `Super+Space` | Switch to the next keyboard layout of region.keyboard (M5.21) |  |

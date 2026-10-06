@@ -387,6 +387,9 @@ impl Edel {
         if old.outputs != new.outputs {
             self.screens_changed = true;
         }
+        if old.keyboard != new.keyboard {
+            self.apply_keyboard();
+        }
         self.restyle();
         let rescaled = self.apply_scales();
         if self.desks.count() != new.workspaces() {

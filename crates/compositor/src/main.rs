@@ -18,6 +18,7 @@ mod extworkspace;
 mod fullscreen;
 mod grabs;
 mod input;
+mod keyboard;
 mod layers;
 mod outputs;
 mod pointer;
