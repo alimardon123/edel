@@ -122,7 +122,7 @@ fn take_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
         .write(true)
         .open(Path::new("/dev").join(name))
     else {
-        // mdev has not made its node yet; the next second tries again.
+        // mdev has not made its node yet; the next look tries again.
         return;
     };
     if let Some(mut softdog) = watchdog.replace(hardware) {
@@ -179,7 +179,10 @@ pub fn guard() -> Result<()> {
             // Closing without the magic byte leaves the watchdog running.
             std::process::exit(1);
         }
-        sleep(Duration::from_secs(1));
+        // Looked at ten times a second, so the slot is confirmed as soon as
+        // it is healthy, not up to a second later; petting the watchdog
+        // as often costs nothing.
+        sleep(Duration::from_millis(100));
     }
 }
 

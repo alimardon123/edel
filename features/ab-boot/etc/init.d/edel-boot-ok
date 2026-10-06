@@ -15,9 +15,11 @@ start() {
 	ebegin "Confirming that this Edel OS slot works"
 	mkdir -p /run/edel
 	touch /run/edel/default-reached
+	# Ten looks a second for 30 s, so the Started line is the boot's
+	# time, not up to a second of waiting on top.
 	i=0
-	while [ ! -s /run/edel/confirmed ] && [ "$i" -lt 30 ]; do
-		sleep 1
+	while [ ! -s /run/edel/confirmed ] && [ "$i" -lt 300 ]; do
+		sleep 0.1
 		i=$((i + 1))
 	done
 	cat /run/edel/confirmed 2>/dev/null
