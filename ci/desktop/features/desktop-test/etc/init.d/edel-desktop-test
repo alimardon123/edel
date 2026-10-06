@@ -261,6 +261,11 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
+		# Settings (M5.6a), as ci, and the file it writes.
+		'settings window')
+			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
+			;;
+		'settings file') say "settings_file $(tr '\n' ';' <"/home/ci/.config/edel/$settings_name" 2>/dev/null)" ;;
 		# Keyboard layouts (M5.21): German first, then US; a layout
 		# xkeyboard-config lacks, refused with its message; and the file
 		# typing "touch y" in foot made, named after the key's letter.

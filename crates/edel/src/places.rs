@@ -258,8 +258,11 @@ mod tests {
                 }
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
                 let text = fs::read_to_string(path).unwrap_or_default();
+                // A feature file is named after its feature: the settings
+                // feature (M5.6a) is features/settings.toml, not this file.
+                let feature = path.parent().is_some_and(|p| same(p, &root.join("features")));
                 for named in settings_names() {
-                    if name == named || text.contains(named) {
+                    if (name == named && !feature) || text.contains(named) {
                         found.push(format!("{} names {named}", path.display()));
                     }
                 }

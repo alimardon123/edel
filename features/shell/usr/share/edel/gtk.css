@@ -18,6 +18,8 @@
 @define-color popover_fg_color #e8e8ea;
 @define-color dialog_bg_color #2e323a;
 @define-color dialog_fg_color #e8e8ea;
+@define-color card_bg_color #2e323a;
+@define-color card_fg_color #e8e8ea;
 
 @media (prefers-color-scheme: light) {
   @define-color accent_color #3a73e8;
@@ -36,4 +38,6 @@
   @define-color popover_fg_color #1f2329;
   @define-color dialog_bg_color #e9ecf0;
   @define-color dialog_fg_color #1f2329;
+  @define-color card_bg_color #e9ecf0;
+  @define-color card_fg_color #1f2329;
 }

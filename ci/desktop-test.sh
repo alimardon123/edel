@@ -608,6 +608,50 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close_window = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_settings() {
+	# Settings (M5.6a): the app opens as a window with its sidebar of
+	# pages in the tokens' panel colour beside the page in the
+	# background's; a click on Mac-like writes layout.preset to ci's own
+	# settings file, and the desktop switches to Mac-like at once; a click
+	# on Classic, the default, takes the key out again. Kept as
+	# settings.png and settings-mac.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open a window: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	panel=$(token panel)
+	background=$(token background)
+	shot settings $((x + 20)) $((y + h - 40)) "$panel" >/dev/null ||
+		fail "Settings' sidebar at $((x + 20)),$((y + h - 40)) is not the panel's #$panel"
+	shot settings $((x + w - 40)) $((y + h - 40)) "$background" >/dev/null ||
+		fail "Settings' page at $((x + w - 40)),$((y + h - 40)) is not the background's #$background"
+	# The chosen preset's radio, Classic's, is the accent; rows are 55 px
+	# apart, Classic, Hive, Mac-like, Windows-like.
+	radio=$((x + w / 4 + (w - w / 4 - (w - w / 4 > 600 ? 556 : w - w / 4)) / 2 + 26))
+	top=$(python3 ci/qmp.py find "$dir/settings.png" "$radio" "$y" $((y + h)) "$(token accent)")
+	[ "$top" != none ] || fail "no chosen preset's radio in column $radio of Settings"
+	classic=$((top + 9))
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	python3 ci/qmp.py click $((radio + 60)) $((classic + 110))
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+		fail "a click on Mac-like at $((radio + 60)),$((classic + 110)) did not switch the desktop to Mac-like"
+	guest 'settings file'
+	wait_for 'DESKTOP-TEST: settings_file ' || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[layout\];preset = "mac-like"' ||
+		fail "ci's settings file is not what edel settings set layout.preset=mac-like writes: $(value settings_file)"
+	shot settings-mac 640 12 "$panel" >/dev/null || fail "Mac-like's bar is not along the top"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	python3 ci/qmp.py click $((radio + 60)) "$classic"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+		fail "a click on Classic did not bring Classic back"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened at $x,$y ${w}x$h with its sidebar and page in the token colours, Mac-like wrote layout.preset and moved the bar to the top at once, and Classic took the key out again"
+}
+
 case_keyboard() {
 	# Keyboard layouts (M5.21): region.keyboard = "de,us" loads German
 	# then US at once; in foot the key QEMU calls y then types z, as on a
@@ -1364,14 +1408,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, settings, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

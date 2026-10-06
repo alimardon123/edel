@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Comment=Layout, look and everything else on this machine
+Exec=edel-settings
+Icon=preferences-system
+Terminal=false
+Categories=Settings;GTK;
+Keywords=preferences;layout;preset;tiling;about;
+StartupNotify=true

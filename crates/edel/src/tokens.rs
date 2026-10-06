@@ -225,7 +225,7 @@ impl Tokens {
     /// GTK's named colours from these tokens: the windows' background and
     /// text, the header bars as our title bars, sidebars and lists as the
     /// panel, popovers and dialogs as the title bars, and the accent.
-    fn gtk_colours(&self) -> [(&'static str, String); 16] {
+    fn gtk_colours(&self) -> [(&'static str, String); 18] {
         let text = self.title_text.hex();
         [
             ("accent_color", self.accent.hex()),
@@ -243,7 +243,10 @@ impl Tokens {
             ("popover_bg_color", self.title_bar.hex()),
             ("popover_fg_color", text.clone()),
             ("dialog_bg_color", self.title_bar.hex()),
-            ("dialog_fg_color", text),
+            ("dialog_fg_color", text.clone()),
+            // Settings' boxed rows (M5.6a), raised as a title bar is.
+            ("card_bg_color", self.title_bar.hex()),
+            ("card_fg_color", text),
         ]
     }
 
