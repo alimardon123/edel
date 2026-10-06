@@ -1,7 +1,7 @@
 # ADR-006: Atomic updates and system replication
 
 **Status:** Proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-06 (the file and its commands take the Settings app's names, ADR-008)
 **Deciders:** Alimardon
 **Extends:** ADR-003 (immutable base with A/B updates)
 
@@ -87,6 +87,8 @@ Three commands:
 | `edel system export` | Writes the current machine's setup to a file |
 | `edel system diff file` | Shows what applying the file would change |
 | `edel system apply file` | Makes this machine match the file, as a new deployment that can roll back |
+
+From M5.25 the file is `settings.toml` and the commands are `edel settings export`, `edel settings diff FILE` and `edel settings import FILE`, the Settings app's own names (ADR-008).
 
 The same file works at install time: the installer accepts it from a USB stick or a URL, so a new machine comes up already set up. The settings app can do export and apply with a button, so nobody has to touch a terminal.
 

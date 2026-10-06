@@ -1,5 +1,7 @@
 # The system file
 
+From M5.25 this file is `settings.toml`, its command `edel settings`, and several sections and keys take the Settings app's names (`[shell]` becomes `[layout]`, `[outputs.NAME]` becomes `[displays.NAME]`, `[locale]` becomes `[region]` and more): ADR-008's same names decision lists them all. Until then the names below hold.
+
 **Date:** 2026-10-02
 
 One TOML file describes a whole machine (ADR-006): `/data/edel/system.toml`. It holds only what a person chose; an absent key means the release decides (ADR-008). It never holds personal files or secrets. `edel system check FILE` checks one strictly, `edel system apply [FILE]` makes the machine match it, `edel system diff [FILE]` shows what apply would change (exit 1 when anything would), `edel system set KEY=VALUE` and `unset KEY` change one key of the machine's file in place (unsetting a user's last key keeps `[users.NAME]`, so apply takes back what the key gave), and `edel system export` prints the machine as one, with the `/etc` files it changed listed in comments; every part reads it with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows. The reading rules are in [FORMATS.md](FORMATS.md).

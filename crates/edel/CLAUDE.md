@@ -5,7 +5,7 @@ The one command-line tool of Edel OS and the library `edel::system`: the workspa
 ## What belongs here
 
 - Every system function lands here as a subcommand (`edel update`, `edel rollback`, `edel status`, `edel boot`, `edel release`, `edel system`, `edel install`, `edel report`, `edel shell`), never as a separate tool: "one tool to learn" (`main.rs`). Add-ons, the live USB and fleet images are built by the same `edel image build`, not by a new builder.
-- Settings change only through `edel system set` and `unset`. Never add a per-domain verb that changes settings (no `edel addon add`), shell completion scripts, telemetry, runtime-loaded code or a plugin API (ADR-008).
+- Settings change only through `edel system set` and `unset`. Never add a per-domain verb that changes settings (no `edel addon add`), an alias (a second name for a command or a key), telemetry, runtime-loaded code or a plugin API (ADR-008).
 - The library target (`lib.rs`: `edel::system`, `edel::features`, `edel::install`, `edel::presets`, `edel::shortcuts` and `edel::tokens`) is the one parser for system files and feature files. The compositor (M4.5), shell-ui (M5.1) and Settings (M5.6) link it, so it has no network or signing dependencies: `clap`, `ed25519-dalek`, `flate2`, `sha2` and `ureq` are optional and sit behind the binary's default `cli` feature (ADR-008). CI builds the library with `--no-default-features`; code the library needs never uses them.
 
 ## Fast checks
