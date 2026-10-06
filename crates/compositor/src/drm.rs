@@ -103,12 +103,43 @@ fn open_seat() -> Result<(
                 std::thread::sleep(std::time::Duration::from_millis(500));
             }
             Err(err) => {
-                return Err(err).context(
-                    "opening a seat session (is seatd running and is this user in group seat?)",
-                );
+                return Err(err)
+                    .with_context(|| format!("could not open the seat: {}", seat_diagnosis()));
             }
         }
     }
+}
+
+/// Why the seat may not open, in words a person can act on: whether
+/// seatd's socket takes a connection, and whether this user is in group
+/// seat, as the socket wants.
+fn seat_diagnosis() -> String {
+    let socket = std::env::var("SEATD_SOCK").unwrap_or_else(|_| "/run/seatd.sock".into());
+    let connect = match std::os::unix::net::UnixStream::connect(&socket) {
+        Ok(_) => format!("seatd's socket {socket} takes connections"),
+        Err(e) => format!("seatd's socket {socket}: {e}"),
+    };
+    let status = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+    let groups: Vec<&str> = status
+        .lines()
+        .find_map(|l| l.strip_prefix("Groups:"))
+        .map(|g| g.split_whitespace().collect())
+        .unwrap_or_default();
+    let group_file = std::fs::read_to_string("/etc/group").unwrap_or_default();
+    let seat_gid = group_file
+        .lines()
+        .find_map(|l| l.strip_prefix("seat:"))
+        .and_then(|rest| rest.split(':').nth(1).map(str::to_string));
+    let membership = match seat_gid {
+        Some(gid) if groups.contains(&gid.as_str()) => "this user is in group seat".to_string(),
+        Some(gid) => format!(
+            "this user is not in group seat (GID {gid}); its groups are {}",
+            groups.join(" ")
+        ),
+        None => "there is no group seat".to_string(),
+    };
+    let vt = std::env::var("XDG_VTNR").unwrap_or_else(|_| "unset".into());
+    format!("{connect}; {membership}; XDG_VTNR is {vt}")
 }
 
 struct Gpu {
