@@ -15,8 +15,6 @@
 //! `launcher.rs`). It exits when the compositor goes away.
 
 mod a11y;
-mod apps;
-mod icons;
 mod launcher;
 mod link;
 mod paint;
@@ -62,6 +60,7 @@ use edel::places;
 use edel::presets::{self, Edge, Hide, Style};
 use edel::system;
 use edel::tokens::{self, Scheme, Tokens};
+use edel::{app_icons as icons, apps};
 
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;

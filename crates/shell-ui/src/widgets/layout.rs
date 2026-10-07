@@ -28,13 +28,14 @@ fn label(shown: &str) -> String {
 
 /// The button and the space on each side of it; its corners are the
 /// tokens' controls'.
-const WIDTH: f32 = 30.0;
-const HEIGHT: f32 = 26.0;
-const ROOM: f32 = 3.0;
+const WIDTH: f32 = 32.0;
+const HEIGHT: f32 = 28.0;
+const ROOM: f32 = 2.0;
 /// The icon's size; `design/icons/layout-floating.svg` and
 /// `layout-tiling.svg` are drawn on a 24-unit square, as the mockups' are
-/// (M5.5d).
-const ICON: f32 = 15.0;
+/// (M5.5d). 19 px, so its shape stands about as tall as the workspace
+/// buttons' digits beside it (Alimardon, 2026-10-06: 15 read too small).
+const ICON: f32 = 19.0;
 
 /// What it shows: the shown workspace's policy, `floating` or `tiling`,
 /// or nothing before the compositor has said.

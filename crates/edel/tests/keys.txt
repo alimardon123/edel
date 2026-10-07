@@ -51,3 +51,6 @@ updates.automatic
 updates.restart_window
 apps.installed
 addons.installed
+layout.close_button
+layout.minimize_button
+layout.maximize_button

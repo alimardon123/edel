@@ -15,6 +15,7 @@ use edel::system::{self, SystemFile};
 pub use edel::tokens::Scheme;
 
 use crate::animation::Motion;
+use crate::frame::Shown;
 
 /// Whether the compositor draws title bars in tiling too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -35,6 +36,9 @@ pub struct Settings {
     pub title_bars: TitleBars,
     /// `layout.window_buttons` (M5.4b): absent means the preset's side.
     pub window_buttons: Option<Side>,
+    /// `layout.close_button`, `minimize_button` and `maximize_button`
+    /// (M5.18a): absent shows each.
+    pub buttons: Shown,
     /// `layout.panels` (M5.4e): absent means the preset's; shell-ui reads
     /// them, and the compositor only restarts it when they change.
     pub panels: Option<Vec<edel::presets::Panel>>,
@@ -42,7 +46,7 @@ pub struct Settings {
     pub outputs: BTreeMap<String, OutputSettings>,
     /// `appearance.animations` (M5.11b): absent means full.
     pub motion: Motion,
-    /// `appearance.mode` (M5.5c): absent, or `auto`, means dark.
+    /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
     pub color_scheme: Scheme,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
@@ -85,6 +89,15 @@ impl Settings {
             }
             if let Some(side) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
                 settings.window_buttons = Some(side);
+            }
+            for (value, shown) in [
+                (file.layout.close_button, &mut settings.buttons.close),
+                (file.layout.minimize_button, &mut settings.buttons.minimize),
+                (file.layout.maximize_button, &mut settings.buttons.maximize),
+            ] {
+                if let Some(value) = value {
+                    *shown = value;
+                }
             }
             if file.layout.panels.is_some() {
                 settings.panels.clone_from(&file.layout.panels);
@@ -298,6 +311,22 @@ mod tests {
     }
 
     #[test]
+    fn each_button_shows_unless_a_file_hides_it() {
+        assert_eq!(Settings::default().buttons, Shown::default());
+        let machine = file("format = 1\n[layout]\nminimize_button = false\nclose_button = false\n");
+        let person = file("format = 1\n[layout]\nclose_button = true\n");
+        let settings = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(
+            settings.buttons,
+            Shown {
+                close: true,
+                minimize: false,
+                maximize: true,
+            }
+        );
+    }
+
+    #[test]
     fn only_another_preset_counts_as_a_change_of_preset() {
         let named = |name: Option<&str>| Settings {
             preset: name.map(str::to_string),
@@ -340,18 +369,18 @@ mod tests {
     }
 
     #[test]
-    fn the_colour_scheme_is_dark_unless_a_file_says_light() {
-        assert_eq!(Settings::from_files(None, None).color_scheme, Scheme::Dark);
-        let machine = file("format = 1\n[appearance]\nmode = \"light\"\n");
+    fn the_colour_scheme_is_light_unless_a_file_says_dark() {
+        assert_eq!(Settings::from_files(None, None).color_scheme, Scheme::Light);
+        let machine = file("format = 1\n[appearance]\nmode = \"dark\"\n");
         let person = file("format = 1\n[appearance]\nmode = \"auto\"\n");
         assert_eq!(
             Settings::from_files(Some(&machine), None).color_scheme,
-            Scheme::Light
+            Scheme::Dark
         );
         assert_eq!(
             Settings::from_files(Some(&machine), Some(&person)).color_scheme,
-            Scheme::Dark,
-            "the person's wins, and auto is dark in this release"
+            Scheme::Light,
+            "the person's wins, and auto is light in this release"
         );
     }
 

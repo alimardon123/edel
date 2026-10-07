@@ -18,7 +18,7 @@ esac
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
 apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar \
-	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf
+	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
 
 # The tool and our programs the features ship (edel-compositor, M4.2b);
 # edel image build copies those from beside itself.

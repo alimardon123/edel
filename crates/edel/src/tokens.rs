@@ -67,23 +67,24 @@ impl Colour {
 }
 
 /// Light or dark (M5.5c): which colours the tokens give. `[colour]` holds
-/// the dark ones, the release's default, and `[colour.light]` the light
-/// ones; sizes and fonts are the same in both.
+/// the dark ones and `[colour.light]` the light ones; sizes and fonts are
+/// the same in both. Light is the release's default, as ADR-008 and the
+/// mockups have it (M5.12a).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scheme {
-    #[default]
     Dark,
+    #[default]
     Light,
 }
 
 impl Scheme {
     /// `appearance.mode`'s value: `light`, `dark`, or `auto`,
-    /// which is the release's choice, dark in this one; none for anything
+    /// which is the release's choice, light in this one; none for anything
     /// else.
     pub fn parse(value: &str) -> Option<Scheme> {
         match value {
-            "light" => Some(Scheme::Light),
-            "dark" | "auto" => Some(Scheme::Dark),
+            "light" | "auto" => Some(Scheme::Light),
+            "dark" => Some(Scheme::Dark),
             _ => None,
         }
     }
@@ -141,13 +142,24 @@ pub struct Tokens {
     pub radius_window: u32,
     pub radius_menu: u32,
     pub radius_control: u32,
+    /// Small things inside a window: a sidebar's rows, a value's box.
+    pub radius_small: u32,
     /// The one shadow, cast by one light above (M5.5e): its colour, how
     /// far it blurs and how far down it falls, logical pixels.
     pub shadow: Colour,
+    /// Apps' own surfaces (M5.6a): a window's page, the cards raised on
+    /// it, and the hairlines round cards and between rows.
+    pub window: Colour,
+    pub card: Colour,
+    pub line: Colour,
+    /// Text and icons on the accent.
+    pub accent_text: Colour,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
     pub row: u32,
+    /// Apps' text, in logical pixels (M5.6a).
+    pub text_size: u32,
     /// The interface font's family.
     pub font: String,
 }
@@ -222,28 +234,31 @@ impl Tokens {
         ]
     }
 
-    /// GTK's named colours from these tokens: the windows' background and
-    /// text, the header bars as our title bars, sidebars and lists as the
-    /// panel, popovers and dialogs as the title bars, and the accent.
-    fn gtk_colours(&self) -> [(&'static str, String); 16] {
+    /// GTK's named colours from these tokens: the windows' page and
+    /// text, lists, cards, popovers and dialogs as raised cards, the
+    /// header bars as our title bars, sidebars as the panel, and the
+    /// accent.
+    fn gtk_colours(&self) -> [(&'static str, String); 18] {
         let text = self.title_text.hex();
         [
             ("accent_color", self.accent.hex()),
             ("accent_bg_color", self.accent.hex()),
-            ("accent_fg_color", "#ffffff".to_string()),
-            ("window_bg_color", self.background.hex()),
+            ("accent_fg_color", self.accent_text.hex()),
+            ("window_bg_color", self.window.hex()),
             ("window_fg_color", text.clone()),
-            ("view_bg_color", self.panel.hex()),
+            ("view_bg_color", self.card.hex()),
             ("view_fg_color", text.clone()),
             ("headerbar_bg_color", self.title_bar.hex()),
             ("headerbar_fg_color", text.clone()),
             ("headerbar_backdrop_color", self.background.hex()),
             ("sidebar_bg_color", self.panel.hex()),
             ("sidebar_fg_color", text.clone()),
-            ("popover_bg_color", self.title_bar.hex()),
+            ("popover_bg_color", self.card.hex()),
             ("popover_fg_color", text.clone()),
-            ("dialog_bg_color", self.title_bar.hex()),
-            ("dialog_fg_color", text),
+            ("dialog_bg_color", self.window.hex()),
+            ("dialog_fg_color", text.clone()),
+            ("card_bg_color", self.card.hex()),
+            ("card_fg_color", text),
         ]
     }
 
@@ -334,6 +349,10 @@ impl Tokens {
                 "panel_text" => &mut self.panel_text,
                 "accent" => &mut self.accent,
                 "shadow" => &mut self.shadow,
+                "window" => &mut self.window,
+                "card" => &mut self.card,
+                "line" => &mut self.line,
+                "accent_text" => &mut self.accent_text,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -360,9 +379,11 @@ impl Tokens {
                 "radius_window" => (&mut self.radius_window, 100),
                 "radius_menu" => (&mut self.radius_menu, 100),
                 "radius_control" => (&mut self.radius_control, 100),
+                "radius_small" => (&mut self.radius_small, 100),
                 "shadow_blur" => (&mut self.shadow_blur, 100),
                 "shadow_offset" => (&mut self.shadow_offset, 100),
                 "row" => (&mut self.row, 200),
+                "text" => (&mut self.text_size, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -413,6 +434,10 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel_text",
                 "accent",
                 "shadow",
+                "window",
+                "card",
+                "line",
+                "accent_text",
             ][..],
         ),
         (
@@ -427,7 +452,9 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "radius_window",
                 "radius_menu",
                 "radius_control",
+                "radius_small",
                 "row",
+                "text",
                 "shadow_blur",
                 "shadow_offset",
             ][..],
@@ -478,10 +505,16 @@ pub fn check(text: &str) -> Result<Tokens> {
         radius_window: 0,
         radius_menu: 0,
         radius_control: 0,
+        radius_small: 0,
         shadow: BLACK,
+        window: BLACK,
+        card: BLACK,
+        line: BLACK,
+        accent_text: BLACK,
         shadow_blur: 0,
         shadow_offset: 0,
         row: 0,
+        text_size: 0,
         font: String::new(),
     };
     tokens.apply(&table, &mut notes);
@@ -545,8 +578,10 @@ mod tests {
             "features/shell/usr/share/edel/gtk.css differs from the tokens; run EDEL_WRITE_GTK_CSS=1 cargo test -p edel gtk_css"
         );
         assert!(css.contains("@define-color accent_bg_color #5b8ef5;"));
-        assert!(css.contains("@define-color window_bg_color #24272e;"));
-        assert!(css.contains("  @define-color window_bg_color #dfe3ea;"));
+        // Apps' windows are the window token's colour in each scheme.
+        let window = |t: &Tokens| format!("@define-color window_bg_color {};", t.window.hex());
+        assert!(css.contains(&format!("\n{}", window(&Tokens::built_in()))));
+        assert!(css.contains(&format!("  {}", window(&light))));
         // A changed token changes the file.
         let mut tokens = Tokens::built_in();
         tokens.accent = Colour::parse("#e5484d").unwrap();
@@ -573,7 +608,7 @@ mod tests {
             "docs/theme/tokens.css differs from the tokens; run EDEL_WRITE_DOCS=1 cargo test -p edel site_css"
         );
         assert!(css.contains("  --edel-accent: #5b8ef5;"));
-        assert!(css.contains("  --edel-page: #f2f3f5;"));
+        assert!(css.contains("  --edel-page: #f6f7f9;"));
         assert!(css.contains("  --edel-radius-menu: 12px;"));
     }
 
@@ -583,8 +618,8 @@ mod tests {
         let light = Tokens::built_in_scheme(Scheme::Light);
         assert_eq!(dark, Tokens::built_in());
         assert_eq!(light.background.hex(), "#dfe3ea");
-        assert_eq!(light.panel.hex(), "#f2f3f5");
-        assert_eq!(light.accent.hex(), "#3a73e8");
+        assert_eq!(light.panel.hex(), "#f6f7f9");
+        assert_eq!(light.accent.hex(), "#2d6ae3");
         assert_eq!(light.panel_height, dark.panel_height);
         assert_eq!(light.font, dark.font);
         // A machine's file changes either scheme, and a light colour it
@@ -597,13 +632,15 @@ mod tests {
         assert_eq!(light.background.hex(), "#dfe3ea");
         let (dark, _) = Tokens::read_scheme(file, Scheme::Dark);
         assert_eq!(dark.panel.hex(), "#000000");
-        assert_eq!(Scheme::parse("auto"), Some(Scheme::Dark));
+        // Light is the release's default (M5.12a), and auto is it.
+        assert_eq!(Scheme::parse("auto"), Some(Scheme::Light));
+        assert_eq!(Scheme::default(), Scheme::Light);
         assert_eq!(Scheme::parse("sepia"), None);
     }
 
     #[test]
     fn check_wants_every_colour_in_the_light_scheme() {
-        let missing = BUILT_IN.replace("panel = \"#f2f3f5\"\n", "");
+        let missing = BUILT_IN.replace("panel = \"#f6f7f9\"\n", "");
         let e = format!("{:#}", check(&missing).unwrap_err());
         assert!(e.contains("colour.light.panel is missing"), "{e}");
     }

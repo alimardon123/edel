@@ -143,6 +143,18 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Switch to the next keyboard layout of region.keyboard (M5.21)",
     ),
+    action(
+        "minimize_window",
+        "Super+H",
+        false,
+        "Minimize the focused window; the window list or Alt+Tab brings it back (M5.18a)",
+    ),
+    action(
+        "toggle_maximize",
+        "Super+M",
+        false,
+        "Maximize the focused window, or give it its size back (M5.18a)",
+    ),
 ];
 
 /// The action called `name`.

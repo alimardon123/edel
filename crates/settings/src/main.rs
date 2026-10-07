@@ -1,0 +1,350 @@
+//! `edel-settings` (roadmap M5.6): Settings, the app for every setting
+//! (ADR-008). Its pages are `edel::system`'s page table, the same names
+//! `edel settings` prints; each change is one line of the person's
+//! settings file, written by the function `edel settings set` uses, which
+//! the desktop follows at once. A sidebar with a search field lists the
+//! pages; on a narrow window it folds away and the pages open one at a
+//! time (ADR-004's size classes, proven on our own app first). The window
+//! has no header bar of its own: the compositor draws its title bar, as
+//! for every window, with the buttons where the person put them.
+//! Everything people see is drawn from the design tokens and our own
+//! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
+
+mod about;
+mod files;
+mod icon;
+mod layout;
+mod preview;
+mod rows;
+mod style;
+mod widgets;
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use adw::prelude::*;
+
+use crate::style::Theme;
+
+/// The app's id, which its desktop file is named after
+/// (`features/settings/usr/share/applications/APP_ID.desktop`; a test
+/// holds them together).
+pub const APP_ID: &str = "io.github.alimardon123.edel.Settings";
+
+/// Below this width the sidebar folds away.
+const NARROW: &str = "max-width: 600sp";
+
+/// The sidebar's width, in logical pixels, as the mockups draw it.
+const SIDEBAR: f64 = 204.0;
+
+fn main() -> gtk::glib::ExitCode {
+    let app = adw::Application::builder().application_id(APP_ID).build();
+    app.connect_activate(window);
+    app.run()
+}
+
+/// One page of the app: its name and icon in the sidebar, its section
+/// of the settings file, what it shows, and the feature it talks to,
+/// without which it is hidden (M5.6b).
+struct Page {
+    title: &'static str,
+    icon: &'static str,
+    section: Option<&'static str>,
+    build: fn(&Rc<Theme>) -> gtk::Widget,
+    needs: Option<&'static str>,
+}
+
+/// The pages this release has, in `edel::system::PAGES`' order, then
+/// About; a page is added here as its step lands (M5.7 to M5.10).
+fn all_pages() -> Vec<Page> {
+    let mut pages: Vec<Page> = edel::system::PAGES
+        .iter()
+        .filter_map(|page| match page.section {
+            // The layout is the desktop's: no desktop, no Layout page.
+            "layout" => Some(Page {
+                title: page.title,
+                icon: "page-layout",
+                section: Some(page.section),
+                build: layout::page,
+                needs: Some("shell"),
+            }),
+            _ => None,
+        })
+        .collect();
+    pages.push(Page {
+        title: "About",
+        icon: "page-about",
+        section: None,
+        build: |_| about::page(),
+        needs: None,
+    });
+    pages
+}
+
+/// The pages this machine shows: those whose feature it has, as the
+/// feature files in `features` say (`edel::features::DIR` on a machine).
+fn pages_in(features: &std::path::Path) -> Vec<Page> {
+    all_pages()
+        .into_iter()
+        .filter(|page| {
+            page.needs
+                .is_none_or(|f| features.join(format!("{f}.toml")).exists())
+        })
+        .collect()
+}
+
+fn pages() -> Vec<Page> {
+    pages_in(std::path::Path::new(edel::features::DIR))
+}
+
+/// Whether search text `query` finds `page`: its title or one of its rows'
+/// titles holds it, whatever the case.
+fn finds(page: &Page, query: &str) -> bool {
+    let query = query.trim().to_lowercase();
+    let holds = |text: &str| text.to_lowercase().contains(&query);
+    query.is_empty()
+        || holds(page.title)
+        || page
+            .section
+            .is_some_and(|s| rows::on_page(s).any(|row| holds(row.title)))
+}
+
+fn window(app: &adw::Application) {
+    let theme = Theme::new();
+    let pages = Rc::new(pages());
+    // Each page is built when first shown and kept.
+    let built: Rc<RefCell<Vec<Option<gtk::Widget>>>> =
+        Rc::new(RefCell::new(vec![None; pages.len()]));
+
+    let split = adw::NavigationSplitView::builder()
+        .min_sidebar_width(SIDEBAR)
+        .max_sidebar_width(SIDEBAR)
+        .build();
+    let content = adw::NavigationPage::builder().title(pages[0].title).build();
+    let back = gtk::Button::builder()
+        .halign(gtk::Align::Start)
+        .css_classes(["edel-back"])
+        .visible(false)
+        .build();
+    let back_label = gtk::Box::builder().spacing(4).build();
+    back_label.append(&icon::image("back", 14));
+    back_label.append(&gtk::Label::new(Some("Settings")));
+    back.set_child(Some(&back_label));
+    back.update_property(&[gtk::accessible::Property::Label("Back to the pages")]);
+    split
+        .bind_property("collapsed", &back, "visible")
+        .sync_create()
+        .build();
+    {
+        let split = split.clone();
+        back.connect_clicked(move |_| split.set_show_content(false));
+    }
+    let shown = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .build();
+    let holder = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .vexpand(true)
+        .build();
+    shown.append(&back);
+    shown.append(&holder);
+    content.set_child(Some(&shown));
+    let show = {
+        let (pages, built, theme, content) =
+            (pages.clone(), built.clone(), theme.clone(), content.clone());
+        move |at: usize| {
+            let Some(page) = pages.get(at) else { return };
+            let widget = built.borrow_mut()[at]
+                .get_or_insert_with(|| (page.build)(&theme))
+                .clone();
+            while let Some(child) = holder.first_child() {
+                holder.remove(&child);
+            }
+            holder.append(&widget);
+            content.set_title(page.title);
+        }
+    };
+    show(0);
+
+    let list = gtk::ListBox::builder()
+        .css_classes(["edel-pages"])
+        .vexpand(true)
+        .build();
+    for page in pages.iter() {
+        let row = gtk::Box::builder().spacing(10).build();
+        row.append(&icon::image(page.icon, 16));
+        row.append(&gtk::Label::builder().label(page.title).xalign(0.0).build());
+        list.append(&row);
+    }
+    {
+        let split = split.clone();
+        list.connect_row_activated(move |_, row| {
+            show(row.index().max(0) as usize);
+            split.set_show_content(true);
+        });
+    }
+    list.select_row(list.row_at_index(0).as_ref());
+
+    let search = gtk::Entry::builder()
+        .placeholder_text("Search")
+        .primary_icon_paintable(&icon::Icon::new("search", 14))
+        .css_classes(["edel-search"])
+        .build();
+    search.update_property(&[gtk::accessible::Property::Label("Search the settings")]);
+    {
+        let (pages, search2) = (pages.clone(), search.clone());
+        list.set_filter_func(move |row| {
+            pages
+                .get(row.index().max(0) as usize)
+                .is_some_and(|page| finds(page, &search2.text()))
+        });
+    }
+    {
+        let list = list.clone();
+        search.connect_changed(move |_| list.invalidate_filter());
+    }
+    {
+        // Return opens the first page search found.
+        let list = list.clone();
+        search.connect_activate(move |_| {
+            let mut at = 0;
+            while let Some(row) = list.row_at_index(at) {
+                if row.is_child_visible() {
+                    list.select_row(Some(&row));
+                    row.activate();
+                    break;
+                }
+                at += 1;
+            }
+        });
+    }
+
+    let sidebar_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .css_classes(["edel-sidebar"])
+        .build();
+    sidebar_box.append(&search);
+    sidebar_box.append(&list);
+    let sidebar = adw::NavigationPage::builder()
+        .title("Settings")
+        .child(&sidebar_box)
+        .build();
+    split.set_sidebar(Some(&sidebar));
+    split.set_content(Some(&content));
+
+    let bin = adw::BreakpointBin::builder()
+        .width_request(360)
+        .height_request(300)
+        .child(&split)
+        .build();
+    if let Ok(condition) = adw::BreakpointCondition::parse(NARROW) {
+        let narrow = adw::Breakpoint::new(condition);
+        narrow.add_setter(&split, "collapsed", Some(&true.to_value()));
+        bin.add_breakpoint(narrow);
+    }
+    // A plain GTK window, without libadwaita's own bar, so the compositor
+    // draws ours (KDE's server decoration protocol, M5.6a).
+    let window = gtk::ApplicationWindow::builder()
+        .application(app)
+        .title("Settings")
+        .default_width(960)
+        .default_height(640)
+        .css_classes(["edel"])
+        .child(&bin)
+        .build();
+    // Ctrl+F goes to the search field, as in every app with one.
+    let keys = gtk::ShortcutController::new();
+    let find = search.clone();
+    keys.add_shortcut(gtk::Shortcut::new(
+        gtk::ShortcutTrigger::parse_string("<Control>f"),
+        Some(gtk::CallbackAction::new(move |_, _| {
+            find.grab_focus();
+            gtk::glib::Propagation::Stop
+        })),
+    ));
+    window.add_controller(keys);
+    window.present();
+    // The pages' list takes the keyboard first, so the search field opens
+    // quiet; it is a click away, or Ctrl+F.
+    if let Some(row) = list.row_at_index(0) {
+        row.grab_focus();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_desktop_file_is_named_after_the_app_id() {
+        let path = format!(
+            "{}/../../features/settings/usr/share/applications/{APP_ID}.desktop",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text =
+            std::fs::read_to_string(&path).expect("the settings feature ships the desktop file");
+        assert!(text.contains("Exec=edel-settings"), "{text}");
+    }
+
+    #[test]
+    fn the_pages_follow_the_page_table_then_about() {
+        let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
+        assert_eq!(titles, ["Layout", "About"]);
+    }
+
+    #[test]
+    fn every_page_has_one_of_our_icons() {
+        for page in all_pages() {
+            assert!(
+                edel::icons::mask(page.icon, 16).is_some(),
+                "the {} page's icon {} is not in design/icons",
+                page.title,
+                page.icon
+            );
+        }
+    }
+
+    #[test]
+    fn search_finds_a_page_by_its_title_or_its_rows() {
+        let pages = all_pages();
+        let titles = |query: &str| -> Vec<&str> {
+            pages
+                .iter()
+                .filter(|p| finds(p, query))
+                .map(|p| p.title)
+                .collect()
+        };
+        assert_eq!(titles(""), ["Layout", "About"]);
+        assert_eq!(titles("abo"), ["About"]);
+        assert_eq!(titles("TITLE BARS"), ["Layout"]);
+        assert!(titles("nothing like this").is_empty());
+    }
+
+    #[test]
+    fn a_page_whose_feature_is_missing_is_hidden() {
+        let dir = std::env::temp_dir().join(format!("edel-settings-pages-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let titles = |dir: &std::path::Path| -> Vec<&str> {
+            pages_in(dir).iter().map(|p| p.title).collect()
+        };
+        assert_eq!(titles(&dir), ["About"]);
+        std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
+        assert_eq!(titles(&dir), ["Layout", "About"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn every_feature_a_page_needs_has_a_file_under_features() {
+        let features = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../features");
+        for page in all_pages() {
+            if let Some(feature) = page.needs {
+                assert!(
+                    features.join(format!("{feature}.toml")).exists(),
+                    "the {} page needs a feature {feature} that has no file",
+                    page.title
+                );
+            }
+        }
+    }
+}

@@ -89,14 +89,62 @@ pub enum Button {
     Minimize,
 }
 
-/// The buttons on `side`, from the bar's end inwards: close outermost,
-/// then, reading left to right, minimize before maximize, as on the
-/// desktops people know.
-pub fn buttons(side: Side) -> [Button; 3] {
-    match side {
+/// Which buttons the bars show (M5.18a): each, unless the settings file
+/// hides it with `layout.close_button`, `minimize_button` or
+/// `maximize_button`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shown {
+    pub close: bool,
+    pub minimize: bool,
+    pub maximize: bool,
+}
+
+impl Default for Shown {
+    fn default() -> Shown {
+        Shown {
+            close: true,
+            minimize: true,
+            maximize: true,
+        }
+    }
+}
+
+impl Shown {
+    pub fn has(self, button: Button) -> bool {
+        match button {
+            Button::Close => self.close,
+            Button::Minimize => self.minimize,
+            Button::Maximize => self.maximize,
+        }
+    }
+
+    /// The shown ones' names, for the log: `close, maximize`, or `none`.
+    pub fn names(self) -> String {
+        let names: Vec<&str> = [
+            (self.close, "close"),
+            (self.minimize, "minimize"),
+            (self.maximize, "maximize"),
+        ]
+        .into_iter()
+        .filter_map(|(on, name)| on.then_some(name))
+        .collect();
+        if names.is_empty() {
+            "none".to_string()
+        } else {
+            names.join(", ")
+        }
+    }
+}
+
+/// The shown buttons on `side`, from the bar's end inwards: close
+/// outermost, then, reading left to right, minimize before maximize, as
+/// on the desktops people know; a hidden one leaves no gap.
+pub fn buttons(side: Side, shown: Shown) -> impl Iterator<Item = Button> {
+    let order = match side {
         Side::Right => [Button::Close, Button::Maximize, Button::Minimize],
         Side::Left => [Button::Close, Button::Minimize, Button::Maximize],
-    }
+    };
+    order.into_iter().filter(move |b| shown.has(*b))
 }
 
 /// A part of a frame.
@@ -110,8 +158,8 @@ pub enum Hit {
 }
 
 /// The part of a frame of `size` at `point`, measured from the frame's top
-/// left, its buttons on `buttons_side`; none inside the window or beyond the
-/// grips. A window that cannot be resized (a maximized one) has no grips,
+/// left, its `shown` buttons on `buttons_side`; none inside the window or
+/// beyond the grips. A window that cannot be resized (a maximized one) has no grips,
 /// and its border counts as its bar.
 pub fn hit(
     size: Size<i32, Logical>,
@@ -119,6 +167,7 @@ pub fn hit(
     point: Point<f64, Logical>,
     resizable: bool,
     buttons_side: Side,
+    shown: Shown,
 ) -> Option<Hit> {
     let (w, h) = (f64::from(size.w), f64::from(size.h));
     let (x, y) = (point.x, point.y);
@@ -137,9 +186,9 @@ pub fn hit(
             Side::Left => (x / top).floor() as usize,
         };
         return Some(
-            buttons(buttons_side)
-                .get(from_end)
-                .map_or(Hit::Title, |b| Hit::Button(*b)),
+            buttons(buttons_side, shown)
+                .nth(from_end)
+                .map_or(Hit::Title, Hit::Button),
         );
     }
     if x >= side && x < w - side && y >= top && y < h - bottom {
@@ -186,13 +235,24 @@ pub struct Look {
     pub text: bool,
     /// The side the buttons sit on (M5.4b).
     pub side: Side,
+    /// Which buttons it shows (M5.18a).
+    pub shown: Shown,
+    /// The app's icon, by its name in the icon themes, shown left of the
+    /// title (M5.6a); none for an app without one.
+    pub icon: Option<String>,
     /// Light or dark (M5.5c): a new scheme draws the bar again.
     pub scheme: crate::tokens::Scheme,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
 /// `look.height` ARGB8888 in memory order (blue, green, red, alpha).
-pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut Text>) {
+pub fn paint(
+    pixels: &mut [u8],
+    look: &Look,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    icon: Option<&edel::app_icons::Picture>,
+) {
     let (w, h) = (look.width.max(0) as usize, look.height.max(0) as usize);
     if pixels.len() < w * h * 4 || w == 0 || h == 0 {
         return;
@@ -211,7 +271,7 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         tokens.title_text_unfocused
     };
     let size = h;
-    let set = buttons(look.side);
+    let set: Vec<Button> = buttons(look.side, look.shown).collect();
     for (i, button) in set.iter().enumerate() {
         if (i + 1) * size > w {
             break;
@@ -247,11 +307,22 @@ pub fn paint(pixels: &mut [u8], look: &Look, tokens: &Tokens, text: Option<&mut 
         return;
     }
     text.set_size(tokens.title_text_size as f32 * scale);
-    let title = text.fit(&look.title, room);
-    let width = text.width(&title);
+    // The app's icon, when it has one, sits left of the title, and the
+    // two are centred together (M5.6a).
+    let icon = icon.filter(|p| p.height() as f32 <= h as f32);
+    let (icon_w, gap) = match icon {
+        Some(p) => (p.width() as f32, (7.0 * scale).round()),
+        None => (0.0, 0.0),
+    };
+    let title = text.fit(&look.title, (room - icon_w - gap).max(0.0));
+    let width = text.width(&title) + icon_w + gap;
     let x = ((w as f32 - width) / 2.0).min(right - width).max(left);
+    if let Some(picture) = icon {
+        let top = (h as f32 - picture.height() as f32) / 2.0;
+        canvas.picture(picture, x.round() as i64, top.round() as i64);
+    }
     let baseline = ((h as f32 + text.ascent + text.descent) / 2.0).round();
-    text.draw(&mut canvas, &title, x, baseline, ink, right);
+    text.draw(&mut canvas, &title, x + icon_w + gap, baseline, ink, right);
 }
 
 struct Canvas<'a> {
@@ -283,6 +354,31 @@ impl Canvas<'_> {
         for (k, c) in [b, g, r].into_iter().enumerate() {
             let under = f32::from(self.pixels[i + k]);
             self.pixels[i + k] = (f32::from(c) * coverage + under * (1.0 - coverage)).round() as u8;
+        }
+    }
+
+    /// A picture, premultiplied RGBA as tiny-skia keeps it, with its top
+    /// left at `x`, `y`, over what is there.
+    fn picture(&mut self, picture: &edel::app_icons::Picture, x: i64, y: i64) {
+        let width = picture.width() as usize;
+        for (i, p) in picture.data().chunks_exact(4).enumerate() {
+            let alpha = f32::from(p[3]) / 255.0;
+            if alpha <= 0.0 {
+                continue;
+            }
+            let straight = |c: u8| (f32::from(c) / alpha).min(255.0) / 255.0;
+            let colour = Colour {
+                r: straight(p[0]),
+                g: straight(p[1]),
+                b: straight(p[2]),
+                a: 1.0,
+            };
+            self.blend(
+                x + (i % width) as i64,
+                y + (i / width) as i64,
+                colour,
+                alpha,
+            );
         }
     }
 
@@ -576,7 +672,16 @@ mod tests {
     #[test]
     fn the_bar_has_the_title_then_minimize_maximize_and_close_at_the_right() {
         let size = Size::from((302, 229));
-        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Right);
+        let at = |x: f64, y: f64| {
+            hit(
+                size,
+                insets(),
+                (x, y).into(),
+                true,
+                Side::Right,
+                Shown::default(),
+            )
+        };
         assert_eq!(at(10.0, 10.0), Some(Hit::Title));
         assert_eq!(at(301.0, 0.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(274.0, 27.0), Some(Hit::Button(Button::Close)));
@@ -589,9 +694,74 @@ mod tests {
     }
 
     #[test]
+    fn a_hidden_button_leaves_no_gap_and_its_room_to_the_title() {
+        let size = Size::from((302, 229));
+        let no_minimize = Shown {
+            minimize: false,
+            ..Shown::default()
+        };
+        let at = |x: f64, shown| hit(size, insets(), (x, 14.0).into(), true, Side::Right, shown);
+        assert_eq!(at(280.0, no_minimize), Some(Hit::Button(Button::Close)));
+        assert_eq!(at(250.0, no_minimize), Some(Hit::Button(Button::Maximize)));
+        assert_eq!(at(230.0, no_minimize), Some(Hit::Title));
+        // Only close: it keeps the outer end.
+        let only_close = Shown {
+            close: true,
+            minimize: false,
+            maximize: false,
+        };
+        assert_eq!(at(280.0, only_close), Some(Hit::Button(Button::Close)));
+        assert_eq!(at(260.0, only_close), Some(Hit::Title));
+        let on_left = hit(
+            size,
+            insets(),
+            (5.0, 14.0).into(),
+            true,
+            Side::Left,
+            only_close,
+        );
+        assert_eq!(on_left, Some(Hit::Button(Button::Close)));
+        let none = Shown {
+            close: false,
+            minimize: false,
+            maximize: false,
+        };
+        assert_eq!(at(290.0, none), Some(Hit::Title));
+        assert_eq!(none.names(), "none");
+        assert_eq!(no_minimize.names(), "close, maximize");
+    }
+
+    #[test]
+    fn a_hidden_button_is_not_drawn() {
+        let t = tokens();
+        let mut pixels = vec![0; 302 * 28 * 4];
+        let mut bar = look(302, true);
+        bar.shown.minimize = false;
+        paint(&mut pixels, &bar, &t, None, None);
+        let focused = t.title_bar_focused.bytes();
+        // Where minimize's dash was, the bar.
+        assert_eq!(
+            pixel(&pixels, 302, 232, 14),
+            [focused[0], focused[1], focused[2]]
+        );
+        // Maximize's square stays where it was, next to close.
+        let ink = t.title_text.bytes();
+        assert_eq!(pixel(&pixels, 302, 255, 14), [ink[0], ink[1], ink[2]]);
+    }
+
+    #[test]
     fn on_the_left_close_comes_first_then_minimize_and_maximize() {
         let size = Size::from((302, 229));
-        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Left);
+        let at = |x: f64, y: f64| {
+            hit(
+                size,
+                insets(),
+                (x, y).into(),
+                true,
+                Side::Left,
+                Shown::default(),
+            )
+        };
         assert_eq!(at(0.0, 0.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(27.9, 27.0), Some(Hit::Button(Button::Close)));
         assert_eq!(at(28.0, 14.0), Some(Hit::Button(Button::Minimize)));
@@ -603,7 +773,16 @@ mod tests {
     #[test]
     fn edges_and_corners_resize_and_a_maximized_window_has_none() {
         let size = Size::from((302, 229));
-        let at = |x: f64, y: f64| hit(size, insets(), (x, y).into(), true, Side::Right);
+        let at = |x: f64, y: f64| {
+            hit(
+                size,
+                insets(),
+                (x, y).into(),
+                true,
+                Side::Right,
+                Shown::default(),
+            )
+        };
         assert_eq!(at(-3.0, 100.0), Some(Hit::Edge(ResizeEdge::Left)));
         assert_eq!(at(0.5, 100.0), Some(Hit::Edge(ResizeEdge::Left)));
         assert_eq!(at(304.0, 100.0), Some(Hit::Edge(ResizeEdge::Right)));
@@ -615,7 +794,16 @@ mod tests {
         assert_eq!(at(295.0, 233.0), Some(Hit::Edge(ResizeEdge::BottomRight)));
         assert_eq!(at(305.0, 5.0), Some(Hit::Edge(ResizeEdge::TopRight)));
         assert_eq!(at(-7.0, 100.0), None, "beyond the grip");
-        let fixed = |x: f64, y: f64| hit(size, insets(), (x, y).into(), false, Side::Right);
+        let fixed = |x: f64, y: f64| {
+            hit(
+                size,
+                insets(),
+                (x, y).into(),
+                false,
+                Side::Right,
+                Shown::default(),
+            )
+        };
         assert_eq!(fixed(-3.0, 100.0), None);
         assert_eq!(fixed(0.0, 100.0), Some(Hit::Title));
         assert_eq!(fixed(301.0, 5.0), Some(Hit::Button(Button::Close)));
@@ -632,6 +820,8 @@ mod tests {
             hovered: None,
             text: false,
             side: Side::Right,
+            shown: Shown::default(),
+            icon: None,
             scheme: crate::tokens::Scheme::Dark,
         }
     }
@@ -645,7 +835,7 @@ mod tests {
     fn the_bar_is_the_token_colour_with_its_buttons_drawn() {
         let t = tokens();
         let mut pixels = vec![0; 302 * 28 * 4];
-        paint(&mut pixels, &look(302, true), &t, None);
+        paint(&mut pixels, &look(302, true), &t, None, None);
         let focused = t.title_bar_focused.bytes();
         assert_eq!(
             pixel(&pixels, 302, 5, 5),
@@ -665,12 +855,12 @@ mod tests {
         assert_ne!(pixel(&pixels, 302, 232, 14), bar);
         assert_eq!(pixel(&pixels, 302, 232, 8), bar);
         let mut unfocused = vec![0; 302 * 28 * 4];
-        paint(&mut unfocused, &look(302, false), &t, None);
+        paint(&mut unfocused, &look(302, false), &t, None, None);
         let bar = t.title_bar.bytes();
         assert_eq!(pixel(&unfocused, 302, 5, 5), [bar[0], bar[1], bar[2]]);
         let mut hovered = look(302, false);
         hovered.hovered = Some(Button::Close);
-        paint(&mut unfocused, &hovered, &t, None);
+        paint(&mut unfocused, &hovered, &t, None, None);
         let red = t.title_close_hover.bytes();
         assert_eq!(pixel(&unfocused, 302, 276, 2), [red[0], red[1], red[2]]);
     }
@@ -682,7 +872,7 @@ mod tests {
         let mut left = look(302, false);
         left.side = Side::Left;
         left.hovered = Some(Button::Close);
-        paint(&mut pixels, &left, &t, None);
+        paint(&mut pixels, &left, &t, None, None);
         let red = t.title_close_hover.bytes();
         assert_eq!(pixel(&pixels, 302, 2, 2), [red[0], red[1], red[2]]);
         let bar = t.title_bar.bytes();
@@ -718,11 +908,11 @@ mod tests {
         assert!(text.width(&long) <= 100.0);
         let t = tokens();
         let mut plain = vec![0; 302 * 28 * 4];
-        paint(&mut plain, &look(302, true), &t, None);
+        paint(&mut plain, &look(302, true), &t, None, None);
         let mut titled = vec![0; 302 * 28 * 4];
         let mut with_text = look(302, true);
         with_text.text = true;
-        paint(&mut titled, &with_text, &t, Some(&mut text));
+        paint(&mut titled, &with_text, &t, Some(&mut text), None);
         let changed: Vec<usize> = (0..302 * 28)
             .filter(|i| plain[i * 4..i * 4 + 4] != titled[i * 4..i * 4 + 4])
             .map(|i| i % 302)
@@ -730,6 +920,37 @@ mod tests {
         assert!(changed.len() > 20, "the title is drawn");
         let (left, right) = (changed.iter().min().unwrap(), changed.iter().max().unwrap());
         assert!(*left > 120 && *right < 182, "centred: {left} to {right}");
+        // With the app's icon (M5.6a), the icon comes first, left of the
+        // title, and the two stay centred together.
+        let mut red = edel::app_icons::Picture::new(16, 16).unwrap();
+        for p in red.data_mut().chunks_exact_mut(4) {
+            p.copy_from_slice(&[255, 0, 0, 255]);
+        }
+        let mut iconed = vec![0; 302 * 28 * 4];
+        with_text.icon = Some("red".into());
+        paint(&mut iconed, &with_text, &t, Some(&mut text), Some(&red));
+        let reds: Vec<usize> = (0..302 * 28)
+            .filter(|i| iconed[i * 4..i * 4 + 4] == [0, 0, 255, 255])
+            .map(|i| i % 302)
+            .collect();
+        assert_eq!(reds.len(), 16 * 16, "the whole icon is drawn");
+        let icon_right = *reds.iter().max().unwrap();
+        let title_left = (0..302 * 28)
+            .filter(|i| {
+                plain[i * 4..i * 4 + 4] != iconed[i * 4..i * 4 + 4]
+                    && iconed[i * 4..i * 4 + 4] != [0, 0, 255, 255]
+            })
+            .map(|i| i % 302)
+            .min()
+            .unwrap();
+        assert!(
+            icon_right + 5 < title_left,
+            "the icon comes before the title"
+        );
+        assert!(
+            *reds.iter().min().unwrap() < *left,
+            "the pair is centred together"
+        );
     }
 
     #[test]
@@ -739,7 +960,7 @@ mod tests {
         look.height = 56;
         look.scale_120 = 240;
         let mut pixels = vec![0; 604 * 56 * 4];
-        paint(&mut pixels, &look, &t, None);
+        paint(&mut pixels, &look, &t, None, None);
         let bar = t.title_bar_focused.bytes();
         assert_eq!(pixel(&pixels, 604, 10, 50), [bar[0], bar[1], bar[2]]);
         // Close is the rightmost 56 px; its cross crosses at the middle,
@@ -756,7 +977,7 @@ mod tests {
     #[test]
     fn a_bar_too_narrow_for_its_buttons_is_still_drawn() {
         let mut pixels = vec![0; 30 * 28 * 4];
-        paint(&mut pixels, &look(30, true), &tokens(), None);
-        paint(&mut [], &look(30, true), &tokens(), None);
+        paint(&mut pixels, &look(30, true), &tokens(), None, None);
+        paint(&mut [], &look(30, true), &tokens(), None, None);
     }
 }

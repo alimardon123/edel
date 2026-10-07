@@ -400,7 +400,7 @@ pub fn paint(
     look: &Look,
     tokens: &Tokens,
     text: Option<&mut Text>,
-    icons: Option<&mut crate::icons::Icons>,
+    icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
 ) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
@@ -501,7 +501,7 @@ pub fn paint(
 pub fn natural_width(
     tokens: &Tokens,
     text: Option<&mut Text>,
-    icons: Option<&mut crate::icons::Icons>,
+    icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
     shown: &[String],
     scale: u32,

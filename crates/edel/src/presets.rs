@@ -13,22 +13,25 @@ use serde::{Deserialize, Serialize};
 /// The only preset format so far.
 pub const FORMAT: i64 = 1;
 
-/// The presets this release has, by name, the default first. A new one is
-/// a file under `presets/`, a line here and its name in [`NAMES`], in the
-/// same order; its name must be in [`crate::system::PRESETS`].
+/// The presets this release has, by name, the default first, in the order
+/// Settings shows them and messages list them (ADR-002's: Classic,
+/// Mac-like, Windows-like, Hive, then Zen, Tablet and Phone as they
+/// come). A new one is a file under `presets/`, a line here and its name
+/// in [`NAMES`], in the same order; its name must be in
+/// [`crate::system::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
-    ("hive", include_str!("../../../presets/hive.toml")),
     ("mac-like", include_str!("../../../presets/mac-like.toml")),
     (
         "windows-like",
         include_str!("../../../presets/windows-like.toml"),
     ),
+    ("hive", include_str!("../../../presets/hive.toml")),
 ];
 
 /// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,
 /// so `edel settings check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "hive", "mac-like", "windows-like"];
+pub const NAMES: &[&str] = &["classic", "mac-like", "windows-like", "hive"];
 
 /// The preset a missing `layout.preset` means.
 pub const DEFAULT: &str = "classic";

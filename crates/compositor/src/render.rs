@@ -306,11 +306,15 @@ impl Edel {
         let bar_size = Size::<i32, Logical>::from((outer.size.w, insets.top));
         let pixels = bar_size.to_f64().to_physical(scale).to_i32_round::<i32>();
         let bar_at = at(outer.loc).to_i32_round::<i32>().to_f64();
+        // The app's icon left of the title, 16 px as the mockups draw it.
+        let icon_px = (16.0 * scale).round() as u32;
+        let icon_name = self.app_icons.name(&crate::decoration::app_id(window));
         let look = Look {
             width: pixels.w,
             height: pixels.h,
             scale_120: (scale * 120.0).round() as u32,
             title: title(window),
+            icon: icon_name.clone(),
             focused: is_focused,
             maximized: self.is_maximized(window),
             hovered: self
@@ -320,10 +324,12 @@ impl Edel {
                 .map(|(_, b)| *b),
             text: self.text.is_some(),
             side: self.settings.button_side(),
+            shown: self.settings.buttons,
             scheme: self.settings.color_scheme,
         };
         let mut frame = data(window).borrow_mut();
-        let bar = frame.bar(look, &self.tokens, self.text.as_mut());
+        let icon = icon_name.and_then(|name| self.app_icons.picture(&name, icon_px));
+        let bar = frame.bar(look, &self.tokens, self.text.as_mut(), icon);
         match MemoryRenderBufferRenderElement::from_buffer(
             renderer,
             bar_at,

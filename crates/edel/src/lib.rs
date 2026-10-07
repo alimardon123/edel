@@ -5,9 +5,13 @@
 //! keyboard shortcuts every part agrees on (M5.13), the keyboard layouts
 //! (M5.21), the design tokens the
 //! compositor and shell-ui draw with (M5.1b) and the layout presets
-//! (M5.1c). It needs no network or signing; those sit behind the binary's
-//! `cli` feature.
+//! (M5.1c), and the apps people have with their icons, which shell-ui
+//! lists and the compositor shows in title bars (M5.4c, M5.6a). It needs no
+//! network or signing; those sit behind the binary's `cli` feature.
 
+#[cfg(feature = "icons")]
+pub mod app_icons;
+pub mod apps;
 pub mod features;
 #[cfg(feature = "icons")]
 pub mod icons;

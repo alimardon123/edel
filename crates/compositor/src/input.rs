@@ -341,6 +341,16 @@ impl Edel {
                     self.toggle_fullscreen(&window);
                 }
             }
+            Act::Minimize => {
+                if let Some(window) = self.focused_window() {
+                    self.minimize(&window);
+                }
+            }
+            Act::Maximize => {
+                if let Some(window) = self.focused_window() {
+                    self.toggle_maximized(&window);
+                }
+            }
             Act::Terminal => crate::program::open(self, "foot"),
             Act::Workspace(n) => self.switch_workspace(n),
             Act::MoveTo(n) => self.move_to_workspace(n),
@@ -445,7 +455,14 @@ impl Edel {
                 let resizable = !self.is_maximized(window);
                 let at = point - outer.loc.to_f64();
                 let side = self.settings.button_side();
-                if let Some(hit) = frame::hit(outer.size, insets, at, resizable, side) {
+                if let Some(hit) = frame::hit(
+                    outer.size,
+                    insets,
+                    at,
+                    resizable,
+                    side,
+                    self.settings.buttons,
+                ) {
                     return Under::Frame(window.clone(), hit);
                 }
             }

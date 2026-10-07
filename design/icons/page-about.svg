@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round">
+  <!-- Settings' About page (M5.6a): an i in a circle. -->
+  <circle cx="8" cy="8" r="6.25"/>
+  <path d="M8 7.25V11.25"/>
+  <circle cx="8" cy="4.9" r="0.9" fill="#000" stroke="none"/>
+</svg>

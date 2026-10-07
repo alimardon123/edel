@@ -35,7 +35,7 @@ pub struct Canvas<'a> {
     /// The fonts, if loaded; without them text measures and draws nothing.
     pub text: Option<&'a mut Text>,
     /// App icons, if read; without them apps show their initial (M5.4c).
-    pub icons: Option<&'a mut crate::icons::Icons>,
+    pub icons: Option<&'a mut edel::app_icons::Icons>,
     /// Buffer pixels per logical pixel.
     pub scale: f32,
     /// The panel's top row in the pixmap and its height, in its pixels.
@@ -89,9 +89,9 @@ pub struct Pin {
     pub icon: String,
 }
 
-impl From<&crate::apps::App> for Pin {
+impl From<&edel::apps::App> for Pin {
     /// An installed app; its id stands for its icon when it names none.
-    fn from(app: &crate::apps::App) -> Pin {
+    fn from(app: &edel::apps::App) -> Pin {
         Pin {
             id: app.id.clone(),
             name: app.name.clone(),

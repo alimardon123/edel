@@ -220,6 +220,10 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["desktop", "tablet", "phone"]),
     ),
     now("layout.window_buttons", Kind::OneOf(&["left", "right"])),
+    // Each title bar button shown or hidden (M5.18a).
+    now("layout.close_button", Kind::Flag),
+    now("layout.minimize_button", Kind::Flag),
+    now("layout.maximize_button", Kind::Flag),
     now("layout.panels", Kind::Panels),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
@@ -394,6 +398,14 @@ pub struct Layout {
     /// The title bar buttons' side (M5.4b); absent is the preset's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_buttons: Option<String>,
+    /// Whether every title bar shows its close, minimize and maximize
+    /// buttons (M5.18a); absent shows each.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub close_button: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimize_button: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximize_button: Option<bool>,
     /// The panels in place of the preset's (M5.4e); absent is the
     /// preset's.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -608,6 +620,39 @@ pub fn read_on_machine(path: &Path) -> Result<Read> {
 pub fn format(text: &str) -> Result<i64> {
     let table: Table = toml::from_str(text).context("the file is not valid TOML")?;
     format_of(&table)
+}
+
+/// Where a key's value comes from, in the order every reader resolves it
+/// (ADR-008): the person's own file, then the machine's, else the release
+/// decides. Settings shows it on each row (M5.6b), as `edel settings
+/// get` does.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Source {
+    /// The person's own file sets it.
+    Person(Value),
+    /// The machine's file sets it, and the person's does not.
+    Machine(Value),
+    /// Neither: the preset or the release decides.
+    Release,
+}
+
+/// Where `key` (such as `layout.preset`) comes from, given the machine's
+/// and the person's files' text; a file that is missing or not TOML sets
+/// nothing.
+pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source {
+    let find = |text: Option<&str>| -> Option<Value> {
+        let table: Table = toml::from_str(text?).ok()?;
+        let mut value = Value::Table(table);
+        for part in key.split('.') {
+            value = value.as_table()?.get(part)?.clone();
+        }
+        Some(value)
+    };
+    match (find(person), find(machine)) {
+        (Some(v), _) => Source::Person(v),
+        (None, Some(v)) => Source::Machine(v),
+        (None, None) => Source::Release,
+    }
 }
 
 /// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
@@ -1025,6 +1070,28 @@ mod tests {
         &adr[start..start + len]
     }
 
+    #[test]
+    fn a_value_comes_from_the_person_then_the_machine_then_the_release() {
+        let machine = "format = 1\n[layout]\npreset = \"hive\"\n";
+        let person = "format = 1\n[layout]\ntiling = false\n";
+        assert_eq!(
+            source("layout.preset", Some(machine), Some(person)),
+            Source::Machine(Value::String("hive".into()))
+        );
+        assert_eq!(
+            source("layout.tiling", Some(machine), Some(person)),
+            Source::Person(Value::Boolean(false))
+        );
+        assert_eq!(
+            source("layout.panels", Some(machine), None),
+            Source::Release
+        );
+        assert_eq!(
+            source("layout.preset", Some("not toml ["), None),
+            Source::Release
+        );
+    }
+
     fn sample(kind: Kind) -> Value {
         match kind {
             Kind::Text => Value::String("x".into()),
@@ -1205,14 +1272,14 @@ font_size = 11
         assert_eq!(
             lines,
             [
-                "layout.preset: unknown value \"tablet\"; use classic, hive, mac-like or windows-like"
+                "layout.preset: unknown value \"tablet\"; use classic, mac-like, windows-like or hive"
             ]
         );
         let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("use classic, hive, mac-like or windows-like"),
+                .contains("use classic, mac-like, windows-like or hive"),
             "{error}"
         );
         let read = read(file).unwrap();

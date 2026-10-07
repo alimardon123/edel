@@ -21,6 +21,9 @@ pub enum Act {
     Tiling,
     /// The focused window in or out of fullscreen (M5.20).
     Fullscreen,
+    /// The focused window minimized, or maximized and back (M5.18a).
+    Minimize,
+    Maximize,
     /// The next keyboard layout (M5.21).
     NextLayout,
     Terminal,
@@ -49,6 +52,8 @@ impl Act {
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
+            "minimize_window" => Some(Act::Minimize),
+            "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
             "open_terminal" => Some(Act::Terminal),
             _ => {
@@ -246,6 +251,8 @@ mod tests {
         assert_eq!(find(&bindings, &super_, sym("q")), Some(Act::Close));
         assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Tiling));
         assert_eq!(find(&bindings, &super_, sym("f")), Some(Act::Fullscreen));
+        assert_eq!(find(&bindings, &super_, sym("h")), Some(Act::Minimize));
+        assert_eq!(find(&bindings, &super_, sym("m")), Some(Act::Maximize));
         assert_eq!(
             find(&bindings, &super_, sym("space")),
             Some(Act::NextLayout)

@@ -2,48 +2,62 @@
 # colours and sizes the compositor, shell-ui and the GTK theme are drawn
 # with. The parts have this file built in; a file at
 # /usr/share/edel/design/tokens.toml, which no image ships yet, would
-# take its place. [colour] is the dark scheme, the default, and
-# [colour.light] the light one (M5.5c, appearance.color_scheme); M5.12
-# lets people override them in system.toml.
+# take its place. [colour] is the dark scheme and [colour.light] the
+# light one (M5.5c, appearance.mode); light is the release's default,
+# as ADR-008 and the mockups have it (M5.12a). The colours are the
+# mockups' own (docs/mockups/edel-mockups.html), which Alimardon
+# reviewed; M5.12 lets people override them in the settings file.
 format = 1
 
 [colour]
 # Behind every window, where there is no wallpaper.
-background = "#24272e"
+background = "#1a1d23"
 # Window title bars (M4.4), the focused one lighter, and their text,
 # dimmer on the windows without the keyboard.
-title_bar = "#2e323a"
-title_bar_focused = "#3a404b"
-title_text = "#e8e8ea"
-title_text_unfocused = "#9a9da5"
+title_bar = "#24272e"
+title_bar_focused = "#2b2e36"
+title_text = "#eceef1"
+title_text_unfocused = "#737a85"
 # Behind a title bar button under the pointer; close turns red.
-title_button_hover = "#4b5260"
-title_close_hover = "#c4473f"
+title_button_hover = "#3a3e48"
+title_close_hover = "#e0443e"
 # shell-ui's panel (M5.1b), a shade darker than the background, and its
 # text and icons.
-panel = "#1b1d22"
-panel_text = "#e8e8ea"
+panel = "#1a1c22"
+panel_text = "#eceef1"
 # The one accent: the shown workspace's button in the panel (M5.2c), a
 # little deeper in the light scheme; M5.12 lets people choose it.
 accent = "#5b8ef5"
 # The one shadow, cast by one light above, under menus on the Full and
 # Balanced tiers (M5.5e) and windows from M5.14; its alpha is its depth.
 shadow = "#00000073"
+# Apps' own surfaces (M5.6a), Settings first and GTK's windows through
+# gtk.css, as the mockups have them: a window's page, the cards, grouped
+# rows and sidebars set on it, the hairlines round cards and between
+# rows, and text on the accent.
+window = "#1e2026"
+card = "#191b20"
+line = "#ffffff14"
+accent_text = "#0b1220"
 
-# The light scheme (M5.5c, appearance.color_scheme = "light"): the same
-# keys, each one given, over the dark values above.
+# The light scheme (M5.5c, appearance.mode = "light", the default): the
+# same keys, each one given, over the dark values above.
 [colour.light]
 background = "#dfe3ea"
-title_bar = "#e9ecf0"
-title_bar_focused = "#f7f8fa"
-title_text = "#1f2329"
-title_text_unfocused = "#7a808a"
-title_button_hover = "#d5d9df"
-title_close_hover = "#d9473f"
-panel = "#f2f3f5"
-panel_text = "#1f2329"
-accent = "#3a73e8"
+title_bar = "#f1f2f4"
+title_bar_focused = "#f7f8f9"
+title_text = "#1c1e22"
+title_text_unfocused = "#8d929b"
+title_button_hover = "#e3e5e9"
+title_close_hover = "#e0443e"
+panel = "#f6f7f9"
+panel_text = "#1c1e22"
+accent = "#2d6ae3"
 shadow = "#0000003d"
+window = "#ffffff"
+card = "#f5f6f8"
+line = "#14182017"
+accent_text = "#ffffff"
 
 [size]
 # In logical pixels.
@@ -62,6 +76,10 @@ panel_text = 13
 radius_window = 10
 radius_menu = 12
 radius_control = 7
+# Small things inside a window: a sidebar's rows, a value's box (M5.6a).
+radius_small = 5
+# Apps' text (M5.6a), Settings first; headings are drawn larger from it.
+text = 13
 # A row in a menu or list: the launcher's apps, the window switcher's
 # windows (M5.3).
 row = 36

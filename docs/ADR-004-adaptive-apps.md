@@ -1,7 +1,7 @@
 # ADR-004: One app on every device (adaptive apps)
 
 **Status:** Proposed
-**Date:** 2026-10-01
+**Date:** 2026-10-01, amended 2026-10-06 (our own look; an own toolkit later, if it measures better)
 **Deciders:** Alimardon
 **Extends:** ADR-002 (which covers how *windows* adapt; this covers how *apps* adapt)
 
@@ -31,9 +31,11 @@ We publish a short layout guide with three size classes:
 | Medium | Tablet, unfolded foldable, small window | Two panes or a collapsible sidebar |
 | Expanded | Laptop, desktop, docked phone | Sidebar, content and details side by side, toolbars |
 
-The exact width cutoffs are tuned during development; Android's window size classes use the same three-step idea and are a good starting point.
+The exact width cutoffs are tuned during development; Android's window size classes use the same three-step idea and are a good starting point. The cutoffs, touch sizes and the touch mode key are in the [layout guide](layout-guide.md) (M5.6c).
 
 **Recommended toolkit: GTK4 with libadwaita.** It already has breakpoints and adaptive building blocks (split views that collapse, bottom sheets, view switchers that move from the header to the bottom bar). Qt with Kirigami works too. Our own app (settings) and any default tools we add use GTK4, which matches the shell-ui choice in ADR-002 and gives one look across the system.
+
+**Own look decision (2026-10-06):** Alimardon reviewed the first screenshots of Settings and asked for "our own design language", not GNOME's ("I don't need GNOME style at all"), "polished and kind of luxury feel", with everything changeable. Our apps keep GTK4, and libadwaita only for its adaptive pieces (the split view and breakpoints); everything people see is drawn from our design tokens and our own icons, and the window takes the compositor's title bar, so it has the buttons and their side the person chose. Every toolkit call sits in one module of each app, and an own Rust toolkit grown from shell-ui's drawing code is a later option, swapped in only if it measures lighter and as smooth, with screen readers and input methods working (M10.8).
 
 ### 3. The system provides the signals
 
@@ -81,7 +83,8 @@ A later idea that softens this: **handoff**, where you start something on the ph
 
 ## Action Items
 
-1. [ ] Write the layout guide (size classes, touch targets, live resize rule).
+1. [x] Write the layout guide (size classes, touch targets, live resize rule): `docs/layout-guide.md` (done 2026-10-06, M5.6c).
 2. [ ] Define the touch-mode setting and publish it through the settings portal.
-3. [ ] Build the settings app as the first adaptive reference app.
+3. [x] Build the settings app as the first adaptive reference app (done 2026-10-06, M5.6: it folds its sidebar below the Compact cutoff).
 4. [ ] Make sure the chosen store front shows AppStream-based device badges.
+5. [ ] An own toolkit for our apps, only if it measures better than GTK4 (M10.8).

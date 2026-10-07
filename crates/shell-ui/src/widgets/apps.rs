@@ -61,16 +61,7 @@ pub struct Cell<'a> {
     pub name: &'a str,
 }
 
-/// Whether a window whose app id is `app_id` belongs to the app with
-/// desktop file id `id`: the same, ignoring case, or the last part of a
-/// reverse-domain id (`firefox` for `org.mozilla.firefox`).
-pub fn belongs(app_id: &str, id: &str) -> bool {
-    if app_id.is_empty() || id.is_empty() {
-        return false;
-    }
-    let last = |s: &str| s.rsplit('.').next().unwrap_or(s).to_lowercase();
-    app_id.eq_ignore_ascii_case(id) || last(app_id) == last(id)
-}
+pub use edel::apps::belongs;
 
 /// What it shows: a line per cell, `state\tid\ticon\tname`.
 fn shows(live: &Live) -> String {

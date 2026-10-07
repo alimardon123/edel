@@ -71,7 +71,7 @@ The **settings file** is one TOML file that describes a whole machine: its name,
 - `edel settings set KEY=VALUE` changes one line and keeps everything else in the file as it was, comments included; the desktop follows window, screen and shortcut settings at once.
 - `edel settings export` writes this machine as a file, and `edel settings diff` and `apply` make another machine match one. One file can set up a fleet.
 
-A setting is never a second mechanism: each one is a line in the file, a command, and, from roadmap M5.6, a row in Settings (ADR-008). A missing line means the release's default, so a machine's file holds only what was chosen.
+A setting is never a second mechanism: each one is a line in the file, a command, and a row in Settings, page by page as roadmap M5 adds them (ADR-008). A missing line means the release's default, so a machine's file holds only what was chosen.
 
 ## The desktop
 
@@ -81,7 +81,7 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 |---|---|
 | **edel-compositor** | Draws every window and routes all input: floating and tiling windows per workspace, title bars with close, minimize and maximize, workspaces, keyboard shortcuts, every screen at its own scale, effects and animations that drop to a lighter tier when frames run late |
 | **edel-shell-ui** | Draws the panels and docks, the launcher, the window switcher and the workspace buttons, and tells apps the colour scheme and accent; the compositor starts it and starts it again if it stops |
-| Settings | The Settings app, from roadmap M5.6 |
+| **edel-settings** | Settings, the app for every setting: a sidebar of pages, with Layout (the presets and tiling) and About so far, each change one line of the person's settings file, which the desktop follows at once (M5.6) |
 | greetd | Logs people in; its greeter runs on our compositor and comes back if a session ends |
 | Mesa, and from roadmap M6 PipeWire, NetworkManager and Flatpak | Graphics, sound, networks and apps, reused as they are |
 
