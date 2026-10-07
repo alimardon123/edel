@@ -10,8 +10,7 @@ Every Edel OS machine runs the same base: Linux, Alpine Linux's small C library 
 |---|---|
 | Container | The base as a container image, to build servers and tools on |
 | VM | A server or a virtual machine, with a text console and ssh |
-| Laptop | The VM image with the kernel and firmware real laptops need |
-| Desktop | The laptop image with our desktop |
+| Desktop | Our desktop, with the kernel and firmware real laptops and desktops need; also the stick to try and install from |
 | Phone | Later (roadmap M9) |
 
 An image is a list of features, and a feature is one small file naming the packages, services and programs it brings and why ([Features and images](../FEATURES.md)). `edel image build` turns the list into an image. So adding Wi-Fi tools to every laptop, or dropping something from every server, is one line in one file.

@@ -10,18 +10,18 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 |---|---|---|---|---|
 | `base` | The identity (os-release, issue, motd) and what apk needs; modules `ext4`, `overlay` | `alpine-keys`, `busybox-binsh`, `ca-certificates-bundle` | none | every image |
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
-| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, laptop, desktop |
-| `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm, laptop |
+| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, desktop |
+| `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm |
 | `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle | desktop |
-| `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, laptop, desktop |
-| `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; laptop and desktop ship it off |
+| `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, desktop |
+| `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; the desktop ships it off |
 | `vm` | The small kernel for virtual machines | `linux-virt` | none | vm |
-| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | laptop, desktop |
+| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | desktop |
 | `graphics` | Mesa for every common GPU (llvmpipe where none loads; svga for VirtualBox's VMSVGA), DRM, libinput, keyboard layouts; modules `virtio_gpu` and `vmwgfx` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
 | `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
 | `login` | greetd, whose greeter is our compositor running its text greeter in foot (M4.7b) and which starts the person's session, `/usr/libexec/edel-session`, after login; `/run/user/UID` from pam_rundir; on a USB stick, or with nobody set up yet, `edel-live` logs the person called `live` in by itself (M3.6); needs `terminal` and `compositor` | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | edel-live; greetd | desktop |
 | `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
-| `completion` | Tab completion: bash, bash-completion and new people's login shell bash, which completes `edel`'s commands, keys and values (M5.26) | `bash`, `bash-completion` | none | laptop, desktop |
+| `completion` | Tab completion: bash, bash-completion and new people's login shell bash, which completes `edel`'s commands, keys and values (M5.26) | `bash`, `bash-completion` | none | desktop |
 | `terminal` | foot | `foot` | none | desktop |
 | `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus; health `compositor` (M4.8): the slot is good once a compositor, the greeter's included, shows a frame or waits for a screen | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
 | `xwayland` | X11 apps: XWayland through xwayland-satellite, which the compositor starts when the first X11 app connects (M4.7) | `xwayland`, `xwayland-satellite` | none | desktop |
@@ -58,22 +58,22 @@ default = ["sshd"]  # also sysinit, boot, shutdown
 | `flatpak`, `flatpak_dropped` | Only in the `apps` feature (M6.2) |
 | `[alpine]` | `branch`, `mirror` and `repositories`: only in the `base` feature, the one owner of the Alpine branch every image is built from and CI's build container follows (M5.27) |
 
-No dependencies, versions, scripts or alternatives between features: apk resolves packages. A package one image needs alone goes into a feature named after that image (`vm`, `laptop`, `container`).
+No dependencies, versions, scripts or alternatives between features: apk resolves packages. A package one image needs alone goes into a feature named after that image (`vm`, `container`).
 
 ## An image definition (format 2)
 
 ```toml
 format = 2
-name = "edel-laptop"
+name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "mdev", "ab-boot", "ssh", "laptop"]
-off = ["ssh"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "xwayland"]
+off = ["ssh"]       # installed, its service off
 
 [vm]
 kernel = "lts"      # a listed feature must install linux-lts
-slot_mib = 1024
+slot_mib = 1536
 cmdline = "console=tty0 console=ttyS0,115200"   # never modules=
 ```
 

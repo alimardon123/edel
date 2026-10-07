@@ -131,6 +131,18 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Move the focused window to workspace 9",
     ),
+    action(
+        "toggle_fullscreen",
+        "Super+F",
+        false,
+        "Make the focused window fill its screen, or leave fullscreen (M5.20)",
+    ),
+    action(
+        "next_keyboard_layout",
+        "Super+Space",
+        false,
+        "Switch to the next keyboard layout of region.keyboard (M5.21)",
+    ),
 ];
 
 /// The action called `name`.

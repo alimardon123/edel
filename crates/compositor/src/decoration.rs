@@ -37,6 +37,11 @@ pub struct FrameData {
     pub restore: Option<Rectangle<i32, Logical>>,
     /// It asked to be maximized before it was shown.
     pub maximize_when_placed: bool,
+    /// The frame before the window went fullscreen; set while it is
+    /// (M5.20).
+    pub before_fullscreen: Option<Rectangle<i32, Logical>>,
+    /// It asked to be fullscreen before it was shown.
+    pub fullscreen_when_placed: bool,
     /// Its size and whether it has our bar, when last told to the policy.
     pub shape: Option<(smithay::utils::Size<i32, Logical>, bool)>,
     /// Its surfaces as last drawn, for its close animation (M5.11b).
@@ -159,9 +164,10 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
 
 impl Edel {
     /// What the frame adds round `window`: nothing for a window that draws
-    /// its own, nor in tiling when `layout.title_bars = "floating-only"`.
+    /// its own, nor in tiling when `layout.title_bars = "floating-only"`,
+    /// nor while it is fullscreen.
     pub fn insets(&self, window: &Window) -> Insets {
-        if server_side(window) && self.bars_shown() {
+        if server_side(window) && self.bars_shown() && !self.is_fullscreen(window) {
             Insets::server_side(&self.tokens)
         } else {
             Insets::default()
@@ -190,6 +196,15 @@ impl Edel {
 
     /// The window fills its screen, title bar and all.
     pub fn maximize(&mut self, window: &Window) {
+        if self.is_fullscreen(window) {
+            // It is maximized again when it leaves fullscreen.
+            let before = data(window).borrow().before_fullscreen;
+            let mut frame = data(window).borrow_mut();
+            if frame.restore.is_none() {
+                frame.restore = before;
+            }
+            return;
+        }
         let (Some((_, area)), Some(frame)) = (self.home(window), self.frame_of(window)) else {
             return;
         };

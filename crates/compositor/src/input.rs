@@ -335,6 +335,12 @@ impl Edel {
                 }
             }
             Act::Tiling => self.toggle_tiling(),
+            Act::NextLayout => self.next_keyboard_layout(),
+            Act::Fullscreen => {
+                if let Some(window) = self.focused_window() {
+                    self.toggle_fullscreen(&window);
+                }
+            }
             Act::Terminal => crate::program::open(self, "foot"),
             Act::Workspace(n) => self.switch_workspace(n),
             Act::MoveTo(n) => self.move_to_workspace(n),
@@ -420,7 +426,7 @@ impl Edel {
     /// the top, each window's own surfaces (its popups may lie over its
     /// bar) before its frame, then backgrounds.
     pub fn under(&self, point: Point<f64, Logical>) -> Under {
-        if let Some((layer, surface, at)) = self.layer_under(&crate::layers::ABOVE, point) {
+        if let Some((layer, surface, at)) = self.layer_under(self.layers_over_point(point), point) {
             return Under::Layer(layer, surface, at);
         }
         for window in self.space.elements().rev() {

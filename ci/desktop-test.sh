@@ -90,7 +90,9 @@
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
-#               showed with nobody logging in (M3.6)
+#               showed with nobody logging in (M3.6); and the checks the
+#               laptop stick had in boot-test: /data, the hardware
+#               watchdog, the report on the EFI system partition, ssh off
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
 #               it restarts the VM): the test service installs the update
 #               ci/build.sh signs, served here on port 8001, puts a
@@ -606,6 +608,42 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close_window = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_keyboard() {
+	# Keyboard layouts (M5.21): region.keyboard = "de,us" loads German
+	# then US at once; in foot the key QEMU calls y then types z, as on a
+	# German keyboard, so typing "touch y" makes a file named z; Super+Space
+	# goes to the next layout; a layout xkeyboard-config lacks is refused
+	# with a message that names its list; unset, the layout is US again.
+	guest 'keyboard bad'
+	wait_for 'DESKTOP-TEST: keyboard_bad ' || fail "the service did not report the refused layout"
+	value keyboard_bad | grep -q 'is not a keyboard layout this machine knows' ||
+		fail "edel settings set region.keyboard=xx was not refused with its message: $(value keyboard_bad)"
+	guest 'keyboard de'
+	wait_for 'edel-compositor: keyboard layouts de, us' || fail "the compositor did not load the layouts de and us"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key ctrl-alt-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
+	sleep 2
+	python3 ci/qmp.py type 'cd'
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type 'touch y'
+	python3 ci/qmp.py key ret
+	sleep 1
+	guest 'key file'
+	wait_for 'DESKTOP-TEST: keyfile ' || fail "the service did not look for the file"
+	[ "$(value keyfile)" = z ] || fail "with the German layout, typing y in foot made $(value keyfile), not z"
+	switched=$(count 'edel-compositor: keyboard layout now')
+	python3 ci/qmp.py key meta_l-spc
+	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
+		fail "Super+Space did not go to the next layout, English (US)"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
+	guest 'keyboard default'
+	wait_for "edel-compositor: keyboard layout us, xkb's default" || fail "unsetting region.keyboard did not bring the US layout back"
+	echo "PASS: region.keyboard = \"de,us\" loaded at once, y typed z in foot, Super+Space went to English (US), xx was refused with its message, and unsetting it brought US back"
+}
+
 case_workspaces() {
 	# Classic's four workspaces (M5.2a). away opens on the first, over the
 	# windows there, and takes the keyboard.
@@ -953,6 +991,50 @@ case_dockhide() {
 	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
 }
 
+case_fullscreen() {
+	# Fullscreen (M5.20): a test client that asks for fullscreen before
+	# it is shown covers the whole 1280x800 screen, panel too, in its
+	# colour with no title bar, and the windows line ends its entry in !;
+	# Super+F takes it out, back to its own size with the panel, and in
+	# again; Super+Q closes it. Then Super+F does the same for foot.
+	# Kept as fullscreen.png and fullscreen-left.png.
+	panel=$(token panel)
+	opened=$(count 'edel-compositor: window full fullscreen')
+	guest 'full window'
+	wait_more 'edel-compositor: window full fullscreen' "$opened" || fail "the window full did not go fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
+	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
+	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	left=$(count 'edel-compositor: window full not fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window full not fullscreen' "$left" || fail "Super+F did not take full out of fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* full@[0-9]+,[0-9]+,300x200( |$)' || fail "full did not go back to 300x200: $(value windows)"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back at 640,790"
+	again=$(count 'edel-compositor: window full fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window full fullscreen' "$again" || fail "Super+F did not make full fullscreen again"
+	closed=$(count 'edel-compositor: unmapped window full')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window full' "$closed" || fail "Super+Q did not close full"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back after full closed"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key ctrl-alt-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T did not open foot"
+	went=$(count 'edel-compositor: window foot fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window foot fullscreen' "$went" || fail "Super+F did not make foot fullscreen"
+	wait_for 'DESKTOP-TEST: windows .* foot@0,0,1280x800!' || fail "foot does not cover the screen: $(value windows)"
+	shot fullscreen 640 790 "!$panel" >/dev/null || fail "the panel still shows over fullscreen foot"
+	left=$(count 'edel-compositor: window foot not fullscreen')
+	python3 ci/qmp.py key meta_l-f
+	wait_more 'edel-compositor: window foot not fullscreen' "$left" || fail "Super+F did not take foot out of fullscreen"
+	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back after foot left fullscreen"
+	closed=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+F took it out and back; foot went fullscreen and back with Super+F"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -1199,6 +1281,19 @@ case_tiling() {
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
 }
 
+case_dmabuf() {
+	# Apps draw on the GPU (M5.19): the compositor offers
+	# zwp_linux_dmabuf_v1, version 4 with feedback, in the formats its
+	# renderer imports, at least one.
+	case " $(value globals) " in
+	*" zwp_linux_dmabuf_v1 "*) ;;
+	*) fail "the compositor does not offer zwp_linux_dmabuf_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	line=$(value dmabuf | grep -o 'apps may hand over GPU buffers in [0-9]* formats')
+	[ -n "$line" ] || fail "the compositor offers no GPU buffer formats: $(value dmabuf)"
+	echo "PASS: the compositor offers zwp_linux_dmabuf_v1: $line"
+}
+
 case_pointer() {
 	globals=$(value globals)
 	for protocol in zwp_tablet_manager_v2 wp_cursor_shape_manager_v1 wp_fractional_scale_manager_v1 wp_viewporter zxdg_decoration_manager_v1; do
@@ -1269,14 +1364,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | compositor | dock | dockhide | floating | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, compositor, dock, dockhide, floating, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
@@ -1323,8 +1418,23 @@ if [ "$*" = live ]; then
 	background=$(token background)
 	shot live $((w / 2)) $((h / 2)) "$background" >/dev/null ||
 		fail "$((w / 2)),$((h / 2)) is not the background's #$background: the screen was drawn only in part"
+	# What boot-test checked on the laptop stick until the desktop took
+	# its place (2026-10-06): linux-lts from USB, /data, the version, the
+	# guard on the hardware watchdog, the report on the EFI system
+	# partition (printed after the write), and ssh shipped off.
+	for line in 'Welcome to Edel OS' 'edel update: slot A confirmed' 'edel-data: mounted /data' \
+		"Edel OS ${EDEL_VERSION:-0.1}, channel " 'edel guard: using the hardware watchdog' \
+		'edel report: wrote /EFI/edel/report.toml on the EFI system partition'; do
+		i=0
+		while ! tr -d '\r' <"$log" | grep -qaF "$line" && [ "$i" -lt 60 ]; do
+			i=$((i + 1))
+			sleep 1
+		done
+		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
+	done
+	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
 	stop_vm
-	echo "PASS: the desktop image started from a USB stick logged live in by itself: its panel lies along the bottom of the ${w}x$h screen"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off"
 	exit 0
 fi
 

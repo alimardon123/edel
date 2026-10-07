@@ -164,7 +164,7 @@ impl Edel {
         // a window covers is not drawn (M5.4f).
         let hidden = self.hidden_layers();
         elements.extend(
-            crate::layers::elements(renderer, output, &crate::layers::ABOVE, scale, &hidden)
+            crate::layers::elements(renderer, output, self.layers_over(output), scale, &hidden)
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );

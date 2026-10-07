@@ -31,6 +31,7 @@ use crate::state::Edel;
 const MAXIMIZED: u32 = 0;
 const MINIMIZED: u32 = 1;
 const ACTIVATED: u32 = 2;
+const FULLSCREEN: u32 = 3;
 
 /// Every client's manager and the handles it was given.
 #[derive(Default)]
@@ -127,6 +128,9 @@ impl Edel {
         }
         if minimized.is_some() {
             states.push(MINIMIZED);
+        }
+        if self.is_fullscreen(window) {
+            states.push(FULLSCREEN);
         }
         if window
             .toplevel()
@@ -309,8 +313,15 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Edel {
             zwlr_foreign_toplevel_handle_v1::Request::UnsetMinimized => {
                 state.restore(&window);
             }
-            // Fullscreen and the rectangle a list draws a window's entry
-            // in mean nothing here yet.
+            zwlr_foreign_toplevel_handle_v1::Request::SetFullscreen { output } if shown => {
+                let output = output.as_ref().and_then(Output::from_resource);
+                state.fullscreen(&window, output);
+            }
+            zwlr_foreign_toplevel_handle_v1::Request::UnsetFullscreen if shown => {
+                state.unfullscreen(&window);
+            }
+            // The rectangle a list draws a window's entry in means nothing
+            // here yet.
             _ => {}
         }
         state.sync_toplevels();

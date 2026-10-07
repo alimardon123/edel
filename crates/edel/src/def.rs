@@ -825,12 +825,13 @@ mod tests {
     }
 
     /// Roadmap M4.0: each image made of features installs and enables what
-    /// main's format-1 definition did (the laptop without sshd, its ssh
-    /// shipped off), and boots with the same modules and initramfs.
+    /// main's format-1 definition did, and boots with the same modules and
+    /// initramfs. The laptop image, dropped on 2026-10-06, is the desktop's
+    /// stick now.
     #[test]
     fn features_rebuild_the_format_1_images() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/format1");
-        for name in ["container", "vm", "laptop"] {
+        for name in ["container", "vm"] {
             let text = fs::read_to_string(fixtures.join(format!("{name}.toml"))).unwrap();
             let old: toml::Table = toml::from_str(&text).unwrap();
             let install: Vec<String> = old["packages"]["install"].clone().try_into().unwrap();
@@ -838,13 +839,7 @@ mod tests {
                 .get("services")
                 .map(|s| s.clone().try_into().unwrap())
                 .unwrap_or_default();
-            let mut old_services: Vec<(&str, &str)> = services.entries();
-            let mut install = install;
-            if name == "laptop" {
-                old_services.retain(|(_, s)| *s != "sshd");
-                // M5.26 added the completion feature to the laptop.
-                install.extend(["bash".to_string(), "bash-completion".to_string()]);
-            }
+            let old_services: Vec<(&str, &str)> = services.entries();
             let new = repo_def(name);
             assert_eq!(sorted(&new.packages), sorted(&install), "{name}: packages");
             assert_eq!(
@@ -854,22 +849,21 @@ mod tests {
             );
             if name != "container" {
                 // Since the M2 and M3 review, i6300esb loads by hardware ID
-                // like a laptop's watchdog, and the laptop adds mmc.
+                // like a laptop's watchdog.
                 assert_eq!(
                     new.modules.join(","),
                     "ext4,overlay,softdog,virtio_pci,virtio_blk,nvme,ahci,sd_mod,usb-storage,uas,xhci_pci",
                     "{name}: modules="
                 );
-                let mmc = if name == "laptop" { " mmc" } else { "" };
                 assert_eq!(
                     new.initramfs.join(" "),
-                    format!("ata base ext4 kms{mmc} nvme scsi usb virtio"),
+                    "ata base ext4 kms nvme scsi usb virtio",
                     "{name}: mkinitfs features"
                 );
                 assert_eq!(new.health, ["default-runlevel"], "{name}: EDEL_HEALTH");
             }
         }
-        assert_eq!(repo_def("laptop").off, ["ssh"]);
+        assert_eq!(repo_def("desktop").off, ["ssh"]);
     }
 
     /// Roadmap M4.0: dropping a feature from a definition drops exactly

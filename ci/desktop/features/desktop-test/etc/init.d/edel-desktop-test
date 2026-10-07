@@ -89,6 +89,8 @@ report() {
 	# the last, after any drop, and edel status's, from the state
 	# file; then the animations it gives (M5.11b).
 	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
+	# Whether apps may hand over GPU buffers (M5.19), and in how many formats.
+	say "dmabuf $(grep 'GPU buffers' /tmp/compositor.log | tail -n 1)"
 	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
@@ -157,6 +159,10 @@ commands() {
 		'panels default') edel settings reset layout.panels ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
 		'dock hiding') edel settings set 'layout.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		# A window that asks to fill its screen (M5.20).
+		'full window')
+			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
+			;;
 		'big window')
 			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
 			;;
@@ -257,6 +263,22 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
+		# Keyboard layouts (M5.21): German first, then US; a layout
+		# xkeyboard-config lacks, refused with its message; and the file
+		# typing "touch y" in foot made, named after the key's letter.
+		'keyboard de') edel settings set region.keyboard=de,us ;;
+		'keyboard bad') say "keyboard_bad $(edel settings set region.keyboard=xx 2>&1 | tr '\n' ' ')" ;;
+		'keyboard default') edel settings reset region.keyboard ;;
+		'key file')
+			if [ -e /home/ci/z ]; then
+				say "keyfile z"
+			elif [ -e /home/ci/y ]; then
+				say "keyfile y"
+			else
+				say "keyfile none"
+			fi
+			rm -f /home/ci/z /home/ci/y
+			;;
 		# A broken desktop update (M4.8): it must roll back on its own.
 		'break update') break_update ;;
 		# The session's compositor dies (M4.7b): greetd should start its
@@ -312,7 +334,7 @@ follow() {
 # then each as title@x,y,widthxheight, bottom first, spaces in titles as
 # _. windows hidden: the shown workspace and how many windows the others
 # hold, then each as title@workspace (M5.2a). A minimized window's entry
-# ends in - (M5.2h).
+# ends in - (M5.2h), a fullscreen one's in ! (M5.20).
 windows() {
 	awk -F' = ' -v hidden="${1:-}" '
 		function flush() {
@@ -320,15 +342,16 @@ windows() {
 				n++
 				# A minimized window (M5.2h) ends in -.
 				if (hidden != "") out = out " " t "@" ws (m ? "-" : "")
-				else if (t != "") out = out " " t "@" x "," y "," w "x" h (m ? "-" : "")
+				else if (t != "") out = out " " t "@" x "," y "," w "x" h (m ? "-" : "") (f ? "!" : "")
 			}
 			inside = 0
 		}
 		/^\[/ { flush(); header = 1 }
-		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = ""; m = 0 }
+		/^\[\[windows\]\]/ { inside = 1; t = ""; ws = ""; m = 0; f = 0 }
 		!header && $1 == "workspace" { shown = $2 }
 		inside && $1 == "workspace" { ws = $2 }
 		inside && $1 == "minimized" { m = ($2 == "true") }
+		inside && $1 == "fullscreen" { f = ($2 == "true") }
 		inside && $1 == "title" { t = $2; gsub(/"/, "", t); gsub(/ /, "_", t) }
 		inside && $1 == "x" { x = $2 }
 		inside && $1 == "y" { y = $2 }

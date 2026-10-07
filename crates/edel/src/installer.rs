@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn every_bootable_image_has_every_tool_install_runs() {
         let images = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../images");
-        for name in ["vm", "laptop"] {
+        for name in ["vm", "desktop"] {
             let def = crate::def::ImageDef::load(&images.join(format!("{name}.toml"))).unwrap();
             for (tool, package) in TOOLS {
                 assert!(

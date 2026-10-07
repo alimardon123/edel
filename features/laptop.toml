@@ -1,5 +1,5 @@
-# Only the laptop image needs this (a feature named after its image); the
-# desktop image lists it too (M4.1). features/laptop/ holds edel-report,
+# Real hardware: the desktop image lists it (M4.1); the laptop image it
+# was named after was dropped on 2026-10-06, as the desktop is the stick. features/laptop/ holds edel-report,
 # which leaves the hardware report on the stick's EFI system partition at
 # every boot (M3.4, docs/TRY-IT.md).
 format = 1

@@ -19,6 +19,10 @@ use edel::shortcuts::{Keys, resolve};
 pub enum Act {
     Close,
     Tiling,
+    /// The focused window in or out of fullscreen (M5.20).
+    Fullscreen,
+    /// The next keyboard layout (M5.21).
+    NextLayout,
     Terminal,
     /// Go to workspace N, from 0 (M5.2a).
     Workspace(usize),
@@ -44,6 +48,8 @@ impl Act {
             "open_launcher" => Some(Act::Launcher),
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
+            "toggle_fullscreen" => Some(Act::Fullscreen),
+            "next_keyboard_layout" => Some(Act::NextLayout),
             "open_terminal" => Some(Act::Terminal),
             _ => {
                 if let Some(rest) = name.strip_prefix("move_to_workspace_") {
@@ -239,6 +245,11 @@ mod tests {
         let super_ = held(true, false, false, false);
         assert_eq!(find(&bindings, &super_, sym("q")), Some(Act::Close));
         assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Tiling));
+        assert_eq!(find(&bindings, &super_, sym("f")), Some(Act::Fullscreen));
+        assert_eq!(
+            find(&bindings, &super_, sym("space")),
+            Some(Act::NextLayout)
+        );
         let ctrl_alt = held(false, true, true, false);
         assert_eq!(find(&bindings, &ctrl_alt, sym("t")), Some(Act::Terminal));
         // Other modifiers, or none, leave the key to the app.
@@ -283,13 +294,13 @@ mod tests {
         assert_eq!(tap("q"), None);
         assert!(is_tap_key(xkb::keysym_from_name("Super_L", 0)));
         assert!(!is_tap_key(xkb::keysym_from_name("a", 0)));
-        // Moved to Super+Space, it is a key like any other; two modifiers
+        // Moved to Super+A, it is a key like any other; two modifiers
         // alone cannot be tapped.
-        let file = BTreeMap::from([("open_launcher".to_string(), "Super+Space".to_string())]);
+        let file = BTreeMap::from([("open_launcher".to_string(), "Super+A".to_string())]);
         let (moved, notes) = bind(&file);
         assert!(notes.is_empty(), "{notes:?}");
         let super_ = held(true, false, false, false);
-        assert_eq!(find(&moved, &super_, sym("space")), Some(Act::Launcher));
+        assert_eq!(find(&moved, &super_, sym("a")), Some(Act::Launcher));
         assert_eq!(tapped(&moved, xkb::keysym_from_name("Super_L", 0)), None);
         let file = BTreeMap::from([("open_launcher".to_string(), "Ctrl+Alt".to_string())]);
         let (_, notes) = bind(&file);

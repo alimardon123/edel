@@ -247,7 +247,7 @@ impl Esp {
 
 /// Writes `text` as `name` beside GRUB's environment block on the running
 /// disk's EFI system partition, through a new file and a rename, and
-/// returns where it is on the partition. The laptop stick leaves its
+/// returns where it is on the partition. The desktop stick leaves its
 /// `edel report` there, readable on any computer (M3.4).
 pub(crate) fn write_beside_grubenv(name: &str, text: &str) -> Result<String> {
     let _lock = Lock::take("update", "edel report --esp")?;
