@@ -51,9 +51,9 @@ pub fn swap_file(src: &Path, dest: &Path) -> Result<()> {
         fs::copy(dest, with_suffix(dest, ".prev"))?;
     }
     let new = with_suffix(dest, ".new");
-    fs::copy(src, &new).with_context(|| format!("writing {}", new.display()))?;
+    fs::copy(src, &new).with_context(|| format!("could not write {}", new.display()))?;
     File::open(&new)?.sync_all()?;
-    fs::rename(&new, dest).with_context(|| format!("replacing {}", dest.display()))?;
+    fs::rename(&new, dest).with_context(|| format!("could not replace {}", dest.display()))?;
     File::open(dest)?.sync_all()?;
     if let Some(dir) = dest.parent() {
         File::open(dir)?.sync_all()?;

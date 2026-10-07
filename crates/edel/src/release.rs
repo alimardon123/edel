@@ -192,7 +192,8 @@ fn fixed<const N: usize>(bytes: Vec<u8>, what: &str) -> Result<[u8; N]> {
 
 /// A public key file: 32 bytes as hex.
 pub fn read_public_key(path: &Path) -> Result<VerifyingKey> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let bytes = fixed::<32>(from_hex(&text)?, "the public key")?;
     VerifyingKey::from_bytes(&bytes)
         .with_context(|| format!("{} is not an ed25519 public key", path.display()))
@@ -211,7 +212,7 @@ fn load_keys(dir: &Path) -> Result<Vec<VerifyingKey>> {
     }
     if keys.is_empty() {
         bail!(
-            "no public keys in {}; this image cannot check updates",
+            "no public keys in {}, so this system cannot check who signed an update; nothing was changed; reinstall from an Edel OS image",
             dir.display()
         );
     }
@@ -231,16 +232,18 @@ fn verify_bytes(bytes: &[u8], sig_hex: &str, keys: &[VerifyingKey]) -> Result<()
             return Ok(());
         }
     }
-    bail!("refused: signature: no trusted key signed this release")
+    bail!(
+        "refused: signature: no key this system trusts signed this release list; nothing was changed; check the address, or ask the publisher for a fresh list"
+    )
 }
 
 /// Parses a manifest, refusing only a format this edel does not know.
 pub fn parse_manifest(text: &str) -> Result<Manifest> {
-    let table: toml::Table = toml::from_str(text).context("release.toml is not valid TOML")?;
+    let table: toml::Table = toml::from_str(text).context("refused: release.toml is not valid TOML, so it is cut short or is not a release list; check the address")?;
     let format = table
         .get("format")
         .and_then(|v| v.as_integer())
-        .context("release.toml has no format")?;
+        .context("refused: release.toml has no format line, so it is not a release list this edel can read; check the address")?;
     if format != FORMAT {
         bail!(
             "refused: release.toml is format {format}; this edel reads format {FORMAT}, so install a release in between first"
@@ -291,7 +294,7 @@ fn pick_image<'a>(
         .find(|e| e.name == image)
         .with_context(|| {
             format!(
-                "refused: release {} has no image {image:?}",
+                "refused: release {} has no image {image:?}, the one this system is; nothing was changed, so wait for a release that lists it",
                 manifest.version
             )
         })
@@ -316,17 +319,25 @@ fn agent() -> ureq::Agent {
         .into()
 }
 
+/// What a download that failed says: the address and what to try; the
+/// cause follows it.
+fn download_failed(location: &str) -> String {
+    format!(
+        "could not download {location}; check the network and the address, then run edel update again (the running system is unchanged)"
+    )
+}
+
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
         let mut response = agent()
             .get(location)
             .call()
-            .with_context(|| format!("downloading {location}"))?;
+            .with_context(|| download_failed(location))?;
         Ok(response.body_mut().read_to_vec()?)
     } else {
         let path = local_path(location);
-        fs::read(path).with_context(|| format!("reading {path}"))
+        fs::read(path).with_context(|| format!("could not read {path}"))
     }
 }
 
@@ -336,11 +347,11 @@ fn open_image(location: &str) -> Result<Box<dyn Read>> {
         let response = agent()
             .get(location)
             .call()
-            .with_context(|| format!("downloading {location}"))?;
+            .with_context(|| download_failed(location))?;
         Box::new(response.into_body().into_reader())
     } else {
         let path = local_path(location);
-        Box::new(File::open(path).with_context(|| format!("reading {path}"))?)
+        Box::new(File::open(path).with_context(|| format!("could not read {path}"))?)
     };
     Ok(if location.ends_with(".gz") {
         Box::new(GzDecoder::new(raw))
@@ -385,7 +396,7 @@ fn verified_manifest(location: &str, accept: &Accept) -> Result<Manifest> {
     check_location(location, accept.allow_http)?;
     let bytes = fetch(location)?;
     let sig = fetch(&format!("{location}.sig"))
-        .context("refused: signature: cannot read the .sig file beside release.toml")?;
+        .context("refused: signature: could not read the .sig file beside release.toml; it must sit next to the list with the same name and .sig")?;
     verify_bytes(
         &bytes,
         &String::from_utf8_lossy(&sig),
@@ -410,13 +421,16 @@ pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
     let manifest = verified_manifest(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE")
-        .context("this system's /usr/lib/os-release has no EDEL_IMAGE")?;
+        .context("this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take")?;
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let entry = pick_image(&manifest, &image, &running, accept.allow_downgrade)?;
-    let sha256 = from_hex(&entry.sha256).context("release.toml has a bad sha256")?;
+    let sha256 = from_hex(&entry.sha256).context("refused: release.toml has a sha256 for the image that is not 64 hex digits; nothing was changed")?;
     let image_at = beside(location, &entry.file);
     check_location(&image_at, accept.allow_http)?;
-    println!("release {}: signature checked", manifest.version);
+    println!(
+        "edel update: release {}: signature checked",
+        manifest.version
+    );
     Ok(Checked {
         sha256,
         size: entry.size,
@@ -460,7 +474,7 @@ pub fn keygen(dir: &Path, name: &str) -> Result<()> {
         .create_new(true)
         .mode(0o600)
         .open(&secret)
-        .with_context(|| format!("creating {}", secret.display()))?;
+        .with_context(|| format!("could not create {}", secret.display()))?;
     std::io::Write::write_all(&mut file, format!("{}\n", to_hex(&seed)).as_bytes())?;
     let public = dir.join(format!("{name}.pub"));
     fs::write(
@@ -483,10 +497,12 @@ pub fn make(
     images: &[PathBuf],
 ) -> Result<PathBuf> {
     if let Some(url) = base_url.filter(|u| !is_url(u)) {
-        bail!("--base-url {url:?} is not an http(s) URL");
+        bail!(
+            "--base-url {url:?} is not an http(s) URL; write one such as https://example.org/edel"
+        );
     }
     let Some(dir) = images.first().and_then(|i| i.parent()) else {
-        bail!("name at least one image");
+        bail!("no image given; name at least one image after the options");
     };
     let mut entries = Vec::new();
     for image in images {
@@ -537,17 +553,17 @@ pub fn make(
 /// the list's `expires` that many days from today (M3.8), so the date is
 /// the signer's, not the build's.
 pub fn sign(key_path: &Path, file: &Path, expires_in: Option<u32>) -> Result<()> {
-    let text =
-        fs::read_to_string(key_path).with_context(|| format!("reading {}", key_path.display()))?;
+    let text = fs::read_to_string(key_path)
+        .with_context(|| format!("could not read {}", key_path.display()))?;
     let key = SigningKey::from_bytes(&fixed::<32>(from_hex(&text)?, "the secret key")?);
     if let Some(days) = expires_in {
-        let list =
-            fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        let list = fs::read_to_string(file)
+            .with_context(|| format!("could not read {}", file.display()))?;
         let date = civil_from_days(today() + i64::from(days));
         fs::write(file, with_expires(&list, &date)?)?;
         println!("{}: expires {date}", file.display());
     }
-    let bytes = fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let bytes = fs::read(file).with_context(|| format!("could not read {}", file.display()))?;
     let sig = key.sign(&bytes);
     let sig_path = PathBuf::from(format!("{}.sig", file.display()));
     fs::write(&sig_path, format!("{}\n", to_hex(&sig.to_bytes())))?;
@@ -565,7 +581,7 @@ fn with_expires(list: &str, date: &str) -> Result<String> {
 
 /// `edel release verify`: checks `FILE.sig` against the keys in `keys`.
 pub fn verify(keys: &Path, file: &Path) -> Result<()> {
-    let bytes = fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    let bytes = fs::read(file).with_context(|| format!("could not read {}", file.display()))?;
     let sig = fs::read_to_string(format!("{}.sig", file.display()))?;
     verify_bytes(&bytes, &sig, &load_keys(keys)?)?;
     println!("{}: signature good", file.display());
@@ -743,6 +759,65 @@ mod tests {
         assert_eq!(plain, packed);
         assert_eq!(plain.1, 13);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Each way an update is refused says what failed, why and what to do,
+    /// word for word (docs/MESSAGES.md); CI's A/B test greps the
+    /// `refused: KIND` start of the first two.
+    #[test]
+    fn every_refusal_says_what_failed_why_and_what_to_do() {
+        let keys = [key(1).verifying_key()];
+        let wrong = sig(&key(9), MANIFEST);
+        assert_eq!(
+            verify_bytes(MANIFEST.as_bytes(), &wrong, &keys)
+                .unwrap_err()
+                .to_string(),
+            "refused: signature: no key this system trusts signed this release list; nothing was changed; check the address, or ask the publisher for a fresh list"
+        );
+        let mut list = parse_manifest(MANIFEST).unwrap();
+        list.expires = "2026-10-06".into();
+        let today = parse_date("2026-10-07").unwrap();
+        assert_eq!(
+            check_list(&list, today, "stable", &Accept::default())
+                .unwrap_err()
+                .to_string(),
+            "refused: expired: this release list expired on 2026-10-06: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)"
+        );
+        assert_eq!(
+            check_list(&list, today - 9, "preview", &Accept::default())
+                .unwrap_err()
+                .to_string(),
+            "refused: channel: this release list is for the stable channel, and this machine follows preview; pass --channel stable to take it once, or set updates.channel to change for good"
+        );
+        assert_eq!(
+            check_location("http://10.0.2.2:8000/release.toml", false)
+                .unwrap_err()
+                .to_string(),
+            "refused: http: http://10.0.2.2:8000/release.toml is plain http; use an https:// address, or pass --allow-http for a local test server"
+        );
+        let manifest = parse_manifest(MANIFEST).unwrap();
+        assert_eq!(
+            pick_image(&manifest, "edel-vm-x86_64", "2026.10.2", false)
+                .unwrap_err()
+                .to_string(),
+            "refused: version 2026.10.2 is not newer than the running 2026.10.2; pass --allow-downgrade to install it anyway"
+        );
+        assert_eq!(
+            pick_image(&manifest, "edel-laptop-x86_64", "2026.10.1", false)
+                .unwrap_err()
+                .to_string(),
+            "refused: release 2026.10.2 has no image \"edel-laptop-x86_64\", the one this system is; nothing was changed, so wait for a release that lists it"
+        );
+        assert_eq!(
+            parse_manifest(&MANIFEST.replace("format = 1", "format = 2"))
+                .unwrap_err()
+                .to_string(),
+            "refused: release.toml is format 2; this edel reads format 1, so install a release in between first"
+        );
+        assert_eq!(
+            download_failed("https://example.org/release.toml"),
+            "could not download https://example.org/release.toml; check the network and the address, then run edel update again (the running system is unchanged)"
+        );
     }
 
     #[test]

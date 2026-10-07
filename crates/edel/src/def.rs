@@ -276,7 +276,7 @@ impl ImageDef {
                 "format 1 is no longer read: a definition lists features now (format 2, docs/FEATURES.md)"
             ),
             Some(n) => bail!("format {n} is not supported; this edel understands format {FORMAT}"),
-            None => bail!("format is missing"),
+            None => bail!("the definition has no format; add format = {FORMAT} at the top"),
         }
         let file: DefFile = toml::Value::Table(table).try_into()?;
 
@@ -413,7 +413,7 @@ impl ImageDef {
             }
         }
         if self.packages.is_empty() {
-            bail!("the features install no package");
+            bail!("the features install no package; list the base feature");
         }
         for name in &self.health {
             if guard::health_file(name).is_none() {

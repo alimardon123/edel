@@ -33,7 +33,8 @@ fn should_grow(disk_sectors: u64, start: u64, size: u64) -> bool {
 }
 
 fn sectors(path: &Path) -> Result<u64> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     Ok(text.trim().parse()?)
 }
 
@@ -57,7 +58,7 @@ fn grow(disk: &Path) -> Result<()> {
         .arg(disk)
         .stdin(Stdio::piped())
         .spawn()
-        .context("starting sfdisk")?;
+        .context("could not start sfdisk")?;
     sfdisk
         .stdin
         .take()
@@ -73,7 +74,7 @@ fn grow(disk: &Path) -> Result<()> {
 
 fn names(dir: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
-    for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+    for entry in fs::read_dir(dir).with_context(|| format!("could not read {}", dir.display()))? {
         names.push(entry?.file_name().to_string_lossy().into_owned());
     }
     names.sort();

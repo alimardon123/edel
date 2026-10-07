@@ -58,7 +58,7 @@ pub fn live() -> Result<()> {
         );
         return Ok(());
     }
-    let config = fs::read_to_string(GREETD).with_context(|| format!("reading {GREETD}"))?;
+    let config = fs::read_to_string(GREETD).with_context(|| format!("could not read {GREETD}"))?;
     let Some(live) = with_live_session(&config) else {
         println!("edel boot live: {GREETD} is not TOML, so nobody logs in by itself");
         return Ok(());
@@ -67,7 +67,7 @@ pub fn live() -> Result<()> {
     if let Some(dir) = Path::new(GREETD_LIVE).parent() {
         fs::create_dir_all(dir)?;
     }
-    fs::write(GREETD_LIVE, live).with_context(|| format!("writing {GREETD_LIVE}"))?;
+    fs::write(GREETD_LIVE, live).with_context(|| format!("could not write {GREETD_LIVE}"))?;
     let why = if removable {
         format!("started from a removable disk, {}", disk.name)
     } else {
