@@ -213,7 +213,7 @@ else
 fi
 "#;
     let cmdline = format!(
-        "root=UUID=$uuid rootfstype=ext4 panic=10 modules={modules} {WATCHDOG_ARGS} {cmdline}"
+        "root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules={modules} {WATCHDOG_ARGS} {cmdline}"
     );
     let cmdline = cmdline.trim_end();
     let early: String = microcode.iter().map(|f| format!("/boot/{f} ")).collect();
@@ -222,8 +222,8 @@ fi
             r#"
 menuentry "Edel OS, slot {name}" {{
 	set root="$disk,gpt{partition}"
-	set uuid=""
-	probe --set=uuid --fs-uuid "($disk,gpt{partition})"
+	set partuuid=""
+	probe --set=partuuid --part-uuid "($disk,gpt{partition})"
 	linux /boot/vmlinuz-{kernel} {cmdline}
 	initrd {early}/boot/initramfs-{kernel}
 }}
@@ -307,12 +307,15 @@ mod tests {
     }
 
     #[test]
-    fn grub_boots_each_slot_by_its_own_uuid() {
+    fn grub_boots_each_slot_by_its_own_partition() {
         let cfg = grub_cfg("virt", "ext4,overlay", "console=ttyS0", &[]);
         assert!(cfg.contains("menuentry \"Edel OS, slot B\" {"));
-        assert!(cfg.contains("probe --set=uuid --fs-uuid \"($disk,gpt3)\""));
+        // The partition's GPT id, never the file system's UUID, which a
+        // slot keeps from the image it was written from (M1.12).
+        assert!(cfg.contains("probe --set=partuuid --part-uuid \"($disk,gpt3)\""));
+        assert!(!cfg.contains("UUID=$uuid"));
         assert!(cfg.contains(
-            "linux /boot/vmlinuz-virt root=UUID=$uuid rootfstype=ext4 panic=10 modules=ext4,overlay i6300esb."
+            "linux /boot/vmlinuz-virt root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4,overlay i6300esb."
         ));
         assert!(cfg.contains(" sp5100_tco.heartbeat=15 console=ttyS0\n"));
         assert!(cfg.contains("initrd /boot/initramfs-virt\n"));
