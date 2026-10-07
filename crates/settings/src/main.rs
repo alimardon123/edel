@@ -37,7 +37,23 @@ const NARROW: &str = "max-width: 600sp";
 /// The sidebar's width, in logical pixels, as the mockups draw it.
 const SIDEBAR: f64 = 204.0;
 
+/// The renderer GTK draws Settings with unless `GSK_RENDERER` says
+/// otherwise: Cairo, on the processor. Measured on 2026-10-07 under
+/// llvmpipe, Settings held 12.8 MiB of its own with it and 88.3 MiB with
+/// GL, and a page of rows that changes on a click needs no GPU to keep
+/// up (Efficient over a speed nobody sees; the default row in the roadmap).
+const RENDERER: &str = "cairo";
+
 fn main() -> gtk::glib::ExitCode {
+    if std::env::var_os("GSK_RENDERER").is_none() {
+        // SAFETY: the first thing the program does, before GTK or any
+        // other thread starts, so nothing reads the environment meanwhile.
+        unsafe { std::env::set_var("GSK_RENDERER", RENDERER) };
+    }
+    // Without a session bus GTK names the window after the program, so
+    // the program takes the app's id: the compositor and the panel find
+    // its icon and name either way.
+    gtk::glib::set_prgname(Some(APP_ID));
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(window);
     app.run()

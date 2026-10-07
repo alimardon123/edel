@@ -704,7 +704,13 @@ case_settings() {
 	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
-	nx=$(((($1 + $3) * 5 / 2) - 40)) ny=$(((($2 + $4) * 5 / 2) - 40))
+	# A point low in the part of the window on screen, below the pages'
+	# list: Settings keeps at least 360 by 300, so it may reach past the
+	# screen's 512 by 320.
+	right=$(($1 + $3)) bottom=$(($2 + $4))
+	[ "$right" -le 512 ] || right=512
+	[ "$bottom" -le 320 ] || bottom=320
+	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
 	shot settings-narrow "$nx" "$ny" "$side" >/dev/null ||
 		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$side"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
