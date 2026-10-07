@@ -11,10 +11,9 @@
 #      /etc/passwd, then install the update into slot B.
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
-#      from the slot, and so did /var/lib/ci-new; slot B's bytes are still
-#      the signed image's, after a boot (M1.12), and its tagged boot loader
-#      replaced slot A's on the ESP once the slot was confirmed. Roll back
-#      by command.
+#      from the slot, and so did /var/lib/ci-new; the shrunk update grew to
+#      fill the slot, and its tagged boot loader replaced slot A's on the
+#      ESP once the slot was confirmed. Roll back by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
@@ -118,22 +117,9 @@ ab_break_b() {
 	umount /run/ab-test/slot
 }
 
-# A slot keeps the shrunk image as it was signed (M1.12): its file system
-# is far smaller than the 4096 MiB slot.
-slot_as_signed() {
-	[ "$(df -m / | awk 'NR == 2 { print $2 }')" -lt 1024 ]
-}
-
-# Whether the running slot's first SIZE bytes have the sha256 release.toml
-# gives its image, read from the device after the slot booted (M1.12).
-slot_matches_release() {
-	manifest=$(wget -qO- "$update") || return 1
-	want=$(echo "$manifest" | sed -n 's/^sha256 = "\(.*\)"$/\1/p' | head -n 1)
-	size=$(echo "$manifest" | sed -n 's/^size = \([0-9]*\)$/\1/p' | head -n 1)
-	device=$(echo "$slots" | awk -v s="$1:" '$1 == s { print $4 }')
-	have=$(head -c "$size" "$device" | sha256sum | cut -d' ' -f1)
-	echo "slot $1: $device, $size bytes, sha256 $have, release.toml $want"
-	[ -n "$want" ] && [ "$have" = "$want" ]
+# The update image is shrunk; installing it must grow it to the slot.
+slot_is_full() {
+	[ "$(df -m / | awk 'NR == 2 { print $2 }')" -gt 3600 ]
 }
 
 ab_next() {
@@ -168,8 +154,8 @@ start() {
 		ab_has /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
 		# Installed from a live disk with 1024 MiB slots, as from the
-		# desktop stick, into 4096 MiB (M3.3b): copied as it was (M1.12).
-		ab_check "slot A as it was signed, not grown" slot_as_signed || return 0
+		# desktop stick: edel install grew slot A to 4096 MiB (M3.3b).
+		ab_check "slot A grown to its full size" slot_is_full || return 0
 		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
 		if refused=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/expired.toml 2>&1); then
@@ -205,8 +191,7 @@ start() {
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker /var/lib/ci-new || return 0
 		ab_check "a read-only root" root_is_ro || return 0
-		ab_check "slot B as it was signed, not grown" slot_as_signed || return 0
-		ab_check "slot B byte for byte the signed image" slot_matches_release B || return 0
+		ab_check "a slot grown to its full size" slot_is_full || return 0
 		ab_check "slot B's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		ab_check "a boot loader that differs from slot A's" sh -c '! cmp -s /data/ab-loader-a /usr/lib/edel/boot/loader.toml' || return 0
 		ab_check "the previous boot loader kept" test -e "$esp/EFI/BOOT/BOOTX64.EFI.prev" || return 0

@@ -536,9 +536,11 @@ impl Build<'_> {
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
         self.make_slot(root, &update, slot_mib)?;
         self.shrink(&update)?;
-        // Slot A is the update image itself, byte for byte, as every slot
-        // stays what was signed (M1.12): GRUB finds a slot by its
-        // partition, so two slots may hold one file system UUID.
+        // Slot A gets a filesystem of its own rather than a copy of the
+        // update image: the kernel finds its root by filesystem UUID, so no
+        // two filesystems a machine can see may share one.
+        let slot_a = work.join("slot-a.ext4");
+        self.make_slot(root, &slot_a, slot_mib)?;
         let data = work.join("data.ext4");
         self.make_data(&data, vm.data_mib)?;
         let esp = work.join("esp.img");
@@ -559,7 +561,7 @@ impl Build<'_> {
             .step("copy the EFI system partition, slot A and the data partition into the disk");
         if !self.runner.dry_run {
             copy_sparse(&esp, &disk, layout.esp_start_mib() * MIB)?;
-            copy_sparse(&update, &disk, layout.slot_start_mib(0) * MIB)?;
+            copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
             copy_sparse(&data, &disk, layout.data_start_mib() * MIB)?;
         }
         // The update image is small; the disk is the size of both slots.
@@ -573,8 +575,7 @@ impl Build<'_> {
     }
 
     /// Shrinks the update image to its file system, so it fits any slot at
-    /// least that big; a slot keeps it that size, as a read-only root
-    /// needs no room, so its bytes stay those signed (M1.12).
+    /// least that big; `edel update` grows it again (M1.7).
     fn shrink(&self, image: &Path) -> Result<()> {
         self.runner
             .run(Command::new("e2fsck").arg("-fp").arg(image))?;

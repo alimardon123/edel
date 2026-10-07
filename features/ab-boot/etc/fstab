@@ -1,5 +1,5 @@
 # The root filesystem is whichever A/B slot GRUB started (the kernel finds
-# it by its partition's GPT id, PARTUUID), so it has no fixed name here. It stays read-only: changes to
+# it by UUID), so it has no fixed name here. It stays read-only: changes to
 # /etc, /home and /var live on the data partition (edel boot mount-data).
 # <device>  <mount>  <type>  <options>    <dump> <pass>
 /dev/root   /        ext4    ro,relatime  0      0
