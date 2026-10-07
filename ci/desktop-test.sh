@@ -82,6 +82,8 @@
 #   scroll      layout.tiling_style = "scroll" lays four windows on workspace
 #               4 out as columns, the newest whole and the first off screen;
 #               Super+Left and the window list scroll to them (M5.16c)
+#   sandbox     a client in a security context sees none of the shell's
+#               four protocols, which a plain client sees (M5.22)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1635,6 +1637,25 @@ case_scroll() {
 	echo "PASS: with scroll, four windows opened as columns with s4 whole and s1 off screen ($opened), Super+Left three times brought s1 whole, and a click on s4 in the window list scrolled back to it ($back)"
 }
 
+case_sandbox() {
+	# Only the shell may use the shell's protocols (M5.22): a plain test
+	# client is offered the layer shell, the window list, the workspaces
+	# and edel-shell-v1; one that connects through a socket it made with
+	# wp_security_context_v1, as Flatpak does for its apps, is offered
+	# none of the four, and still the core it draws with.
+	asked=$(count 'DESKTOP-TEST: sandbox ')
+	guest globals
+	wait_more 'DESKTOP-TEST: sandbox ' "$asked" || fail "the service did not list the globals"
+	plain=" $(value plain) "
+	sandboxed=" $(value sandbox) "
+	for g in zwlr_layer_shell_v1 zwlr_foreign_toplevel_manager_v1 ext_workspace_manager_v1 edel_shell_v1; do
+		case "$plain" in *" $g "*) ;; *) fail "a plain client is not offered $g:$plain" ;; esac
+		case "$sandboxed" in *" $g "*) fail "a sandboxed client is offered $g:$sandboxed" ;; esac
+	done
+	case "$sandboxed" in *" sandboxed globals "*" wl_compositor "*) ;; *) fail "the sandboxed client saw no wl_compositor:$sandboxed" ;; esac
+	echo "PASS: a client in a security context is offered none of the layer shell, the window list, the workspaces and edel-shell-v1, which a plain client is"
+}
+
 case_dmabuf() {
 	# Apps draw on the GPU (M5.19): the compositor offers
 	# zwp_linux_dmabuf_v1, version 4 with feedback, in the formats its
@@ -1718,15 +1739,22 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+# Every case is a case_NAME function, so this list is the functions
+# themselves and cannot miss one (the sandbox case was once left out).
+cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | scroll | shortcuts | styles | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, scroll, settings, shortcuts, styles, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
-		exit 1
+		case " $cases" in
+		*" $c "*) ;;
+		*)
+			echo "unknown case $c; the cases are $cases"
+			exit 1
+			;;
+		esac
 		;;
 	esac
 done

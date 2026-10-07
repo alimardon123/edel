@@ -169,6 +169,9 @@ pub struct Edel {
     _cursor_shapes: CursorShapeManagerState,
     _outputs: OutputManagerState,
     _presentation: PresentationState,
+    _security_context: smithay::wayland::security_context::SecurityContextState,
+    /// The event loop's handle, for the sockets sandboxes ask for (M5.22).
+    pub handle: Option<LoopHandle<'static, Edel>>,
 }
 
 impl Edel {
@@ -191,7 +194,16 @@ impl Edel {
                 [WmCapabilities::Maximize, WmCapabilities::Minimize],
             ),
             shm: ShmState::new::<Edel>(&display, Vec::new()),
-            layer_shell: WlrLayerShellState::new::<Edel>(&display),
+            // Panels and docks, but not sandboxed apps (M5.22).
+            layer_shell: WlrLayerShellState::new_with_filter::<Edel, _>(
+                &display,
+                crate::sandbox::shell_may,
+            ),
+            _security_context: smithay::wayland::security_context::SecurityContextState::new::<
+                Edel,
+                _,
+            >(&display, crate::sandbox::shell_may),
+            handle: None,
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take
@@ -745,10 +757,12 @@ fn insert_rect(table: &mut Table, rect: Rectangle<i32, Logical>) {
     }
 }
 
-/// Per client: the compositor's bookkeeping for its surfaces.
+/// Per client: the compositor's bookkeeping for its surfaces, and the
+/// sandbox it came from, if one marked it (M5.22, `sandbox.rs`).
 #[derive(Default)]
 pub struct ClientState {
     pub compositor: CompositorClientState,
+    pub security_context: Option<smithay::wayland::security_context::SecurityContext>,
 }
 
 impl ClientData for ClientState {
@@ -1054,7 +1068,12 @@ impl OutputHandler for Edel {
 
 /// Opens the Wayland socket (`wayland-1` or the next free name) and
 /// serves clients from the event loop; returns the socket's name.
-pub fn listen(handle: &LoopHandle<'static, Edel>, display: Display<Edel>) -> Result<String> {
+pub fn listen(
+    handle: &LoopHandle<'static, Edel>,
+    state: &mut Edel,
+    display: Display<Edel>,
+) -> Result<String> {
+    state.handle = Some(handle.clone());
     let socket = ListeningSocketSource::new_auto().context("opening a Wayland socket")?;
     let name = socket.socket_name().to_string_lossy().into_owned();
     handle
