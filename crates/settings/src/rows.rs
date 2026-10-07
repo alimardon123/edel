@@ -65,13 +65,7 @@ pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {
 /// The values `key` may take, as the key table lists them, so a row's
 /// choices are always the ones `edel settings set` takes.
 pub fn values(key: &str) -> &'static [&'static str] {
-    match edel::settings::KEYS.iter().find(|k| k.path == key) {
-        Some(edel::settings::Key {
-            kind: edel::settings::Kind::OneOf(values),
-            ..
-        }) => values,
-        _ => &[],
-    }
+    edel::settings::choices(key)
 }
 
 /// A value as a row shows it: `floating-only` is Floating only.

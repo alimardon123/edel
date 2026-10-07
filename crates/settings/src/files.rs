@@ -230,22 +230,7 @@ impl Files {
             .person
             .as_ref()
             .ok_or("there is no home folder to keep your settings in")?;
-        let text = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT));
-        let edited = match value {
-            Some(value) => settings::set(&text, key, value),
-            None => settings::unset(&text, key),
-        }
-        .map_err(|e| format!("{e:#}"))?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
-                .map_err(|e| format!("could not make {}: {e}", dir.display()))?;
-        }
-        // Through a rename, so the desktop never reads half a file.
-        let new = path.with_extension("toml.edel-new");
-        std::fs::write(&new, edited)
-            .and_then(|()| std::fs::rename(&new, path))
-            .map_err(|e| format!("could not write {}: {e}", path.display()))
+        settings::write(path, key, value).map_err(|e| format!("{e:#}"))
     }
 }
 

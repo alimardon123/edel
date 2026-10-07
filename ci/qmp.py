@@ -8,6 +8,7 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  which, unlike the tablet, can leave the
                                  first screen for the next (M5.2g)
     qmp.py click X Y             move the pointer to pixel X, Y and click
+    qmp.py rightclick X Y        the same with the right button (M5.16b)
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
     qmp.py key KEY...            press each chord, such as ctrl-alt-t or ret
@@ -24,7 +25,7 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  within 24 of RRGGBB in each channel, or
                                  none (M5.6a)
 
-The first nine talk to the QMP socket named by $QMP. Key names are
+The first ten talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -148,15 +149,15 @@ def nudge(qmp, dx, dy):
     qmp.run("input-send-event", events=events)
 
 
-def button(qmp, down):
+def button(qmp, down, which="left"):
     time.sleep(0.05)
-    qmp.run("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
+    qmp.run("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": which}}])
 
 
-def click(qmp, x, y):
+def click(qmp, x, y, which="left"):
     point(qmp, screen_size(qmp), x, y)
-    button(qmp, True)
-    button(qmp, False)
+    button(qmp, True, which)
+    button(qmp, False, which)
 
 
 def drag(qmp, x, y, to_x, to_y, steps=10):
@@ -265,6 +266,8 @@ def main(argv):
         nudge(qmp, int(args[0]), int(args[1]))
     elif command == "click":
         click(qmp, int(args[0]), int(args[1]))
+    elif command == "rightclick":
+        click(qmp, int(args[0]), int(args[1]), "right")
     elif command == "drag":
         drag(qmp, *map(int, args[:4]))
     elif command == "key":

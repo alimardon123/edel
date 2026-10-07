@@ -116,6 +116,8 @@ pub enum Input {
     /// A click this many logical pixels from its left edge, on the widget
     /// as wide as the second number.
     Click(f32, f32),
+    /// A right click, the same way: a widget's menu (M5.16b).
+    Menu(f32, f32),
     /// A scroll, in steps: positive towards the end.
     Scroll(i32),
 }
@@ -136,6 +138,8 @@ pub enum Action {
     TogglePolicy,
     /// Open the launcher, or close it (M5.3b).
     Launcher,
+    /// Open the tiling styles' menu beside the widget (M5.16b).
+    Styles,
     /// The app with this desktop file id: bring its window forward, or
     /// minimize it if it is the focused one, or start the app (M5.4c).
     App(String),

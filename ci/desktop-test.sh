@@ -77,7 +77,8 @@
 #   styles      layout.tiling_style = "split" leaves workspace 4 floating;
 #               Super+T tiles four windows there, each halving the one
 #               before; Super+Shift+Left swaps the last two, and stack
-#               lays them out as master and stack (M5.16a)
+#               lays them out as master and stack (M5.16a); the layout
+#               button's right-click menu chooses split (M5.16b)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1522,6 +1523,45 @@ case_styles() {
 	guest 'style default'
 	python3 ci/qmp.py key meta_l-t
 	python3 ci/qmp.py key meta_l-1
+	# The layout button's menu (M5.16b): a right click opens it above the
+	# button in the menus' colour with stack in use; a click on its second
+	# row, Split, writes layout.tiling_style to ci's file and the
+	# compositor follows, while workspace 1 still floats.
+	panel=$(token panel)
+	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
+	[ -n "$toggle" ] || fail "shell-ui did not say where its layout button lies"
+	shown=$(count 'edel-shell-ui: styles menu shown, stack in use')
+	python3 ci/qmp.py rightclick $((toggle + 18)) 780
+	wait_more 'edel-shell-ui: styles menu shown, stack in use' "$shown" ||
+		fail "a right click on the layout button at $((toggle + 18)),780 did not open the styles menu"
+	i=0
+	until value layers | grep -q 'edel-styles@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no styles menu: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-styles@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-styles@//; s/[,x]/ /g')
+	# Two rows of 36 px with 8 px round them, and the shadow's room, if
+	# the tier draws one, round the card.
+	room=$((($4 - 88) / 2))
+	mx=$(($1 + $3 / 2)) my=$(($2 + room + 8 + 36 + 18))
+	shot styles $((mx + 40)) $(($2 + room + 4)) "$panel" >/dev/null ||
+		fail "the styles menu at $1,$2 ${3}x$4 is not in the menus' #$panel"
+	tiled=$(count 'edel-compositor: windows now tiling')
+	chosen=$(count 'edel-compositor: tiling style split')
+	python3 ci/qmp.py click "$mx" "$my"
+	wait_more 'edel-compositor: tiling style split' "$chosen" ||
+		fail "a click on the menu's Split row at $mx,$my did not choose split"
+	guest 'settings file'
+	sleep 1
+	value settings_file | grep -q 'tiling_style = "split"' ||
+		fail "ci's settings file does not hold the chosen style: $(value settings_file)"
+	[ "$(count 'edel-compositor: windows now tiling')" = "$tiled" ] ||
+		fail "choosing a style tiled the floating workspace"
+	styled=$(count 'edel-compositor: tiling style stack')
+	guest 'style default'
+	wait_more 'edel-compositor: tiling style stack' "$styled" || fail "resetting layout.tiling_style did not bring stack back"
+	echo "PASS: the layout button's right-click menu showed stack in use, its Split row wrote layout.tiling_style = \"split\" and the compositor followed with workspace 1 still floating"
 	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+T tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
 

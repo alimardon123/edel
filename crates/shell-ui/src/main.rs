@@ -20,6 +20,7 @@ mod link;
 mod paint;
 mod popup;
 mod portal;
+mod styles;
 mod switcher;
 mod toplevels;
 mod widgets;
@@ -43,7 +44,7 @@ use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
 };
 use smithay_client_toolkit::seat::pointer::{
-    BTN_LEFT, PointerEvent, PointerEventKind, PointerHandler,
+    BTN_LEFT, BTN_RIGHT, PointerEvent, PointerEventKind, PointerHandler,
 };
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -74,6 +75,8 @@ const DOCK: &str = "edel-dock";
 const DOCK_MARGIN: i32 = 8;
 const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
+/// The layout button's menu of tiling styles (M5.16b).
+const STYLES: &str = "edel-styles";
 /// The launcher's distance from the panel and the screen's side.
 const MARGIN: i32 = 8;
 
@@ -99,6 +102,8 @@ struct Shell {
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
+    /// The tiling styles' menu while it is open (M5.16b).
+    styles: Option<StylesMenu>,
     /// Scrolling over a panel not yet a whole step.
     scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
@@ -121,6 +126,13 @@ struct Shell {
 struct Menu {
     popup: Popup<launcher::View>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+}
+
+/// The open tiling styles' menu, what it shows and the keyboard.
+struct StylesMenu {
+    popup: Popup<styles::View>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    view: styles::View,
 }
 
 /// One of the preset's panels.
@@ -269,6 +281,7 @@ fn run() -> Result<()> {
         panels,
         launcher: launcher::Launcher::default(),
         menu: None,
+        styles: None,
         flip: None,
         flipped: switcher::View::default(),
         scrolled: widgets::Scrolled::default(),
@@ -551,6 +564,7 @@ impl Shell {
             Some(Action::Minimize(window)) => self.toplevels.minimize(window),
             Some(Action::TogglePolicy) => self.link.toggle_policy(),
             Some(Action::Launcher) => self.toggle_launcher(),
+            Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::App(id)) => self.open_app(&id),
             None => {}
         }
@@ -591,6 +605,7 @@ impl Shell {
     /// Opens the launcher beside the first panel's start, on the screen
     /// the compositor picks, with the keyboard.
     fn open_launcher(&mut self) {
+        self.close_styles();
         let (edge, scale) = self
             .panels
             .first()
@@ -697,6 +712,144 @@ impl Shell {
         self.draw_launcher();
     }
 
+    /// A right click on the layout button: the tiling styles' menu opens
+    /// beside it, centred on `centre` logical pixels along panel `i`, or
+    /// closes if open (M5.16b).
+    fn toggle_styles(&mut self, i: usize, centre: f32) {
+        if self.styles.is_some() {
+            return self.close_styles();
+        }
+        self.close_launcher();
+        let Some(panel) = self.panels.get(i) else {
+            return;
+        };
+        let (edge, scale, panel_width) = (panel.edge, panel.scale, panel.width);
+        let size = styles::size(&self.tokens);
+        let room = paint::shadow_room(&self.tokens, !fillets());
+        let Some(popup) = Popup::new(self, STYLES, size, size, scale, room) else {
+            return;
+        };
+        let side = match edge {
+            Edge::Top => Anchor::TOP,
+            Edge::Bottom => Anchor::BOTTOM,
+        };
+        // Centred on the button, kept inside the screen.
+        let most = (panel_width as i32 - size.0 as i32 - MARGIN).max(MARGIN);
+        let left = (centre as i32 - size.0 as i32 / 2).clamp(MARGIN, most);
+        let surface = &popup.surface;
+        surface.set_anchor(side | Anchor::LEFT);
+        let m = MARGIN - room as i32;
+        surface.set_margin(m, m, m, left - room as i32);
+        surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
+        surface.commit();
+        let keyboard = self.seat.seats().next().and_then(|seat| {
+            self.seat
+                .get_keyboard_with_repeat(
+                    &self.qh,
+                    &seat,
+                    None,
+                    self.handle.clone(),
+                    Box::new(|shell: &mut Shell, _, event| shell.styles_key(event)),
+                )
+                .inspect_err(|e| eprintln!("edel-shell-ui: no keyboard for the styles menu: {e}"))
+                .ok()
+        });
+        let (machine, person) = settings_texts();
+        let chosen = styles::in_use(machine.as_deref(), person.as_deref());
+        self.styles = Some(StylesMenu {
+            popup,
+            keyboard,
+            view: styles::View {
+                chosen,
+                lit: chosen,
+            },
+        });
+    }
+
+    /// Closes the styles' menu and lets go of its keyboard and buffers.
+    fn close_styles(&mut self) {
+        let Some(menu) = self.styles.take() else {
+            return;
+        };
+        if let Some(keyboard) = &menu.keyboard {
+            keyboard.release();
+        }
+        eprintln!("edel-shell-ui: styles menu hidden");
+    }
+
+    /// Draws the styles' menu if what it shows changed.
+    fn draw_styles(&mut self) {
+        let Some(menu) = &mut self.styles else {
+            return;
+        };
+        let view = menu.view.clone();
+        let Some(mut pixmap) = menu.popup.canvas(&view) else {
+            return;
+        };
+        let scale = menu.popup.scale();
+        styles::paint(
+            &mut pixmap,
+            &view,
+            &self.tokens,
+            Some(&mut self.text),
+            scale,
+        );
+        if menu
+            .popup
+            .show(view, &pixmap, &self.tokens, "styles menu", &self.qh)
+        {
+            let style = styles::styles()
+                .get(menu.view.chosen)
+                .copied()
+                .unwrap_or("");
+            eprintln!("edel-shell-ui: styles menu shown, {style} in use");
+        }
+    }
+
+    /// The style in row `row` chosen: written to the person's settings
+    /// file, or taken out of it when it is what applies without it, as
+    /// writers never write a default (ADR-008); the menu closes.
+    fn choose_style(&mut self, row: usize) {
+        let Some(&style) = styles::styles().get(row) else {
+            return;
+        };
+        let (machine, _) = settings_texts();
+        let without = styles::in_use(machine.as_deref(), None);
+        let value = (row != without).then_some(style);
+        match places::person_settings().map(|p| places::found(&p)) {
+            Some(path) => match settings::write(&path, styles::KEY, value) {
+                Ok(()) => eprintln!("edel-shell-ui: tiling style {style} chosen"),
+                Err(e) => eprintln!("edel-shell-ui: could not choose the {style} style: {e:#}"),
+            },
+            None => eprintln!("edel-shell-ui: no home folder to keep the {style} style in"),
+        }
+        self.close_styles();
+    }
+
+    /// A key while the styles' menu is open: Escape closes, Up and Down
+    /// move, Return chooses.
+    fn styles_key(&mut self, event: KeyEvent) {
+        let Some(menu) = &mut self.styles else {
+            return;
+        };
+        let last = styles::styles().len().saturating_sub(1);
+        match event.keysym {
+            Keysym::Escape => return self.close_styles(),
+            Keysym::Return | Keysym::KP_Enter | Keysym::space => {
+                let row = menu.view.lit;
+                return self.choose_style(row);
+            }
+            Keysym::Up => menu.view.lit = menu.view.lit.saturating_sub(1),
+            Keysym::Down | Keysym::Tab => menu.view.lit = (menu.view.lit + 1).min(last),
+            _ => {}
+        }
+        self.draw_styles();
+    }
+
+    fn is_styles(&self, surface: &wl_surface::WlSurface) -> bool {
+        self.styles.as_ref().is_some_and(|m| m.popup.is(surface))
+    }
+
     /// The compositor's switcher shows `view`: its surface is made, or
     /// sized again when the number of titles changed, then drawn.
     fn show_switcher(&mut self, view: switcher::View) {
@@ -784,6 +937,8 @@ impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &LayerSurface) {
         if self.is_launcher(surface.wl_surface()) {
             self.close_launcher();
+        } else if self.is_styles(surface.wl_surface()) {
+            self.close_styles();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -804,6 +959,12 @@ impl LayerShellHandler for Shell {
                 menu.popup.configured();
             }
             return self.draw_launcher();
+        }
+        if self.is_styles(surface.wl_surface()) {
+            if let Some(menu) = &mut self.styles {
+                menu.popup.configured();
+            }
+            return self.draw_styles();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -836,6 +997,12 @@ impl CompositorHandler for Shell {
                 menu.popup.set_scale(factor);
             }
             return self.draw_launcher();
+        }
+        if self.is_styles(surface) {
+            if let Some(menu) = &mut self.styles {
+                menu.popup.set_scale(factor);
+            }
+            return self.draw_styles();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -873,6 +1040,12 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_launcher();
+        }
+        if self.is_styles(surface) {
+            if let Some(menu) = &mut self.styles {
+                menu.popup.framed();
+            }
+            return self.draw_styles();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1008,6 +1181,29 @@ impl PointerHandler for Shell {
                 }
                 continue;
             }
+            if self.is_styles(&event.surface) {
+                let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
+                let (x, y) = (
+                    event.position.0 as f32 - room,
+                    event.position.1 as f32 - room,
+                );
+                let row = styles::row_at(y, &self.tokens).filter(|_| x >= 0.0);
+                match &event.kind {
+                    PointerEventKind::Motion { .. } => {
+                        if let (Some(row), Some(menu)) = (row, &mut self.styles) {
+                            menu.view.lit = row;
+                            self.draw_styles();
+                        }
+                    }
+                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                        if let Some(row) = row {
+                            self.choose_style(row);
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
@@ -1015,6 +1211,9 @@ impl PointerHandler for Shell {
             match &event.kind {
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.input(i, x, Input::Click);
+                }
+                PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
+                    self.input(i, x, Input::Menu);
                 }
                 PointerEventKind::Leave { .. } => self.scrolled.reset(),
                 PointerEventKind::Axis {
@@ -1064,6 +1263,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.is_launcher(surface) {
             self.close_launcher();
+        } else if self.is_styles(surface) {
+            self.close_styles();
         }
     }
 
@@ -1075,7 +1276,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        self.launcher_key(event);
+        if self.styles.is_some() {
+            self.styles_key(event);
+        } else {
+            self.launcher_key(event);
+        }
     }
 
     fn repeat_key(
@@ -1086,7 +1291,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        self.launcher_key(event);
+        if self.styles.is_some() {
+            self.styles_key(event);
+        } else {
+            self.launcher_key(event);
+        }
     }
 
     fn release_key(
@@ -1110,6 +1319,16 @@ impl KeyboardHandler for Shell {
         _: u32,
     ) {
     }
+}
+
+/// The machine's settings file and the person's, as text, for what the
+/// menus mark as in use.
+fn settings_texts() -> (Option<String>, Option<String>) {
+    let read = |path: std::path::PathBuf| std::fs::read_to_string(places::found(&path)).ok();
+    (
+        read(places::machine_settings()),
+        places::person_settings().and_then(read),
+    )
 }
 
 delegate_registry!(Shell);
