@@ -240,6 +240,9 @@ commands() {
 		'style split') edel settings set layout.tiling_style=split ;;
 		'style stack') edel settings set layout.tiling_style=stack ;;
 		'style default') edel settings reset layout.tiling_style ;;
+		# The style the panel's menu wrote to ci's own file (M5.16b),
+		# taken out again.
+		'style mine default') as_ci "sed -i '/^tiling_style = /d' /home/ci/.config/edel/$settings_name" ;;
 		'four windows') four_windows & ;;
 		'four off') pkill -f '[e]del-testclient --size 200x150 --colour 3366cc' ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to

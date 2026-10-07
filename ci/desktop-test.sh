@@ -1559,8 +1559,8 @@ case_styles() {
 	[ "$(count 'edel-compositor: windows now tiling')" = "$tiled" ] ||
 		fail "choosing a style tiled the floating workspace"
 	styled=$(count 'edel-compositor: tiling style stack')
-	guest 'style default'
-	wait_more 'edel-compositor: tiling style stack' "$styled" || fail "resetting layout.tiling_style did not bring stack back"
+	guest 'style mine default'
+	wait_more 'edel-compositor: tiling style stack' "$styled" || fail "taking layout.tiling_style out of ci's file did not bring stack back"
 	echo "PASS: the layout button's right-click menu showed stack in use, its Split row wrote layout.tiling_style = \"split\" and the compositor followed with workspace 1 still floating"
 	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+T tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
