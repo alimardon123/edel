@@ -1,0 +1,61 @@
+#!/bin/sh
+# Sets the clock once with busybox ntpd, from the servers the settings file
+# names in region.time_servers or, without that key, pool.ntp.org (roadmap
+# M1.13, started by the edel-clock service). Prints one line saying what
+# happened, on the console and in the system log, and writes the hardware
+# clock when it set the system's. It always exits 0 and gives up after
+# EDEL_CLOCK_TIMEOUT seconds (30), so the clock stays as it was when no
+# server answers; it runs in the background, so nothing waits for it.
+# Daily re-sync: no feature runs crond, so none (no service runs unless
+# someone uses what it serves); each boot sets the clock.
+
+timeout_s=${EDEL_CLOCK_TIMEOUT:-30}
+default_server=pool.ntp.org
+
+say() {
+	echo "edel-clock: $1"
+	logger -t edel-clock -- "$1" 2>/dev/null || true
+}
+
+now() {
+	date -u '+%Y-%m-%d %H:%M UTC'
+}
+
+# region.time_servers as `edel settings get --toml` prints it:
+#   [region]
+#   time_servers = ["a.example", "b.example"]
+# Only plain host names are kept, so a hand-edited file cannot slip an
+# option to ntpd (a word starting with "-").
+servers=
+list=$(/usr/bin/edel settings get --toml region.time_servers 2>/dev/null |
+	tr -d '\n' | sed -n 's/.*time_servers *= *\[\([^]]*\)\].*/\1/p' | tr -d '",')
+for server in $list; do
+	case $server in
+	-* | *[!A-Za-z0-9.-]*) ;;
+	*) servers="$servers $server" ;;
+	esac
+done
+[ -n "$servers" ] || servers=" $default_server"
+
+args=
+names=
+for server in $servers; do
+	args="$args -p $server"
+	names="${names:+$names, }$server"
+done
+
+before=$(now)
+# shellcheck disable=SC2086 # one -p per server
+if timeout "$timeout_s" ntpd -n -q $args >/dev/null 2>&1; then
+	hwclock -w -u 2>/dev/null || true
+	after=$(now)
+	# Say what the clock said before only when the minute is another one.
+	if [ "$after" = "$before" ]; then
+		say "set the clock from $names: $after"
+	else
+		say "set the clock from $names: $after (it said $before)"
+	fi
+else
+	say "warning: no time server answered within $timeout_s s ($names); the clock stays as it was, $before; check the network, or name other servers with edel settings set region.time_servers"
+fi
+exit 0

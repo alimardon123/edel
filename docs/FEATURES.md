@@ -10,7 +10,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 |---|---|---|---|---|
 | `base` | The identity (os-release, issue, motd) and what apk needs; modules `ext4`, `overlay` | `alpine-keys`, `busybox-binsh`, `ca-certificates-bundle` | none | every image |
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
-| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; mount-ro, killprocs, savecache | vm, desktop |
+| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP, and the clock set from the network once at each start (`edel-clock`, busybox `ntpd`, M1.13) | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; edel-clock; mount-ro, killprocs, savecache | vm, desktop |
 | `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm |
 | `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle | desktop |
 | `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, desktop |
