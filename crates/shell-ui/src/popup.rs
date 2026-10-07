@@ -12,12 +12,12 @@ use smithay_client_toolkit::reexports::client::protocol::{wl_shm, wl_surface};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
 use smithay_client_toolkit::shm::slot::SlotPool;
-use tiny_skia::{Pixmap, PixmapPaint, Transform};
+use tiny_skia::{Pixmap, PixmapPaint, Stroke, Transform};
 
 use edel::tokens::Tokens;
 
 use crate::Shell;
-use crate::paint::{self, Text, fill, lit};
+use crate::paint::{self, Text, fill, lit, mix, paint_of};
 
 /// The room round a card's rows, and text's from a row's left, in logical
 /// pixels.
@@ -264,6 +264,51 @@ pub fn rows<'a>(
         let mut line = text.fit(label, size, room);
         let y = middle(top + i as f32 * row, row, size, s);
         text.draw(pixmap, &mut line, (PAD + INSET) * s, y, tokens.panel_text);
+    }
+}
+
+/// A radio button `d` logical pixels across with its top left corner at
+/// `x`, `y` logical pixels, at scale `s`: a ring, and when `on` the ring
+/// and a dot half its width in the accent, so exactly one row of a menu
+/// shows it is the choice. Off, the ring is the panel's text dimmed
+/// towards the card, the colour of a picture's tiles. The ring is as thick
+/// as a picture's frame lines, 1.5 px, because the tokens have no line
+/// width.
+pub fn radio(pixmap: &mut Pixmap, tokens: &Tokens, x: f32, y: f32, d: f32, on: bool, s: f32) {
+    let ring = (1.5 * s).max(1.0);
+    let (cx, cy) = ((x + d / 2.0) * s, (y + d / 2.0) * s);
+    // The stroke lies half inside and half outside its path.
+    let r = d / 2.0 * s - ring / 2.0;
+    let ink = if on {
+        tokens.accent
+    } else {
+        mix(tokens.panel_text, tokens.panel, 0.45)
+    };
+    let Some(circle) = tiny_skia::PathBuilder::from_circle(cx, cy, r) else {
+        return;
+    };
+    let stroke = Stroke {
+        width: ring,
+        ..Stroke::default()
+    };
+    pixmap.stroke_path(
+        &circle,
+        &paint_of(ink),
+        &stroke,
+        Transform::identity(),
+        None,
+    );
+    if on {
+        let dot = tiny_skia::PathBuilder::from_circle(cx, cy, d / 4.0 * s);
+        if let Some(dot) = dot {
+            pixmap.fill_path(
+                &dot,
+                &paint_of(ink),
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
     }
 }
 
