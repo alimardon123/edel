@@ -6,6 +6,8 @@
 
 use smithay::input::keyboard::XkbConfig;
 
+use edel_compositor::messages;
+
 use crate::state::Edel;
 
 impl Edel {
@@ -46,7 +48,8 @@ impl Edel {
                 eprintln!("edel-compositor: keyboard {which} {}", names.join(", "));
             }
             Err(e) => eprintln!(
-                "edel-compositor: keyboard layout {written:?} could not be loaded ({e:?}); keeping the layout in use"
+                "edel-compositor: {}",
+                messages::keyboard_not_loaded(&written, format!("{e:?}"))
             ),
         }
     }

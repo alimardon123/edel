@@ -21,7 +21,7 @@ One line when it fits; the cause chain after it, most specific last, only when i
 - **Plain words**, short sentences, no jargon a person cannot look up. A technical name (a path, a key, a command) goes in as it is, so it can be searched and copied.
 - **Lower case, no final period** for command-line messages (`crates/edel/CLAUDE.md`); Settings shows the same text as a sentence.
 - **Values quoted** when they could hide spaces or be empty: `"ali laptop"`.
-- **One prefix per part**, so a mixed log reads at a glance: `edel update: ...`, `edel settings: ...`, `edel-compositor: ...`, `edel-shell-ui: ...`.
+- **One prefix per part**, so a mixed log reads at a glance: `edel update: ...`, `edel settings: ...`, `edel-compositor: ...`, `edel-shell-ui: ...`. `edel` prefixes the command the person ran, on its progress lines and on a failure's one line (`edel update: refused: expired: ...`).
 - **Warnings** start `warning:` and say what still worked: `warning: the clock could not be read; the panel shows no time`.
 - **Progress** says what is happening now and what it led to, never only "done": `edel update: slot B written and checked (412 MiB, 9 s); restart to use it`.
 - **Numbers carry units** (MiB, s, ms) and come from measurements.

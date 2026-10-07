@@ -16,6 +16,8 @@ use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
 use edel::places;
 
+use edel_compositor::messages;
+
 use crate::state::Edel;
 
 /// Reads the settings now and follows both files from here on.
@@ -24,7 +26,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     let inotify = match Inotify::init() {
         Ok(inotify) => inotify,
         Err(e) => {
-            eprintln!("edel-compositor: changes to the settings are not followed: {e}");
+            eprintln!("edel-compositor: {}", messages::settings_not_followed(e));
             return;
         }
     };
@@ -44,7 +46,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     for dir in [machine, person].into_iter().flatten() {
         match inotify.watches().add(&dir, mask) {
             Ok(_) => watched += 1,
-            Err(e) => eprintln!("edel-compositor: not following {}: {e}", dir.display()),
+            Err(e) => eprintln!(
+                "edel-compositor: {}",
+                messages::folder_not_followed(&dir, e)
+            ),
         }
     }
     if watched == 0 {
@@ -84,6 +89,6 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         },
     );
     if let Err(e) = inserted {
-        eprintln!("edel-compositor: changes to the settings are not followed: {e}");
+        eprintln!("edel-compositor: {}", messages::settings_not_followed(e));
     }
 }

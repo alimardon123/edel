@@ -13,6 +13,8 @@ use std::thread;
 use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::channel::{self, Event};
 
+use edel_compositor::messages;
+
 use crate::state::Edel;
 
 pub struct Program {
@@ -51,7 +53,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
     let child = match command.spawn() {
         Ok(child) => child,
         Err(e) => {
-            eprintln!("edel-compositor: {name} did not start: {e}; the session ends");
+            eprintln!(
+                "edel-compositor: {}",
+                messages::program_not_started(&name, e)
+            );
             state.signal.stop();
             return;
         }
@@ -108,6 +113,6 @@ pub fn open(state: &Edel, name: &str) {
                 eprintln!("edel-compositor: waiting for {name} failed: {e}");
             }
         }
-        Err(e) => eprintln!("edel-compositor: {name} did not start: {e}"),
+        Err(e) => eprintln!("edel-compositor: {}", messages::app_not_started(name, e)),
     }
 }

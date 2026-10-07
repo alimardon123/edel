@@ -11,6 +11,8 @@ use std::path::Path;
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
 
+use edel_compositor::messages;
+
 /// Where the session keeps the file (M4.1 made the directory).
 pub const PATH: &str = edel::places::STATE_FILE;
 
@@ -38,7 +40,7 @@ impl StateFile {
                         text = newer;
                     }
                     if let Err(e) = replace(Path::new(PATH), &text) {
-                        eprintln!("edel-compositor: writing {PATH} failed: {e}");
+                        eprintln!("edel-compositor: {}", messages::state_not_written(PATH, e));
                     }
                 }
             });

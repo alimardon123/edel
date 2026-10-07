@@ -303,6 +303,50 @@ pub fn value_row(group: &gtk::Box, title: &str, value: &str) {
     group.append(&row);
 }
 
+/// A row of plain words in `group`, such as what to do when there is
+/// nothing to show.
+pub fn text_row(group: &gtk::Box, text: &str) {
+    let label = gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
+        .selectable(true)
+        .css_classes(["edel-row", "edel-row-subtitle"])
+        .build();
+    group.append(&label);
+}
+
+/// A row in `group` that opens to show `text` in a read-only box, in a
+/// fixed-width font and scrolled to its end, as About's session log is:
+/// the newest line is the one people need.
+pub fn log_row(group: &gtk::Box, title: &str, text: &str) {
+    let view = gtk::TextView::builder()
+        .editable(false)
+        .cursor_visible(false)
+        .monospace(true)
+        .wrap_mode(gtk::WrapMode::WordChar)
+        .build();
+    view.buffer().set_text(text);
+    view.update_property(&[gtk::accessible::Property::Label(title)]);
+    view.connect_map(|view| {
+        let buffer = view.buffer();
+        let mark = buffer.create_mark(None, &buffer.end_iter(), false);
+        view.scroll_to_mark(&mark, 0.0, false, 0.0, 1.0);
+    });
+    let scroll = gtk::ScrolledWindow::builder()
+        .min_content_height(220)
+        .max_content_height(360)
+        .propagate_natural_height(true)
+        .child(&view)
+        .build();
+    let expander = gtk::Expander::builder()
+        .label(title)
+        .child(&scroll)
+        .css_classes(["edel-row"])
+        .build();
+    group.append(&expander);
+}
+
 /// Shows that `button` copied: its icon a check for a moment.
 pub fn copied(button: &gtk::Button) {
     button.set_child(Some(&icon::image("check", 12)));

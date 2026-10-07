@@ -612,7 +612,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
 /// beside it, left by `edel migrate` for this release's format, is read
 /// instead. Without one this fails, and the caller applies nothing.
 pub fn read_on_machine(path: &Path) -> Result<Read> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     let table: Table = toml::from_str(&text)
         .with_context(|| format!("{} is not valid TOML; nothing is applied", path.display()))?;
     let format = format_of(&table)?;
@@ -627,7 +628,7 @@ pub fn read_on_machine(path: &Path) -> Result<Read> {
             older.display()
         );
     };
-    let mut read = read(&text).with_context(|| format!("reading {}", older.display()))?;
+    let mut read = read(&text).with_context(|| format!("could not read {}", older.display()))?;
     read.problems.insert(
         0,
         Problem {
@@ -733,11 +734,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
     let entry = known_key(key, &path)?;
     let value = normalize(entry.kind, &value_from_arg(value)).map_err(|m| anyhow!("{key}: {m}"))?;
     if !entry.supported {
-        bail!("{key}: not supported yet");
+        bail!("{key}: not supported yet; this release does not act on it, so it cannot be set");
     }
     let new = toml_edit_value(&value)?;
     let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
-    let (last, parents) = path.split_last().context("no key given")?;
+    let (last, parents) = path
+        .split_last()
+        .context("no key given; write KEY=VALUE, such as network.hostname=lab-1")?;
     let mut table = doc.as_table_mut();
     for (i, part) in parents.iter().enumerate() {
         let item = table.entry(part).or_insert_with(|| {
@@ -791,7 +794,7 @@ pub fn unset(text: &str, key: &str) -> Result<String> {
         _ => remove_path(doc.as_table_mut(), &path)?,
     };
     if !removed {
-        bail!("{key} is not in the file");
+        bail!("{key} is not in the file, so it already has its default; there is nothing to reset");
     }
     Ok(doc.to_string())
 }
@@ -824,10 +827,17 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
     }
     KEYS.iter()
         .find(|k| matches(k.path, &names, false))
-        .ok_or_else(|| match nearest_key(key) {
-            Some(near) => anyhow!("{key}: unknown key; did you mean {near}?"),
-            None => anyhow!("{key}: unknown key; edel settings lists the pages, and edel settings get PAGE their keys"),
-        })
+        .ok_or_else(|| anyhow!("{key}: {}", unknown_key(key)))
+}
+
+/// What is said of a key no page has, by `set`, `check` and `apply`: the
+/// nearest key when one is close, else where the keys are listed.
+fn unknown_key(key: &str) -> String {
+    match nearest_key(key) {
+        Some(near) => format!("unknown key; did you mean {near}?"),
+        None => "unknown key; edel settings lists the pages, and edel settings get PAGE their keys"
+            .to_string(),
+    }
 }
 
 /// The known key nearest to the mistyped `key`, such as `layout.preset` for
@@ -936,8 +946,8 @@ fn read_table(table: &Table) -> Result<Read> {
     // The key table already left out unknown keys; anything ignored here is
     // a key the table lists but the structs lack, which a test prevents.
     problems.extend(ignored.into_iter().map(|key| Problem {
+        message: unknown_key(&key),
         key,
-        message: "unknown key".into(),
     }));
     Ok(Read {
         file,
@@ -992,8 +1002,8 @@ fn clean(
             }
         } else {
             problems.push(Problem {
+                message: unknown_key(&shown),
                 key: shown,
-                message: "unknown key".into(),
             });
         }
     }
@@ -1268,7 +1278,12 @@ font_size = 11
     #[test]
     fn check_names_an_unknown_key() {
         let lines = check(MIXED).unwrap();
-        assert!(lines.contains(&"appearance.acent: unknown key".to_string()));
+        assert!(
+            lines.contains(
+                &"appearance.acent: unknown key; did you mean appearance.accent?".to_string()
+            ),
+            "{lines:?}"
+        );
     }
 
     #[test]
@@ -1467,7 +1482,7 @@ font_size = 11
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
             error("appearance.font_size", "11"),
-            "appearance.font_size: not supported yet"
+            "appearance.font_size: not supported yet; this release does not act on it, so it cannot be set"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }
@@ -1479,7 +1494,12 @@ font_size = 11
             unset_once,
             "format = 1\nfuture.key = 1 # kept\n\n# The person who runs CI\n[users.ci]\nadmin = true\n"
         );
-        assert!(unset(&unset_once, "network.hostname").is_err());
+        assert_eq!(
+            unset(&unset_once, "network.hostname")
+                .unwrap_err()
+                .to_string(),
+            "network.hostname is not in the file, so it already has its default; there is nothing to reset"
+        );
         assert_eq!(
             unset(EDITED, "future.key").unwrap(),
             EDITED.replace("future.key = 1 # kept\n", "")

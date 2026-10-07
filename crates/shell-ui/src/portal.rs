@@ -137,7 +137,7 @@ pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
     let connection = match built {
         Ok(connection) => connection,
         Err(e) => {
-            eprintln!("edel-shell-ui: no settings portal: {e}");
+            eprintln!("edel-shell-ui: {}", crate::messages::portal_not_served(e));
             return None;
         }
     };
@@ -157,7 +157,7 @@ pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
             })
         });
     if let Err(e) = said {
-        eprintln!("edel-shell-ui: the settings portal could not say its settings: {e}");
+        eprintln!("edel-shell-ui: {}", crate::messages::portal_not_said(e));
     }
     Some(connection)
 }

@@ -20,6 +20,7 @@ use sha2::{Digest, Sha256};
 use crate::grubenv::{Env, Slot};
 use crate::release::os_release_value;
 
+const MIB: u64 = 1 << 20;
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
 const RUN_DIR: &str = edel::places::RUN_DIR;
 /// The environment block, relative to the EFI system partition.
@@ -49,8 +50,8 @@ pub(crate) struct Disk {
 
 impl Disk {
     pub(crate) fn find() -> Result<Disk> {
-        let mountinfo =
-            fs::read_to_string("/proc/self/mountinfo").context("reading /proc/self/mountinfo")?;
+        let mountinfo = fs::read_to_string("/proc/self/mountinfo")
+            .context("could not read /proc/self/mountinfo")?;
         find_disk(&mountinfo, Path::new("/sys"))
     }
 
@@ -97,7 +98,7 @@ fn root_device(mountinfo: &str) -> Result<&str> {
 
 fn read_trimmed(path: &Path) -> Result<String> {
     Ok(fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?
+        .with_context(|| format!("could not read {}", path.display()))?
         .trim()
         .to_string())
 }
@@ -107,13 +108,16 @@ fn read_trimmed(path: &Path) -> Result<String> {
 fn find_disk(mountinfo: &str, sys: &Path) -> Result<Disk> {
     let root_dev = root_device(mountinfo)?.to_string();
     let link = sys.join("dev/block").join(&root_dev);
-    let root = fs::canonicalize(&link).with_context(|| format!("resolving {}", link.display()))?;
+    let root =
+        fs::canonicalize(&link).with_context(|| format!("could not resolve {}", link.display()))?;
     if !root.join("partition").exists() {
-        bail!("/ is not on a disk partition");
+        bail!(
+            "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on a disk partition"
+        );
     }
     let number: u32 = read_trimmed(&root.join("partition"))?.parse()?;
     let running = Slot::from_partition(number)
-        .context("/ is not on slot A (partition 2) or slot B (partition 3)")?;
+        .context("this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on slot A (partition 2) or slot B (partition 3)")?;
     let disk_dir = root.parent().context("the root partition has no disk")?;
     let mut parts = Vec::new();
     for entry in fs::read_dir(disk_dir)? {
@@ -183,7 +187,9 @@ fn confirm(env: &mut Env, running: Slot) -> Option<Slot> {
 fn roll_back(env: &mut Env, running: Slot) -> Result<Slot> {
     let target = running.other();
     if !env.ok(target) {
-        bail!("slot {target} is switched off, so there is nothing to roll back to");
+        bail!(
+            "slot {target} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
+        );
     }
     env.set_order(target);
     env.set_slot(target, true, 0);
@@ -219,7 +225,9 @@ impl Esp {
             mounted_here: true,
         };
         if !esp.env_path().is_file() {
-            bail!("the EFI system partition has no {ENV_FILE}");
+            bail!(
+                "the EFI system partition has no {ENV_FILE}, so the slots cannot be read; this disk was not made by edel install, or it is damaged"
+            );
         }
         Ok(esp)
     }
@@ -229,7 +237,9 @@ impl Esp {
     }
 
     fn load(&self) -> Result<Env> {
-        Env::parse(&fs::read_to_string(self.env_path()).context("reading the GRUB environment")?)
+        Env::parse(
+            &fs::read_to_string(self.env_path()).context("could not read the GRUB environment")?,
+        )
     }
 
     /// Rewrites the block in place, as GRUB's `save_env` does, so it keeps
@@ -238,7 +248,7 @@ impl Esp {
         let file = OpenOptions::new()
             .write(true)
             .open(self.env_path())
-            .context("opening the GRUB environment")?;
+            .context("could not open the GRUB environment")?;
         file.write_all_at(env.render()?.as_bytes(), 0)?;
         file.sync_all()?;
         Ok(())
@@ -284,7 +294,8 @@ pub(crate) struct Lock(PathBuf);
 
 impl Lock {
     pub(crate) fn take(name: &str, what: &str) -> Result<Lock> {
-        fs::create_dir_all(RUN_DIR)?;
+        fs::create_dir_all(RUN_DIR)
+            .map_err(|err| io_failure(err, &format!("could not write {RUN_DIR}")))?;
         let path = Path::new(RUN_DIR).join(format!("{name}.lock"));
         for _ in 0..2 {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
@@ -304,10 +315,31 @@ impl Lock {
                     // the kernel no longer knows its pid.
                     fs::remove_file(&path)?;
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => {
+                    return Err(io_failure(
+                        err,
+                        &format!("could not take the lock {}", path.display()),
+                    ));
+                }
             }
         }
-        bail!("cannot take {}", path.display())
+        bail!(
+            "could not take the lock {}: another edel command took it first; try again",
+            path.display()
+        )
+    }
+}
+
+/// `err` as the message for what failed (`doing`): a refusal by the system
+/// says to run the command as root, which is what a first try as an
+/// ordinary user needs to read (docs/MESSAGES.md).
+pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
+    if err.kind() == std::io::ErrorKind::PermissionDenied {
+        anyhow::anyhow!(
+            "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)"
+        )
+    } else {
+        anyhow::Error::new(err).context(doing.to_string())
     }
 }
 
@@ -346,7 +378,7 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
     let status = cmd
         .stdin(Stdio::null())
         .status()
-        .with_context(|| format!("starting {:?}", cmd.get_program()))?;
+        .with_context(|| format!("could not start {:?}", cmd.get_program()))?;
     if !status.success() {
         bail!("{:?} failed with {status}", cmd.get_program());
     }
@@ -443,7 +475,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     };
     let room = size_of(&target)?;
     if size > room {
-        bail!("the image ({size} bytes) does not fit in slot {slot} ({room} bytes)");
+        bail!("{}", too_big(slot, size, room));
     }
 
     // The EFI system partition is mounted only while it is written: here,
@@ -455,21 +487,24 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         esp.save(&env)?;
     }
 
-    println!("writing {location} to slot {slot} ({})", target.display());
+    println!(
+        "edel update: writing {location} to slot {slot} ({})",
+        target.display()
+    );
     let mut dst = OpenOptions::new()
         .write(true)
         .open(&target)
-        .with_context(|| format!("opening {}", target.display()))?;
+        .with_context(|| format!("could not open {}", target.display()))?;
     let (written, streamed) = copy_hashing(&mut source, &mut dst)?;
     dst.sync_all()?;
     drop(dst);
     if expected.as_ref().is_some_and(|e| *e != streamed) || written != size {
-        bail!("refused: sha256: the image does not match release.toml; slot {slot} stays off");
+        bail!("{}", wrong_checksum(slot));
     }
     // Drop cached blocks, so the check reads what is on the disk.
     run(Command::new("blockdev").arg("--flushbufs").arg(&target))?;
     if hash_prefix(&target, written)? != streamed {
-        bail!("slot {slot} does not match the image after writing; it stays off");
+        bail!("{}", not_read_back(slot));
     }
 
     // The slot keeps the signed bytes for its whole life (M1.12): checked
@@ -482,9 +517,9 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .context("starting e2fsck")?;
+        .context("could not start e2fsck")?;
     if fsck.code() != Some(0) {
-        bail!("slot {slot} has filesystem errors; it stays off");
+        bail!("{}", file_system_errors(slot));
     }
 
     let esp = Esp::mount(&disk)?;
@@ -492,11 +527,41 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     after_install(&mut env, slot);
     esp.save(&env)?;
     println!(
-        "slot {slot} is ready and starts next time. If it fails to start, \
-         Edel OS goes back to slot {} on its own.",
+        "edel update: slot {slot} written and checked; restart to use it; if it fails to start, \
+         Edel OS goes back to slot {} on its own",
         disk.running
     );
     Ok(())
+}
+
+/// The update image does not fit the slot it was to be written to.
+fn too_big(slot: Slot, size: u64, room: u64) -> String {
+    format!(
+        "the update image is {} MiB and slot {slot} holds {} MiB, so nothing was written; the running system is unchanged",
+        size.div_ceil(MIB),
+        room / MIB
+    )
+}
+
+/// The written image is not the one release.toml lists.
+fn wrong_checksum(slot: Slot) -> String {
+    format!(
+        "refused: sha256: the image does not match the checksum in release.toml, so it is damaged or was changed on the way; slot {slot} stays switched off and the running system is unchanged; run edel update again"
+    )
+}
+
+/// The disk gave back something other than what was written.
+fn not_read_back(slot: Slot) -> String {
+    format!(
+        "slot {slot} does not read back as written, so the disk may be failing; it stays switched off and the running system is unchanged; run edel update again"
+    )
+}
+
+/// `e2fsck` found errors in the written slot.
+fn file_system_errors(slot: Slot) -> String {
+    format!(
+        "slot {slot} has file system errors after writing; it stays switched off and the running system is unchanged; run edel update again"
+    )
 }
 
 /// Copies `src` into `dst`, returning the bytes written and their SHA-256.
@@ -505,12 +570,13 @@ fn copy_hashing(src: &mut dyn Read, dst: &mut dyn Write) -> Result<(u64, Vec<u8>
     let mut buf = vec![0u8; 1 << 20];
     let mut total = 0u64;
     loop {
-        let n = src.read(&mut buf).context("reading the image")?;
+        let n = src.read(&mut buf).context("could not read the image")?;
         if n == 0 {
             break;
         }
         hasher.update(&buf[..n]);
-        dst.write_all(&buf[..n]).context("writing the slot")?;
+        dst.write_all(&buf[..n])
+            .context("could not write the slot")?;
         total += n as u64;
     }
     Ok((total, hasher.finalize().to_vec()))
@@ -539,7 +605,9 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
         lines.push(format!("edel update: {msg}"));
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
         if let Err(err) = record_fallback(failed, disk.running) {
-            eprintln!("warning: could not record the fallback: {err:#}");
+            eprintln!(
+                "warning: the fallback happened but could not be recorded: {err:#}; Settings will not mention it"
+            );
         }
     }
     esp.save(&env)?;
@@ -550,7 +618,9 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     }) {
         Ok(Some(line)) => lines.push(line),
         Ok(None) => {}
-        Err(err) => lines.push(format!("warning: the boot loader was not updated: {err:#}")),
+        Err(err) => lines.push(format!(
+            "warning: the boot loader was not updated: {err:#}; the slot is confirmed and the boot loader before it stays"
+        )),
     }
     Ok(lines)
 }
@@ -570,7 +640,7 @@ fn record_fallback(from: Slot, to: Slot) -> Result<()> {
         .arg("-u")
         .arg("+%Y-%m-%dT%H:%M:%SZ")
         .output()
-        .context("starting date")?;
+        .context("could not start date")?;
     let date = String::from_utf8_lossy(&date.stdout).trim().to_string();
     fs::create_dir_all(edel::places::DATA_DIR)?;
     fs::write(
@@ -589,7 +659,7 @@ pub fn rollback() -> Result<()> {
     let target = roll_back(&mut env, disk.running)?;
     esp.save(&env)?;
     println!(
-        "slot {target} starts after the next reboot; slot {} stays installed",
+        "edel rollback: slot {target} starts after the next restart; slot {} stays installed",
         disk.running
     );
     Ok(())
@@ -645,6 +715,7 @@ mod tests {
         let sys = sysfs("outside-slots", 1);
         let err = find_disk(&mountinfo(1), &sys).unwrap_err();
         assert!(err.to_string().contains("not on slot A"));
+        assert!(err.to_string().contains("no slots to update or roll back"));
         fs::remove_dir_all(&sys).unwrap();
     }
 
@@ -732,8 +803,54 @@ mod tests {
         let mut env = Env::initial();
         let before = env.clone();
         let err = roll_back(&mut env, Slot::A).unwrap_err();
-        assert!(err.to_string().contains("slot B is switched off"));
+        assert_eq!(
+            err.to_string(),
+            "slot B is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
+        );
         assert_eq!(env, before);
+    }
+
+    /// What `edel update` says when it stops before or after writing a
+    /// slot (docs/MESSAGES.md): what failed, why, and what is safe.
+    #[test]
+    fn an_update_that_stops_says_what_is_safe_and_what_to_do() {
+        assert_eq!(
+            too_big(Slot::B, 5000 * MIB + 1, 4096 * MIB),
+            "the update image is 5001 MiB and slot B holds 4096 MiB, so nothing was written; the running system is unchanged"
+        );
+        let wrong = wrong_checksum(Slot::B);
+        assert!(wrong.starts_with("refused: sha256: "), "{wrong}");
+        assert!(wrong.ends_with(
+            "slot B stays switched off and the running system is unchanged; run edel update again"
+        ));
+        for text in [not_read_back(Slot::A), file_system_errors(Slot::A)] {
+            assert!(text.contains("slot A "), "{text}");
+            assert!(text.ends_with("it stays switched off and the running system is unchanged; run edel update again"), "{text}");
+        }
+    }
+
+    /// A first try as an ordinary user reads that it needs root, not
+    /// `Permission denied (os error 13)`.
+    #[test]
+    fn a_refused_write_says_to_run_it_as_root() {
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            io_failure(denied, "could not write /run/edel").to_string(),
+            "could not write /run/edel: permission denied; this changes the system, so run it as root (sudo edel ...)"
+        );
+        let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
+        let text = format!("{:#}", io_failure(full, "could not write /run/edel"));
+        assert!(text.starts_with("could not write /run/edel: "), "{text}");
+        assert!(!text.contains("permission denied"), "{text}");
+    }
+
+    #[test]
+    fn a_held_lock_says_who_holds_it() {
+        assert_eq!(
+            holder("812 edel update\n"),
+            "edel update (pid 812) is running"
+        );
+        assert_eq!(holder(""), "another command is starting");
     }
 
     #[test]

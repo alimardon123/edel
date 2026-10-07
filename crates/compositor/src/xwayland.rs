@@ -21,6 +21,8 @@ use smithay::reexports::calloop::channel::{self, Event, Sender};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction, RegistrationToken};
 
+use edel_compositor::messages;
+
 use crate::state::Edel;
 
 const PROGRAM: &str = "xwayland-satellite";
@@ -126,7 +128,7 @@ fn start_satellite(state: &mut Edel, firing: usize) {
             eprintln!("edel-compositor: {PROGRAM} started for :{}", x11.number);
         }
         Err(e) => {
-            eprintln!("edel-compositor: {PROGRAM} did not start: {e}");
+            eprintln!("edel-compositor: {}", messages::x11_not_started(PROGRAM, e));
             x11.refuse_waiting();
             x11.wait_again();
         }
