@@ -361,7 +361,7 @@ fn size_of(path: &Path) -> Result<u64> {
 }
 
 /// SHA-256 of the first `len` bytes of `path`.
-fn hash_prefix(path: &Path, len: u64) -> Result<Vec<u8>> {
+pub(crate) fn hash_prefix(path: &Path, len: u64) -> Result<Vec<u8>> {
     let mut reader = File::open(path)?.take(len);
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
@@ -426,7 +426,8 @@ fn slot_os_release(device: &Path) -> Option<String> {
 /// path or an http(s) URL (or, with `unsigned`, the slot image or block
 /// device at that path), into the slot that is not running, and makes it
 /// start next. The image streams into the slot, decompressed on the way
-/// when it is gzipped, and grows to fill the slot.
+/// when it is gzipped, and stays as it was signed: never grown, its UUID
+/// its own (M1.12).
 pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<()> {
     let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
@@ -471,28 +472,20 @@ pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<
         bail!("slot {slot} does not match the image after writing; it stays off");
     }
 
-    // e2fsck -p exits 1 when it fixed something, which is fine.
+    // The slot keeps the signed bytes for its whole life (M1.12): checked
+    // without changes (-n), never grown, and with the image's own UUID, as
+    // GRUB finds a slot by its partition.
     let fsck = Command::new("e2fsck")
-        .arg("-fp")
+        .arg("-fn")
         .arg(&target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .context("starting e2fsck")?;
-    if !matches!(fsck.code(), Some(0 | 1)) {
+    if fsck.code() != Some(0) {
         bail!("slot {slot} has filesystem errors; it stays off");
     }
-    // Images are shipped shrunk; the file system grows to fill the slot.
-    run(Command::new("resize2fs")
-        .arg(&target)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null()))?;
-    // GRUB hands the kernel root=UUID=..., so the new slot needs a UUID of
-    // its own rather than the one of the image it came from.
-    run(Command::new("tune2fs")
-        .args(["-U", "random"])
-        .arg(&target)
-        .stdout(Stdio::null()))?;
 
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
