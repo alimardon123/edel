@@ -622,9 +622,13 @@ impl Build<'_> {
         if !self.runner.dry_run {
             File::create(image)?.set_len(size_mib * MIB)?;
         }
+        // No journal: a slot is only ever mounted read-only, so it has
+        // nothing to replay, and Linux writes its checksum settings into a
+        // journal's superblock at every mount, read-only ones too, which
+        // left a booted slot 6 bytes off its signed image (M1.12).
         self.runner.run(
             Command::new("mkfs.ext4")
-                .args(["-q", "-F", "-L", "edel", "-d"])
+                .args(["-q", "-F", "-O", "^has_journal", "-L", "edel", "-d"])
                 .arg(root)
                 .arg(image),
         )
