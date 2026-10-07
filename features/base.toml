@@ -14,3 +14,9 @@ modules = ["ext4", "overlay"]
 branch = "v3.24"
 mirror = "https://dl-cdn.alpinelinux.org/alpine"
 repositories = ["main", "community"]
+# The digest of CI's build container, `alpine:` plus the branch above
+# (ci.yml reads both from here), so a build runs in an image someone looked
+# at. The registry moves the tag at every Alpine point release; refresh with
+# `docker buildx imagetools inspect alpine:3.24` (the multi-architecture
+# index's Digest, branch as above) and say so in the PR. Last read 2026-10-07.
+image_digest = "sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
