@@ -17,6 +17,7 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input: no_input,
+    parts: super::no_parts,
     role: Role::Label,
     label: str::to_owned,
 };

@@ -18,6 +18,7 @@ pub const WIDGET: Widget = Widget {
     width,
     draw,
     input,
+    parts: super::no_parts,
     role: Role::Button,
     label,
 };

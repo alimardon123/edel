@@ -233,6 +233,15 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' dbus-monitor --session \"type='signal',interface='org.freedesktop.portal.Settings',member='SettingChanged'\"" </dev/null >/tmp/portal-signals.txt 2>&1 &
 			;;
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
+		# The tray (M5.2e): a StatusNotifierItem on ci's session bus, whose
+		# icon is a square of #33aa66 and which prints what a click asks of
+		# it into a file, read back with `sni log`; `sni off` ends it.
+		sni)
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --sni" </dev/null >/tmp/sni.log 2>&1 &
+			;;
+		'sni log') say "sni $(tr '\n' ';' </tmp/sni.log)" ;;
+		'sni off') pkill -f '[e]del-testclient --sni' ;;
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;

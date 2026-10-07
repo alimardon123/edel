@@ -1,6 +1,6 @@
 # Mac-like (M5.4d): a slim bar along the top with the menu button and the
 # focused window's title at its start and the workspace buttons, the
-# layout toggle and the clock at its end, and a dock along the bottom, a
+# layout toggle, the tray (M5.2e) and the clock at its end, and a dock along the bottom, a
 # card as wide as its apps: the pinned ones, then every other app with a
 # window open. Windows float, with their buttons on the left.
 format = 1
@@ -25,7 +25,7 @@ pinned = ["files", "browser", "mail", "music", "editor", "terminal", "settings"]
 edge = "top"
 start = ["menu", "title"]
 centre = []
-end = ["workspaces", "layout", "clock"]
+end = ["workspaces", "layout", "tray", "clock"]
 
 # The dock: a card along the bottom, keeping its height free of windows.
 [[panels]]

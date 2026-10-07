@@ -16,6 +16,7 @@ pub mod layout;
 pub mod menu;
 pub mod search;
 pub mod title;
+pub mod tray;
 pub mod windows;
 pub mod workspaces;
 
@@ -57,6 +58,9 @@ pub struct Widget {
     pub draw: fn(&mut Canvas, shown: &str, x: f32),
     /// What `input` on it does while it shows `shown`, if anything.
     pub input: fn(shown: &str, input: Input) -> Option<Action>,
+    /// The parts of it a screen reader reads one by one, such as each
+    /// icon of the tray (M5.2e); most widgets are one thing, `no_parts`.
+    pub parts: fn(shown: &str) -> Vec<Part>,
     /// What it is to a screen reader.
     pub role: Role,
     /// What a screen reader says it is, showing `shown`.
@@ -71,12 +75,23 @@ pub struct Widget {
 /// read at start (M5.4c).
 #[derive(Debug, Default)]
 pub struct Live {
+    /// The tray's items, as their apps last said them (M5.2e).
+    pub tray: Vec<crate::tray::Item>,
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     pub windows: Vec<Task>,
     pub policy: String,
     pub pinned: Vec<Pin>,
     pub installed: Vec<Pin>,
+}
+
+/// One part of a widget for a screen reader: what it is called and where
+/// it lies, from the widget's left edge, in logical pixels.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Part {
+    pub label: String,
+    pub x: f32,
+    pub width: f32,
 }
 
 /// An app as the apps widget shows it.
@@ -143,11 +158,19 @@ pub enum Action {
     /// The app with this desktop file id: bring its window forward, or
     /// minimize it if it is the focused one, or start the app (M5.4c).
     App(String),
+    /// The tray item with this id (`service/path`): its app is asked to
+    /// do what a click does, or with `true` to open its menu (M5.2e).
+    Tray(String, bool),
 }
 
 /// For widgets that take no input.
 pub fn no_input(_: &str, _: Input) -> Option<Action> {
     None
+}
+
+/// For widgets that are one thing to a screen reader.
+pub fn no_parts(_: &str) -> Vec<Part> {
+    Vec::new()
 }
 
 /// Every widget, by name.
@@ -156,6 +179,7 @@ pub const TABLE: &[Widget] = &[
     windows::WIDGET,
     workspaces::WIDGET,
     layout::WIDGET,
+    tray::WIDGET,
     clock::WIDGET,
     title::WIDGET,
     apps::WIDGET,
@@ -313,6 +337,7 @@ mod tests {
                 width: zero,
                 draw: nothing,
                 input: no_input,
+                parts: no_parts,
                 role: Role::Label,
                 label: str::to_owned,
             },

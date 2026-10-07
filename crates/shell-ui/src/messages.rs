@@ -43,6 +43,34 @@ pub fn portal_not_said(why: impl Display) -> String {
     )
 }
 
+/// The tray cannot be served.
+pub fn tray_not_served(why: impl Display) -> String {
+    format!(
+        "could not serve the tray: {why}; apps' tray icons are not shown, and another tray on the session's bus may be using the name"
+    )
+}
+
+/// The tray cannot tell apps about itself or an item leaving.
+pub fn tray_not_said(why: impl Display) -> String {
+    format!(
+        "the tray could not tell apps what changed: {why}; icons still show, but an app may not notice"
+    )
+}
+
+/// An app registered a tray item with something that is no address.
+pub fn tray_bad_item(service: &str) -> String {
+    format!(
+        "{service:?} is not a bus name or an object path; register with the app's bus name, as in org.kde.StatusNotifierItem-1-1"
+    )
+}
+
+/// A click could not reach a tray item's app.
+pub fn tray_call_failed(id: &str, method: &str, why: impl Display) -> String {
+    format!(
+        "could not ask the tray item {id} to {method}: {why}; the app may have closed or may not offer it"
+    )
+}
+
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
     format!("could not keep the {style} tiling style: {why}; it stays as it was")
@@ -106,6 +134,23 @@ mod tests {
     }
 
     #[test]
+    fn the_tray_says_what_apps_lose() {
+        assert_eq!(
+            tray_not_served("name already taken"),
+            "could not serve the tray: name already taken; apps' tray icons are not shown, and another tray on the session's bus may be using the name"
+        );
+        assert_eq!(
+            tray_bad_item("x y"),
+            "\"x y\" is not a bus name or an object path; register with the app's bus name, as in org.kde.StatusNotifierItem-1-1"
+        );
+        assert_eq!(
+            tray_call_failed(":1.4/StatusNotifierItem", "Activate", "no such method"),
+            "could not ask the tray item :1.4/StatusNotifierItem to Activate: no such method; the app may have closed or may not offer it"
+        );
+        assert!(tray_not_said("x").starts_with("the tray could not tell apps what changed: x;"));
+    }
+
+    #[test]
     fn a_style_that_is_not_kept_says_the_command_that_works() {
         assert_eq!(
             style_no_home("split"),
@@ -126,6 +171,10 @@ mod tests {
             clock_not_started("x"),
             panel_not_drawn("x"),
             portal_not_said("x"),
+            tray_not_served("x"),
+            tray_not_said("x"),
+            tray_bad_item("x"),
+            tray_call_failed("a", "b", "x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

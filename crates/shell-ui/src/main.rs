@@ -24,6 +24,7 @@ mod portal;
 mod styles;
 mod switcher;
 mod toplevels;
+mod tray;
 mod widgets;
 mod workspaces;
 
@@ -32,6 +33,7 @@ use smithay_client_toolkit::compositor::{
     CompositorHandler, CompositorState, FrameCallbackData, Region,
 };
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
+use smithay_client_toolkit::reexports::calloop::channel;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
@@ -114,8 +116,8 @@ struct Shell {
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
     tokens: Tokens,
-    /// The settings portal's backend on the session's bus (M5.5a),
-    /// served while this lives.
+    /// The settings portal's backend on the session's bus (M5.5a), and
+    /// the tray's watcher (M5.2e), served while this lives.
     _portal: Option<zbus::blocking::Connection>,
     text: Text,
     icons: icons::Icons,
@@ -271,6 +273,24 @@ fn run() -> Result<()> {
         .context("creating the shared memory pool")?;
     let mut event_loop: EventLoop<Shell> =
         EventLoop::try_new().context("starting the event loop")?;
+    // The portal and the tray share the session's bus and zbus's thread
+    // for it; the tray's news reaches the loop over a channel (M5.2e), but
+    // only when a panel holds the widget.
+    let portal = portal::serve(&tokens);
+    let tray_wanted = panels.iter().any(|p| p.row.all().any(|w| w.name == "tray"));
+    if let (Some(connection), true) = (&portal, tray_wanted) {
+        let (events, news) = channel::channel();
+        if tray::serve(connection, events) {
+            event_loop
+                .handle()
+                .insert_source(news, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(event) = event {
+                        shell.tray_changed(event);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
+        }
+    }
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -295,7 +315,7 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens),
+        _portal: portal,
         tokens,
         fillets: fillets(),
         exit: false,
@@ -458,6 +478,20 @@ impl Shell {
                 role: widget.role,
                 label: (widget.label)(shown),
                 bounds: accesskit::Rect::new(x.into(), top, (x + width).into(), bottom),
+                children: (widget.parts)(shown)
+                    .into_iter()
+                    .map(|part| a11y::Item {
+                        role: accesskit::Role::Button,
+                        label: part.label,
+                        bounds: accesskit::Rect::new(
+                            f64::from(x + part.x),
+                            top,
+                            f64::from(x + part.x + part.width),
+                            bottom,
+                        ),
+                        children: Vec::new(),
+                    })
+                    .collect(),
             })
             .collect();
         let size = (
@@ -575,8 +609,37 @@ impl Shell {
             Some(Action::Launcher) => self.toggle_launcher(),
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::App(id)) => self.open_app(&id),
+            Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
             None => {}
         }
+    }
+
+    /// A click on a tray icon (M5.2e): the item's app is asked to
+    /// activate, or for its menu, `x` logical pixels along the panel. It
+    /// is not told the screen's place, which shell-ui does not know, so a
+    /// window it opens there is placed by the compositor.
+    fn tray_call(&mut self, id: &str, menu: bool, x: f32) {
+        let Some(connection) = &self._portal else {
+            return;
+        };
+        let method = if menu { "ContextMenu" } else { "Activate" };
+        tray::call(connection, id, method, (x as i32, 0));
+    }
+
+    /// The tray's tasks said an item came, changed or left (M5.2e).
+    fn tray_changed(&mut self, event: tray::Event) {
+        let before = self.live.tray.len();
+        match event {
+            tray::Event::Item(item) => match self.live.tray.iter_mut().find(|i| i.id == item.id) {
+                Some(known) => *known = item,
+                None => self.live.tray.push(item),
+            },
+            tray::Event::Gone(id) => self.live.tray.retain(|i| i.id != id),
+        }
+        if self.live.tray.len() != before {
+            eprintln!("edel-shell-ui: tray: {} items", self.live.tray.len());
+        }
+        self.draw_all();
     }
 
     /// A click on an app in the apps widget (M5.4c): its window comes
