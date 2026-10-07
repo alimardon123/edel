@@ -14,6 +14,7 @@ mod decoration;
 mod dmabuf;
 mod drm;
 mod edelshell;
+mod everyday;
 mod extworkspace;
 mod fullscreen;
 mod grabs;

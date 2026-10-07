@@ -84,6 +84,9 @@
 #               Super+Left and the window list scroll to them (M5.16c)
 #   sandbox     a client in a security context sees none of the shell's
 #               four protocols, which a plain client sees (M5.22)
+#   everyday    the five everyday protocols are offered, a locked pointer
+#               gives its window relative motion, and a window keeping the
+#               screen on is counted in the state file (M5.23)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1635,6 +1638,49 @@ case_scroll() {
 	python3 ci/qmp.py key meta_l-t
 	python3 ci/qmp.py key meta_l-1
 	echo "PASS: with scroll, four windows opened as columns with s4 whole and s1 off screen ($opened), Super+Left three times brought s1 whole, and a click on s4 in the window list scrolled back to it ($back)"
+}
+
+case_everyday() {
+	# The protocols everyday apps expect (M5.23): wayland-info's list, as
+	# a plain client is offered it, holds all five; a window that locks
+	# the pointer hears the mouse's motion while the pointer stays put;
+	# one that keeps the screen on is counted in the state file, and no
+	# longer once it closes.
+	asked=$(count 'DESKTOP-TEST: sandbox ')
+	guest globals
+	wait_more 'DESKTOP-TEST: sandbox ' "$asked" || fail "the service did not list the globals"
+	plain=" $(value plain) "
+	for g in zwp_pointer_constraints_v1 zwp_relative_pointer_manager_v1 zwp_primary_selection_device_manager_v1 zwp_idle_inhibit_manager_v1 xdg_activation_v1; do
+		case "$plain" in *" $g "*) ;; *) fail "the compositor does not offer $g:$plain" ;; esac
+	done
+	opened=$(count 'edel-compositor: mapped window lock')
+	guest 'lock window'
+	wait_more 'edel-compositor: mapped window lock' "$opened" || fail "the window that locks the pointer did not open"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window lock at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	set -- $place
+	python3 ci/qmp.py move $(($1 + 200)) $(($2 + 150))
+	wait_for 'DESKTOP-TEST: lock locked' || fail "the pointer over the window did not lock"
+	python3 ci/qmp.py nudge 40 20
+	wait_for 'DESKTOP-TEST: lock relative ' || fail "the window that locked the pointer heard no relative motion"
+	opened=$(count 'edel-compositor: mapped window idle')
+	guest 'idle window'
+	wait_more 'edel-compositor: mapped window idle' "$opened" || fail "the window that keeps the screen on did not open"
+	i=0
+	until [ "$(value idle_inhibitors)" = 1 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the state file does not count the window that keeps the screen on: $(value idle_inhibitors)"
+		guest idle
+		sleep 0.4
+	done
+	guest 'everyday off'
+	i=0
+	until [ "$(value idle_inhibitors)" = 0 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the state file still counts a closed window as keeping the screen on: $(value idle_inhibitors)"
+		guest idle
+		sleep 0.4
+	done
+	echo "PASS: the compositor offers pointer constraints, relative pointer, primary selection, idle inhibit and xdg-activation; a locked pointer gave its window the mouse's motion, and a window keeping the screen on was counted until it closed"
 }
 
 case_sandbox() {

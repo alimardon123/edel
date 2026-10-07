@@ -172,6 +172,14 @@ pub struct Edel {
     _security_context: smithay::wayland::security_context::SecurityContextState,
     /// The event loop's handle, for the sockets sandboxes ask for (M5.22).
     pub handle: Option<LoopHandle<'static, Edel>>,
+    /// The protocols everyday apps expect (`everyday.rs`, M5.23).
+    pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
+    pub activation: smithay::wayland::xdg_activation::XdgActivationState,
+    /// The surfaces that asked to keep the screen on.
+    pub idle_inhibitors: Vec<WlSurface>,
+    _pointer_constraints: smithay::wayland::pointer_constraints::PointerConstraintsState,
+    _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState,
+    _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
 }
 
 impl Edel {
@@ -204,6 +212,22 @@ impl Edel {
                 _,
             >(&display, crate::sandbox::shell_may),
             handle: None,
+            primary_selection:
+                smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
+                    &display,
+                ),
+            activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Edel>(&display),
+            idle_inhibitors: Vec::new(),
+            _pointer_constraints:
+                smithay::wayland::pointer_constraints::PointerConstraintsState::new::<Edel>(
+                    &display,
+                ),
+            _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState::new::<
+                Edel,
+            >(&display),
+            _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Edel>(
+                &display,
+            ),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take
@@ -393,6 +417,21 @@ impl Edel {
         if shown != name {
             eprintln!("edel-compositor: windows now {name}");
             self.relayout();
+        }
+    }
+
+    /// `window` comes forward, as a click in a window list or an app's
+    /// activation (M5.23) asks: its workspace first, then the window, and
+    /// a minimized window comes back.
+    pub fn bring_forward(&mut self, window: &Window) {
+        if !self.restore(window) {
+            if let Some(desk) = self.desks.hidden_on(window) {
+                self.switch_workspace(desk);
+            }
+            if self.space.element_geometry(window).is_some() {
+                self.focus(window);
+                self.state_changed();
+            }
         }
     }
 
@@ -630,6 +669,11 @@ impl Edel {
         table.insert(
             "tier".into(),
             Value::String(self.deadline.tier().name().into()),
+        );
+        // How many surfaces keep the screen on (M5.23).
+        table.insert(
+            "idle_inhibitors".into(),
+            Value::Integer(self.idle_inhibited() as i64),
         );
         table.insert("outputs".into(), Value::Array(outputs));
         let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
