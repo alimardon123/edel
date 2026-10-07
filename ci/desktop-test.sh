@@ -79,6 +79,9 @@
 #               before; Super+Shift+Left swaps the last two, and stack
 #               lays them out as master and stack (M5.16a); the layout
 #               button's right-click menu chooses split (M5.16b)
+#   scroll      layout.tiling_style = "scroll" lays four windows on workspace
+#               4 out as columns, the newest whole and the first off screen;
+#               Super+Left and the window list scroll to them (M5.16c)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1565,6 +1568,72 @@ case_styles() {
 	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+T tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
 
+case_scroll() {
+	# The scroll style (M5.16c): on workspace 4, empty, tiled with
+	# layout.tiling_style = "scroll", four windows open as columns half
+	# the screen wide; the newest is whole and the first off screen to
+	# the left. Super+Left three times brings the first whole; a click on
+	# the last in the panel's window list scrolls back to it.
+	python3 ci/qmp.py key meta_l-4
+	styled=$(count 'edel-compositor: tiling style scroll')
+	guest 'style scroll'
+	wait_more 'edel-compositor: tiling style scroll' "$styled" ||
+		fail "the compositor did not follow layout.tiling_style = \"scroll\""
+	tiled=$(count 'edel-compositor: windows now tiling')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "Super+T did not tile workspace 4"
+	guest 'four windows'
+	# column NAME: the window's x and width from the windows line.
+	column() {
+		value windows | grep -oE " $1@-?[0-9]+,[0-9]+,[0-9]+x" | sed -E 's/.*@(-?[0-9]+),[0-9]+,([0-9]+)x/\1 \2/'
+	}
+	# whole NAME: its column lies on the 1280 px screen.
+	whole() {
+		set -- $(column "$1")
+		[ -n "$1" ] && [ "$1" -ge 0 ] && [ $(($1 + $2)) -le 1280 ]
+	}
+	# gone NAME: its column lies off the screen's left edge.
+	gone() {
+		set -- $(column "$1")
+		[ -n "$1" ] && [ $(($1 + $2)) -le 0 ]
+	}
+	i=0
+	until whole s4 && gone s1; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "with scroll, s4 is not whole with s1 off screen: $(value windows)"
+		sleep 0.2
+	done
+	opened=$(value windows)
+	python3 ci/qmp.py key meta_l-left meta_l-left meta_l-left
+	i=0
+	until whole s1; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "Super+Left three times did not bring s1 whole: $(value windows)"
+		sleep 0.2
+	done
+	# The window list's fourth button, s4: the list's place from the
+	# panel's log, four buttons 4 px apart with 4 px at each end.
+	asked=$(count 'DESKTOP-TEST: places ')
+	guest 'panel places'
+	wait_more 'DESKTOP-TEST: places ' "$asked" || fail "the service did not say where the panel's widgets lie"
+	set -- $(value places | sed -n 's/.*windows \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	[ -n "$1" ] || fail "shell-ui did not say where its window list lies"
+	b=$((($2 - 20) / 4))
+	python3 ci/qmp.py click $(($1 + 4 + 3 * (b + 4) + b / 2)) 780
+	i=0
+	until whole s4; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "a click on s4 in the window list did not scroll back to it: $(value windows)"
+		sleep 0.2
+	done
+	back=$(value windows)
+	guest 'four off'
+	guest 'style default'
+	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-1
+	echo "PASS: with scroll, four windows opened as columns with s4 whole and s1 off screen ($opened), Super+Left three times brought s1 whole, and a click on s4 in the window list scrolled back to it ($back)"
+}
+
 case_dmabuf() {
 	# Apps draw on the GPU (M5.19): the compositor offers
 	# zwp_linux_dmabuf_v1, version 4 with feedback, in the formats its
@@ -1648,14 +1717,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | shortcuts | styles | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | scroll | shortcuts | styles | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, settings, shortcuts, styles, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, scroll, settings, shortcuts, styles, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

@@ -5,32 +5,36 @@
 //! half from the top down, with a gap between them and round them; one
 //! window fills the area. A new window joins the bottom of the stack, so
 //! the one being worked in stays put, and when the master closes the first
-//! of the stack takes its place. `split` is `split.rs`. A window moved or
+//! of the stack takes its place. `split` is `split.rs`, `scroll` is
+//! `scroll.rs`. A window moved or
 //! resized by a person goes back to its tile. Title bars stay in tiling.
 //! A style is one module and one line in [`Style`].
 
 use smithay::utils::{Logical, Rectangle, Size};
 
 use crate::layout::WindowPolicy;
+use crate::scroll::Strip;
 use crate::split::Tree;
 
 /// How tiling lays windows out: `layout.tiling_style`'s values, the
-/// default first. `scroll` joins with M5.16c.
+/// default first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Style {
     #[default]
     Stack,
     Split,
+    Scroll,
 }
 
 impl Style {
-    pub const ALL: [Style; 2] = [Style::Stack, Style::Split];
+    pub const ALL: [Style; 3] = [Style::Stack, Style::Split, Style::Scroll];
 
     /// The name the settings file and the log use.
     pub fn name(self) -> &'static str {
         match self {
             Style::Stack => "stack",
             Style::Split => "split",
+            Style::Scroll => "scroll",
         }
     }
 
@@ -47,6 +51,8 @@ pub struct Tiling<W> {
     windows: Vec<W>,
     /// The halves `split` lays out.
     tree: Tree<W>,
+    /// The columns `scroll` lays out.
+    strip: Strip<W>,
     /// The window with the keyboard, which a new window halves in `split`.
     focused: Option<W>,
     gap: i32,
@@ -60,6 +66,7 @@ impl<W> Tiling<W> {
             style: Style::default(),
             windows: Vec::new(),
             tree: Tree::default(),
+            strip: Strip::default(),
             focused: None,
             gap: gap.min(100) as i32,
             area: Rectangle::default(),
@@ -124,6 +131,7 @@ impl<W: Clone + PartialEq> Tiling<W> {
                 .zip(tiles(self.windows.len(), area, self.gap))
                 .collect(),
             Style::Split => self.tree.places(area, self.gap),
+            Style::Scroll => self.strip.places(area, self.gap),
         }
     }
 
@@ -150,21 +158,32 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         self.windows.retain(|w| *w != window);
         self.windows.push(window.clone());
         self.tree.insert(window.clone(), self.focused.as_ref());
+        self.strip.insert(window.clone(), self.focused.as_ref());
         self.tile_of(&window).unwrap_or(area)
     }
 
     fn close(&mut self, window: &W) {
         self.windows.retain(|w| w != window);
         self.tree.remove(window);
+        self.strip.remove(window);
         if self.focused.as_ref() == Some(window) {
             self.focused = None;
         }
     }
 
-    fn focused(&mut self, window: &W) {
-        if self.windows.contains(window) {
-            self.focused = Some(window.clone());
+    fn focused(&mut self, window: &W) -> bool {
+        if !self.windows.contains(window) {
+            return false;
         }
+        self.focused = Some(window.clone());
+        self.style == Style::Scroll
+            && self
+                .strip
+                .reveal(self.focused.as_ref(), self.area.size.w, self.gap)
+    }
+
+    fn widen(&mut self, window: &W) -> bool {
+        self.style == Style::Scroll && self.strip.widen(window)
     }
 
     fn swap(&mut self, a: &W, b: &W) -> bool {
@@ -176,6 +195,7 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         };
         self.windows.swap(i, j);
         self.tree.swap(a, b);
+        self.strip.swap(a, b);
         true
     }
 
@@ -189,6 +209,10 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
 
     fn arrange(&mut self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)> {
         self.area = area;
+        if self.style == Style::Scroll {
+            self.strip
+                .reveal(self.focused.as_ref(), area.size.w, self.gap);
+        }
         self.places(area)
     }
 
@@ -301,6 +325,7 @@ mod tests {
         assert_eq!(tiling.arrange(screen())[0], (4, rect(8, 8, 628, 784)));
         assert!(!tiling.swap(&1, &9));
         assert_eq!(Style::parse("split"), Some(Style::Split));
-        assert_eq!(Style::parse("scroll"), None);
+        assert_eq!(Style::parse("scroll"), Some(Style::Scroll));
+        assert_eq!(Style::parse("spiral"), None);
     }
 }

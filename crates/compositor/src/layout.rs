@@ -50,8 +50,17 @@ pub trait WindowPolicy<W> {
         false
     }
 
-    /// `window` took the keyboard: tiling's `split` halves it next.
-    fn focused(&mut self, _window: &W) {}
+    /// `window` took the keyboard: tiling's `split` halves it next, and
+    /// `scroll` scrolls to it; whether the windows must be laid out again.
+    fn focused(&mut self, _window: &W) -> bool {
+        false
+    }
+
+    /// `window` takes the next width a column steps through (`scroll`'s
+    /// Super+R); whether it changed.
+    fn widen(&mut self, _window: &W) -> bool {
+        false
+    }
 
     /// `a` and `b` trade places; false when the policy leaves windows
     /// where people put them.
@@ -243,15 +252,29 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         self.kinds[self.active].1
     }
 
-    /// `window` took the keyboard.
-    pub fn focused(&mut self, window: &W) {
+    /// `window` took the keyboard; whether the active policy must lay the
+    /// windows out again, as `scroll` does to bring it into view.
+    pub fn focused(&mut self, window: &W) -> bool {
+        let active = self.active;
+        let mut moved = false;
         for screen in &mut self.screens {
             if screen.windows.contains(window) {
-                for policy in &mut screen.policies {
-                    policy.focused(window);
+                for (i, policy) in screen.policies.iter_mut().enumerate() {
+                    moved |= policy.focused(window) && i == active;
                 }
             }
         }
+        moved
+    }
+
+    /// `window` takes the next width a column steps through, under the
+    /// active policy; whether it changed.
+    pub fn widen(&mut self, window: &W) -> bool {
+        let active = self.active;
+        self.screens
+            .iter_mut()
+            .find(|s| s.windows.contains(window))
+            .is_some_and(|s| s.policies[active].widen(window))
     }
 
     /// `a` and `b`, on the same screen, trade places under the active

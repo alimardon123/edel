@@ -225,8 +225,11 @@ pub const KEYS: &[Key] = &[
     now("layout.minimize_button", Kind::Flag),
     now("layout.maximize_button", Kind::Flag),
     now("layout.panels", Kind::Panels),
-    // How tiling lays windows out (M5.16a); `scroll` joins with M5.16c.
-    now("layout.tiling_style", Kind::OneOf(&["stack", "split"])),
+    // How tiling lays windows out (M5.16a, scroll M5.16c).
+    now(
+        "layout.tiling_style",
+        Kind::OneOf(&["stack", "split", "scroll"]),
+    ),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),

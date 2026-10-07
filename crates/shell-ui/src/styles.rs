@@ -142,6 +142,17 @@ fn picture(pixmap: &mut Pixmap, style: &str, x: f32, y: f32, s: f32, tokens: &To
             fill(pixmap, right, low, quarter, tall, small, tile);
             fill(pixmap, right + quarter + g, low, quarter, tall, small, tile);
         }
+        // Scroll: columns half the screen wide, the last running off its
+        // right edge.
+        "scroll" => {
+            let column = half * 0.62;
+            let mut cx = inner.0 + half + g;
+            while cx < inner.0 + inner.2 {
+                let w = column.min(inner.0 + inner.2 - cx);
+                fill(pixmap, cx, inner.1, w, inner.3, small, tile);
+                cx += column + g;
+            }
+        }
         // Stack, and any style without a picture of its own: the rest
         // stacked on the right.
         _ => {
@@ -160,7 +171,7 @@ mod tests {
 
     #[test]
     fn the_menu_offers_the_keys_styles_and_marks_the_one_in_use() {
-        assert_eq!(styles(), ["stack", "split"]);
+        assert_eq!(styles(), ["stack", "split", "scroll"]);
         assert_eq!(label("split"), "Split");
         let machine = "format = 1\n[layout]\ntiling_style = \"split\"\n";
         let person = "format = 1\n[layout]\ntiling_style = \"stack\"\n";
@@ -183,9 +194,10 @@ mod tests {
         assert_eq!(row_at(PAD - 1.0, &tokens), None);
         assert_eq!(row_at(PAD + 1.0, &tokens), Some(0));
         assert_eq!(row_at(PAD + row + 1.0, &tokens), Some(1));
-        assert_eq!(row_at(PAD + 2.0 * row + 1.0, &tokens), None);
+        assert_eq!(row_at(PAD + 2.0 * row + 1.0, &tokens), Some(2));
+        assert_eq!(row_at(PAD + 3.0 * row + 1.0, &tokens), None);
         let (w, h) = size(&tokens);
-        assert_eq!((w, h), (WIDTH, (2.0 * PAD + 2.0 * row) as u32));
+        assert_eq!((w, h), (WIDTH, (2.0 * PAD + 3.0 * row) as u32));
     }
 
     #[test]

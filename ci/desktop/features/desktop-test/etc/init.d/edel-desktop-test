@@ -239,6 +239,7 @@ commands() {
 		# screen, so each new one has the keyboard.
 		'style split') edel settings set layout.tiling_style=split ;;
 		'style stack') edel settings set layout.tiling_style=stack ;;
+		'style scroll') edel settings set layout.tiling_style=scroll ;;
 		'style default') edel settings reset layout.tiling_style ;;
 		# The style the panel's menu wrote to ci's own file (M5.16b),
 		# taken out again.

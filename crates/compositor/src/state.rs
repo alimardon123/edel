@@ -257,7 +257,8 @@ impl Edel {
 
     /// Raises `window` and gives it the keyboard.
     pub fn focus(&mut self, window: &Window) {
-        self.desks.layout_mut().focused(window);
+        // The scroll style brings the window's column into view.
+        let scrolled = self.desks.layout_mut().focused(window);
         self.space.raise_element(window, true);
         let surface = window.toplevel().map(|t| t.wl_surface().clone());
         if let Some(keyboard) = self.seat.get_keyboard() {
@@ -265,6 +266,18 @@ impl Edel {
         }
         self.dirty = true;
         self.sync_toplevels();
+        if scrolled {
+            self.relayout();
+        }
+    }
+
+    /// Super+R: the focused column's next width, in the scroll style.
+    pub fn widen_focused(&mut self) {
+        if let Some(window) = self.focused_window() {
+            if self.desks.layout_mut().widen(&window) {
+                self.relayout();
+            }
+        }
     }
 
     /// `window` was put at `place` by a person, or back from maximized:

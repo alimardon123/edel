@@ -31,6 +31,8 @@ pub enum Act {
     /// window swapped with it, when tiled.
     Focus(Direction),
     Swap(Direction),
+    /// The focused column's next width, in the scroll style (M5.16c).
+    Widen,
     Terminal,
     /// Go to workspace N, from 0 (M5.2a).
     Workspace(usize),
@@ -60,6 +62,7 @@ impl Act {
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
+            "cycle_column_width" => Some(Act::Widen),
             _ if name.starts_with("focus_window_") => {
                 Direction::parse(&name["focus_window_".len()..]).map(Act::Focus)
             }
