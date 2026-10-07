@@ -1,8 +1,8 @@
 //! Every row of Settings with its key (M5.6b): the one list a test holds
-//! to `edel::system`'s key table, and what each row says about where its
+//! to `edel::settings`'s key table, and what each row says about where its
 //! value comes from (ADR-008).
 
-use edel::system::Source;
+use edel::settings::Source;
 
 /// One row: the settings file key it shows and changes.
 pub struct Row {
@@ -65,9 +65,9 @@ pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {
 /// The values `key` may take, as the key table lists them, so a row's
 /// choices are always the ones `edel settings set` takes.
 pub fn values(key: &str) -> &'static [&'static str] {
-    match edel::system::KEYS.iter().find(|k| k.path == key) {
-        Some(edel::system::Key {
-            kind: edel::system::Kind::OneOf(values),
+    match edel::settings::KEYS.iter().find(|k| k.path == key) {
+        Some(edel::settings::Key {
+            kind: edel::settings::Kind::OneOf(values),
             ..
         }) => values,
         _ => &[],
@@ -120,7 +120,7 @@ pub fn resettable(source: &Source) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use edel::system::{self, KEYS, Source};
+    use edel::settings::{self, KEYS, Source};
     use toml::Value;
 
     #[test]
@@ -168,7 +168,7 @@ mod tests {
             .strip_prefix("edel settings set ")
             .and_then(|a| a.split_once('='))
             .unwrap();
-        assert!(system::set("format = 1\n", key, value).is_ok());
+        assert!(settings::set("format = 1\n", key, value).is_ok());
         let both = command(&[
             ("layout.close_button", "true".into()),
             ("layout.minimize_button", "false".into()),

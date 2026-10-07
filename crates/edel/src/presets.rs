@@ -18,7 +18,7 @@ pub const FORMAT: i64 = 1;
 /// Mac-like, Windows-like, Hive, then Zen, Tablet and Phone as they
 /// come). A new one is a file under `presets/`, a line here and its name
 /// in [`NAMES`], in the same order; its name must be in
-/// [`crate::system::PRESETS`].
+/// [`crate::settings::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
     ("classic", include_str!("../../../presets/classic.toml")),
     ("mac-like", include_str!("../../../presets/mac-like.toml")),
@@ -306,8 +306,8 @@ mod tests {
         for (name, text) in BUILT_IN {
             check(text).unwrap_or_else(|e| panic!("presets/{name}.toml: {e:#}"));
             assert!(
-                crate::system::PRESETS.contains(name),
-                "{name} is not in system::PRESETS, so layout.preset could not name it"
+                crate::settings::PRESETS.contains(name),
+                "{name} is not in settings::PRESETS, so layout.preset could not name it"
             );
         }
     }

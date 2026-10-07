@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use edel::places;
-use edel::system::{self, SystemFile, User};
+use edel::settings::{self, SettingsFile, User};
 
 use crate::boot::GRUB_PREFIX;
 use crate::release::os_release_value;
@@ -271,7 +271,7 @@ struct Machine {
 }
 
 impl Machine {
-    fn read(file: &SystemFile) -> Result<Machine> {
+    fn read(file: &SettingsFile) -> Result<Machine> {
         let passwd = fs::read_to_string("/etc/passwd")?;
         let mut keys = BTreeMap::new();
         for account in accounts(&passwd) {
@@ -305,7 +305,7 @@ impl Machine {
 
 /// The changes that make `machine` match `file`, and notes on what is left
 /// alone. Pure, so diff and apply agree and tests need no machine.
-fn plan(file: &SystemFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
+fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let mut changes = Vec::new();
     let mut notes = Vec::new();
     match &file.network.hostname {
@@ -529,7 +529,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
 
 /// The file to apply or diff, read leniently, with its problems and the
 /// keys this release skips printed first; `None` when there is none.
-fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<system::Read>> {
+fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::Read>> {
     let machine = machine_file();
     let path = file.unwrap_or(&machine);
     if file.is_none() && !path.exists() {
@@ -541,7 +541,7 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<system::Rea
             }
         }
     }
-    let read = system::read_on_machine(path)?;
+    let read = settings::read_on_machine(path)?;
     for problem in &read.problems {
         println!("edel settings: left out {problem}");
     }
@@ -558,10 +558,10 @@ fn settle_names() -> Result<()> {
     let machine = places::machine_settings();
     let found = machine_file();
     if found != machine {
-        for format in 1..=system::FORMAT {
-            let old = system::versioned(&found, format);
+        for format in 1..=settings::FORMAT {
+            let old = settings::versioned(&found, format);
             if old.exists() {
-                fs::rename(&old, system::versioned(&machine, format))?;
+                fs::rename(&old, settings::versioned(&machine, format))?;
             }
         }
         fs::rename(&found, &machine)
@@ -666,11 +666,11 @@ fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
 /// too (ADR-008).
 fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
     let text = fs::read(from).with_context(|| format!("reading {}", from.display()))?;
-    if system::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > system::FORMAT) {
-        let older = system::versioned(from, system::FORMAT);
+    if settings::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > settings::FORMAT) {
+        let older = settings::versioned(from, settings::FORMAT);
         let older_text =
             fs::read(&older).with_context(|| format!("reading {}", older.display()))?;
-        write_whole(&system::versioned(to, system::FORMAT), &older_text)?;
+        write_whole(&settings::versioned(to, settings::FORMAT), &older_text)?;
     }
     write_whole(to, &text).with_context(|| format!("saving {}", to.display()))
 }
@@ -701,15 +701,15 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     let mut path = machine.clone();
     let mut newer = None;
     if let Ok(text) = fs::read_to_string(&machine) {
-        let format = system::format(&text).with_context(|| format!("reading {shown}"))?;
-        if format > system::FORMAT {
-            path = system::versioned(&machine, system::FORMAT);
+        let format = settings::format(&text).with_context(|| format!("reading {shown}"))?;
+        if format > settings::FORMAT {
+            path = settings::versioned(&machine, settings::FORMAT);
             newer = Some(format);
         }
     }
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
-        Err(_) if newer.is_none() => format!("format = {}\n", system::FORMAT),
+        Err(_) if newer.is_none() => format!("format = {}\n", settings::FORMAT),
         Err(_) => bail!(
             "{shown} is format {}, newer than this release, and there is no {} beside it to change",
             newer.unwrap_or_default(),
@@ -717,7 +717,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
         ),
     };
     let edited = change(&text)?;
-    for problem in system::read(&edited)?.problems {
+    for problem in settings::read(&edited)?.problems {
         println!("edel settings: kept, not used by this release: {problem}");
     }
     fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
@@ -757,7 +757,7 @@ pub fn set(assignments: &[String]) -> Result<()> {
     edit(&format!("set {}", keys.join(", ")), &keys, |text| {
         let mut text = text.to_string();
         for (key, value) in &pairs {
-            text = system::set(&text, key, value)?;
+            text = settings::set(&text, key, value)?;
         }
         Ok(text)
     })
@@ -779,7 +779,7 @@ pub fn reset(keys: &[String]) -> Result<()> {
     edit(&format!("reset {}", keys.join(", ")), &keys, |text| {
         let mut text = text.to_string();
         for key in &keys {
-            text = system::unset(&text, key)?;
+            text = settings::unset(&text, key)?;
         }
         Ok(text)
     })
@@ -787,19 +787,19 @@ pub fn reset(keys: &[String]) -> Result<()> {
 
 /// A page's name as people type it: its title in lowercase, `_` for a
 /// space, such as `default_apps` (ADR-008's same names decision).
-fn page_word(page: &system::Page) -> String {
+fn page_word(page: &settings::Page) -> String {
     page.title.to_lowercase().replace(' ', "_").replace('-', "")
 }
 
 /// `edel settings` alone: the pages, in the Settings app's order.
 pub fn pages() {
     println!("Settings, page by page, as the Settings app shows them:\n");
-    let width = system::PAGES
+    let width = settings::PAGES
         .iter()
         .map(|p| page_word(p).len())
         .max()
         .unwrap_or(0);
-    for page in system::PAGES {
+    for page in settings::PAGES {
         println!(
             "  {:width$}  {}: {}",
             page_word(page),
@@ -835,7 +835,7 @@ fn values_in(path: Option<PathBuf>) -> Vec<(String, toml::Value)> {
     let mut out = Vec::new();
     let file = path
         .filter(|p| p.exists())
-        .and_then(|p| system::read_on_machine(&p).ok());
+        .and_then(|p| settings::read_on_machine(&p).ok());
     if let Some(toml::Value::Table(table)) = file.and_then(|r| toml::Value::try_from(r.file).ok()) {
         flatten(&table, "", &mut out);
     }
@@ -855,12 +855,12 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     // The section asked for, by its page's word or its own name, or a key.
     let (section, key) = match what {
         None => (None, None),
-        Some(w) => match system::PAGES
+        Some(w) => match settings::PAGES
             .iter()
             .find(|p| page_word(p) == w || p.section == w)
         {
             Some(page) => (Some(page.section), None),
-            None if system::KEYS.iter().any(|k| key_fits(k.path, w)) => (None, Some(w)),
+            None if settings::KEYS.iter().any(|k| key_fits(k.path, w)) => (None, Some(w)),
             None if machine
                 .iter()
                 .chain(&person)
@@ -868,7 +868,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             {
                 (None, Some(w))
             }
-            None => match system::nearest_key(w) {
+            None => match settings::nearest_key(w) {
                 Some(near) => bail!("{w}: no such page or key; did you mean {near}?"),
                 None => bail!("{w}: no such page or key; edel settings lists the pages"),
             },
@@ -900,7 +900,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
         return Ok(());
     }
     // The keys a page has that nobody set, so the release decides them.
-    for entry in system::KEYS.iter().filter(|k| !k.path.contains('*')) {
+    for entry in settings::KEYS.iter().filter(|k| !k.path.contains('*')) {
         if wanted(entry.path) && !rows.iter().any(|(r, _, _)| r == entry.path) {
             rows.push((
                 entry.path.to_string(),
@@ -910,7 +910,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
         }
     }
     let width = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0);
-    for page in system::PAGES {
+    for page in settings::PAGES {
         let mut mine: Vec<&(String, toml::Value, &str)> = rows
             .iter()
             .filter(|(k, _, _)| k.split('.').next() == Some(page.section))
@@ -921,7 +921,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
         mine.sort_by(|a, b| (a.2.is_empty(), &a.0).cmp(&(b.2.is_empty(), &b.0)));
         println!("{} ({}): {}", page.title, page_word(page), page.about);
         for (k, v, from) in mine {
-            let later = system::KEYS
+            let later = settings::KEYS
                 .iter()
                 .any(|e| !e.supported && key_fits(e.path, k));
             let shown = if from.is_empty() {
@@ -976,7 +976,7 @@ fn seed(target: &Path) -> Result<Option<String>> {
         let Some(text) = text else {
             return Ok(None);
         };
-        if let Err(err) = system::read(&text) {
+        if let Err(err) = settings::read(&text) {
             println!("edel settings: passed over the settings file on {from}: {err:#}");
             return Ok(None);
         }
@@ -1056,12 +1056,12 @@ pub const EXPORT_HEADER: &str = "\
 /// the machine has, writing no defaults (ADR-008).
 pub fn export() -> Result<()> {
     let machine = machine_file();
-    let mut file = match system::read_on_machine(&machine) {
+    let mut file = match settings::read_on_machine(&machine) {
         Ok(read) => read.file,
-        Err(_) if !machine.exists() => SystemFile::default(),
+        Err(_) if !machine.exists() => SettingsFile::default(),
         Err(err) => {
             eprintln!("warning: {err:#}; exporting only what the machine has");
-            SystemFile::default()
+            SettingsFile::default()
         }
     };
     let hostname = Path::new(ETC_UPPER)
@@ -1112,7 +1112,7 @@ fn changed_files(dir: &Path, shown: &Path) -> Vec<String> {
 /// Sets the keys apply owns in `file` from the machine: the hostname when
 /// this machine changed it, every person's account, and developer mode.
 fn describe(
-    file: &mut SystemFile,
+    file: &mut SettingsFile,
     passwd: &str,
     group: &str,
     hostname: Option<&str>,
@@ -1209,7 +1209,7 @@ mod tests {
 
     #[test]
     fn a_machine_that_matches_needs_no_change() {
-        let file = system::read(
+        let file = settings::read(
             "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nadmin = true\nssh_keys = [\"ssh-ed25519 AAAA ci@edel\"]\n[users.sshd]\nadmin = true\n",
         )
         .unwrap()
@@ -1221,7 +1221,7 @@ mod tests {
 
     #[test]
     fn plans_each_difference_once() {
-        let file = system::read(
+        let file = settings::read(
             "format = 1\n[system]\ndeveloper_mode = true\n[users.ali]\nadmin = true\n[users.new]\nlogin_shell = \"/bin/ash\"\n",
         )
         .unwrap()
@@ -1243,7 +1243,7 @@ mod tests {
 
     #[test]
     fn people_and_the_greeter_join_the_seat_where_there_is_one() {
-        let file = system::read("format = 1\n[users.ci]\n[users.new]\n[users.sshd]\n")
+        let file = settings::read("format = 1\n[users.ci]\n[users.new]\n[users.sshd]\n")
             .unwrap()
             .file;
         let mut desktop = machine();
@@ -1345,7 +1345,7 @@ mod tests {
 
     #[test]
     fn keeps_the_shell_when_the_file_names_one_the_machine_lacks() {
-        let file = system::read(
+        let file = settings::read(
             "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nlogin_shell = \"/bin/zsh\"\n[users.new]\nlogin_shell = \"/bin/zsh\"\n",
         )
         .unwrap()
@@ -1367,12 +1367,12 @@ mod tests {
 
     #[test]
     fn unset_admin_takes_admin_away() {
-        let text = system::unset(
+        let text = settings::unset(
             "format = 1\n[network]\nhostname = \"lab-1\"\n[users.ci]\nadmin = true\n",
             "users.ci.admin",
         )
         .unwrap();
-        let (changes, _) = plan(&system::read(&text).unwrap().file, &machine());
+        let (changes, _) = plan(&settings::read(&text).unwrap().file, &machine());
         assert_eq!(
             changes,
             [Change::Admin {
@@ -1394,7 +1394,7 @@ mod tests {
         keep_as_machine_file(&from, &to).unwrap();
         assert_eq!(fs::read_to_string(&to).unwrap(), "format = 9\n");
         assert_eq!(
-            fs::read_to_string(system::versioned(
+            fs::read_to_string(settings::versioned(
                 &places::settings_in(&dir.join("data")),
                 1
             ))
@@ -1426,10 +1426,11 @@ mod tests {
 
     #[test]
     fn describes_the_machine_without_defaults() {
-        let mut file =
-            system::read("format = 1\n[appearance]\nmode = \"dark\"\n[users.gone]\nadmin = true\n")
-                .unwrap()
-                .file;
+        let mut file = settings::read(
+            "format = 1\n[appearance]\nmode = \"dark\"\n[users.gone]\nadmin = true\n",
+        )
+        .unwrap()
+        .file;
         describe(
             &mut file,
             PASSWD,
@@ -1454,6 +1455,6 @@ mod tests {
         assert_eq!(file.users["ali"].admin, None);
         assert_eq!(file.users["ali"].login_shell.as_deref(), Some("/bin/ash"));
         let text = toml::to_string(&file).unwrap();
-        assert!(system::read(&text).unwrap().problems.is_empty(), "{text}");
+        assert!(settings::read(&text).unwrap().problems.is_empty(), "{text}");
     }
 }

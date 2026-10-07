@@ -2,7 +2,7 @@
 //!
 //! It builds images, updates and rolls back A/B slots and checks system
 //! files. Add-ons (ADR-007) will live here too, so there is one tool to
-//! learn. The settings file parser is the library half (`edel::system`).
+//! learn. The settings file parser is the library half (`edel::settings`).
 
 mod boot;
 mod completion;
@@ -25,7 +25,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use edel::system;
+use edel::settings;
 
 use crate::def::ImageDef;
 use crate::run::Runner;
@@ -436,7 +436,8 @@ fn main() -> Result<()> {
 fn check_system_file(file: &std::path::Path) -> Result<()> {
     let text =
         std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
-    let problems = system::check(&text).with_context(|| format!("checking {}", file.display()))?;
+    let problems =
+        settings::check(&text).with_context(|| format!("checking {}", file.display()))?;
     if problems.is_empty() {
         println!("{}: ok", file.display());
         return Ok(());

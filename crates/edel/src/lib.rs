@@ -19,6 +19,6 @@ pub mod install;
 pub mod keyboard;
 pub mod places;
 pub mod presets;
+pub mod settings;
 pub mod shortcuts;
-pub mod system;
 pub mod tokens;

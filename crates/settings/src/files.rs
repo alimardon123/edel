@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use edel::presets::{self, Policy};
-use edel::{places, system};
+use edel::{places, settings};
 
 /// What the Layout page shows: each key's value as the desktop applies
 /// it, from the person's file, the machine's, the preset or the release.
@@ -45,7 +45,7 @@ impl Layout {
 
 /// `key`'s value in one file's `[layout]`, as `edel settings set` writes
 /// it; none when the file has none.
-fn own(layout: &system::Layout, key: &str) -> Option<String> {
+fn own(layout: &settings::Layout, key: &str) -> Option<String> {
     let flag = |v: Option<bool>| v.map(|b| b.to_string());
     match key {
         "layout.preset" => layout.preset.clone(),
@@ -76,20 +76,20 @@ impl Files {
 
     /// One file read leniently as the desktop reads it (ADR-008); nothing
     /// for a file that is missing or not TOML.
-    fn read(path: Option<&PathBuf>) -> Option<system::SystemFile> {
+    fn read(path: Option<&PathBuf>) -> Option<settings::SettingsFile> {
         path.and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|text| system::read(&text).ok())
+            .and_then(|text| settings::read(&text).ok())
             .map(|read| read.file)
     }
 
     /// One file's `[layout]`, empty when there is no file.
-    fn layout_of(path: Option<&PathBuf>) -> system::Layout {
+    fn layout_of(path: Option<&PathBuf>) -> settings::Layout {
         Self::read(path).map(|f| f.layout).unwrap_or_default()
     }
 
     /// The layout from the machine's keys with `person`'s laid over them,
     /// the preset and the release under both.
-    fn layout_from(machine: &system::Layout, person: &system::Layout) -> Layout {
+    fn layout_from(machine: &settings::Layout, person: &settings::Layout) -> Layout {
         let chosen = person.preset.clone().or(machine.preset.clone());
         let (preset, _) = presets::named(chosen.as_deref());
         let name = chosen
@@ -185,9 +185,9 @@ impl Files {
 
     /// Where `key`'s value comes from: the person's file, the machine's,
     /// or neither (M5.6b).
-    pub fn source(&self, key: &str) -> system::Source {
+    pub fn source(&self, key: &str) -> settings::Source {
         let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
-        system::source(
+        settings::source(
             key,
             read(Some(&self.machine)).as_deref(),
             read(self.person.as_ref()).as_deref(),
@@ -231,10 +231,10 @@ impl Files {
             .as_ref()
             .ok_or("there is no home folder to keep your settings in")?;
         let text = std::fs::read_to_string(path)
-            .unwrap_or_else(|_| format!("format = {}\n", system::FORMAT));
+            .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT));
         let edited = match value {
-            Some(value) => system::set(&text, key, value),
-            None => system::unset(&text, key),
+            Some(value) => settings::set(&text, key, value),
+            None => settings::unset(&text, key),
         }
         .map_err(|e| format!("{e:#}"))?;
         if let Some(dir) = path.parent() {
@@ -323,8 +323,8 @@ mod tests {
             person: Some(person.clone()),
         };
         files.choose("layout.preset", "mac-like").unwrap();
-        let by_command = system::set(
-            &format!("format = {}\n", system::FORMAT),
+        let by_command = settings::set(
+            &format!("format = {}\n", settings::FORMAT),
             "layout.preset",
             "mac-like",
         )
@@ -341,7 +341,7 @@ mod tests {
             person: Some(dir.join("person.toml")),
         };
         let row = files.set("layout.preset", Some("hiv")).unwrap_err();
-        let command = system::set("format = 1\n", "layout.preset", "hiv").unwrap_err();
+        let command = settings::set("format = 1\n", "layout.preset", "hiv").unwrap_err();
         assert_eq!(row, format!("{command:#}"));
         assert!(row.contains("did you mean"), "{row}");
         let _ = std::fs::remove_dir_all(&dir);
@@ -358,16 +358,16 @@ mod tests {
         files.choose("layout.preset", "mac-like").unwrap();
         assert!(matches!(
             files.source("layout.preset"),
-            system::Source::Person(_)
+            settings::Source::Person(_)
         ));
         files.set("layout.preset", None).unwrap();
         assert!(!std::fs::read_to_string(&person).unwrap().contains("preset"));
-        assert_eq!(files.source("layout.preset"), system::Source::Release);
+        assert_eq!(files.source("layout.preset"), settings::Source::Release);
         assert_eq!(files.layout().preset, "classic");
         std::fs::write(&files.machine, "format = 1\n[layout]\npreset = \"hive\"\n").unwrap();
         assert!(matches!(
             files.source("layout.preset"),
-            system::Source::Machine(_)
+            settings::Source::Machine(_)
         ));
         let _ = std::fs::remove_dir_all(&dir);
     }

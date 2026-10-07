@@ -58,7 +58,7 @@ use tiny_skia::Pixmap;
 
 use edel::places;
 use edel::presets::{self, Edge, Hide, Style};
-use edel::system;
+use edel::settings;
 use edel::tokens::{self, Scheme, Tokens};
 use edel::{app_icons as icons, apps};
 
@@ -315,7 +315,7 @@ fn from_system_files() -> (presets::Preset, Scheme) {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
-        match system::read(&text) {
+        match settings::read(&text) {
             Ok(read) => {
                 let layout = read.file.layout;
                 name = layout.preset.or(name);

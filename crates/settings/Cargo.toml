@@ -22,5 +22,5 @@ edel = { path = "../edel", default-features = false, features = ["icons"] }
 # style.rs), so another toolkit could take its place (ADR-004).
 gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_4"] }
-# The values edel::system's sources hold; the version edel already uses.
+# The values edel::settings's sources hold; the version edel already uses.
 toml = "1.1.6"
