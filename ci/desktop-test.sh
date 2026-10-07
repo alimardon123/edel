@@ -1901,11 +1901,14 @@ if [ "$*" = live ]; then
 		stop_vm
 		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
 		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" status=none
+		# The VM was stopped with /data mounted, so the copy's journal is
+		# not written back; debugfs cannot read it until e2fsck replays it.
+		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 		. ci/names.sh
-		people=$(debugfs -R "ls -p /home" "$dir/data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print "/home/" $6 }')
+		people=$(debugfs -R "ls -p /home" "$dir/data.img" 2>&1 | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print "/home/" $6 }')
 		for f in $(for p in $people; do echo "$p/$home_session_log"; done) /var/log/greetd.log "$system_log"; do
 			echo "== $f on the stick"
-			debugfs -R "cat $f" "$dir/data.img" 2>/dev/null | tail -n 80
+			debugfs -R "cat $f" "$dir/data.img" 2>&1 | tail -n 80
 		done
 	}
 	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
