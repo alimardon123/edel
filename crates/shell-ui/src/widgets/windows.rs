@@ -1,6 +1,6 @@
 //! The window list (M5.2h): a button for each window on a screen, in the
-//! order the windows opened, each its title on one line, cut short with
-//! an ellipsis. The focused window's button is lit and marked by a short
+//! order the windows opened, each its app's icon, when the app has one,
+//! then its title on one line, cut short with an ellipsis. The focused window's button is lit and marked by a short
 //! accent line along its foot; another window's by a dot; a minimized
 //! window's has no mark and dimmer text. Buttons share one width, at most
 //! 180 logical pixels, and together take at most 45% of the panel, so
@@ -8,11 +8,12 @@
 //! fit, the last one stands for the windows left over, with their count,
 //! and brings the first of them forward. A click on the focused window
 //! minimizes it, and on any other brings it forward, back if minimized,
-//! over wlr-foreign-toplevel-management (`crate::toplevels`). App icons
-//! join with the launcher (M5.3), which reads them.
+//! over wlr-foreign-toplevel-management (`crate::toplevels`). The icon is
+//! found as the apps widget finds it: the installed app the window
+//! belongs to, else its app id as an icon name.
 
 use accesskit::Role;
-use tiny_skia::{Rect, Transform};
+use tiny_skia::{FilterQuality, PixmapPaint, Rect, Transform};
 
 use edel::tokens::Colour;
 
@@ -42,7 +43,9 @@ fn label(shown: &str) -> String {
                 Some('-') => " (minimized)",
                 _ => "",
             };
-            format!("{}{state}", chars.as_str())
+            let rest = chars.as_str();
+            let title = rest.split_once('\t').map_or(rest, |(_, title)| title);
+            format!("{title}{state}")
         })
         .collect();
     format!("Windows: {}", titles.join(", "))
@@ -61,6 +64,9 @@ const GAP: f32 = 4.0;
 const HEIGHT: f32 = 30.0;
 /// The title's inset from each side of its button.
 const PAD: f32 = 10.0;
+/// The app's icon, and the room between it and the title.
+const ICON: f32 = 16.0;
+const ICON_GAP: f32 = 7.0;
 /// The marks along a button's foot: the focused window's line and other
 /// windows' dot, 2 px high, 2 px above the foot.
 const LINE: f32 = 14.0;
@@ -68,7 +74,7 @@ const DOT: f32 = 4.0;
 
 /// What it shows: a line for each window, its first character `*` for
 /// the focused one, `-` for a minimized one, else a space, then its
-/// title. Empty without windows.
+/// app's icon name, a tab and its title. Empty without windows.
 fn shows(live: &Live) -> String {
     let lines: Vec<String> = live
         .windows
@@ -80,19 +86,24 @@ fn shows(live: &Live) -> String {
                 _ => ' ',
             };
             // A title is one line here.
-            let title: String = task
-                .title
-                .chars()
-                .map(|c| if c.is_control() { ' ' } else { c })
-                .collect();
-            format!("{mark}{title}")
+            let one_line = |text: &str| -> String {
+                text.chars()
+                    .map(|c| if c.is_control() { ' ' } else { c })
+                    .collect()
+            };
+            let icon = live
+                .installed
+                .iter()
+                .find(|p| super::apps::belongs(&task.app_id, &p.id))
+                .map_or(task.app_id.as_str(), |p| p.icon.as_str());
+            format!("{mark}{}\t{}", one_line(icon), one_line(&task.title))
         })
         .collect();
     lines.join("\n")
 }
 
-/// `shows`' text read back: each window's mark and title.
-fn read(shown: &str) -> Vec<(char, &str)> {
+/// `shows`' text read back: each window's mark, icon name and title.
+fn read(shown: &str) -> Vec<(char, &str, &str)> {
     if shown.is_empty() {
         return Vec::new();
     }
@@ -101,7 +112,9 @@ fn read(shown: &str) -> Vec<(char, &str)> {
         .map(|line| {
             let mut chars = line.chars();
             let mark = chars.next().unwrap_or(' ');
-            (mark, chars.as_str())
+            let rest = chars.as_str();
+            let (icon, title) = rest.split_once('\t').unwrap_or(("", rest));
+            (mark, icon, title)
         })
         .collect()
 }
@@ -162,7 +175,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         ..tokens.panel_text
     };
     let size = (tokens.panel_text_size as f32 * 0.96).round() * s;
-    for (i, (mark, title)) in windows.into_iter().take(drawn).enumerate() {
+    for (i, (mark, icon, title)) in windows.into_iter().take(drawn).enumerate() {
         let bx = (x + (EDGE + i as f32 * (button + GAP)) * s).round();
         let bw = (button * s).round();
         // The last button, when windows are left over, counts them.
@@ -198,10 +211,50 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
                     .fill_rect(rect, &paint_of(colour), Transform::identity(), None);
             }
         }
+        // The app's icon, when it has one and the button has room for
+        // it; a button too narrow for a title shows the icon alone,
+        // centred.
+        let px = (ICON * s).round();
+        let alone = bw < (2.0 * PAD + ICON + ICON_GAP + 24.0) * s;
+        let ix = if alone {
+            (bx + (bw - px) / 2.0).round()
+        } else {
+            (bx + PAD * s).round()
+        };
+        let iy = (y + (height - px) / 2.0 - s).round();
+        let shown_icon = !icon.is_empty()
+            && bw >= px
+            && canvas
+                .icons
+                .as_deref_mut()
+                .and_then(|icons| icons.get(icon, px as u32))
+                .map(|picture| {
+                    let paint = PixmapPaint {
+                        quality: FilterQuality::Nearest,
+                        ..PixmapPaint::default()
+                    };
+                    canvas.pixmap.draw_pixmap(
+                        ix as i32,
+                        iy as i32,
+                        picture.as_ref(),
+                        &paint,
+                        Transform::identity(),
+                        None,
+                    );
+                })
+                .is_some();
+        if shown_icon && alone {
+            continue;
+        }
+        let tx = if shown_icon {
+            ix + px + ICON_GAP * s
+        } else {
+            bx + PAD * s
+        };
         if let Some(text) = canvas.text.as_deref_mut() {
-            let mut line = text.fit(title, size, bw - 2.0 * PAD * s);
+            let mut line = text.fit(title, size, bx + bw - PAD * s - tx);
             let ty = y + (height - size * 1.25) / 2.0;
-            text.draw(canvas.pixmap, &mut line, bx + PAD * s, ty, ink);
+            text.draw(canvas.pixmap, &mut line, tx, ty, ink);
         }
     }
 }
@@ -253,7 +306,7 @@ mod tests {
     fn task(title: &str, focused: bool, minimized: bool) -> Task {
         Task {
             title: title.into(),
-            app_id: String::new(),
+            app_id: "foot".into(),
             focused,
             minimized,
         }
@@ -273,13 +326,37 @@ mod tests {
             task("two\nlines", true, false),
             task("away", true, true),
         ]));
-        assert_eq!(shown, " foot\n*two lines\n-away");
+        assert_eq!(shown, " foot\tfoot\n*foot\ttwo lines\n-foot\taway");
         assert_eq!(
             read(&shown),
-            [(' ', "foot"), ('*', "two lines"), ('-', "away")]
+            [
+                (' ', "foot", "foot"),
+                ('*', "foot", "two lines"),
+                ('-', "foot", "away")
+            ]
         );
         assert_eq!(shows(&live(Vec::new())), "");
         assert!(read("").is_empty());
+    }
+
+    #[test]
+    fn a_window_shows_its_installed_apps_icon_else_its_app_id() {
+        let mut files = task("Home", true, false);
+        files.app_id = "org.gnome.Nautilus".into();
+        let live = Live {
+            windows: vec![files, task("term", false, false)],
+            installed: vec![crate::widgets::Pin {
+                id: "org.gnome.Nautilus".into(),
+                name: "Files".into(),
+                icon: "system-file-manager".into(),
+            }],
+            ..Live::default()
+        };
+        let shown = shows(&live);
+        assert_eq!(
+            read(&shown),
+            [('*', "system-file-manager", "Home"), (' ', "foot", "term")]
+        );
     }
 
     #[test]
@@ -314,7 +391,7 @@ mod tests {
 
     #[test]
     fn a_click_minimizes_the_focused_window_and_brings_others_forward() {
-        let shown = " foot\n*one\n-away";
+        let shown = " foot\tfoot\n*\tone\n-\taway";
         let width = logical_width(3, 180.0);
         let middle = |i: f32| EDGE + i * (180.0 + GAP) + 90.0;
         let click = |at| input(shown, Input::Click(at, width));
@@ -331,7 +408,7 @@ mod tests {
     #[test]
     fn a_screen_reader_hears_each_title_and_its_state() {
         assert_eq!(
-            label("*Files\n-Mail\n Notes"),
+            label("*files\tFiles\n-mail\tMail\n \tNotes"),
             "Windows: Files (focused), Mail (minimized), Notes"
         );
     }

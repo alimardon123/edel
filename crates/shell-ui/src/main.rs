@@ -232,10 +232,13 @@ fn run() -> Result<()> {
             reader: a11y::Reader::new(),
         });
     }
-    // The apps a panel's apps widget shows, read once (M5.4c); none read
-    // when no panel holds one.
+    // The apps a panel's apps widget shows, and whose icons the window
+    // list shows, read once (M5.4c); none read when no panel holds either.
     let mut live = Live::default();
-    if panels.iter().any(|p| p.row.all().any(|w| w.name == "apps")) {
+    if panels
+        .iter()
+        .any(|p| p.row.all().any(|w| w.name == "apps" || w.name == "windows"))
+    {
         let installed = apps::read_all(&apps::dirs());
         live.pinned = preset
             .apps

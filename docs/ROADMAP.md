@@ -597,6 +597,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-07: the panel's window list shows each window's app icon before its title, as the apps widget finds it, so Classic's taskbar has icons as Windows-like's and Mac-like's do; Settings' Undo and Keep bar is docked along the page's foot in the sidebar's colour behind a hairline, no longer floating over the settings, after Alimardon found the floating one mixed with what lay under it. Asked by Alimardon. PR #113.
 - 2026-10-07: M5.12 split into 12a (light out of the box, in the mockups' colours) and 12b (people's own tokens and the Appearance page); 12a done, with the title bars showing each app's icon and the minimize and maximize shortcuts (Super+H, Super+M), after Alimardon's reviews of the screenshots. Asked by Alimardon. PR #113.
 - 2026-10-06: M5.6c done, and with it M5.6: `docs/layout-guide.md` gives apps the three size classes, touch sizes, the touch mode key and the live-resize rule; a default row records the cutoffs. PR #113.
 - 2026-10-06: M5.18 split into 18a (each title bar button as a setting, with its toggle in Settings) and 18b (Never and the Zen preset); 18a pulled forward and done, as Alimardon asked for the buttons' switches in Settings at once. Asked by Alimardon. PR #113.

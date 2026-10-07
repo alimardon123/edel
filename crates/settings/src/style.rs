@@ -115,12 +115,7 @@ pub fn css(t: &Tokens) -> String {
     let tiny = format!("{:.1}", f64::from(size) - 1.5);
     let key = format!("{:.1}", f64::from(size) - 2.5);
     let heading = size * 20 / 13;
-    let (rw, rm, rc, rs) = (
-        t.radius_window,
-        t.radius_menu,
-        t.radius_control,
-        t.radius_small,
-    );
+    let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
     format!(
         r#"/* Written from design/tokens.toml by edel-settings (style.rs), after the mockups' own CSS. */
 window.edel {{ background-color: {window}; color: {text}; font-family: "{font}"; font-size: {size}px; letter-spacing: -0.08px; }}
@@ -191,10 +186,10 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-choices {{ background: none; }}
 .edel-choices > row {{ min-height: 26px; padding: 0 10px 0 6px; border-radius: {rs}px; color: {text}; }}
 .edel-choices > row:hover {{ background-color: {accent}; color: {accent_text}; }}
-.edel-change-bar {{ padding: 6px 6px 6px 14px; border-radius: {rm}px; background-color: {window}; color: {text};
-  box-shadow: 0 0 0 1px {line}, 0 10px 28px -10px alpha({shadow}, 0.55), 0 2px 6px alpha({shadow}, 0.12); }}
-.edel-change-bar > image {{ color: {accent}; }}
-.edel-change-text {{ margin-right: 10px; }}
+.edel-change-bar {{ padding: 10px 20px 10px 32px; background-color: {card}; color: {text}; border-top: 1px solid {line}; }}
+.edel-change-mark {{ min-width: 22px; min-height: 22px; border-radius: 999px; background-color: {accent}; color: {accent_text}; }}
+.edel-change-text {{ font-weight: 600; }}
+.edel-change-detail {{ color: {muted}; font-size: {tiny}px; }}
 .edel-change-undo, .edel-change-keep {{ min-height: 28px; padding: 0 14px; border-radius: {rc}px; background-image: none; box-shadow: none; border: none; }}
 .edel-change-undo {{ background-color: {fill}; color: {text}; }}
 .edel-change-undo:hover {{ background-color: {fill_strong}; }}

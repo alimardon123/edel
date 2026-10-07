@@ -55,15 +55,21 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
         .vexpand(true)
         .child(&clamp)
         .build();
-    // An overlay, so a page may float its change bar over the bottom.
-    let page = gtk::Overlay::builder().child(&scroll).build();
+    // A column, so a page may dock its change bar under what scrolls.
+    let page = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .build();
+    page.append(&scroll);
     (page.upcast(), content, problem)
 }
 
 /// The bar a page shows once something on it changed (M5.6a): changes
 /// apply at once, so the desktop itself is the preview, and the bar
 /// offers to put back everything changed since the page opened, or to
-/// keep it. Save as preset joins it with own presets (M5.17).
+/// keep it. It is docked along the page's foot, in the sidebar's colour
+/// behind a hairline, so it never lies over a setting and reads as the
+/// window's own, not the page's. Save as preset joins it with own presets
+/// (M5.17).
 pub struct ChangeBar {
     revealer: gtk::Revealer,
     pub undo: gtk::Button,
@@ -71,12 +77,27 @@ pub struct ChangeBar {
 }
 
 impl ChangeBar {
-    /// Floats a bar, hidden, over the bottom of `page`, made by [`page`].
+    /// Docks a bar, hidden, along the foot of `page`, made by [`page`].
     pub fn new(page: &gtk::Widget) -> ChangeBar {
         let text = gtk::Label::builder()
             .label("Your changes are live")
+            .xalign(0.0)
             .css_classes(["edel-change-text"])
             .build();
+        let detail = gtk::Label::builder()
+            .label("Undo puts back what changed since you opened this page.")
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .hexpand(true)
+            .css_classes(["edel-change-detail"])
+            .build();
+        let words = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .valign(gtk::Align::Center)
+            .hexpand(true)
+            .build();
+        words.append(&text);
+        words.append(&detail);
         let undo = gtk::Button::builder()
             .label("Undo")
             .tooltip_text("Put back everything changed since this page opened")
@@ -87,11 +108,14 @@ impl ChangeBar {
             .css_classes(["edel-change-keep"])
             .build();
         let bar = gtk::Box::builder()
-            .spacing(8)
+            .spacing(10)
             .css_classes(["edel-change-bar"])
             .build();
-        bar.append(&icon::image("check", 14));
-        bar.append(&text);
+        let mark = icon::image("check", 14);
+        mark.add_css_class("edel-change-mark");
+        mark.set_valign(gtk::Align::Center);
+        bar.append(&mark);
+        bar.append(&words);
         bar.append(&undo);
         bar.append(&keep);
         bar.update_property(&[gtk::accessible::Property::Label("Your changes are live")]);
@@ -99,12 +123,9 @@ impl ChangeBar {
             .child(&bar)
             .transition_type(gtk::RevealerTransitionType::SlideUp)
             .transition_duration(160)
-            .halign(gtk::Align::Center)
-            .valign(gtk::Align::End)
-            .margin_bottom(18)
             .build();
-        if let Some(overlay) = page.downcast_ref::<gtk::Overlay>() {
-            overlay.add_overlay(&revealer);
+        if let Some(column) = page.downcast_ref::<gtk::Box>() {
+            column.append(&revealer);
         }
         ChangeBar {
             revealer,
