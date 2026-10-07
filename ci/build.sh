@@ -153,8 +153,8 @@ ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
 # images and their release.toml, the disks, the container image and the
 # package lists), and out/channel/release.toml names the same update images
 # by their URL under the tag's release, for the stable channel. They are
-# signed by ci/sign.sh in a container of its own, so the release key never
-# reaches cargo, apk or this build.
+# signed by ci/sign.sh in the workflow's sign job, on a runner of its own
+# (M3.7), so the release key never reaches cargo, apk or this build.
 tag=${EDEL_TAG:-v$version}
 rm -rf out/release out/channel
 mkdir -p out/release out/channel

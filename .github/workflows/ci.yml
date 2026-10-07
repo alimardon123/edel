@@ -97,13 +97,18 @@ jobs:
       - name: Build images inside Alpine
         run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
 
-      - name: Sign the release in a container of its own
-        env:
-          # Empty until Alimardon adds the secret (docs/RELEASE.md), and
-          # always empty for pull requests: only this step of a push to
-          # main or of a tag sees the key; the rest sign with a throwaway.
-          EDEL_RELEASE_KEY: ${{ github.event_name == 'push' && secrets.EDEL_RELEASE_KEY || '' }}
-        run: docker run --rm -e EDEL_RELEASE_KEY -v "$PWD:/src" -w /src "$ALPINE" sh ci/sign.sh
+      - name: Every image carries the release's public keys
+        # The sign job, which holds the key, never sees the images (M3.7).
+        run: sh ci/keys-carried.sh
+
+      - name: Hand the release lists to the sign job
+        # Only the two lists: the signer never touches what the build made.
+        uses: actions/upload-artifact@v4
+        with:
+          name: edel-lists
+          path: |
+            out/release/release.toml
+            out/channel/release.toml
 
       - name: Test the container image
         run: sh ci/container-test.sh
@@ -265,12 +270,50 @@ jobs:
           key: mdbook-${{ hashFiles('ci/site.sh') }}
       - run: sh ci/site.sh publish
 
+  # Signs the release lists (M3.7) on a runner of its own, after the build:
+  # only the two lists come from the build, and the signer is built here
+  # from the locked sources (Cargo.lock's checksums pin every crate), with
+  # nothing cached, so nothing the build made runs while the key is here.
+  # Only a push gets the key, in the GitHub environment "release", which
+  # Alimardon can make wait for their approval; pull requests sign with a
+  # throwaway key, which proves the path.
+  sign:
+    name: Sign the release
+    needs: images
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: edel-lists
+          path: out
+      - name: Build the signer from the locked sources
+        run: cargo build --release --locked -p edel --bin edel
+      - name: Sign and verify both lists
+        env:
+          # Empty until Alimardon adds the secret (docs/RELEASE.md), and
+          # always empty for pull requests.
+          EDEL_RELEASE_KEY: ${{ github.event_name == 'push' && secrets.EDEL_RELEASE_KEY || '' }}
+          EDEL: target/release/edel
+        run: sh ci/sign.sh
+      - name: Hand the signed lists to the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: edel-signed
+          path: |
+            out/release/release.toml
+            out/release/release.toml.sig
+            out/channel/release.toml
+            out/channel/release.toml.sig
+            out/channel/signer
+
   # Publishes what the images job built and tested (M3.4): the preview on
   # every merge to main, a draft release for a v* tag. Off until Alimardon
   # sets the repository variable EDEL_PUBLISH to yes (docs/RELEASE.md).
   publish:
     name: Publish the release
-    needs: [rust, images, desktop]
+    needs: [rust, images, desktop, sign]
     if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
     # One publish per ref at a time, never cancelled halfway: two merges in
     # a row upload one after the other, and ci/release.sh keeps the newer.
@@ -285,6 +328,12 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: edel-release
+          path: out
+      # The lists as the sign job signed them, over the build's unsigned
+      # ones (M3.7).
+      - uses: actions/download-artifact@v4
+        with:
+          name: edel-signed
           path: out
       - name: Upload to the preview, or to a draft release for a tag
         env:
