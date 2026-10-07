@@ -24,6 +24,7 @@ mod outputs;
 mod pointer;
 mod program;
 mod render;
+mod sandbox;
 mod shellui;
 mod shortcuts;
 mod state;

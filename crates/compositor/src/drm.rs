@@ -186,7 +186,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
     let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
     let handle = event_loop.handle();
-    let name = listen(&handle, display)?;
+    let name = listen(&handle, &mut state, display)?;
     state.socket = name.clone();
     crate::xwayland::listen(&handle, &mut state, &name);
     state.program = program;
