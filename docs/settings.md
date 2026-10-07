@@ -54,6 +54,7 @@ The desktop follows these keys at once (M4.5): it reads the machine's file and t
 | `layout.preset` | a preset this release has: `classic`, `hive` (M5.4a), `windows-like` (M5.4c) or `mac-like` (M5.4d), with `tablet` and `phone` to come with M9; missing is `classic`. A changed preset re-lays out the windows and restarts the panel at once; a name this release lacks gives Classic, and `edel settings diff` says so | M5.4a |
 | `layout.tiling` | `true` or `false` | M4.5 |
 | `layout.title_bars` | `always` or `floating-only` | M4.5 |
+| `layout.tiling_style` | `stack` or `split`: how tiling lays windows out, one main window on the left and the rest stacked on the right (`stack`), or each new window taking half of the focused one's space, cut across its longer side, as Hyprland tiles (`split`); missing is `stack`. It never switches a workspace between floating and tiling: a floating one takes the style when it next tiles. `scroll`, as niri tiles, comes with M5.16c | M5.16a |
 | `layout.device_type` | `desktop`, `tablet` or `phone`; missing detects it | M9.3 |
 | `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive) | M5.4b |
 | `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown | M5.18a |

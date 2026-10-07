@@ -74,6 +74,10 @@
 #               foot; Escape closes it (M5.3b)
 #   switcher    with Alt held, Tab shows the window switcher with the
 #               window used before chosen; letting go switches (M5.3c)
+#   styles      layout.tiling_style = "split" leaves workspace 4 floating;
+#               Super+T tiles four windows there, each halving the one
+#               before; Super+Shift+Left swaps the last two, and stack
+#               lays them out as master and stack (M5.16a)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1447,6 +1451,78 @@ case_tiling() {
 	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+}
+
+case_styles() {
+	# Tiling styles (M5.16a): layout.tiling_style = "split" changes how
+	# tiling lays windows out and leaves a floating workspace floating. On
+	# workspace 4, empty, four windows open floating; Super+T tiles them
+	# as split: s1 on the left half, s2 top right, s3 and s4 sharing the
+	# bottom right quarter side by side. Super+Shift+Left swaps s4, the
+	# focused one, with s3; stack then lays the same windows out as master
+	# and stack, live.
+	python3 ci/qmp.py key meta_l-4
+	wait_for 'edel-compositor: workspace 4$' || fail "Super+4 did not show workspace 4"
+	guest 'style split'
+	wait_for 'edel-compositor: tiling style split' ||
+		fail "the compositor did not follow layout.tiling_style = \"split\""
+	guest 'four windows'
+	i=0
+	until value windows | grep -qE ' s4@[0-9]+,'; do
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "four test windows did not open: $(value windows)"
+		sleep 0.2
+	done
+	floated=$(value windows)
+	python3 ci/qmp.py key meta_l-t
+	wait_for 'edel-compositor: windows now tiling' || fail "Super+T did not tile workspace 4"
+	# places WINDOWS: each of s1 to s4 as name x y w h, from the windows line.
+	places() {
+		echo "$1" | grep -oE 's[1-4]@[0-9]+,[0-9]+,[0-9]+x[0-9]+' | tr '@,x' '   '
+	}
+	split_ok() {
+		places "$(value windows)" | awk '
+			{ x[$1] = $2; y[$1] = $3; w[$1] = $4; h[$1] = $5 }
+			END {
+				ok = x["s1"] < x["s2"] && h["s1"] > 2 * h["s2"] &&
+				     y["s3"] > y["s2"] && y["s3"] == y["s4"] && x["s3"] == x["s2"] &&
+				     x["s4"] > x["s3"] && w["s3"] < w["s2"]
+				exit !ok
+			}'
+	}
+	i=0
+	until split_ok; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "with split, s1 to s4 are not halved in turn: $(value windows)"
+		sleep 0.2
+	done
+	split=$(value windows)
+	echo "$floated" | grep -qE 's1@[0-9]+,[0-9]+,200x150' ||
+		fail "the style tiled a floating workspace before Super+T: $floated"
+	closed=$(count 'edel-compositor: swapped s4 and s3')
+	python3 ci/qmp.py key meta_l-shift-left
+	wait_more 'edel-compositor: swapped s4 and s3' "$closed" ||
+		fail "Super+Shift+Left did not swap s4 with s3, the window to its left: $(value windows)"
+	guest 'style stack'
+	wait_for 'edel-compositor: tiling style stack' ||
+		fail "the compositor did not follow layout.tiling_style = \"stack\""
+	stack_ok() {
+		places "$(value windows)" | awk '
+			{ x[$1] = $2; y[$1] = $3 }
+			END { exit !(x["s1"] < x["s2"] && x["s2"] == x["s3"] && x["s3"] == x["s4"] && y["s2"] < y["s4"] && y["s4"] < y["s3"]) }'
+	}
+	i=0
+	until stack_ok; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "with stack, s2 to s4 are not stacked on the right, s4 above s3: $(value windows)"
+		sleep 0.2
+	done
+	stacked=$(value windows)
+	guest 'four off'
+	guest 'style default'
+	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-1
+	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+T tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
 
 case_dmabuf() {

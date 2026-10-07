@@ -155,6 +155,54 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Maximize the focused window, or give it its size back (M5.18a)",
     ),
+    action(
+        "focus_window_left",
+        "Super+Left",
+        false,
+        "Focus the window to the left of the focused one (M5.16a)",
+    ),
+    action(
+        "focus_window_right",
+        "Super+Right",
+        false,
+        "Focus the window to the right of the focused one (M5.16a)",
+    ),
+    action(
+        "focus_window_up",
+        "Super+Up",
+        false,
+        "Focus the window above the focused one (M5.16a)",
+    ),
+    action(
+        "focus_window_down",
+        "Super+Down",
+        false,
+        "Focus the window below the focused one (M5.16a)",
+    ),
+    action(
+        "move_window_left",
+        "Super+Shift+Left",
+        false,
+        "Swap the focused window with the one to its left, when tiled (M5.16a)",
+    ),
+    action(
+        "move_window_right",
+        "Super+Shift+Right",
+        false,
+        "Swap the focused window with the one to its right, when tiled (M5.16a)",
+    ),
+    action(
+        "move_window_up",
+        "Super+Shift+Up",
+        false,
+        "Swap the focused window with the one above it, when tiled (M5.16a)",
+    ),
+    action(
+        "move_window_down",
+        "Super+Shift+Down",
+        false,
+        "Swap the focused window with the one below it, when tiled (M5.16a)",
+    ),
 ];
 
 /// The action called `name`.

@@ -1,16 +1,16 @@
 //! The Layout page (M5.6a, M5.6b), as the mockup draws it
 //! (`docs/mockups/classic-menus.jpg`): a card per preset with its picture,
-//! then a card of rows for tiling, title bars and the buttons' side, and
+//! then a card of rows for tiling and its style (M5.16a), title bars and
+//! the buttons' side, and
 //! the title bar's buttons: a bar drawn as every window's will be and a
 //! switch for each button (M5.18a). Each
 //! choice is one line of the person's settings file, which the desktop
 //! follows at once, and each says where its value comes from, with Reset
 //! for the person's own choice and Copy as command (ADR-008). The page
 //! follows the files, so a change from the panel or `edel settings set`
-//! shows here too. Later keys join as their steps land: the tiling style
-//! (M5.16) and Never with a switch per button (M5.18) as rows here, a
-//! person's own presets as cards after the built-in ones, with Save as
-//! (M5.17).
+//! shows here too. Later keys join as their steps land: Never (M5.18b)
+//! as a row here, a person's own presets as cards after the built-in
+//! ones, with Save as (M5.17).
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -206,6 +206,18 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         ("Or the panel's toggle", Some("toggle_tiling"), true),
         Control::Switch(gtk::Switch::new()),
     )];
+    // How tiling lays windows out (M5.16a): the same key as the panel's
+    // layout button's menu and `edel settings set`.
+    settings.push(setting(
+        &group,
+        "layout.tiling_style",
+        (
+            "Stack keeps one main window, Split halves the focused one",
+            None,
+            false,
+        ),
+        Control::choice("layout.tiling_style"),
+    ));
 
     // Everything about title bars in one group, each row named as its key
     // is (ADR-008's same names decision): a bar drawn as the compositor

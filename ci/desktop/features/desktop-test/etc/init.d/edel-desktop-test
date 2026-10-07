@@ -234,6 +234,14 @@ commands() {
 		'motion default') edel settings reset appearance.animations ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
+		# Tiling styles (M5.16a): split, stack, and the release's again,
+		# and four windows to tile, each opened once the one before is on
+		# screen, so each new one has the keyboard.
+		'style split') edel settings set layout.tiling_style=split ;;
+		'style stack') edel settings set layout.tiling_style=stack ;;
+		'style default') edel settings reset layout.tiling_style ;;
+		'four windows') four_windows & ;;
+		'four off') pkill -f '[e]del-testclient --size 200x150 --colour 3366cc' ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to
 		# Super+W, and back to its default.
 		'shortcut window')
@@ -442,6 +450,16 @@ open_ten() {
 	say "open_ten_p99_ms $(frame_ms /tmp/frames-ten.txt 99)"
 	say "open_ten_frames $(frame_ms /tmp/frames-ten.txt count)"
 	say "open_ten_tier $(edel status 2>&1 | sed -n 's/^effects: //p')"
+}
+
+# four_windows: test clients s1 to s4, each once the one before is on
+# screen (M5.16a).
+four_windows() {
+	before=$(grep -c '^\[\[windows\]\]' "$state_file" 2>/dev/null || true)
+	for n in 1 2 3 4; do
+		as_ci edel-testclient --size 200x150 --colour 3366cc --title "s$n" </dev/null >/dev/null 2>&1 &
+		shown $((${before:-0} + n))
+	done
 }
 
 # x11_rss: the memory XWayland and xwayland-satellite use, in MiB.

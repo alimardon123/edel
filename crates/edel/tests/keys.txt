@@ -54,3 +54,4 @@ addons.installed
 layout.close_button
 layout.minimize_button
 layout.maximize_button
+layout.tiling_style
