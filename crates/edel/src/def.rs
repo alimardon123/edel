@@ -403,8 +403,15 @@ impl ImageDef {
         if self.packages.is_empty() {
             bail!("the features install no package");
         }
-        if let Some(name) = self.health.iter().find(|n| !guard::is_health_name(n)) {
-            bail!("health {name:?} is not a known health name");
+        for name in &self.health {
+            if guard::health_file(name).is_none() {
+                bail!("health {name:?} is not a health name: use only a-z, 0-9 and '-'");
+            }
+            if !guard::is_built_in(name) && !self.writes_health(name)? {
+                bail!(
+                    "health {name:?} is never written: no feature of this image ships a file that writes $health_dir/{name}, so the boot guard would wait for it in vain and every update would fall back"
+                );
+            }
         }
         match (self.variant, &self.vm) {
             (Variant::Vm, None) => bail!("a vm image needs a [vm] section"),
@@ -478,6 +485,23 @@ impl ImageDef {
     /// File name stem shared by every output of this image.
     pub fn stem(&self) -> String {
         format!("{}-{}", self.name, self.arch)
+    }
+}
+
+impl ImageDef {
+    /// Whether a file one of the features ships writes the health file
+    /// `name`, as `$health_dir/NAME` from `places.sh` (M1.11).
+    fn writes_health(&self, name: &str) -> Result<bool> {
+        let needle = format!("$health_dir/{name}");
+        for dir in self.features.iter().filter_map(|l| l.files.as_ref()) {
+            for path in files_below(dir)? {
+                let text = fs::read(dir.join(&path)).unwrap_or_default();
+                if String::from_utf8_lossy(&text).contains(&needle) {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -765,7 +789,40 @@ mod tests {
             .1
             .replace("\"default-runlevel\"", "\"desktop-ish\"");
         found.insert("boot".into(), listed("boot", &unknown));
-        assert!(ImageDef::merge(VM, found).is_err());
+        let err = ImageDef::merge(VM, found).unwrap_err();
+        assert!(err.to_string().contains("is never written"), "{err}");
+    }
+
+    #[test]
+    fn a_features_own_health_check_needs_a_file_that_writes_it() {
+        let dir = std::env::temp_dir().join(format!("edel-def-health-{}", std::process::id()));
+        let service = dir.join("etc/init.d/net-check");
+        fs::create_dir_all(service.parent().unwrap()).unwrap();
+        fs::write(&service, "touch \"$health_dir/elsewhere\"\n").unwrap();
+        let with = |health: &str| {
+            let mut found = found();
+            let text = FEATURES[2].1.replace(
+                "switchable = true",
+                &format!("switchable = true\nhealth = [\"{health}\"]"),
+            );
+            let mut ssh = listed("ssh", &text);
+            ssh.files = Some(dir.clone());
+            found.insert("ssh".into(), ssh);
+            ImageDef::merge(VM, found)
+        };
+        // Nothing writes $health_dir/network yet.
+        let err = with("network").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("no feature of this image ships a file that writes $health_dir/network"),
+            "{err}"
+        );
+        fs::write(&service, "touch \"$health_dir/network\"\n").unwrap();
+        let def = with("network").unwrap();
+        assert_eq!(def.health, ["default-runlevel", "network"]);
+        let err = with("No_Name").unwrap_err();
+        assert!(err.to_string().contains("is not a health name"), "{err}");
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

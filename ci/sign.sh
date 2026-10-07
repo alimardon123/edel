@@ -47,7 +47,9 @@ else
 	key=out/keys/throwaway/ci-release.key keys=out/keys/throwaway signer=throwaway
 fi
 for manifest in out/release/release.toml out/channel/release.toml; do
-	$edel release sign --key "$key" "$manifest"
+	# Each list expires 60 days after it is signed (M3.8, the default row),
+	# renewed by every publish and monthly rebuild.
+	$edel release sign --key "$key" --expires-in 60 "$manifest"
 	$edel release verify --keys "$keys" "$manifest"
 done
 echo "$signer" >out/channel/signer

@@ -540,7 +540,7 @@ shown() {
 # and GRUB starts slot A again; the marker on /data, which both slots
 # share, makes the next boots say so instead of testing the desktop.
 break_update() {
-	edel update http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
+	edel update --allow-http http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
 		say "rollback: FAIL: the update did not install"
 		return 1
 	}

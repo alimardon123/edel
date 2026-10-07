@@ -29,13 +29,13 @@ use edel::places;
 use crate::release::os_release_value;
 use crate::update;
 
-/// Health names an image may list in `[image] health`, and the file under
-/// `/run` that says each one is reached. OpenRC's own `softlevel` is never
-/// used: OpenRC writes it when a runlevel starts, while services may still
-/// hang.
+/// The health names edel itself writes, and the file that says each one
+/// is reached. OpenRC's own `softlevel` is never used: OpenRC writes it
+/// when a runlevel starts, while services may still hang. Any other name
+/// is a feature's own check, its file in [`places::HEALTH_DIR`] (M1.11).
 const SENTINELS: [(&str, &str); 2] = [
-    ("default-runlevel", "edel/default-reached"),
-    ("compositor", "edel/session/ready"),
+    ("default-runlevel", places::DEFAULT_REACHED),
+    ("compositor", places::READY_FILE),
 ];
 /// How long a slot may take to become healthy when the image says nothing.
 pub const DEFAULT_TIMEOUT: u64 = 120;
@@ -45,15 +45,25 @@ const WATCHDOG_CLASS: &str = "/sys/class/watchdog";
 /// softdog's identity; every other watchdog is hardware.
 const SOFTDOG: &str = "Software Watchdog";
 
-/// Whether `name` is a health name edel knows.
-pub fn is_health_name(name: &str) -> bool {
+/// Whether `name` is one of the health names edel itself writes.
+pub fn is_built_in(name: &str) -> bool {
     SENTINELS.iter().any(|(n, _)| *n == name)
 }
 
-/// The health files to wait for and the timeout, from os-release; `run` is
-/// `/run`, or a test directory. Unknown names are skipped and returned, so
-/// a newer image's name never stops an older guard.
-fn health_plan(os_release: &str, run: &Path) -> (Vec<PathBuf>, u64, Vec<String>) {
+/// The file that says health `name` is reached: edel's own, else the
+/// feature's in [`places::HEALTH_DIR`]; none for a name that is not one
+/// (a-z, 0-9 and '-').
+pub fn health_file(name: &str) -> Option<PathBuf> {
+    match SENTINELS.iter().find(|(n, _)| *n == name) {
+        Some((_, file)) => Some(PathBuf::from(file)),
+        None if edel::features::is_name(name) => Some(Path::new(places::HEALTH_DIR).join(name)),
+        None => None,
+    }
+}
+
+/// The health files to wait for and the timeout, from os-release. A name
+/// that is no name is skipped and returned.
+fn health_plan(os_release: &str) -> (Vec<PathBuf>, u64, Vec<String>) {
     let mut files = Vec::new();
     let mut unknown = Vec::new();
     for name in os_release_value(os_release, "EDEL_HEALTH")
@@ -61,8 +71,8 @@ fn health_plan(os_release: &str, run: &Path) -> (Vec<PathBuf>, u64, Vec<String>)
         .split([' ', ','])
         .filter(|n| !n.is_empty())
     {
-        match SENTINELS.iter().find(|(n, _)| *n == name) {
-            Some((_, file)) => files.push(run.join(file)),
+        match health_file(name) {
+            Some(file) => files.push(file),
             None => unknown.push(name.to_string()),
         }
     }
@@ -74,6 +84,24 @@ fn health_plan(os_release: &str, run: &Path) -> (Vec<PathBuf>, u64, Vec<String>)
 
 fn healthy(files: &[PathBuf]) -> bool {
     files.iter().all(|f| f.exists())
+}
+
+/// The health names of `files` not reached yet, for the guard's message.
+fn not_reached(files: &[PathBuf]) -> String {
+    let names: Vec<String> = files
+        .iter()
+        .filter(|f| !f.exists())
+        .map(
+            |f| match SENTINELS.iter().find(|(_, file)| Path::new(file) == f) {
+                Some((name, _)) => name.to_string(),
+                None => f
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+            },
+        )
+        .collect();
+    names.join(", ")
 }
 
 /// The watchdog device, loading softdog when the hardware has none.
@@ -140,9 +168,11 @@ fn take_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
 /// Waits for the slot to become healthy, then confirms it.
 pub fn guard() -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let (files, timeout, unknown) = health_plan(&os_release, Path::new("/run"));
+    let (files, timeout, unknown) = health_plan(&os_release);
     for name in unknown {
-        eprintln!("warning: edel guard: unknown health name {name:?} skipped");
+        eprintln!(
+            "warning: edel guard: {name:?} in EDEL_HEALTH is not a health name (a-z, 0-9 and '-'), so it is skipped"
+        );
     }
     let mut watchdog = open_watchdog();
     if watchdog.is_none() {
@@ -180,6 +210,10 @@ pub fn guard() -> Result<()> {
             return Ok(());
         }
         if start.elapsed() >= Duration::from_secs(timeout) {
+            eprintln!(
+                "edel guard: health not reached after {timeout} s: {}",
+                not_reached(&files)
+            );
             match on_timeout(watchdog.is_some()) {
                 Timeout::LetTheWatchdog => {
                     eprintln!(
@@ -262,16 +296,26 @@ fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
 mod tests {
     use super::*;
 
-    const OS_RELEASE: &str =
-        "NAME=\"Edel OS\"\nEDEL_HEALTH=\"default-runlevel newer-thing\"\nEDEL_HEALTH_TIMEOUT=30\n";
+    const OS_RELEASE: &str = "NAME=\"Edel OS\"\nEDEL_HEALTH=\"default-runlevel network Bad_Name\"\nEDEL_HEALTH_TIMEOUT=30\n";
 
     #[test]
-    fn reads_health_names_and_timeout_and_skips_unknown_ones() {
-        let (files, timeout, unknown) = health_plan(OS_RELEASE, Path::new("/run"));
-        assert_eq!(files, [PathBuf::from(places::DEFAULT_REACHED)]);
+    fn reads_health_names_and_timeout_and_skips_what_is_no_name() {
+        let (files, timeout, unknown) = health_plan(OS_RELEASE);
+        assert_eq!(
+            files,
+            [
+                PathBuf::from(places::DEFAULT_REACHED),
+                Path::new(places::HEALTH_DIR).join("network"),
+            ]
+        );
         assert_eq!(timeout, 30);
-        assert_eq!(unknown, ["newer-thing"]);
-        let (files, timeout, _) = health_plan("NAME=x\n", Path::new("/run"));
+        assert_eq!(unknown, ["Bad_Name"]);
+        assert_eq!(
+            health_file("compositor"),
+            Some(PathBuf::from(places::READY_FILE))
+        );
+        assert!(is_built_in("compositor") && !is_built_in("network"));
+        let (files, timeout, _) = health_plan("NAME=x\n");
         assert!(files.is_empty());
         assert_eq!(timeout, DEFAULT_TIMEOUT);
     }
@@ -322,12 +366,27 @@ mod tests {
     fn accepts_the_sentinel_files_only_not_softlevel() {
         let run = std::env::temp_dir().join(format!("edel-guard-health-{}", std::process::id()));
         fs::create_dir_all(run.join("openrc")).unwrap();
-        fs::create_dir_all(run.join("edel")).unwrap();
-        let (files, _, _) = health_plan(OS_RELEASE, &run);
+        fs::create_dir_all(run.join("edel/health")).unwrap();
+        // The plan's files, under this test's directory in place of /run.
+        let (files, _, _) = health_plan(OS_RELEASE);
+        let files: Vec<PathBuf> = files
+            .iter()
+            .map(|f| run.join(f.strip_prefix("/run").unwrap()))
+            .collect();
         // OpenRC says the default runlevel started; that is not health.
         fs::write(run.join("openrc/softlevel"), "default").unwrap();
         assert!(!healthy(&files));
         fs::write(run.join("edel/default-reached"), "").unwrap();
+        assert!(!healthy(&files), "network is not reached yet");
+        assert_eq!(
+            not_reached(&[
+                PathBuf::from(places::DEFAULT_REACHED),
+                run.join("edel/health/network"),
+                run.join("edel/health/job"),
+            ]),
+            "default-runlevel, network, job"
+        );
+        fs::write(run.join("edel/health/network"), "").unwrap();
         assert!(healthy(&files));
         fs::remove_dir_all(&run).unwrap();
     }

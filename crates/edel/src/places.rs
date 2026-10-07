@@ -58,6 +58,9 @@ pub const SESSION_DIR: &str = run!("/session");
 pub const STATE_FILE: &str = run!("/session/state.toml");
 /// The desktop's health: the compositor's first frame (M4.8).
 pub const READY_FILE: &str = run!("/session/ready");
+/// Where a feature's own health checks leave their files, one per name,
+/// such as a server's `network` (M1.11).
+pub const HEALTH_DIR: &str = run!("/health");
 /// The default runlevel's health (M1.5).
 pub const DEFAULT_REACHED: &str = run!("/default-reached");
 /// Written once the guard confirmed this boot's slot (M1.5).
@@ -125,6 +128,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("state_file", STATE_FILE.to_string()),
         ("ready_file", READY_FILE.to_string()),
         ("default_reached", DEFAULT_REACHED.to_string()),
+        ("health_dir", HEALTH_DIR.to_string()),
         ("confirmed_file", CONFIRMED.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),

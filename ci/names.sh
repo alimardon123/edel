@@ -9,6 +9,7 @@ session_dir=/run/edel/session
 state_file=/run/edel/session/state.toml
 ready_file=/run/edel/session/ready
 default_reached=/run/edel/default-reached
+health_dir=/run/edel/health
 confirmed_file=/run/edel/confirmed
 started_file=/run/edel/started
 greetd_live=/run/edel/greetd.toml
