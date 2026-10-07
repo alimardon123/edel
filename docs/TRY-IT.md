@@ -36,7 +36,7 @@ The stick touches only itself: nothing is written to the laptop's disk.
 4. Start the laptop from the stick. After a little while the desktop shows by itself, logged in as a person called `live`: the stick makes `live` on its own data partition, so the desktop needs no login. Super (the Windows key) opens the launcher, Ctrl+Alt+T a terminal, and Super+T tiles the windows.
 5. Turn the laptop off and put the stick into any computer: its small FAT partition holds `EFI/edel/report.toml`, a report of your hardware written at every start. Attach it to an issue at <https://github.com/alimardon123/edel/issues> with the laptop's model, and say what worked: the screen, the touchpad, Wi-Fi, sound, sleep.
 
-The report holds the release, the kernel, how long the start took, the memory in use, every PCI device with its driver, and the kernel log. It never holds your files.
+The report holds the release, the kernel, how long the start took, the memory in use, every PCI device with its driver, the kernel log, and the last lines of the system log and of the desktop's log from the time before, which name the apps and windows that opened. It never holds your files.
 
 ## The desktop in VirtualBox
 

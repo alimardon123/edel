@@ -90,6 +90,19 @@ pub const LOCALE_DIR: &str = share!("/locale");
 /// These places as shell variables, for the slot's own scripts (M5.27).
 pub const PLACES_SH: &str = share!("/places.sh");
 
+/// Where people's home directories are.
+pub const HOMES: &str = "/home";
+/// A person's state directory for Edel OS inside their home, where
+/// `XDG_STATE_HOME` is not set: their session's log (M5.28a).
+pub const STATE_IN_HOME: &str = ".local/state/edel";
+/// The desktop session's log, in a person's state directory: the
+/// compositor and what it starts write to it (M5.28a).
+pub const SESSION_LOG: &str = "session.log";
+/// The session before's log, beside it: two sessions are kept.
+pub const SESSION_LOG_BEFORE: &str = "session.old.log";
+/// The system log busybox's syslogd writes, on the data partition.
+pub const SYSTEM_LOG: &str = "/var/log/messages";
+
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
 /// Edel OS's directory on the EFI system partition: GRUB, its counters and
@@ -118,6 +131,9 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
+        // Inside a person's home (M5.28a).
+        ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),
+        ("system_log", SYSTEM_LOG.to_string()),
     ]
 }
 
@@ -164,6 +180,16 @@ pub fn person_dir() -> Option<PathBuf> {
                 .map(|home| PathBuf::from(home).join(".config"))
         })?;
     Some(config.join("edel"))
+}
+
+/// A person's state directory for Edel OS: `$XDG_STATE_HOME/edel`, else
+/// [`STATE_IN_HOME`] in their home; none without either variable.
+pub fn person_state_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_STATE_HOME") {
+        Some(state) => Some(PathBuf::from(state).join("edel")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(STATE_IN_HOME)),
+    }
 }
 
 /// `part`'s words in `language`, such as `de` or `pt_BR` (M5.24).

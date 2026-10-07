@@ -6,7 +6,8 @@
 //! (M5.21), the design tokens the
 //! compositor and shell-ui draw with (M5.1b) and the layout presets
 //! (M5.1c), and the apps people have with their icons, which shell-ui
-//! lists and the compositor shows in title bars (M5.4c, M5.6a). It needs no
+//! lists and the compositor shows in title bars (M5.4c, M5.6a), and the
+//! session's log, which the compositor writes and `edel` reads (M5.28a). It needs no
 //! network or signing; those sit behind the binary's `cli` feature.
 
 #[cfg(feature = "icons")]
@@ -20,6 +21,7 @@ pub mod install;
 pub mod keyboard;
 pub mod places;
 pub mod presets;
+pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
 pub mod tokens;

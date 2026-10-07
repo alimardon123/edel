@@ -2,8 +2,9 @@
 //! Edel OS misbehaves on their hardware. The release and kernel, the
 //! features the image is made of (M4.0), the boot time and memory in use
 //! when the slot was confirmed (the line `edel-boot-ok` printed), the
-//! memory in use now, every PCI device with its driver, and the kernel log,
-//! as TOML on standard output. Everything comes from `/proc`, `/sys`,
+//! memory in use now, every PCI device with its driver, the kernel log, and
+//! the last lines of the system log and of each desktop session's log
+//! (M5.28a), as TOML on standard output. Everything comes from `/proc`, `/sys`,
 //! `/usr/share/edel/features` and busybox's `dmesg`, so no tool is added.
 
 use std::fs;
@@ -11,7 +12,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
-use edel::features;
+use edel::{features, places, session_log};
 use serde::Serialize;
 
 use crate::release::os_release_value;
@@ -36,7 +37,84 @@ struct Report {
     started: String,
     memory_in_use_mib: u64,
     dmesg: String,
+    /// The system log's last lines, busybox syslogd's (M5.28a).
+    system_log: String,
     pci: Vec<Pci>,
+    /// The last lines of each person's desktop session logs (M5.28a): the
+    /// one running it, or for root everyone's.
+    sessions: Vec<Session>,
+}
+
+/// One person's session log, its last lines.
+#[derive(Debug, PartialEq, Serialize)]
+struct Session {
+    person: String,
+    path: String,
+    /// Whether that session ended as it should; one still running has not
+    ended: bool,
+    last_lines: String,
+}
+
+/// The session logs `people` have, the session before's first.
+fn sessions(people: &[session_log::Person]) -> Vec<Session> {
+    let mut found = Vec::new();
+    for person in people {
+        for name in [places::SESSION_LOG_BEFORE, places::SESSION_LOG] {
+            let path = person.dir.join(name);
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            found.push(Session {
+                person: person.name.clone(),
+                path: path.display().to_string(),
+                ended: session_log::ended(&text),
+                last_lines: session_log::tail(&text, session_log::LAST_LINES),
+            });
+        }
+    }
+    found
+}
+
+/// The `logs:` lines `edel status` prints when something went wrong: a
+/// boot that fell back (`fell_back`), each session in `badly` that ended
+/// without closing, by person and log; none when all is well.
+pub(crate) fn pointers(fell_back: bool, badly: &[(String, std::path::PathBuf)]) -> Vec<String> {
+    let mut lines = Vec::new();
+    if fell_back {
+        lines.push(format!(
+            "logs: the last update did not start, so the machine went back to the slot before; the system log is {}, and edel report gathers it with the rest",
+            places::SYSTEM_LOG
+        ));
+    }
+    for (person, path) in badly {
+        lines.push(format!(
+            "logs: {person}'s last desktop session ended without closing; its log is {}, and edel report gathers it with the rest",
+            path.display()
+        ));
+    }
+    lines
+}
+
+/// [`pointers`] for this machine now.
+pub(crate) fn pointers_now() -> Vec<String> {
+    let badly: Vec<_> = session_log::people(Path::new(places::HOMES), as_root())
+        .into_iter()
+        .filter_map(|person| {
+            let running =
+                session_log::runs_as_owner_of(Path::new("/proc"), "edel-compositor", &person.dir);
+            Some((
+                person.name.clone(),
+                session_log::ended_badly(&person, running)?,
+            ))
+        })
+        .collect();
+    pointers(Path::new(places::LAST_FALLBACK).exists(), &badly)
+}
+
+/// Whether this process runs as root, as `/proc/self`'s owner says.
+pub(crate) fn as_root() -> bool {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
 }
 
 /// One PCI device as sysfs shows it.
@@ -165,7 +243,12 @@ pub fn report(esp: bool) -> Result<()> {
         )
         .unwrap_or(0),
         dmesg,
+        system_log: session_log::tail(
+            &fs::read_to_string(places::SYSTEM_LOG).unwrap_or_default(),
+            session_log::LAST_LINES,
+        ),
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
+        sessions: sessions(&session_log::people(Path::new(places::HOMES), as_root())),
     };
     let text = render(&report)?;
     if esp {
@@ -287,6 +370,13 @@ mod tests {
                 class: "0x030000".into(),
                 driver: "i915".into(),
             }],
+            system_log: "Oct  7 11:03:25 edel syslog.info syslogd started\n".into(),
+            sessions: vec![Session {
+                person: "ci".into(),
+                path: "/home/ci/.local/state/edel/session.log".into(),
+                ended: false,
+                last_lines: "edel-compositor: output Virtual-1 ready\n".into(),
+            }],
         };
         let text = render(&report).unwrap();
         let parsed: toml::Table = toml::from_str(&text).unwrap();
@@ -294,5 +384,48 @@ mod tests {
         assert_eq!(parsed["version"].as_str(), Some("2026.10.90"));
         assert!(parsed["dmesg"].as_str().unwrap().contains("\"quoted\""));
         assert_eq!(parsed["pci"][0]["driver"].as_str(), Some("i915"));
+        assert_eq!(parsed["sessions"][0]["person"].as_str(), Some("ci"));
+        assert!(parsed["system_log"].as_str().unwrap().contains("syslogd"));
+    }
+
+    #[test]
+    fn status_points_to_the_logs_only_when_something_went_wrong() {
+        assert!(pointers(false, &[]).is_empty());
+        let lines = pointers(
+            true,
+            &[(
+                "ci".into(),
+                "/home/ci/.local/state/edel/session.old.log".into(),
+            )],
+        );
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains(places::SYSTEM_LOG), "{}", lines[0]);
+        assert_eq!(
+            lines[1],
+            "logs: ci's last desktop session ended without closing; its log is /home/ci/.local/state/edel/session.old.log, and edel report gathers it with the rest"
+        );
+    }
+
+    #[test]
+    fn gathers_both_sessions_logs_the_one_before_first() {
+        let dir = std::env::temp_dir().join(format!("edel-report-logs-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(places::SESSION_LOG_BEFORE), "killed half way\n").unwrap();
+        fs::write(
+            dir.join(places::SESSION_LOG),
+            format!("ready\n{}\n", session_log::ENDED),
+        )
+        .unwrap();
+        let person = session_log::Person {
+            name: "ci".into(),
+            dir: dir.clone(),
+        };
+        let found = sessions(&[person]);
+        assert_eq!(found.len(), 2);
+        assert!(!found[0].ended);
+        assert!(found[0].path.ends_with(places::SESSION_LOG_BEFORE));
+        assert!(found[1].ended);
+        assert!(found[1].last_lines.starts_with("ready\n"));
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

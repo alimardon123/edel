@@ -402,6 +402,10 @@ pub fn status() -> Result<()> {
     if let Some(tier) = crate::shell::tier_now() {
         println!("effects: {tier}");
     }
+    // Where to look when a boot or a session went wrong (M5.28a).
+    for line in crate::report::pointers_now() {
+        println!("{line}");
+    }
     Ok(())
 }
 

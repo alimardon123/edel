@@ -419,7 +419,22 @@ case_respawn() {
 	"ci output "*" ready") ;;
 	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again"
+	# The session's log (M5.28a), ci's ~/.local/state/edel/session.log:
+	# the new session warns that the one before ended without closing,
+	# edel status points to that log, and edel report holds both logs'
+	# last lines, the new one's ready line among them.
+	wait_for 'DESKTOP-TEST: log_report ' || fail "no word from the test service about the session's log"
+	[ "$(value log_warned)" = 1 ] || fail "the new session's log does not say the session before ended without closing"
+	case "$(value log_status)" in
+	"logs: ci's last desktop session ended without closing; its log is /home/ci/.local/state/edel/session.old.log"*) ;;
+	*) fail "edel status did not point to the killed session's log: \"$(value log_status)\"" ;;
+	esac
+	read -r logs ready <<-EOF
+		$(value log_report)
+	EOF
+	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
+		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
 }
 
 case_layers() {
