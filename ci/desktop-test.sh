@@ -532,7 +532,7 @@ case_panel() {
 	rss=$(value shell_ui_rss_mib)
 	limit=$(budget shell_ui_own_mib)
 	awk -v m="$own" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "edel-shell-ui keeps ${own:-?} MiB of its own once settled (${peak:-?} MiB at most over 3 s, $rss MiB resident), over its budget of $limit MiB"
+		fail "edel-shell-ui keeps ${own:-?} MiB of its own once settled (${peak:-?} MiB at most over 8 s, reads $(value shell_ui_own_reads), $(value shell_ui_threads) threads, $rss MiB resident), over its budget of $limit MiB"
 	# Killed, it comes back: the compositor starts it again.
 	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'kill panel'
