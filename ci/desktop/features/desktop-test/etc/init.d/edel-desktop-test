@@ -102,11 +102,16 @@ report() {
 	say "shell_ui_shared_kib $(awk '/^RssShmem:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 	# What it holds of its own, the budgeted number, and the pages mapped
 	# from files (its binary, libraries and fonts), which the kernel
-	# shares and maps more or fewer of from run to run. Read three times a
+	# shares and maps more or fewer of from run to run. Read eight times a
 	# second apart: the least is what it keeps once settled, the budgeted
-	# number, and the most is reported, as one read during start-up once
-	# caught it at 3.4 MiB against 1.5 in every other run of the same image.
-	samples=$(for i in 1 2 3; do own_mib "$pid"; echo; sleep 1; done)
+	# number, and the most is reported. Reads during start-up caught it at
+	# 3.4 to 3.6 MiB against 1.5 to 1.6 in every other run of the same
+	# image, three seconds of 3.5 included on 2026-10-07, so three reads
+	# were not always enough on a slow runner. Its threads and every read
+	# are reported beside it, so a lasting rise shows what it is.
+	samples=$(for i in 1 2 3 4 5 6 7 8; do own_mib "$pid"; echo; sleep 1; done)
+	say "shell_ui_threads $(awk '/^Threads:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
+	say "shell_ui_own_reads $(echo "$samples" | tr '\n' ' ')"
 	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
 	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
