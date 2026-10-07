@@ -15,8 +15,6 @@
 //! `launcher.rs`). It exits when the compositor goes away.
 
 mod a11y;
-mod apps;
-mod icons;
 mod launcher;
 mod link;
 mod paint;
@@ -62,6 +60,7 @@ use edel::places;
 use edel::presets::{self, Edge, Hide, Style};
 use edel::system;
 use edel::tokens::{self, Scheme, Tokens};
+use edel::{app_icons as icons, apps};
 
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
@@ -233,10 +232,13 @@ fn run() -> Result<()> {
             reader: a11y::Reader::new(),
         });
     }
-    // The apps a panel's apps widget shows, read once (M5.4c); none read
-    // when no panel holds one.
+    // The apps a panel's apps widget shows, and whose icons the window
+    // list shows, read once (M5.4c); none read when no panel holds either.
     let mut live = Live::default();
-    if panels.iter().any(|p| p.row.all().any(|w| w.name == "apps")) {
+    if panels
+        .iter()
+        .any(|p| p.row.all().any(|w| w.name == "apps" || w.name == "windows"))
+    {
         let installed = apps::read_all(&apps::dirs());
         live.pinned = preset
             .apps

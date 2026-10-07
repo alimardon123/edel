@@ -400,7 +400,7 @@ pub fn paint(
     look: &Look,
     tokens: &Tokens,
     text: Option<&mut Text>,
-    icons: Option<&mut crate::icons::Icons>,
+    icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
 ) -> Vec<(f32, f32)> {
     let s = look.scale.max(1) as f32;
@@ -412,14 +412,10 @@ pub fn paint(
     let panel = paint_of(tokens.panel);
     let dock = look.style == Style::Dock;
     if dock {
-        // A card rounded all round, with a hairline of the text's colour
-        // inside its edge, so it reads on any background.
+        // A card rounded all round, with the tokens' hairline inside its
+        // edge, so it reads on any background.
         let r = DOCK_RADIUS * s;
-        let line = Colour {
-            a: 0.1,
-            ..tokens.panel_text
-        };
-        fill(pixmap, 0.0, top, w, panel_h, r, line);
+        fill(pixmap, 0.0, top, w, panel_h, r, tokens.edge);
         fill(
             pixmap,
             s,
@@ -431,6 +427,15 @@ pub fn paint(
         );
     } else if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
         pixmap.fill_rect(rect, &panel, Transform::identity(), None);
+        // A hairline along the edge that faces the windows, as the
+        // mockups draw it, one screen pixel at any scale.
+        let at = match look.edge {
+            Edge::Bottom => top,
+            Edge::Top => top + panel_h - 1.0,
+        };
+        if let Some(rect) = Rect::from_xywh(0.0, at, w, 1.0) {
+            pixmap.fill_rect(rect, &paint_of(tokens.edge), Transform::identity(), None);
+        }
     }
     if look.fillets && !dock {
         let (inner, up) = match look.edge {
@@ -501,7 +506,7 @@ pub fn paint(
 pub fn natural_width(
     tokens: &Tokens,
     text: Option<&mut Text>,
-    icons: Option<&mut crate::icons::Icons>,
+    icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
     shown: &[String],
     scale: u32,
@@ -601,7 +606,12 @@ mod tests {
         let panel = tokens.panel.bytes();
         let h = tokens.panel_height;
         assert_eq!(pixel(&pixmap, 640, 0), panel);
-        assert_eq!(pixel(&pixmap, 640, h - 1), panel);
+        assert_eq!(pixel(&pixmap, 640, h - 2), panel);
+        assert_ne!(
+            pixel(&pixmap, 640, h - 1),
+            panel,
+            "the hairline facing the windows"
+        );
         assert_eq!(pixel(&pixmap, 640, h)[3], 0, "the strip is clear");
         assert_eq!(pixel(&pixmap, 0, h), panel, "the left fillet's corner");
         assert_eq!(pixel(&pixmap, 1279, h), panel, "the right one's");

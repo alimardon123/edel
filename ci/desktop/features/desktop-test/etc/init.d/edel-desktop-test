@@ -169,7 +169,12 @@ commands() {
 		# Window buttons on either side (M5.4b).
 		'buttons left') edel settings set layout.window_buttons=left ;;
 		'buttons default') edel settings reset layout.window_buttons ;;
+		# One title bar button hidden (M5.18a), and shown again.
+		'no minimize') edel settings set layout.minimize_button=false ;;
+		'minimize default') edel settings reset layout.minimize_button ;;
 		'scale 2') edel settings set displays.Virtual-1.scale=2 ;;
+		'scale 2.5') edel settings set displays.Virtual-1.scale=2.5 ;;
+		'scale default') edel settings reset displays.Virtual-1.scale ;;
 		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
@@ -221,7 +226,7 @@ commands() {
 			;;
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
 		# appearance.mode (M5.5c), light and back to the default.
-		'scheme light') edel settings set appearance.mode=light ;;
+		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;
 		# appearance.animations (M5.11b), reduced and back to the default.
 		'motion reduced') edel settings set appearance.animations=reduced ;;
@@ -263,6 +268,20 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
+		# Settings (M5.6a), as ci, and the file it writes.
+		'settings window')
+			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
+			;;
+		'settings file') say "settings_file $(tr '\n' ';' <"/home/ci/.config/edel/$settings_name" 2>/dev/null)" ;;
+		# What Settings holds of its own while open (M5.6a), read as
+		# shell-ui's is: the least of three reads a second apart, the
+		# budgeted number, and VmRSS, reported.
+		'settings memory')
+			pid=$(pidof edel-settings | cut -d' ' -f1)
+			samples=$(for i in 1 2 3; do own_mib "$pid"; echo; sleep 1; done)
+			say "settings_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
+			say "settings_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
+			;;
 		# Keyboard layouts (M5.21): German first, then US; a layout
 		# xkeyboard-config lacks, refused with its message; and the file
 		# typing "touch y" in foot made, named after the key's letter.

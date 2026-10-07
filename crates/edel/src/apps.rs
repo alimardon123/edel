@@ -1,5 +1,6 @@
-//! The apps the launcher offers (M5.3b), read from the XDG `.desktop`
-//! files on each opening, so an app just installed is there: the
+//! The apps people have (M5.3b), as shell-ui's launcher and panel and the
+//! compositor's title bars (M5.6a) find them, read from the XDG `.desktop`
+//! files each time they are asked for, so an app just installed is there: the
 //! person's `~/.local/share/applications`, then each of
 //! `$XDG_DATA_DIRS` (else `/usr/local/share` and `/usr/share`), then
 //! Flatpak's exports; the first file with a given id wins, as the
@@ -311,6 +312,25 @@ pub fn command(app: &App) -> Vec<String> {
     } else {
         app.argv.clone()
     }
+}
+
+/// Whether a window with app id `app_id` belongs to the app whose desktop
+/// file id is `id`: the same, whatever the case, or the same last part, as
+/// `org.mozilla.firefox` and `firefox` are.
+pub fn belongs(app_id: &str, id: &str) -> bool {
+    if app_id.is_empty() || id.is_empty() {
+        return false;
+    }
+    let last = |s: &str| s.rsplit('.').next().unwrap_or(s).to_lowercase();
+    app_id.eq_ignore_ascii_case(id) || last(app_id) == last(id)
+}
+
+/// The app a window with app id `app_id` belongs to, its own desktop
+/// file first.
+pub fn of_window<'a>(apps: &'a [App], app_id: &str) -> Option<&'a App> {
+    apps.iter()
+        .find(|a| a.id.eq_ignore_ascii_case(app_id))
+        .or_else(|| apps.iter().find(|a| belongs(app_id, &a.id)))
 }
 
 #[cfg(test)]

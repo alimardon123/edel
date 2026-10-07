@@ -1,4 +1,5 @@
-//! App icons (M5.4c), found as the icon theme spec says for the theme
+//! App icons (M5.4c), for shell-ui's panel and launcher and the
+//! compositor's title bars (M5.6a), found as the icon theme spec says for the theme
 //! every app installs into, hicolor, and in `/usr/share/pixmaps`: a PNG at
 //! least as big as wanted, else an SVG, else the biggest smaller PNG. Each
 //! is drawn once at the size the panel asks and kept, PNGs through
@@ -10,7 +11,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
+use resvg::tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
+
+/// What an icon is drawn into: premultiplied RGBA, as tiny-skia keeps it.
+pub use resvg::tiny_skia::Pixmap as Picture;
 
 /// hicolor's fixed sizes, small to big.
 const SIZES: [u32; 10] = [16, 22, 24, 32, 48, 64, 96, 128, 256, 512];
@@ -90,11 +94,11 @@ pub fn find(dirs: &[PathBuf], icon: &str, px: u32) -> Option<PathBuf> {
 /// centred; an SVG through `edel::icons`, as the shell's own icons are.
 pub fn draw(path: &Path, px: u32) -> Option<Pixmap> {
     if path.extension().is_some_and(|e| e == "svg") {
-        return edel::icons::svg_pixmap(&std::fs::read(path).ok()?, px);
+        return crate::icons::svg_pixmap(&std::fs::read(path).ok()?, px);
     }
     let mut out = Pixmap::new(px, px)?;
     let image = Pixmap::load_png(path).ok()?;
-    let (scale, dx, dy) = edel::icons::fit(image.width() as f32, image.height() as f32, px);
+    let (scale, dx, dy) = crate::icons::fit(image.width() as f32, image.height() as f32, px);
     let paint = PixmapPaint {
         quality: FilterQuality::Bicubic,
         ..PixmapPaint::default()
@@ -107,6 +111,7 @@ pub fn draw(path: &Path, px: u32) -> Option<Pixmap> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use resvg::tiny_skia;
 
     const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" fill="#ff0000"/></svg>"##;
 

@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 7] = [
+pub const BUILT_IN: [(&str, &str); 14] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     (
         "layout-floating",
@@ -30,6 +30,22 @@ pub const BUILT_IN: [(&str, &str); 7] = [
     ),
     ("restore", include_str!("../../../design/icons/restore.svg")),
     ("close", include_str!("../../../design/icons/close.svg")),
+    // Settings' (M5.6a): its pages, its search field, Copy as command,
+    // the chosen card, the way back from a page on a narrow window and a
+    // value chosen from a few.
+    (
+        "page-layout",
+        include_str!("../../../design/icons/page-layout.svg"),
+    ),
+    (
+        "page-about",
+        include_str!("../../../design/icons/page-about.svg"),
+    ),
+    ("search", include_str!("../../../design/icons/search.svg")),
+    ("copy", include_str!("../../../design/icons/copy.svg")),
+    ("check", include_str!("../../../design/icons/check.svg")),
+    ("back", include_str!("../../../design/icons/back.svg")),
+    ("updown", include_str!("../../../design/icons/updown.svg")),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name
@@ -101,6 +117,19 @@ mod tests {
             );
         }
         assert!(draw("nope", 28, red).is_none());
+    }
+
+    #[test]
+    fn every_file_in_design_icons_is_built_in() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../design/icons");
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_stem().unwrap().to_str().unwrap().to_string();
+            assert!(
+                BUILT_IN.iter().any(|(n, _)| *n == name),
+                "design/icons/{name}.svg is not in icons::BUILT_IN"
+            );
+        }
     }
 
     #[test]

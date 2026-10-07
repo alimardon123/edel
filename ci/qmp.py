@@ -19,6 +19,10 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
     qmp.py uniform FILE.png [X Y W H]
                                  print "uniform rrggbb" or "varied", for
                                  the whole screen or the W by H box at X, Y
+    qmp.py find FILE.png X Y0 Y1 RRGGBB
+                                 print the first Y from Y0 to Y1 in column X
+                                 within 24 of RRGGBB in each channel, or
+                                 none (M5.6a)
 
 The first nine talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
@@ -229,7 +233,7 @@ def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
     command, args = argv[1], argv[2:]
-    if command in ("pixel", "size", "uniform"):
+    if command in ("pixel", "size", "uniform", "find"):
         width, height, rows = read_png(args[0])
         if command == "size":
             print(width, height)
@@ -238,6 +242,15 @@ def main(argv):
             if not (0 <= x < width and 0 <= y < height):
                 raise SystemExit(f"{args[0]}: {x}, {y} is outside {width}x{height}")
             print(hex_colour(rows[y][x]))
+        elif command == "find":
+            x, y0, y1 = int(args[1]), int(args[2]), int(args[3])
+            want = tuple(int(args[4][i:i + 2], 16) for i in (0, 2, 4))
+            found = next(
+                (y for y in range(max(y0, 0), min(y1, height))
+                 if all(abs(a - b) <= 24 for a, b in zip(rows[y][x], want))),
+                None,
+            )
+            print("none" if found is None else found)
         else:
             x, y, w, h = map(int, args[1:5]) if len(args) >= 5 else (0, 0, width, height)
             colours = {p for row in rows[y:y + h] for p in row[x:x + w]}

@@ -1,7 +1,7 @@
 //! The launcher (M5.3b): Super, tapped alone, or the menu button opens
 //! it beside the panel's start, the preset's `[launcher] style = "menu"`.
 //! A search line over the apps whose names, keywords or commands match
-//! what was typed (`crate::apps`), the best first; Up and Down choose,
+//! what was typed (`edel::apps`), the best first; Up and Down choose,
 //! Return or a click starts one, Escape, Super again or a click
 //! elsewhere closes it. It holds the keyboard, its buffers and the app
 //! list only while open: shell-ui's idle memory stays the panel's.
@@ -13,9 +13,9 @@ use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
 
-use crate::apps::{self, App};
 use crate::paint::{Text, fill, mix};
 use crate::popup::{self, INSET, PAD, middle};
+use edel::apps::{self, App};
 
 /// Its width in logical pixels, its search line's height and how many
 /// apps it shows: the same however many match, so it never changes size

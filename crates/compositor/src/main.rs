@@ -67,13 +67,12 @@ fn main() -> ExitCode {
     }
 }
 
-/// The image's tokens if it has them, else the built-in ones; anything
-/// skipped is reported, never fatal (ADR-008).
+/// The image's tokens if it has them, else the built-in ones, in the
+/// release's default scheme, light (M5.12a); the settings files may then
+/// change it, as any later change does. Anything skipped is reported,
+/// never fatal (ADR-008).
 fn load_tokens() -> Tokens {
-    let Ok(text) = std::fs::read_to_string(tokens::PATH) else {
-        return Tokens::built_in();
-    };
-    let (tokens, notes) = Tokens::read(&text);
+    let (tokens, notes) = tokens::load(tokens::Scheme::default());
     for note in notes {
         eprintln!("edel-compositor: {}: {note}", tokens::PATH);
     }

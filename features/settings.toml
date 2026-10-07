@@ -1,0 +1,10 @@
+# Settings, the app for every setting (ADR-008, M5.6a): edel-settings,
+# built from this repository's workspace and copied in by edel image
+# build, with its desktop file, so the launcher finds it and the presets'
+# settings role pins it (M5.4c). It is the one app of ours on GTK4 and
+# libadwaita (ADR-004); it runs only while a person has it open.
+format = 1
+summary = "Settings: the layout, the look and the rest of the machine's settings"
+why = "edel-settings is the app the settings file's rows live in (ADR-008), on GTK4 and libadwaita as ADR-004 chose for our apps, drawn in our own look from the tokens and design/icons, with its own icon, the mockups' gear; gtk4.0 and libadwaita are the libraries it links, which apk cannot see in a copied program, and adwaita-icon-theme gives GTK's own widgets the few icons they draw. Nothing runs until a person opens it."
+programs = ["edel-settings"]
+packages = ["gtk4.0", "libadwaita", "adwaita-icon-theme"]

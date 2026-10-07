@@ -160,10 +160,11 @@ budget() {
 	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
-# token KEY [TABLE]: the colour KEY has in design/tokens.toml's [colour]
-# table, or in TABLE such as colour.light (M5.5c), as rrggbb.
+# token KEY [TABLE]: the colour KEY has in design/tokens.toml's
+# [colour.light] table, the release's default scheme (M5.12a), or in
+# TABLE, such as colour for the dark one (M5.5c), as rrggbb.
 token() {
-	awk -v key="$1" -v table="[${2:-colour}]" '
+	awk -v key="$1" -v table="[${2:-colour.light}]" '
 		/^\[/ { here = ($1 == table); next }
 		here && $1 == key && $3 ~ /^"#[0-9a-f]{6}"$/ { print substr($3, 3, 6); exit }
 	' design/tokens.toml
@@ -608,6 +609,122 @@ case_shortcuts() {
 	echo "PASS: shortcuts.close_window = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
+case_settings() {
+	# Settings (M5.6a): the app opens as a window with our title bar,
+	# asked for through KDE's server decoration protocol, its sidebar of
+	# pages in the tokens' card colour beside the page in their window
+	# colour; the chosen preset's card, Classic's, has a border in the
+	# accent; a click on Mac-like's card writes layout.preset to ci's own
+	# settings file, and the desktop switches to Mac-like at once; a click
+	# on Classic, the default, takes the key out again. Kept as
+	# settings.png and settings-mac.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open a window: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	panel=$(token panel)
+	page=$(token window)
+	side=$(token card)
+	sleep 2
+	shot settings $((x + 20)) $((y + h - 40)) "$side" >/dev/null ||
+		fail "Settings' sidebar at $((x + 20)),$((y + h - 40)) is not the card token's #$side"
+	shot settings $((x + w - 40)) $((y + h - 40)) "$page" >/dev/null ||
+		fail "Settings' page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$page"
+	# Our title bar above it: the compositor's focused bar colour.
+	shot settings $((x + 8)) $((y - 14)) "$(token title_bar_focused)" >/dev/null ||
+		fail "Settings has no title bar of ours at $((x + 8)),$((y - 14))"
+	# The page's cards (crates/settings): a 204 px sidebar, the page's
+	# text and cards at most 704 px wide with 32 px margins, centred in
+	# what is left, three cards to a line 12 px apart.
+	area=$((w - 204))
+	clamp=$((area < 704 ? area : 704))
+	left=$((x + 204 + (area - clamp) / 2 + 32))
+	inner=$((clamp - 64))
+	cell=$(((inner - 24) / 3))
+	top=none
+	for dx in 3 4 5 2 6; do
+		top=$(python3 ci/qmp.py find "$dir/settings.png" $((left + dx)) "$y" $((y + h)) "$(token accent)")
+		[ "$top" != none ] && break
+	done
+	[ "$top" != none ] || fail "no chosen card's accent border at $left in Settings"
+	classic=$((top + 40))
+	mac=$((left + cell + 12 + cell / 2))
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	python3 ci/qmp.py click "$mac" "$classic"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+		fail "a click on Mac-like at $mac,$classic did not switch the desktop to Mac-like"
+	guest 'settings file'
+	wait_for 'DESKTOP-TEST: settings_file ' || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[layout\];preset = "mac-like"' ||
+		fail "ci's settings file is not what edel settings set layout.preset=mac-like writes: $(value settings_file)"
+	shot settings-mac 640 12 "$panel" >/dev/null || fail "Mac-like's bar is not along the top"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	python3 ci/qmp.py click $((left + cell / 2)) "$classic"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+		fail "a click on Classic did not bring Classic back"
+	# Reset (M5.6b), at the end of the Preset heading, left of Copy as
+	# command, about 32 px above where the accent border was found:
+	# Mac-like again, then Reset takes the key out of ci's file, and the
+	# desktop goes back to Classic.
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	python3 ci/qmp.py click "$mac" "$classic"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+		fail "a second click on Mac-like did not switch the desktop to Mac-like"
+	sleep 1
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	python3 ci/qmp.py click $((left + inner - 50)) $((top - 32))
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+		fail "a click on Reset at $((left + inner - 50)),$((top - 32)) did not bring Classic back"
+	guest 'settings file'
+	sleep 1
+	value settings_file | grep -q 'preset' &&
+		fail "Reset left layout.preset in ci's file: $(value settings_file)"
+	# Its memory while open, against its budget.
+	guest 'settings memory'
+	wait_for 'DESKTOP-TEST: settings_own_mib ' || fail "the service did not read Settings' memory"
+	settings_own=$(value settings_own_mib)
+	settings_limit=$(budget settings_own_mib)
+	awk -v m="$settings_own" -v b="$settings_limit" 'BEGIN { exit !(m != "" && (b == "" || m <= b)) }' ||
+		fail "Settings keeps ${settings_own:-?} MiB of its own while open ($(value settings_rss_mib) MiB resident), over its budget of $settings_limit MiB"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Settings (M5.6a): $settings_own MiB of its own while open (budget ${settings_limit:-none yet}), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	# Narrow (M5.6b): tiled alone on a screen 512 px wide (scale 2.5),
+	# Settings folds its sidebar away and shows the pages' list across
+	# the window, in the sidebar's colour where the page was.
+	tiled=$(count 'edel-compositor: windows now tiling')
+	guest 'tiling on'
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile Settings"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 2.5')
+	guest 'scale 2.5'
+	wait_more 'edel-compositor: output Virtual-1 scale 2.5' "$scaled" || fail "displays.Virtual-1.scale = 2.5 was not followed"
+	sleep 3
+	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
+	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
+	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
+	# A point low in the part of the window on screen, below the pages'
+	# list: Settings keeps at least 360 by 300, so it may reach past the
+	# screen's 512 by 320.
+	right=$(($1 + $3)) bottom=$(($2 + $4))
+	[ "$right" -le 512 ] || right=512
+	[ "$bottom" -le 320 ] || bottom=320
+	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
+	shot settings-narrow "$nx" "$ny" "$side" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$side"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
+	guest 'scale default'
+	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
+	floated=$(count 'edel-compositor: windows now floating')
+	guest 'tiling off'
+	wait_more 'edel-compositor: windows now floating' "$floated" || fail "layout.tiling = false did not float the windows again"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened at $x,$y ${w}x$h under our title bar with its sidebar and page in the token colours, Classic's card chosen, Mac-like's card wrote layout.preset and moved the bar to the top at once, Classic and Reset took the key out again, it held $settings_own MiB of its own ($(value settings_rss_mib) MiB resident), and on a 512 px screen it folded its sidebar away"
+}
+
 case_keyboard() {
 	# Keyboard layouts (M5.21): region.keyboard = "de,us" loads German
 	# then US at once; in foot the key QEMU calls y then types z, as on a
@@ -1038,28 +1155,37 @@ case_fullscreen() {
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
-	# tokens: prefer dark, 1, as the tokens are dark, and the accent
-	# #5b8ef5 as three numbers from 0 to 1.
+	# tokens: prefer light, 2, the release's default (M5.12a), and the
+	# light accent as three numbers from 0 to 1, each cut to two places.
 	guest 'portal read'
 	wait_for 'DESKTOP-TEST: portal accent-color ' 60 || fail "the service did not hear back from the portal"
 	scheme=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal color-scheme //p' | tail -n 1)
 	accent=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal accent-color //p' | tail -n 1)
 	case "$scheme" in
-	"(<uint32 1>,)"*) ;;
-	*) fail "the portal's colour scheme is not prefer dark: $scheme" ;;
+	"(<uint32 2>,)"*) ;;
+	*) fail "the portal's colour scheme is not prefer light: $scheme" ;;
 	esac
-	echo "$accent" | grep -qE '^\(<\(0\.35[0-9]*, 0\.55[0-9]*, 0\.96[0-9]*\)>,\)' ||
-		fail "the portal's accent is not the tokens' #5b8ef5: $accent"
+	hex=$(token accent)
+	want=$(echo "$hex" | awk '{
+		for (i = 0; i < 3; i++) {
+			v = 0
+			for (j = 1; j <= 2; j++) v = v * 16 + index("0123456789abcdef", substr($0, 2 * i + j, 1)) - 1
+			printf "%s0\\.%02d[0-9]*", (i ? ", " : ""), int(v / 255 * 100)
+		}
+	}')
+	echo "$accent" | grep -qE "^\\(<\\($want\\)>,\\)" ||
+		fail "the portal's accent is not the tokens' #$hex: $accent"
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
 case_scheme() {
-	# Light and dark (M5.5c): edel settings set appearance.mode=light
-	# gives the compositor the tokens' [colour.light], drawing the title
-	# bars and the background again, and restarts shell-ui, whose panel
-	# and portal follow; the portal tells apps already open with
+	# Light and dark (M5.5c): edel settings set appearance.mode=dark
+	# gives the compositor the tokens' [colour], drawing the title bars
+	# and the background again, and restarts shell-ui, whose panel and
+	# portal follow; the portal tells apps already open with
 	# SettingChanged, which xdg-desktop-portal passes on. Unset, it is
-	# dark again. Kept as scheme-light.png and scheme-dark.png.
+	# light again, the release's default (M5.12a). Kept as
+	# scheme-dark.png and scheme-light.png.
 	guest 'portal watch'
 	opened=$(count 'edel-compositor: mapped window keys')
 	guest 'shortcut window'
@@ -1068,12 +1194,12 @@ case_scheme() {
 	read -r x y <<-EOF
 		$place
 	EOF
-	for scheme in light dark; do
-		if [ "$scheme" = light ]; then
-			table=colour.light
-			command='scheme light'
-		else
+	for scheme in dark light; do
+		if [ "$scheme" = dark ]; then
 			table=colour
+			command='scheme dark'
+		else
+			table=colour.light
 			command='scheme default'
 		fi
 		said=$(count "edel-compositor: colour scheme $scheme")
@@ -1111,9 +1237,9 @@ case_scheme() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Light and dark (M5.5c): scheme-light.png and scheme-dark.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Light and dark (M5.5c): scheme-dark.png and scheme-light.png are in the edel-desktop-test artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.mode=light turned the panel, keys' title bar and the background to the light tokens, the portal said prefer light (2) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to dark (1)"
+	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default"
 }
 
 case_buttons() {
@@ -1141,7 +1267,49 @@ case_buttons() {
 	guest 'buttons default'
 	wait_for 'edel-compositor: window buttons on the right' ||
 		fail "unsetting layout.window_buttons did not bring the buttons back to the right"
-	echo "PASS: layout.window_buttons = \"left\" put close at the bar's left end, a click there closed keys at $x,$y, and unsetting it brought the buttons back to the right"
+	# Each button as a setting (M5.18a): layout.minimize_button = false
+	# takes minimize off every bar, so its square, the third from the
+	# right, is the bar's colour, and unset, it comes back.
+	guest 'no minimize'
+	wait_for 'edel-compositor: title bar buttons close, maximize$' ||
+		fail "the compositor did not follow layout.minimize_button = false"
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open again"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window keys at \([0-9]*\),\([0-9]*\) \([0-9]*\)x.*/\1 \2 \3/p' | tail -n 1)
+	read -r x y w <<-EOF
+		$place
+	EOF
+	# Maximize's outline first: waiting for its ink also waits out the
+	# window's opening animation, which may show the bar's colour anywhere.
+	ink=$(token title_text)
+	shot buttons-no-minimize $((x + w - 46)) $((y - 14)) "$ink" >/dev/null ||
+		fail "maximize's outline at $((x + w - 46)),$((y - 14)) is not the title's #$ink: maximize went too"
+	shot buttons-no-minimize $((x + w - 70)) $((y - 14)) "$focused" >/dev/null ||
+		fail "with layout.minimize_button = false, minimize's square at $((x + w - 70)),$((y - 14)) is not the bar's #$focused"
+	# Super+M maximizes it (M5.18a): its entry in the windows line spans
+	# the screen's width; again, and it has its size back.
+	python3 ci/qmp.py key meta_l-m
+	i=0
+	until value windows | grep -qE 'keys@[0-9]+,[0-9]+,12[0-9][0-9]x'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "Super+M did not maximize keys: $(value windows)"
+		sleep 0.2
+	done
+	python3 ci/qmp.py key meta_l-m
+	i=0
+	while value windows | grep -qE 'keys@[0-9]+,[0-9]+,12[0-9][0-9]x'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "Super+M again did not give keys its size back: $(value windows)"
+		sleep 0.2
+	done
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys"
+	guest 'minimize default'
+	wait_for 'edel-compositor: title bar buttons close, minimize, maximize' ||
+		fail "unsetting layout.minimize_button did not bring minimize back"
+	echo "PASS: layout.window_buttons = \"left\" put close at the bar's left end, a click there closed keys at $x,$y, unsetting it brought the buttons back to the right, layout.minimize_button = false took minimize off the bar until it was unset, and Super+M maximized keys and gave it its size back"
 }
 
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
@@ -1364,14 +1532,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, settings, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac

@@ -4,26 +4,26 @@
    Never edit it by hand: change the tokens. */
 
 :root, .coal, .navy, .ayu {
-  --edel-page: #1b1d22;
-  --edel-sidebar: #24272e;
-  --edel-raised: #2e323a;
-  --edel-hover: #3a404b;
-  --edel-border: #4b5260;
-  --edel-text: #e8e8ea;
-  --edel-text-muted: #9a9da5;
+  --edel-page: #1a1c22;
+  --edel-sidebar: #1a1d23;
+  --edel-raised: #24272e;
+  --edel-hover: #2b2e36;
+  --edel-border: #3a3e48;
+  --edel-text: #eceef1;
+  --edel-text-muted: #737a85;
   --edel-accent: #5b8ef5;
   --edel-shadow: #00000073;
 }
 
 .light, .rust {
-  --edel-page: #f2f3f5;
+  --edel-page: #f6f7f9;
   --edel-sidebar: #dfe3ea;
-  --edel-raised: #e9ecf0;
-  --edel-hover: #f7f8fa;
-  --edel-border: #d5d9df;
-  --edel-text: #1f2329;
-  --edel-text-muted: #7a808a;
-  --edel-accent: #3a73e8;
+  --edel-raised: #f1f2f4;
+  --edel-hover: #f7f8f9;
+  --edel-border: #e3e5e9;
+  --edel-text: #1c1e22;
+  --edel-text-muted: #8d929b;
+  --edel-accent: #2d6ae3;
   --edel-shadow: #0000003d;
 }
 

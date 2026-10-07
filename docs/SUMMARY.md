@@ -17,6 +17,7 @@
 - [File formats](FORMATS.md)
 - [Releases](RELEASE.md)
 - [Messages and logs](MESSAGES.md)
+- [Layout guide for apps](layout-guide.md)
 - [The look](mockups/README.md)
 - [Writing these docs](guide/writing-docs.md)
 
