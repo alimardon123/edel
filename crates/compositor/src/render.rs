@@ -347,11 +347,9 @@ impl Edel {
         if insets.side == 0 && insets.bottom == 0 {
             return parts;
         }
-        let colour = if is_focused {
-            self.tokens.title_bar_focused
-        } else {
-            self.tokens.title_bar
-        };
+        // The hairline round the window, as the mockups draw it; the bar
+        // draws its own part of it.
+        let colour = self.tokens.edge;
         for (buffer, place) in frame.borders.iter_mut().zip(border_places(outer, insets)) {
             buffer.update(place.size, colour.rgba());
             parts.push(Element::Border(SolidColorRenderElement::from_buffer(

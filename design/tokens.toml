@@ -39,6 +39,9 @@ window = "#1e2026"
 card = "#191b20"
 line = "#ffffff14"
 accent_text = "#0b1220"
+# The hairline round every window and along the panels' inner edge, as
+# the mockups draw them, a little stronger than a line.
+edge = "#00000099"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -58,6 +61,7 @@ window = "#ffffff"
 card = "#f5f6f8"
 line = "#14182017"
 accent_text = "#ffffff"
+edge = "#14182024"
 
 [size]
 # In logical pixels.

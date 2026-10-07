@@ -154,6 +154,8 @@ pub struct Tokens {
     pub line: Colour,
     /// Text and icons on the accent.
     pub accent_text: Colour,
+    /// The hairline round windows and along the panels' inner edge.
+    pub edge: Colour,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
@@ -353,6 +355,7 @@ impl Tokens {
                 "card" => &mut self.card,
                 "line" => &mut self.line,
                 "accent_text" => &mut self.accent_text,
+                "edge" => &mut self.edge,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -438,6 +441,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "card",
                 "line",
                 "accent_text",
+                "edge",
             ][..],
         ),
         (
@@ -511,6 +515,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         card: BLACK,
         line: BLACK,
         accent_text: BLACK,
+        edge: BLACK,
         shadow_blur: 0,
         shadow_offset: 0,
         row: 0,

@@ -291,6 +291,23 @@ pub fn paint(
         }
         canvas.icon(*button, look.maximized, x, size, icon);
     }
+    // A hairline under the bar, and the window's edge along its top and
+    // sides, as the mockups draw them; a maximized window has no edge.
+    let line = tokens.line;
+    for col in 0..w {
+        canvas.blend(col as i64, h as i64 - 1, line, line.a);
+    }
+    if !look.maximized {
+        let edge = tokens.edge;
+        let opaque = Colour { a: 1.0, ..edge };
+        for col in 0..w {
+            canvas.blend(col as i64, 0, opaque, edge.a);
+        }
+        for row in 1..h {
+            canvas.blend(0, row as i64, opaque, edge.a);
+            canvas.blend(w as i64 - 1, row as i64, opaque, edge.a);
+        }
+    }
     let Some(text) = text else {
         return;
     };
