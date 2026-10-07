@@ -5,6 +5,7 @@
 //! title changes.
 
 use accesskit::Role;
+use edel::i18n::trf;
 
 use super::{Canvas, Live, Widget, no_input};
 
@@ -32,7 +33,7 @@ fn shows(live: &Live) -> String {
 }
 
 fn label(shown: &str) -> String {
-    format!("Focused window: {shown}")
+    trf("Focused window: {title}", &[("title", shown)])
 }
 
 /// The text's size and the room on each side of it, in the pixmap's

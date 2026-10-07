@@ -540,6 +540,9 @@ impl Edel {
         } else if old.color_scheme != new.color_scheme {
             let name = new.color_scheme.name();
             crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
+        } else if old.language != new.language {
+            let name = new.language.as_deref().unwrap_or("English");
+            crate::shellui::restart(self, &format!("the language is now {name}"));
         }
         if old.tiling_style != new.tiling_style {
             eprintln!("edel-compositor: tiling style {}", new.tiling_style.name());

@@ -18,14 +18,18 @@ use std::rc::Rc;
 use gtk::gio;
 use gtk::prelude::*;
 
+use edel::i18n::{n_, tr};
+
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
 use crate::{icon, preview, rows};
 
-const INTRO: &str = "One preset sets up the whole desktop: its panels, where windows open \
+const INTRO: &str = n_(
+    "One preset sets up the whole desktop: its panels, where windows open \
                      and how they tile. Each choice here is also a line of your settings \
-                     file and an edel settings set command.";
+                     file and an edel settings set command.",
+);
 
 /// A row's control: a switch for a flag, a list for one of a few values.
 enum Control {
@@ -170,7 +174,7 @@ impl Ui {
 
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let files = Files::here();
-    let (page, content, problem) = widgets::page("Layout", INTRO);
+    let (page, content, problem) = widgets::page(tr("Layout"), tr(INTRO));
 
     let preset_source = widgets::section(&content, rows::title("layout.preset"));
     let cards = gtk::FlowBox::builder()
@@ -203,7 +207,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let mut settings = vec![setting(
         &group,
         "layout.tiling",
-        ("Or the panel's toggle", Some("toggle_tiling"), true),
+        (tr("Or the panel's toggle"), Some("toggle_tiling"), true),
         Control::Switch(gtk::Switch::new()),
     )];
     // How tiling lays windows out (M5.16a): the same key as the panel's
@@ -212,7 +216,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         &group,
         "layout.tiling_style",
         (
-            "Stack keeps one main window, Split halves the focused one, Scroll lines them up",
+            tr("Stack keeps one main window, Split halves the focused one, Scroll lines them up"),
             None,
             false,
         ),
@@ -224,35 +228,35 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     // draws it, so every choice shows at once, then where bars show, the
     // side their buttons sit on, and a switch per button, each row saying
     // how to do the same without the button (M5.18a).
-    widgets::heading(&content, "Title bars");
+    widgets::heading(&content, tr("Title bars"));
     let bars = widgets::group(&content);
-    let bar = widgets::BarPreview::new(&bars, "Settings");
+    let bar = widgets::BarPreview::new(&bars, tr("Settings"));
     settings.push(setting(
         &bars,
         "layout.title_bars",
-        ("On every window, or only on floating ones", None, false),
+        (tr("On every window, or only on floating ones"), None, false),
         Control::choice("layout.title_bars"),
     ));
     settings.push(setting(
         &bars,
         "layout.window_buttons",
-        ("The side they sit on", None, true),
+        (tr("The side they sit on"), None, true),
         Control::choice("layout.window_buttons"),
     ));
     for (key, what, action) in [
         (
             "layout.minimize_button",
-            "The panel's window list brings a window back",
+            tr("The panel's window list brings a window back"),
             Some("minimize_window"),
         ),
         (
             "layout.maximize_button",
-            "Or double-click a title bar",
+            tr("Or double-click a title bar"),
             Some("toggle_maximize"),
         ),
         (
             "layout.close_button",
-            "Closes a window even with its button hidden",
+            tr("Closes a window even with its button hidden"),
             Some("close_window"),
         ),
     ] {

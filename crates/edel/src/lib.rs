@@ -13,6 +13,7 @@
 pub mod app_icons;
 pub mod apps;
 pub mod features;
+pub mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod install;

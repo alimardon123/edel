@@ -98,7 +98,7 @@ Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; 
 
 | Key | Value | From |
 |---|---|---|
-| `region.language` | text, such as `"en_GB"` | M6.6a |
+| `region.language` | the language shell-ui and Settings show their words in: a catalogue's name, such as `"de"` or `"pt_BR"` (`pt_BR` falls back to `pt`); missing is English, as is a word the catalogue lacks. The desktop restarts shell-ui in it at once; Settings takes it when next opened | M5.24a |
 | `region.keyboard` | keyboard layouts as xkb names them: one, such as `"de"`, or up to four, such as `"us,ru"`, each with a variant if wanted, such as `"de(nodeadkeys)"`; missing is US. Check and set refuse a layout or variant xkeyboard-config lacks where its list is on the machine. The desktop follows it at once, and Super+Space (`shortcuts.next_keyboard_layout`) goes to the next layout | M5.21a |
 | `region.timezone` | text, such as `"Europe/London"` | M6.6a |
 

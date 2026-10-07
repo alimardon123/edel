@@ -1,6 +1,8 @@
 //! The About page (M5.6a): this release, read from `/usr/lib/os-release`
 //! as `edel image build` writes it.
 
+use edel::i18n::tr;
+
 use crate::widgets;
 
 const OS_RELEASE: &str = "/usr/lib/os-release";
@@ -8,17 +10,17 @@ const OS_RELEASE: &str = "/usr/lib/os-release";
 pub fn page() -> gtk::Widget {
     let release = std::fs::read_to_string(OS_RELEASE).unwrap_or_default();
     let (page, content, _) = widgets::page(
-        "About",
-        "The system this machine runs and the release it follows.",
+        tr("About"),
+        tr("The system this machine runs and the release it follows."),
     );
-    widgets::heading(&content, "This system");
+    widgets::heading(&content, tr("This system"));
     let group = widgets::group(&content);
     for (title, key) in [
-        ("System", "PRETTY_NAME"),
-        ("Version", "VERSION_ID"),
-        ("Channel", "EDEL_CHANNEL"),
+        (tr("System"), "PRETTY_NAME"),
+        (tr("Version"), "VERSION_ID"),
+        (tr("Channel"), "EDEL_CHANNEL"),
     ] {
-        let value = field(&release, key).unwrap_or_else(|| "Unknown".into());
+        let value = field(&release, key).unwrap_or_else(|| tr("Unknown").into());
         widgets::value_row(&group, title, &value);
     }
     page

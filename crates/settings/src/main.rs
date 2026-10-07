@@ -24,6 +24,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
+use edel::i18n::tr;
+
 use crate::style::Theme;
 
 /// The app's id, which its desktop file is named after
@@ -54,6 +56,9 @@ fn main() -> gtk::glib::ExitCode {
     // the program takes the app's id: the compositor and the panel find
     // its icon and name either way.
     gtk::glib::set_prgname(Some(APP_ID));
+    if let Some((language, words)) = edel::i18n::init("settings") {
+        eprintln!("edel-settings: words in {language}, {words} translated");
+    }
     let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(window);
     app.run()
@@ -78,7 +83,7 @@ fn all_pages() -> Vec<Page> {
         .filter_map(|page| match page.section {
             // The layout is the desktop's: no desktop, no Layout page.
             "layout" => Some(Page {
-                title: page.title,
+                title: tr(page.title),
                 icon: "page-layout",
                 section: Some(page.section),
                 build: layout::page,
@@ -88,7 +93,7 @@ fn all_pages() -> Vec<Page> {
         })
         .collect();
     pages.push(Page {
-        title: "About",
+        title: tr("About"),
         icon: "page-about",
         section: None,
         build: |_| about::page(),
@@ -122,7 +127,7 @@ fn finds(page: &Page, query: &str) -> bool {
         || holds(page.title)
         || page
             .section
-            .is_some_and(|s| rows::on_page(s).any(|row| holds(row.title)))
+            .is_some_and(|s| rows::on_page(s).any(|row| holds(tr(row.title))))
 }
 
 fn window(app: &adw::Application) {
@@ -144,9 +149,9 @@ fn window(app: &adw::Application) {
         .build();
     let back_label = gtk::Box::builder().spacing(4).build();
     back_label.append(&icon::image("back", 14));
-    back_label.append(&gtk::Label::new(Some("Settings")));
+    back_label.append(&gtk::Label::new(Some(tr("Settings"))));
     back.set_child(Some(&back_label));
-    back.update_property(&[gtk::accessible::Property::Label("Back to the pages")]);
+    back.update_property(&[gtk::accessible::Property::Label(tr("Back to the pages"))]);
     split
         .bind_property("collapsed", &back, "visible")
         .sync_create()
@@ -202,11 +207,11 @@ fn window(app: &adw::Application) {
     list.select_row(list.row_at_index(0).as_ref());
 
     let search = gtk::Entry::builder()
-        .placeholder_text("Search")
+        .placeholder_text(tr("Search"))
         .primary_icon_paintable(&icon::Icon::new("search", 14))
         .css_classes(["edel-search"])
         .build();
-    search.update_property(&[gtk::accessible::Property::Label("Search the settings")]);
+    search.update_property(&[gtk::accessible::Property::Label(tr("Search the settings"))]);
     {
         let (pages, search2) = (pages.clone(), search.clone());
         list.set_filter_func(move |row| {
@@ -242,7 +247,7 @@ fn window(app: &adw::Application) {
     sidebar_box.append(&search);
     sidebar_box.append(&list);
     let sidebar = adw::NavigationPage::builder()
-        .title("Settings")
+        .title(tr("Settings"))
         .child(&sidebar_box)
         .build();
     split.set_sidebar(Some(&sidebar));
@@ -262,7 +267,7 @@ fn window(app: &adw::Application) {
     // draws ours (KDE's server decoration protocol, M5.6a).
     let window = gtk::ApplicationWindow::builder()
         .application(app)
-        .title("Settings")
+        .title(tr("Settings"))
         .default_width(960)
         .default_height(640)
         .css_classes(["edel"])

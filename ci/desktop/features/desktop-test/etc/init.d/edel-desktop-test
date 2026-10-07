@@ -316,6 +316,10 @@ commands() {
 		'keyboard de') edel settings set region.keyboard=de,us ;;
 		'keyboard bad') say "keyboard_bad $(edel settings set region.keyboard=xx 2>&1 | tr '\n' ' ')" ;;
 		'keyboard default') edel settings reset region.keyboard ;;
+		# Translations (M5.24a): xx, the made-up language whose catalogue
+		# this feature ships, and English again.
+		'language xx') edel settings set region.language=xx ;;
+		'language default') edel settings reset region.language ;;
 		'key file')
 			if [ -e /home/ci/z ]; then
 				say "keyfile z"

@@ -1,0 +1,66 @@
+# The words shell-ui shows people, gathered from its source by a test in
+# crates/edel (EDEL_WRITE_DOCS=1 cargo test -p edel i18n writes it).
+# A language's translation is LANG/shell-ui.po beside it (M5.24).
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Panel"
+msgstr ""
+
+msgid "Type to search"
+msgstr ""
+
+msgid "No app matches"
+msgstr ""
+
+msgid "Stack"
+msgstr ""
+
+msgid "Split"
+msgstr ""
+
+msgid "Scroll"
+msgstr ""
+
+msgid "{name} (focused)"
+msgstr ""
+
+msgid "{name} (running)"
+msgstr ""
+
+msgid "Apps: {names}"
+msgstr ""
+
+msgid "Layout: tiling"
+msgstr ""
+
+msgid "Layout: floating"
+msgstr ""
+
+msgid "Layout: {policy}"
+msgstr ""
+
+msgid "Menu"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Focused window: {title}"
+msgstr ""
+
+msgid "{title} (focused)"
+msgstr ""
+
+msgid "{title} (minimized)"
+msgstr ""
+
+msgid "Windows: {titles}"
+msgstr ""
+
+msgid "Workspaces: {name} shown, {n} of {count}"
+msgstr ""
+
+msgid "Workspaces"
+msgstr ""

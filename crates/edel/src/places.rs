@@ -85,6 +85,8 @@ pub const PACKAGES_FILE: &str = share!("/packages");
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
 /// GTK's colours from the tokens (M5.5b).
 pub const GTK_CSS: &str = share!("/gtk.css");
+/// Where each part's words in each language are (M5.24): `LANG/PART.po`.
+pub const LOCALE_DIR: &str = share!("/locale");
 /// These places as shell variables, for the slot's own scripts (M5.27).
 pub const PLACES_SH: &str = share!("/places.sh");
 
@@ -162,6 +164,13 @@ pub fn person_dir() -> Option<PathBuf> {
                 .map(|home| PathBuf::from(home).join(".config"))
         })?;
     Some(config.join("edel"))
+}
+
+/// `part`'s words in `language`, such as `de` or `pt_BR` (M5.24).
+pub fn catalogue(language: &str, part: &str) -> PathBuf {
+    Path::new(LOCALE_DIR)
+        .join(language)
+        .join(format!("{part}.po"))
 }
 
 /// A person's own settings file, with the same keys as the machine's; for

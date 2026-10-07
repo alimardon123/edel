@@ -87,6 +87,10 @@
 #   everyday    the five everyday protocols are offered, a locked pointer
 #               gives its window relative motion, and a window keeping the
 #               screen on is counted in the state file (M5.23)
+#   language    region.language = "xx" restarts shell-ui in a made-up
+#               language, whose launcher draws its one long word where
+#               English leaves the search line empty; unset, English
+#               (M5.24a)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -860,6 +864,64 @@ case_workspaces() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
+}
+
+# search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
+# second for up to 10 s, until the open launcher's search line, from
+# 160 to 340 across its middle 20 rows, is WANT, uniform (empty there)
+# or varied (words reach it); prints the last answer and fails if never.
+search_line() {
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/$1.png"
+		seen=$(python3 ci/qmp.py uniform "$dir/$1.png" 160 418 180 20)
+		case "$seen" in "$2"*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	echo "$seen"
+	case "$seen" in "$2"*) true ;; *) false ;; esac
+}
+
+case_language() {
+	# Translations (M5.24a): region.language = "xx", a made-up language
+	# the test feature ships a catalogue for, restarts shell-ui, which
+	# reads its words in it; the launcher's "Type to search", 14 letters
+	# from 28,428, becomes a line long enough to reach past 160, where
+	# English leaves the search line empty. Unset, English is back. Kept
+	# as language-xx.png and language-en.png.
+	for language in en xx en; do
+		if [ "$language" = xx ]; then
+			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now xx')
+			guest 'language xx'
+			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now xx' "$restarts" ||
+				fail "setting region.language=xx did not restart shell-ui"
+			wait_for 'edel-shell-ui: words in xx, 1 translated' || fail "shell-ui did not read xx's one word"
+			want=varied
+		elif [ "$(count 'edel-shell-ui: words in xx')" -gt 0 ]; then
+			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now English')
+			guest 'language default'
+			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now English' "$restarts" ||
+				fail "unsetting region.language did not restart shell-ui"
+			want=uniform
+		else
+			want=uniform
+		fi
+		sleep 2
+		shown=$(count 'edel-shell-ui: launcher shown')
+		python3 ci/qmp.py key meta_l
+		wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher in $language"
+		seen=$(search_line "language-$language" "$want") ||
+			fail "in $language the launcher's search line from 160 to 340 is $seen, not $want"
+		hidden=$(count 'edel-shell-ui: launcher hidden')
+		python3 ci/qmp.py key esc
+		wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher in $language"
+	done
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Translations (M5.24a): language-xx.png and language-en.png are in the edel-desktop-test artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: region.language = \"xx\" restarted shell-ui, which read xx's one word, and the launcher drew it past 160, where English leaves the search line empty; unset, English came back"
 }
 
 case_launcher() {
