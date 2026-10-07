@@ -623,6 +623,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-07: The desktop stick's live test failed in 10 of 38 runs, two ways. A black panel: on a graphics driver without fences (bochs-drm, simpledrm) the compositor now waits for llvmpipe to finish a frame before showing it, as smithay asks. No session at all: its cause is still open, so the test's copy of the stick has its journal replayed before its logs are read (they printed nothing), and the greeter gets the seat on a stick too, which it lacked without a settings file.
 - 2026-10-07: M3.9 done: every PR audits `Cargo.lock` against the RustSec advisories, with five accepted in `ci/audit-exceptions.toml`, and the workflows' actions and the Alpine build image are pinned by digest. PR #128.
 - 2026-10-07: M1.13 done: every machine sets its clock from the network once at each start, from `region.time_servers` or `pool.ntp.org`. PR #127.
 - 2026-10-07: M3.8 done: release lists expire 60 days after signing and name their channel, and `edel update` refuses an expired list, another channel's and plain http. PR #126.
