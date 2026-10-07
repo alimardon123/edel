@@ -14,6 +14,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use edel::i18n::{n_, tr, trf};
 use edel::install::{Disk, Partition, Plan, SLOT_MIB, parse_blkid};
 use edel::settings;
 
@@ -35,7 +36,9 @@ const MIB: u64 = 1024 * 1024;
 /// The first block of a slot: it holds the ext4 superblock and its UUID.
 const HEAD: u64 = 4096;
 /// What is said when the plan was shown and nobody could confirm it.
-const NO_ANSWER: &str = "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes";
+const NO_ANSWER: &str = n_(
+    "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes",
+);
 
 /// Exit code when the plan was shown but nobody could confirm it.
 const NOT_CONFIRMED: i32 = 3;
@@ -70,16 +73,29 @@ fn partition_name(disk: &str, number: u32) -> String {
 }
 
 fn read_number(path: &Path) -> Result<u64> {
-    let text =
-        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
+    let text = fs::read_to_string(path).with_context(|| could_not_read(path))?;
     Ok(text.trim().parse()?)
+}
+
+/// `could not read PATH`, the start of a failure to read a file.
+fn could_not_read(path: &Path) -> String {
+    trf(
+        "could not read {path}",
+        &[("path", &path.display().to_string())],
+    )
 }
 
 /// The target disk as sysfs and blkid see it.
 fn describe(name: &str) -> Result<Disk> {
     let sys = Path::new("/sys/block").join(name);
     if !sys.exists() {
-        bail!("/dev/{name} is not a whole disk; name a disk such as /dev/sda, not a partition");
+        bail!(
+            "{}",
+            trf(
+                "/dev/{name} is not a whole disk; name a disk such as /dev/sda, not a partition",
+                &[("name", name)]
+            )
+        );
     }
     let model = fs::read_to_string(sys.join("device/model"))
         .ok()
@@ -106,8 +122,8 @@ fn describe(name: &str) -> Result<Disk> {
         // blkid says nothing about a partition it may not open, which is
         // not the same as an empty one (a dry run needs no root).
         if line.trim().is_empty() && File::open(Path::new("/dev").join(&part)).is_err() {
-            label = Some("unknown".into());
-            fs = Some("run as root to see".into());
+            label = Some(tr("unknown").into());
+            fs = Some(tr("run as root to see").into());
         }
         partitions.push(Partition {
             name: part,
@@ -130,23 +146,41 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
     let name = disk_name(disk);
     let running = update::Disk::find()?;
     if name == running.name {
-        bail!("/dev/{name} is the disk this system runs from; install to another disk");
+        bail!(
+            "{}",
+            trf(
+                "/dev/{name} is the disk this system runs from; install to another disk",
+                &[("name", name)]
+            )
+        );
     }
     let mounts = fs::read_to_string("/proc/mounts")?;
     if mounts
         .lines()
         .any(|l| l.starts_with(&format!("/dev/{name}")))
     {
-        bail!("/dev/{name} has a mounted file system; unmount it first");
+        bail!(
+            "{}",
+            trf(
+                "/dev/{name} has a mounted file system; unmount it first",
+                &[("name", name)]
+            )
+        );
     }
-    let text = fs::read_to_string(system_file)
-        .with_context(|| format!("could not read {}", system_file.display()))?;
-    let problems = settings::check(&text)
-        .with_context(|| format!("could not check {}", system_file.display()))?;
+    let text = fs::read_to_string(system_file).with_context(|| could_not_read(system_file))?;
+    let problems = settings::check(&text).with_context(|| {
+        trf(
+            "could not check {path}",
+            &[("path", &system_file.display().to_string())],
+        )
+    })?;
     if !problems.is_empty() {
         bail!(
-            "{} has problems, so nothing was changed; fix these (edel settings check shows them again):\n{}",
-            system_file.display(),
+            "{}\n{}",
+            trf(
+                "{path} has problems, so nothing was changed; fix these (edel settings check shows them again):",
+                &[("path", &system_file.display().to_string())]
+            ),
             problems.join("\n")
         );
     }
@@ -167,29 +201,45 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
     print!("{plan}");
     if dry_run {
         println!(
-            "edel install: this was only the plan; nothing was changed; leave out --plan to install"
+            "edel install: {}",
+            tr("this was only the plan; nothing was changed; leave out --plan to install")
         );
         return Ok(());
     }
     if !yes {
         if !io::stdin().is_terminal() {
-            println!("{NO_ANSWER}");
+            println!("{}", tr(NO_ANSWER));
             io::stdout().flush()?;
             std::process::exit(NOT_CONFIRMED);
         }
-        print!("Type {name} to erase it and install, or anything else to stop: ");
+        print!(
+            "{}",
+            trf(
+                "Type {name} to erase it and install, or anything else to stop: ",
+                &[("name", name)]
+            )
+        );
         io::stdout().flush()?;
         let mut answer = String::new();
         io::stdin().lock().read_line(&mut answer)?;
         if answer.trim() != name {
-            bail!("stopped, because {name} was not typed; nothing was changed");
+            bail!(
+                "{}",
+                trf(
+                    "stopped, because {name} was not typed; nothing was changed",
+                    &[("name", name)]
+                )
+            );
         }
     }
     let missing = missing_tools();
     if !missing.is_empty() {
         bail!(
-            "this system lacks {}, so nothing was changed; install them (apk add) and run edel install again",
-            missing.join(", ")
+            "{}",
+            trf(
+                "this system lacks {tools}, so nothing was changed; install them (apk add) and run edel install again",
+                &[("tools", &missing.join(", "))]
+            )
         );
     }
     let _lock = Lock::take("install", "edel install")?;
@@ -209,8 +259,11 @@ fn wait_for(device: &Path) -> Result<()> {
         sleep(Duration::from_millis(100));
     }
     bail!(
-        "{} did not appear after partitioning, so the disk is only partly installed; run edel install again",
-        device.display()
+        "{}",
+        trf(
+            "{device} did not appear after partitioning, so the disk is only partly installed; run edel install again",
+            &[("device", &device.display().to_string())]
+        )
     )
 }
 
@@ -243,32 +296,43 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         data_mib: plan.data_mib(),
     };
 
-    println!("edel install: partitioning {}", disk.display());
+    println!(
+        "edel install: {}",
+        trf(
+            "partitioning {disk}",
+            &[("disk", &disk.display().to_string())]
+        )
+    );
     let mut sfdisk = Command::new("sfdisk")
         .args(["--quiet", "--wipe", "always", "--wipe-partitions", "always"])
         .arg(&disk)
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .context("could not start sfdisk")?;
+        .context(tr("could not start sfdisk"))?;
     sfdisk
         .stdin
         .take()
-        .context("sfdisk has no input")?
+        .context(tr("sfdisk has no input"))?
         .write_all(layout.sfdisk_script().as_bytes())?;
     if !sfdisk.wait()?.success() {
         bail!(
-            "sfdisk could not partition {}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed",
-            disk.display()
+            "{}",
+            trf(
+                "sfdisk could not partition {disk}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed",
+                &[("disk", &disk.display().to_string())]
+            )
         );
     }
     for n in 1..=4 {
         wait_for(&part(n))?;
     }
 
-    println!("edel install: copying the running system into slot A");
+    println!(
+        "edel install: {}",
+        tr("copying the running system into slot A")
+    );
     let mut half = HalfCopy::new(part(2));
-    let mut from =
-        File::open(slot).with_context(|| format!("could not read {}", slot.display()))?;
+    let mut from = File::open(slot).with_context(|| could_not_read(slot))?;
     let mut to = fs::OpenOptions::new().write(true).open(part(2))?;
     // The first block, which holds the file system's UUID, goes last.
     from.seek(SeekFrom::Start(HEAD))?;
@@ -290,19 +354,32 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     run(Command::new("blockdev").arg("--flushbufs").arg(part(2)))?;
     if update::hash_prefix(&part(2), length)? != update::hash_prefix(slot, length)? {
         bail!(
-            "slot A on the new disk differs from the running slot after copying, so the copy is damaged and the disk cannot start yet; run edel install again"
+            "{}",
+            tr(
+                "slot A on the new disk differs from the running slot after copying, so the copy is damaged and the disk cannot start yet; run edel install again"
+            )
         );
     }
-    println!("edel install: slot A is the running slot byte for byte ({running_mib} MiB)");
+    println!(
+        "edel install: {}",
+        trf(
+            "slot A is the running slot byte for byte ({mib} MiB)",
+            &[("mib", &running_mib.to_string())]
+        )
+    );
     let status = Command::new("e2fsck").arg("-fn").arg(part(2)).status()?;
     if status.code() != Some(0) {
         bail!(
-            "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again"
+            "{}",
+            trf(
+                "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again",
+                &[("status", &status.to_string())]
+            )
         );
     }
     half.done();
 
-    println!("edel install: writing the boot loader");
+    println!("edel install: {}", tr("writing the boot loader"));
     run(Command::new("mkfs.vfat")
         .args(["-F", "32", "-n", ESP_LABEL])
         .arg(part(1)))?;
@@ -325,7 +402,7 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())?;
     }
 
-    println!("edel install: creating the data partition");
+    println!("edel install: {}", tr("creating the data partition"));
     run(Command::new("mkfs.ext4")
         .args(["-q", "-L", DATA_LABEL])
         .arg(part(4)))?;
@@ -348,8 +425,11 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     }
     run(&mut Command::new("sync"))?;
     println!(
-        "edel install: done; restart from {} to use it",
-        disk.display()
+        "edel install: {}",
+        trf(
+            "done; restart from {disk} to use it",
+            &[("disk", &disk.display().to_string())]
+        )
     );
     Ok(())
 }

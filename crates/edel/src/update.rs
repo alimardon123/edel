@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 
 use crate::grubenv::{Env, Slot};
 use crate::release::os_release_value;
+use edel::i18n::{tr, trf};
 
 const MIB: u64 = 1 << 20;
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
@@ -51,7 +52,7 @@ pub(crate) struct Disk {
 impl Disk {
     pub(crate) fn find() -> Result<Disk> {
         let mountinfo = fs::read_to_string("/proc/self/mountinfo")
-            .context("could not read /proc/self/mountinfo")?;
+            .context(tr("could not read /proc/self/mountinfo"))?;
         find_disk(&mountinfo, Path::new("/sys"))
     }
 
@@ -59,7 +60,12 @@ impl Disk {
         self.parts
             .iter()
             .find(|p| p.number == number)
-            .with_context(|| format!("the system disk has no partition {number}"))
+            .with_context(|| {
+                trf(
+                    "the system disk has no partition {number}",
+                    &[("number", &number.to_string())],
+                )
+            })
     }
 
     pub(crate) fn device(&self, number: u32) -> Result<PathBuf> {
@@ -76,7 +82,13 @@ impl Disk {
         let target = self.running.other();
         let part = self.part(target.partition())?;
         if part.dev == self.root_dev {
-            bail!("slot {target} holds the running system; not writing to it");
+            bail!(
+                "{}",
+                trf(
+                    "slot {slot} holds the running system; not writing to it",
+                    &[("slot", &target.to_string())]
+                )
+            );
         }
         Ok(part)
     }
@@ -93,12 +105,17 @@ fn root_device(mountinfo: &str) -> Result<&str> {
             let dev = fields.nth(2)?;
             (fields.nth(1)? == "/").then_some(dev)
         })
-        .context("/proc/self/mountinfo has no entry for /")
+        .context(tr("/proc/self/mountinfo has no entry for /"))
 }
 
 fn read_trimmed(path: &Path) -> Result<String> {
     Ok(fs::read_to_string(path)
-        .with_context(|| format!("could not read {}", path.display()))?
+        .with_context(|| {
+            trf(
+                "could not read {path}",
+                &[("path", &path.display().to_string())],
+            )
+        })?
         .trim()
         .to_string())
 }
@@ -108,17 +125,28 @@ fn read_trimmed(path: &Path) -> Result<String> {
 fn find_disk(mountinfo: &str, sys: &Path) -> Result<Disk> {
     let root_dev = root_device(mountinfo)?.to_string();
     let link = sys.join("dev/block").join(&root_dev);
-    let root =
-        fs::canonicalize(&link).with_context(|| format!("could not resolve {}", link.display()))?;
+    let root = fs::canonicalize(&link).with_context(|| {
+        trf(
+            "could not resolve {path}",
+            &[("path", &link.display().to_string())],
+        )
+    })?;
     if !root.join("partition").exists() {
         bail!(
-            "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on a disk partition"
+            "{}",
+            tr(
+                "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on a disk partition"
+            )
         );
     }
     let number: u32 = read_trimmed(&root.join("partition"))?.parse()?;
     let running = Slot::from_partition(number)
-        .context("this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on slot A (partition 2) or slot B (partition 3)")?;
-    let disk_dir = root.parent().context("the root partition has no disk")?;
+        .context(tr(
+            "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on slot A (partition 2) or slot B (partition 3)",
+        ))?;
+    let disk_dir = root
+        .parent()
+        .context(tr("the root partition has no disk"))?;
     let mut parts = Vec::new();
     for entry in fs::read_dir(disk_dir)? {
         let path = entry?.path();
@@ -188,7 +216,11 @@ fn roll_back(env: &mut Env, running: Slot) -> Result<Slot> {
     let target = running.other();
     if !env.ok(target) {
         bail!(
-            "slot {target} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
+            "{}",
+            trf(
+                "slot {slot} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged",
+                &[("slot", &target.to_string())]
+            )
         );
     }
     env.set_order(target);
@@ -219,14 +251,23 @@ impl Esp {
             .args(["-t", "vfat", "-o", "noatime,dirsync,iocharset=iso8859-1"])
             .arg(&dev)
             .arg(&dir))
-        .with_context(|| format!("cannot mount the EFI system partition {}", dev.display()))?;
+        .with_context(|| {
+            trf(
+                "cannot mount the EFI system partition {device}",
+                &[("device", &dev.display().to_string())],
+            )
+        })?;
         let esp = Esp {
             dir,
             mounted_here: true,
         };
         if !esp.env_path().is_file() {
             bail!(
-                "the EFI system partition has no {ENV_FILE}, so the slots cannot be read; this disk was not made by edel install, or it is damaged"
+                "{}",
+                trf(
+                    "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged",
+                    &[("file", ENV_FILE)]
+                )
             );
         }
         Ok(esp)
@@ -238,7 +279,8 @@ impl Esp {
 
     fn load(&self) -> Result<Env> {
         Env::parse(
-            &fs::read_to_string(self.env_path()).context("could not read the GRUB environment")?,
+            &fs::read_to_string(self.env_path())
+                .context(tr("could not read the GRUB environment"))?,
         )
     }
 
@@ -248,7 +290,7 @@ impl Esp {
         let file = OpenOptions::new()
             .write(true)
             .open(self.env_path())
-            .context("could not open the GRUB environment")?;
+            .context(tr("could not open the GRUB environment"))?;
         file.write_all_at(env.render()?.as_bytes(), 0)?;
         file.sync_all()?;
         Ok(())
@@ -265,7 +307,7 @@ pub(crate) fn write_beside_grubenv(name: &str, text: &str) -> Result<String> {
     let env = esp.env_path();
     let dir = env
         .parent()
-        .context("GRUB's environment block has no directory")?;
+        .context(tr("GRUB's environment block has no directory"))?;
     // In place, not through a rename: on FAT a rename over an existing
     // file is two directory writes, and a power cut between them can
     // cross-link clusters in the directory that holds grub.cfg and
@@ -295,7 +337,7 @@ pub(crate) struct Lock(PathBuf);
 impl Lock {
     pub(crate) fn take(name: &str, what: &str) -> Result<Lock> {
         fs::create_dir_all(RUN_DIR)
-            .map_err(|err| io_failure(err, &format!("could not write {RUN_DIR}")))?;
+            .map_err(|err| io_failure(err, &trf("could not write {path}", &[("path", RUN_DIR)])))?;
         let path = Path::new(RUN_DIR).join(format!("{name}.lock"));
         for _ in 0..2 {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
@@ -307,8 +349,11 @@ impl Lock {
                     if !is_stale(&path) {
                         let held = fs::read_to_string(&path).unwrap_or_default();
                         bail!(
-                            "{what} has to wait: {}; try again when it is done",
-                            holder(&held)
+                            "{}",
+                            trf(
+                                "{command} has to wait: {holder}; try again when it is done",
+                                &[("command", what), ("holder", &holder(&held))]
+                            )
                         );
                     }
                     // A process killed mid-install leaves its lock behind;
@@ -318,14 +363,20 @@ impl Lock {
                 Err(err) => {
                     return Err(io_failure(
                         err,
-                        &format!("could not take the lock {}", path.display()),
+                        &trf(
+                            "could not take the lock {path}",
+                            &[("path", &path.display().to_string())],
+                        ),
                     ));
                 }
             }
         }
         bail!(
-            "could not take the lock {}: another edel command took it first; try again",
-            path.display()
+            "{}",
+            trf(
+                "could not take the lock {path}: another edel command took it first; try again",
+                &[("path", &path.display().to_string())]
+            )
         )
     }
 }
@@ -336,7 +387,11 @@ impl Lock {
 pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
     if err.kind() == std::io::ErrorKind::PermissionDenied {
         anyhow::anyhow!(
-            "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)"
+            "{}",
+            trf(
+                "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)",
+                &[("doing", doing)]
+            )
         )
     } else {
         anyhow::Error::new(err).context(doing.to_string())
@@ -346,9 +401,12 @@ pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
 /// Who holds a lock, from the lock file's `PID COMMAND`.
 fn holder(held: &str) -> String {
     match held.trim().split_once(' ') {
-        Some((pid, what)) => format!("{what} (pid {pid}) is running"),
-        None if !held.trim().is_empty() => format!("pid {} is running", held.trim()),
-        None => "another command is starting".into(),
+        Some((pid, what)) => trf(
+            "{command} (pid {pid}) is running",
+            &[("command", what), ("pid", pid)],
+        ),
+        None if !held.trim().is_empty() => trf("pid {pid} is running", &[("pid", held.trim())]),
+        None => tr("another command is starting").into(),
     }
 }
 
@@ -388,7 +446,12 @@ pub(crate) fn run(cmd: &mut Command) -> Result<()> {
 /// Size in bytes of a file or a block device (file metadata says 0 for a
 /// device, seeking to its end does not).
 fn size_of(path: &Path) -> Result<u64> {
-    let mut file = File::open(path).with_context(|| format!("cannot read {}", path.display()))?;
+    let mut file = File::open(path).with_context(|| {
+        trf(
+            "cannot read {path}",
+            &[("path", &path.display().to_string())],
+        )
+    })?;
     Ok(file.seek(SeekFrom::End(0))?)
 }
 
@@ -466,7 +529,10 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
     let (mut source, expected, size): (Box<dyn Read>, Option<Vec<u8>>, u64) = if unsigned {
-        eprintln!("warning: installing an unsigned image; nothing checked where it came from");
+        eprintln!(
+            "warning: {}",
+            tr("installing an unsigned image; nothing checked where it came from")
+        );
         let path = Path::new(location);
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
@@ -488,13 +554,25 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     }
 
     println!(
-        "edel update: writing {location} to slot {slot} ({})",
-        target.display()
+        "edel update: {}",
+        trf(
+            "writing {location} to slot {slot} ({device})",
+            &[
+                ("location", location),
+                ("slot", &slot.to_string()),
+                ("device", &target.display().to_string())
+            ]
+        )
     );
     let mut dst = OpenOptions::new()
         .write(true)
         .open(&target)
-        .with_context(|| format!("could not open {}", target.display()))?;
+        .with_context(|| {
+            trf(
+                "could not open {path}",
+                &[("path", &target.display().to_string())],
+            )
+        })?;
     let (written, streamed) = copy_hashing(&mut source, &mut dst)?;
     dst.sync_all()?;
     drop(dst);
@@ -517,7 +595,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .context("could not start e2fsck")?;
+        .context(tr("could not start e2fsck"))?;
     if fsck.code() != Some(0) {
         bail!("{}", file_system_errors(slot));
     }
@@ -527,40 +605,51 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     after_install(&mut env, slot);
     esp.save(&env)?;
     println!(
-        "edel update: slot {slot} written and checked; restart to use it; if it fails to start, \
-         Edel OS goes back to slot {} on its own",
-        disk.running
+        "edel update: {}",
+        trf(
+            "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own",
+            &[
+                ("slot", &slot.to_string()),
+                ("running", &disk.running.to_string())
+            ]
+        )
     );
     Ok(())
 }
 
 /// The update image does not fit the slot it was to be written to.
 fn too_big(slot: Slot, size: u64, room: u64) -> String {
-    format!(
-        "the update image is {} MiB and slot {slot} holds {} MiB, so nothing was written; the running system is unchanged",
-        size.div_ceil(MIB),
-        room / MIB
+    trf(
+        "the update image is {size} MiB and slot {slot} holds {room} MiB, so nothing was written; the running system is unchanged",
+        &[
+            ("size", &size.div_ceil(MIB).to_string()),
+            ("slot", &slot.to_string()),
+            ("room", &(room / MIB).to_string()),
+        ],
     )
 }
 
 /// The written image is not the one release.toml lists.
 fn wrong_checksum(slot: Slot) -> String {
-    format!(
-        "refused: sha256: the image does not match the checksum in release.toml, so it is damaged or was changed on the way; slot {slot} stays switched off and the running system is unchanged; run edel update again"
+    trf(
+        "refused: sha256: the image does not match the checksum in release.toml, so it is damaged or was changed on the way; slot {slot} stays switched off and the running system is unchanged; run edel update again",
+        &[("slot", &slot.to_string())],
     )
 }
 
 /// The disk gave back something other than what was written.
 fn not_read_back(slot: Slot) -> String {
-    format!(
-        "slot {slot} does not read back as written, so the disk may be failing; it stays switched off and the running system is unchanged; run edel update again"
+    trf(
+        "slot {slot} does not read back as written, so the disk may be failing; it stays switched off and the running system is unchanged; run edel update again",
+        &[("slot", &slot.to_string())],
     )
 }
 
 /// `e2fsck` found errors in the written slot.
 fn file_system_errors(slot: Slot) -> String {
-    format!(
-        "slot {slot} has file system errors after writing; it stays switched off and the running system is unchanged; run edel update again"
+    trf(
+        "slot {slot} has file system errors after writing; it stays switched off and the running system is unchanged; run edel update again",
+        &[("slot", &slot.to_string())],
     )
 }
 
@@ -570,13 +659,13 @@ fn copy_hashing(src: &mut dyn Read, dst: &mut dyn Write) -> Result<(u64, Vec<u8>
     let mut buf = vec![0u8; 1 << 20];
     let mut total = 0u64;
     loop {
-        let n = src.read(&mut buf).context("could not read the image")?;
+        let n = src.read(&mut buf).context(tr("could not read the image"))?;
         if n == 0 {
             break;
         }
         hasher.update(&buf[..n]);
         dst.write_all(&buf[..n])
-            .context("could not write the slot")?;
+            .context(tr("could not write the slot"))?;
         total += n as u64;
     }
     Ok((total, hasher.finalize().to_vec()))
@@ -659,8 +748,14 @@ pub fn rollback() -> Result<()> {
     let target = roll_back(&mut env, disk.running)?;
     esp.save(&env)?;
     println!(
-        "edel rollback: slot {target} starts after the next restart; slot {} stays installed",
-        disk.running
+        "edel rollback: {}",
+        trf(
+            "slot {slot} starts after the next restart; slot {running} stays installed",
+            &[
+                ("slot", &target.to_string()),
+                ("running", &disk.running.to_string())
+            ]
+        )
     );
     Ok(())
 }

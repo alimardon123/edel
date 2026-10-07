@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use edel::i18n::{tr, trf};
 use edel::places;
 use edel::settings::{self, SettingsFile, User};
 
@@ -193,13 +194,34 @@ fn passwd_with_shell(passwd: &str, name: &str, shell: &str) -> Option<String> {
 /// Replaces a file through a new file and a rename, keeping its mode and
 /// owner, so a power cut leaves the old or the new account file.
 fn replace(path: &Path, text: &str) -> Result<()> {
-    let meta = fs::metadata(path).with_context(|| format!("could not read {}", path.display()))?;
+    let meta = fs::metadata(path).with_context(|| could_not_read(path))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
     fs::write(&new, text)?;
     fs::set_permissions(&new, meta.permissions())?;
     chown(&new, Some(meta.uid()), Some(meta.gid()))?;
     fs::File::open(&new)?.sync_all()?;
-    fs::rename(&new, path).with_context(|| format!("could not replace {}", path.display()))
+    fs::rename(&new, path).with_context(|| {
+        trf(
+            "could not replace {path}",
+            &[("path", &path.display().to_string())],
+        )
+    })
+}
+
+/// `could not read PATH`, the start of a failure to read a file.
+fn could_not_read(path: &Path) -> String {
+    trf(
+        "could not read {path}",
+        &[("path", &path.display().to_string())],
+    )
+}
+
+/// `could not write PATH`, the start of a failure to write a file.
+fn could_not_write(path: &Path) -> String {
+    trf(
+        "could not write {path}",
+        &[("path", &path.display().to_string())],
+    )
 }
 
 /// One change apply makes; `edel settings diff` lists them without making them.
@@ -421,7 +443,7 @@ fn find_account(name: &str) -> Result<Account> {
     accounts(&fs::read_to_string("/etc/passwd")?)
         .into_iter()
         .find(|a| a.name == name)
-        .with_context(|| format!("{name} is not in /etc/passwd"))
+        .with_context(|| trf("{name} is not in /etc/passwd", &[("name", name)]))
 }
 
 /// `~/.ssh/authorized_keys` of `account`, read without trusting the home,
@@ -438,9 +460,14 @@ fn read_keys(account: &Account) -> Option<String> {
     let meta = file.metadata().ok()?;
     if !meta.is_file() || meta.uid() != account.uid || meta.len() > KEYS_MAX {
         eprintln!(
-            "edel settings: ignored {}: not a regular file of {} up to 1 MiB",
-            path.display(),
-            account.name
+            "edel settings: {}",
+            trf(
+                "ignored {path}: not a regular file of {user} up to 1 MiB",
+                &[
+                    ("path", &path.display().to_string()),
+                    ("user", &account.name)
+                ]
+            )
         );
         return None;
     }
@@ -462,19 +489,25 @@ fn write_keys(account: &Account, text: &str) -> Result<()> {
         .gid(account.gid)
         .stdin(Stdio::piped())
         .spawn()
-        .with_context(|| format!("could not start a shell as {}", account.name))?;
+        .with_context(|| {
+            trf(
+                "could not start a shell as {user}",
+                &[("user", &account.name)],
+            )
+        })?;
     let written = child
         .stdin
         .take()
-        .context("no input to the shell")?
+        .context(tr("no input to the shell"))?
         .write_all(text.as_bytes());
     let status = child.wait()?;
     if !status.success() || written.is_err() {
         bail!(
-            "could not write {}/.ssh/authorized_keys as {}; check that the home directory exists and {} owns it",
-            account.home,
-            account.name,
-            account.name
+            "{}",
+            trf(
+                "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it",
+                &[("home", &account.home), ("user", &account.name)]
+            )
         );
     }
     Ok(())
@@ -545,19 +578,34 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     let path = file.unwrap_or(&machine);
     if file.is_none() && !path.exists() {
         match seed_if_missing.then(|| seed(path)).transpose()?.flatten() {
-            Some(from) => println!("edel settings: seeded {} from {from}", path.display()),
+            Some(from) => println!(
+                "edel settings: {}",
+                trf(
+                    "seeded {path} from {from}",
+                    &[("path", &path.display().to_string()), ("from", &from)]
+                )
+            ),
             None => {
-                println!("edel settings: no settings file, so nothing to apply");
+                println!(
+                    "edel settings: {}",
+                    tr("no settings file, so nothing to apply")
+                );
                 return Ok(None);
             }
         }
     }
     let read = settings::read_on_machine(path)?;
     for problem in &read.problems {
-        println!("edel settings: left out {problem}");
+        println!(
+            "edel settings: {}",
+            trf("left out {problem}", &[("problem", &problem.to_string())])
+        );
     }
     for key in &read.later {
-        println!("edel settings: skipped {key}: not supported yet");
+        println!(
+            "edel settings: {}",
+            trf("skipped {key}: not supported yet", &[("key", key.as_str())])
+        );
     }
     Ok(Some(read))
 }
@@ -576,16 +624,23 @@ fn settle_names() -> Result<()> {
             }
         }
         fs::rename(&found, &machine).with_context(|| {
-            format!(
-                "could not rename {} to {}",
-                found.display(),
-                machine.display()
+            trf(
+                "could not rename {from} to {to}",
+                &[
+                    ("from", &found.display().to_string()),
+                    ("to", &machine.display().to_string()),
+                ],
             )
         })?;
         println!(
-            "edel settings: renamed {} to {}",
-            found.display(),
-            machine.display()
+            "edel settings: {}",
+            trf(
+                "renamed {from} to {to}",
+                &[
+                    ("from", &found.display().to_string()),
+                    ("to", &machine.display().to_string())
+                ]
+            )
         );
     }
     let link = places::etc_settings();
@@ -593,12 +648,23 @@ fn settle_names() -> Result<()> {
         fs::create_dir_all(places::ETC_DIR)?;
         let _ = fs::remove_file(&link);
         std::os::unix::fs::symlink(&machine, &link).with_context(|| {
-            format!("could not link {} to {}", link.display(), machine.display())
+            trf(
+                "could not link {link} to {to}",
+                &[
+                    ("link", &link.display().to_string()),
+                    ("to", &machine.display().to_string()),
+                ],
+            )
         })?;
         println!(
-            "edel settings: linked {} to {}",
-            link.display(),
-            machine.display()
+            "edel settings: {}",
+            trf(
+                "linked {link} to {to}",
+                &[
+                    ("link", &link.display().to_string()),
+                    ("to", &machine.display().to_string())
+                ]
+            )
         );
     }
     Ok(())
@@ -638,7 +704,16 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
             Ok(()) => println!("edel settings: {change}"),
             Err(err) => {
                 failed += 1;
-                eprintln!("edel settings: could not apply {change}: {err:#}");
+                eprintln!(
+                    "edel settings: {}",
+                    trf(
+                        "could not apply {change}: {why}",
+                        &[
+                            ("change", &change.to_string()),
+                            ("why", &format!("{err:#}"))
+                        ]
+                    )
+                );
             }
         }
     }
@@ -646,16 +721,25 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     if let Some(path) = file.filter(|f| !same_file(f, &machine)) {
         keep_as_machine_file(path, &machine)?;
         println!(
-            "edel settings: {} is now this machine's settings file",
-            path.display()
+            "edel settings: {}",
+            trf(
+                "{path} is now this machine's settings file",
+                &[("path", &path.display().to_string())]
+            )
         );
     } else if changes.is_empty() {
-        println!("edel settings: nothing to change");
+        println!("edel settings: {}", tr("nothing to change"));
     }
     if failed > 0 {
         bail!(
-            "{failed} of {} changes could not be applied, listed above; the others were applied, and edel settings diff shows what is left",
-            changes.len()
+            "{}",
+            trf(
+                "{failed} of {total} changes could not be applied, listed above; the others were applied, and edel settings diff shows what is left",
+                &[
+                    ("failed", &failed.to_string()),
+                    ("total", &changes.len().to_string())
+                ]
+            )
         );
     }
     Ok(())
@@ -674,11 +758,10 @@ fn same_file(a: &Path, b: &Path) -> bool {
 fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
     fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    let mut out =
-        fs::File::create(&new).with_context(|| format!("could not write {}", new.display()))?;
+    let mut out = fs::File::create(&new).with_context(|| could_not_write(&new))?;
     out.write_all(text)?;
     out.sync_all()?;
-    fs::rename(&new, path).with_context(|| format!("could not write {}", path.display()))?;
+    fs::rename(&new, path).with_context(|| could_not_write(path))?;
     Ok(())
 }
 
@@ -686,14 +769,18 @@ fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
 /// format brings the `.v<N>` this release read, so the next boot reads it
 /// too (ADR-008).
 fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
-    let text = fs::read(from).with_context(|| format!("could not read {}", from.display()))?;
+    let text = fs::read(from).with_context(|| could_not_read(from))?;
     if settings::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > settings::FORMAT) {
         let older = settings::versioned(from, settings::FORMAT);
-        let older_text =
-            fs::read(&older).with_context(|| format!("could not read {}", older.display()))?;
+        let older_text = fs::read(&older).with_context(|| could_not_read(&older))?;
         write_whole(&settings::versioned(to, settings::FORMAT), &older_text)?;
     }
-    write_whole(to, &text).with_context(|| format!("could not save {}", to.display()))
+    write_whole(to, &text).with_context(|| {
+        trf(
+            "could not save {path}",
+            &[("path", &to.display().to_string())],
+        )
+    })
 }
 
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line
@@ -722,7 +809,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     let mut path = machine.clone();
     let mut newer = None;
     if let Ok(text) = fs::read_to_string(&machine) {
-        let format = settings::format(&text).with_context(|| format!("could not read {shown}"))?;
+        let format = settings::format(&text).with_context(|| could_not_read(&machine))?;
         if format > settings::FORMAT {
             path = settings::versioned(&machine, settings::FORMAT);
             newer = Some(format);
@@ -732,16 +819,28 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
         Ok(text) => text,
         Err(_) if newer.is_none() => format!("format = {}\n", settings::FORMAT),
         Err(_) => bail!(
-            "{shown} is format {}, newer than this release, and there is no {} beside it to change",
-            newer.unwrap_or_default(),
-            path.display()
+            "{}",
+            trf(
+                "{path} is format {format}, newer than this release, and there is no {older} beside it to change",
+                &[
+                    ("path", &shown),
+                    ("format", &newer.unwrap_or_default().to_string()),
+                    ("older", &path.display().to_string())
+                ]
+            )
         ),
     };
     let edited = change(&text)?;
     for problem in settings::read(&edited)?.problems {
-        println!("edel settings: kept, not used by this release: {problem}");
+        println!(
+            "edel settings: {}",
+            trf(
+                "kept, not used by this release: {problem}",
+                &[("problem", &problem.to_string())]
+            )
+        );
     }
-    let doing = format!("could not write {}", path.display());
+    let doing = could_not_write(&path);
     fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))
         .map_err(|err| io_failure(err, &doing))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
@@ -752,17 +851,30 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     println!(
-        "edel settings: {what} in {}; {}",
-        path.display(),
-        if desktop {
-            "the desktop follows it at once"
-        } else {
-            "edel settings apply applies it"
-        }
+        "edel settings: {}",
+        trf(
+            "{what} in {path}; {then}",
+            &[
+                ("what", what),
+                ("path", &path.display().to_string()),
+                (
+                    "then",
+                    if desktop {
+                        tr("the desktop follows it at once")
+                    } else {
+                        tr("edel settings apply applies it")
+                    }
+                )
+            ]
+        )
     );
     if let Some(format) = newer {
         println!(
-            "edel settings: {shown} is format {format}, so the change applies to this release only"
+            "edel settings: {}",
+            trf(
+                "{path} is format {format}, so the change applies to this release only",
+                &[("path", &shown), ("format", &format.to_string())]
+            )
         );
     }
     Ok(())
@@ -774,12 +886,16 @@ pub fn set(assignments: &[String]) -> Result<()> {
     let mut pairs = Vec::new();
     for assignment in assignments {
         let (key, value) = assignment.split_once('=').with_context(|| {
-            format!("{assignment:?}: write KEY=VALUE, such as network.hostname=lab-1")
+            trf(
+                "{assignment}: write KEY=VALUE, such as network.hostname=lab-1",
+                &[("assignment", &format!("{assignment:?}"))],
+            )
         })?;
         pairs.push((key.trim(), value.trim()));
     }
     let keys: Vec<&str> = pairs.iter().map(|(k, _)| *k).collect();
-    edit(&format!("set {}", keys.join(", ")), &keys, |text| {
+    let what = trf("set {keys}", &[("keys", &keys.join(", "))]);
+    edit(&what, &keys, |text| {
         let mut text = text.to_string();
         for (key, value) in &pairs {
             text = settings::set(&text, key, value)?;
@@ -801,7 +917,8 @@ fn desktop_follows(key: &str) -> bool {
 /// it again.
 pub fn reset(keys: &[String]) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
-    edit(&format!("reset {}", keys.join(", ")), &keys, |text| {
+    let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
+    edit(&what, &keys, |text| {
         let mut text = text.to_string();
         for key in &keys {
             text = settings::unset(&text, key)?;
@@ -818,7 +935,10 @@ fn page_word(page: &settings::Page) -> String {
 
 /// `edel settings` alone: the pages, in the Settings app's order.
 pub fn pages() {
-    println!("Settings, page by page, as the Settings app shows them:\n");
+    println!(
+        "{}\n",
+        tr("Settings, page by page, as the Settings app shows them:")
+    );
     let width = settings::PAGES
         .iter()
         .map(|p| page_word(p).len())
@@ -828,13 +948,15 @@ pub fn pages() {
         println!(
             "  {:width$}  {}: {}",
             page_word(page),
-            page.title,
-            page.about
+            tr(page.title),
+            tr(page.about)
         );
     }
     println!(
-        "\nedel settings get PAGE shows a page's settings and where each comes from;\n\
-         edel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
+        "\n{}",
+        tr(
+            "edel settings get PAGE shows a page's settings and where each comes from;\nedel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
+        )
     );
 }
 
@@ -894,8 +1016,20 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
                 (None, Some(w))
             }
             None => match settings::nearest_key(w) {
-                Some(near) => bail!("{w}: no such page or key; did you mean {near}?"),
-                None => bail!("{w}: no such page or key; edel settings lists the pages"),
+                Some(near) => bail!(
+                    "{}",
+                    trf(
+                        "{name}: no such page or key; did you mean {near}?",
+                        &[("name", w), ("near", &near)]
+                    )
+                ),
+                None => bail!(
+                    "{}",
+                    trf(
+                        "{name}: no such page or key; edel settings lists the pages",
+                        &[("name", w)]
+                    )
+                ),
             },
         },
     };
@@ -908,12 +1042,12 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     let mut rows: Vec<(String, toml::Value, &str)> = Vec::new();
     for (k, v) in &person {
         if wanted(k) {
-            rows.push((k.clone(), v.clone(), "your own file"));
+            rows.push((k.clone(), v.clone(), tr("your own file")));
         }
     }
     for (k, v) in &machine {
         if wanted(k) && !rows.iter().any(|(r, _, _)| r == k) {
-            rows.push((k.clone(), v.clone(), "this machine"));
+            rows.push((k.clone(), v.clone(), tr("this machine")));
         }
     }
     if as_toml {
@@ -944,17 +1078,26 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             continue;
         }
         mine.sort_by(|a, b| (a.2.is_empty(), &a.0).cmp(&(b.2.is_empty(), &b.0)));
-        println!("{} ({}): {}", page.title, page_word(page), page.about);
+        println!(
+            "{} ({}): {}",
+            tr(page.title),
+            page_word(page),
+            tr(page.about)
+        );
         for (k, v, from) in mine {
             let later = settings::KEYS
                 .iter()
                 .any(|e| !e.supported && key_fits(e.path, k));
             let shown = if from.is_empty() {
-                "not set: the release decides".to_string()
+                tr("not set: the release decides").to_string()
             } else {
                 format!("{v}  ({from})")
             };
-            let later = if later { "  (not supported yet)" } else { "" };
+            let later = if later {
+                format!("  ({})", tr("not supported yet"))
+            } else {
+                String::new()
+            };
             println!("  {k:width$}  {shown}{later}");
         }
         println!();
@@ -1002,7 +1145,13 @@ fn seed(target: &Path) -> Result<Option<String>> {
             return Ok(None);
         };
         if let Err(err) = settings::read(&text) {
-            println!("edel settings: passed over the settings file on {from}: {err:#}");
+            println!(
+                "edel settings: {}",
+                trf(
+                    "passed over the settings file on {from}: {why}",
+                    &[("from", from), ("why", &format!("{err:#}"))]
+                )
+            );
             return Ok(None);
         }
         write_whole(target, text.as_bytes())?;
@@ -1056,8 +1205,11 @@ fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
     };
     if !mounted {
         eprintln!(
-            "warning: cannot mount {} to look for a settings file",
-            device.display()
+            "warning: {}",
+            trf(
+                "cannot mount {device} to look for a settings file",
+                &[("device", &device.display().to_string())]
+            )
         );
         return None;
     }
@@ -1085,7 +1237,13 @@ pub fn export() -> Result<()> {
         Ok(read) => read.file,
         Err(_) if !machine.exists() => SettingsFile::default(),
         Err(err) => {
-            eprintln!("warning: {err:#}; exporting only what the machine has");
+            eprintln!(
+                "warning: {}",
+                trf(
+                    "{why}; exporting only what the machine has",
+                    &[("why", &format!("{err:#}"))]
+                )
+            );
             SettingsFile::default()
         }
     };
@@ -1106,7 +1264,10 @@ pub fn export() -> Result<()> {
     print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
     if !changed.is_empty() {
-        println!("\n# Files this machine changed in /etc, kept on /data and not described above:");
+        println!(
+            "\n# {}",
+            tr("Files this machine changed in /etc, kept on /data and not described above:")
+        );
         for line in changed {
             println!("#   {line}");
         }

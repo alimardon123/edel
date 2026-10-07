@@ -234,7 +234,8 @@ impl Files {
     }
 }
 
-/// A preset's name as people read it: `mac-like` is Mac-like.
+/// A value's name as people read it, with a capital: `floating only` is
+/// Floating only. A preset's is `edel::presets::title`, which translates.
 pub fn title(name: &str) -> String {
     let mut chars = name.chars();
     match chars.next() {

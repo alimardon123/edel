@@ -12,6 +12,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
+use edel::i18n::trf;
 use edel::{features, places, session_log};
 use serde::Serialize;
 
@@ -82,14 +83,20 @@ pub(crate) fn pointers(fell_back: bool, badly: &[(String, std::path::PathBuf)]) 
     let mut lines = Vec::new();
     if fell_back {
         lines.push(format!(
-            "logs: the last update did not start, so the machine went back to the slot before; the system log is {}, and edel report gathers it with the rest",
-            places::SYSTEM_LOG
+            "logs: {}",
+            trf(
+                "the last update did not start, so the machine went back to the slot before; the system log is {log}, and edel report gathers it with the rest",
+                &[("log", places::SYSTEM_LOG)]
+            )
         ));
     }
     for (person, path) in badly {
         lines.push(format!(
-            "logs: {person}'s last desktop session ended without closing; its log is {}, and edel report gathers it with the rest",
-            path.display()
+            "logs: {}",
+            trf(
+                "{person}'s last desktop session ended without closing; its log is {log}, and edel report gathers it with the rest",
+                &[("person", person), ("log", &path.display().to_string())]
+            )
         ));
     }
     lines
@@ -258,13 +265,22 @@ pub fn report(esp: bool) -> Result<()> {
         let disk = crate::update::Disk::find()?;
         if !is_removable(Path::new("/sys"), &disk.name) {
             println!(
-                "edel report: {} is not a removable disk, so the report stays off its EFI system partition",
-                disk.name
+                "edel report: {}",
+                trf(
+                    "{disk} is not a removable disk, so the report stays off its EFI system partition",
+                    &[("disk", &disk.name)]
+                )
             );
             return Ok(());
         }
         let path = crate::update::write_beside_grubenv("report.toml", &text)?;
-        println!("edel report: wrote {path} on the EFI system partition");
+        println!(
+            "edel report: {}",
+            trf(
+                "wrote {path} on the EFI system partition",
+                &[("path", &path)]
+            )
+        );
     } else {
         print!("{text}");
     }

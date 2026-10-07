@@ -24,7 +24,8 @@ mod update;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{FromArgMatches, Parser, Subcommand};
+use edel::i18n::{self, trf};
 use edel::settings;
 
 use crate::def::ImageDef;
@@ -38,10 +39,55 @@ struct Cli {
 }
 
 /// `edel`'s command table, for what is written from it: the completion
-/// (M5.26) and the command reference (M8.10a).
+/// (M5.26) and the command reference (M8.10a). Its words are English; the
+/// help a person reads is [`translated`].
 pub(crate) fn cli_command() -> clap::Command {
     use clap::CommandFactory;
     Cli::command()
+}
+
+/// `cmd` with each help text in the person's language, or as it is where
+/// no catalogue has it (M5.24b). The words are the ones clap built from
+/// the doc comments of [`Commands`] and the rest, which the test of
+/// `po/edel.pot` lists (`help_words` there); a hidden command or option, which CI and the
+/// boot services use, stays English.
+fn translated(cmd: clap::Command) -> clap::Command {
+    let say = |text: &clap::builder::StyledStr| i18n::translate(&text.to_string());
+    let mut cmd = cmd;
+    if let Some(about) = cmd.get_about().and_then(say) {
+        cmd = cmd.about(about);
+    }
+    if let Some(long) = cmd.get_long_about().and_then(say) {
+        cmd = cmd.long_about(long);
+    }
+    let ids: Vec<clap::Id> = cmd
+        .get_arguments()
+        .filter(|a| !a.is_hide_set())
+        .map(|a| a.get_id().clone())
+        .collect();
+    for id in ids {
+        cmd = cmd.mut_arg(id, |arg| {
+            let help = arg.get_help().and_then(say);
+            let long = arg.get_long_help().and_then(say);
+            let arg = match help {
+                Some(help) => arg.help(help),
+                None => arg,
+            };
+            match long {
+                Some(long) => arg.long_help(long),
+                None => arg,
+            }
+        });
+    }
+    let names: Vec<String> = cmd
+        .get_subcommands()
+        .filter(|c| !c.is_hide_set())
+        .map(|c| c.get_name().to_string())
+        .collect();
+    for name in names {
+        cmd = cmd.mut_subcommand(name, translated);
+    }
+    cmd
 }
 
 #[derive(Subcommand)]
@@ -310,7 +356,13 @@ struct BuildArgs {
 }
 
 fn main() -> std::process::ExitCode {
-    let command = Cli::parse().command;
+    // The language `region.language` names, for every word below.
+    i18n::init("edel");
+    let matches = translated(cli_command()).get_matches();
+    let command = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli.command,
+        Err(err) => err.exit(),
+    };
     let name = command.name();
     match run(command) {
         Ok(()) => std::process::ExitCode::SUCCESS,
@@ -364,7 +416,13 @@ fn run(command: Commands) -> Result<()> {
                     plan,
                 } = *args;
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
-                    anyhow::bail!("version {v:?} is not numbers joined by dots, such as 2026.10.3");
+                    anyhow::bail!(
+                        "{}",
+                        trf(
+                            "version {version} is not numbers joined by dots, such as 2026.10.3",
+                            &[("version", &format!("{v:?}"))]
+                        )
+                    );
                 }
                 let def = ImageDef::load(&definition)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
@@ -494,12 +552,13 @@ fn run(command: Commands) -> Result<()> {
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
 fn check_system_file(file: &std::path::Path) -> Result<()> {
+    let shown = file.display().to_string();
     let text = std::fs::read_to_string(file)
-        .with_context(|| format!("could not read {}", file.display()))?;
-    let problems =
-        settings::check(&text).with_context(|| format!("could not check {}", file.display()))?;
+        .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
+    let problems = settings::check(&text)
+        .with_context(|| trf("could not check {path}", &[("path", &shown)]))?;
     if problems.is_empty() {
-        println!("{}: ok", file.display());
+        println!("{}", trf("{path}: ok", &[("path", &shown)]));
         return Ok(());
     }
     for problem in &problems {
@@ -511,15 +570,18 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
 /// The last line of a failed `edel settings check`: how many problems the
 /// lines above are, and what to do about them.
 fn problem_count(file: &std::path::Path, count: usize) -> String {
-    let (problems, fix) = if count == 1 {
-        ("1 problem".to_string(), "it")
+    let path = file.display().to_string();
+    if count == 1 {
+        trf(
+            "{path} has 1 problem, listed above; fix it and run edel settings check again",
+            &[("path", &path)],
+        )
     } else {
-        (format!("{count} problems"), "them")
-    };
-    format!(
-        "{} has {problems}, listed above; fix {fix} and run edel settings check again",
-        file.display()
-    )
+        trf(
+            "{path} has {count} problems, listed above; fix them and run edel settings check again",
+            &[("path", &path), ("count", &count.to_string())],
+        )
+    }
 }
 
 #[cfg(test)]
@@ -527,7 +589,7 @@ mod tests {
     use clap::error::ErrorKind;
     use clap::{CommandFactory, Parser};
 
-    use super::{Cli, Commands, failure_line, problem_count};
+    use super::{Cli, Commands, cli_command, failure_line, problem_count, translated};
 
     /// A failed command prints one line, `edel NAME: ` and then the cause
     /// chain, the most specific last (docs/MESSAGES.md).
@@ -608,6 +670,87 @@ mod tests {
         }
         let both = Cli::try_parse_from(["edel", "update", "--check", "--unsigned", "slot.img"]);
         assert!(both.is_err());
+    }
+
+    /// Every help text a person reads from `edel --help`: what clap built
+    /// from the doc comments, for the commands and options that are shown.
+    fn help_words(cmd: &clap::Command, words: &mut Vec<String>) {
+        let mut add = |text: Option<&clap::builder::StyledStr>| {
+            if let Some(text) = text.map(ToString::to_string).filter(|t| !t.is_empty()) {
+                if !words.contains(&text) {
+                    words.push(text);
+                }
+            }
+        };
+        add(cmd.get_about());
+        add(cmd.get_long_about());
+        for arg in cmd.get_arguments().filter(|a| !a.is_hide_set()) {
+            add(arg.get_help());
+            add(arg.get_long_help());
+        }
+        for sub in cmd.get_subcommands().filter(|c| !c.is_hide_set()) {
+            help_words(sub, words);
+        }
+    }
+
+    /// `po/edel.pot` lists what the sources mark and what the help says
+    /// (the other parts' templates are checked in `edel::i18n`); with
+    /// EDEL_WRITE_DOCS set it is written afresh.
+    #[test]
+    fn i18n_template_of_edel_is_its_source_and_its_help() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut words = edel::i18n::gather(&root, &["crates/edel/src"]);
+        let mut help = Vec::new();
+        help_words(&cli_command(), &mut help);
+        for word in help {
+            if !words.contains(&word) {
+                words.push(word);
+            }
+        }
+        edel::i18n::check_template(&root, "edel", &words, "crates/edel/src and the help");
+    }
+
+    /// In a made-up language the help comes out translated, word for
+    /// word, and stays English where the catalogue lacks it.
+    #[test]
+    fn i18n_help_is_translated_and_falls_back_to_english() {
+        let catalogue = edel::i18n::parse_po(
+            "msgid \"Go back to the version in the other slot, the one before the last update; it starts at the next restart\"\n\
+             msgstr \"xx rollback\"\n\n\
+             msgid \"Only check the version RELEASE holds against this one; change nothing\"\n\
+             msgstr \"xx check\"\n",
+        );
+        edel::i18n::with_catalogue(catalogue, || {
+            let cmd = translated(cli_command());
+            let rollback = cmd.find_subcommand("rollback").unwrap();
+            assert_eq!(rollback.get_about().unwrap().to_string(), "xx rollback");
+            let update = cmd.find_subcommand("update").unwrap();
+            let check = update.get_arguments().find(|a| a.get_id() == "check");
+            assert_eq!(check.unwrap().get_help().unwrap().to_string(), "xx check");
+            // Not in the catalogue: English.
+            let status = cmd.find_subcommand("status").unwrap();
+            assert!(
+                status
+                    .get_about()
+                    .unwrap()
+                    .to_string()
+                    .starts_with("Show the version")
+            );
+            // The command reference is written from the English table.
+            let english = cli_command();
+            let about = english.find_subcommand("rollback").unwrap().get_about();
+            assert!(about.unwrap().to_string().starts_with("Go back"));
+        });
+        // Outside, nothing changes.
+        let plain = translated(cli_command());
+        let rollback = plain.find_subcommand("rollback").unwrap();
+        assert!(
+            rollback
+                .get_about()
+                .unwrap()
+                .to_string()
+                .starts_with("Go back")
+        );
     }
 
     /// The docs site's command reference (M8.10a), written from this
