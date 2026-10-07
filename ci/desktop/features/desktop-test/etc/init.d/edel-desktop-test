@@ -234,6 +234,11 @@ commands() {
 		'motion default') edel settings reset appearance.animations ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
+		# The globals a plain client and a sandboxed one see (M5.22).
+		globals)
+			say "plain $(as_ci edel-testclient --globals </dev/null 2>&1)"
+			say "sandbox $(as_ci edel-testclient --security-context </dev/null 2>&1)"
+			;;
 		# Tiling styles (M5.16a): split, stack, and the release's again,
 		# and four windows to tile, each opened once the one before is on
 		# screen, so each new one has the keyboard.

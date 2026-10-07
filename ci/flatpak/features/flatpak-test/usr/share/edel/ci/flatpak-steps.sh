@@ -31,6 +31,14 @@ try() {
 	fi
 }
 
+# Flatpak 1.15 or later marks its apps with wp_security_context_v1, so
+# the compositor hides the shell's protocols from them (M5.22).
+version=$(flatpak --version | awk '{ print $2 }')
+if printf '1.15\n%s\n' "$version" | sort -c -t. -k1,1n -k2,2n 2>/dev/null; then
+	say "flatpak $version marks its apps with a security context: yes"
+else
+	say "flatpak $version marks its apps with a security context: no"
+fi
 if unshare -U true 2>/dev/null; then
 	say "unprivileged user namespaces: yes"
 else

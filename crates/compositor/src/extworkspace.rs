@@ -117,6 +117,11 @@ impl Manager {
 }
 
 impl GlobalDispatch<ExtWorkspaceManagerV1, ()> for Edel {
+    /// Hidden from sandboxed apps: only the shell's (M5.22).
+    fn can_view(client: Client, _: &()) -> bool {
+        crate::sandbox::shell_may(&client)
+    }
+
     fn bind(
         state: &mut Edel,
         display: &DisplayHandle,

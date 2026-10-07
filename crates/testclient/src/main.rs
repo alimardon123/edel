@@ -11,12 +11,15 @@
 //! activates one given its title (`toplevels.rs`, M5.2d). `--app-id` sets
 //! the window's app id, `edel-testclient` without it, so a test can stand
 //! in for an app the panel pins (M5.4c). `--fullscreen` asks to fill the
-//! screen before the window is shown (M5.20).
+//! screen before the window is shown (M5.20). `--globals` lists the
+//! globals it is offered, and `--security-context` those a sandboxed app
+//! is offered (`sandbox.rs`, M5.22).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
 //!     edel-testclient --workspace 3
 //!     edel-testclient --toplevels away
+//!     edel-testclient --security-context
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -144,6 +147,7 @@ struct Client {
     closed: bool,
 }
 
+mod sandbox;
 mod toplevels;
 mod workspaces;
 
@@ -152,6 +156,8 @@ fn main() -> Result<()> {
     match words.iter().map(String::as_str).collect::<Vec<_>>()[..] {
         ["--workspace", name] => return workspaces::run(name),
         ["--toplevels"] => return toplevels::run(None),
+        ["--globals"] => return sandbox::run(false),
+        ["--security-context"] => return sandbox::run(true),
         ["--toplevels", title] => return toplevels::run(Some(title)),
         _ => {}
     }
