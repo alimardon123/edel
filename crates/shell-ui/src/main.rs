@@ -17,6 +17,7 @@
 mod a11y;
 mod launcher;
 mod link;
+mod messages;
 mod paint;
 mod popup;
 mod portal;
@@ -161,7 +162,7 @@ struct Panel {
 
 fn main() {
     if let Err(e) = run() {
-        eprintln!("edel-shell-ui: {e:#}");
+        eprintln!("edel-shell-ui: {}", messages::stopped(format!("{e:#}")));
         std::process::exit(1);
     }
 }
@@ -172,12 +173,14 @@ fn run() -> Result<()> {
     }
     let (preset, scheme) = from_system_files();
     let tokens = load_tokens(scheme);
-    let connection = Connection::connect_to_env().context("connecting to the compositor")?;
-    let (globals, queue) = registry_queue_init(&connection).context("reading the globals")?;
+    let connection = Connection::connect_to_env().context(messages::NO_COMPOSITOR)?;
+    let (globals, queue) = registry_queue_init(&connection).context(messages::NO_GLOBALS)?;
     let qh = queue.handle();
-    let compositor = CompositorState::bind(&globals, &qh).context("no wl_compositor")?;
-    let shm = Shm::bind(&globals, &qh).context("no wl_shm")?;
-    let layers = LayerShell::bind(&globals, &qh).context("no zwlr_layer_shell_v1")?;
+    let compositor =
+        CompositorState::bind(&globals, &qh).with_context(|| messages::missing("wl_compositor"))?;
+    let shm = Shm::bind(&globals, &qh).with_context(|| messages::missing("wl_shm"))?;
+    let layers = LayerShell::bind(&globals, &qh)
+        .with_context(|| messages::missing("zwlr_layer_shell_v1"))?;
     let strip = paint::fillet_height(&tokens);
     let features = std::path::Path::new(edel::features::DIR);
     let mut panels = Vec::new();
@@ -304,7 +307,7 @@ fn run() -> Result<()> {
     while !shell.exit {
         // When the compositor goes away, so does the panel: the end.
         if event_loop.dispatch(None, &mut shell).is_err() {
-            eprintln!("edel-shell-ui: the compositor went away");
+            eprintln!("edel-shell-ui: {}", messages::COMPOSITOR_GONE);
             break;
         }
     }
@@ -385,7 +388,7 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
         },
     );
     if let Err(e) = result {
-        eprintln!("edel-shell-ui: the clock's timer did not start: {e}");
+        eprintln!("edel-shell-ui: {}", messages::clock_not_started(e));
     }
 }
 
@@ -435,7 +438,10 @@ impl Shell {
             return;
         }
         if let Err(e) = self.show(i, &look) {
-            eprintln!("edel-shell-ui: drawing the panel failed: {e:#}");
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::panel_not_drawn(format!("{e:#}"))
+            );
             return;
         }
         // Screen readers get what was drawn, in logical pixels.
@@ -822,9 +828,12 @@ impl Shell {
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, styles::KEY, value) {
                 Ok(()) => eprintln!("edel-shell-ui: tiling style {style} chosen"),
-                Err(e) => eprintln!("edel-shell-ui: could not choose the {style} style: {e:#}"),
+                Err(e) => eprintln!(
+                    "edel-shell-ui: {}",
+                    messages::style_not_kept(style, format!("{e:#}"))
+                ),
             },
-            None => eprintln!("edel-shell-ui: no home folder to keep the {style} style in"),
+            None => eprintln!("edel-shell-ui: {}", messages::style_no_home(style)),
         }
         self.close_styles();
     }

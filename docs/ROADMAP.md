@@ -623,6 +623,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-07: M5.28b, the desktop's part: what `edel-compositor` and `edel-shell-ui` say when something fails now says what failed, why and what to do or what still works (no graphics card, a panel that keeps failing, the health file that cannot be written, a shortcut or layout that is refused, an app that will not start, the settings portal), each in one `messages.rs` per part with cargo tests holding the text, and Settings' About page shows the last 60 lines of the person's session log, or says where one will be written. Routine lines CI greps are unchanged. Part 2 of M5.28b.
 - 2026-10-07: M3.9 done: every PR audits `Cargo.lock` against the RustSec advisories, with five accepted in `ci/audit-exceptions.toml`, and the workflows' actions and the Alpine build image are pinned by digest. PR #128.
 - 2026-10-07: M1.13 done: every machine sets its clock from the network once at each start, from `region.time_servers` or `pool.ntp.org`. PR #127.
 - 2026-10-07: M3.8 done: release lists expire 60 days after signing and name their channel, and `edel update` refuses an expired list, another channel's and plain http. PR #126.

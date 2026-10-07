@@ -10,6 +10,7 @@ pub mod desks;
 pub mod effects;
 pub mod frame;
 pub mod layout;
+pub mod messages;
 pub mod scroll;
 pub mod settings;
 pub mod split;

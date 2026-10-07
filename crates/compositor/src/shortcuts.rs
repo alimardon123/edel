@@ -14,6 +14,7 @@ use smithay::input::keyboard::{ModifiersState, xkb};
 
 use edel::shortcuts::{Keys, resolve};
 use edel_compositor::layout::Direction;
+use edel_compositor::messages;
 
 /// What a shortcut does in the compositor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,19 +111,13 @@ pub fn bind(file: &BTreeMap<String, String>) -> (Vec<Binding>, Vec<String>) {
                     sym: None,
                 });
             } else {
-                notes.push(format!(
-                    "shortcuts.{}: only one modifier can be tapped alone",
-                    action.name
-                ));
+                notes.push(messages::modifier_alone(action.name));
             }
             continue;
         };
         let sym = xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE);
         if sym.raw() == xkb::keysyms::KEY_NoSymbol {
-            notes.push(format!(
-                "shortcuts.{}: no key is called {name}",
-                action.name
-            ));
+            notes.push(messages::no_such_key(action.name, name));
             continue;
         }
         bindings.push(Binding {

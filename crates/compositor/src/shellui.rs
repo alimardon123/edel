@@ -18,6 +18,8 @@ use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::channel::{self, Event};
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
+use edel_compositor::messages;
+
 use crate::state::Edel;
 
 /// The program's name, found on the `PATH`.
@@ -71,7 +73,10 @@ fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) 
             return;
         }
         Err(e) => {
-            eprintln!("edel-compositor: {NAME} did not start: {e}");
+            eprintln!(
+                "edel-compositor: {}",
+                messages::shell_ui_not_started(NAME, e)
+            );
             ended(handle, state, wayland, None);
             return;
         }
@@ -110,7 +115,7 @@ pub fn restart(state: &mut Edel, why: &str) {
     eprintln!("edel-compositor: restarting {NAME}: {why}");
     state.shell_ui.restarting = true;
     if let Err(e) = kill_process(pid, Signal::TERM) {
-        eprintln!("edel-compositor: ending {NAME} failed: {e}");
+        eprintln!("edel-compositor: {}", messages::shell_ui_not_ended(NAME, e));
         state.shell_ui.restarting = false;
     }
 }
@@ -142,8 +147,8 @@ fn ended(
     let how = status.map_or_else(|| "was lost".to_string(), |s| format!("ended ({s})"));
     if state.shell_ui.failures >= TRIES {
         eprintln!(
-            "edel-compositor: {NAME} {how}, and failed {TRIES} times in a row within {} s of starting; it is not started again",
-            QUICK.as_secs()
+            "edel-compositor: {}",
+            messages::shell_ui_given_up(NAME, &how, TRIES, QUICK.as_secs())
         );
         return;
     }

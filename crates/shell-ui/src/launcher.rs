@@ -198,7 +198,10 @@ impl Launcher {
                 true
             }
             Err(e) => {
-                eprintln!("edel-shell-ui: {} did not start: {e}", app.name);
+                eprintln!(
+                    "edel-shell-ui: {}",
+                    crate::messages::app_not_started(&app.name, e)
+                );
                 false
             }
         }

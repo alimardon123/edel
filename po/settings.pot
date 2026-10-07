@@ -68,6 +68,18 @@ msgstr ""
 msgid "Unknown"
 msgstr ""
 
+msgid "Session log"
+msgstr ""
+
+msgid "The last lines of this session"
+msgstr ""
+
+msgid "There is no session log yet. The desktop starts one when you log in, in {folder}."
+msgstr ""
+
+msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
+msgstr ""
+
 msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
 msgstr ""
 

@@ -54,6 +54,7 @@ use smithay::utils::{Clock, DeviceFd, Monotonic, Point, Size};
 use smithay::wayland::presentation::Refresh;
 
 use edel_compositor::layout::{auto_scale, parse_mode, pick_mode, place_screens};
+use edel_compositor::messages;
 use edel_compositor::tokens::Tokens;
 
 use crate::program::Program;
@@ -195,20 +196,20 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
 
     let (mut session, session_events) = open_seat()?;
     let seat = session.seat();
-    let path = match primary_gpu(&seat).context("looking for the primary GPU")? {
+    let path = match primary_gpu(&seat).context(messages::GPU_LIST)? {
         Some(path) => path,
         None => all_gpus(&seat)
-            .context("looking for a GPU")?
+            .context(messages::GPU_LIST)?
             .into_iter()
             .next()
-            .context("no GPU found")?,
+            .context(messages::NO_GPU)?,
     };
     let fd = session
         .open(
             &path,
             OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOCTTY | OFlags::NONBLOCK,
         )
-        .with_context(|| format!("opening {}", path.display()))?;
+        .with_context(|| messages::gpu_open(&path))?;
     let fd = DrmDeviceFd::new(DeviceFd::from(fd));
     let driver = smithay::reexports::drm::Device::get_driver(&fd)
         .map(|d| d.name().to_string_lossy().into_owned())
@@ -225,7 +226,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         DrmDevice::new(fd.clone(), true).context("opening the GPU for display")?;
     let gbm = GbmDevice::new(fd).context("opening the GPU for buffers")?;
     // SAFETY: the GBM device lives as long as the display and the renderer.
-    let egl = unsafe { EGLDisplay::new(gbm.clone()) }.context("starting EGL")?;
+    let egl = unsafe { EGLDisplay::new(gbm.clone()) }.context(messages::NO_EGL)?;
     let context = EGLContext::new(&egl).context("creating the GL context")?;
     // SAFETY: the context is current only on this thread.
     let mut renderer =
@@ -247,7 +248,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                 }
                 if let Some(vt) = state.input(event) {
                     if let Err(e) = switcher.change_vt(vt) {
-                        eprintln!("edel-compositor: switching to terminal {vt} failed: {e}");
+                        eprintln!("edel-compositor: {}", messages::terminal_switch(vt, e));
                     }
                 }
             },
@@ -348,10 +349,10 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                 }
                 SessionEvent::ActivateSession => {
                     if gpu.libinput.resume().is_err() {
-                        eprintln!("edel-compositor: input devices did not come back");
+                        eprintln!("edel-compositor: {}", messages::INPUT_LOST);
                     }
                     if let Err(e) = gpu.drm.activate(false) {
-                        eprintln!("edel-compositor: the screens did not come back: {e}");
+                        eprintln!("edel-compositor: {}", messages::screens_lost(e));
                     }
                     for screen in gpu.screens.values_mut() {
                         if let Err(e) = screen.compositor.reset_state() {
@@ -413,7 +414,7 @@ impl Gpu {
             return;
         }
         let Ok(resources) = self.drm.resource_handles() else {
-            eprintln!("edel-compositor: reading the GPU's screens failed");
+            eprintln!("edel-compositor: {}", messages::SCREEN_LIST);
             return;
         };
         let mut wanted = Vec::new();
@@ -460,8 +461,8 @@ impl Gpu {
             }
             if let Err(e) = self.light(info, state) {
                 eprintln!(
-                    "edel-compositor: output {} stays dark: {e:#}",
-                    connector_name(info)
+                    "edel-compositor: {}",
+                    messages::screen_dark(&connector_name(info), format!("{e:#}"))
                 );
             }
         }
@@ -676,7 +677,7 @@ impl Gpu {
                 );
             }
             Ok(_) => {}
-            Err(e) => eprintln!("edel-compositor: the frame was not shown: {e}"),
+            Err(e) => eprintln!("edel-compositor: {}", messages::frame_not_shown(e)),
         }
         if !screen.ready {
             screen.ready = true;
@@ -729,7 +730,7 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
     ) {
         Ok(frame) => frame,
         Err(e) => {
-            eprintln!("edel-compositor: rendering failed: {e}");
+            eprintln!("edel-compositor: {}", messages::frame_not_drawn(e));
             return false;
         }
     };
@@ -758,7 +759,7 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
     match compositor.queue_frame(Some(feedback)) {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("edel-compositor: showing the frame failed: {e}");
+            eprintln!("edel-compositor: {}", messages::frame_not_shown(e));
             false
         }
     }
@@ -793,7 +794,7 @@ fn write_ready(line: &str) {
     let path = std::path::Path::new(READY);
     if path.parent().is_some_and(|dir| dir.is_dir()) {
         if let Err(e) = crate::statefile::replace(path, &format!("{line}\n")) {
-            eprintln!("edel-compositor: writing {READY} failed: {e}");
+            eprintln!("edel-compositor: {}", messages::ready_not_written(READY, e));
         }
     }
 }
