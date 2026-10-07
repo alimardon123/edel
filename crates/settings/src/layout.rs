@@ -100,6 +100,10 @@ struct Ui {
     /// A title bar as the compositor draws it with these choices.
     bar: widgets::BarPreview,
     problem: gtk::Label,
+    /// Undo and Keep, shown while the person's file differs from
+    /// `before`, as it was when the page opened or Keep was pressed.
+    changes: widgets::ChangeBar,
+    before: std::cell::RefCell<Option<String>>,
     /// Set while the page itself moves a control, so that is not a choice.
     quiet: Cell<bool>,
     /// Kept so the page follows the files while it is open.
@@ -121,6 +125,8 @@ impl Ui {
             setting.control.show(setting.key, &now);
         }
         self.quiet.set(false);
+        self.changes
+            .show(files.person_text() != *self.before.borrow());
         self.bar.show(
             now.window_buttons == "left",
             [now.minimize_button, now.maximize_button, now.close_button],
@@ -260,6 +266,8 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         settings,
         bar,
         problem,
+        changes: widgets::ChangeBar::new(&page),
+        before: std::cell::RefCell::new(files.person_text()),
         quiet: Cell::new(false),
         monitors,
     });
@@ -307,6 +315,21 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             vec![setting.key],
         );
     }
+    let weak = Rc::downgrade(&ui);
+    ui.changes.undo.connect_clicked(move |_| {
+        if let Some(ui) = weak.upgrade() {
+            let before = ui.before.borrow().clone();
+            ui.report(Files::here().restore(before.as_deref()));
+            ui.update();
+        }
+    });
+    let weak = Rc::downgrade(&ui);
+    ui.changes.keep.connect_clicked(move |_| {
+        if let Some(ui) = weak.upgrade() {
+            *ui.before.borrow_mut() = Files::here().person_text();
+            ui.update();
+        }
+    });
     // The page's state lives as long as the page does.
     let keep = ui.clone();
     page.connect_destroy(move |_| {

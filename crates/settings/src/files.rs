@@ -166,6 +166,35 @@ impl Files {
         )
     }
 
+    /// The person's file as it is now, or nothing when there is none.
+    pub fn person_text(&self) -> Option<String> {
+        self.person
+            .as_ref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+    }
+
+    /// Puts the person's file back as `text` held it, or takes it away
+    /// when it had none (Undo, M5.6a).
+    pub fn restore(&self, text: Option<&str>) -> Result<(), String> {
+        let Some(path) = self.person.as_ref() else {
+            return Ok(());
+        };
+        match text {
+            Some(text) => {
+                let new = path.with_extension("toml.edel-new");
+                std::fs::write(&new, text)
+                    .and_then(|()| std::fs::rename(&new, path))
+                    .map_err(|e| format!("could not write {}: {e}", path.display()))
+            }
+            None => match std::fs::remove_file(path) {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                    Err(format!("could not remove {}: {e}", path.display()))
+                }
+                _ => Ok(()),
+            },
+        }
+    }
+
     /// Sets `key` to `value` in the person's file, or takes it out with
     /// none, with the functions `edel settings set` and `reset` use, so a
     /// refused value reads the same in both; the message when it cannot.
@@ -313,6 +342,29 @@ mod tests {
             files.source("layout.preset"),
             system::Source::Machine(_)
         ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn undo_puts_the_file_back_as_it_was() {
+        let dir = scratch("undo");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        // No file at first: Undo takes the one a change made away.
+        let before = files.person_text();
+        assert!(before.is_none());
+        files.choose("layout.preset", "hive").unwrap();
+        files.restore(before.as_deref()).unwrap();
+        assert!(!person.exists());
+        // A file with a choice: Undo brings that choice back.
+        files.choose("layout.preset", "mac-like").unwrap();
+        let before = files.person_text();
+        files.choose("layout.preset", "hive").unwrap();
+        files.restore(before.as_deref()).unwrap();
+        assert_eq!(files.layout().preset, "mac-like");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

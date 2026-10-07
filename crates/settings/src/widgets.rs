@@ -55,7 +55,67 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
         .vexpand(true)
         .child(&clamp)
         .build();
-    (scroll.upcast(), content, problem)
+    // An overlay, so a page may float its change bar over the bottom.
+    let page = gtk::Overlay::builder().child(&scroll).build();
+    (page.upcast(), content, problem)
+}
+
+/// The bar a page shows once something on it changed (M5.6a): changes
+/// apply at once, so the desktop itself is the preview, and the bar
+/// offers to put back everything changed since the page opened, or to
+/// keep it. Save as preset joins it with own presets (M5.17).
+pub struct ChangeBar {
+    revealer: gtk::Revealer,
+    pub undo: gtk::Button,
+    pub keep: gtk::Button,
+}
+
+impl ChangeBar {
+    /// Floats a bar, hidden, over the bottom of `page`, made by [`page`].
+    pub fn new(page: &gtk::Widget) -> ChangeBar {
+        let text = gtk::Label::builder()
+            .label("Your changes are live")
+            .css_classes(["edel-change-text"])
+            .build();
+        let undo = gtk::Button::builder()
+            .label("Undo")
+            .tooltip_text("Put back everything changed since this page opened")
+            .css_classes(["edel-change-undo"])
+            .build();
+        let keep = gtk::Button::builder()
+            .label("Keep")
+            .css_classes(["edel-change-keep"])
+            .build();
+        let bar = gtk::Box::builder()
+            .spacing(8)
+            .css_classes(["edel-change-bar"])
+            .build();
+        bar.append(&icon::image("check", 14));
+        bar.append(&text);
+        bar.append(&undo);
+        bar.append(&keep);
+        bar.update_property(&[gtk::accessible::Property::Label("Your changes are live")]);
+        let revealer = gtk::Revealer::builder()
+            .child(&bar)
+            .transition_type(gtk::RevealerTransitionType::SlideUp)
+            .transition_duration(160)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::End)
+            .margin_bottom(18)
+            .build();
+        if let Some(overlay) = page.downcast_ref::<gtk::Overlay>() {
+            overlay.add_overlay(&revealer);
+        }
+        ChangeBar {
+            revealer,
+            undo,
+            keep,
+        }
+    }
+
+    pub fn show(&self, shown: bool) {
+        self.revealer.set_reveal_child(shown);
+    }
 }
 
 /// Where a value comes from, and the two things a person may do with it.
