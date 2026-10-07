@@ -1,8 +1,7 @@
 //! `edel install DISK --settings FILE` (roadmap M2.4): makes a blank or old
 //! disk an Edel OS machine. It lays out the disk as images are laid out
 //! (`boot.rs`) with slots of `SLOT_MIB` (M3.3b), copies the running slot
-//! into slot A, grows its file system to the slot and gives it a fresh UUID,
-//! writes the EFI system partition from the slot's own boot loader with an
+//! into slot A unchanged, byte for byte, as it was signed (M1.12), writes the EFI system partition from the slot's own boot loader with an
 //! initial environment block, and creates the data partition holding the
 //! settings file. It never writes the disk it runs from. The plan it shows is
 //! `edel::install::Plan`.
@@ -30,8 +29,6 @@ pub const TOOLS: &[(&str, &str)] = &[
     ("mkfs.vfat", "dosfstools"),
     ("mkfs.ext4", "e2fsprogs"),
     ("e2fsck", "e2fsprogs"),
-    ("tune2fs", "e2fsprogs"),
-    ("resize2fs", "e2fsprogs-extra"),
 ];
 
 const MIB: u64 = 1024 * 1024;
@@ -235,7 +232,8 @@ impl Drop for Mounted {
 }
 
 /// Writes the disk: `running_mib` MiB of the running slot become the start
-/// of slot A, whose file system then grows to fill it.
+/// of slot A, byte for byte; the rest of the slot stays unused, as a
+/// read-only root needs no room.
 fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Result<()> {
     let name = &plan.disk.name;
     let disk = Path::new("/dev").join(name);
@@ -287,16 +285,21 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     to.write_all(&head)?;
     to.sync_all()?;
     drop(to);
-    let status = Command::new("e2fsck").arg("-fp").arg(part(2)).status()?;
-    if !matches!(status.code(), Some(0 | 1)) {
+    // Byte for byte as the running slot, read back from the disk (M1.12).
+    let length = running_mib * MIB;
+    run(Command::new("blockdev").arg("--flushbufs").arg(part(2)))?;
+    if update::hash_prefix(&part(2), length)? != update::hash_prefix(slot, length)? {
+        bail!(
+            "slot A on the new disk differs from the running slot after copying, so the copy is damaged and the disk cannot start yet; run edel install again"
+        );
+    }
+    println!("edel install: slot A is the running slot byte for byte ({running_mib} MiB)");
+    let status = Command::new("e2fsck").arg("-fn").arg(part(2)).status()?;
+    if status.code() != Some(0) {
         bail!(
             "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again"
         );
     }
-    if plan.slot_mib > running_mib {
-        run(Command::new("resize2fs").arg(part(2)))?;
-    }
-    run(Command::new("tune2fs").args(["-U", "random"]).arg(part(2)))?;
     half.done();
 
     println!("edel install: writing the boot loader");
@@ -351,12 +354,13 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     Ok(())
 }
 
-/// Slot A while the running system is copied into it. Until `done`, after
-/// `tune2fs -U random`, it carries the running root's UUID, by which the
-/// stick's GRUB and initramfs find their root, so a copy that stops half
-/// way could be started instead of the stick (M2 and M3 review). The first
-/// block is written last and cleared again when the copy fails, leaving a
-/// window of the e2fsck, resize2fs and tune2fs seconds for a power cut.
+/// Slot A while the running system is copied into it. Until `done`, once
+/// the copy is read back and checked, it carries the running root's file
+/// system UUID; GRUB and the initramfs find a root by its partition since
+/// M1.12, but a copy that stops half way must still never look whole (M2
+/// and M3 review). The first block is written last and cleared again when
+/// the copy fails, leaving a window of the check's seconds for a power
+/// cut.
 struct HalfCopy {
     partition: PathBuf,
     done: bool,

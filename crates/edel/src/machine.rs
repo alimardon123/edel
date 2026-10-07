@@ -110,7 +110,10 @@ pub fn has_person(passwd: &str) -> bool {
 /// Adds the account the desktop logs in by itself from a stick (M3.6,
 /// `edel boot live`): a system account, so the settings file never lists
 /// it and apply and export leave it alone, with the shell greetd starts
-/// the session through, no password (`*`) and the seat.
+/// the session through, no password (`*`) and the seat. The greeter gets
+/// the seat too, as `apply` gives it on a machine with a settings file,
+/// which a stick has not: without it, logging out of the live session
+/// left a greeter that could not open the screen.
 pub fn add_live_account(name: &str) -> Result<()> {
     if !accounts(&fs::read_to_string("/etc/passwd")?)
         .iter()
@@ -120,9 +123,16 @@ pub fn add_live_account(name: &str) -> Result<()> {
         run(Command::new("adduser").args(["-S", "-D", "-s", default_shell(), "-h", &home, name]))?;
         unlock(name)?;
     }
+    let greeter = accounts(&fs::read_to_string("/etc/passwd")?)
+        .iter()
+        .any(|a| a.name == GREETER);
     let group = fs::read_to_string("/etc/group")?;
-    if members(&group, SEAT_GROUP).is_some_and(|m| !m.iter().any(|m| m == name)) {
-        run(Command::new("addgroup").args([name, SEAT_GROUP]))?;
+    for who in [name, GREETER] {
+        if (who == name || greeter)
+            && members(&group, SEAT_GROUP).is_some_and(|m| !m.iter().any(|m| m == who))
+        {
+            run(Command::new("addgroup").args([who, SEAT_GROUP]))?;
+        }
     }
     Ok(())
 }
