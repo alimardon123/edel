@@ -1289,8 +1289,8 @@ case_dmabuf() {
 	*" zwp_linux_dmabuf_v1 "*) ;;
 	*) fail "the compositor does not offer zwp_linux_dmabuf_v1; wayland-info listed: $(value globals)" ;;
 	esac
-	line=$(tr -d '\r' <"$log" | grep -a -o 'apps may hand over GPU buffers in [0-9]* formats' | tail -n 1)
-	[ -n "$line" ] || fail "the compositor offers no GPU buffer formats: $(tr -d '\r' <"$log" | grep -a 'GPU buffers' | tail -n 1)"
+	line=$(value dmabuf | grep -o 'apps may hand over GPU buffers in [0-9]* formats')
+	[ -n "$line" ] || fail "the compositor offers no GPU buffer formats: $(value dmabuf)"
 	echo "PASS: the compositor offers zwp_linux_dmabuf_v1: $line"
 }
 

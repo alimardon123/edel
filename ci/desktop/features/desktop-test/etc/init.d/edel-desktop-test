@@ -89,6 +89,8 @@ report() {
 	# the last, after any drop, and edel status's, from the state
 	# file; then the animations it gives (M5.11b).
 	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
+	# Whether apps may hand over GPU buffers (M5.19), and in how many formats.
+	say "dmabuf $(grep 'GPU buffers' /tmp/compositor.log | tail -n 1)"
 	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
