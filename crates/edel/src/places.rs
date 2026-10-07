@@ -90,6 +90,9 @@ pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
 pub const GTK_CSS: &str = share!("/gtk.css");
 /// Where each part's words in each language are (M5.24): `LANG/PART.po`.
 pub const LOCALE_DIR: &str = share!("/locale");
+/// Alpine's initramfs `init` with our one change, which finds a root
+/// named by its partition (`root=PARTUUID=`, M1.12); `mkinitfs -i` uses it.
+pub const INITRAMFS_INIT: &str = share!("/initramfs-init");
 /// These places as shell variables, for the slot's own scripts (M5.27).
 pub const PLACES_SH: &str = share!("/places.sh");
 

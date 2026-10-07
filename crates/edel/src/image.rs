@@ -192,8 +192,18 @@ impl Build<'_> {
         let [kernel] = kernels.as_slice() else {
             bail!("expected one {flavor} kernel in /lib/modules, found {kernels:?}");
         };
+        // Alpine's init, changed to mount a root GRUB names by its partition
+        // (M1.12), written beside our other files and handed to mkinitfs.
+        let alpine = root.join("usr/share/mkinitfs/initramfs-init");
+        let text = fs::read_to_string(&alpine)
+            .with_context(|| format!("reading Alpine's {}", alpine.display()))?;
+        let ours = root.join(edel::places::INITRAMFS_INIT.trim_start_matches('/'));
+        fs::create_dir_all(ours.parent().unwrap_or(root))?;
+        fs::write(&ours, partuuid_init(&text)?)?;
         self.runner.run(Command::new("chroot").arg(root).args([
             "mkinitfs",
+            "-i",
+            edel::places::INITRAMFS_INIT,
             "-o",
             &format!("/boot/initramfs-{flavor}"),
             kernel,
@@ -536,11 +546,9 @@ impl Build<'_> {
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
         self.make_slot(root, &update, slot_mib)?;
         self.shrink(&update)?;
-        // Slot A gets a filesystem of its own rather than a copy of the
-        // update image: the kernel finds its root by filesystem UUID, so no
-        // two filesystems a machine can see may share one.
-        let slot_a = work.join("slot-a.ext4");
-        self.make_slot(root, &slot_a, slot_mib)?;
+        // Slot A is the update image itself, byte for byte, as every slot
+        // stays what was signed (M1.12): GRUB finds a slot by its
+        // partition, so two slots may hold one file system UUID.
         let data = work.join("data.ext4");
         self.make_data(&data, vm.data_mib)?;
         let esp = work.join("esp.img");
@@ -561,7 +569,7 @@ impl Build<'_> {
             .step("copy the EFI system partition, slot A and the data partition into the disk");
         if !self.runner.dry_run {
             copy_sparse(&esp, &disk, layout.esp_start_mib() * MIB)?;
-            copy_sparse(&slot_a, &disk, layout.slot_start_mib(0) * MIB)?;
+            copy_sparse(&update, &disk, layout.slot_start_mib(0) * MIB)?;
             copy_sparse(&data, &disk, layout.data_start_mib() * MIB)?;
         }
         // The update image is small; the disk is the size of both slots.
@@ -575,7 +583,8 @@ impl Build<'_> {
     }
 
     /// Shrinks the update image to its file system, so it fits any slot at
-    /// least that big; `edel update` grows it again (M1.7).
+    /// least that big; a slot keeps it that size, as a read-only root
+    /// needs no room, so its bytes stay those signed (M1.12).
     fn shrink(&self, image: &Path) -> Result<()> {
         self.runner
             .run(Command::new("e2fsck").arg("-fp").arg(image))?;
@@ -835,9 +844,57 @@ fn has_index(cache: &Path) -> bool {
     })
 }
 
+/// Where Alpine's init waits for the root device, just before it may drop
+/// to a shell and then mounts it.
+const ROOT_FOUND: &str = "\tif [ \"$SINGLEMODE\" = \"yes\" ]; then\n";
+
+/// Our change to Alpine's init (M1.12): once nlplug-findfs has found the
+/// root, a `root=PARTUUID=` becomes its device, read from the kernel's
+/// partition events, as busybox `mount` knows only `UUID=` and `LABEL=`.
+const PARTUUID_ROOT: &str = "\t# Edel OS (M1.12): GRUB names the slot by its partition, which
+\t# nlplug-findfs found; busybox mount needs its device.
+\tcase \"$KOPT_root\" in
+\tPARTUUID=*)
+\t\tfor _uevent in /sys/class/block/*/uevent; do
+\t\t\tif grep -qix \"PARTUUID=${KOPT_root#PARTUUID=}\" \"$_uevent\"; then
+\t\t\t\tKOPT_root=/dev/$(sed -n 's/^DEVNAME=//p' \"$_uevent\")
+\t\t\t\tbreak
+\t\t\tfi
+\t\tdone
+\t\t;;
+\tesac
+";
+
+/// Alpine's initramfs `init`, `alpine`, with [`PARTUUID_ROOT`] where it has
+/// found the root device; an error when that place is not where it was,
+/// so a changed Alpine init stops the build rather than the boot.
+pub fn partuuid_init(alpine: &str) -> Result<String> {
+    let start = alpine
+        .find("ebegin \"Mounting root\"")
+        .context("Alpine's initramfs init no longer says \"Mounting root\"; M1.12's change needs a new place")?;
+    let at = alpine[start..]
+        .find(ROOT_FOUND)
+        .map(|i| start + i)
+        .context("Alpine's initramfs init no longer checks SINGLEMODE after finding the root; M1.12's change needs a new place")?;
+    Ok(format!("{}{PARTUUID_ROOT}{}", &alpine[..at], &alpine[at..]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alpines_init_resolves_a_root_named_by_its_partition() {
+        let alpine = "if [ -n \"$KOPT_root\" ]; then\n\tebegin \"Mounting root\"\n\tnlplug-findfs \"$KOPT_root\"\n\n\tif [ \"$SINGLEMODE\" = \"yes\" ]; then\n\t\tsh\n\tfi\n\tmount \"${KOPT_root#ZFS=}\" \"$sysroot\"\nfi\n";
+        let ours = partuuid_init(alpine).unwrap();
+        let resolve = ours.find("PARTUUID=*)").unwrap();
+        assert!(ours.find("nlplug-findfs").unwrap() < resolve);
+        assert!(resolve < ours.find("SINGLEMODE").unwrap());
+        assert!(ours.contains("KOPT_root=/dev/$(sed -n 's/^DEVNAME=//p' \"$_uevent\")"));
+        // A changed Alpine init stops the build.
+        assert!(partuuid_init("ebegin \"Mounting root\"\n").is_err());
+        assert!(partuuid_init("no root here").is_err());
+    }
 
     #[test]
     fn locks_an_empty_root_password() {

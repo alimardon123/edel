@@ -26,9 +26,12 @@ run_vm "$log" 'INSTALL-TEST: (installed|FAIL)' "${INSTALL_TEST_TIMEOUT:-600}" -n
 	-device virtio-blk-pci,drive=disk1
 grep -q 'INSTALL-TEST: installed' "$log" || fail "$log" "the live image did not install"
 grep -q 'Install Edel OS on /dev/vdb' "$log" || fail "$log" "install showed no plan"
+# M1.12: slot A is copied as it was signed, checked against the stick's.
+grep -q 'edel install: slot A is the running slot byte for byte' "$log" ||
+	fail "$log" "install did not find slot A the running slot byte for byte"
 grep -q 'INSTALL-TEST: exit code 3 without --yes, disk unchanged' "$log" ||
 	fail "$log" "install without --yes did not exit 3 with the disk unchanged"
 tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
 cat "$log"
-echo "PASS: install showed its plan and exited 3 without --yes, then installed onto the blank disk (${waited}s)"
+echo "PASS: install showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's (${waited}s)"
