@@ -40,6 +40,7 @@ Since then (2026-10-02), M1 replaced `edel-update` with `edel update` in Rust an
 | M9 Phones, tablets, arm64 | later | arm64 in CI, form factors, touch, a phone image |
 | M10 The compatibility promise | later | App platform on the oldest kept release, runtime archive, driver rebuilds |
 | M11 Enterprise appliances and the long channel | later | A verified root, TPM unlock, audit, hardening checks in CI; the ten-year channel and a systemd adapter add-on once someone can carry them (ADR-009) |
+| M12 Glasses and pocket PCs | an idea | Display glasses as the screen of a pocket-sized PC, the desktop fixed in space; written down on 2026-10-07, not scheduled |
 
 Every milestone ends with the ab-test, boot-test and install-test still green; a step that breaks them is not done.
 
@@ -444,6 +445,8 @@ Every milestone ends with the ab-test, boot-test and install-test still green; a
   Done when: the image builds and the QEMU variant boots to the Phone preset; the real device is reported by Alimardon with `edel report`. Notes: first prove in QEMU that GRUB for arm64 started by U-Boot's UEFI writes `grubenv`, and write a second counter only if it cannot; `Layout` gains a sector size (4096 on UFS phones); calls, SMS and Waydroid are hardware-only follow-ups.
 - [ ] **8. Rotation and 2-in-1 posture.** iio-sensor-proxy, `transform` in `[displays]`, a rotation lock in Settings.
   Done when: `transform = 90` moves the panel to the new top edge in the screendump; the sensor path is a needs-hardware row in the basics table (no accelerometer source in QEMU).
+- [ ] **9. The phone as a whole desktop when docked.** Asked by Alimardon on 2026-10-07: a phone running Edel OS, plugged into a screen, keyboard and mouse (a USB-C dock with DisplayPort, or a wireless display later), becomes a full desktop with the person's preset on the big screen, running the same apps, as Samsung's DeX does, so one device can do everything. The form-factor switch of step 3 already moves to Desktop when a screen is docked; this step makes it whole: the windows move to the big screen and lay themselves out again, keeping their state (ADR-004's live-resize rule); the phone's own screen goes dark or becomes a touchpad, chosen in Settings; unplugging brings the Phone preset back with every window still open; the effect tier and the memory budget are measured on the phone docked.
+  Done when: in QEMU, a second screen added to the phone image while it runs moves the windows to it under the Classic preset and removing it brings Phone back with the same windows; the real device docked is reported by Alimardon with `edel report`. Notes: level 1, settings (ADR-007), no new part: the compositor's screens (M4.6c) and step 3's switch do it; which phones carry video over USB-C is checked in step 7's device family.
 
 **Parts after M9:** unchanged; squeekboard or wvkbd and postmarketOS device packages reused. **Deliberately not added:** a second shell for phones, a separate phone image pipeline, Waydroid until asked.
 
@@ -502,6 +505,23 @@ Every milestone ends with the ab-test, boot-test and install-test still green; a
 **Parts after M11:** unchanged; audit, AppArmor, the firewall and the adapter are features or add-ons. **Deliberately not added:** an enterprise edition, an enterprise-only security tier, a management server or fleet agent, SELinux, a compliance daemon, certifications before there is a company.
 
 **Principles check:** Reliable and Scalable drive it: a slot that verifies itself and health checks of the image's own choosing keep unattended machines safe. Simple holds, because everything here is a feature, an add-on or a CI check on the same base. Efficient: consumer images get only what protects them too (the verified root, TPM unlock). Traded off: a slower road to buyers who want a Red Hat style system.
+
+## M12 (an idea, not scheduled): Glasses and pocket PCs
+
+**Goal:** a pocket-sized PC runs the desktop image and shows it in display glasses worn instead of a monitor: the whole desktop with its apps, floating in front of the eyes, as Apple's Vision Pro shows a Mac's screen, with the full power of a PC rather than a phone's. Asked by Alimardon on 2026-10-07, after an announcement of Meta's glasses that work with a small device kept in a pocket (from Alimardon's words; the product's details are not checked here), as the newest and furthest idea, written down so it is not lost.
+
+**Why an idea only:** it needs phones and small devices first (M9) and hardware Alimardon chooses; it starts only on their word, and each step below is planned in detail then.
+
+**Depends on:** M9 (form factors, arm64, docking).
+
+- [ ] **1. Glasses as a screen.** Most display glasses today plug into USB-C with DisplayPort and appear as an ordinary monitor, so the desktop already lights them (M4.6c); the step tries real glasses with Alimardon, finds the right scale, and adds a **Glasses** preset: larger text, the panel kept near the middle of the view, dark by default, as glasses' displays add light to what is behind them.
+- [ ] **2. Screens fixed in space.** The compositor places the desktop on one or more virtual screens that stay still as the head turns, reading the glasses' motion sensor and drawing each frame for where the head is now; reused from Monado, the open OpenXR runtime, rather than written, if it measures well. It must keep Instant: a gate on the time from a head turn to the frame that shows it.
+- [ ] **3. A pocket PC image.** A small fanless x86_64 or arm64 box, or a handheld, that Alimardon picks as the reference, with battery and heat budgets in `ci/budgets.toml`, and the phone docked (M9.9) as a second way in.
+- [ ] **4. Glasses that link without a cable.** Only for glasses that speak an open protocol to a nearby device; checked when the step starts.
+
+**Parts after M12:** unchanged if Monado is reused; step 2 is a module of the compositor behind its screens. **Deliberately not added:** a 3D desktop of our own, a store for spatial apps, any closed vendor runtime in the base.
+
+**Principles check:** Scalable and Versatile drive it: one base from a container to a pocket PC, one more form factor through a preset. Simple holds: glasses are a screen first, so step 1 needs no new part. Instant gates step 2, and Reliable keeps every device on the same A/B updates. Traded off: it waits behind everything else, so it costs nothing now.
 
 ## Decisions taken by default
 
@@ -597,6 +617,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-07: Added M9.9 (a docked phone becomes a whole desktop, as DeX does) and M12, an idea not scheduled (display glasses as the screen of a pocket-sized PC, the desktop fixed in space), so the idea is not lost. Asked by Alimardon. PR #113.
 - 2026-10-07: the panel's window list shows each window's app icon before its title, as the apps widget finds it, so Classic's taskbar has icons as Windows-like's and Mac-like's do; Settings' Undo and Keep bar is docked along the page's foot in the sidebar's colour behind a hairline, no longer floating over the settings, after Alimardon found the floating one mixed with what lay under it. Asked by Alimardon. PR #113.
 - 2026-10-07: M5.12 split into 12a (light out of the box, in the mockups' colours) and 12b (people's own tokens and the Appearance page); 12a done, with the title bars showing each app's icon and the minimize and maximize shortcuts (Super+H, Super+M), after Alimardon's reviews of the screenshots. Asked by Alimardon. PR #113.
 - 2026-10-06: M5.6c done, and with it M5.6: `docs/layout-guide.md` gives apps the three size classes, touch sizes, the touch mode key and the live-resize rule; a default row records the cutoffs. PR #113.
