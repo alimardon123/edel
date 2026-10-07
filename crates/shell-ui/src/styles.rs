@@ -1,7 +1,10 @@
 //! The layout button's menu (M5.16b): a right click on the layout button
-//! opens a small card beside it with a row for each tiling style, its
-//! picture, its name and a check on the one in use. A click, or Up, Down
-//! and Return, chooses one, which is written to the person's settings
+//! opens a small card beside it with a row for each tiling style: a
+//! radio button, its picture and its name. The radio of the style in use
+//! is filled in the accent, the others are empty rings, so people see at
+//! a glance that exactly one applies; the row the pointer or the arrows
+//! are on is lit apart from that. A click, or Up, Down and Return,
+//! chooses one, which is written to the person's settings
 //! file as `layout.tiling_style` with the function Settings and
 //! `edel settings set` write with; the compositor follows the file, and
 //! nothing else changes, so a floating workspace stays floating. Escape
@@ -15,7 +18,7 @@ use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
 
-use crate::paint::{self, Text, fill, mix};
+use crate::paint::{Text, fill, mix};
 use crate::popup::{self, INSET, PAD, middle};
 
 /// The key the menu chooses.
@@ -26,8 +29,12 @@ pub const WIDTH: u32 = 200;
 /// A style's picture, logical pixels, and the room after it.
 const PICTURE: (f32, f32) = (26.0, 16.0);
 const GAP: f32 = 10.0;
-/// The check on the style in use.
-const CHECK: f32 = 14.0;
+
+/// A radio button's width: the panel text's size, so it sits level with
+/// the letters it belongs to (the tokens have no size for it).
+fn radio_size(tokens: &Tokens) -> f32 {
+    tokens.panel_text_size as f32
+}
 
 /// The styles the menu offers, in the key table's order.
 pub fn styles() -> &'static [&'static str] {
@@ -93,30 +100,23 @@ pub fn paint(
     let names = styles().iter().map(|_| "");
     popup::rows(pixmap, tokens, None, names, PAD, Some(view.lit), s);
     let row = tokens.row as f32;
+    let radio = radio_size(tokens);
+    // Radio, then picture, then name, from the row's left.
     let left = PAD + INSET;
+    let picture_x = left + radio + GAP;
     for (i, style) in styles().iter().enumerate() {
         let top = PAD + i as f32 * row;
         let y = top + (row - PICTURE.1) / 2.0;
-        picture(pixmap, style, left * s, y * s, s, tokens);
-        if i == view.chosen {
-            let px = CHECK * s;
-            let x = (WIDTH as f32 - PAD - INSET) * s - px;
-            paint::icon(
-                pixmap,
-                "check",
-                px,
-                x,
-                (top + (row - CHECK) / 2.0) * s,
-                tokens.accent,
-            );
-        }
+        let ry = top + (row - radio) / 2.0;
+        popup::radio(pixmap, tokens, left, ry, radio, i == view.chosen, s);
+        picture(pixmap, style, picture_x * s, y * s, s, tokens);
     }
     let Some(text) = text else {
         return;
     };
     let size = tokens.panel_text_size as f32 * s;
-    let x = (left + PICTURE.0 + GAP) * s;
-    let room = (WIDTH as f32 - left - PICTURE.0 - GAP - CHECK - PAD - INSET) * s;
+    let x = (picture_x + PICTURE.0 + GAP) * s;
+    let room = (WIDTH as f32 - picture_x - PICTURE.0 - GAP - PAD - INSET) * s;
     for (i, style) in styles().iter().enumerate() {
         let mut line = text.fit(&label(style), size, room);
         let y = middle(PAD + i as f32 * row, row, size, s);
@@ -226,8 +226,56 @@ mod tests {
         // its picture.
         assert_ne!(at(PAD + 3.0, PAD + row / 2.0), back);
         assert_eq!(at(PAD + 3.0, PAD + row + row / 2.0), back);
-        // Each row's picture is drawn left of its name.
-        let px = PAD + INSET + 4.0;
+        // Each row's picture is drawn right of its radio, left of its
+        // name.
+        let px = PAD + INSET + radio_size(&tokens) + GAP + 4.0;
         assert_ne!(at(px, PAD + row + row / 2.0), back);
+        // No check mark at the row's right end, chosen or not.
+        let end = WIDTH as f32 - PAD - INSET - 4.0;
+        assert_eq!(at(end, PAD + row + row / 2.0), back);
+        assert_ne!(at(end, PAD + row / 2.0), back, "only the lit row's light");
+    }
+
+    #[test]
+    fn the_chosen_rows_radio_is_the_accent_and_the_others_are_not() {
+        let tokens = Tokens::built_in();
+        let (w, h) = size(&tokens);
+        let accent = {
+            let b = tokens.accent.bytes();
+            [b[0], b[1], b[2]]
+        };
+        let back = {
+            let b = tokens.panel.bytes();
+            [b[0], b[1], b[2]]
+        };
+        let d = radio_size(&tokens);
+        for s in [1.0f32, 2.0] {
+            for (chosen, lit) in [(1, 0), (1, 1), (2, 0)] {
+                let mut pixmap = Pixmap::new((w as f32 * s) as u32, (h as f32 * s) as u32).unwrap();
+                paint(&mut pixmap, &View { chosen, lit }, &tokens, None, s);
+                let at = |x: f32, y: f32| {
+                    let c = pixmap
+                        .pixel((x * s) as u32, (y * s) as u32)
+                        .unwrap()
+                        .demultiply();
+                    [c.red(), c.green(), c.blue()]
+                };
+                let cx = PAD + INSET + d / 2.0;
+                let cy = |i: usize| PAD + i as f32 * tokens.row as f32 + tokens.row as f32 / 2.0;
+                for i in 0..styles().len() {
+                    if i == chosen {
+                        assert_eq!(at(cx, cy(i)), accent, "row {i} is the choice");
+                    } else {
+                        assert_ne!(at(cx, cy(i)), accent, "row {i} is not");
+                    }
+                }
+                // Every row has its ring, whatever the choice: it is not
+                // the card's colour.
+                let ring = |i: usize| at(PAD + INSET + 0.75, cy(i));
+                for i in 0..styles().len() {
+                    assert_ne!(ring(i), back, "row {i} has a ring");
+                }
+            }
+        }
     }
 }
