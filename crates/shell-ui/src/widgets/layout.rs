@@ -3,7 +3,8 @@
 //! overlapping windows when they float, a screen split in three when they
 //! tile, the button then filled with the accent. A click switches the
 //! shown workspace over `edel-shell-v1` (`crate::link`), which also says
-//! the policy; without it the button is not there.
+//! the policy; without it the button is not there. A right click opens
+//! the tiling styles' menu (M5.16b, `crate::styles`).
 
 use accesskit::Role;
 
@@ -83,10 +84,12 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     paint::icon(canvas.pixmap, name, px, ix, iy, ink);
 }
 
-/// A click switches the shown workspace's policy.
+/// A click switches the shown workspace's policy; a right click opens the
+/// tiling styles' menu (M5.16b).
 fn input(shown: &str, input: Input) -> Option<Action> {
     match input {
         Input::Click(..) if !shown.is_empty() => Some(Action::TogglePolicy),
+        Input::Menu(..) if !shown.is_empty() => Some(Action::Styles),
         _ => None,
     }
 }
@@ -151,6 +154,10 @@ mod tests {
         assert_eq!(
             input("floating", Input::Click(10.0, 36.0)),
             Some(Action::TogglePolicy)
+        );
+        assert_eq!(
+            input("tiling", Input::Menu(10.0, 36.0)),
+            Some(Action::Styles)
         );
         assert_eq!(input("", Input::Click(10.0, 0.0)), None);
         assert_eq!(input("tiling", Input::Scroll(1)), None);

@@ -263,6 +263,7 @@ fn input(shown: &str, input: Input) -> Option<Action> {
             let to = (first as i64 + i64::from(steps)).clamp(0, last) as usize;
             (to != first).then_some(Action::View(to))
         }
+        Input::Menu(..) => None,
     }
 }
 

@@ -660,6 +660,49 @@ pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source 
     }
 }
 
+/// The values a choice key takes, as the key table lists them, so every
+/// part that offers them (Settings' rows, the panel's menus) offers the
+/// ones `edel settings set` takes; none for another kind of key.
+pub fn choices(key: &str) -> &'static [&'static str] {
+    match KEYS.iter().find(|k| k.path == key) {
+        Some(Key {
+            kind: Kind::OneOf(values),
+            ..
+        }) => values,
+        _ => &[],
+    }
+}
+
+/// `key`'s value as the files say it now: the person's file over the
+/// machine's, as a string; none when neither sets it.
+pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
+    match source(key, machine, person) {
+        Source::Person(value) | Source::Machine(value) => match value {
+            Value::String(s) => Some(s),
+            other => Some(other.to_string()),
+        },
+        Source::Release => None,
+    }
+}
+
+/// Sets `key` to `value` in the settings file at `path`, or takes it out
+/// with none, starting a file when there is none, through a rename so a
+/// reader never sees half a file: what Settings and the panel write with.
+pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
+    let text = fs::read_to_string(path).unwrap_or_else(|_| format!("format = {FORMAT}\n"));
+    let edited = match value {
+        Some(value) => set(&text, key, value)?,
+        None => unset(&text, key)?,
+    };
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("could not make {}", dir.display()))?;
+    }
+    let new = path.with_extension("toml.edel-new");
+    fs::write(&new, edited)
+        .and_then(|()| fs::rename(&new, path))
+        .with_context(|| format!("could not write {}", path.display()))
+}
+
 /// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
 /// the key and value as strictly as `check`, then changes that one value in
 /// place, so comments, order and keys this release does not know survive
