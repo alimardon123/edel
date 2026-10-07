@@ -623,6 +623,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`.
 
+- 2026-10-07: M5.28b, `edel`'s messages read against MESSAGES.md: a failed command prints one line, `edel COMMAND: message: cause`, in place of Rust's `Error:` and `Caused by:` list; a first try without root reads "run it as root"; the update's refusals, a slot that is too small, damaged or off, a failed download, install without `--yes`, an unknown key and a rollback with nothing to go back to now say what failed, why and what is safe or what to do; file errors read "could not read/write ..."; cargo tests hold the most common to their text. The compositor, shell-ui and Settings' About page follow in part 2. Part 1 of M5.28b.
 - 2026-10-07: M3.9 done: every PR audits `Cargo.lock` against the RustSec advisories, with five accepted in `ci/audit-exceptions.toml`, and the workflows' actions and the Alpine build image are pinned by digest. PR #128.
 - 2026-10-07: M1.13 done: every machine sets its clock from the network once at each start, from `region.time_servers` or `pool.ntp.org`. PR #127.
 - 2026-10-07: M3.8 done: release lists expire 60 days after signing and name their channel, and `edel update` refuses an expired list, another channel's and plain http. PR #126.

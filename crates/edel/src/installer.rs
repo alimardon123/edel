@@ -37,6 +37,9 @@ pub const TOOLS: &[(&str, &str)] = &[
 const MIB: u64 = 1024 * 1024;
 /// The first block of a slot: it holds the ext4 superblock and its UUID.
 const HEAD: u64 = 4096;
+/// What is said when the plan was shown and nobody could confirm it.
+const NO_ANSWER: &str = "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes";
+
 /// Exit code when the plan was shown but nobody could confirm it.
 const NOT_CONFIRMED: i32 = 3;
 
@@ -70,7 +73,8 @@ fn partition_name(disk: &str, number: u32) -> String {
 }
 
 fn read_number(path: &Path) -> Result<u64> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
     Ok(text.trim().parse()?)
 }
 
@@ -139,12 +143,12 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
         bail!("/dev/{name} has a mounted file system; unmount it first");
     }
     let text = fs::read_to_string(system_file)
-        .with_context(|| format!("reading {}", system_file.display()))?;
-    let problems =
-        settings::check(&text).with_context(|| format!("checking {}", system_file.display()))?;
+        .with_context(|| format!("could not read {}", system_file.display()))?;
+    let problems = settings::check(&text)
+        .with_context(|| format!("could not check {}", system_file.display()))?;
     if !problems.is_empty() {
         bail!(
-            "{} has problems, so nothing was changed:\n{}",
+            "{} has problems, so nothing was changed; fix these (edel settings check shows them again):\n{}",
             system_file.display(),
             problems.join("\n")
         );
@@ -165,12 +169,14 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
     plan.check()?;
     print!("{plan}");
     if dry_run {
-        println!("This was only the plan; nothing was changed.");
+        println!(
+            "edel install: this was only the plan; nothing was changed; leave out --plan to install"
+        );
         return Ok(());
     }
     if !yes {
         if !io::stdin().is_terminal() {
-            println!("No terminal to confirm on and no --yes, so nothing was changed.");
+            println!("{NO_ANSWER}");
             io::stdout().flush()?;
             std::process::exit(NOT_CONFIRMED);
         }
@@ -179,13 +185,13 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
         let mut answer = String::new();
         io::stdin().lock().read_line(&mut answer)?;
         if answer.trim() != name {
-            bail!("stopped; nothing was changed");
+            bail!("stopped, because {name} was not typed; nothing was changed");
         }
     }
     let missing = missing_tools();
     if !missing.is_empty() {
         bail!(
-            "this system lacks {}, so nothing was changed",
+            "this system lacks {}, so nothing was changed; install them (apk add) and run edel install again",
             missing.join(", ")
         );
     }
@@ -205,7 +211,10 @@ fn wait_for(device: &Path) -> Result<()> {
         }
         sleep(Duration::from_millis(100));
     }
-    bail!("{} did not appear after partitioning", device.display())
+    bail!(
+        "{} did not appear after partitioning, so the disk is only partly installed; run edel install again",
+        device.display()
+    )
 }
 
 /// Mounts `device` at `dir` for as long as the guard lives.
@@ -242,14 +251,17 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         .arg(&disk)
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .context("starting sfdisk")?;
+        .context("could not start sfdisk")?;
     sfdisk
         .stdin
         .take()
         .context("sfdisk has no input")?
         .write_all(layout.sfdisk_script().as_bytes())?;
     if !sfdisk.wait()?.success() {
-        bail!("sfdisk could not partition {}", disk.display());
+        bail!(
+            "sfdisk could not partition {}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed",
+            disk.display()
+        );
     }
     for n in 1..=4 {
         wait_for(&part(n))?;
@@ -257,7 +269,8 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
 
     println!("edel install: copying the running system into slot A");
     let mut half = HalfCopy::new(part(2));
-    let mut from = File::open(slot).with_context(|| format!("reading {}", slot.display()))?;
+    let mut from =
+        File::open(slot).with_context(|| format!("could not read {}", slot.display()))?;
     let mut to = fs::OpenOptions::new().write(true).open(part(2))?;
     // The first block, which holds the file system's UUID, goes last.
     from.seek(SeekFrom::Start(HEAD))?;
@@ -276,7 +289,9 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
     drop(to);
     let status = Command::new("e2fsck").arg("-fp").arg(part(2)).status()?;
     if !matches!(status.code(), Some(0 | 1)) {
-        bail!("e2fsck found errors in the copied slot ({status})");
+        bail!(
+            "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again"
+        );
     }
     if plan.slot_mib > running_mib {
         run(Command::new("resize2fs").arg(part(2)))?;
@@ -387,6 +402,17 @@ mod tests {
         assert_eq!(partition_name("nvme0n1", 1), "nvme0n1p1");
         assert_eq!(partition_name("mmcblk0", 3), "mmcblk0p3");
         assert_eq!(disk_name("/dev/vdb"), "vdb");
+    }
+
+    /// Install without `--yes` and without a terminal changes nothing and
+    /// says how to go on; CI's install test checks the exit code (3).
+    #[test]
+    fn install_without_a_yes_says_nothing_was_changed() {
+        assert_eq!(
+            NO_ANSWER,
+            "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
+        );
+        assert_eq!(NOT_CONFIRMED, 3);
     }
 
     #[test]

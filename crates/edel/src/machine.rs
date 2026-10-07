@@ -20,7 +20,7 @@ use edel::settings::{self, SettingsFile, User};
 
 use crate::boot::GRUB_PREFIX;
 use crate::release::os_release_value;
-use crate::update::{Disk, Lock, run};
+use crate::update::{Disk, Lock, io_failure, run};
 
 /// The machine's settings file as it is found now: by its name, or by a
 /// name it had before (`edel::places`), until apply renames it.
@@ -183,13 +183,13 @@ fn passwd_with_shell(passwd: &str, name: &str, shell: &str) -> Option<String> {
 /// Replaces a file through a new file and a rename, keeping its mode and
 /// owner, so a power cut leaves the old or the new account file.
 fn replace(path: &Path, text: &str) -> Result<()> {
-    let meta = fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
+    let meta = fs::metadata(path).with_context(|| format!("could not read {}", path.display()))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
     fs::write(&new, text)?;
     fs::set_permissions(&new, meta.permissions())?;
     chown(&new, Some(meta.uid()), Some(meta.gid()))?;
     fs::File::open(&new)?.sync_all()?;
-    fs::rename(&new, path).with_context(|| format!("replacing {}", path.display()))
+    fs::rename(&new, path).with_context(|| format!("could not replace {}", path.display()))
 }
 
 /// One change apply makes; `edel settings diff` lists them without making them.
@@ -452,7 +452,7 @@ fn write_keys(account: &Account, text: &str) -> Result<()> {
         .gid(account.gid)
         .stdin(Stdio::piped())
         .spawn()
-        .with_context(|| format!("starting a shell as {}", account.name))?;
+        .with_context(|| format!("could not start a shell as {}", account.name))?;
     let written = child
         .stdin
         .take()
@@ -461,8 +461,9 @@ fn write_keys(account: &Account, text: &str) -> Result<()> {
     let status = child.wait()?;
     if !status.success() || written.is_err() {
         bail!(
-            "could not write {}/.ssh/authorized_keys as {}",
+            "could not write {}/.ssh/authorized_keys as {}; check that the home directory exists and {} owns it",
             account.home,
+            account.name,
             account.name
         );
     }
@@ -564,8 +565,13 @@ fn settle_names() -> Result<()> {
                 fs::rename(&old, settings::versioned(&machine, format))?;
             }
         }
-        fs::rename(&found, &machine)
-            .with_context(|| format!("renaming {} to {}", found.display(), machine.display()))?;
+        fs::rename(&found, &machine).with_context(|| {
+            format!(
+                "could not rename {} to {}",
+                found.display(),
+                machine.display()
+            )
+        })?;
         println!(
             "edel settings: renamed {} to {}",
             found.display(),
@@ -576,8 +582,9 @@ fn settle_names() -> Result<()> {
     if fs::read_link(&link).ok().as_deref() != Some(machine.as_path()) {
         fs::create_dir_all(places::ETC_DIR)?;
         let _ = fs::remove_file(&link);
-        std::os::unix::fs::symlink(&machine, &link)
-            .with_context(|| format!("linking {} to {}", link.display(), machine.display()))?;
+        std::os::unix::fs::symlink(&machine, &link).with_context(|| {
+            format!("could not link {} to {}", link.display(), machine.display())
+        })?;
         println!(
             "edel settings: linked {} to {}",
             link.display(),
@@ -636,7 +643,10 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
         println!("edel settings: nothing to change");
     }
     if failed > 0 {
-        bail!("{failed} of {} changes could not be applied", changes.len());
+        bail!(
+            "{failed} of {} changes could not be applied, listed above; the others were applied, and edel settings diff shows what is left",
+            changes.len()
+        );
     }
     Ok(())
 }
@@ -654,10 +664,11 @@ fn same_file(a: &Path, b: &Path) -> bool {
 fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
     fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    let mut out = fs::File::create(&new).with_context(|| format!("writing {}", new.display()))?;
+    let mut out =
+        fs::File::create(&new).with_context(|| format!("could not write {}", new.display()))?;
     out.write_all(text)?;
     out.sync_all()?;
-    fs::rename(&new, path).with_context(|| format!("writing {}", path.display()))?;
+    fs::rename(&new, path).with_context(|| format!("could not write {}", path.display()))?;
     Ok(())
 }
 
@@ -665,14 +676,14 @@ fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
 /// format brings the `.v<N>` this release read, so the next boot reads it
 /// too (ADR-008).
 fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
-    let text = fs::read(from).with_context(|| format!("reading {}", from.display()))?;
+    let text = fs::read(from).with_context(|| format!("could not read {}", from.display()))?;
     if settings::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > settings::FORMAT) {
         let older = settings::versioned(from, settings::FORMAT);
         let older_text =
-            fs::read(&older).with_context(|| format!("reading {}", older.display()))?;
+            fs::read(&older).with_context(|| format!("could not read {}", older.display()))?;
         write_whole(&settings::versioned(to, settings::FORMAT), &older_text)?;
     }
-    write_whole(to, &text).with_context(|| format!("saving {}", to.display()))
+    write_whole(to, &text).with_context(|| format!("could not save {}", to.display()))
 }
 
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line
@@ -701,7 +712,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     let mut path = machine.clone();
     let mut newer = None;
     if let Ok(text) = fs::read_to_string(&machine) {
-        let format = settings::format(&text).with_context(|| format!("reading {shown}"))?;
+        let format = settings::format(&text).with_context(|| format!("could not read {shown}"))?;
         if format > settings::FORMAT {
             path = settings::versioned(&machine, settings::FORMAT);
             newer = Some(format);
@@ -720,11 +731,15 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     for problem in settings::read(&edited)?.problems {
         println!("edel settings: kept, not used by this release: {problem}");
     }
-    fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
+    let doing = format!("could not write {}", path.display());
+    fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))
+        .map_err(|err| io_failure(err, &doing))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    fs::write(&new, &edited)?;
-    fs::File::open(&new)?.sync_all()?;
-    fs::rename(&new, &path).with_context(|| format!("replacing {}", path.display()))?;
+    fs::write(&new, &edited).map_err(|err| io_failure(err, &doing))?;
+    fs::File::open(&new)
+        .and_then(|file| file.sync_all())
+        .map_err(|err| io_failure(err, &doing))?;
+    fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     println!(
         "edel settings: {what} in {}; {}",
@@ -1167,6 +1182,17 @@ mod tests {
         assert_eq!(
             shadow_unlocked("x:!!:1::::::\n", "x").unwrap(),
             "x:*:1::::::\n"
+        );
+    }
+
+    /// An assignment without `=` is refused before anything is read or
+    /// written, with the form it should have.
+    #[test]
+    fn set_without_a_value_says_how_to_write_one() {
+        let err = set(&["network.hostname".to_string()]).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "\"network.hostname\": write KEY=VALUE, such as network.hostname=lab-1"
         );
     }
 

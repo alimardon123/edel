@@ -309,8 +309,44 @@ struct BuildArgs {
     plan: bool,
 }
 
-fn main() -> Result<()> {
-    match Cli::parse().command {
+fn main() -> std::process::ExitCode {
+    let command = Cli::parse().command;
+    let name = command.name();
+    match run(command) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("{}", failure_line(name, &err));
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+/// What a failed command prints (docs/MESSAGES.md): its prefix, then the
+/// message and its causes on one line, the most specific last, in place of
+/// Rust's `Error:` and its `Caused by:` list.
+fn failure_line(name: &str, err: &anyhow::Error) -> String {
+    format!("edel {name}: {err:#}")
+}
+
+impl Commands {
+    /// The word after `edel` that the command was started with.
+    fn name(&self) -> &'static str {
+        match self {
+            Commands::Image { .. } => "image",
+            Commands::Boot { .. } => "boot",
+            Commands::Release { .. } => "release",
+            Commands::Update { .. } => "update",
+            Commands::Rollback => "rollback",
+            Commands::Status => "status",
+            Commands::Install { .. } => "install",
+            Commands::Report { .. } => "report",
+            Commands::Settings { .. } => "settings",
+        }
+    }
+}
+
+fn run(command: Commands) -> Result<()> {
+    match command {
         Commands::Image { command } => match command {
             ImageCommands::Build(args) => {
                 let BuildArgs {
@@ -458,10 +494,10 @@ fn main() -> Result<()> {
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
 fn check_system_file(file: &std::path::Path) -> Result<()> {
-    let text =
-        std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+    let text = std::fs::read_to_string(file)
+        .with_context(|| format!("could not read {}", file.display()))?;
     let problems =
-        settings::check(&text).with_context(|| format!("checking {}", file.display()))?;
+        settings::check(&text).with_context(|| format!("could not check {}", file.display()))?;
     if problems.is_empty() {
         println!("{}: ok", file.display());
         return Ok(());
@@ -469,7 +505,21 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
     for problem in &problems {
         println!("{problem}");
     }
-    bail!("{} has {} problems", file.display(), problems.len())
+    bail!("{}", problem_count(file, problems.len()))
+}
+
+/// The last line of a failed `edel settings check`: how many problems the
+/// lines above are, and what to do about them.
+fn problem_count(file: &std::path::Path, count: usize) -> String {
+    let (problems, fix) = if count == 1 {
+        ("1 problem".to_string(), "it")
+    } else {
+        (format!("{count} problems"), "them")
+    };
+    format!(
+        "{} has {problems}, listed above; fix {fix} and run edel settings check again",
+        file.display()
+    )
 }
 
 #[cfg(test)]
@@ -477,7 +527,43 @@ mod tests {
     use clap::error::ErrorKind;
     use clap::{CommandFactory, Parser};
 
-    use super::Cli;
+    use super::{Cli, Commands, failure_line, problem_count};
+
+    /// A failed command prints one line, `edel NAME: ` and then the cause
+    /// chain, the most specific last (docs/MESSAGES.md).
+    #[test]
+    fn a_failure_is_one_line_with_the_commands_prefix() {
+        let err = anyhow::anyhow!("No such file or directory (os error 2)")
+            .context("could not read /etc/edel/ali.toml");
+        assert_eq!(
+            failure_line("settings", &err),
+            "edel settings: could not read /etc/edel/ali.toml: No such file or directory (os error 2)"
+        );
+        for (args, name) in [
+            (&["edel", "update", "release.toml"][..], "update"),
+            (&["edel", "rollback"], "rollback"),
+            (&["edel", "status"], "status"),
+            (&["edel", "report"], "report"),
+            (&["edel", "settings", "export"], "settings"),
+            (&["edel", "boot", "guard"], "boot"),
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert_eq!(Commands::name(&cli.command), name);
+        }
+    }
+
+    #[test]
+    fn a_failed_check_counts_its_problems_and_says_what_to_do() {
+        let file = std::path::Path::new("/tmp/ali.toml");
+        assert_eq!(
+            problem_count(file, 1),
+            "/tmp/ali.toml has 1 problem, listed above; fix it and run edel settings check again"
+        );
+        assert_eq!(
+            problem_count(file, 3),
+            "/tmp/ali.toml has 3 problems, listed above; fix them and run edel settings check again"
+        );
+    }
 
     /// The help lists what people run (ADR-008's easy to use decision);
     /// the boot services' and CI's own commands still work, unlisted.

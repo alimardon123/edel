@@ -64,7 +64,7 @@ impl Plan {
         if self.data_mib() < MIN_DATA_MIB {
             let need = 2 + ESP_MIB + 2 * self.slot_mib + MIN_DATA_MIB;
             bail!(
-                "/dev/{} has {}, and Edel OS needs at least {}",
+                "/dev/{} has {}, and Edel OS needs at least {}; use a larger disk",
                 self.disk.name,
                 size(self.disk.bytes),
                 size(need * MIB)
