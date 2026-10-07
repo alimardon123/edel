@@ -74,6 +74,11 @@ pub struct Alpine {
     pub branch: String,
     pub mirror: String,
     pub repositories: Vec<String>,
+    /// The digest of the multi-architecture `alpine` image of that branch
+    /// (`sha256:` and 64 hex digits) that CI builds in, so a build never
+    /// runs in a container nobody looked at (M3.9). Images do not use it.
+    #[serde(default)]
+    pub image_digest: Option<String>,
 }
 
 /// OpenRC services to enable, by runlevel.
