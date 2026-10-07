@@ -38,9 +38,9 @@ const NARROW: &str = "max-width: 600sp";
 const SIDEBAR: f64 = 204.0;
 
 /// The renderer GTK draws Settings with unless `GSK_RENDERER` says
-/// otherwise: Cairo, on the processor. Measured on 2026-10-07 under
-/// llvmpipe, Settings held 12.8 MiB of its own with it and 88.3 MiB with
-/// GL, and a page of rows that changes on a click needs no GPU to keep
+/// otherwise: Cairo, on the processor. Measured on 2026-10-07 in CI's
+/// VM, Settings held 18.6 MiB of its own with it and 107.4 MiB with GL
+/// under llvmpipe, and a page of rows that changes on a click needs no GPU to keep
 /// up (Efficient over a speed nobody sees; the default row in the roadmap).
 const RENDERER: &str = "cairo";
 

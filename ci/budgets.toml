@@ -56,13 +56,13 @@ idle_frames = 0
 shell_ui_own_mib = 1.8
 
 # What Settings holds of its own while open (desktop-test settings,
-# M5.6a), read as shell-ui's is: RssAnon plus RssShmem, MiB. 12.8 MiB
-# measured on 2026-10-07 in a nested session with GTK's Cairo renderer,
-# which Settings uses unless GSK_RENDERER says otherwise, plus 20 percent;
-# with GL under llvmpipe it held 88.3 MiB there and 107.4 MiB in CI's VM
-# (PR #113), which is why it draws with Cairo. Nothing of it is held
-# while Settings is closed.
-settings_own_mib = 16
+# M5.6a), read as shell-ui's is: RssAnon plus RssShmem, MiB. 18.6 MiB
+# measured on 2026-10-07 in CI's VM (PR #113) with GTK's Cairo renderer,
+# which Settings uses unless GSK_RENDERER says otherwise, plus 20
+# percent; with GL under llvmpipe it held 107.4 MiB there (12.8 against
+# 88.3 MiB in a nested session), which is why it draws with Cairo.
+# Nothing of it is held while Settings is closed.
+settings_own_mib = 22
 
 # What the animations add, in milliseconds, to the 99th percentile of the
 # time between frames while ten windows open and close one after another
