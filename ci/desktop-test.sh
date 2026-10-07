@@ -1891,14 +1891,32 @@ if [ "$*" = live ]; then
 	QMP="$dir/qmp.sock"
 	mkdir -p "$dir"
 	rm -f "$QMP" "$dir"/*.png
-	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot -snapshot \
+	# A sparse copy rather than -snapshot, so a failure can show what the
+	# stick wrote on its data partition (M5.28a).
+	stick="$dir/stick.img"
+	cp --sparse=always out/edel-desktop-x86_64.img "$stick"
+	# stick_logs: the session's, greetd's and the system's logs from the
+	# stick's data partition (partition 4), which /home and /var live on.
+	stick_logs() {
+		stop_vm
+		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" status=none
+		. ci/names.sh
+		people=$(debugfs -R "ls -p /home" "$dir/data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print "/home/" $6 }')
+		for f in $(for p in $people; do echo "$p/$home_session_log"; done) /var/log/greetd.log "$system_log"; do
+			echo "== $f on the stick"
+			debugfs -R "cat $f" "$dir/data.img" 2>/dev/null | tail -n 80
+		done
+	}
+	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-qmp unix:"$QMP",server=on,wait=off \
 		-device qemu-xhci,id=xhci \
-		-drive if=none,id=stick,format=raw,file=out/edel-desktop-x86_64.img \
+		-drive if=none,id=stick,format=raw,file="$stick" \
 		-device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=0
 	if [ "$found" = 0 ]; then
 		cat "$log"
+		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
@@ -1915,6 +1933,7 @@ if [ "$*" = live ]; then
 		i=$((i + 1))
 		if [ "$i" -ge 6 ]; then
 			tr -d '\r' <"$log" | tail -n 100
+			stick_logs
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
@@ -1939,6 +1958,7 @@ if [ "$*" = live ]; then
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
 	stop_vm
+	rm -f "$stick" "$dir/data.img"
 	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off"
 	exit 0
 fi
