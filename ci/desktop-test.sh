@@ -1740,14 +1740,21 @@ case_scale() {
 }
 
 [ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+# Every case is a case_NAME function, so this list is the functions
+# themselves and cannot miss one (the sandbox case was once left out).
+cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | sandbox | scale | scheme | settings | scroll | shortcuts | styles | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, sandbox, scale, scheme, scroll, settings, shortcuts, styles, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
-		exit 1
+		case " $cases" in
+		*" $c "*) ;;
+		*)
+			echo "unknown case $c; the cases are $cases"
+			exit 1
+			;;
+		esac
 		;;
 	esac
 done
