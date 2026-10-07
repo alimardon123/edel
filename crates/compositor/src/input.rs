@@ -29,6 +29,7 @@ use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use edel_compositor::frame::{self, Button, Hit};
+use edel_compositor::layout::Direction;
 
 use crate::grabs::{Kind, WindowGrab, nearest_corner};
 use crate::shortcuts::Act;
@@ -337,6 +338,7 @@ impl Edel {
             Act::Tiling => self.toggle_tiling(),
             Act::Focus(way) => self.focus_toward(way),
             Act::Swap(way) => self.swap_toward(way),
+            Act::Widen => self.widen_focused(),
             Act::NextLayout => self.next_keyboard_layout(),
             Act::Fullscreen => {
                 if let Some(window) = self.focused_window() {
@@ -366,6 +368,31 @@ impl Edel {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
+        // Super with the wheel moves along the scroll style's strip a
+        // column a click (M5.16c), and the app under the pointer does not
+        // scroll.
+        let logo = self
+            .seat
+            .get_keyboard()
+            .is_some_and(|k| k.modifier_state().logo);
+        if logo
+            && self.settings.tiling_style == edel_compositor::tiling::Style::Scroll
+            && self.desks.layout().rearranges()
+        {
+            let clicks = event
+                .amount_v120(Axis::Vertical)
+                .or_else(|| event.amount_v120(Axis::Horizontal))
+                .unwrap_or(0.0);
+            if clicks != 0.0 {
+                let way = if clicks > 0.0 {
+                    Direction::Right
+                } else {
+                    Direction::Left
+                };
+                self.focus_toward(way);
+            }
+            return;
+        }
         let source = event.source();
         let mut frame = AxisFrame::new(event.time_msec()).source(source);
         for axis in [Axis::Horizontal, Axis::Vertical] {

@@ -135,7 +135,7 @@ mod tests {
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
         assert_eq!(titles.len(), 8);
-        assert_eq!(values("layout.tiling_style"), ["stack", "split"]);
+        assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
 

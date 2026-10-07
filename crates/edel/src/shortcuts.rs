@@ -203,6 +203,12 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Swap the focused window with the one below it, when tiled (M5.16a)",
     ),
+    action(
+        "cycle_column_width",
+        "Super+R",
+        false,
+        "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c)",
+    ),
 ];
 
 /// The action called `name`.

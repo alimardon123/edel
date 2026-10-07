@@ -212,7 +212,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         &group,
         "layout.tiling_style",
         (
-            "Stack keeps one main window, Split halves the focused one",
+            "Stack keeps one main window, Split halves the focused one, Scroll lines them up",
             None,
             false,
         ),
