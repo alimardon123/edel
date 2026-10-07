@@ -1,0 +1,39 @@
+# The advisories we accept for now (roadmap M3.9): the one place ci/audit.sh
+# reads them from. Every entry has the advisory `id`, the `crate` and
+# version it is about, the `date` it was accepted and the `reason`: which
+# crate pulls it in, why it cannot be updated now and whether our use is
+# exposed. Delete an entry when its crate is updated or dropped; the audit
+# says so when an entry matches nothing in Cargo.lock.
+#
+# A vulnerability with no entry here fails the pull request; an
+# unmaintained or unsound crate with none is listed in the job's summary.
+
+[[exception]]
+id = "RUSTSEC-2026-0194"
+crate = "quick-xml 0.38.4"
+date = "2026-10-07"
+reason = "Pulled in by zbus_xml 5.1.0 through zbus-lockstep and atspi-common, under accesskit_unix (shell-ui's screen reader support). The fixed zbus_xml 5.2.1 needs Rust 1.87 and our crates say 1.85, so `cargo update -p` does not take it. Not exposed: atspi-common and zbus-lockstep read their own bundled D-Bus XML files at compile time (their macros and tests), and nothing at run time hands untrusted XML to it. Fix: raise rust-version to 1.87, then `cargo update -p zbus_xml`."
+
+[[exception]]
+id = "RUSTSEC-2026-0195"
+crate = "quick-xml 0.38.4"
+date = "2026-10-07"
+reason = "The same quick-xml 0.38.4 as RUSTSEC-2026-0194, with the same way in, the same reason it cannot be updated now and the same exposure: none at run time. Dropped together with it."
+
+[[exception]]
+id = "RUSTSEC-2026-0196"
+crate = "cgmath 0.18.0"
+date = "2026-10-07"
+reason = "Unmaintained. Pulled in by smithay 0.7.0, which we pin with `=` (the compositor's one big dependency, ADR-002), for its renderer's matrices. No fix exists: smithay has to move off it, so this waits for a smithay release that does. Not a flaw in itself."
+
+[[exception]]
+id = "RUSTSEC-2026-0197"
+crate = "cgmath 0.18.0"
+date = "2026-10-07"
+reason = "Unsound: `swap_columns` of `Matrix2`, `Matrix3` and `Matrix4` with two equal indices is undefined behaviour. Same crate and way in as RUSTSEC-2026-0196. Not exposed: neither smithay 0.7.0 nor our code calls swap_columns (checked with grep on 2026-10-07)."
+
+[[exception]]
+id = "RUSTSEC-2026-0192"
+crate = "ttf-parser 0.25.1"
+date = "2026-10-07"
+reason = "Unmaintained. Pulled in by fontdb 0.23.0 under cosmic-text (shell-ui's text) and by fontdue 0.9.4 (the compositor's title bars). No fix exists: both have to move to another parser. Exposed only to the font files installed on the machine, which come from the image or from the person; it reads no network data."
