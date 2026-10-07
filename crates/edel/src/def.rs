@@ -896,7 +896,11 @@ mod tests {
                 .get("services")
                 .map(|s| s.clone().try_into().unwrap())
                 .unwrap_or_default();
-            let old_services: Vec<(&str, &str)> = services.entries();
+            let mut old_services: Vec<(&str, &str)> = services.entries();
+            if name != "container" {
+                // Added since format 1: the machine feature's clock (M1.13).
+                old_services.push(("default", "edel-clock"));
+            }
             let new = repo_def(name);
             assert_eq!(sorted(&new.packages), sorted(&install), "{name}: packages");
             assert_eq!(

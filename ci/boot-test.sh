@@ -3,8 +3,10 @@
 # A) and waits for the Edel OS login prompt on the serial console. The disk
 # is opened in snapshot mode, so the tested image stays exactly as built.
 # Then boots a copy of the disk made 3 GiB larger and checks that the data
-# partition grew to fill it (roadmap M1.2). The desktop image is booted
-# as a USB stick by desktop-test.sh live (M3.6).
+# partition grew to fill it (roadmap M1.2). Then boots it once more with
+# the virtual machine's clock set to 2020 and checks that edel-clock sets it
+# from the network, so serial shows 2026 or later (roadmap M1.13). The
+# desktop image is booted as a USB stick by desktop-test.sh live (M3.6).
 set -eu
 . ci/vm.sh
 
@@ -45,5 +47,24 @@ if [ "$found" = 1 ] && [ "${size:-0}" -gt 2048 ]; then
 	echo "PASS: on a disk 3 GiB larger, /data grew to ${size} MiB"
 else
 	echo "FAIL: /data did not grow past 2048 MiB (saw '${size:-nothing}')"
+	exit 1
+fi
+
+# A machine whose clock battery died starts in the past. edel-clock runs in
+# the background once the network is up (QEMU's user network reaches the
+# runner's), after the login prompt, so wait for its whole line (it ends with the earlier
+# time), not the prompt.
+run_vm out/boot-clock.log 'edel-clock: .*(it said [0-9: -]* UTC\)|check the network)' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
+	-rtc base=2020-01-01 \
+	-drive if=none,id=disk0,format=raw,file=out/edel-vm-x86_64.img \
+	-device virtio-blk-pci,drive=disk0,bootindex=0
+cat out/boot-clock.log
+clock_line=$(tr -d '\r' <out/boot-clock.log | grep 'edel-clock: ' | tail -n 1 || true)
+# The year 2026 or later: 2026 to 2099.
+if [ "$found" = 1 ] &&
+	echo "$clock_line" | grep -qE 'edel-clock: set the clock from .*: 20(2[6-9]|[3-9][0-9])-[0-9][0-9]-[0-9][0-9] '; then
+	echo "PASS: with the clock set to 2020, edel-clock set it from the network in ${waited}s: ${clock_line}"
+else
+	echo "FAIL: expected a line 'edel-clock: set the clock from SERVER: YYYY-MM-DD HH:MM UTC' with a year of 2026 or later on serial within ${BOOT_TIMEOUT:-300}s after booting with -rtc base=2020-01-01, saw '${clock_line:-no edel-clock line}'"
 	exit 1
 fi

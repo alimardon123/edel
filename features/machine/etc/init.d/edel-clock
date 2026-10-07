@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+# Sets the clock from the network once the network is up (roadmap M1.13).
+# A machine whose clock battery died starts in the past, and then every
+# certificate check fails, `edel update` over https:// included. The work is
+# /usr/libexec/edel-clock, started in the background, so a missing network
+# or a slow server never holds up the default runlevel or edel-boot-ok
+# (which runs after everything else); with no network it says so in one
+# line and gives up. Nothing stays running: the helper exits when the
+# clock is set or its time is up.
+
+description="Set the clock from the network"
+
+depend() {
+	after networking
+	use logger
+}
+
+start() {
+	/usr/libexec/edel-clock >/dev/console 2>&1 &
+	return 0
+}

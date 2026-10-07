@@ -156,7 +156,14 @@ pub enum Kind {
     /// Keyboard layouts as xkb names them, such as `"us,ru"` or
     /// `"de(nodeadkeys)"` ([`crate::keyboard::normalize`], M5.21)
     Keyboard,
+    /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
+    /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
+    /// (M1.13)
+    Hosts,
 }
+
+/// The most host names a [`Kind::Hosts`] list holds.
+pub const MOST_HOSTS: usize = 4;
 
 /// One key of the settings file. `*` in a path stands for any name, such as a
 /// user or an output.
@@ -213,6 +220,8 @@ pub const KEYS: &[Key] = &[
     now("region.language", Kind::Text),
     now("region.keyboard", Kind::Keyboard),
     later("region.timezone", Kind::Text),
+    // The servers the clock is set from (M1.13); `pool.ntp.org` without.
+    now("region.time_servers", Kind::Hosts),
     now("layout.preset", Kind::OneOf(crate::presets::NAMES)),
     now("layout.tiling", Kind::Flag),
     now(
@@ -392,6 +401,9 @@ pub struct Region {
     pub keyboard: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
+    /// Host names the clock is set from (M1.13); absent is `pool.ntp.org`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_servers: Option<Vec<String>>,
 }
 
 /// The Layout page.
@@ -1062,6 +1074,29 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             crate::keyboard::normalize(s, rules.as_deref()).map(Value::String)
         }
         (Kind::Keyboard, _) => fail("keyboard layouts in quotes, such as \"us\" or \"us,ru\""),
+        (Kind::Hosts, Value::Array(items)) => {
+            let mut names = Vec::new();
+            for item in items {
+                match item.as_str() {
+                    Some(name) if is_host(name) => names.push(name),
+                    _ => {
+                        return Err(format!(
+                            "{item} is not a host name; use a name such as \"pool.ntp.org\" \
+                             (letters, digits, hyphens and dots)"
+                        ));
+                    }
+                }
+            }
+            if names.is_empty() || names.len() > MOST_HOSTS {
+                return Err(format!(
+                    "expected one to {MOST_HOSTS} host names, not {} (to use the release's, \
+                     run edel settings reset on this key)",
+                    names.len()
+                ));
+            }
+            Ok(value.clone())
+        }
+        (Kind::Hosts, _) => fail("a list of host names, such as [\"pool.ntp.org\"]"),
         (Kind::Panels, _) => {
             fail("a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]")
         }
@@ -1074,6 +1109,12 @@ pub fn is_hostname(name: &str) -> bool {
         && !name.starts_with('-')
         && !name.ends_with('-')
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// A host name as a time server is named: dot-separated labels (each
+/// as [`is_hostname`] takes one), at most 253 bytes.
+pub fn is_host(name: &str) -> bool {
+    name.len() <= 253 && name.split('.').all(is_hostname)
 }
 
 /// A login shell `/etc/passwd` can hold: an absolute path of at most 255
@@ -1164,6 +1205,7 @@ mod tests {
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
+            Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
         }
     }
 
@@ -1472,6 +1514,50 @@ font_size = 11
         let read = read("format = 1\n[users.ali]\nlogin_shell = \"/bin/a:b\"\n").unwrap();
         assert_eq!(read.file.users["ali"].login_shell, None);
         assert_eq!(read.problems.len(), 1);
+    }
+
+    #[test]
+    fn time_servers_are_host_names() {
+        let ok = set(
+            "format = 1\n",
+            "region.time_servers",
+            r#"["pool.ntp.org", "169.254.169.123"]"#,
+        )
+        .unwrap();
+        let parsed = read(&ok).unwrap();
+        assert_eq!(
+            parsed.file.region.time_servers,
+            Some(vec!["pool.ntp.org".into(), "169.254.169.123".into()])
+        );
+        let bad = |value: &str| set("format = 1\n", "region.time_servers", value).unwrap_err();
+        assert_eq!(
+            bad(r#"["pool.ntp.org", "bad name"]"#).to_string(),
+            "region.time_servers: \"bad name\" is not a host name; use a name such as \
+             \"pool.ntp.org\" (letters, digits, hyphens and dots)"
+        );
+        assert!(bad(r#"["-oops"]"#).to_string().contains("not a host name"));
+        assert!(bad(r#"["a..b"]"#).to_string().contains("not a host name"));
+        assert!(bad("[1]").to_string().contains("not a host name"));
+        assert!(bad("[]").to_string().contains("one to 4 host names"));
+        assert!(
+            bad(r#"["a","b","c","d","e"]"#)
+                .to_string()
+                .contains("one to 4")
+        );
+        assert!(
+            bad("pool.ntp.org")
+                .to_string()
+                .contains("a list of host names")
+        );
+        let file = "format = 1\n[region]\ntime_servers = [\"bad name\"]\n";
+        assert_eq!(
+            check(file).unwrap(),
+            [format!(
+                "region.time_servers: {}",
+                normalize(Kind::Hosts, &value_from_arg(r#"["bad name"]"#)).unwrap_err()
+            )]
+        );
+        assert_eq!(read(file).unwrap().file.region.time_servers, None);
     }
 
     #[test]
