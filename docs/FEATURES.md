@@ -41,7 +41,7 @@ modules = []        # kernel modules the initramfs loads first (modules=)
 initramfs = []      # mkinitfs features
 switchable = true   # may ship off (off = [...]); services.ssh later (M6.10)
 addon = false       # also built as a signed add-on (M7.2a)
-health = []         # health files it writes, which the boot guard waits for
+health = []         # health checks it writes, which the boot guard waits for
 programs = []       # our own programs it ships in /usr/bin (edel-compositor)
 
 [services]
@@ -84,6 +84,7 @@ Besides these, a definition has only `[image] health_timeout` and `[release] pub
 
 - **Finds** features in `features/` beside the definition, if there is one (CI's test features under `ci/`), and in the repository's, the `features/` of the nearest directory above that also holds `images/`. It checks every feature file there strictly, so an unknown field, a `NAME/` without `NAME.toml` or any other file in a features directory stops the build even when no image lists it.
 - **Merges** the listed features in order: packages, services, modules, health files, programs and mkinitfs features as sets, so several features may list `dbus`; modules keep the order they are first named in (`modules=` loads them in that order), and the mkinitfs features are sorted.
+- **Refuses** a health name that nothing writes: `default-runlevel` and `compositor` are edel's own, and any other name (a-z, 0-9 and '-', such as a server's `network`) is a feature's own check, its file `$health_dir/NAME` (`/run/edel/health/NAME`, from `places.sh`), which a file one of the image's features ships must write, as its service does once the check passes (M1.11). A check finishes well inside `health_timeout`, or every update falls back.
 - **Refuses** an unknown feature, one listed twice, a missing `why`, one service in two runlevels, a file path shipped by two features, an `off` entry that is not listed or not switchable, a VM image without health, modules, mkinitfs features or its kernel package, and a container image with health.
 - **Ships** each listed feature's file as `/usr/share/edel/features/NAME.toml`, writes the union of health as `EDEL_HEALTH` and the `off` list as `EDEL_SERVICES_OFF` in os-release, installs the packages of every listed feature, copies their programs to `/usr/bin`, and enables the services of those not in `off`.
 
