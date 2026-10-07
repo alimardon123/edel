@@ -133,6 +133,17 @@ slot_matches_release() {
 	device=$(echo "$slots" | awk -v s="$1:" '$1 == s { print $4 }')
 	have=$(head -c "$size" "$device" | sha256sum | cut -d' ' -f1)
 	echo "slot $1: $device, $size bytes, sha256 $have, release.toml $want"
+	if [ -n "$want" ] && [ "$have" != "$want" ]; then
+		# Which bytes differ from the signed image, and their file system's
+		# view, so a failure says what wrote to the slot.
+		image=$(echo "$manifest" | sed -n 's/^file = "\(.*\)"$/\1/p' | head -n 1)
+		mkfifo /tmp/ab-slot
+		head -c "$size" "$device" >/tmp/ab-slot &
+		wget -qO- "${update%/*}/$image" | gunzip | cmp -l - /tmp/ab-slot 2>&1 | head -n 40
+		echo "differing bytes: $(wget -qO- "${update%/*}/$image" | gunzip | cmp -l - "$device" 2>/dev/null | head -c 100000000 | wc -l) (counted within the image)"
+		rm -f /tmp/ab-slot
+		dumpe2fs -h "$device" 2>/dev/null | grep -E 'state|Last mount|Last write|Mount count|features'
+	fi
 	[ -n "$want" ] && [ "$have" = "$want" ]
 }
 
