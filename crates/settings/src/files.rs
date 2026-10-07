@@ -40,6 +40,22 @@ impl Layout {
     }
 }
 
+/// `key`'s value in one file's `[layout]`, as `edel settings set` writes
+/// it; none when the file has none.
+fn own(layout: &system::Layout, key: &str) -> Option<String> {
+    let flag = |v: Option<bool>| v.map(|b| b.to_string());
+    match key {
+        "layout.preset" => layout.preset.clone(),
+        "layout.tiling" => flag(layout.tiling),
+        "layout.title_bars" => layout.title_bars.clone(),
+        "layout.window_buttons" => layout.window_buttons.clone(),
+        "layout.close_button" => flag(layout.close_button),
+        "layout.minimize_button" => flag(layout.minimize_button),
+        "layout.maximize_button" => flag(layout.maximize_button),
+        _ => None,
+    }
+}
+
 pub struct Files {
     pub machine: PathBuf,
     pub person: Option<PathBuf>,
@@ -166,33 +182,32 @@ impl Files {
         )
     }
 
-    /// The person's file as it is now, or nothing when there is none.
-    pub fn person_text(&self) -> Option<String> {
-        self.person
-            .as_ref()
-            .and_then(|path| std::fs::read_to_string(path).ok())
+    /// The person's own value of each of the Layout page's keys, as
+    /// `edel settings set` writes it, none where their file has none: what
+    /// Undo puts back (M5.6a).
+    pub fn own_layout(&self) -> Vec<(&'static str, Option<String>)> {
+        let person = Self::layout_of(self.person.as_ref());
+        crate::rows::on_page("layout")
+            .map(|row| (row.key, own(&person, row.key)))
+            .collect()
     }
 
-    /// Puts the person's file back as `text` held it, or takes it away
-    /// when it had none (Undo, M5.6a).
-    pub fn restore(&self, text: Option<&str>) -> Result<(), String> {
-        let Some(path) = self.person.as_ref() else {
-            return Ok(());
-        };
-        match text {
-            Some(text) => {
-                let new = path.with_extension("toml.edel-new");
-                std::fs::write(&new, text)
-                    .and_then(|()| std::fs::rename(&new, path))
-                    .map_err(|e| format!("could not write {}: {e}", path.display()))
+    /// Puts each of the Layout page's keys back as `before` held them
+    /// (Undo), with the functions `edel settings set` and `reset` use, so
+    /// the person's other keys, a change made elsewhere to them and the
+    /// file's comments all stay.
+    pub fn restore(&self, before: &[(&'static str, Option<String>)]) -> Result<(), String> {
+        let now = self.own_layout();
+        for (key, was) in before {
+            let is = now
+                .iter()
+                .find(|(k, _)| k == key)
+                .and_then(|(_, v)| v.clone());
+            if *was != is {
+                self.set(key, was.as_deref())?;
             }
-            None => match std::fs::remove_file(path) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                    Err(format!("could not remove {}: {e}", path.display()))
-                }
-                _ => Ok(()),
-            },
         }
+        Ok(())
     }
 
     /// Sets `key` to `value` in the person's file, or takes it out with
@@ -346,25 +361,32 @@ mod tests {
     }
 
     #[test]
-    fn undo_puts_the_file_back_as_it_was() {
+    fn undo_puts_the_pages_keys_back_and_leaves_the_rest() {
         let dir = scratch("undo");
         let person = dir.join("person.toml");
         let files = Files {
             machine: dir.join("machine.toml"),
             person: Some(person.clone()),
         };
-        // No file at first: Undo takes the one a change made away.
-        let before = files.person_text();
-        assert!(before.is_none());
+        // Nothing chosen at first: Undo takes a choice out again.
+        let before = files.own_layout();
+        assert!(before.iter().all(|(_, v)| v.is_none()));
         files.choose("layout.preset", "hive").unwrap();
-        files.restore(before.as_deref()).unwrap();
-        assert!(!person.exists());
-        // A file with a choice: Undo brings that choice back.
+        files.choose("layout.minimize_button", "false").unwrap();
+        assert_ne!(files.own_layout(), before);
+        files.restore(&before).unwrap();
+        assert_eq!(files.own_layout(), before);
+        assert_eq!(files.layout().preset, "classic");
+        // A choice made before is brought back, and a key another page or
+        // `edel settings set` changed meanwhile stays as it is now.
         files.choose("layout.preset", "mac-like").unwrap();
-        let before = files.person_text();
+        let before = files.own_layout();
         files.choose("layout.preset", "hive").unwrap();
-        files.restore(before.as_deref()).unwrap();
+        files.set("appearance.mode", Some("dark")).unwrap();
+        files.restore(&before).unwrap();
         assert_eq!(files.layout().preset, "mac-like");
+        let text = std::fs::read_to_string(&person).unwrap();
+        assert!(text.contains("mode = \"dark\""), "{text}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

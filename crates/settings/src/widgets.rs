@@ -85,7 +85,7 @@ impl ChangeBar {
             .css_classes(["edel-change-text"])
             .build();
         let detail = gtk::Label::builder()
-            .label("Undo puts back what changed since you opened this page.")
+            .label("Undo puts this page back as it was when Settings opened.")
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .hexpand(true)
@@ -100,12 +100,14 @@ impl ChangeBar {
         words.append(&detail);
         let undo = gtk::Button::builder()
             .label("Undo")
-            .tooltip_text("Put back everything changed since this page opened")
+            .tooltip_text("Put this page back as it was when Settings opened")
             .css_classes(["edel-change-undo"])
+            .focus_on_click(false)
             .build();
         let keep = gtk::Button::builder()
             .label("Keep")
             .css_classes(["edel-change-keep"])
+            .focus_on_click(false)
             .build();
         let bar = gtk::Box::builder()
             .spacing(10)

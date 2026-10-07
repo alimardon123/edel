@@ -100,10 +100,11 @@ struct Ui {
     /// A title bar as the compositor draws it with these choices.
     bar: widgets::BarPreview,
     problem: gtk::Label,
-    /// Undo and Keep, shown while the person's file differs from
-    /// `before`, as it was when the page opened or Keep was pressed.
+    /// Undo and Keep, shown while the person's own values of the page's
+    /// keys differ from `before`, as they were when the page opened or
+    /// Keep was pressed.
     changes: widgets::ChangeBar,
-    before: std::cell::RefCell<Option<String>>,
+    before: std::cell::RefCell<Vec<(&'static str, Option<String>)>>,
     /// Set while the page itself moves a control, so that is not a choice.
     quiet: Cell<bool>,
     /// Kept so the page follows the files while it is open.
@@ -126,7 +127,7 @@ impl Ui {
         }
         self.quiet.set(false);
         self.changes
-            .show(files.person_text() != *self.before.borrow());
+            .show(files.own_layout() != *self.before.borrow());
         self.bar.show(
             now.window_buttons == "left",
             [now.minimize_button, now.maximize_button, now.close_button],
@@ -267,7 +268,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         bar,
         problem,
         changes: widgets::ChangeBar::new(&page),
-        before: std::cell::RefCell::new(files.person_text()),
+        before: std::cell::RefCell::new(files.own_layout()),
         quiet: Cell::new(false),
         monitors,
     });
@@ -319,14 +320,14 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     ui.changes.undo.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {
             let before = ui.before.borrow().clone();
-            ui.report(Files::here().restore(before.as_deref()));
+            ui.report(Files::here().restore(&before));
             ui.update();
         }
     });
     let weak = Rc::downgrade(&ui);
     ui.changes.keep.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {
-            *ui.before.borrow_mut() = Files::here().person_text();
+            *ui.before.borrow_mut() = Files::here().own_layout();
             ui.update();
         }
     });
