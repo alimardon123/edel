@@ -1544,9 +1544,10 @@ case_styles() {
 		sleep 0.2
 	done
 	set -- $(value layers | grep -o 'edel-styles@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-styles@//; s/[,x]/ /g')
-	# Two rows of 36 px with 8 px round them, and the shadow's room, if
-	# the tier draws one, round the card.
-	room=$((($4 - 88) / 2))
+	# A row of 36 px for each style, stack, split and scroll, with 8 px
+	# round them, and the shadow's room, if the tier draws one, round the
+	# card.
+	room=$((($4 - 16 - 3 * 36) / 2))
 	mx=$(($1 + $3 / 2)) my=$(($2 + room + 8 + 36 + 18))
 	shot styles $((mx + 40)) $(($2 + room + 4)) "$panel" >/dev/null ||
 		fail "the styles menu at $1,$2 ${3}x$4 is not in the menus' #$panel"
