@@ -21,7 +21,7 @@ jobs:
     name: Rust checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install the libraries the compositor links
         # libxkbcommon for the keyboard; libudev, libinput, libgbm and
         # libseat for the GPU backend (M4.2b); GTK4 and libadwaita for
@@ -41,8 +41,19 @@ jobs:
         # Alpine branch only at their owners, and the check catching one
         # of each planted elsewhere.
         run: sh ci/one-place.sh && sh ci/one-place.sh --self-test
+      - name: Keep cargo-audit between runs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ hashFiles('ci/audit.sh') }}
+      - name: No known vulnerability in the dependencies
+        # cargo-audit, at the version ci/audit.sh names, checks Cargo.lock
+        # against the RustSec advisories (M3.9): a vulnerability fails the
+        # pull request unless ci/audit-exceptions.toml accepts it with a
+        # reason; an unmaintained crate is listed in this job's summary.
+        run: sh ci/audit.sh
       - name: Keep mdBook between runs
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/bin/mdbook
           key: mdbook-${{ hashFiles('ci/site.sh') }}
@@ -55,10 +66,10 @@ jobs:
     name: Build and boot images
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Keep the Rust build between runs
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             .cargo-home
@@ -90,9 +101,10 @@ jobs:
           fi
 
       - name: The Alpine release to build in
-        # The base feature owns the Alpine branch (M5.27): the build and
-        # signing containers are that release, so nothing else names it.
-        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
+        # The base feature owns the Alpine branch (M5.27) and the digest
+        # of its image (M3.9): the build and signing containers are that
+        # image, so nothing else names either.
+        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)@$(sed -n 's/^image_digest = "\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
 
       - name: Build images inside Alpine
         run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
@@ -147,7 +159,7 @@ jobs:
 
       - name: Keep the desktop image to try
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-try-x86_64
           retention-days: 14
@@ -162,7 +174,7 @@ jobs:
 
       - name: Keep the release for the publish job
         if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-release
           path: |
@@ -179,7 +191,7 @@ jobs:
 
       - name: Keep the container image, the logs and the screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-images
           if-no-files-found: ignore
@@ -198,10 +210,10 @@ jobs:
     name: Desktop tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Keep the Rust build between runs
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             .cargo-home
@@ -214,8 +226,8 @@ jobs:
         run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
       - name: The Alpine release to build in
-        # The base feature owns the Alpine branch (M5.27).
-        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
+        # The base feature owns the Alpine branch and its image's digest.
+        run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)@$(sed -n 's/^image_digest = "\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
 
       - name: Build the desktop test image inside Alpine
         run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh desktop-test
@@ -234,7 +246,7 @@ jobs:
 
       - name: Keep the log and the screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-desktop-test
           if-no-files-found: ignore
@@ -257,9 +269,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Keep mdBook between runs
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/bin/mdbook
           key: mdbook-${{ hashFiles('ci/site.sh') }}
@@ -281,8 +293,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: edel-release
           path: out
