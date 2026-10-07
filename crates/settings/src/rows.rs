@@ -21,6 +21,10 @@ pub const ROWS: &[Row] = &[
         title: "Tile windows",
     },
     Row {
+        key: "layout.tiling_style",
+        title: "Tiling style",
+    },
+    Row {
         key: "layout.title_bars",
         title: "Title bars",
     },
@@ -136,7 +140,8 @@ mod tests {
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
-        assert_eq!(titles.len(), 7);
+        assert_eq!(titles.len(), 8);
+        assert_eq!(values("layout.tiling_style"), ["stack", "split"]);
         assert_eq!(on_page("about").count(), 0);
     }
 

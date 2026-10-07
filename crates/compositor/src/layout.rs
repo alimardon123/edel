@@ -7,7 +7,7 @@
 
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
-use crate::tiling::Tiling;
+use crate::tiling::{Style, Tiling};
 
 /// Every policy, the default first: what `layout.tiling` and Super+T choose
 /// between. Their names are what people see (ADR-008), never the
@@ -49,6 +49,18 @@ pub trait WindowPolicy<W> {
     fn rearranges(&self) -> bool {
         false
     }
+
+    /// `window` took the keyboard: tiling's `split` halves it next.
+    fn focused(&mut self, _window: &W) {}
+
+    /// `a` and `b` trade places; false when the policy leaves windows
+    /// where people put them.
+    fn swap(&mut self, _a: &W, _b: &W) -> bool {
+        false
+    }
+
+    /// The tiling style (M5.16); floating has none.
+    fn set_style(&mut self, _style: Style) {}
 }
 
 /// The areas windows lie in, one per screen, by the screen's name: each
@@ -62,6 +74,8 @@ pub type Areas = [(String, Rectangle<i32, Logical>)];
 /// floating they are where they were.
 pub struct Workspace<W> {
     gap: u32,
+    /// The tiling style new screens' tiling starts in.
+    style: Style,
     /// Each policy's name and whether it rearranges, in [`policies`]'
     /// order, asked once.
     kinds: Vec<(&'static str, bool)>,
@@ -83,6 +97,7 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
     pub fn new(gap: u32) -> Workspace<W> {
         Workspace {
             gap,
+            style: Style::default(),
             kinds: policies::<W>(gap)
                 .iter()
                 .map(|p| (p.name(), p.rearranges()))
@@ -135,11 +150,15 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         let i = match self.screens.iter().position(|s| s.name == screen) {
             Some(i) => i,
             None => {
+                let mut policies = policies(self.gap);
+                for policy in &mut policies {
+                    policy.set_style(self.style);
+                }
                 self.screens.push(Screen {
                     name: screen.to_string(),
                     area,
                     windows: Vec::new(),
-                    policies: policies(self.gap),
+                    policies,
                 });
                 self.screens.len() - 1
             }
@@ -223,6 +242,109 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
     pub fn rearranges(&self) -> bool {
         self.kinds[self.active].1
     }
+
+    /// `window` took the keyboard.
+    pub fn focused(&mut self, window: &W) {
+        for screen in &mut self.screens {
+            if screen.windows.contains(window) {
+                for policy in &mut screen.policies {
+                    policy.focused(window);
+                }
+            }
+        }
+    }
+
+    /// `a` and `b`, on the same screen, trade places under the active
+    /// policy and every other that keeps an order; false if they could not.
+    pub fn swap(&mut self, a: &W, b: &W) -> bool {
+        let active = self.active;
+        let Some(screen) = self
+            .screens
+            .iter_mut()
+            .find(|s| s.windows.contains(a) && s.windows.contains(b))
+        else {
+            return false;
+        };
+        let mut swapped = false;
+        for (i, policy) in screen.policies.iter_mut().enumerate() {
+            let traded = policy.swap(a, b);
+            swapped |= traded && i == active;
+        }
+        swapped
+    }
+
+    /// Every screen's tiling lays its windows out in `style` from now on.
+    pub fn set_style(&mut self, style: Style) {
+        self.style = style;
+        for screen in &mut self.screens {
+            for policy in &mut screen.policies {
+                policy.set_style(style);
+            }
+        }
+    }
+}
+
+/// A way from one window to the next, for Super with an arrow (M5.16a).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+impl Direction {
+    /// `left`, `right`, `up` or `down`, as the shortcuts' names end.
+    pub fn parse(name: &str) -> Option<Direction> {
+        match name {
+            "left" => Some(Direction::Left),
+            "right" => Some(Direction::Right),
+            "up" => Some(Direction::Up),
+            "down" => Some(Direction::Down),
+            _ => None,
+        }
+    }
+}
+
+/// The window of `others` that lies `way` from `from`: of those whose
+/// middle is past `from`'s middle that way, first those beside it (their
+/// span across that way meets `from`'s), then the nearest edge, then the
+/// middle most in line; an older window wins a tie. None when nothing
+/// lies that way.
+pub fn toward<W: Clone>(
+    from: Rectangle<i32, Logical>,
+    others: &[(W, Rectangle<i32, Logical>)],
+    way: Direction,
+) -> Option<W> {
+    let across = matches!(way, Direction::Left | Direction::Right);
+    // A rectangle's span across the way, and its middle there, doubled.
+    let span = |r: &Rectangle<i32, Logical>| {
+        if across {
+            (r.loc.y, r.loc.y + r.size.h)
+        } else {
+            (r.loc.x, r.loc.x + r.size.w)
+        }
+    };
+    let middle = |r: &Rectangle<i32, Logical>| (r.loc.x * 2 + r.size.w, r.loc.y * 2 + r.size.h);
+    let (fx, fy) = middle(&from);
+    let (a0, a1) = span(&from);
+    others
+        .iter()
+        .filter_map(|(w, r)| {
+            let (x, y) = middle(r);
+            let (past, gap) = match way {
+                Direction::Left => (fx - x, from.loc.x - (r.loc.x + r.size.w)),
+                Direction::Right => (x - fx, r.loc.x - (from.loc.x + from.size.w)),
+                Direction::Up => (fy - y, from.loc.y - (r.loc.y + r.size.h)),
+                Direction::Down => (y - fy, r.loc.y - (from.loc.y + from.size.h)),
+            };
+            let (b0, b1) = span(r);
+            let beside = b0 < a1 && a0 < b1;
+            let off = ((b0 + b1) - (a0 + a1)).abs();
+            (past > 0).then_some(((!beside, gap.max(0), off), w))
+        })
+        .min_by_key(|(key, _)| *key)
+        .map(|(_, w)| w.clone())
 }
 
 /// How far each new window moves down and right when its centre would
@@ -693,6 +815,35 @@ mod tests {
         assert!(placed.iter().all(|(_, at)| at.loc.x + at.size.w <= 1280));
         assert_eq!(workspace.screen_of(&2), Some("one"));
         assert!(workspace.arrange(&[]).is_empty(), "no screen, no places");
+    }
+
+    #[test]
+    fn an_arrow_finds_the_window_beside_that_way() {
+        let r = |x: i32, y: i32, w: i32, h: i32| Rectangle::new((x, y).into(), (w, h).into());
+        // Split's four: 1 on the left half, 2 top right, 3 and 4 below it.
+        let windows = [
+            (1, r(8, 8, 628, 784)),
+            (2, r(644, 8, 628, 388)),
+            (3, r(644, 404, 310, 388)),
+            (4, r(962, 404, 310, 388)),
+        ];
+        let from = |w: usize| windows[w - 1].1;
+        let others = |w: u32| -> Vec<(u32, Rectangle<i32, Logical>)> {
+            windows.iter().filter(|(x, _)| *x != w).cloned().collect()
+        };
+        assert_eq!(toward(from(4), &others(4), Direction::Left), Some(3));
+        assert_eq!(toward(from(3), &others(3), Direction::Left), Some(1));
+        assert_eq!(toward(from(4), &others(4), Direction::Up), Some(2));
+        assert_eq!(toward(from(1), &others(1), Direction::Right), Some(2));
+        assert_eq!(
+            toward(from(2), &others(2), Direction::Down),
+            Some(3),
+            "a tie goes to the older"
+        );
+        assert_eq!(toward(from(4), &others(4), Direction::Right), None);
+        assert_eq!(toward(from(1), &others(1), Direction::Left), None);
+        assert_eq!(Direction::parse("up"), Some(Direction::Up));
+        assert_eq!(Direction::parse("north"), None);
     }
 
     #[test]

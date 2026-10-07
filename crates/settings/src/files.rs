@@ -18,6 +18,8 @@ pub struct Layout {
     pub tiling: bool,
     pub title_bars: String,
     pub window_buttons: String,
+    /// How tiling lays windows out (M5.16a).
+    pub tiling_style: String,
     /// Each title bar button shown (M5.18a).
     pub close_button: bool,
     pub minimize_button: bool,
@@ -32,6 +34,7 @@ impl Layout {
             "layout.tiling" => Some(self.tiling.to_string()),
             "layout.title_bars" => Some(self.title_bars.clone()),
             "layout.window_buttons" => Some(self.window_buttons.clone()),
+            "layout.tiling_style" => Some(self.tiling_style.clone()),
             "layout.close_button" => Some(self.close_button.to_string()),
             "layout.minimize_button" => Some(self.minimize_button.to_string()),
             "layout.maximize_button" => Some(self.maximize_button.to_string()),
@@ -49,6 +52,7 @@ fn own(layout: &system::Layout, key: &str) -> Option<String> {
         "layout.tiling" => flag(layout.tiling),
         "layout.title_bars" => layout.title_bars.clone(),
         "layout.window_buttons" => layout.window_buttons.clone(),
+        "layout.tiling_style" => layout.tiling_style.clone(),
         "layout.close_button" => flag(layout.close_button),
         "layout.minimize_button" => flag(layout.minimize_button),
         "layout.maximize_button" => flag(layout.maximize_button),
@@ -101,6 +105,10 @@ impl Files {
             .window_buttons
             .as_ref()
             .or(machine.window_buttons.as_ref());
+        let style = person
+            .tiling_style
+            .as_ref()
+            .or(machine.tiling_style.as_ref());
         Layout {
             preset: name,
             tiling: person
@@ -112,6 +120,9 @@ impl Files {
                 .unwrap_or_else(|| "always".to_string()),
             window_buttons: known("layout.window_buttons", buttons)
                 .unwrap_or_else(|| preset.windows.buttons.name().to_string()),
+            // Absent, tiling stacks (docs/settings.md).
+            tiling_style: known("layout.tiling_style", style)
+                .unwrap_or_else(|| "stack".to_string()),
             // Absent, every bar shows each button (docs/settings.md).
             close_button: person.close_button.or(machine.close_button).unwrap_or(true),
             minimize_button: person
@@ -144,6 +155,7 @@ impl Files {
             "layout.tiling" => person.tiling.take().is_some(),
             "layout.title_bars" => person.title_bars.take().is_some(),
             "layout.window_buttons" => person.window_buttons.take().is_some(),
+            "layout.tiling_style" => person.tiling_style.take().is_some(),
             "layout.close_button" => person.close_button.take().is_some(),
             "layout.minimize_button" => person.minimize_button.take().is_some(),
             "layout.maximize_button" => person.maximize_button.take().is_some(),

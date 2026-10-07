@@ -11,6 +11,7 @@ pub mod effects;
 pub mod frame;
 pub mod layout;
 pub mod settings;
+pub mod split;
 pub mod telemetry;
 pub mod tiling;
 /// The design tokens live in `edel::tokens`, which shell-ui reads too

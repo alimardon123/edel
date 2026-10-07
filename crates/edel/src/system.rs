@@ -225,6 +225,8 @@ pub const KEYS: &[Key] = &[
     now("layout.minimize_button", Kind::Flag),
     now("layout.maximize_button", Kind::Flag),
     now("layout.panels", Kind::Panels),
+    // How tiling lays windows out (M5.16a); `scroll` joins with M5.16c.
+    now("layout.tiling_style", Kind::OneOf(&["stack", "split"])),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),
@@ -410,6 +412,9 @@ pub struct Layout {
     /// preset's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panels: Option<Vec<crate::presets::Panel>>,
+    /// How tiling lays windows out (M5.16a); absent is `stack`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiling_style: Option<String>,
 }
 
 /// One screen on the Displays page, by its connector's name.

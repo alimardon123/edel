@@ -1,19 +1,54 @@
-//! Dynamic tiling (roadmap M4.5), the second [`WindowPolicy`]: master and
-//! stack. The first window of the workspace takes the left half, the rest
-//! share the right half from the top down, with a gap between them and
-//! round them; one window fills the area. A new window joins the bottom of
-//! the stack, so the one being worked in stays put, and when the master
-//! closes the first of the stack takes its place. A window moved or
+//! Dynamic tiling (roadmap M4.5), the second [`WindowPolicy`], in one of
+//! the styles of `layout.tiling_style` (M5.16), which say how tiling lays
+//! the windows out. `stack`, the default, is master and stack: the first
+//! window of the workspace takes the left half, the rest share the right
+//! half from the top down, with a gap between them and round them; one
+//! window fills the area. A new window joins the bottom of the stack, so
+//! the one being worked in stays put, and when the master closes the first
+//! of the stack takes its place. `split` is `split.rs`. A window moved or
 //! resized by a person goes back to its tile. Title bars stay in tiling.
+//! A style is one module and one line in [`Style`].
 
 use smithay::utils::{Logical, Rectangle, Size};
 
 use crate::layout::WindowPolicy;
+use crate::split::Tree;
+
+/// How tiling lays windows out: `layout.tiling_style`'s values, the
+/// default first. `scroll` joins with M5.16c.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Style {
+    #[default]
+    Stack,
+    Split,
+}
+
+impl Style {
+    pub const ALL: [Style; 2] = [Style::Stack, Style::Split];
+
+    /// The name the settings file and the log use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Style::Stack => "stack",
+            Style::Split => "split",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Style> {
+        Style::ALL.into_iter().find(|s| s.name() == name)
+    }
+}
 
 #[derive(Debug)]
 pub struct Tiling<W> {
-    /// The master first, then the stack from the top.
+    style: Style,
+    /// The master first, then the stack from the top: the order windows
+    /// opened in, which `stack` lays out.
     windows: Vec<W>,
+    /// The halves `split` lays out.
+    tree: Tree<W>,
+    /// The window with the keyboard, which a new window halves in `split`.
+    focused: Option<W>,
     gap: i32,
     area: Rectangle<i32, Logical>,
 }
@@ -22,7 +57,10 @@ impl<W> Tiling<W> {
     /// Tiling with `gap` logical pixels between tiles and round them.
     pub fn new(gap: u32) -> Tiling<W> {
         Tiling {
+            style: Style::default(),
             windows: Vec::new(),
+            tree: Tree::default(),
+            focused: None,
             gap: gap.min(100) as i32,
             area: Rectangle::default(),
         }
@@ -76,11 +114,24 @@ pub fn tiles(
 }
 
 impl<W: Clone + PartialEq> Tiling<W> {
+    /// Every window's place in `area` in the style.
+    fn places(&self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)> {
+        match self.style {
+            Style::Stack => self
+                .windows
+                .iter()
+                .cloned()
+                .zip(tiles(self.windows.len(), area, self.gap))
+                .collect(),
+            Style::Split => self.tree.places(area, self.gap),
+        }
+    }
+
     fn tile_of(&self, window: &W) -> Option<Rectangle<i32, Logical>> {
-        let i = self.windows.iter().position(|w| w == window)?;
-        tiles(self.windows.len(), self.area, self.gap)
-            .get(i)
-            .copied()
+        self.places(self.area)
+            .into_iter()
+            .find(|(w, _)| w == window)
+            .map(|(_, place)| place)
     }
 }
 
@@ -98,11 +149,38 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         self.area = area;
         self.windows.retain(|w| *w != window);
         self.windows.push(window.clone());
+        self.tree.insert(window.clone(), self.focused.as_ref());
         self.tile_of(&window).unwrap_or(area)
     }
 
     fn close(&mut self, window: &W) {
         self.windows.retain(|w| w != window);
+        self.tree.remove(window);
+        if self.focused.as_ref() == Some(window) {
+            self.focused = None;
+        }
+    }
+
+    fn focused(&mut self, window: &W) {
+        if self.windows.contains(window) {
+            self.focused = Some(window.clone());
+        }
+    }
+
+    fn swap(&mut self, a: &W, b: &W) -> bool {
+        let (Some(i), Some(j)) = (
+            self.windows.iter().position(|w| w == a),
+            self.windows.iter().position(|w| w == b),
+        ) else {
+            return false;
+        };
+        self.windows.swap(i, j);
+        self.tree.swap(a, b);
+        true
+    }
+
+    fn set_style(&mut self, style: Style) {
+        self.style = style;
     }
 
     fn moved(&mut self, window: &W, to: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
@@ -111,11 +189,7 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
 
     fn arrange(&mut self, area: Rectangle<i32, Logical>) -> Vec<(W, Rectangle<i32, Logical>)> {
         self.area = area;
-        self.windows
-            .iter()
-            .cloned()
-            .zip(tiles(self.windows.len(), area, self.gap))
-            .collect()
+        self.places(area)
     }
 
     fn rearranges(&self) -> bool {
@@ -206,5 +280,27 @@ mod tests {
         assert_eq!(tiling.moved(&3, rect(0, 0, 50, 50)), rect(644, 8, 628, 784));
         assert!(tiling.rearranges());
         assert_eq!(tiling.name(), "tiling");
+    }
+
+    #[test]
+    fn the_style_changes_the_places_and_keeps_the_windows() {
+        let mut tiling = Tiling::new(8);
+        for w in 1..=4 {
+            tiling.open(w, Size::default(), screen());
+            tiling.focused(&w);
+        }
+        let stacked = tiling.arrange(screen());
+        assert_eq!(stacked[3], (4, rect(644, 536, 628, 256)));
+        tiling.set_style(Style::Split);
+        let split = tiling.arrange(screen());
+        assert_eq!(split[3], (4, rect(962, 404, 310, 388)));
+        // Swapping trades places in either style.
+        assert!(tiling.swap(&1, &4));
+        assert_eq!(tiling.arrange(screen())[3], (1, rect(962, 404, 310, 388)));
+        tiling.set_style(Style::Stack);
+        assert_eq!(tiling.arrange(screen())[0], (4, rect(8, 8, 628, 784)));
+        assert!(!tiling.swap(&1, &9));
+        assert_eq!(Style::parse("split"), Some(Style::Split));
+        assert_eq!(Style::parse("scroll"), None);
     }
 }

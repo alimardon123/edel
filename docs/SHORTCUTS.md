@@ -33,3 +33,11 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `next_keyboard_layout` | `Super+Space` | Switch to the next keyboard layout of region.keyboard (M5.21) |  |
 | `minimize_window` | `Super+H` | Minimize the focused window; the window list or Alt+Tab brings it back (M5.18a) |  |
 | `toggle_maximize` | `Super+M` | Maximize the focused window, or give it its size back (M5.18a) |  |
+| `focus_window_left` | `Super+Left` | Focus the window to the left of the focused one (M5.16a) |  |
+| `focus_window_right` | `Super+Right` | Focus the window to the right of the focused one (M5.16a) |  |
+| `focus_window_up` | `Super+Up` | Focus the window above the focused one (M5.16a) |  |
+| `focus_window_down` | `Super+Down` | Focus the window below the focused one (M5.16a) |  |
+| `move_window_left` | `Super+Shift+Left` | Swap the focused window with the one to its left, when tiled (M5.16a) |  |
+| `move_window_right` | `Super+Shift+Right` | Swap the focused window with the one to its right, when tiled (M5.16a) |  |
+| `move_window_up` | `Super+Shift+Up` | Swap the focused window with the one above it, when tiled (M5.16a) |  |
+| `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled (M5.16a) |  |

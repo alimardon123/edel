@@ -16,6 +16,7 @@ pub use edel::tokens::Scheme;
 
 use crate::animation::Motion;
 use crate::frame::Shown;
+use crate::tiling::Style;
 
 /// Whether the compositor draws title bars in tiling too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -55,6 +56,8 @@ pub struct Settings {
     /// `region.keyboard` (M5.21), as `edel::keyboard` writes it: absent
     /// means xkb's default, the US layout.
     pub keyboard: Option<String>,
+    /// `layout.tiling_style` (M5.16a): absent means stack.
+    pub tiling_style: Style,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -101,6 +104,9 @@ impl Settings {
             }
             if file.layout.panels.is_some() {
                 settings.panels.clone_from(&file.layout.panels);
+            }
+            if let Some(style) = file.layout.tiling_style.as_deref().and_then(Style::parse) {
+                settings.tiling_style = style;
             }
             if let Some(motion) = file
                 .appearance
@@ -420,6 +426,29 @@ mod tests {
             "the person's key added to the machine's"
         );
         assert_eq!(hdmi.scale, None);
+    }
+
+    #[test]
+    fn the_tiling_style_is_the_persons_over_the_machines_and_scroll_waits() {
+        let machine = file("format = 1\n[layout]\ntiling_style = \"split\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&machine), None).tiling_style,
+            Style::Split
+        );
+        let person = file("format = 1\n[layout]\ntiling_style = \"stack\"\n");
+        let settings = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(settings.tiling_style, Style::Stack);
+        assert_eq!(Settings::default().tiling_style, Style::Stack);
+        // The styles the compositor knows are the key's values, its owner.
+        let key = edel::system::KEYS
+            .iter()
+            .find(|k| k.path == "layout.tiling_style")
+            .unwrap();
+        let edel::system::Kind::OneOf(values) = key.kind else {
+            panic!("layout.tiling_style is not a choice");
+        };
+        let names: Vec<&str> = Style::ALL.iter().map(|s| s.name()).collect();
+        assert_eq!(names, values);
     }
 
     #[test]

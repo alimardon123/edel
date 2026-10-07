@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use edel_compositor::layout::Direction;
 use smithay::desktop::{PopupManager, Space, Window, find_popup_root_surface};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -256,6 +257,7 @@ impl Edel {
 
     /// Raises `window` and gives it the keyboard.
     pub fn focus(&mut self, window: &Window) {
+        self.desks.layout_mut().focused(window);
         self.space.raise_element(window, true);
         let surface = window.toplevel().map(|t| t.wl_surface().clone());
         if let Some(keyboard) = self.seat.get_keyboard() {
@@ -369,6 +371,43 @@ impl Edel {
         }
     }
 
+    /// The focused window and the one shown `way` from it (M5.16a).
+    fn toward(&self, way: Direction) -> Option<(Window, Window)> {
+        let focused = self.focused_window()?;
+        let from = self.space.element_geometry(&focused)?;
+        let others: Vec<(Window, Rectangle<i32, Logical>)> = self
+            .space
+            .elements()
+            .filter(|w| **w != focused)
+            .filter_map(|w| Some((w.clone(), self.space.element_geometry(w)?)))
+            .collect();
+        let next = edel_compositor::layout::toward(from, &others, way)?;
+        Some((focused, next))
+    }
+
+    /// Super with an arrow: the keyboard goes to the window that way.
+    pub fn focus_toward(&mut self, way: Direction) {
+        if let Some((_, next)) = self.toward(way) {
+            self.focus(&next);
+        }
+    }
+
+    /// Super+Shift with an arrow: the focused window trades places with
+    /// the one that way, when the workspace tiles.
+    pub fn swap_toward(&mut self, way: Direction) {
+        let Some((focused, next)) = self.toward(way) else {
+            return;
+        };
+        if self.desks.layout_mut().swap(&focused, &next) {
+            eprintln!(
+                "edel-compositor: swapped {} and {}",
+                title(&focused),
+                title(&next)
+            );
+            self.relayout();
+        }
+    }
+
     /// Super+T: the other policy, for this workspace only; the settings file
     /// is left as it is.
     pub fn toggle_tiling(&mut self) {
@@ -437,6 +476,13 @@ impl Edel {
         } else if old.color_scheme != new.color_scheme {
             let name = new.color_scheme.name();
             crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
+        }
+        if old.tiling_style != new.tiling_style {
+            eprintln!("edel-compositor: tiling style {}", new.tiling_style.name());
+            self.desks.set_style(new.tiling_style);
+            if self.desks.layout().rearranges() && old.policy() == new.policy() {
+                self.relayout();
+            }
         }
         if old.policy() != new.policy() {
             self.switch_policy(new.policy());

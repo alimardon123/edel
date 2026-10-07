@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use smithay::input::keyboard::{ModifiersState, xkb};
 
 use edel::shortcuts::{Keys, resolve};
+use edel_compositor::layout::Direction;
 
 /// What a shortcut does in the compositor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +27,10 @@ pub enum Act {
     Maximize,
     /// The next keyboard layout (M5.21).
     NextLayout,
+    /// The keyboard to the window that way (M5.16a), or the focused
+    /// window swapped with it, when tiled.
+    Focus(Direction),
+    Swap(Direction),
     Terminal,
     /// Go to workspace N, from 0 (M5.2a).
     Workspace(usize),
@@ -55,6 +60,12 @@ impl Act {
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
+            _ if name.starts_with("focus_window_") => {
+                Direction::parse(&name["focus_window_".len()..]).map(Act::Focus)
+            }
+            _ if name.starts_with("move_window_") => {
+                Direction::parse(&name["move_window_".len()..]).map(Act::Swap)
+            }
             "open_terminal" => Some(Act::Terminal),
             _ => {
                 if let Some(rest) = name.strip_prefix("move_to_workspace_") {

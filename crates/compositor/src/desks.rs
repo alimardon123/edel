@@ -11,6 +11,7 @@
 use smithay::utils::{Logical, Rectangle};
 
 use crate::layout::{Areas, Workspace};
+use crate::tiling::Style;
 
 /// The most workspaces a preset can ask for.
 pub const MOST: usize = edel::presets::MOST_WORKSPACES;
@@ -50,6 +51,8 @@ pub struct Desks<W> {
     desks: Vec<Desk<W>>,
     active: usize,
     gap: u32,
+    /// The tiling style every workspace's tiling uses (M5.16).
+    style: Style,
 }
 
 impl<W: Clone + PartialEq + 'static> Desks<W> {
@@ -66,6 +69,16 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
                 .collect(),
             active: 0,
             gap,
+            style: Style::default(),
+        }
+    }
+
+    /// Every workspace's tiling lays windows out in `style`, now and when
+    /// workspaces are added.
+    pub fn set_style(&mut self, style: Style) {
+        self.style = style;
+        for desk in &mut self.desks {
+            desk.layout.set_style(style);
         }
     }
 
@@ -233,6 +246,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         while self.desks.len() < count {
             let mut layout = Workspace::new(self.gap);
             layout.switch(policy);
+            layout.set_style(self.style);
             self.desks.push(Desk {
                 layout,
                 hidden: Vec::new(),
