@@ -1608,14 +1608,14 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
 for c in "$@"; do
 	case "$c" in
-	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | shortcuts | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
+	animations | buttons | completion | console | dmabuf | compositor | dock | dockhide | floating | fullscreen | keyboard | launcher | layers | outputs | panel | panels | pointer | portal | presets | respawn | scale | scheme | settings | shortcuts | styles | switcher | taskbar | tiling | titlebar | windows | workspaces | xwayland) ;;
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	*)
-		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, settings, shortcuts, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
+		echo "unknown case $c; the cases are animations, buttons, completion, console, dmabuf, compositor, dock, dockhide, floating, fullscreen, keyboard, launcher, layers, live, outputs, panel, panels, pointer, portal, presets, respawn, rollback, scale, scheme, settings, shortcuts, styles, switcher, taskbar, tiling, titlebar, windows, workspaces and xwayland"
 		exit 1
 		;;
 	esac
