@@ -400,6 +400,18 @@ impl ImageDef {
         if self.alpine.repositories.is_empty() {
             bail!("alpine.repositories must list at least one repository");
         }
+        if let Some(digest) = &self.alpine.image_digest {
+            let hex = digest.strip_prefix("sha256:").unwrap_or("");
+            if hex.len() != 64
+                || !hex
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            {
+                bail!(
+                    "alpine.image_digest {digest:?} must be sha256: and 64 lowercase hex digits, as `docker buildx imagetools inspect alpine:BRANCH` prints it"
+                );
+            }
+        }
         if self.packages.is_empty() {
             bail!("the features install no package");
         }
@@ -879,6 +891,34 @@ mod tests {
                 .to_string()
                 .contains("belongs to the base feature")
         );
+    }
+
+    /// M3.9: the digest CI pins the build container to is written in the
+    /// base feature, and checked there.
+    #[test]
+    fn the_alpine_image_digest_is_checked() {
+        let digest = format!("sha256:{}", "ab".repeat(32));
+        let with = |d: &str| {
+            let text = FEATURES[0].1.replace(
+                "repositories = [\"main\", \"community\"]",
+                &format!("repositories = [\"main\", \"community\"]\nimage_digest = \"{d}\""),
+            );
+            let mut found = found();
+            found.insert("base".into(), listed("base", &text));
+            ImageDef::merge(VM, found)
+        };
+        assert_eq!(
+            with(&digest).unwrap().alpine.image_digest.as_deref(),
+            Some(digest.as_str())
+        );
+        assert!(parse(VM).unwrap().alpine.image_digest.is_none());
+        let wrong_hex = format!("sha256:{}", "g".repeat(64));
+        for bad in ["v3.24", "sha256:abc", &digest.to_uppercase(), &wrong_hex] {
+            assert!(
+                with(bad).unwrap_err().to_string().contains("image_digest"),
+                "{bad}"
+            );
+        }
     }
 
     /// Roadmap M4.0: each image made of features installs and enables what
