@@ -1277,8 +1277,8 @@ case_buttons() {
 	# Maximize's outline first: waiting for its ink also waits out the
 	# window's opening animation, which may show the bar's colour anywhere.
 	ink=$(token title_text)
-	shot buttons-no-minimize $((x + w - 47)) $((y - 14)) "$ink" >/dev/null ||
-		fail "maximize's outline at $((x + w - 47)),$((y - 14)) is not the title's #$ink: maximize went too"
+	shot buttons-no-minimize $((x + w - 46)) $((y - 14)) "$ink" >/dev/null ||
+		fail "maximize's outline at $((x + w - 46)),$((y - 14)) is not the title's #$ink: maximize went too"
 	shot buttons-no-minimize $((x + w - 70)) $((y - 14)) "$focused" >/dev/null ||
 		fail "with layout.minimize_button = false, minimize's square at $((x + w - 70)),$((y - 14)) is not the bar's #$focused"
 	# Super+M maximizes it (M5.18a): its entry in the windows line spans
