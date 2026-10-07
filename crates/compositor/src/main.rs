@@ -40,6 +40,7 @@ mod xwayland;
 
 use std::process::ExitCode;
 
+use edel_compositor::messages;
 use edel_compositor::tokens::{self, Tokens};
 
 fn main() -> ExitCode {
@@ -74,7 +75,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("edel-compositor: {e:#}");
+            eprintln!("edel-compositor: {}", messages::stopped(format!("{e:#}")));
             ExitCode::FAILURE
         }
     }
