@@ -32,7 +32,10 @@ if [ "$mode" = publish ]; then
 	gh release download "$tag" -p channel.toml -p channel.toml.sig -D "$from"
 else
 	cp out/channel/release.toml "$from/channel.toml"
-	cp out/channel/release.toml.sig "$from/channel.toml.sig"
+	# Signed in the sign job (M3.7), after this dry run in the build.
+	if [ -s out/channel/release.toml.sig ]; then
+		cp out/channel/release.toml.sig "$from/channel.toml.sig"
+	fi
 fi
 grep -q "releases/download/$tag/" "$from/channel.toml" || {
 	echo "FAIL: channel.toml does not name the images under $tag"
@@ -63,7 +66,12 @@ if [ -n "$old" ] && [ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)"
 fi
 mkdir -p "$pages/channels/stable"
 cp "$from/channel.toml" "$pages/channels/stable/release.toml"
-cp "$from/channel.toml.sig" "$pages/channels/stable/release.toml.sig"
+if [ -s "$from/channel.toml.sig" ]; then
+	cp "$from/channel.toml.sig" "$pages/channels/stable/release.toml.sig"
+elif [ "$mode" = publish ]; then
+	echo "FAIL: $tag has no channel.toml.sig"
+	exit 1
+fi
 git -C "$pages" add channels
 if git -C "$pages" diff --cached --quiet; then
 	echo "the stable channel already points at $tag"

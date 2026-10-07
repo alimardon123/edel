@@ -20,20 +20,29 @@ dry-run | publish) ;;
 	exit 2
 	;;
 esac
-for file in out/release/release.toml out/release/release.toml.sig out/channel/release.toml out/channel/release.toml.sig out/channel/signer; do
+# The lists come from ci/build.sh; their signatures from ci/sign.sh, in a
+# job of its own after the build (M3.7), so a dry run in the build checks
+# the lists without them and only publish needs them.
+need="out/release/release.toml out/channel/release.toml"
+if [ "$mode" = publish ]; then
+	need="$need out/release/release.toml.sig out/channel/release.toml.sig out/channel/signer"
+fi
+for file in $need; do
 	[ -s "$file" ] || {
-		echo "FAIL: $file is missing; ci/build.sh makes it"
+		echo "FAIL: $file is missing; ci/build.sh makes the lists and ci/sign.sh their signatures"
 		exit 1
 	}
 done
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' out/release/release.toml)
-signer=$(cat out/channel/signer)
+signer=$(cat out/channel/signer 2>/dev/null || echo "no")
 if [ "$mode" = publish ] && [ "$signer" != release ]; then
 	echo "FAIL: this release is signed with a $signer key; set the EDEL_RELEASE_KEY secret (docs/RELEASE.md)"
 	exit 1
 fi
 cp out/channel/release.toml out/release/channel.toml
-cp out/channel/release.toml.sig out/release/channel.toml.sig
+if [ -s out/channel/release.toml.sig ]; then
+	cp out/channel/release.toml.sig out/release/channel.toml.sig
+fi
 assets=$(cd out/release && ls | tr '\n' ' ')
 # would WHAT: says what publish does, or would do in a dry run.
 would() {

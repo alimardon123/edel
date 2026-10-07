@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
-use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags};
+use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
     DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
@@ -747,6 +747,15 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
     }
     if frame.is_empty {
         return false;
+    }
+    // A driver without fences (bochs-drm and simpledrm, the ones
+    // `draws_whole` lists) leaves the wait to us: without it, llvmpipe's
+    // threads were still drawing when the frame went to the screen, and
+    // a live stick's panel stayed partly black.
+    if frame.needs_sync() {
+        if let PrimaryPlaneElement::Swapchain(element) = &frame.primary_element {
+            let _ = element.sync.wait();
+        }
     }
     let mut feedback = OutputPresentationFeedback::new(output);
     for window in state.space.elements() {
