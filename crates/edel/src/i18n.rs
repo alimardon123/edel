@@ -1,5 +1,6 @@
-//! The words people read, in their language (roadmap M5.24a). Each part
-//! that shows words (shell-ui, Settings) marks every one with [`tr`] or
+//! The words people read, in their language (roadmap M5.24a and M5.24b).
+//! Each part that shows words (shell-ui, Settings, `edel`) marks every one
+//! with [`tr`] or
 //! [`trf`]; a test gathers the marked words into the part's template,
 //! `po/PART.pot`, and fails when the committed one differs. A language's
 //! words are a gettext `.po` file, `LANG/PART.po` under
@@ -8,7 +9,13 @@
 //! format), and the language is `region.language`, the person's over the
 //! machine's. A word the catalogue lacks, or has no translation for,
 //! stays English.
+//!
+//! Words two parts show are translated once (ADR-010): `edel`'s template,
+//! `po/edel.pot`, owns everything marked in this crate's sources, the
+//! pages' titles and descriptions and the presets' names among them, and
+//! [`init`] gives the Settings app that catalogue under its own.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -31,6 +38,15 @@ impl Catalogue {
 
     pub fn get(&self, english: &str) -> Option<&str> {
         self.words.get(english).map(String::as_str)
+    }
+
+    /// `other`'s words added under this one's: a word both translate keeps
+    /// this one's.
+    fn under(mut self, other: Catalogue) -> Catalogue {
+        for (english, theirs) in other.words {
+            self.words.entry(english).or_insert(theirs);
+        }
+        self
     }
 }
 
@@ -147,20 +163,56 @@ pub fn language() -> Option<String> {
 
 static WORDS: OnceLock<Catalogue> = OnceLock::new();
 
+thread_local! {
+    /// A catalogue one thread uses instead of the machine's, for tests.
+    static OVERRIDE: RefCell<Option<Catalogue>> = const { RefCell::new(None) };
+}
+
+/// The parts whose words a part shows beside its own: the Settings app
+/// shows `edel`'s pages' titles and presets' names, which `po/edel.pot`
+/// owns.
+fn shared_with(part: &str) -> &'static [&'static str] {
+    match part {
+        "settings" => &["edel"],
+        _ => &[],
+    }
+}
+
+/// `part`'s catalogue in `language`, else in its base language.
+fn read_catalogue(language: &str, part: &str) -> Catalogue {
+    // `pt_BR` reads `pt_BR`'s words, else `pt`'s.
+    let base = language.split(['_', '.', '@']).next().unwrap_or(language);
+    [language, base]
+        .iter()
+        .find_map(|name| std::fs::read_to_string(places::catalogue(name, part)).ok())
+        .map(|text| parse_po(&text))
+        .unwrap_or_default()
+}
+
 /// Reads `part`'s catalogue in the person's language, once, at start;
 /// returns the language and how many words it translates.
 pub fn init(part: &str) -> Option<(String, usize)> {
     let language = language()?;
-    // `pt_BR` reads `pt_BR`'s words, else `pt`'s.
-    let base = language.split(['_', '.', '@']).next().unwrap_or(&language);
-    let catalogue = [language.as_str(), base]
-        .iter()
-        .find_map(|name| std::fs::read_to_string(places::catalogue(name, part)).ok())
-        .map(|text| parse_po(&text))
-        .unwrap_or_default();
+    let mut catalogue = read_catalogue(&language, part);
+    for shared in shared_with(part) {
+        catalogue = catalogue.under(read_catalogue(&language, shared));
+    }
     let count = catalogue.len();
     let _ = WORDS.set(catalogue);
     Some((language, count))
+}
+
+/// Runs `f` with `catalogue` as this thread's words, whatever the machine
+/// has: a test of a message in a made-up language.
+pub fn with_catalogue<R>(catalogue: Catalogue, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<Catalogue>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OVERRIDE.with(|o| *o.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(OVERRIDE.with(|o| o.borrow_mut().replace(catalogue)));
+    f()
 }
 
 /// Marks `english` for the template where a call to [`tr`] cannot stand,
@@ -170,8 +222,32 @@ pub const fn n_(english: &'static str) -> &'static str {
     english
 }
 
+/// `english` in the person's language, or None when no catalogue has it.
+/// For words that are not literals, such as clap's help.
+pub fn translate(english: &str) -> Option<String> {
+    let mine = OVERRIDE.with(|o| {
+        o.borrow()
+            .as_ref()
+            .map(|c| c.get(english).map(str::to_string))
+    });
+    match mine {
+        Some(found) => found,
+        None => WORDS.get()?.get(english).map(str::to_string),
+    }
+}
+
 /// `english` in the person's language, or as it is.
 pub fn tr(english: &'static str) -> &'static str {
+    let mine = OVERRIDE.with(|o| {
+        o.borrow().as_ref().map(|c| {
+            c.get(english)
+                .map(|s| &*Box::leak(s.to_string().into_boxed_str()))
+        })
+    });
+    if let Some(found) = mine {
+        // Only a test's words get here, and they are few.
+        return found.unwrap_or(english);
+    }
     WORDS
         .get()
         .and_then(|c| c.words.get(english))
@@ -246,6 +322,75 @@ pub fn marked(source: &str) -> Vec<String> {
     words
 }
 
+/// The words marked in the sources `places` name (files, or folders read
+/// for their `.rs` files), relative to `root`, in order, each once. Tests'
+/// words (after `#[cfg(test)]`) and comments are not shown to people, so
+/// they are left out.
+pub fn gather(root: &std::path::Path, places: &[&str]) -> Vec<String> {
+    let mut sources = Vec::new();
+    let mut dirs = Vec::new();
+    for place in places {
+        let path = root.join(place);
+        if path.is_dir() {
+            dirs.push(path);
+        } else {
+            sources.push(path);
+        }
+    }
+    while let Some(d) = dirs.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(&d)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", d.display()))
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|e| e == "rs")
+                // The reader names the marks, in strings, but has no words.
+                && path.file_name().is_none_or(|n| n != "i18n.rs")
+            {
+                sources.push(path);
+            }
+        }
+    }
+    sources.sort();
+    let mut words: Vec<String> = Vec::new();
+    for path in sources {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        let shown = text.split("#[cfg(test)]").next().unwrap_or("");
+        let code: String = shown
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .flat_map(|l| [l, "\n"])
+            .collect();
+        for word in marked(&code) {
+            if !words.contains(&word) {
+                words.push(word);
+            }
+        }
+    }
+    words
+}
+
+/// Checks `po/PART.pot` under `root` against `words`, or writes it afresh
+/// when `EDEL_WRITE_DOCS` is set.
+pub fn check_template(root: &std::path::Path, part: &str, words: &[String], from: &str) {
+    let path = root.join(format!("po/{part}.pot"));
+    let want = template(part, words);
+    if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &want).unwrap();
+    }
+    let have = std::fs::read_to_string(&path).unwrap_or_default();
+    assert!(
+        have == want,
+        "po/{part}.pot is not what {from} mark; run EDEL_WRITE_DOCS=1 cargo test -p edel i18n"
+    );
+}
+
 /// The template a part's words make: a header, then each word with an
 /// empty translation.
 pub fn template(part: &str, words: &[String]) -> String {
@@ -302,6 +447,32 @@ msgstr "Sag \"hallo\"\n"
         assert_eq!(c.len(), 3);
     }
 
+    /// In a made-up language ("xx", M5.24b) the pages' titles and
+    /// descriptions and the presets' names come out translated, and stay
+    /// English where the catalogue lacks them or a person named the preset.
+    #[test]
+    fn pages_and_presets_are_translated_and_fall_back_to_english() {
+        let layout = crate::settings::page("layout").unwrap();
+        let xx = parse_po(&format!(
+            "msgid {}\nmsgstr \"xx titel\"\n\nmsgid {}\nmsgstr \"xx about\"\n\nmsgid \"Mac-like\"\nmsgstr \"xx Mac\"\n",
+            quote(layout.title),
+            quote(layout.about)
+        ));
+        with_catalogue(xx, || {
+            assert_eq!(tr(layout.title), "xx titel");
+            assert_eq!(tr(layout.about), "xx about");
+            assert_eq!(crate::presets::title("mac-like"), "xx Mac");
+            // Not in the catalogue: English. A person's own preset is its
+            // name with a capital.
+            assert_eq!(crate::presets::title("hive"), "Hive");
+            assert_eq!(crate::presets::title("my laptop"), "My laptop");
+            let displays = crate::settings::page("displays").unwrap();
+            assert_eq!(tr(displays.title), "Displays");
+        });
+        assert_eq!(tr(layout.title), "Layout");
+        assert_eq!(crate::presets::title("mac-like"), "Mac-like");
+    }
+
     #[test]
     fn marked_words_are_found_in_order_once_and_round_trip_through_a_template() {
         let source = r#"
@@ -346,69 +517,57 @@ msgstr "Sag \"hallo\"\n"
     }
 
     /// Each part's template lists exactly the words its source marks; with
-    /// EDEL_WRITE_DOCS set it is written afresh.
+    /// EDEL_WRITE_DOCS set it is written afresh. `edel`'s own is checked
+    /// in main.rs, as its help comes from the command table.
     #[test]
     fn each_parts_template_is_gathered_from_its_source() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let owned_by_edel = gather(&root, &["crates/edel/src"]);
         for (part, places) in PARTS {
-            let mut sources = Vec::new();
-            let mut dirs = Vec::new();
-            for place in *places {
-                let path = root.join(place);
-                if path.is_dir() {
-                    dirs.push(path);
-                } else {
-                    sources.push(path);
-                }
+            let mut words = gather(&root, places);
+            // The Settings app shows words `edel` marks, such as the pages'
+            // titles; they are translated once, in `po/edel.pot`, which
+            // `init` gives it as well (ADR-010).
+            if shared_with(part).contains(&"edel") {
+                words.retain(|w| !owned_by_edel.contains(w));
             }
-            while let Some(d) = dirs.pop() {
-                let mut entries: Vec<_> = std::fs::read_dir(&d)
-                    .unwrap()
-                    .flatten()
-                    .map(|e| e.path())
-                    .collect();
-                entries.sort();
-                for path in entries {
-                    if path.is_dir() {
-                        dirs.push(path);
-                    } else if path.extension().is_some_and(|e| e == "rs") {
-                        sources.push(path);
-                    }
-                }
-            }
-            sources.sort();
-            let mut words: Vec<String> = Vec::new();
-            for path in sources {
-                // Tests' words are not shown to people.
-                let text = std::fs::read_to_string(&path).unwrap();
-                let shown = text.split("#[cfg(test)]").next().unwrap_or("");
-                for word in marked(shown) {
-                    if !words.contains(&word) {
-                        words.push(word);
-                    }
-                }
-            }
-            let path = root.join(format!("po/{part}.pot"));
-            let want = template(part, &words);
-            if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
-                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                std::fs::write(&path, &want).unwrap();
-            }
-            let have = std::fs::read_to_string(&path).unwrap_or_default();
-            assert!(
-                have == want,
-                "po/{part}.pot is not what {places:?} mark; run EDEL_WRITE_DOCS=1 cargo test -p edel i18n"
-            );
+            check_template(&root, part, &words, &format!("{places:?}"));
         }
     }
 
-    /// The parts whose words are translated, and where their source is:
-    /// Settings shows the pages' titles `edel::settings` keeps.
+    /// The words of a template, as `msgid`s.
+    fn words_of(part: &str) -> Vec<String> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let text = std::fs::read_to_string(root.join(format!("po/{part}.pot"))).unwrap();
+        text.lines()
+            .filter_map(|l| l.strip_prefix("msgid "))
+            .map(unquote)
+            .filter(|w| !w.is_empty())
+            .collect()
+    }
+
+    /// A word `edel` shows is translated in `po/edel.pot` alone, however
+    /// many parts show it (ADR-010): the Settings app reads that catalogue
+    /// under its own, so its template leaves such words out.
+    #[test]
+    fn a_word_edel_owns_is_in_no_other_template() {
+        let owned = words_of("edel");
+        assert!(owned.len() > 100, "po/edel.pot should hold edel's words");
+        for part in ["shell-ui", "settings"] {
+            for word in words_of(part) {
+                assert!(
+                    !owned.contains(&word),
+                    "{word:?} is in po/edel.pot and po/{part}.pot; leave it to edel's"
+                );
+            }
+        }
+    }
+
+    /// The parts whose words are gathered here, and where their source is.
+    /// Settings shows the pages' titles and the presets' names, which
+    /// `edel` owns (`crates/edel/src`).
     const PARTS: &[(&str, &[&str])] = &[
         ("shell-ui", &["crates/shell-ui/src"]),
-        (
-            "settings",
-            &["crates/settings/src", "crates/edel/src/settings.rs"],
-        ),
+        ("settings", &["crates/settings/src"]),
     ];
 }

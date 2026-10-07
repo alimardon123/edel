@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
-use crate::i18n::n_;
+use crate::i18n::{n_, tr, trf};
 
 /// The settings file format this release reads and writes. A key is never
 /// removed or renamed within a format: `tests/keys.txt` lists every key a
@@ -42,77 +42,77 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "layout",
         title: n_("Layout"),
-        about: "the preset, tiling, title bars and panels",
+        about: n_("the preset, tiling, title bars and panels"),
     },
     Page {
         section: "displays",
         title: n_("Displays"),
-        about: "each screen's place, scale and resolution",
+        about: n_("each screen's place, scale and resolution"),
     },
     Page {
         section: "appearance",
         title: n_("Appearance"),
-        about: "light or dark, the accent, fonts and animations",
+        about: n_("light or dark, the accent, fonts and animations"),
     },
     Page {
         section: "shortcuts",
         title: n_("Shortcuts"),
-        about: "the keys for each action",
+        about: n_("the keys for each action"),
     },
     Page {
         section: "region",
         title: n_("Region"),
-        about: "language, keyboard and time zone",
+        about: n_("language, keyboard and time zone"),
     },
     Page {
         section: "users",
         title: n_("Users"),
-        about: "the people who log in, and their ssh keys",
+        about: n_("the people who log in, and their ssh keys"),
     },
     Page {
         section: "network",
         title: n_("Network"),
-        about: "the device's name",
+        about: n_("the device's name"),
     },
     Page {
         section: "default_apps",
         title: n_("Default apps"),
-        about: "the browser, files, editor, terminal and mail",
+        about: n_("the browser, files, editor, terminal and mail"),
     },
     Page {
         section: "startup",
         title: n_("Startup"),
-        about: "apps that start after login",
+        about: n_("apps that start after login"),
     },
     Page {
         section: "power",
         title: n_("Power"),
-        about: "the lid, the power button and the screen lock",
+        about: n_("the lid, the power button and the screen lock"),
     },
     Page {
         section: "services",
         title: n_("Services"),
-        about: "optional services, on or off",
+        about: n_("optional services, on or off"),
     },
     Page {
         section: "updates",
         title: n_("Updates"),
-        about: "when updates are installed",
+        about: n_("when updates are installed"),
     },
     Page {
         section: "apps",
         title: n_("Apps"),
-        about: "the apps installed from Flathub",
+        about: n_("the apps installed from Flathub"),
     },
     Page {
         section: "addons",
         title: n_("Add-ons"),
-        about: "signed extras to the system",
+        about: n_("signed extras to the system"),
     },
     Page {
         section: "system",
         title: n_("System"),
-        about: "developer mode and profiles",
+        about: n_("developer mode and profiles"),
     },
 ];
 
@@ -583,10 +583,19 @@ pub struct Read {
 /// kind are left out and reported, and every other key is kept. Only a file
 /// that is not TOML, or not in this release's format, is refused.
 pub fn read(text: &str) -> Result<Read> {
-    let table: Table = toml::from_str(text).context("the file is not valid TOML")?;
+    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
     let format = format_of(&table)?;
     if format != FORMAT {
-        bail!("the file is format {format}, and this release reads format {FORMAT}");
+        bail!(
+            "{}",
+            trf(
+                "the file is format {format}, and this release reads format {current}",
+                &[
+                    ("format", &format.to_string()),
+                    ("current", &FORMAT.to_string())
+                ]
+            )
+        );
     }
     read_table(&table)
 }
@@ -600,7 +609,7 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     lines.extend(
         read.later
             .iter()
-            .map(|key| format!("{key}: not supported yet")),
+            .map(|key| format!("{key}: {}", tr("not supported yet"))),
     );
     // Across keys: unknown actions, two on one key, a way out unbound.
     lines.extend(crate::shortcuts::check(&read.file.shortcuts));
@@ -612,10 +621,13 @@ pub fn check(text: &str) -> Result<Vec<String>> {
 /// beside it, left by `edel migrate` for this release's format, is read
 /// instead. Without one this fails, and the caller applies nothing.
 pub fn read_on_machine(path: &Path) -> Result<Read> {
-    let text =
-        fs::read_to_string(path).with_context(|| format!("could not read {}", path.display()))?;
-    let table: Table = toml::from_str(&text)
-        .with_context(|| format!("{} is not valid TOML; nothing is applied", path.display()))?;
+    let text = fs::read_to_string(path).with_context(|| could_not_read(path))?;
+    let table: Table = toml::from_str(&text).with_context(|| {
+        trf(
+            "{path} is not valid TOML; nothing is applied",
+            &[("path", &path.display().to_string())],
+        )
+    })?;
     let format = format_of(&table)?;
     if format <= FORMAT {
         return read(&text);
@@ -623,28 +635,45 @@ pub fn read_on_machine(path: &Path) -> Result<Read> {
     let older = versioned(path, FORMAT);
     let Ok(text) = fs::read_to_string(&older) else {
         bail!(
-            "{} is format {format}, newer than this release reads, and there is no {} beside it; nothing is applied",
-            path.display(),
-            older.display()
+            "{}",
+            trf(
+                "{path} is format {format}, newer than this release reads, and there is no {older} beside it; nothing is applied",
+                &[
+                    ("path", &path.display().to_string()),
+                    ("format", &format.to_string()),
+                    ("older", &older.display().to_string())
+                ]
+            )
         );
     };
-    let mut read = read(&text).with_context(|| format!("could not read {}", older.display()))?;
+    let mut read = read(&text).with_context(|| could_not_read(&older))?;
     read.problems.insert(
         0,
         Problem {
             key: "format".into(),
-            message: format!(
-                "format {format} is newer than this release, so {} was read instead",
-                older.display()
+            message: trf(
+                "format {format} is newer than this release, so {older} was read instead",
+                &[
+                    ("format", &format.to_string()),
+                    ("older", &older.display().to_string()),
+                ],
             ),
         },
     );
     Ok(read)
 }
 
+/// `could not read PATH`, the start of a failure to read a file.
+fn could_not_read(path: &Path) -> String {
+    trf(
+        "could not read {path}",
+        &[("path", &path.display().to_string())],
+    )
+}
+
 /// The `format` of a settings file's text.
 pub fn format(text: &str) -> Result<i64> {
-    let table: Table = toml::from_str(text).context("the file is not valid TOML")?;
+    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
     format_of(&table)
 }
 
@@ -716,12 +745,22 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
         None => unset(&text, key)?,
     };
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).with_context(|| format!("could not make {}", dir.display()))?;
+        fs::create_dir_all(dir).with_context(|| {
+            trf(
+                "could not make {path}",
+                &[("path", &dir.display().to_string())],
+            )
+        })?;
     }
     let new = path.with_extension("toml.edel-new");
     fs::write(&new, edited)
         .and_then(|()| fs::rename(&new, path))
-        .with_context(|| format!("could not write {}", path.display()))
+        .with_context(|| {
+            trf(
+                "could not write {path}",
+                &[("path", &path.display().to_string())],
+            )
+        })
 }
 
 /// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
@@ -734,13 +773,19 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
     let entry = known_key(key, &path)?;
     let value = normalize(entry.kind, &value_from_arg(value)).map_err(|m| anyhow!("{key}: {m}"))?;
     if !entry.supported {
-        bail!("{key}: not supported yet; this release does not act on it, so it cannot be set");
+        bail!(
+            "{}",
+            trf(
+                "{key}: not supported yet; this release does not act on it, so it cannot be set",
+                &[("key", key)]
+            )
+        );
     }
     let new = toml_edit_value(&value)?;
-    let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
-    let (last, parents) = path
-        .split_last()
-        .context("no key given; write KEY=VALUE, such as network.hostname=lab-1")?;
+    let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
+    let (last, parents) = path.split_last().context(tr(
+        "no key given; write KEY=VALUE, such as network.hostname=lab-1",
+    ))?;
     let mut table = doc.as_table_mut();
     for (i, part) in parents.iter().enumerate() {
         let item = table.entry(part).or_insert_with(|| {
@@ -750,9 +795,9 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             toml_edit::Item::Table(new)
         });
         table = item.as_table_mut().with_context(|| {
-            format!(
-                "{} is not a table in the file; change {key} by hand",
-                path[..=i].join(".")
+            trf(
+                "{table} is not a table in the file; change {key} by hand",
+                &[("table", &path[..=i].join(".")), ("key", key)],
             )
         })?;
     }
@@ -784,7 +829,7 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
 /// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
     let path: Vec<&str> = key.split('.').collect();
-    let mut doc: DocumentMut = text.parse().context("the file is not valid TOML")?;
+    let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
     let removed = match path.as_slice() {
         ["users", name, last] => doc
             .get_mut("users")
@@ -794,7 +839,13 @@ pub fn unset(text: &str, key: &str) -> Result<String> {
         _ => remove_path(doc.as_table_mut(), &path)?,
     };
     if !removed {
-        bail!("{key} is not in the file, so it already has its default; there is nothing to reset");
+        bail!(
+            "{}",
+            trf(
+                "{key} is not in the file, so it already has its default; there is nothing to reset",
+                &[("key", key)]
+            )
+        );
     }
     Ok(doc.to_string())
 }
@@ -809,9 +860,12 @@ fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
     let Some(inner) = table.get_mut(first) else {
         return Ok(false);
     };
-    let inner = inner
-        .as_table_mut()
-        .with_context(|| format!("{first} is not a table in the file; change it by hand"))?;
+    let inner = inner.as_table_mut().with_context(|| {
+        trf(
+            "{table} is not a table in the file; change it by hand",
+            &[("table", first)],
+        )
+    })?;
     let removed = remove_path(inner, rest)?;
     if removed && inner.is_empty() {
         table.remove(first);
@@ -823,7 +877,13 @@ fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
 fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
     let names: Vec<String> = path.iter().map(|p| p.to_string()).collect();
     if path.first() == Some(&"users") && path.len() > 1 && !is_user_name(path[1]) {
-        bail!("{key}: {:?} is not a user name", path[1]);
+        bail!(
+            "{}",
+            trf(
+                "{key}: {name} is not a user name",
+                &[("key", key), ("name", &format!("{:?}", path[1]))]
+            )
+        );
     }
     KEYS.iter()
         .find(|k| matches(k.path, &names, false))
@@ -834,9 +894,11 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
 /// nearest key when one is close, else where the keys are listed.
 fn unknown_key(key: &str) -> String {
     match nearest_key(key) {
-        Some(near) => format!("unknown key; did you mean {near}?"),
-        None => "unknown key; edel settings lists the pages, and edel settings get PAGE their keys"
-            .to_string(),
+        Some(near) => trf("unknown key; did you mean {near}?", &[("near", &near)]),
+        None => {
+            tr("unknown key; edel settings lists the pages, and edel settings get PAGE their keys")
+                .to_string()
+        }
     }
 }
 
@@ -919,7 +981,7 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
             v.decor_mut().clear();
             v
         })
-        .context("cannot write the value")
+        .context(tr("cannot write the value"))
 }
 
 /// The settings file `path` with `.v1` added, for format 1.
@@ -930,8 +992,20 @@ pub fn versioned(path: &Path, format: i64) -> PathBuf {
 fn format_of(table: &Table) -> Result<i64> {
     match table.get("format") {
         Some(Value::Integer(format)) if *format >= 1 => Ok(*format),
-        Some(other) => bail!("format must be a whole number from 1, not {other}"),
-        None => bail!("the file has no format; add format = {FORMAT} at the top"),
+        Some(other) => bail!(
+            "{}",
+            trf(
+                "format must be a whole number from 1, not {value}",
+                &[("value", &other.to_string())]
+            )
+        ),
+        None => bail!(
+            "{}",
+            trf(
+                "the file has no format; add format = {current} at the top",
+                &[("current", &FORMAT.to_string())]
+            )
+        ),
     }
 }
 
@@ -942,7 +1016,7 @@ fn read_table(table: &Table) -> Result<Read> {
     let mut ignored = Vec::new();
     let file: SettingsFile =
         serde_ignored::deserialize(Value::Table(kept), |path| ignored.push(path.to_string()))
-            .context("the key table and the structs disagree")?;
+            .context(tr("the key table and the structs disagree"))?;
     // The key table already left out unknown keys; anything ignored here is
     // a key the table lists but the structs lack, which a test prevents.
     problems.extend(ignored.into_iter().map(|key| Problem {
@@ -974,7 +1048,7 @@ fn clean(
         } else if at == ["users"] && !is_user_name(name) {
             problems.push(Problem {
                 key: shown,
-                message: "not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _".into(),
+                message: tr("not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _").into(),
             });
         } else if let Some(key) = KEYS.iter().find(|k| matches(k.path, &path, false)) {
             match normalize(key.kind, value) {
@@ -997,7 +1071,7 @@ fn clean(
                 }
                 _ => problems.push(Problem {
                     key: shown,
-                    message: "expected a table".into(),
+                    message: tr("expected a table").into(),
                 }),
             }
         } else {
@@ -1028,33 +1102,45 @@ fn matches(pattern: &str, path: &[String], prefix: bool) -> bool {
 /// `value` if it is of `kind` (a whole number becomes a number where one
 /// is expected), else what is wrong with it.
 fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
-    let fail = |expected: &str| Err(format!("expected {expected}, not {value}"));
+    let fail = |expected: &str| {
+        Err(trf(
+            "expected {expected}, not {value}",
+            &[("expected", expected), ("value", &value.to_string())],
+        ))
+    };
     match (kind, value) {
         (Kind::Text, Value::String(_)) | (Kind::Flag, Value::Boolean(_)) => Ok(value.clone()),
-        (Kind::Text, _) => fail("text in quotes"),
-        (Kind::Flag, _) => fail("true or false"),
+        (Kind::Text, _) => fail(tr("text in quotes")),
+        (Kind::Flag, _) => fail(tr("true or false")),
         (Kind::Texts, Value::Array(items)) if items.iter().all(Value::is_str) => Ok(value.clone()),
-        (Kind::Texts, _) => fail("a list of texts in quotes"),
+        (Kind::Texts, _) => fail(tr("a list of texts in quotes")),
         (Kind::Whole, Value::Integer(n)) if u32::try_from(*n).is_ok() => Ok(value.clone()),
-        (Kind::Whole, _) => fail("a whole number from 0"),
+        (Kind::Whole, _) => fail(tr("a whole number from 0")),
         (Kind::Number, Value::Float(n)) if n.is_finite() => Ok(value.clone()),
         (Kind::Number, Value::Integer(n)) => Ok(Value::Float(*n as f64)),
-        (Kind::Number, _) => fail("a number"),
+        (Kind::Number, _) => fail(tr("a number")),
         (Kind::Pair, Value::Array(items))
             if items.len() == 2 && items.iter().all(Value::is_integer) =>
         {
             Ok(value.clone())
         }
-        (Kind::Pair, _) => fail("two whole numbers, such as [0, 0]"),
+        (Kind::Pair, _) => fail(tr("two whole numbers, such as [0, 0]")),
         (Kind::OneOf(allowed), Value::String(s)) if allowed.contains(&s.as_str()) => {
             Ok(value.clone())
         }
         (Kind::OneOf(allowed), Value::String(s)) => Err(match nearest_value(s, allowed) {
-            Some(near) => format!(
-                "unknown value {s:?}; did you mean {near}? Use {}",
-                or_list(allowed)
+            Some(near) => trf(
+                "unknown value {value}; did you mean {near}? Use {allowed}",
+                &[
+                    ("value", &format!("{s:?}")),
+                    ("near", near),
+                    ("allowed", &or_list(allowed)),
+                ],
             ),
-            None => format!("unknown value {s:?}; use {}", or_list(allowed)),
+            None => trf(
+                "unknown value {value}; use {allowed}",
+                &[("value", &format!("{s:?}")), ("allowed", &or_list(allowed))],
+            ),
         }),
         (Kind::OneOf(allowed), _) => fail(&or_list(allowed)),
         (Kind::WholeOf(allowed), Value::Integer(n)) if allowed.contains(n) => Ok(value.clone()),
@@ -1064,52 +1150,59 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             fail(&or_list(&allowed))
         }
         (Kind::Hostname, Value::String(s)) if is_hostname(s) => Ok(value.clone()),
-        (Kind::Hostname, _) => fail("a hostname: letters, digits and hyphens, up to 63"),
+        (Kind::Hostname, _) => fail(tr("a hostname: letters, digits and hyphens, up to 63")),
         (Kind::Shell, Value::String(s)) if is_shell_path(s) => Ok(value.clone()),
-        (Kind::Shell, _) => fail("a login shell's full path, such as \"/bin/sh\""),
+        (Kind::Shell, _) => fail(tr("a login shell's full path, such as \"/bin/sh\"")),
         (Kind::Keys, Value::String(s)) => crate::shortcuts::normalize(s).map(Value::String),
-        (Kind::Keys, _) => fail("keys in quotes, such as \"Super+Q\""),
+        (Kind::Keys, _) => fail(tr("keys in quotes, such as \"Super+Q\"")),
         (Kind::Panels, Value::Array(_)) => {
             let panels: Vec<crate::presets::Panel> =
                 value.clone().try_into().map_err(|e: toml::de::Error| {
-                    format!("expected panels as a preset writes them: {}", e.message())
+                    trf(
+                        "expected panels as a preset writes them: {why}",
+                        &[("why", e.message())],
+                    )
                 })?;
             crate::presets::check_panels(&panels).map_err(|e| e.to_string())?;
             Ok(value.clone())
         }
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
-        (Kind::Resolution, _) => fail("a resolution such as \"1920x1080\""),
+        (Kind::Resolution, _) => fail(tr("a resolution such as \"1920x1080\"")),
         (Kind::Keyboard, Value::String(s)) => {
             let rules = std::fs::read_to_string(crate::keyboard::RULES).ok();
             crate::keyboard::normalize(s, rules.as_deref()).map(Value::String)
         }
-        (Kind::Keyboard, _) => fail("keyboard layouts in quotes, such as \"us\" or \"us,ru\""),
+        (Kind::Keyboard, _) => fail(tr(
+            "keyboard layouts in quotes, such as \"us\" or \"us,ru\"",
+        )),
         (Kind::Hosts, Value::Array(items)) => {
             let mut names = Vec::new();
             for item in items {
                 match item.as_str() {
                     Some(name) if is_host(name) => names.push(name),
                     _ => {
-                        return Err(format!(
-                            "{item} is not a host name; use a name such as \"pool.ntp.org\" \
-                             (letters, digits, hyphens and dots)"
+                        return Err(trf(
+                            "{item} is not a host name; use a name such as \"pool.ntp.org\" (letters, digits, hyphens and dots)",
+                            &[("item", &item.to_string())],
                         ));
                     }
                 }
             }
             if names.is_empty() || names.len() > MOST_HOSTS {
-                return Err(format!(
-                    "expected one to {MOST_HOSTS} host names, not {} (to use the release's, \
-                     run edel settings reset on this key)",
-                    names.len()
+                return Err(trf(
+                    "expected one to {most} host names, not {count} (to use the release's, run edel settings reset on this key)",
+                    &[
+                        ("most", &MOST_HOSTS.to_string()),
+                        ("count", &names.len().to_string()),
+                    ],
                 ));
             }
             Ok(value.clone())
         }
-        (Kind::Hosts, _) => fail("a list of host names, such as [\"pool.ntp.org\"]"),
-        (Kind::Panels, _) => {
-            fail("a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]")
-        }
+        (Kind::Hosts, _) => fail(tr("a list of host names, such as [\"pool.ntp.org\"]")),
+        (Kind::Panels, _) => fail(tr(
+            "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]",
+        )),
     }
 }
 
@@ -1160,7 +1253,10 @@ pub fn is_user_name(name: &str) -> bool {
 fn or_list(items: &[&str]) -> String {
     match items.split_last() {
         Some((last, [])) => (*last).to_string(),
-        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        Some((last, rest)) => trf(
+            "{others} or {last}",
+            &[("others", &rest.join(", ")), ("last", last)],
+        ),
         None => String::new(),
     }
 }

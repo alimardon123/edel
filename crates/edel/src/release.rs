@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use edel::i18n::{tr, trf};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -78,7 +79,11 @@ pub fn machine_channel() -> String {
 fn check_location(location: &str, allow_http: bool) -> Result<()> {
     if location.starts_with("http://") && !allow_http {
         bail!(
-            "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
+            "{}",
+            trf(
+                "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server",
+                &[("location", location)]
+            )
         );
     }
     Ok(())
@@ -91,23 +96,31 @@ fn check_list(manifest: &Manifest, today: i64, channel: &str, accept: &Accept) -
     if !manifest.expires.is_empty() {
         let Some(last) = parse_date(&manifest.expires) else {
             bail!(
-                "refused: expired: release.toml's expires {:?} is not a date (YYYY-MM-DD); nothing was changed",
-                manifest.expires
+                "{}",
+                trf(
+                    "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed",
+                    &[("date", &format!("{:?}", manifest.expires))]
+                )
             );
         };
         if today > last {
             bail!(
-                "refused: expired: this release list expired on {}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)",
-                manifest.expires
+                "{}",
+                trf(
+                    "refused: expired: this release list expired on {date}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)",
+                    &[("date", &manifest.expires)]
+                )
             );
         }
     }
     let wanted = accept.channel.as_deref().unwrap_or(channel);
     if !manifest.channel.is_empty() && manifest.channel != wanted {
         bail!(
-            "refused: channel: this release list is for the {} channel, and this machine follows {wanted}; pass --channel {} to take it once, or set updates.channel to change for good",
-            manifest.channel,
-            manifest.channel
+            "{}",
+            trf(
+                "refused: channel: this release list is for the {channel} channel, and this machine follows {wanted}; pass --channel {channel} to take it once, or set updates.channel to change for good",
+                &[("channel", &manifest.channel), ("wanted", wanted)]
+            )
         );
     }
     Ok(())
@@ -212,8 +225,11 @@ fn load_keys(dir: &Path) -> Result<Vec<VerifyingKey>> {
     }
     if keys.is_empty() {
         bail!(
-            "no public keys in {}, so this system cannot check who signed an update; nothing was changed; reinstall from an Edel OS image",
-            dir.display()
+            "{}",
+            trf(
+                "no public keys in {path}, so this system cannot check who signed an update; nothing was changed; reinstall from an Edel OS image",
+                &[("path", &dir.display().to_string())]
+            )
         );
     }
     Ok(keys)
@@ -233,20 +249,30 @@ fn verify_bytes(bytes: &[u8], sig_hex: &str, keys: &[VerifyingKey]) -> Result<()
         }
     }
     bail!(
-        "refused: signature: no key this system trusts signed this release list; nothing was changed; check the address, or ask the publisher for a fresh list"
+        "{}",
+        tr(
+            "refused: signature: no key this system trusts signed this release list; nothing was changed; check the address, or ask the publisher for a fresh list"
+        )
     )
 }
 
 /// Parses a manifest, refusing only a format this edel does not know.
 pub fn parse_manifest(text: &str) -> Result<Manifest> {
-    let table: toml::Table = toml::from_str(text).context("refused: release.toml is not valid TOML, so it is cut short or is not a release list; check the address")?;
+    let table: toml::Table = toml::from_str(text).context(tr("refused: release.toml is not valid TOML, so it is cut short or is not a release list; check the address"))?;
     let format = table
         .get("format")
         .and_then(|v| v.as_integer())
-        .context("refused: release.toml has no format line, so it is not a release list this edel can read; check the address")?;
+        .context(tr("refused: release.toml has no format line, so it is not a release list this edel can read; check the address"))?;
     if format != FORMAT {
         bail!(
-            "refused: release.toml is format {format}; this edel reads format {FORMAT}, so install a release in between first"
+            "{}",
+            trf(
+                "refused: release.toml is format {format}; this edel reads format {current}, so install a release in between first",
+                &[
+                    ("format", &format.to_string()),
+                    ("current", &FORMAT.to_string())
+                ]
+            )
         );
     }
     Ok(toml::from_str(text)?)
@@ -284,8 +310,11 @@ fn pick_image<'a>(
 ) -> Result<&'a ImageEntry> {
     if !allow_downgrade && compare_versions(&manifest.version, running) != Ordering::Greater {
         bail!(
-            "refused: version {} is not newer than the running {running}; pass --allow-downgrade to install it anyway",
-            manifest.version
+            "{}",
+            trf(
+                "refused: version {version} is not newer than the running {running}; pass --allow-downgrade to install it anyway",
+                &[("version", &manifest.version), ("running", running)]
+            )
         );
     }
     manifest
@@ -293,9 +322,9 @@ fn pick_image<'a>(
         .iter()
         .find(|e| e.name == image)
         .with_context(|| {
-            format!(
-                "refused: release {} has no image {image:?}, the one this system is; nothing was changed, so wait for a release that lists it",
-                manifest.version
+            trf(
+                "refused: release {version} has no image {image}, the one this system is; nothing was changed, so wait for a release that lists it",
+                &[("version", &manifest.version), ("image", &format!("{image:?}"))],
             )
         })
 }
@@ -322,9 +351,15 @@ fn agent() -> ureq::Agent {
 /// What a download that failed says: the address and what to try; the
 /// cause follows it.
 fn download_failed(location: &str) -> String {
-    format!(
-        "could not download {location}; check the network and the address, then run edel update again (the running system is unchanged)"
+    trf(
+        "could not download {location}; check the network and the address, then run edel update again (the running system is unchanged)",
+        &[("location", location)],
     )
+}
+
+/// `could not read PATH`, the start of a failure to read a file.
+fn could_not_read(path: &str) -> String {
+    trf("could not read {path}", &[("path", path)])
 }
 
 /// Reads a small file (a manifest or a signature) from a path or a URL.
@@ -337,7 +372,7 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
         Ok(response.body_mut().read_to_vec()?)
     } else {
         let path = local_path(location);
-        fs::read(path).with_context(|| format!("could not read {path}"))
+        fs::read(path).with_context(|| could_not_read(path))
     }
 }
 
@@ -351,7 +386,7 @@ fn open_image(location: &str) -> Result<Box<dyn Read>> {
         Box::new(response.into_body().into_reader())
     } else {
         let path = local_path(location);
-        Box::new(File::open(path).with_context(|| format!("could not read {path}"))?)
+        Box::new(File::open(path).with_context(|| could_not_read(path))?)
     };
     Ok(if location.ends_with(".gz") {
         Box::new(GzDecoder::new(raw))
@@ -396,7 +431,7 @@ fn verified_manifest(location: &str, accept: &Accept) -> Result<Manifest> {
     check_location(location, accept.allow_http)?;
     let bytes = fetch(location)?;
     let sig = fetch(&format!("{location}.sig"))
-        .context("refused: signature: could not read the .sig file beside release.toml; it must sit next to the list with the same name and .sig")?;
+        .context(tr("refused: signature: could not read the .sig file beside release.toml; it must sit next to the list with the same name and .sig"))?;
     verify_bytes(
         &bytes,
         &String::from_utf8_lossy(&sig),
@@ -421,15 +456,18 @@ pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
     let manifest = verified_manifest(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE")
-        .context("this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take")?;
+        .context(tr("this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take"))?;
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let entry = pick_image(&manifest, &image, &running, accept.allow_downgrade)?;
-    let sha256 = from_hex(&entry.sha256).context("refused: release.toml has a sha256 for the image that is not 64 hex digits; nothing was changed")?;
+    let sha256 = from_hex(&entry.sha256).context(tr("refused: release.toml has a sha256 for the image that is not 64 hex digits; nothing was changed"))?;
     let image_at = beside(location, &entry.file);
     check_location(&image_at, accept.allow_http)?;
     println!(
-        "edel update: release {}: signature checked",
-        manifest.version
+        "edel update: {}",
+        trf(
+            "release {version}: signature checked",
+            &[("version", &manifest.version)]
+        )
     );
     Ok(Checked {
         sha256,
@@ -448,7 +486,7 @@ pub fn check(location: &str, accept: &Accept) -> Result<()> {
     println!(
         "available: {} ({})",
         manifest.version,
-        if newer { "newer" } else { "not newer" }
+        if newer { tr("newer") } else { tr("not newer") }
     );
     Ok(())
 }
@@ -591,6 +629,48 @@ pub fn verify(keys: &Path, file: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A refusal comes out in a made-up language ("xx", M5.24b) with its
+    /// values filled in, and in English where the catalogue lacks it.
+    #[test]
+    fn a_refusal_is_translated_and_falls_back_to_english() {
+        let xx = edel::i18n::parse_po(
+            "msgid \"refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server\"\n\
+             msgstr \"xx: {location} xx\"\n",
+        );
+        edel::i18n::with_catalogue(xx.clone(), || {
+            let refused = check_location("http://mirror.example/release.toml", false)
+                .unwrap_err()
+                .to_string();
+            assert_eq!(refused, "xx: http://mirror.example/release.toml xx");
+            // Another refusal, which this catalogue lacks, stays English.
+            let old = Manifest {
+                format: FORMAT,
+                version: "2020.1.1".into(),
+                channel: String::new(),
+                date: String::new(),
+                expires: "2020-01-01".into(),
+                images: Vec::new(),
+            };
+            let late = check_list(
+                &old,
+                days_from_civil(2026, 10, 7),
+                "stable",
+                &Accept::default(),
+            );
+            assert!(
+                late.unwrap_err()
+                    .to_string()
+                    .starts_with("refused: expired:")
+            );
+        });
+        assert!(
+            check_location("http://mirror.example/release.toml", false)
+                .unwrap_err()
+                .to_string()
+                .starts_with("refused: http: http://mirror.example")
+        );
+    }
 
     #[test]
     fn finds_images_beside_the_manifest_or_at_their_url() {

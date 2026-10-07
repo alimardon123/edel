@@ -137,7 +137,7 @@ impl Ui {
             [now.minimize_button, now.maximize_button, now.close_button],
         );
         let preset = files.source("layout.preset");
-        let title = files::title(&now.preset);
+        let title = edel::presets::title(&now.preset);
         self.preset_source
             .label
             .set_label(&rows::describe(&preset, &title));
@@ -357,7 +357,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
 
 /// A preset's card: its picture, its name and, when chosen, a check.
 fn card(name: &str, theme: &Rc<Theme>) -> (gtk::ToggleButton, gtk::Box) {
-    let title = files::title(name);
+    let title = edel::presets::title(name);
     let label = gtk::Label::builder()
         .label(&title)
         .xalign(0.0)

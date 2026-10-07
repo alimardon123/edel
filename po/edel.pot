@@ -1,0 +1,798 @@
+# The words edel shows people, gathered from its source by a test in
+# crates/edel (EDEL_WRITE_DOCS=1 cargo test -p edel i18n writes it).
+# A language's translation is LANG/edel.po beside it (M5.24).
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
+msgstr ""
+
+msgid "no name"
+msgstr ""
+
+msgid "{name}: {label} ({fs}, {size})"
+msgstr ""
+
+msgid "{name}: {label} (no file system, {size})"
+msgstr ""
+
+msgid "no model name"
+msgstr ""
+
+msgid "Install Edel OS on /dev/{disk} ({model}, {size})"
+msgstr ""
+
+msgid "The disk has no partitions."
+msgstr ""
+
+msgid "This erases everything on it:"
+msgstr ""
+
+msgid "and writes:"
+msgstr ""
+
+msgid "  1: EFI system partition, {mib} MiB"
+msgstr ""
+
+msgid "  2: slot A, {mib} MiB, a copy of the running system"
+msgstr ""
+
+msgid "  3: slot B, {mib} MiB, empty until the first update"
+msgstr ""
+
+msgid "  4: data, {mib} MiB, starting from the settings file {file}"
+msgstr ""
+
+msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
+msgstr ""
+
+msgid "could not read {path}"
+msgstr ""
+
+msgid "/dev/{name} is not a whole disk; name a disk such as /dev/sda, not a partition"
+msgstr ""
+
+msgid "unknown"
+msgstr ""
+
+msgid "run as root to see"
+msgstr ""
+
+msgid "/dev/{name} is the disk this system runs from; install to another disk"
+msgstr ""
+
+msgid "/dev/{name} has a mounted file system; unmount it first"
+msgstr ""
+
+msgid "could not check {path}"
+msgstr ""
+
+msgid "{path} has problems, so nothing was changed; fix these (edel settings check shows them again):"
+msgstr ""
+
+msgid "this was only the plan; nothing was changed; leave out --plan to install"
+msgstr ""
+
+msgid "Type {name} to erase it and install, or anything else to stop: "
+msgstr ""
+
+msgid "stopped, because {name} was not typed; nothing was changed"
+msgstr ""
+
+msgid "this system lacks {tools}, so nothing was changed; install them (apk add) and run edel install again"
+msgstr ""
+
+msgid "{device} did not appear after partitioning, so the disk is only partly installed; run edel install again"
+msgstr ""
+
+msgid "partitioning {disk}"
+msgstr ""
+
+msgid "could not start sfdisk"
+msgstr ""
+
+msgid "sfdisk has no input"
+msgstr ""
+
+msgid "sfdisk could not partition {disk}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed"
+msgstr ""
+
+msgid "copying the running system into slot A"
+msgstr ""
+
+msgid "slot A on the new disk differs from the running slot after copying, so the copy is damaged and the disk cannot start yet; run edel install again"
+msgstr ""
+
+msgid "slot A is the running slot byte for byte ({mib} MiB)"
+msgstr ""
+
+msgid "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again"
+msgstr ""
+
+msgid "writing the boot loader"
+msgstr ""
+
+msgid "creating the data partition"
+msgstr ""
+
+msgid "done; restart from {disk} to use it"
+msgstr ""
+
+msgid "could not replace {path}"
+msgstr ""
+
+msgid "could not write {path}"
+msgstr ""
+
+msgid "{name} is not in /etc/passwd"
+msgstr ""
+
+msgid "ignored {path}: not a regular file of {user} up to 1 MiB"
+msgstr ""
+
+msgid "could not start a shell as {user}"
+msgstr ""
+
+msgid "no input to the shell"
+msgstr ""
+
+msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
+msgstr ""
+
+msgid "seeded {path} from {from}"
+msgstr ""
+
+msgid "no settings file, so nothing to apply"
+msgstr ""
+
+msgid "left out {problem}"
+msgstr ""
+
+msgid "skipped {key}: not supported yet"
+msgstr ""
+
+msgid "could not rename {from} to {to}"
+msgstr ""
+
+msgid "renamed {from} to {to}"
+msgstr ""
+
+msgid "could not link {link} to {to}"
+msgstr ""
+
+msgid "linked {link} to {to}"
+msgstr ""
+
+msgid "could not apply {change}: {why}"
+msgstr ""
+
+msgid "{path} is now this machine's settings file"
+msgstr ""
+
+msgid "nothing to change"
+msgstr ""
+
+msgid "{failed} of {total} changes could not be applied, listed above; the others were applied, and edel settings diff shows what is left"
+msgstr ""
+
+msgid "could not save {path}"
+msgstr ""
+
+msgid "{path} is format {format}, newer than this release, and there is no {older} beside it to change"
+msgstr ""
+
+msgid "kept, not used by this release: {problem}"
+msgstr ""
+
+msgid "{what} in {path}; {then}"
+msgstr ""
+
+msgid "the desktop follows it at once"
+msgstr ""
+
+msgid "edel settings apply applies it"
+msgstr ""
+
+msgid "{path} is format {format}, so the change applies to this release only"
+msgstr ""
+
+msgid "{assignment}: write KEY=VALUE, such as network.hostname=lab-1"
+msgstr ""
+
+msgid "set {keys}"
+msgstr ""
+
+msgid "reset {keys}"
+msgstr ""
+
+msgid "Settings, page by page, as the Settings app shows them:"
+msgstr ""
+
+msgid "edel settings get PAGE shows a page's settings and where each comes from;\nedel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
+msgstr ""
+
+msgid "{name}: no such page or key; did you mean {near}?"
+msgstr ""
+
+msgid "{name}: no such page or key; edel settings lists the pages"
+msgstr ""
+
+msgid "your own file"
+msgstr ""
+
+msgid "this machine"
+msgstr ""
+
+msgid "not set: the release decides"
+msgstr ""
+
+msgid "not supported yet"
+msgstr ""
+
+msgid "passed over the settings file on {from}: {why}"
+msgstr ""
+
+msgid "cannot mount {device} to look for a settings file"
+msgstr ""
+
+msgid "{why}; exporting only what the machine has"
+msgstr ""
+
+msgid "Files this machine changed in /etc, kept on /data and not described above:"
+msgstr ""
+
+msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
+msgstr ""
+
+msgid "{path}: ok"
+msgstr ""
+
+msgid "{path} has 1 problem, listed above; fix it and run edel settings check again"
+msgstr ""
+
+msgid "{path} has {count} problems, listed above; fix them and run edel settings check again"
+msgstr ""
+
+msgid "two panels along the {edge} edge"
+msgstr ""
+
+msgid "{widget} is not a widget name"
+msgstr ""
+
+msgid "only a dock hides; the {edge} panel is a bar"
+msgstr ""
+
+msgid "Classic"
+msgstr ""
+
+msgid "Mac-like"
+msgstr ""
+
+msgid "Windows-like"
+msgstr ""
+
+msgid "Hive"
+msgstr ""
+
+msgid "this release has no preset {name}; the Classic preset is used"
+msgstr ""
+
+msgid "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
+msgstr ""
+
+msgid "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed"
+msgstr ""
+
+msgid "refused: expired: this release list expired on {date}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)"
+msgstr ""
+
+msgid "refused: channel: this release list is for the {channel} channel, and this machine follows {wanted}; pass --channel {channel} to take it once, or set updates.channel to change for good"
+msgstr ""
+
+msgid "no public keys in {path}, so this system cannot check who signed an update; nothing was changed; reinstall from an Edel OS image"
+msgstr ""
+
+msgid "refused: signature: no key this system trusts signed this release list; nothing was changed; check the address, or ask the publisher for a fresh list"
+msgstr ""
+
+msgid "refused: release.toml is not valid TOML, so it is cut short or is not a release list; check the address"
+msgstr ""
+
+msgid "refused: release.toml has no format line, so it is not a release list this edel can read; check the address"
+msgstr ""
+
+msgid "refused: release.toml is format {format}; this edel reads format {current}, so install a release in between first"
+msgstr ""
+
+msgid "refused: version {version} is not newer than the running {running}; pass --allow-downgrade to install it anyway"
+msgstr ""
+
+msgid "refused: release {version} has no image {image}, the one this system is; nothing was changed, so wait for a release that lists it"
+msgstr ""
+
+msgid "could not download {location}; check the network and the address, then run edel update again (the running system is unchanged)"
+msgstr ""
+
+msgid "refused: signature: could not read the .sig file beside release.toml; it must sit next to the list with the same name and .sig"
+msgstr ""
+
+msgid "this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take"
+msgstr ""
+
+msgid "refused: release.toml has a sha256 for the image that is not 64 hex digits; nothing was changed"
+msgstr ""
+
+msgid "release {version}: signature checked"
+msgstr ""
+
+msgid "newer"
+msgstr ""
+
+msgid "not newer"
+msgstr ""
+
+msgid "the last update did not start, so the machine went back to the slot before; the system log is {log}, and edel report gathers it with the rest"
+msgstr ""
+
+msgid "{person}'s last desktop session ended without closing; its log is {log}, and edel report gathers it with the rest"
+msgstr ""
+
+msgid "{disk} is not a removable disk, so the report stays off its EFI system partition"
+msgstr ""
+
+msgid "wrote {path} on the EFI system partition"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "the preset, tiling, title bars and panels"
+msgstr ""
+
+msgid "Displays"
+msgstr ""
+
+msgid "each screen's place, scale and resolution"
+msgstr ""
+
+msgid "Appearance"
+msgstr ""
+
+msgid "light or dark, the accent, fonts and animations"
+msgstr ""
+
+msgid "Shortcuts"
+msgstr ""
+
+msgid "the keys for each action"
+msgstr ""
+
+msgid "Region"
+msgstr ""
+
+msgid "language, keyboard and time zone"
+msgstr ""
+
+msgid "Users"
+msgstr ""
+
+msgid "the people who log in, and their ssh keys"
+msgstr ""
+
+msgid "Network"
+msgstr ""
+
+msgid "the device's name"
+msgstr ""
+
+msgid "Default apps"
+msgstr ""
+
+msgid "the browser, files, editor, terminal and mail"
+msgstr ""
+
+msgid "Startup"
+msgstr ""
+
+msgid "apps that start after login"
+msgstr ""
+
+msgid "Power"
+msgstr ""
+
+msgid "the lid, the power button and the screen lock"
+msgstr ""
+
+msgid "Services"
+msgstr ""
+
+msgid "optional services, on or off"
+msgstr ""
+
+msgid "Updates"
+msgstr ""
+
+msgid "when updates are installed"
+msgstr ""
+
+msgid "Apps"
+msgstr ""
+
+msgid "the apps installed from Flathub"
+msgstr ""
+
+msgid "Add-ons"
+msgstr ""
+
+msgid "signed extras to the system"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+msgid "developer mode and profiles"
+msgstr ""
+
+msgid "the file is not valid TOML"
+msgstr ""
+
+msgid "the file is format {format}, and this release reads format {current}"
+msgstr ""
+
+msgid "{path} is not valid TOML; nothing is applied"
+msgstr ""
+
+msgid "{path} is format {format}, newer than this release reads, and there is no {older} beside it; nothing is applied"
+msgstr ""
+
+msgid "format {format} is newer than this release, so {older} was read instead"
+msgstr ""
+
+msgid "could not make {path}"
+msgstr ""
+
+msgid "{key}: not supported yet; this release does not act on it, so it cannot be set"
+msgstr ""
+
+msgid "no key given; write KEY=VALUE, such as network.hostname=lab-1"
+msgstr ""
+
+msgid "{table} is not a table in the file; change {key} by hand"
+msgstr ""
+
+msgid "{key} is not in the file, so it already has its default; there is nothing to reset"
+msgstr ""
+
+msgid "{table} is not a table in the file; change it by hand"
+msgstr ""
+
+msgid "{key}: {name} is not a user name"
+msgstr ""
+
+msgid "unknown key; did you mean {near}?"
+msgstr ""
+
+msgid "unknown key; edel settings lists the pages, and edel settings get PAGE their keys"
+msgstr ""
+
+msgid "cannot write the value"
+msgstr ""
+
+msgid "format must be a whole number from 1, not {value}"
+msgstr ""
+
+msgid "the file has no format; add format = {current} at the top"
+msgstr ""
+
+msgid "the key table and the structs disagree"
+msgstr ""
+
+msgid "not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _"
+msgstr ""
+
+msgid "expected a table"
+msgstr ""
+
+msgid "expected {expected}, not {value}"
+msgstr ""
+
+msgid "text in quotes"
+msgstr ""
+
+msgid "true or false"
+msgstr ""
+
+msgid "a list of texts in quotes"
+msgstr ""
+
+msgid "a whole number from 0"
+msgstr ""
+
+msgid "a number"
+msgstr ""
+
+msgid "two whole numbers, such as [0, 0]"
+msgstr ""
+
+msgid "unknown value {value}; did you mean {near}? Use {allowed}"
+msgstr ""
+
+msgid "unknown value {value}; use {allowed}"
+msgstr ""
+
+msgid "a hostname: letters, digits and hyphens, up to 63"
+msgstr ""
+
+msgid "a login shell's full path, such as \"/bin/sh\""
+msgstr ""
+
+msgid "keys in quotes, such as \"Super+Q\""
+msgstr ""
+
+msgid "expected panels as a preset writes them: {why}"
+msgstr ""
+
+msgid "a resolution such as \"1920x1080\""
+msgstr ""
+
+msgid "keyboard layouts in quotes, such as \"us\" or \"us,ru\""
+msgstr ""
+
+msgid "{item} is not a host name; use a name such as \"pool.ntp.org\" (letters, digits, hyphens and dots)"
+msgstr ""
+
+msgid "expected one to {most} host names, not {count} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
+msgid "a list of host names, such as [\"pool.ntp.org\"]"
+msgstr ""
+
+msgid "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]"
+msgstr ""
+
+msgid "{others} or {last}"
+msgstr ""
+
+msgid "could not read /proc/self/mountinfo"
+msgstr ""
+
+msgid "the system disk has no partition {number}"
+msgstr ""
+
+msgid "slot {slot} holds the running system; not writing to it"
+msgstr ""
+
+msgid "/proc/self/mountinfo has no entry for /"
+msgstr ""
+
+msgid "could not resolve {path}"
+msgstr ""
+
+msgid "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on a disk partition"
+msgstr ""
+
+msgid "this system does not run from an Edel OS disk, so it has no slots to update or roll back: / is not on slot A (partition 2) or slot B (partition 3)"
+msgstr ""
+
+msgid "the root partition has no disk"
+msgstr ""
+
+msgid "slot {slot} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
+msgstr ""
+
+msgid "cannot mount the EFI system partition {device}"
+msgstr ""
+
+msgid "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged"
+msgstr ""
+
+msgid "could not read the GRUB environment"
+msgstr ""
+
+msgid "could not open the GRUB environment"
+msgstr ""
+
+msgid "GRUB's environment block has no directory"
+msgstr ""
+
+msgid "{command} has to wait: {holder}; try again when it is done"
+msgstr ""
+
+msgid "could not take the lock {path}"
+msgstr ""
+
+msgid "could not take the lock {path}: another edel command took it first; try again"
+msgstr ""
+
+msgid "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)"
+msgstr ""
+
+msgid "{command} (pid {pid}) is running"
+msgstr ""
+
+msgid "pid {pid} is running"
+msgstr ""
+
+msgid "another command is starting"
+msgstr ""
+
+msgid "cannot read {path}"
+msgstr ""
+
+msgid "installing an unsigned image; nothing checked where it came from"
+msgstr ""
+
+msgid "writing {location} to slot {slot} ({device})"
+msgstr ""
+
+msgid "could not open {path}"
+msgstr ""
+
+msgid "could not start e2fsck"
+msgstr ""
+
+msgid "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own"
+msgstr ""
+
+msgid "the update image is {size} MiB and slot {slot} holds {room} MiB, so nothing was written; the running system is unchanged"
+msgstr ""
+
+msgid "refused: sha256: the image does not match the checksum in release.toml, so it is damaged or was changed on the way; slot {slot} stays switched off and the running system is unchanged; run edel update again"
+msgstr ""
+
+msgid "slot {slot} does not read back as written, so the disk may be failing; it stays switched off and the running system is unchanged; run edel update again"
+msgstr ""
+
+msgid "slot {slot} has file system errors after writing; it stays switched off and the running system is unchanged; run edel update again"
+msgstr ""
+
+msgid "could not read the image"
+msgstr ""
+
+msgid "could not write the slot"
+msgstr ""
+
+msgid "slot {slot} starts after the next restart; slot {running} stays installed"
+msgstr ""
+
+msgid "The Edel OS system tool"
+msgstr ""
+
+msgid "Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails"
+msgstr ""
+
+msgid "The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one"
+msgstr ""
+
+msgid "Only check the version RELEASE holds against this one; change nothing"
+msgstr ""
+
+msgid "Install even when the release is not newer than this system"
+msgstr ""
+
+msgid "Take a release list for this channel once, rather than the one this machine follows (updates.channel)"
+msgstr ""
+
+msgid "Read RELEASE over plain http (for a local test server)"
+msgstr ""
+
+msgid "Install a slot image without a signed release.toml (for testing)"
+msgstr ""
+
+msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
+msgstr ""
+
+msgid "Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong"
+msgstr ""
+
+msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"
+msgstr ""
+
+msgid "The disk, such as /dev/sda"
+msgstr ""
+
+msgid "The settings file the new machine starts with"
+msgstr ""
+
+msgid "Only show the plan: what would be erased and written; change nothing"
+msgstr ""
+
+msgid "Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3"
+msgstr ""
+
+msgid "Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs"
+msgstr ""
+
+msgid "Write it to /EFI/edel/report.toml on the EFI system partition instead, where any computer can read it from the disk or stick"
+msgstr ""
+
+msgid "settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages"
+msgstr ""
+
+msgid "Show settings with their values and where each comes from: one key, one page (such as layout), or every page"
+msgstr ""
+
+msgid "A key such as network.hostname, or a page such as layout"
+msgstr ""
+
+msgid "Print the settings file's own TOML, for scripts"
+msgstr ""
+
+msgid "Change settings, keeping everything else in the file as it was; the desktop follows its settings at once, apply makes the rest take effect"
+msgstr ""
+
+msgid "KEY=VALUE, one or more, such as network.hostname=lab-1"
+msgstr ""
+
+msgid "Give settings back to the release, as the Settings app's Reset does"
+msgstr ""
+
+msgid "The keys, such as network.hostname"
+msgstr ""
+
+msgid "Show what apply would change, changing nothing; exits 1 when there is anything to change"
+msgstr ""
+
+msgid "A settings file; without one, the machine's own"
+msgstr ""
+
+msgid "Make this machine match its settings: the hostname, people, their ssh keys and developer mode"
+msgstr ""
+
+msgid "Make FILE this machine's settings and apply it, such as a file exported on another machine"
+msgstr ""
+
+msgid "The settings file"
+msgstr ""
+
+msgid "Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed"
+msgstr ""
+
+msgid "Check a settings file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused"
+msgstr ""
+
+msgid "Build and inspect Edel OS images"
+msgstr ""
+
+msgid "Build an image from its definition file (run as root on Alpine)"
+msgstr ""
+
+msgid "Image definition, for example images/vm.toml"
+msgstr ""
+
+msgid "Directory for the finished images and the work area"
+msgstr ""
+
+msgid "Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once"
+msgstr ""
+
+msgid "Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images"
+msgstr ""
+
+msgid "Size of each slot in MiB, instead of the definition's; for test images, such as the install test's live disk, which has the desktop stick's small slots"
+msgstr ""
+
+msgid "Another public key that may sign updates, after the definition's own; for test images. Can be given more than once"
+msgstr ""
+
+msgid "A tag written into grub.cfg so the boot loader differs from an untagged build; for test images"
+msgstr ""
+
+msgid "The release version written into the image, such as 2026.10.3; without it the image keeps its development version"
+msgstr ""
+
+msgid "The channel written into the image, such as preview or stable"
+msgstr ""
+
+msgid "An apk cache to share between the images of one build, so they all install from one package index"
+msgstr ""
+
+msgid "Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images"
+msgstr ""
+
+msgid "Only show the plan: every step, changing nothing"
+msgstr ""
+
+msgid "Check an image definition without building it"
+msgstr ""
