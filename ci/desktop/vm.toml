@@ -7,7 +7,7 @@ name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "xwayland", "desktop-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "xwayland", "desktop-test"]
 off = ["ssh"]
 
 [vm]

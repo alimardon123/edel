@@ -179,6 +179,14 @@ commands() {
 		'panel off') pkill -f '[e]del-testclient --layer' ;;
 		# shell-ui dies (M5.1b): the compositor should start it again.
 		'kill panel') pkill -9 -x edel-shell-ui ;;
+		# Tab completion (M5.26): ci's login shell, and what an interactive
+		# bash of ci's completes, one line per answer.
+		complete)
+			say "login_shell $(awk -F: '$1 == "ci" { print $7 }' /etc/passwd)"
+			su ci -s /bin/bash -c /usr/libexec/edel-complete-test 2>&1 | while IFS= read -r answer; do
+				say "complete $answer"
+			done
+			;;
 		# A screen reader (M5.1d): accessibility on in ci's session, and
 		# what AT-SPI holds of shell-ui, a line a node.
 		'a11y tree')

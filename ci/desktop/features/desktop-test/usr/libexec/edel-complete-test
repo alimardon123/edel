@@ -1,0 +1,27 @@
+#!/bin/bash -i
+# Test only (roadmap M5.26): run as ci, an interactive bash, as a person's
+# terminal is, completes two lines the way Tab would, and prints whether
+# bash-completion loaded edel's completion on its own, then each answer.
+# bash-completion 2.12 renamed its loader _comp_load; older ones call it
+# _completion_loader.
+load() {
+	if declare -F _comp_load >/dev/null; then
+		_comp_load edel
+	elif declare -F _completion_loader >/dev/null; then
+		_completion_loader edel
+	else
+		return 1
+	fi
+}
+if load 2>/dev/null && declare -F _edel >/dev/null; then
+	echo "loader yes"
+else
+	echo "loader no"
+	exit 1
+fi
+for line in "edel se" "edel settings set lay"; do
+	COMP_LINE=$line
+	COMP_POINT=${#line}
+	_edel
+	echo "${COMPREPLY[*]}"
+done

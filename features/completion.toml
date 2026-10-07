@@ -1,0 +1,9 @@
+# Tab completion (roadmap M5.26, ADR-008's same names decision): bash, and
+# bash-completion, which loads edel's completion, written into every
+# bootable image by edel image build from edel's own command table, when a
+# command is first completed. People's login shell is bash where this
+# feature is, unless users.NAME.login_shell says otherwise.
+format = 1
+summary = "Tab completion: bash, which completes edel's commands, keys and values"
+why = "busybox's shell cannot complete; bash with bash-completion completes edel's commands, settings keys and values one part at a time, so people type less and learn the names as they go. Kept only while it adds at most 3 MiB to a slot (M5.26)."
+packages = ["bash", "bash-completion"]
