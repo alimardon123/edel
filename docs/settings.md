@@ -138,7 +138,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 
 | Key | Value | From |
 |---|---|---|
-| `updates.channel` | text, such as `"stable"` | M3.4 |
+| `updates.channel` | the channel whose release lists `edel update` takes, such as `"stable"` or `"preview"`; missing is the channel the image was built for. A list for another channel is refused unless `edel update --channel NAME` asks for it once | M3.8 |
 | `updates.version` | text, a release to stay on; missing follows the channel | M3.4 |
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |

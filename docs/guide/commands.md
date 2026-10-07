@@ -25,6 +25,8 @@ Install a newer Edel OS into the other slot from RELEASE; it starts at the next 
 | `RELEASE` | The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one |
 | `--check` | Only check the version RELEASE holds against this one; change nothing |
 | `--allow-downgrade` | Install even when the release is not newer than this system |
+| `--channel CHANNEL` | Take a release list for this channel once, rather than the one this machine follows (updates.channel) |
+| `--allow-http` | Read RELEASE over plain http (for a local test server) |
 | `--unsigned` | Install a slot image without a signed release.toml (for testing) |
 
 ## `edel rollback`

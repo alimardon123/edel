@@ -428,7 +428,7 @@ fn slot_os_release(device: &Path) -> Option<String> {
 /// start next. The image streams into the slot, decompressed on the way
 /// when it is gzipped, and stays as it was signed: never grown, its UUID
 /// its own (M1.12).
-pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<()> {
+pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) -> Result<()> {
     let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
     let slot = disk.running.other();
@@ -438,7 +438,7 @@ pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<
         let path = Path::new(location);
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
-        let release = crate::release::open_checked(location, allow_downgrade)?;
+        let release = crate::release::open_checked(location, accept)?;
         (release.reader, Some(release.sha256), release.size)
     };
     let room = size_of(&target)?;

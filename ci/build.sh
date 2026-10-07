@@ -118,16 +118,20 @@ build "$version.1" images/vm.toml --files ci/ab-test/files \
 	--loader-tag ci --no-compress --out out/ab-test-update
 
 # The update the A/B test downloads over HTTP (ci/ab-test.sh serves this
-# directory): a signed release.toml, the shrunk and gzipped image, and
-# bad.toml, the same manifest with one byte changed (roadmap M1.6, M1.7).
+# directory): a signed release.toml, the shrunk and gzipped image,
+# bad.toml, the same manifest with one byte changed (roadmap M1.6, M1.7),
+# and expired.toml, signed but past its date (M3.8). Lists are for the
+# images' own channel and expire 60 days after signing, as released ones (the default row).
 update=out/ab-test/update
 rm -rf "$update"
 mkdir -p "$update"
 ln out/ab-test-update/edel-vm-x86_64.ext4.gz "$update/"
-./target/release/edel release make --version "$version.1" --channel ci "$update/edel-vm-x86_64.ext4.gz"
-./target/release/edel release sign --key out/keys/ci-1.key "$update/release.toml"
-sed 's/^channel = "ci"$/channel = "cj"/' "$update/release.toml" >"$update/bad.toml"
+./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-vm-x86_64.ext4.gz"
+./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
+sed 's/^version = "\(.*\)"$/version = "\1x"/' "$update/release.toml" >"$update/bad.toml"
 cp "$update/release.toml.sig" "$update/bad.toml.sig"
+sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/expired.toml"
+./target/release/edel release sign --key out/keys/ci-1.key "$update/expired.toml"
 
 # The Flatpak spike image: the VM image plus dbus, flatpak and a test
 # service that installs and runs a Flathub runtime (roadmap M1.9).
@@ -141,8 +145,8 @@ update=out/desktop-test/update
 rm -rf "$update"
 mkdir -p "$update"
 ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
-./target/release/edel release make --version "$version.1" --channel ci "$update/edel-desktop-x86_64.ext4.gz"
-./target/release/edel release sign --key out/keys/ci-1.key "$update/release.toml"
+./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-desktop-x86_64.ext4.gz"
+./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
 
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update

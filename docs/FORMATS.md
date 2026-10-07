@@ -13,6 +13,7 @@ format = 1
 version = "2026.10.1"
 channel = "stable"
 date = "2026-10-02T18:00:00Z"
+expires = "2026-12-01"           # the last day it may be used, set when signed (M3.8)
 
 [[images]]
 name = "edel-vm-x86_64"        # matches EDEL_IMAGE in the image's os-release
@@ -24,7 +25,8 @@ size = 187695104
 - **Signature:** `release.toml.sig` holds an ed25519 signature over the exact bytes of `release.toml`, as hex. Public keys are 32 bytes as hex in `*.pub` files; every image carries two of them in `/usr/share/edel/keys/`, so one key can replace the other without stranding a machine. `edel release keygen`, `make`, `sign` and `verify` handle them.
 - **Where from:** `edel update` and `edel update --check` take a path, a `file://` URL or an http(s) URL; the signature makes plain http as safe as https. The image streams into the slot and is hashed on the way (M1.7).
 - **Images are shrunk:** `edel image build` cuts the update image to its file system (`resize2fs -M`), so it fits any slot at least that big; the slot keeps it at that size, unchanged (M1.12). `size` is that shrunk size, so it is also the smallest slot the image needs.
-- **What `edel update` refuses:** a manifest no carried key signed (`refused: signature`), an image whose sha256 or size differs (`refused: sha256`), a release with no image named like this machine's `EDEL_IMAGE`, and a version that is not newer than the running `VERSION_ID` unless `--allow-downgrade` is given. Versions compare number by number (`2026.10.2` is newer than `2026.9.9`).
+- **What `edel update` refuses:** a list past its `expires` date (`refused: expired`), a list for another channel than the machine's (`refused: channel`; the machine follows `updates.channel`, else its image's own channel, and `--channel NAME` takes another once), a plain `http://` location without `--allow-http`, which only CI's local server needs (`refused: http`), a manifest no carried key signed (`refused: signature`), an image whose sha256 or size differs (`refused: sha256`), a release with no image named like this machine's `EDEL_IMAGE`, and a version that is not newer than the running `VERSION_ID` unless `--allow-downgrade` is given. Versions compare number by number (`2026.10.2` is newer than `2026.9.9`).
+- **Expiry (M3.8):** `edel release sign --expires-in DAYS` writes `expires` before it signs, so the date is the signer's; released lists get 60 days (a default row). A list from before M3.8 has no `expires` and is still read, as older updaters ignore the field, so this was no format bump.
 - **Reading:** unknown fields are ignored; the signature still covers them. Only an unknown `format` is refused, naming the format.
 - **The stepping-stone rule:** a breaking change publishes the new format under a new file name and keeps `release.toml` pointing at a release whose `edel` reads both formats. A machine two formats behind installs that stepping stone, then the newer release at its next check, with no extra command from the person (AerynOS users rerun theirs by hand).
 - **Keys today:** until the first preview (M3.4) no image carries a real key. CI makes two throwaway keys on every run and bakes them into its test images with `edel image build --public-key`. The real key goes into the `EDEL_RELEASE_KEY` secret, which waits for Alimardon.

@@ -4,8 +4,8 @@
 # Each boot runs the next step of the test, then restarts the VM. The step
 # number lives on the EFI system partition, which both slots share.
 #
-#   1. Slot A runs with a read-only root. A release.toml with one byte
-#      changed is refused. The update comes over HTTP from the host. Write markers into /home and
+#   1. Slot A runs with a read-only root. A release.toml past its date
+#      and one with one byte changed are refused. The update comes over HTTP from the host. Write markers into /home and
 #      /var, delete /var/lib/ci-new, change the hostname, note the ssh
 #      host key, add a user and drop a system user from this machine's
 #      /etc/passwd, then install the update into slot B.
@@ -95,7 +95,7 @@ root_is_ro() {
 # has no softdog; with network, add the health check network to slot B's
 # os-release and take its networking service out, and this test's own.
 ab_break_b() {
-	/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
+	/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
 	# The same length, so the 1024-byte block stays whole.
 	sed -i 's/^B_TRY=0$/B_TRY=2/' "$esp/EFI/edel/grubenv"
 	grep -q '^B_TRY=2$' "$esp/EFI/edel/grubenv" || { ab_end "FAIL: setting slot B's last try for $1"; return 1; }
@@ -172,7 +172,16 @@ start() {
 		ab_check "slot A as it was signed, not grown" slot_as_signed || return 0
 		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
-		if refused=$(/usr/bin/edel update http://10.0.2.2:8000/bad.toml 2>&1); then
+		if refused=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/expired.toml 2>&1); then
+			ab_end "FAIL: step 1 installed a release list past its date"
+			return 0
+		fi
+		echo "$refused"
+		echo "$refused" | grep -q 'refused: expired' || {
+			ab_end "FAIL: step 1 expected refused: expired"
+			return 0
+		}
+		if refused=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/bad.toml 2>&1); then
 			ab_end "FAIL: step 1 installed a tampered release.toml"
 			return 0
 		fi
@@ -189,7 +198,7 @@ start() {
 		adduser -D abuser
 		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped
 		sed -i "/^$(cat /data/ab-dropped):/d" /etc/passwd
-		/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
+		/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
 		ab_next 2
 		;;
 	2)
@@ -212,7 +221,7 @@ start() {
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker || return 0
 		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
-		/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
+		/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
 		slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 		mkdir -p /run/ab-test/slot
 		mount "$slot_b" /run/ab-test/slot
