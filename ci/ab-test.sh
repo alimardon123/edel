@@ -32,8 +32,18 @@ if ! first_boot; then
 	echo "FAIL: the installed disk's first boot lacked its hostname, the confirmation of slot A or its own ssh host key"
 	exit 1
 fi
+# M1.10: slot B's hang ran with no watchdog, so the guard restarted it.
+if ! grep -q 'edel guard: this slot is not healthy after .* the machine has no watchdog; restarting it now' "$log"; then
+	echo "FAIL: with no watchdog, the guard did not restart the hung slot B itself"
+	exit 1
+fi
+# M1.11: slot B named its own health check, network, which never passed.
+if ! tr -d '\r' <"$log" | grep -q 'edel guard: health not reached after [0-9]* s: network$'; then
+	echo "FAIL: slot B's guard did not wait for its own health check, network, alone"
+	exit 1
+fi
 if [ "$found" = 1 ] && grep -q 'AB-TEST: PASS' "$log"; then
-	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work (${waited}s)"
+	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too and on an image's own health check (${waited}s)"
 else
 	echo "FAIL: see the serial log above"
 	exit 1

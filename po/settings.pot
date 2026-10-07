@@ -1,0 +1,195 @@
+# The words settings shows people, gathered from its source by a test in
+# crates/edel (EDEL_WRITE_DOCS=1 cargo test -p edel i18n writes it).
+# A language's translation is LANG/settings.po beside it (M5.24).
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Layout"
+msgstr ""
+
+msgid "Displays"
+msgstr ""
+
+msgid "Appearance"
+msgstr ""
+
+msgid "Shortcuts"
+msgstr ""
+
+msgid "Region"
+msgstr ""
+
+msgid "Users"
+msgstr ""
+
+msgid "Network"
+msgstr ""
+
+msgid "Default apps"
+msgstr ""
+
+msgid "Startup"
+msgstr ""
+
+msgid "Power"
+msgstr ""
+
+msgid "Services"
+msgstr ""
+
+msgid "Updates"
+msgstr ""
+
+msgid "Apps"
+msgstr ""
+
+msgid "Add-ons"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+msgid "About"
+msgstr ""
+
+msgid "The system this machine runs and the release it follows."
+msgstr ""
+
+msgid "This system"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Channel"
+msgstr ""
+
+msgid "Unknown"
+msgstr ""
+
+msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
+msgstr ""
+
+msgid "Or the panel's toggle"
+msgstr ""
+
+msgid "Stack keeps one main window, Split halves the focused one, Scroll lines them up"
+msgstr ""
+
+msgid "Title bars"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "On every window, or only on floating ones"
+msgstr ""
+
+msgid "The side they sit on"
+msgstr ""
+
+msgid "The panel's window list brings a window back"
+msgstr ""
+
+msgid "Or double-click a title bar"
+msgstr ""
+
+msgid "Closes a window even with its button hidden"
+msgstr ""
+
+msgid "Back to the pages"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Search the settings"
+msgstr ""
+
+msgid "Preset"
+msgstr ""
+
+msgid "Tile windows"
+msgstr ""
+
+msgid "Tiling style"
+msgstr ""
+
+msgid "Window buttons"
+msgstr ""
+
+msgid "Minimize button"
+msgstr ""
+
+msgid "Maximize button"
+msgstr ""
+
+msgid "Close button"
+msgstr ""
+
+msgid "Always"
+msgstr ""
+
+msgid "Floating only"
+msgstr ""
+
+msgid "Left"
+msgstr ""
+
+msgid "Right"
+msgstr ""
+
+msgid "Stack"
+msgstr ""
+
+msgid "Split"
+msgstr ""
+
+msgid "Scroll"
+msgstr ""
+
+msgid "Your choice"
+msgstr ""
+
+msgid "Set by this machine"
+msgstr ""
+
+msgid "Automatic ({current})"
+msgstr ""
+
+msgid "From the preset"
+msgstr ""
+
+msgid "Your changes are live"
+msgstr ""
+
+msgid "Undo puts this page back as it was when Settings opened."
+msgstr ""
+
+msgid "Undo"
+msgstr ""
+
+msgid "Put this page back as it was when Settings opened"
+msgstr ""
+
+msgid "Keep"
+msgstr ""
+
+msgid "Reset"
+msgstr ""
+
+msgid "Take your choice out, so this machine or the release decides"
+msgstr ""
+
+msgid "Copy as command"
+msgstr ""
+
+msgid "How every window's title bar will look"
+msgstr ""
+
+msgid "Shortcut {keys}"
+msgstr ""
+
+msgid "Shortcut: {keys}"
+msgstr ""

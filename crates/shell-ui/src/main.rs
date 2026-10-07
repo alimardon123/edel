@@ -167,6 +167,9 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    if let Some((language, words)) = edel::i18n::init("shell-ui") {
+        eprintln!("edel-shell-ui: words in {language}, {words} translated");
+    }
     let (preset, scheme) = from_system_files();
     let tokens = load_tokens(scheme);
     let connection = Connection::connect_to_env().context("connecting to the compositor")?;

@@ -7,6 +7,7 @@
 //! list only while open: shell-ui's idle memory stays the panel's.
 //! Drawing is plain and tested without a display.
 
+use edel::i18n::tr;
 use std::process::{Child, Command, Stdio};
 
 use tiny_skia::Pixmap;
@@ -83,7 +84,7 @@ pub fn paint(
     let room = (w - 2.0 * (PAD + INSET)) * s;
     let dim = mix(tokens.panel_text, tokens.panel, 0.45);
     let (words, ink) = if view.query.is_empty() {
-        ("Type to search", dim)
+        (tr("Type to search"), dim)
     } else {
         (view.query.as_str(), tokens.panel_text)
     };
@@ -100,7 +101,7 @@ pub fn paint(
     let (y, h) = ((PAD + 10.0) * s, (SEARCH - 20.0) * s);
     fill(pixmap, x, y, 2.0 * s, h, s, tokens.accent);
     if view.names.is_empty() {
-        let mut line = text.fit("No app matches", size, room);
+        let mut line = text.fit(tr("No app matches"), size, room);
         let y = middle(first, tokens.row as f32, size, s);
         text.draw(pixmap, &mut line, left, y, dim);
     }

@@ -13,7 +13,9 @@
 //! in for an app the panel pins (M5.4c). `--fullscreen` asks to fill the
 //! screen before the window is shown (M5.20). `--globals` lists the
 //! globals it is offered, and `--security-context` those a sandboxed app
-//! is offered (`sandbox.rs`, M5.22).
+//! is offered (`sandbox.rs`, M5.22). `--lock-pointer` locks the pointer
+//! and prints the mouse's motion, and `--inhibit-idle` keeps the screen
+//! on (`hold.rs`, M5.23).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -52,6 +54,9 @@ struct Args {
     layer: Option<Anchor>,
     /// A window that asks to fill its screen before it is shown (M5.20).
     fullscreen: bool,
+    /// A window that locks the pointer, or keeps the screen on (M5.23).
+    lock_pointer: bool,
+    inhibit_idle: bool,
 }
 
 fn args() -> Result<Args> {
@@ -61,10 +66,19 @@ fn args() -> Result<Args> {
     let mut app_id = "edel-testclient".to_string();
     let mut layer = None;
     let mut fullscreen = false;
+    let (mut lock_pointer, mut inhibit_idle) = (false, false);
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
-        if word == "--fullscreen" {
-            fullscreen = true;
+        match word.as_str() {
+            "--fullscreen" => fullscreen = true,
+            "--lock-pointer" => lock_pointer = true,
+            "--inhibit-idle" => inhibit_idle = true,
+            _ => {}
+        }
+        if matches!(
+            word.as_str(),
+            "--fullscreen" | "--lock-pointer" | "--inhibit-idle"
+        ) {
             continue;
         }
         let value = words
@@ -95,7 +109,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen and --layer, or --workspace or --toplevels alone"
+                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals or --security-context alone"
             ),
         }
     }
@@ -110,6 +124,8 @@ fn args() -> Result<Args> {
         app_id,
         layer,
         fullscreen,
+        lock_pointer,
+        inhibit_idle,
     })
 }
 
@@ -147,6 +163,7 @@ struct Client {
     closed: bool,
 }
 
+mod hold;
 mod sandbox;
 mod toplevels;
 mod workspaces;
@@ -190,6 +207,12 @@ fn main() -> Result<()> {
             Shown::Window(window)
         }
     };
+    if args.lock_pointer {
+        hold::lock(&globals, &qh, shown.wl_surface())?;
+    }
+    if args.inhibit_idle {
+        hold::inhibit(&globals, &qh, shown.wl_surface())?;
+    }
     // The first commit carries no buffer; the compositor answers with a
     // configure, and the first draw follows it.
     shown.commit();

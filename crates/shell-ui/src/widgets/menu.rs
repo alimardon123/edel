@@ -3,6 +3,7 @@
 //! panel (M5.5d). A click opens the launcher, or closes it (M5.3b).
 
 use accesskit::Role;
+use edel::i18n::tr;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint;
@@ -19,7 +20,7 @@ pub const WIDGET: Widget = Widget {
 };
 
 fn label(_: &str) -> String {
-    "Menu".into()
+    tr("Menu").into()
 }
 
 /// A click opens or closes the launcher.

@@ -61,6 +61,13 @@ enum Commands {
         /// Install even when the release is not newer than this system
         #[arg(long)]
         allow_downgrade: bool,
+        /// Take a release list for this channel once, rather than the one
+        /// this machine follows (updates.channel)
+        #[arg(long, value_name = "CHANNEL")]
+        channel: Option<String>,
+        /// Read RELEASE over plain http (for a local test server)
+        #[arg(long)]
+        allow_http: bool,
         /// Install a slot image without a signed release.toml (for testing)
         #[arg(long)]
         unsigned: bool,
@@ -68,8 +75,9 @@ enum Commands {
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
     Rollback,
-    /// Show the version running now and the one in the other slot, and
-    /// the desktop's effect tier while a session runs
+    /// Show the version running now and the one in the other slot, the
+    /// desktop's effect tier while a session runs, and which log to read
+    /// when the last boot or desktop session went wrong
     Status,
     /// Steps the boot services run
     #[command(hide = true)]
@@ -101,7 +109,8 @@ enum Commands {
         yes: bool,
     },
     /// Print what an issue about this machine needs, as TOML: the release,
-    /// kernel, boot time, memory in use, PCI devices and the kernel log
+    /// kernel, boot time, memory in use, PCI devices, the kernel log, and
+    /// the last lines of the system log and of the desktop sessions' logs
     Report {
         /// Write it to /EFI/edel/report.toml on the EFI system partition
         /// instead, where any computer can read it from the disk or stick
@@ -227,6 +236,9 @@ enum ReleaseCommands {
         /// The secret key file (NAME.key)
         #[arg(long)]
         key: PathBuf,
+        /// First set the release list's expires this many days from today
+        #[arg(long, value_name = "DAYS")]
+        expires_in: Option<u32>,
         file: PathBuf,
     },
     /// Check FILE.sig against public keys
@@ -386,20 +398,32 @@ fn main() -> Result<()> {
                 &images,
             )
             .map(|_| ()),
-            ReleaseCommands::Sign { key, file } => release::sign(&key, &file),
+            ReleaseCommands::Sign {
+                key,
+                expires_in,
+                file,
+            } => release::sign(&key, &file, expires_in),
             ReleaseCommands::Verify { keys, file } => release::verify(&keys, &file),
         },
         Commands::Update {
             location,
-            check: true,
-            ..
-        } => release::check(&location),
-        Commands::Update {
-            location,
-            check: false,
+            check,
             allow_downgrade,
+            channel,
+            allow_http,
             unsigned,
-        } => update::install(&location, allow_downgrade, unsigned),
+        } => {
+            let accept = release::Accept {
+                allow_downgrade,
+                channel,
+                allow_http,
+            };
+            if check {
+                release::check(&location, &accept)
+            } else {
+                update::install(&location, &accept, unsigned)
+            }
+        }
         Commands::Rollback => update::rollback(),
         Commands::Status => update::status(),
         Commands::Install {

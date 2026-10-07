@@ -3,7 +3,10 @@
 //! signature over its exact bytes. Every image carries two public keys in
 //! `/usr/share/edel/keys/`, so a key can be replaced without stranding a
 //! machine. `edel update` refuses a manifest no key signed, an
-//! image whose sha256 differs and a version that is not newer.
+//! image whose sha256 differs and a version that is not newer, and since
+//! M3.8 a list past its `expires` date, one for another channel than the
+//! machine's and a plain `http://` location, so a stale or crossed list
+//! cannot hold a machine back.
 //!
 //! The manifest is the one file an old slot reads from the future, so its
 //! reader ignores fields it does not know (the signature still covers them)
@@ -37,8 +40,120 @@ pub struct Manifest {
     pub channel: String,
     #[serde(default)]
     pub date: String,
+    /// The last day, `YYYY-MM-DD` in UTC, on which the list may be used
+    /// (M3.8); set when it is signed. A list from before M3.8 has none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub expires: String,
     #[serde(default)]
     pub images: Vec<ImageEntry>,
+}
+
+/// What `edel update` accepts beyond a good signature (M3.8).
+#[derive(Debug, Clone, Default)]
+pub struct Accept {
+    /// A version that is not newer than the running one.
+    pub allow_downgrade: bool,
+    /// A list for this channel rather than the machine's (`--channel`).
+    pub channel: Option<String>,
+    /// Plain `http://`, for a local test server (`--allow-http`).
+    pub allow_http: bool,
+}
+
+/// The channel this machine follows: `updates.channel` in the machine's
+/// settings file, else the one its image was built for, else `stable`.
+pub fn machine_channel() -> String {
+    let machine = fs::read_to_string(edel::places::found(&edel::places::machine_settings())).ok();
+    edel::settings::chosen("updates.channel", machine.as_deref(), None)
+        .or_else(|| {
+            let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+            os_release_value(&os_release, "EDEL_CHANNEL")
+        })
+        .filter(|c| !c.is_empty())
+        .unwrap_or_else(|| "stable".into())
+}
+
+/// Refuses a plain `http://` location unless `allow_http`: the signature
+/// already covers what comes over it, but https keeps a list from being
+/// swapped or held back on the way (M3.8).
+fn check_location(location: &str, allow_http: bool) -> Result<()> {
+    if location.starts_with("http://") && !allow_http {
+        bail!(
+            "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
+        );
+    }
+    Ok(())
+}
+
+/// Refuses a list past its `expires` date (`today` in days since
+/// 1970-01-01, UTC) or for another channel than `channel`, the machine's,
+/// unless `accept` asks for that channel.
+fn check_list(manifest: &Manifest, today: i64, channel: &str, accept: &Accept) -> Result<()> {
+    if !manifest.expires.is_empty() {
+        let Some(last) = parse_date(&manifest.expires) else {
+            bail!(
+                "refused: expired: release.toml's expires {:?} is not a date (YYYY-MM-DD); nothing was changed",
+                manifest.expires
+            );
+        };
+        if today > last {
+            bail!(
+                "refused: expired: this release list expired on {}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)",
+                manifest.expires
+            );
+        }
+    }
+    let wanted = accept.channel.as_deref().unwrap_or(channel);
+    if !manifest.channel.is_empty() && manifest.channel != wanted {
+        bail!(
+            "refused: channel: this release list is for the {} channel, and this machine follows {wanted}; pass --channel {} to take it once, or set updates.channel to change for good",
+            manifest.channel,
+            manifest.channel
+        );
+    }
+    Ok(())
+}
+
+/// Days since 1970-01-01 of a proleptic Gregorian date (Howard Hinnant's
+/// days_from_civil).
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (i64::from(m) + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// The date `days` after 1970-01-01, as `YYYY-MM-DD`.
+fn civil_from_days(days: i64) -> String {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// `YYYY-MM-DD` as days since 1970-01-01.
+fn parse_date(text: &str) -> Option<i64> {
+    let mut parts = text.trim().splitn(3, '-');
+    let y: i64 = parts.next()?.parse().ok()?;
+    let m: u32 = parts.next()?.parse().ok()?;
+    let d: u32 = parts.next()?.parse().ok()?;
+    ((1..=12).contains(&m) && (1..=31).contains(&d)).then(|| days_from_civil(y, m, d))
+}
+
+/// Today, in days since 1970-01-01, by this machine's clock.
+fn today() -> i64 {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    (secs / 86_400) as i64
 }
 
 /// One image of a release. `sha256` and `size` are those of the image as
@@ -264,8 +379,10 @@ fn sha256_reader(reader: &mut dyn Read) -> Result<(String, u64)> {
 }
 
 /// The manifest at `location` (a path or an http(s) URL), after its
-/// signature is checked against the keys this image carries.
-fn verified_manifest(location: &str) -> Result<Manifest> {
+/// signature is checked against the keys this image carries and the list
+/// against its date, the machine's channel and `accept` (M3.8).
+fn verified_manifest(location: &str, accept: &Accept) -> Result<Manifest> {
+    check_location(location, accept.allow_http)?;
     let bytes = fetch(location)?;
     let sig = fetch(&format!("{location}.sig"))
         .context("refused: signature: cannot read the .sig file beside release.toml")?;
@@ -274,7 +391,9 @@ fn verified_manifest(location: &str) -> Result<Manifest> {
         &String::from_utf8_lossy(&sig),
         &load_keys(Path::new(KEYS_DIR))?,
     )?;
-    parse_manifest(&String::from_utf8_lossy(&bytes))
+    let manifest = parse_manifest(&String::from_utf8_lossy(&bytes))?;
+    check_list(&manifest, today(), &machine_channel(), accept)?;
+    Ok(manifest)
 }
 
 /// A checked release, ready to stream into a slot. `sha256` and `size`
@@ -287,25 +406,27 @@ pub struct Checked {
 
 /// Checks the release at `location` with this image's keys and opens the
 /// image for this machine.
-pub fn open_checked(location: &str, allow_downgrade: bool) -> Result<Checked> {
-    let manifest = verified_manifest(location)?;
+pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
+    let manifest = verified_manifest(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE")
         .context("this system's /usr/lib/os-release has no EDEL_IMAGE")?;
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
-    let entry = pick_image(&manifest, &image, &running, allow_downgrade)?;
+    let entry = pick_image(&manifest, &image, &running, accept.allow_downgrade)?;
     let sha256 = from_hex(&entry.sha256).context("release.toml has a bad sha256")?;
+    let image_at = beside(location, &entry.file);
+    check_location(&image_at, accept.allow_http)?;
     println!("release {}: signature checked", manifest.version);
     Ok(Checked {
         sha256,
         size: entry.size,
-        reader: open_image(&beside(location, &entry.file))?,
+        reader: open_image(&image_at)?,
     })
 }
 
 /// `edel update --check`: the running version and the one at `location`.
-pub fn check(location: &str) -> Result<()> {
-    let manifest = verified_manifest(location)?;
+pub fn check(location: &str, accept: &Accept) -> Result<()> {
+    let manifest = verified_manifest(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let newer = compare_versions(&manifest.version, &running) == Ordering::Greater;
@@ -401,6 +522,7 @@ pub fn make(
         version: version.to_string(),
         channel: channel.to_string(),
         date,
+        expires: String::new(),
         images: entries,
     };
     let out = out_dir.unwrap_or(dir);
@@ -411,17 +533,34 @@ pub fn make(
     Ok(path)
 }
 
-/// `edel release sign`: writes `FILE.sig`.
-pub fn sign(key_path: &Path, file: &Path) -> Result<()> {
+/// `edel release sign`: writes `FILE.sig`; with `expires_in`, first sets
+/// the list's `expires` that many days from today (M3.8), so the date is
+/// the signer's, not the build's.
+pub fn sign(key_path: &Path, file: &Path, expires_in: Option<u32>) -> Result<()> {
     let text =
         fs::read_to_string(key_path).with_context(|| format!("reading {}", key_path.display()))?;
     let key = SigningKey::from_bytes(&fixed::<32>(from_hex(&text)?, "the secret key")?);
+    if let Some(days) = expires_in {
+        let list =
+            fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        let date = civil_from_days(today() + i64::from(days));
+        fs::write(file, with_expires(&list, &date)?)?;
+        println!("{}: expires {date}", file.display());
+    }
     let bytes = fs::read(file).with_context(|| format!("reading {}", file.display()))?;
     let sig = key.sign(&bytes);
     let sig_path = PathBuf::from(format!("{}.sig", file.display()));
     fs::write(&sig_path, format!("{}\n", to_hex(&sig.to_bytes())))?;
     println!("{}", sig_path.display());
     Ok(())
+}
+
+/// `list` with its `expires` set to `date`, every other line kept.
+fn with_expires(list: &str, date: &str) -> Result<String> {
+    let mut doc: toml_edit::DocumentMut = list.parse().context("the list is not valid TOML")?;
+    doc["expires"] = toml_edit::value(date);
+    // Before the [[images]] tables, as a top-level key must be.
+    Ok(doc.to_string())
 }
 
 /// `edel release verify`: checks `FILE.sig` against the keys in `keys`.
@@ -492,6 +631,67 @@ mod tests {
         assert_eq!(manifest.images[0].name, "edel-vm-x86_64");
         let err = parse_manifest(&MANIFEST.replace("format = 1", "format = 2")).unwrap_err();
         assert!(err.to_string().contains("format 2"));
+    }
+
+    #[test]
+    fn dates_round_trip_through_days() {
+        assert_eq!(parse_date("1970-01-01"), Some(0));
+        assert_eq!(parse_date("2026-10-07"), Some(20_733));
+        assert_eq!(civil_from_days(20_733), "2026-10-07");
+        assert_eq!(
+            civil_from_days(parse_date("2028-02-29").unwrap() + 1),
+            "2028-03-01"
+        );
+        assert_eq!(parse_date("2026-13-01"), None);
+        assert_eq!(parse_date("soon"), None);
+    }
+
+    #[test]
+    fn refuses_an_expired_list_another_channel_and_plain_http() {
+        let list = |expires: &str, channel: &str| {
+            let mut m = parse_manifest(MANIFEST).unwrap();
+            m.expires = expires.into();
+            m.channel = channel.into();
+            m
+        };
+        let today = parse_date("2026-10-07").unwrap();
+        let none = Accept::default();
+        assert!(check_list(&list("2026-10-07", "stable"), today, "stable", &none).is_ok());
+        let err = check_list(&list("2026-10-06", "stable"), today, "stable", &none).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("refused: expired: this release list expired on 2026-10-06"),
+            "{err}"
+        );
+        // A list from before M3.8 has no date and is still read.
+        assert!(check_list(&list("", "stable"), today, "stable", &none).is_ok());
+        let err = check_list(&list("", "preview"), today, "stable", &none).unwrap_err();
+        assert!(
+            err.to_string().contains("this release list is for the preview channel, and this machine follows stable; pass --channel preview"),
+            "{err}"
+        );
+        let asked = Accept {
+            channel: Some("preview".into()),
+            ..Accept::default()
+        };
+        assert!(check_list(&list("", "preview"), today, "stable", &asked).is_ok());
+        let err = check_location("http://10.0.2.2:8000/release.toml", false).unwrap_err();
+        assert!(err.to_string().starts_with("refused: http:"), "{err}");
+        assert!(check_location("http://10.0.2.2:8000/release.toml", true).is_ok());
+        assert!(check_location("https://example.org/release.toml", false).is_ok());
+        assert!(check_location("/srv/release.toml", false).is_ok());
+    }
+
+    #[test]
+    fn signing_sets_the_date_a_list_expires_before_its_images() {
+        let text = with_expires(MANIFEST, "2026-11-21").unwrap();
+        let m = parse_manifest(&text).unwrap();
+        assert_eq!(m.expires, "2026-11-21");
+        assert_eq!(m.images.len(), 1);
+        assert!(text.find("expires").unwrap() < text.find("[[images]]").unwrap());
+        // Signing again replaces the date.
+        let again = parse_manifest(&with_expires(&text, "2026-12-01").unwrap()).unwrap();
+        assert_eq!(again.expires, "2026-12-01");
     }
 
     #[test]

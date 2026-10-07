@@ -58,6 +58,9 @@ pub const SESSION_DIR: &str = run!("/session");
 pub const STATE_FILE: &str = run!("/session/state.toml");
 /// The desktop's health: the compositor's first frame (M4.8).
 pub const READY_FILE: &str = run!("/session/ready");
+/// Where a feature's own health checks leave their files, one per name,
+/// such as a server's `network` (M1.11).
+pub const HEALTH_DIR: &str = run!("/health");
 /// The default runlevel's health (M1.5).
 pub const DEFAULT_REACHED: &str = run!("/default-reached");
 /// Written once the guard confirmed this boot's slot (M1.5).
@@ -85,8 +88,23 @@ pub const PACKAGES_FILE: &str = share!("/packages");
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
 /// GTK's colours from the tokens (M5.5b).
 pub const GTK_CSS: &str = share!("/gtk.css");
+/// Where each part's words in each language are (M5.24): `LANG/PART.po`.
+pub const LOCALE_DIR: &str = share!("/locale");
 /// These places as shell variables, for the slot's own scripts (M5.27).
 pub const PLACES_SH: &str = share!("/places.sh");
+
+/// Where people's home directories are.
+pub const HOMES: &str = "/home";
+/// A person's state directory for Edel OS inside their home, where
+/// `XDG_STATE_HOME` is not set: their session's log (M5.28a).
+pub const STATE_IN_HOME: &str = ".local/state/edel";
+/// The desktop session's log, in a person's state directory: the
+/// compositor and what it starts write to it (M5.28a).
+pub const SESSION_LOG: &str = "session.log";
+/// The session before's log, beside it: two sessions are kept.
+pub const SESSION_LOG_BEFORE: &str = "session.old.log";
+/// The system log busybox's syslogd writes, on the data partition.
+pub const SYSTEM_LOG: &str = "/var/log/messages";
 
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
@@ -110,12 +128,16 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("state_file", STATE_FILE.to_string()),
         ("ready_file", READY_FILE.to_string()),
         ("default_reached", DEFAULT_REACHED.to_string()),
+        ("health_dir", HEALTH_DIR.to_string()),
         ("confirmed_file", CONFIRMED.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
+        // Inside a person's home (M5.28a).
+        ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),
+        ("system_log", SYSTEM_LOG.to_string()),
     ]
 }
 
@@ -162,6 +184,23 @@ pub fn person_dir() -> Option<PathBuf> {
                 .map(|home| PathBuf::from(home).join(".config"))
         })?;
     Some(config.join("edel"))
+}
+
+/// A person's state directory for Edel OS: `$XDG_STATE_HOME/edel`, else
+/// [`STATE_IN_HOME`] in their home; none without either variable.
+pub fn person_state_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_STATE_HOME") {
+        Some(state) => Some(PathBuf::from(state).join("edel")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(STATE_IN_HOME)),
+    }
+}
+
+/// `part`'s words in `language`, such as `de` or `pt_BR` (M5.24).
+pub fn catalogue(language: &str, part: &str) -> PathBuf {
+    Path::new(LOCALE_DIR)
+        .join(language)
+        .join(format!("{part}.po"))
 }
 
 /// A person's own settings file, with the same keys as the machine's; for

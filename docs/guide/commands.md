@@ -10,9 +10,9 @@
 |---|---|
 | `edel update` | Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails |
 | `edel rollback` | Go back to the version in the other slot, the one before the last update; it starts at the next restart |
-| `edel status` | Show the version running now and the one in the other slot, and the desktop's effect tier while a session runs |
+| `edel status` | Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong |
 | `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings |
-| `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices and the kernel log |
+| `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs |
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
 
@@ -25,6 +25,8 @@ Install a newer Edel OS into the other slot from RELEASE; it starts at the next 
 | `RELEASE` | The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one |
 | `--check` | Only check the version RELEASE holds against this one; change nothing |
 | `--allow-downgrade` | Install even when the release is not newer than this system |
+| `--channel CHANNEL` | Take a release list for this channel once, rather than the one this machine follows (updates.channel) |
+| `--allow-http` | Read RELEASE over plain http (for a local test server) |
 | `--unsigned` | Install a slot image without a signed release.toml (for testing) |
 
 ## `edel rollback`
@@ -33,7 +35,7 @@ Go back to the version in the other slot, the one before the last update; it sta
 
 ## `edel status`
 
-Show the version running now and the one in the other slot, and the desktop's effect tier while a session runs.
+Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong.
 
 ## `edel install DISK [OPTIONS]`
 
@@ -48,7 +50,7 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 
 ## `edel report [OPTIONS]`
 
-Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices and the kernel log.
+Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs.
 
 | | What it does |
 |---|---|

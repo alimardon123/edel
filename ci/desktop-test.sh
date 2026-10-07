@@ -84,6 +84,13 @@
 #               Super+Left and the window list scroll to them (M5.16c)
 #   sandbox     a client in a security context sees none of the shell's
 #               four protocols, which a plain client sees (M5.22)
+#   everyday    the five everyday protocols are offered, a locked pointer
+#               gives its window relative motion, and a window keeping the
+#               screen on is counted in the state file (M5.23)
+#   language    region.language = "xx" restarts shell-ui in a made-up
+#               language, whose launcher draws its one long word where
+#               English leaves the search line empty; unset, English
+#               (M5.24a)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -412,7 +419,22 @@ case_respawn() {
 	"ci output "*" ready") ;;
 	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again"
+	# The session's log (M5.28a), ci's ~/.local/state/edel/session.log:
+	# the new session warns that the one before ended without closing,
+	# edel status points to that log, and edel report holds both logs'
+	# last lines, the new one's ready line among them.
+	wait_for 'DESKTOP-TEST: log_report ' || fail "no word from the test service about the session's log"
+	[ "$(value log_warned)" = 1 ] || fail "the new session's log does not say the session before ended without closing"
+	case "$(value log_status)" in
+	"logs: ci's last desktop session ended without closing; its log is /home/ci/.local/state/edel/session.old.log"*) ;;
+	*) fail "edel status did not point to the killed session's log: \"$(value log_status)\"" ;;
+	esac
+	read -r logs ready <<-EOF
+		$(value log_report)
+	EOF
+	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
+		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
 }
 
 case_layers() {
@@ -857,6 +879,64 @@ case_workspaces() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
+}
+
+# search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
+# second for up to 10 s, until the open launcher's search line, from
+# 160 to 340 across its middle 20 rows, is WANT, uniform (empty there)
+# or varied (words reach it); prints the last answer and fails if never.
+search_line() {
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/$1.png"
+		seen=$(python3 ci/qmp.py uniform "$dir/$1.png" 160 418 180 20)
+		case "$seen" in "$2"*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	echo "$seen"
+	case "$seen" in "$2"*) true ;; *) false ;; esac
+}
+
+case_language() {
+	# Translations (M5.24a): region.language = "xx", a made-up language
+	# the test feature ships a catalogue for, restarts shell-ui, which
+	# reads its words in it; the launcher's "Type to search", 14 letters
+	# from 28,428, becomes a line long enough to reach past 160, where
+	# English leaves the search line empty. Unset, English is back. Kept
+	# as language-xx.png and language-en.png.
+	for language in en xx en; do
+		if [ "$language" = xx ]; then
+			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now xx')
+			guest 'language xx'
+			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now xx' "$restarts" ||
+				fail "setting region.language=xx did not restart shell-ui"
+			wait_for 'edel-shell-ui: words in xx, 1 translated' || fail "shell-ui did not read xx's one word"
+			want=varied
+		elif [ "$(count 'edel-shell-ui: words in xx')" -gt 0 ]; then
+			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now English')
+			guest 'language default'
+			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now English' "$restarts" ||
+				fail "unsetting region.language did not restart shell-ui"
+			want=uniform
+		else
+			want=uniform
+		fi
+		sleep 2
+		shown=$(count 'edel-shell-ui: launcher shown')
+		python3 ci/qmp.py key meta_l
+		wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher in $language"
+		seen=$(search_line "language-$language" "$want") ||
+			fail "in $language the launcher's search line from 160 to 340 is $seen, not $want"
+		hidden=$(count 'edel-shell-ui: launcher hidden')
+		python3 ci/qmp.py key esc
+		wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher in $language"
+	done
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Translations (M5.24a): language-xx.png and language-en.png are in the edel-desktop-test artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: region.language = \"xx\" restarted shell-ui, which read xx's one word, and the launcher drew it past 160, where English leaves the search line empty; unset, English came back"
 }
 
 case_launcher() {
@@ -1635,6 +1715,49 @@ case_scroll() {
 	python3 ci/qmp.py key meta_l-t
 	python3 ci/qmp.py key meta_l-1
 	echo "PASS: with scroll, four windows opened as columns with s4 whole and s1 off screen ($opened), Super+Left three times brought s1 whole, and a click on s4 in the window list scrolled back to it ($back)"
+}
+
+case_everyday() {
+	# The protocols everyday apps expect (M5.23): wayland-info's list, as
+	# a plain client is offered it, holds all five; a window that locks
+	# the pointer hears the mouse's motion while the pointer stays put;
+	# one that keeps the screen on is counted in the state file, and no
+	# longer once it closes.
+	asked=$(count 'DESKTOP-TEST: sandbox ')
+	guest globals
+	wait_more 'DESKTOP-TEST: sandbox ' "$asked" || fail "the service did not list the globals"
+	plain=" $(value plain) "
+	for g in zwp_pointer_constraints_v1 zwp_relative_pointer_manager_v1 zwp_primary_selection_device_manager_v1 zwp_idle_inhibit_manager_v1 xdg_activation_v1; do
+		case "$plain" in *" $g "*) ;; *) fail "the compositor does not offer $g:$plain" ;; esac
+	done
+	opened=$(count 'edel-compositor: mapped window lock')
+	guest 'lock window'
+	wait_more 'edel-compositor: mapped window lock' "$opened" || fail "the window that locks the pointer did not open"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window lock at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	set -- $place
+	python3 ci/qmp.py move $(($1 + 200)) $(($2 + 150))
+	wait_for 'DESKTOP-TEST: lock locked' || fail "the pointer over the window did not lock"
+	python3 ci/qmp.py nudge 40 20
+	wait_for 'DESKTOP-TEST: lock relative ' || fail "the window that locked the pointer heard no relative motion"
+	opened=$(count 'edel-compositor: mapped window idle')
+	guest 'idle window'
+	wait_more 'edel-compositor: mapped window idle' "$opened" || fail "the window that keeps the screen on did not open"
+	i=0
+	until [ "$(value idle_inhibitors)" = 1 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the state file does not count the window that keeps the screen on: $(value idle_inhibitors)"
+		guest idle
+		sleep 0.4
+	done
+	guest 'everyday off'
+	i=0
+	until [ "$(value idle_inhibitors)" = 0 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the state file still counts a closed window as keeping the screen on: $(value idle_inhibitors)"
+		guest idle
+		sleep 0.4
+	done
+	echo "PASS: the compositor offers pointer constraints, relative pointer, primary selection, idle inhibit and xdg-activation; a locked pointer gave its window the mouse's motion, and a window keeping the screen on was counted until it closed"
 }
 
 case_sandbox() {

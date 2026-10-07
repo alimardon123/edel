@@ -2,6 +2,7 @@
 //! to `edel::settings`'s key table, and what each row says about where its
 //! value comes from (ADR-008).
 
+use edel::i18n::{n_, tr, trf};
 use edel::settings::Source;
 
 /// One row: the settings file key it shows and changes.
@@ -14,42 +15,44 @@ pub struct Row {
 pub const ROWS: &[Row] = &[
     Row {
         key: "layout.preset",
-        title: "Preset",
+        title: n_("Preset"),
     },
     Row {
         key: "layout.tiling",
-        title: "Tile windows",
+        title: n_("Tile windows"),
     },
     Row {
         key: "layout.tiling_style",
-        title: "Tiling style",
+        title: n_("Tiling style"),
     },
     Row {
         key: "layout.title_bars",
-        title: "Title bars",
+        title: n_("Title bars"),
     },
     Row {
         key: "layout.window_buttons",
-        title: "Window buttons",
+        title: n_("Window buttons"),
     },
     // The title bar's buttons (M5.18a).
     Row {
         key: "layout.minimize_button",
-        title: "Minimize button",
+        title: n_("Minimize button"),
     },
     Row {
         key: "layout.maximize_button",
-        title: "Maximize button",
+        title: n_("Maximize button"),
     },
     Row {
         key: "layout.close_button",
-        title: "Close button",
+        title: n_("Close button"),
     },
 ];
 
-/// The title of `key`'s row.
+/// The title of `key`'s row, in the person's language.
 pub fn title(key: &str) -> &'static str {
-    ROWS.iter().find(|r| r.key == key).map_or("", |r| r.title)
+    ROWS.iter()
+        .find(|r| r.key == key)
+        .map_or("", |r| tr(r.title))
 }
 
 /// The rows on the page for `section`, such as `layout`, which search
@@ -68,9 +71,20 @@ pub fn values(key: &str) -> &'static [&'static str] {
     edel::settings::choices(key)
 }
 
-/// A value as a row shows it: `floating-only` is Floating only.
+/// A value as a row shows it: `floating-only` is Floating only, in the
+/// person's language for the values the key table lists.
 pub fn label(value: &str) -> String {
-    crate::files::title(&value.replace('-', " "))
+    let word = match value {
+        "always" => n_("Always"),
+        "floating-only" => n_("Floating only"),
+        "left" => n_("Left"),
+        "right" => n_("Right"),
+        "stack" => n_("Stack"),
+        "split" => n_("Split"),
+        "scroll" => n_("Scroll"),
+        _ => return crate::files::title(&value.replace('-', " ")),
+    };
+    tr(word).to_string()
 }
 
 /// What a row says under its title about where its value comes from:
@@ -78,9 +92,9 @@ pub fn label(value: &str) -> String {
 /// the release gives it.
 pub fn describe(source: &Source, current: &str) -> String {
     match source {
-        Source::Person(_) => "Your choice".to_string(),
-        Source::Machine(_) => "Set by this machine".to_string(),
-        Source::Release => format!("Automatic ({current})"),
+        Source::Person(_) => tr("Your choice").to_string(),
+        Source::Machine(_) => tr("Set by this machine").to_string(),
+        Source::Release => trf("Automatic ({current})", &[("current", current)]),
     }
 }
 
@@ -89,9 +103,9 @@ pub fn describe(source: &Source, current: &str) -> String {
 /// preset` when the preset does, `Your choice` or `Set by this machine`.
 pub fn note(source: &Source, from_preset: bool) -> Option<&'static str> {
     match source {
-        Source::Person(_) => Some("Your choice"),
-        Source::Machine(_) => Some("Set by this machine"),
-        Source::Release if from_preset => Some("From the preset"),
+        Source::Person(_) => Some(tr("Your choice")),
+        Source::Machine(_) => Some(tr("Set by this machine")),
+        Source::Release if from_preset => Some(tr("From the preset")),
         Source::Release => None,
     }
 }

@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
+use crate::i18n::n_;
+
 /// The settings file format this release reads and writes. A key is never
 /// removed or renamed within a format: `tests/keys.txt` lists every key a
 /// format has had, and a cargo test holds the structs to it.
@@ -39,77 +41,77 @@ pub struct Page {
 pub const PAGES: &[Page] = &[
     Page {
         section: "layout",
-        title: "Layout",
+        title: n_("Layout"),
         about: "the preset, tiling, title bars and panels",
     },
     Page {
         section: "displays",
-        title: "Displays",
+        title: n_("Displays"),
         about: "each screen's place, scale and resolution",
     },
     Page {
         section: "appearance",
-        title: "Appearance",
+        title: n_("Appearance"),
         about: "light or dark, the accent, fonts and animations",
     },
     Page {
         section: "shortcuts",
-        title: "Shortcuts",
+        title: n_("Shortcuts"),
         about: "the keys for each action",
     },
     Page {
         section: "region",
-        title: "Region",
+        title: n_("Region"),
         about: "language, keyboard and time zone",
     },
     Page {
         section: "users",
-        title: "Users",
+        title: n_("Users"),
         about: "the people who log in, and their ssh keys",
     },
     Page {
         section: "network",
-        title: "Network",
+        title: n_("Network"),
         about: "the device's name",
     },
     Page {
         section: "default_apps",
-        title: "Default apps",
+        title: n_("Default apps"),
         about: "the browser, files, editor, terminal and mail",
     },
     Page {
         section: "startup",
-        title: "Startup",
+        title: n_("Startup"),
         about: "apps that start after login",
     },
     Page {
         section: "power",
-        title: "Power",
+        title: n_("Power"),
         about: "the lid, the power button and the screen lock",
     },
     Page {
         section: "services",
-        title: "Services",
+        title: n_("Services"),
         about: "optional services, on or off",
     },
     Page {
         section: "updates",
-        title: "Updates",
+        title: n_("Updates"),
         about: "when updates are installed",
     },
     Page {
         section: "apps",
-        title: "Apps",
+        title: n_("Apps"),
         about: "the apps installed from Flathub",
     },
     Page {
         section: "addons",
-        title: "Add-ons",
+        title: n_("Add-ons"),
         about: "signed extras to the system",
     },
     Page {
         section: "system",
-        title: "System",
+        title: n_("System"),
         about: "developer mode and profiles",
     },
 ];
@@ -206,7 +208,9 @@ pub const KEYS: &[Key] = &[
     now("users.*.ssh_keys", Kind::Texts),
     now("users.*.login_shell", Kind::Shell),
     now("network.hostname", Kind::Hostname),
-    later("region.language", Kind::Text),
+    // The language people read the desktop in (M5.24a): a catalogue's
+    // name, such as `de` or `pt_BR`; English without it.
+    now("region.language", Kind::Text),
     now("region.keyboard", Kind::Keyboard),
     later("region.timezone", Kind::Text),
     now("layout.preset", Kind::OneOf(crate::presets::NAMES)),
@@ -268,7 +272,8 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
     later("services.*", Kind::Flag),
-    later("updates.channel", Kind::Text),
+    // The release lists `edel update` takes (M3.8); absent, the image's.
+    now("updates.channel", Kind::Text),
     later("updates.version", Kind::Text),
     later(
         "updates.automatic",

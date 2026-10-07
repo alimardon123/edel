@@ -16,6 +16,9 @@ description="Edel OS desktop test"
 
 # Edel OS's places, written by edel::places (M5.27).
 . /usr/share/edel/places.sh
+# The session's log, which ci's compositor writes itself (M5.28a); what
+# it wrote before it opened it is in /tmp/compositor.log.
+session_log=/home/ci/$home_session_log
 
 depend() {
 	after edel-settings
@@ -45,7 +48,7 @@ dump() {
 		ls -l /run/user "$session_dir" /dev/dri
 		ps | grep -v ' \['
 		tail -n 30 /var/log/messages
-		cat /var/log/greetd.log /tmp/compositor.log
+		cat /var/log/greetd.log /tmp/compositor.log "$session_log"
 	} >/dev/console 2>&1
 }
 
@@ -80,7 +83,7 @@ report() {
 	say "frames $(frame_ms /tmp/frames.txt count)"
 	# The compositor logs its telemetry once the screen is still for 2 s.
 	sleep 4
-	telemetry=$(grep 'edel-compositor: frames' /tmp/compositor.log | tail -n 1)
+	telemetry=$(grep 'edel-compositor: frames' "$session_log" | tail -n 1)
 	say "telemetry ${telemetry#edel-compositor: }"
 	say "idle_frames $(echo "$telemetry" | sed -n 's/.*idle frames \([0-9][0-9]*\).*/\1/p')"
 	pid=$(pidof edel-compositor)
@@ -88,10 +91,10 @@ report() {
 	# The effect tier (M5.11): the first logged, which CI forces to Full,
 	# the last, after any drop, and edel status's, from the state
 	# file; then the animations it gives (M5.11b).
-	say "tier $(grep 'edel-compositor: tier=' /tmp/compositor.log | head -n 1)"
+	say "tier $(grep 'edel-compositor: tier=' "$session_log" | head -n 1)"
 	# Whether apps may hand over GPU buffers (M5.19), and in how many formats.
-	say "dmabuf $(grep 'GPU buffers' /tmp/compositor.log | tail -n 1)"
-	say "tier_now $(grep -o 'tier=[a-z]*' /tmp/compositor.log | tail -n 1)"
+	say "dmabuf $(grep 'GPU buffers' "$session_log" | tail -n 1)"
+	say "tier_now $(grep -o 'tier=[a-z]*' "$session_log" | tail -n 1)"
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
 	say "shell_ui_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
@@ -108,14 +111,14 @@ report() {
 	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 	say "status_tier $(edel status 2>&1 | sed -n 's/^effects: //p')"
-	say "animations $(grep 'edel-compositor: animations at' /tmp/compositor.log | tail -n 1)"
+	say "animations $(grep 'edel-compositor: animations at' "$session_log" | tail -n 1)"
 	# The X11 display (M4.7), logged before follow prints the log, and no
 	# X11 process yet: they start with the first X11 app.
-	say "x11 $(grep 'edel-compositor: X11 apps' /tmp/compositor.log | tail -n 1)"
+	say "x11 $(grep 'edel-compositor: X11 apps' "$session_log" | tail -n 1)"
 	say "x11_processes $(pgrep -f 'Xwayland|xwayland-satellite' | wc -l)"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
 	# Every screen's first frame, not only the first screen's (M4.6c).
-	grep 'edel-compositor: output .* ready' /tmp/compositor.log | while IFS= read -r line; do
+	grep 'edel-compositor: output .* ready' "$session_log" | while IFS= read -r line; do
 		say "screen ${line#edel-compositor: }"
 	done
 	# Every protocol the compositor offers, as wayland-info lists them.
@@ -179,7 +182,7 @@ commands() {
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
 		xclock)
-			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' /tmp/compositor.log | tail -n 1) xclock" </dev/null &
+			as_ci "DISPLAY=$(sed -n 's/.*X11 apps on \(:[0-9]*\).*/\1/p' "$session_log" | tail -n 1) xclock" </dev/null &
 			(sleep 5 && say "x11_rss_mib $(x11_rss)") &
 			;;
 		# A panel along the bottom (M5.1a): the test client on the top
@@ -234,6 +237,17 @@ commands() {
 		'motion default') edel settings reset appearance.animations ;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
+		# A window that locks the pointer and says what it hears, and one
+		# that keeps the screen on, and the state file's count (M5.23).
+		'lock window')
+			as_ci edel-testclient --lock-pointer --size 400x300 --colour 2266aa --title lock </dev/null 2>&1 |
+				while IFS= read -r line; do say "lock $line"; done &
+			;;
+		'idle window')
+			as_ci edel-testclient --inhibit-idle --size 200x150 --colour 66aa22 --title idle </dev/null >/dev/null 2>&1 &
+			;;
+		'everyday off') pkill -f '[e]del-testclient --lock-pointer'; pkill -f '[e]del-testclient --inhibit-idle' ;;
+		idle) say "idle_inhibitors $(sed -n 's/^idle_inhibitors = //p' "$state_file")" ;;
 		# The globals a plain client and a sandboxed one see (M5.22).
 		globals)
 			say "plain $(as_ci edel-testclient --globals </dev/null 2>&1)"
@@ -279,7 +293,7 @@ commands() {
 				while IFS= read -r line; do say "$line"; done
 			;;
 		# Where shell-ui's widgets lie (M5.2c), for clicks on them.
-		'panel places') say "places $(grep -a 'edel-shell-ui: panel places' /tmp/compositor.log | tail -n 1 | sed 's/.*panel places //')" ;;
+		'panel places') say "places $(grep -a 'edel-shell-ui: panel places' "$session_log" | tail -n 1 | sed 's/.*panel places //')" ;;
 		'activate 3' | 'activate 1')
 			as_ci timeout 10 edel-testclient --workspace "${command#activate }" </dev/null 2>&1 |
 				while IFS= read -r line; do say "ext $line"; done
@@ -305,6 +319,10 @@ commands() {
 		'keyboard de') edel settings set region.keyboard=de,us ;;
 		'keyboard bad') say "keyboard_bad $(edel settings set region.keyboard=xx 2>&1 | tr '\n' ' ')" ;;
 		'keyboard default') edel settings reset region.keyboard ;;
+		# Translations (M5.24a): xx, the made-up language whose catalogue
+		# this feature ships, and English again.
+		'language xx') edel settings set region.language=xx ;;
+		'language default') edel settings reset region.language ;;
 		'key file')
 			if [ -e /home/ci/z ]; then
 				say "keyfile z"
@@ -339,7 +357,7 @@ commands() {
 # follow: for 10 minutes, the compositor's log lines as they come and the
 # windows each time they change, for the cases that click and drag.
 follow() {
-	tail -n 0 -f /tmp/compositor.log >/dev/console 2>&1 &
+	tail -n 0 -F "$session_log" >/dev/console 2>&1 &
 	last=''
 	last_hidden=''
 	last_layers=''
@@ -428,6 +446,14 @@ respawned() {
 		i=$((i + 1))
 	done
 	say "login_ready $(stat -c %U "$ready_file") $(cat "$ready_file")"
+	# The session's log (M5.28a): the killed session's is moved aside
+	# without its last line, the new session says so, edel status points
+	# to it, and edel report holds the last lines of both.
+	sleep 1
+	say "log_warned $(grep -c 'the session before ended without closing' "$session_log")"
+	say "log_status $(edel status 2>&1 | grep '^logs: ' | head -n 1)"
+	edel report >/tmp/report.toml 2>/dev/null
+	say "log_report $(grep -c '^\[\[sessions\]\]' /tmp/report.toml) $(grep -c 'edel-compositor: output .* ready' /tmp/report.toml)"
 }
 
 # frame_ms FILE P: the Pth percentile, in ms, of the frame times
@@ -514,7 +540,7 @@ shown() {
 # and GRUB starts slot A again; the marker on /data, which both slots
 # share, makes the next boots say so instead of testing the desktop.
 break_update() {
-	edel update http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
+	edel update --allow-http http://10.0.2.2:8001/release.toml >/dev/console 2>&1 || {
 		say "rollback: FAIL: the update did not install"
 		return 1
 	}

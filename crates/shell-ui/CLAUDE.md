@@ -8,6 +8,7 @@
 - It draws its own surfaces (ADR-002's shell-ui toolkit decision of 2026-10-03): layer-shell surfaces through smithay-client-toolkit, drawing with tiny-skia into shared memory, text shaped by cosmic-text. No GTK, no GLib, no scripting, no theme engine. [docs/REVIEW-shells.md](../../docs/REVIEW-shells.md) is what its look and motion learn from.
 - Colours and sizes come only from the design tokens (`edel::tokens`); never hard-code one in drawing code.
 - Redraw only what changed, and only when it changed: an idle panel draws nothing between minutes. Draw a surface at most once per frame: after each drawing it waits for the compositor's frame callback, then draws what shows by then, so its shared buffers stay two however fast things change.
+- Every word people read, shown or spoken to a screen reader, is marked with `edel::i18n`'s `tr`, `trf` or `n_` (M5.24a), and `po/shell-ui.pot` is written afresh with `EDEL_WRITE_DOCS=1 cargo test -p edel i18n` in the same commit; log lines stay English.
 
 ## Layout
 

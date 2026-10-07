@@ -1,0 +1,9 @@
+# CI only (roadmap M5.24a): a made-up language, xx, whose one word is
+# far longer than English's, so ci/desktop-test.sh language sees the
+# launcher draw it where English leaves the search line empty.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Type to search"
+msgstr "Type here to search every app this machine has, by name"

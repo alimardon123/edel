@@ -402,6 +402,10 @@ pub fn status() -> Result<()> {
     if let Some(tier) = crate::shell::tier_now() {
         println!("effects: {tier}");
     }
+    // Where to look when a boot or a session went wrong (M5.28a).
+    for line in crate::report::pointers_now() {
+        println!("{line}");
+    }
     Ok(())
 }
 
@@ -423,7 +427,7 @@ fn slot_os_release(device: &Path) -> Option<String> {
 /// device at that path), into the slot that is not running, and makes it
 /// start next. The image streams into the slot, decompressed on the way
 /// when it is gzipped, and grows to fill the slot.
-pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<()> {
+pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) -> Result<()> {
     let _lock = Lock::take("update", "edel update")?;
     let disk = Disk::find()?;
     let slot = disk.running.other();
@@ -433,7 +437,7 @@ pub fn install(location: &str, allow_downgrade: bool, unsigned: bool) -> Result<
         let path = Path::new(location);
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
-        let release = crate::release::open_checked(location, allow_downgrade)?;
+        let release = crate::release::open_checked(location, accept)?;
         (release.reader, Some(release.sha256), release.size)
     };
     let room = size_of(&target)?;

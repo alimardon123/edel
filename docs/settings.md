@@ -98,7 +98,7 @@ Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; 
 
 | Key | Value | From |
 |---|---|---|
-| `region.language` | text, such as `"en_GB"` | M6.6a |
+| `region.language` | the language shell-ui and Settings show their words in: a catalogue's name, such as `"de"` or `"pt_BR"` (`pt_BR` falls back to `pt`); missing is English, as is a word the catalogue lacks. The desktop restarts shell-ui in it at once; Settings takes it when next opened | M5.24a |
 | `region.keyboard` | keyboard layouts as xkb names them: one, such as `"de"`, or up to four, such as `"us,ru"`, each with a variant if wanted, such as `"de(nodeadkeys)"`; missing is US. Check and set refuse a layout or variant xkeyboard-config lacks where its list is on the machine. The desktop follows it at once, and Super+Space (`shortcuts.next_keyboard_layout`) goes to the next layout | M5.21a |
 | `region.timezone` | text, such as `"Europe/London"` | M6.6a |
 
@@ -138,7 +138,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 
 | Key | Value | From |
 |---|---|---|
-| `updates.channel` | text, such as `"stable"` | M3.4 |
+| `updates.channel` | the channel whose release lists `edel update` takes, such as `"stable"` or `"preview"`; missing is the channel the image was built for. A list for another channel is refused unless `edel update --channel NAME` asks for it once | M3.8 |
 | `updates.version` | text, a release to stay on; missing follows the channel | M3.4 |
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |

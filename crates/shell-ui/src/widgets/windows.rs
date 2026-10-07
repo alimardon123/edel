@@ -13,6 +13,7 @@
 //! belongs to, else its app id as an icon name.
 
 use accesskit::Role;
+use edel::i18n::trf;
 use tiny_skia::{FilterQuality, PixmapPaint, Rect, Transform};
 
 use edel::tokens::Colour;
@@ -38,17 +39,17 @@ fn label(shown: &str) -> String {
         .lines()
         .map(|line| {
             let mut chars = line.chars();
-            let state = match chars.next() {
-                Some('*') => " (focused)",
-                Some('-') => " (minimized)",
-                _ => "",
-            };
+            let mark = chars.next();
             let rest = chars.as_str();
             let title = rest.split_once('\t').map_or(rest, |(_, title)| title);
-            format!("{title}{state}")
+            match mark {
+                Some('*') => trf("{title} (focused)", &[("title", title)]),
+                Some('-') => trf("{title} (minimized)", &[("title", title)]),
+                _ => title.to_string(),
+            }
         })
         .collect();
-    format!("Windows: {}", titles.join(", "))
+    trf("Windows: {titles}", &[("titles", &titles.join(", "))])
 }
 
 /// The widest a button is.
