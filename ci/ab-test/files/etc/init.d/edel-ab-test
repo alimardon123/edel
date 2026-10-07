@@ -19,10 +19,11 @@
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
 #      again: slot A runs, slot B is switched off, a rollback to it is
 #      refused, the markers survived and the fallback was recorded.
-#      Install the update into slot B again with a service that hangs.
-#   5. (hang) The guard let the watchdog restart slot B, so slot A runs
-#      and slot B is off. Install it again with a service that freezes the
-#      kernel with panic reboots switched off.
+#      Install the update into slot B again with a service that hangs,
+#      and without its watchdog drivers, as on a machine that has none.
+#   5. (hang) With no watchdog, the guard restarted slot B itself (M1.10),
+#      so slot A runs and slot B is off. Install it again with a service
+#      that freezes the kernel with panic reboots switched off.
 #   6. (freeze) Only the hardware watchdog can restart a frozen kernel:
 #      slot A runs again and slot B is off.
 #
@@ -81,9 +82,11 @@ root_is_ro() {
 		! touch /usr/ab-test-write 2>/dev/null
 }
 
-# ab_break_b NAME COMMAND: install the update into slot B again, at its
-# last try, and add a service there whose start runs COMMAND in the
-# default runlevel.
+# ab_break_b NAME COMMAND [nowatchdog]: install the update into slot B
+# again, at its last try, and add a service there whose start runs
+# COMMAND in the default runlevel; with nowatchdog, take slot B's
+# watchdog drivers out, so it boots with no watchdog at all, as linux-virt
+# has no softdog.
 ab_break_b() {
 	/usr/bin/edel update "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
 	# The same length, so the 1024-byte block stays whole.
@@ -95,6 +98,9 @@ ab_break_b() {
 	printf '#!/sbin/openrc-run\nstart() {\n\t%s\n}\n' "$2" >/run/ab-test/slot/etc/init.d/ab-$1
 	chmod 755 /run/ab-test/slot/etc/init.d/ab-$1
 	ln -s /etc/init.d/ab-$1 /run/ab-test/slot/etc/runlevels/default/ab-$1
+	if [ "${3:-}" = nowatchdog ]; then
+		rm -f /run/ab-test/slot/lib/modules/*/kernel/drivers/watchdog/*
+	fi
 	umount /run/ab-test/slot
 }
 
@@ -198,7 +204,7 @@ start() {
 			ab_end "FAIL: step 4 rolled back to slot B, which is off"
 			return 0
 		fi
-		ab_break_b hang 'sleep 100000' || return 0
+		ab_break_b hang 'sleep 100000' nowatchdog || return 0
 		ab_next 5
 		;;
 	5)

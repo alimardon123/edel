@@ -65,6 +65,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | Settings keys, defaults, values, pages | `edel::settings` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
 | Shortcuts | `edel::shortcuts` | the compositor, Settings, `docs/SHORTCUTS.md` (generated) |
 | Paths and file names, the settings file's name included | `edel::places` | every part; `ci/names.sh`, held equal by a test (M5.25, M5.27) |
+| Words people read, in English | the code that shows them, marked with `edel::i18n`'s `tr` (M5.24a) | `po/PART.pot` (generated), which translators' `LANG/PART.po` follow |
 | Commands and their help | `edel`'s command table (`crates/edel/src/main.rs`) | a command reference (generated, M5.27) |
 | The Alpine branch and the build container | one owner M5.27 names (today written in 24 files) | the image definitions, CI, docs |
 | Decisions | the ADRs | everything |

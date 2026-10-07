@@ -162,7 +162,15 @@ impl Edel {
             InputEvent::PointerMotion { event } => {
                 let pointer = self.seat.get_pointer()?;
                 let from = pointer.current_location();
-                let location = self.on_screens(from, from + event.delta())?;
+                let wanted = self.on_screens(from, from + event.delta())?;
+                // A window that locks or confines the pointer holds it
+                // (M5.23); the motion still reaches it below.
+                let hold = pointer
+                    .current_focus()
+                    .and_then(|surface| self.hold_on(&surface, &pointer));
+                let inside = hold.is_some()
+                    && self.pointer_over(wanted).map(|(s, _)| s) == pointer.current_focus();
+                let location = crate::everyday::constrained(from, wanted, hold, inside);
                 let focus = self.pointer_over(location);
                 pointer.motion(
                     self,
@@ -199,6 +207,12 @@ impl Edel {
                         time: event.time_msec(),
                     },
                 );
+                // A tablet places the pointer where it points, so it cannot
+                // be held, but a window's lock takes effect once the
+                // pointer is over it (M5.23).
+                if let Some(surface) = pointer.current_focus() {
+                    self.hold_on(&surface, &pointer);
+                }
                 pointer.frame(self);
                 self.dirty = true;
             }

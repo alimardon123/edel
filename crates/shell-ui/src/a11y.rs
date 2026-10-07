@@ -5,6 +5,7 @@
 //! once a reader has turned accessibility on (`org.a11y.Status`); until
 //! then shell-ui keeps what the panel shows and builds no tree.
 
+use edel::i18n::tr;
 use std::sync::{Arc, Mutex};
 
 use accesskit::{
@@ -28,7 +29,7 @@ const ROOT: NodeId = NodeId(0);
 /// The whole tree of a panel `size` big (logical pixels) holding `items`.
 pub fn tree(size: (f64, f64), items: &[Item]) -> TreeUpdate {
     let mut root = Node::new(Role::Window);
-    root.set_label("Panel");
+    root.set_label(tr("Panel"));
     root.set_bounds(Rect::new(0.0, 0.0, size.0, size.1));
     let mut nodes = Vec::new();
     for (i, item) in items.iter().enumerate() {

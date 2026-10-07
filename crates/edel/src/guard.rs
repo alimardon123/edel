@@ -4,7 +4,10 @@
 //! every health file the image names exists, then confirms the slot, stops
 //! the watchdog and exits, so no daemon stays. If the files do not appear
 //! in time it stops petting: the watchdog resets the machine and GRUB
-//! counts the try.
+//! counts the try. A machine with no watchdog at all, such as a cloud VM
+//! that offers none on a kernel without softdog, is restarted by the
+//! guard itself, forced, so a hung service cannot hold the restart up
+//! (M1.10).
 //!
 //! Early in boot the only watchdog is often softdog, a kernel timer that a
 //! frozen kernel never fires, or none at all (linux-virt has no softdog).
@@ -143,7 +146,9 @@ pub fn guard() -> Result<()> {
     }
     let mut watchdog = open_watchdog();
     if watchdog.is_none() {
-        eprintln!("warning: edel guard: no watchdog yet; a hang falls back once one loads");
+        eprintln!(
+            "warning: edel guard: no watchdog yet; if none loads, the guard restarts the machine itself when this slot is not healthy after {timeout} s"
+        );
     }
     // /dev/watchdog is watchdog0, the first one registered.
     let mut on_hardware = watchdog.is_some()
@@ -175,17 +180,61 @@ pub fn guard() -> Result<()> {
             return Ok(());
         }
         if start.elapsed() >= Duration::from_secs(timeout) {
-            eprintln!(
-                "edel guard: this slot is not healthy after {timeout} s; letting the watchdog restart the machine"
-            );
-            // Closing without the magic byte leaves the watchdog running.
-            std::process::exit(1);
+            match on_timeout(watchdog.is_some()) {
+                Timeout::LetTheWatchdog => {
+                    eprintln!(
+                        "edel guard: this slot is not healthy after {timeout} s; letting the watchdog restart the machine"
+                    );
+                    // Closing without the magic byte leaves the watchdog
+                    // running.
+                    std::process::exit(1);
+                }
+                Timeout::RestartItself => {
+                    eprintln!(
+                        "edel guard: this slot is not healthy after {timeout} s and the machine has no watchdog; restarting it now, so the boot loader counts the try"
+                    );
+                    restart_now();
+                }
+            }
         }
         // Looked at ten times a second, so the slot is confirmed as soon as
         // it is healthy, not up to a second later; petting the watchdog
         // as often costs nothing.
         sleep(Duration::from_millis(100));
     }
+}
+
+/// What the guard does when the slot is not healthy in time.
+#[derive(Debug, PartialEq)]
+enum Timeout {
+    /// Stops petting: the watchdog, hardware or softdog, resets the
+    /// machine, even when the kernel itself froze (hardware only).
+    LetTheWatchdog,
+    /// No watchdog at all: the guard restarts the machine itself.
+    RestartItself,
+}
+
+fn on_timeout(has_watchdog: bool) -> Timeout {
+    if has_watchdog {
+        Timeout::LetTheWatchdog
+    } else {
+        Timeout::RestartItself
+    }
+}
+
+/// Writes what is cached to the disks, then restarts at once, as a
+/// watchdog reset would: through the kernel, not init, which could wait
+/// on the service that hung (`reboot -f`).
+fn restart_now() -> ! {
+    // SAFETY: sync and reboot take no pointers; reboot with RB_AUTOBOOT
+    // returns only when it fails, as without the right to restart.
+    let err = unsafe {
+        libc::sync();
+        libc::reboot(libc::RB_AUTOBOOT);
+        std::io::Error::last_os_error()
+    };
+    eprintln!("edel guard: could not restart the machine: {err}");
+    std::process::exit(1);
 }
 
 /// Confirms the slot, waiting while another updater holds the lock (an
@@ -225,6 +274,14 @@ mod tests {
         let (files, timeout, _) = health_plan("NAME=x\n", Path::new("/run"));
         assert!(files.is_empty());
         assert_eq!(timeout, DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn without_any_watchdog_the_guard_restarts_the_machine_itself() {
+        // A hardware watchdog, or softdog only: the watchdog does it.
+        assert_eq!(on_timeout(true), Timeout::LetTheWatchdog);
+        // None, as on linux-virt with no watchdog device.
+        assert_eq!(on_timeout(false), Timeout::RestartItself);
     }
 
     #[test]

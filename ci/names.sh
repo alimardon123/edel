@@ -15,3 +15,5 @@ greetd_live=/run/edel/greetd.toml
 last_fallback=/data/edel/last-fallback.toml
 share_dir=/usr/share/edel
 esp_dir=/EFI/edel
+home_session_log=.local/state/edel/session.log
+system_log=/var/log/messages

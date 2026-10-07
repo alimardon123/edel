@@ -68,8 +68,9 @@ enum Commands {
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
     Rollback,
-    /// Show the version running now and the one in the other slot, and
-    /// the desktop's effect tier while a session runs
+    /// Show the version running now and the one in the other slot, the
+    /// desktop's effect tier while a session runs, and which log to read
+    /// when the last boot or desktop session went wrong
     Status,
     /// Steps the boot services run
     #[command(hide = true)]
@@ -101,7 +102,8 @@ enum Commands {
         yes: bool,
     },
     /// Print what an issue about this machine needs, as TOML: the release,
-    /// kernel, boot time, memory in use, PCI devices and the kernel log
+    /// kernel, boot time, memory in use, PCI devices, the kernel log, and
+    /// the last lines of the system log and of the desktop sessions' logs
     Report {
         /// Write it to /EFI/edel/report.toml on the EFI system partition
         /// instead, where any computer can read it from the disk or stick

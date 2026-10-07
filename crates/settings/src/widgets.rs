@@ -7,6 +7,8 @@
 
 use gtk::prelude::*;
 
+use edel::i18n::{tr, trf};
+
 use crate::icon;
 
 /// How wide a page's text and cards grow before they stop and centre,
@@ -80,12 +82,14 @@ impl ChangeBar {
     /// Docks a bar, hidden, along the foot of `page`, made by [`page`].
     pub fn new(page: &gtk::Widget) -> ChangeBar {
         let text = gtk::Label::builder()
-            .label("Your changes are live")
+            .label(tr("Your changes are live"))
             .xalign(0.0)
             .css_classes(["edel-change-text"])
             .build();
         let detail = gtk::Label::builder()
-            .label("Undo puts this page back as it was when Settings opened.")
+            .label(tr(
+                "Undo puts this page back as it was when Settings opened.",
+            ))
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .hexpand(true)
@@ -99,13 +103,13 @@ impl ChangeBar {
         words.append(&text);
         words.append(&detail);
         let undo = gtk::Button::builder()
-            .label("Undo")
-            .tooltip_text("Put this page back as it was when Settings opened")
+            .label(tr("Undo"))
+            .tooltip_text(tr("Put this page back as it was when Settings opened"))
             .css_classes(["edel-change-undo"])
             .focus_on_click(false)
             .build();
         let keep = gtk::Button::builder()
-            .label("Keep")
+            .label(tr("Keep"))
             .css_classes(["edel-change-keep"])
             .focus_on_click(false)
             .build();
@@ -120,7 +124,9 @@ impl ChangeBar {
         bar.append(&words);
         bar.append(&undo);
         bar.append(&keep);
-        bar.update_property(&[gtk::accessible::Property::Label("Your changes are live")]);
+        bar.update_property(&[gtk::accessible::Property::Label(tr(
+            "Your changes are live",
+        ))]);
         let revealer = gtk::Revealer::builder()
             .child(&bar)
             .transition_type(gtk::RevealerTransitionType::SlideUp)
@@ -187,18 +193,20 @@ fn source() -> Source {
         .css_classes(["edel-source"])
         .build();
     let reset = gtk::Button::builder()
-        .label("Reset")
-        .tooltip_text("Take your choice out, so this machine or the release decides")
+        .label(tr("Reset"))
+        .tooltip_text(tr(
+            "Take your choice out, so this machine or the release decides",
+        ))
         .valign(gtk::Align::Center)
         .css_classes(["edel-link"])
         .build();
     let copy = gtk::Button::builder()
         .child(&icon::image("copy", 12))
-        .tooltip_text("Copy as command")
+        .tooltip_text(tr("Copy as command"))
         .valign(gtk::Align::Center)
         .css_classes(["edel-copy"])
         .build();
-    copy.update_property(&[gtk::accessible::Property::Label("Copy as command")]);
+    copy.update_property(&[gtk::accessible::Property::Label(tr("Copy as command"))]);
     Source { label, reset, copy }
 }
 
@@ -353,9 +361,9 @@ impl BarPreview {
         window.set_hexpand(true);
         // A picture, not a control: screen readers hear the rows below.
         row.set_can_target(false);
-        row.update_property(&[gtk::accessible::Property::Label(
+        row.update_property(&[gtk::accessible::Property::Label(tr(
             "How every window's title bar will look",
-        )]);
+        ))]);
         group.append(&row);
         BarPreview {
             start,
@@ -413,10 +421,11 @@ pub fn show_keys(place: &gtk::Box, keys: Option<&str>) {
                 .build(),
         );
     }
-    place.update_property(&[gtk::accessible::Property::Label(&format!(
-        "Shortcut {keys}"
+    place.update_property(&[gtk::accessible::Property::Label(&trf(
+        "Shortcut {keys}",
+        &[("keys", keys)],
     ))]);
-    place.set_tooltip_text(Some(&format!("Shortcut: {keys}")));
+    place.set_tooltip_text(Some(&trf("Shortcut: {keys}", &[("keys", keys)])));
     place.set_visible(true);
 }
 

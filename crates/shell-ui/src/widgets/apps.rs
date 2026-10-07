@@ -9,6 +9,7 @@
 //! focused one, or starts the app when no window of it is open.
 
 use accesskit::Role;
+use edel::i18n::trf;
 use tiny_skia::{FilterQuality, PixmapPaint, Rect, Transform};
 
 use edel::tokens::Colour;
@@ -133,12 +134,12 @@ fn label(shown: &str) -> String {
     let names: Vec<String> = read(shown)
         .iter()
         .map(|c| match c.state {
-            '*' => format!("{} (focused)", c.name),
-            '+' => format!("{} (running)", c.name),
+            '*' => trf("{name} (focused)", &[("name", c.name)]),
+            '+' => trf("{name} (running)", &[("name", c.name)]),
             _ => c.name.to_string(),
         })
         .collect();
-    format!("Apps: {}", names.join(", "))
+    trf("Apps: {names}", &[("names", &names.join(", "))])
 }
 
 /// The widget's width in logical pixels for `count` cells `cell` wide.

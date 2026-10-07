@@ -7,6 +7,7 @@
 //! the tiling styles' menu (M5.16b, `crate::styles`).
 
 use accesskit::Role;
+use edel::i18n::{tr, trf};
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{self, fill, lit, mix};
@@ -24,7 +25,11 @@ pub const WIDGET: Widget = Widget {
 
 /// The button says how windows are placed: "Layout: tiling".
 fn label(shown: &str) -> String {
-    format!("Layout: {shown}")
+    match shown {
+        "tiling" => tr("Layout: tiling").into(),
+        "floating" => tr("Layout: floating").into(),
+        other => trf("Layout: {policy}", &[("policy", other)]),
+    }
 }
 
 /// The button and the space on each side of it; its corners are the

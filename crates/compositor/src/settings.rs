@@ -56,6 +56,9 @@ pub struct Settings {
     /// `region.keyboard` (M5.21), as `edel::keyboard` writes it: absent
     /// means xkb's default, the US layout.
     pub keyboard: Option<String>,
+    /// `region.language` (M5.24a): shell-ui reads its words in it, and
+    /// the compositor only restarts it when it changes.
+    pub language: Option<String>,
     /// `layout.tiling_style` (M5.16a): absent means stack.
     pub tiling_style: Style,
 }
@@ -122,6 +125,9 @@ impl Settings {
             settings.shortcuts.extend(file.shortcuts.clone());
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
+            }
+            if file.region.language.is_some() {
+                settings.language.clone_from(&file.region.language);
             }
             for (name, output) in &file.displays {
                 let into = settings.outputs.entry(name.clone()).or_default();

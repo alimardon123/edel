@@ -302,15 +302,7 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for Edel {
             // Its workspace first, then the window, as a click in a
             // window list means; a minimized window comes back.
             zwlr_foreign_toplevel_handle_v1::Request::Activate { .. } => {
-                if !state.restore(&window) {
-                    if let Some(desk) = state.desks.hidden_on(&window) {
-                        state.switch_workspace(desk);
-                    }
-                    if state.space.element_geometry(&window).is_some() {
-                        state.focus(&window);
-                        state.state_changed();
-                    }
-                }
+                state.bring_forward(&window);
             }
             zwlr_foreign_toplevel_handle_v1::Request::Close => state.close(&window),
             zwlr_foreign_toplevel_handle_v1::Request::SetMaximized if shown => {

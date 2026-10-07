@@ -9,6 +9,7 @@
 //! scale.
 
 use accesskit::Role;
+use edel::i18n::{tr, trf};
 use tiny_skia::{FillRule, Pixmap, PixmapPaint, Transform};
 
 use edel::tokens::Colour;
@@ -33,13 +34,15 @@ fn label(shown: &str) -> String {
         .split_once(';')
         .map_or_else(Vec::new, |(_, names)| names.split(',').collect());
     match names.iter().position(|name| name.ends_with('*')) {
-        Some(i) => format!(
-            "Workspaces: {} shown, {} of {}",
-            names[i].trim_end_matches('*'),
-            i + 1,
-            names.len()
+        Some(i) => trf(
+            "Workspaces: {name} shown, {n} of {count}",
+            &[
+                ("name", names[i].trim_end_matches('*')),
+                ("n", &(i + 1).to_string()),
+                ("count", &names.len().to_string()),
+            ],
         ),
-        None => "Workspaces".into(),
+        None => tr("Workspaces").into(),
     }
 }
 

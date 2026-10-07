@@ -5,6 +5,7 @@
 //! (M5.3b).
 
 use accesskit::Role;
+use edel::i18n::tr;
 use tiny_skia::{LineCap, PathBuilder, Stroke, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
@@ -30,7 +31,7 @@ const PAD: f32 = 11.0;
 const GLASS: f32 = 14.0;
 
 fn label(_: &str) -> String {
-    "Search".into()
+    tr("Search").into()
 }
 
 /// It always shows the same field.
@@ -81,7 +82,7 @@ fn draw(canvas: &mut Canvas, _: &str, x: f32) {
     if let Some(text) = canvas.text.as_deref_mut() {
         let size = (tokens.panel_text_size as f32 * 0.96).round() * s;
         let tx = gx + (GLASS + 8.0) * s;
-        let mut line = text.fit("Search", size, fx + fw - tx - PAD * s);
+        let mut line = text.fit(tr("Search"), size, fx + fw - tx - PAD * s);
         let ty = fy + (fh - size * 1.25) / 2.0;
         text.draw(canvas.pixmap, &mut line, tx, ty, ink);
     }

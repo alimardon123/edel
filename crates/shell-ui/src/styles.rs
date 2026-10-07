@@ -10,6 +10,7 @@
 //! changed. Like the launcher it holds its surface only while open.
 //! Drawing is plain and tested without a display.
 
+use edel::i18n::tr;
 use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
@@ -35,6 +36,12 @@ pub fn styles() -> &'static [&'static str] {
 
 /// A style as people read it: `split` is Split.
 pub fn label(style: &str) -> String {
+    match style {
+        "stack" => return tr("Stack").into(),
+        "split" => return tr("Split").into(),
+        "scroll" => return tr("Scroll").into(),
+        _ => {}
+    }
     let mut chars = style.chars();
     chars
         .next()
