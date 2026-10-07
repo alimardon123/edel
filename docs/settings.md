@@ -37,7 +37,7 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 | `edel settings export` | Prints the machine as a settings file, to import on another one |
 | `edel settings check FILE` | Checks a file strictly |
 
-A mistyped key or value is answered with the nearest one: `edel settings set layout.presset=hive` says "did you mean layout.preset?". Every part reads the file with the one parser in `edel::system` (`crates/edel/src/system.rs`), whose key table this page follows; the reading rules are in [FORMATS.md](FORMATS.md).
+A mistyped key or value is answered with the nearest one: `edel settings set layout.presset=hive` says "did you mean layout.preset?". Every part reads the file with the one parser in `edel::settings` (`crates/edel/src/settings.rs`), whose key table this page follows; the reading rules are in [FORMATS.md](FORMATS.md).
 
 ## Where it lives
 
@@ -155,4 +155,4 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 
 ## Adding a key
 
-Name it after its row in Settings: the label in lowercase with `_` for spaces, its section the page's name, its values the options' labels in lowercase with `-` for spaces (ADR-008's same names decision). Add it to `KEYS` and the structs in `system.rs`, append it to `crates/edel/tests/keys.txt`, add its row here, and set `supported` in the step that acts on it. A key is never removed or renamed within a format (ADR-008).
+Name it after its row in Settings: the label in lowercase with `_` for spaces, its section the page's name, its values the options' labels in lowercase with `-` for spaces (ADR-008's same names decision). Add it to `KEYS` and the structs in `settings.rs`, append it to `crates/edel/tests/keys.txt`, add its row here, and set `supported` in the step that acts on it. A key is never removed or renamed within a format (ADR-008).

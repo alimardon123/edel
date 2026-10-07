@@ -1,5 +1,5 @@
 //! `edel-settings` (roadmap M5.6): Settings, the app for every setting
-//! (ADR-008). Its pages are `edel::system`'s page table, the same names
+//! (ADR-008). Its pages are `edel::settings`'s page table, the same names
 //! `edel settings` prints; each change is one line of the person's
 //! settings file, written by the function `edel settings set` uses, which
 //! the desktop follows at once. A sidebar with a search field lists the
@@ -70,10 +70,10 @@ struct Page {
     needs: Option<&'static str>,
 }
 
-/// The pages this release has, in `edel::system::PAGES`' order, then
+/// The pages this release has, in `edel::settings::PAGES`' order, then
 /// About; a page is added here as its step lands (M5.7 to M5.10).
 fn all_pages() -> Vec<Page> {
-    let mut pages: Vec<Page> = edel::system::PAGES
+    let mut pages: Vec<Page> = edel::settings::PAGES
         .iter()
         .filter_map(|page| match page.section {
             // The layout is the desktop's: no desktop, no Layout page.

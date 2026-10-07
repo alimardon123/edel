@@ -19,8 +19,8 @@ Much of this exists. ADR-008 made features, presets and settings things we add, 
 | Part | Where it lives | Could stand alone as | Its seam |
 |---|---|---|---|
 | The desktop: compositor, shell-ui, design tokens and icons | `crates/compositor`, `crates/shell-ui`, `design/` | A desktop for other distributions (M5.15) | Wayland and D-Bus protocols; the files `edel::places` names |
-| Settings | `crates/settings` (M5.6) | The desktop's settings app | The settings file, through `edel::system` |
-| The settings file library: `edel::system`, `features`, `presets`, `shortcuts`, `tokens` | `crates/edel` (library target) | A library for one-file machine descriptions | TOML files with a format number |
+| Settings | `crates/settings` (M5.6) | The desktop's settings app | The settings file, through `edel::settings` |
+| The settings file library: `edel::settings`, `features`, `presets`, `shortcuts`, `tokens` | `crates/edel` (library target) | A library for one-file machine descriptions | TOML files with a format number |
 | The updater and the boot guard: `edel update`, `rollback`, `status`, `boot guard`, the GRUB environment | `crates/edel` | A/B updates for other small distributions and devices | GPT partition labels, GRUB's environment block with RAUC's names, `release.toml` |
 | The image builder: `edel image build` and feature files | `crates/edel`, `features/`, `images/` | Images from feature files on Alpine | Feature and image TOML files, apk |
 | The test harness: `ci/qmp.py`, `desktop-test`, `edel-testclient` | `ci/`, `crates/testclient` | Testing a Wayland desktop in QEMU | QMP, the session's state file |
@@ -62,7 +62,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | What an image contains | `features/*.toml` | `edel image build` |
 | An image's facts (name, kernel, slot size) | `images/*.toml` | `edel image build`, CI |
 | Budgets | `ci/budgets.toml` | `ci/sizes.sh`, desktop-test |
-| Settings keys, defaults, values, pages | `edel::system` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
+| Settings keys, defaults, values, pages | `edel::settings` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
 | Shortcuts | `edel::shortcuts` | the compositor, Settings, `docs/SHORTCUTS.md` (generated) |
 | Paths and file names, the settings file's name included | `edel::places` | every part; `ci/names.sh`, held equal by a test (M5.25, M5.27) |
 | Commands and their help | `edel`'s command table (`crates/edel/src/main.rs`) | a command reference (generated, M5.27) |

@@ -9,7 +9,7 @@
 //! values a key takes. It reads the line itself (`COMP_LINE`), so it needs
 //! no helper library.
 
-use edel::system::{self, Kind};
+use edel::settings::{self, Kind};
 
 /// Where bash-completion looks for a command's completion.
 pub const PATH: &str = "/usr/share/bash-completion/completions/edel";
@@ -44,7 +44,7 @@ fn paths(prefix: &str, cmd: &clap::Command, out: &mut Vec<(String, Vec<String>)>
 /// left to the section's prefix.
 fn keys() -> Vec<String> {
     let mut keys = Vec::new();
-    for key in system::KEYS {
+    for key in settings::KEYS {
         if key.path == "shortcuts.*" {
             keys.extend(
                 edel::shortcuts::ACTIONS
@@ -121,7 +121,7 @@ pub fn bash(cmd: &clap::Command) -> String {
          \t\tkey=${cur%%=*}\n\
          \t\tcase \"$key\" in\n",
     );
-    for key in system::KEYS {
+    for key in settings::KEYS {
         if key.path.contains('*') {
             continue;
         }
@@ -133,7 +133,7 @@ pub fn bash(cmd: &clap::Command) -> String {
             ));
         }
     }
-    let sections: Vec<String> = system::PAGES
+    let sections: Vec<String> = settings::PAGES
         .iter()
         .map(|p| format!("{}.", p.section))
         .collect();

@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use edel::install::{Disk, Partition, Plan, SLOT_MIB, parse_blkid};
-use edel::system;
+use edel::settings;
 
 use crate::boot::{self, DATA_LABEL, ESP_LABEL, GRUB_PREFIX, Layout};
 use crate::loader::SLOT_DIR;
@@ -141,7 +141,7 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
     let text = fs::read_to_string(system_file)
         .with_context(|| format!("reading {}", system_file.display()))?;
     let problems =
-        system::check(&text).with_context(|| format!("checking {}", system_file.display()))?;
+        settings::check(&text).with_context(|| format!("checking {}", system_file.display()))?;
     if !problems.is_empty() {
         bail!(
             "{} has problems, so nothing was changed:\n{}",

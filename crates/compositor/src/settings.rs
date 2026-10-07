@@ -1,6 +1,6 @@
 //! What the compositor takes from the settings file (roadmap M4.5): the
 //! machine's and the person's, the same schema, found through
-//! `edel::places` and read with `edel::system`
+//! `edel::places` and read with `edel::settings`
 //! so the defaults and the leniency are `edel`'s (ADR-008). A key the
 //! person's file sets wins; a key neither sets is the preset's (M5.1c),
 //! then the default. Reading is
@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use edel::presets::{self, Side};
-use edel::system::{self, SystemFile};
+use edel::settings::{self, SettingsFile};
 pub use edel::tokens::Scheme;
 
 use crate::animation::Motion;
@@ -76,7 +76,7 @@ pub struct OutputSettings {
 
 impl Settings {
     /// The machine's file, then the person's over it.
-    pub fn from_files(machine: Option<&SystemFile>, person: Option<&SystemFile>) -> Settings {
+    pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
         let mut settings = Settings::default();
         for file in [machine, person].into_iter().flatten() {
             if file.layout.tiling.is_some() {
@@ -211,11 +211,11 @@ pub fn machine_file() -> std::path::PathBuf {
 /// Reads one file the way an unattended reader must: missing is nothing,
 /// what cannot be used is left out and noted, a file it cannot read at all
 /// is noted and read as missing.
-pub fn read(path: &Path, notes: &mut Vec<String>) -> Option<SystemFile> {
+pub fn read(path: &Path, notes: &mut Vec<String>) -> Option<SettingsFile> {
     if !path.exists() {
         return None;
     }
-    match system::read_on_machine(path) {
+    match settings::read_on_machine(path) {
         Ok(read) => {
             notes.extend(
                 read.problems
@@ -245,8 +245,8 @@ pub fn load(machine: &Path, person: Option<&Path>) -> (Settings, Vec<String>) {
 mod tests {
     use super::*;
 
-    fn file(text: &str) -> SystemFile {
-        system::read(text).unwrap().file
+    fn file(text: &str) -> SettingsFile {
+        settings::read(text).unwrap().file
     }
 
     #[test]
@@ -440,11 +440,11 @@ mod tests {
         assert_eq!(settings.tiling_style, Style::Stack);
         assert_eq!(Settings::default().tiling_style, Style::Stack);
         // The styles the compositor knows are the key's values, its owner.
-        let key = edel::system::KEYS
+        let key = edel::settings::KEYS
             .iter()
             .find(|k| k.path == "layout.tiling_style")
             .unwrap();
-        let edel::system::Kind::OneOf(values) = key.kind else {
+        let edel::settings::Kind::OneOf(values) = key.kind else {
             panic!("layout.tiling_style is not a choice");
         };
         let names: Vec<&str> = Style::ALL.iter().map(|s| s.name()).collect();

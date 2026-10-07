@@ -280,7 +280,7 @@ pub const KEYS: &[Key] = &[
 /// decides (ADR-008, section 3), so nothing here has a default of its own.
 /// Each section is a page of the Settings app ([`PAGES`]).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SystemFile {
+pub struct SettingsFile {
     pub format: i64,
     #[serde(default, skip_serializing_if = "is_default")]
     pub layout: Layout,
@@ -316,10 +316,10 @@ pub struct SystemFile {
     pub system: System,
 }
 
-impl Default for SystemFile {
+impl Default for SettingsFile {
     /// A file in this release's format with every key absent.
     fn default() -> Self {
-        SystemFile {
+        SettingsFile {
             format: FORMAT,
             layout: Layout::default(),
             displays: BTreeMap::new(),
@@ -552,7 +552,7 @@ impl fmt::Display for Problem {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Read {
     /// Every key that could be used
-    pub file: SystemFile,
+    pub file: SettingsFile,
     /// What was left out, and why
     pub problems: Vec<Problem>,
     /// Keys that were read but that no part of this release acts on yet
@@ -867,7 +867,7 @@ fn read_table(table: &Table) -> Result<Read> {
     let mut later = Vec::new();
     let kept = clean(table, &[], &mut problems, &mut later);
     let mut ignored = Vec::new();
-    let file: SystemFile =
+    let file: SettingsFile =
         serde_ignored::deserialize(Value::Table(kept), |path| ignored.push(path.to_string()))
             .context("the key table and the structs disagree")?;
     // The key table already left out unknown keys; anything ignored here is
@@ -1477,7 +1477,7 @@ font_size = 11
                 "{line} is in tests/keys.txt but not in KEYS; a key is never removed within a format"
             );
             let mut ignored = Vec::new();
-            let _: SystemFile =
+            let _: SettingsFile =
                 serde_ignored::deserialize(Value::Table(with_keys([line])), |path| {
                     ignored.push(path.to_string())
                 })
