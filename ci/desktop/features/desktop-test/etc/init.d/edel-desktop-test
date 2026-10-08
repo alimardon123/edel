@@ -199,6 +199,8 @@ commands() {
 		'minimize default') edel settings reset layout.minimize_button ;;
 		'scale 2') edel settings set displays.Virtual-1.scale=2 ;;
 		'scale 2.5') edel settings set displays.Virtual-1.scale=2.5 ;;
+		# 3.5 makes the 1280 px screen 366 logical px wide, Compact (M5.8b).
+		'scale 3.5') edel settings set displays.Virtual-1.scale=3.5 ;;
 		'scale default') edel settings reset displays.Virtual-1.scale ;;
 		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
@@ -412,6 +414,28 @@ commands() {
 		'bluetooth log') say "bluetooth_log $(tr '\n' ';' </tmp/bluetooth.log 2>/dev/null)" ;;
 		'network memory')
 			say "network_rss_kib $(for p in NetworkManager bluetoothd; do pid=$(pidof $p | cut -d' ' -f1); echo "$p rss $(awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status" 2>/dev/null) pss $(awk '/^Pss:/ { print $2 }' "/proc/$pid/smaps_rollup" 2>/dev/null)"; done | tr '\n' ';')"
+			;;
+		# Power and Users (M5.8b): what upower lists as ci (`upower -e` must
+		# exit 0: QEMU has no battery, so it lists the display device and
+		# perhaps a power cable), whether upowerd runs, Settings on each page
+		# as ci with its own stderr read back, and what upowerd holds.
+		'power status')
+			out=$(as_ci timeout 10 upower -e 2>&1)
+			status=$?
+			say "power_list $status: $(echo "$out" | tr '\n' ';')"
+			say "power_daemon $(pidof upowerd >/dev/null && echo running || echo stopped), dbus $(pgrep -f 'dbus-daemon --system' | wc -l)"
+			;;
+		'power window')
+			as_ci edel-settings --page power </dev/null >/tmp/power.log 2>&1 &
+			;;
+		'users window')
+			as_ci edel-settings --page users </dev/null >/tmp/users.log 2>&1 &
+			;;
+		'power log') say "power_log $(tr '\n' ';' </tmp/power.log 2>/dev/null)" ;;
+		'users log') say "users_log $(tr '\n' ';' </tmp/users.log 2>/dev/null)" ;;
+		'power memory')
+			pid=$(pidof upowerd | cut -d' ' -f1)
+			say "power_rss_kib upowerd rss $(awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status" 2>/dev/null) pss $(awk '/^Pss:/ { print $2 }' "/proc/$pid/smaps_rollup" 2>/dev/null)"
 			;;
 		# Updates (M5.8c): the channel `edel update` follows, set as root like
 		# every command here (it is the machine's file), refused when it is

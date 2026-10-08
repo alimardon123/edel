@@ -297,6 +297,18 @@ pub fn row(group: &gtk::Box, title: &str, control: &gtk::Widget) -> Row {
 
 /// A row that shows a value people may select and copy, as About's.
 pub fn value_row(group: &gtk::Box, title: &str, value: &str) {
+    value_row_in(group, title, value, true);
+}
+
+/// A row that shows a value as it is, not to be selected: a page whose
+/// first row would otherwise take the keyboard with its text selected, as
+/// a Compact window shows no sidebar to give it to (Power's batteries,
+/// Users' people, M5.8b).
+pub fn fact_row(group: &gtk::Box, title: &str, value: &str) {
+    value_row_in(group, title, value, false);
+}
+
+fn value_row_in(group: &gtk::Box, title: &str, value: &str, selectable: bool) {
     let row = gtk::Box::builder()
         .spacing(10)
         .css_classes(["edel-row"])
@@ -313,7 +325,7 @@ pub fn value_row(group: &gtk::Box, title: &str, value: &str) {
         .xalign(1.0)
         .hexpand(true)
         .justify(gtk::Justification::Right)
-        .selectable(true)
+        .selectable(selectable)
         .wrap(true)
         .css_classes(["edel-value"])
         .build();
@@ -330,6 +342,19 @@ pub fn text_row(group: &gtk::Box, text: &str) {
         .xalign(0.0)
         .wrap(true)
         .selectable(true)
+        .css_classes(["edel-row", "edel-row-subtitle"])
+        .build();
+    group.append(&label);
+}
+
+/// A row of plain words that is only read, as [`text_row`] but not to be
+/// selected, so it never takes the keyboard with its text highlighted when
+/// a window too narrow for a sidebar opens on its page (M5.8b).
+pub fn note_row(group: &gtk::Box, text: &str) {
+    let label = gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
         .css_classes(["edel-row", "edel-row-subtitle"])
         .build();
     group.append(&label);

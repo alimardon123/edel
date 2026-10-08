@@ -308,6 +308,33 @@ msgstr ""
 msgid "{ssid} is not in range now; move closer and try again"
 msgstr ""
 
+msgid "less than a minute"
+msgstr ""
+
+msgid "{hours} {minutes}"
+msgstr ""
+
+msgid "1 minute"
+msgstr ""
+
+msgid "{n} minutes"
+msgstr ""
+
+msgid "1 hour"
+msgstr ""
+
+msgid "{n} hours"
+msgstr ""
+
+msgid "this machine has no {program}, so it cannot tell the battery; the power feature brings it"
+msgstr ""
+
+msgid "{command} did not answer in {seconds} s; the power service (upowerd) starts with the machine, so restart the computer if it is not running"
+msgstr ""
+
+msgid "{command} failed: {said}; the power service (upowerd) starts with the machine, so restart the computer if it is not running"
+msgstr ""
+
 msgid "{command} is not a command the session can start; write a program and its arguments on one line"
 msgstr ""
 
