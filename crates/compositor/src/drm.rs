@@ -318,6 +318,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                     if gpu.announced {
                         crate::program::start(&later, state, &socket);
                         crate::shellui::start(&later, state, &socket);
+                        crate::session::start(&later, state);
                     }
                 }
                 DrmEvent::Error(e) => eprintln!("edel-compositor: the GPU reported an error: {e}"),

@@ -16,6 +16,7 @@ mod icon;
 mod layout;
 mod preview;
 mod rows;
+mod sound;
 mod style;
 mod widgets;
 
@@ -60,8 +61,26 @@ fn main() -> gtk::glib::ExitCode {
         eprintln!("edel-settings: words in {language}, {words} translated");
     }
     let app = adw::Application::builder().application_id(APP_ID).build();
-    app.connect_activate(window);
-    app.run()
+    let wanted = page_asked_for(std::env::args().skip(1));
+    app.connect_activate(move |app| window(app, wanted.as_deref()));
+    // GTK is given no arguments: the app takes only `--page`, read above.
+    app.run_with_args::<&str>(&[])
+}
+
+/// The page named by `--page NAME` or `--page=NAME` (a page's word, as
+/// `edel settings` lists it: `sound`), so a link, a shortcut or a test opens
+/// Settings on it. Anything else is ignored; no such page opens the first.
+fn page_asked_for(args: impl Iterator<Item = String>) -> Option<String> {
+    let mut args = args;
+    while let Some(arg) = args.next() {
+        if let Some(name) = arg.strip_prefix("--page=") {
+            return Some(name.to_string());
+        }
+        if arg == "--page" {
+            return args.next();
+        }
+    }
+    None
 }
 
 /// One page of the app: its name and icon in the sidebar, its section
@@ -88,6 +107,14 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: layout::page,
                 needs: Some("shell"),
+            }),
+            // Sound talks to PipeWire through wpctl; no sound feature, no page.
+            "sound" => Some(Page {
+                title: tr(page.title),
+                icon: "page-sound",
+                section: Some(page.section),
+                build: |_| sound::page(),
+                needs: Some("sound"),
             }),
             _ => None,
         })
@@ -130,7 +157,7 @@ fn finds(page: &Page, query: &str) -> bool {
             .is_some_and(|s| rows::on_page(s).any(|row| holds(tr(row.title))))
 }
 
-fn window(app: &adw::Application) {
+fn window(app: &adw::Application, wanted: Option<&str>) {
     let theme = Theme::new();
     let pages = Rc::new(pages());
     // Each page is built when first shown and kept.
@@ -185,7 +212,15 @@ fn window(app: &adw::Application) {
             content.set_title(page.title);
         }
     };
-    show(0);
+    // The page asked for with --page, else the first.
+    let asked = wanted.and_then(|name| pages.iter().position(|p| is_page(p, name)));
+    let first = asked.unwrap_or(0);
+    show(first);
+    if asked.is_some() {
+        if let Some(page) = built.borrow()[first].as_ref() {
+            page.add_css_class(widgets::ASKED);
+        }
+    }
 
     let list = gtk::ListBox::builder()
         .css_classes(["edel-pages"])
@@ -204,7 +239,7 @@ fn window(app: &adw::Application) {
             split.set_show_content(true);
         });
     }
-    list.select_row(list.row_at_index(0).as_ref());
+    list.select_row(list.row_at_index(first as i32).as_ref());
 
     let search = gtk::Entry::builder()
         .placeholder_text(tr("Search"))
@@ -287,9 +322,16 @@ fn window(app: &adw::Application) {
     window.present();
     // The pages' list takes the keyboard first, so the search field opens
     // quiet; it is a click away, or Ctrl+F.
-    if let Some(row) = list.row_at_index(0) {
+    if let Some(row) = list.row_at_index(first as i32) {
         row.grab_focus();
     }
+}
+
+/// Whether `name`, as `--page` gives it, is `page`: its section or its
+/// title in lower case (`sound`, `about`).
+fn is_page(page: &Page, name: &str) -> bool {
+    let name = name.to_lowercase();
+    page.section == Some(name.as_str()) || page.title.to_lowercase() == name
 }
 
 #[cfg(test)]
@@ -310,7 +352,26 @@ mod tests {
     #[test]
     fn the_pages_follow_the_page_table_then_about() {
         let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
-        assert_eq!(titles, ["Layout", "About"]);
+        assert_eq!(titles, ["Layout", "Sound", "About"]);
+    }
+
+    #[test]
+    fn a_page_is_asked_for_by_its_word() {
+        let args = |list: &[&str]| page_asked_for(list.iter().map(|a| a.to_string()));
+        assert_eq!(args(&["--page", "sound"]).as_deref(), Some("sound"));
+        assert_eq!(args(&["--page=sound"]).as_deref(), Some("sound"));
+        assert_eq!(
+            args(&["--other", "--page", "about"]).as_deref(),
+            Some("about")
+        );
+        assert_eq!(args(&["--page"]), None);
+        assert_eq!(args(&[]), None);
+        let pages = all_pages();
+        let at = |name: &str| pages.iter().position(|p| is_page(p, name));
+        assert_eq!(at("sound"), Some(1));
+        assert_eq!(at("Sound"), Some(1));
+        assert_eq!(at("about"), Some(2));
+        assert_eq!(at("nothing"), None);
     }
 
     #[test]
@@ -335,8 +396,9 @@ mod tests {
                 .map(|p| p.title)
                 .collect()
         };
-        assert_eq!(titles(""), ["Layout", "About"]);
+        assert_eq!(titles(""), ["Layout", "Sound", "About"]);
         assert_eq!(titles("abo"), ["About"]);
+        assert_eq!(titles("sou"), ["Sound"]);
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
         assert!(titles("nothing like this").is_empty());
     }
@@ -352,6 +414,8 @@ mod tests {
         assert_eq!(titles(&dir), ["About"]);
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(titles(&dir), ["Layout", "About"]);
+        std::fs::write(dir.join("sound.toml"), "format = 1\n").unwrap();
+        assert_eq!(titles(&dir), ["Layout", "Sound", "About"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

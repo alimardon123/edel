@@ -91,6 +91,14 @@
 #               language, whose launcher draws its one long word where
 #               English leaves the search line empty; unset, English
 #               (M5.24a)
+#   sound       the compositor started PipeWire, WirePlumber and the
+#               PulseAudio server from the preset's session list (M5.7b);
+#               the VM's sound card (-device intel-hda -device hda-duplex)
+#               shows as a sink in wpctl status, and Settings opened on
+#               its Sound page (edel-settings --page sound), the volume
+#               slider holding the keyboard, takes Home and six presses of
+#               Right and wpctl status shows the sink at 0.30; kept as
+#               sound.png
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -755,6 +763,65 @@ case_settings() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened at $x,$y ${w}x$h under our title bar with its sidebar and page in the token colours, Classic's card chosen, Mac-like's card wrote layout.preset and moved the bar to the top at once, Classic and Reset took the key out again, it held $settings_own MiB of its own ($(value settings_rss_mib) MiB resident), and on a 512 px screen it folded its sidebar away"
+}
+
+# sink_volume: the volume wpctl status shows on the sink in use, such as
+# 0.30, asked of the test service, which runs it as ci.
+sink_volume() {
+	asked=$(count 'DESKTOP-TEST: sound_sinks ')
+	guest 'sound status'
+	wait_more 'DESKTOP-TEST: sound_sinks ' "$asked" 10 || return 1
+	value sound_sinks | tr ';' '\n' | grep '^\*' | sed -n 's/.*vol: \([0-9.]*\).*/\1/p' | head -n 1
+}
+
+case_sound() {
+	# Sound (M5.7b): the compositor started the sound system from the
+	# preset's session list, WirePlumber found the VM's HDA card and made
+	# its sink the one in use; Settings, opened on its Sound page, gives
+	# the keyboard to the volume slider, and Home then six presses of
+	# Right (a step is 5 percent) set the sink to 0.30, which wpctl status
+	# shows. The volume is the sound system's own state, so nothing is
+	# read from a settings file. Kept as sound.png.
+	for program in pipewire wireplumber pipewire-pulse; do
+		wait_for "edel-compositor: started $program, pid" ||
+			fail "the compositor did not start $program from the session's list"
+	done
+	i=0
+	while :; do
+		now=$(sink_volume)
+		[ -n "$now" ] && break
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "wpctl status lists no sink in use after 60 s; the sound card did not come up: $(value sound_status)"
+		sleep 3
+	done
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'sound window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Sound page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 3
+	shot sound $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+		fail "the Sound page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	python3 ci/qmp.py key home
+	sleep 1
+	python3 ci/qmp.py key right right right right right right
+	i=0
+	while [ "$(sink_volume)" != 0.30 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "after Home and six presses of Right on the Sound page, wpctl status shows the sink at $(sink_volume), not 0.30: $(value sound_status)"
+		sleep 1
+	done
+	shot sound $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null || fail "Settings left the Sound page"
+	guest 'sound memory'
+	wait_for 'DESKTOP-TEST: sound_rss_kib ' || fail "the service did not read the sound system's memory"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Sound (M5.7b): resident memory of the sound system, KiB: $(value sound_rss_kib)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: the compositor started pipewire, wireplumber and pipewire-pulse, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
 }
 
 case_keyboard() {
@@ -1980,6 +2047,7 @@ fi
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
+	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
 	-drive if=none,id=disk0,format=raw,file="$dir/edel-desktop-x86_64.img" \

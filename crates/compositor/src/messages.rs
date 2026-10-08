@@ -61,6 +61,32 @@ pub fn shell_ui_not_ended(name: &str, why: impl Display) -> String {
     )
 }
 
+/// A program of the session's list (`[session] start`) is not in this image.
+pub fn session_program_missing(name: &str) -> String {
+    format!(
+        "{name} is not in this image, so the session does not start it; the programs of the sound feature are, and a preset's [session] start names the others"
+    )
+}
+
+/// A program of the session's list cannot start.
+pub fn session_program_not_started(name: &str, why: impl Display) -> String {
+    format!("could not start {name}: {why}; the rest of the desktop works without it")
+}
+
+/// A program of the session's list ran a while and stopped.
+pub fn session_program_stopped(name: &str, how: &str) -> String {
+    format!(
+        "{name} {how} after running a while, and is not started again; what it served (sound, for PipeWire) stops until the next login"
+    )
+}
+
+/// A program of the session's list keeps failing and is left alone.
+pub fn session_program_given_up(name: &str, how: &str, tries: u32, secs: u64) -> String {
+    format!(
+        "{name} {how}, and failed {tries} times in a row within {secs} s of starting; it is not started again, so what it served (sound, for PipeWire) is missing until the next login, and the lines above say why"
+    )
+}
+
 /// A screen cannot be lit.
 pub fn screen_dark(name: &str, why: impl Display) -> String {
     format!("output {name} stays dark: {why}; the other screens work")
@@ -177,6 +203,15 @@ mod tests {
     }
 
     #[test]
+    fn a_session_program_that_fails_says_what_stops() {
+        assert_eq!(
+            session_program_given_up("wireplumber", "ended (exit status: 1)", 4, 5),
+            "wireplumber ended (exit status: 1), and failed 4 times in a row within 5 s of starting; it is not started again, so what it served (sound, for PipeWire) is missing until the next login, and the lines above say why"
+        );
+        assert!(session_program_missing("pipewire").starts_with("pipewire is not in this image"));
+    }
+
+    #[test]
     fn a_missing_graphics_card_says_what_the_desktop_needs() {
         assert!(NO_GPU.starts_with("no graphics card found, so there is no screen to draw on;"));
         assert!(NO_GPU.contains("a virtual machine needs a virtual GPU"));
@@ -234,6 +269,10 @@ mod tests {
             folder_not_followed(Path::new("/data"), "x"),
             x11_not_started("xwayland-satellite", "x"),
             shell_ui_not_started("edel-shell-ui", "x"),
+            session_program_missing("pipewire"),
+            session_program_not_started("pipewire", "x"),
+            session_program_stopped("pipewire", "ended (exit status: 1)"),
+            session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

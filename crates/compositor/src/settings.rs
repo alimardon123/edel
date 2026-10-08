@@ -171,6 +171,12 @@ impl Settings {
             .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.windows.buttons)
     }
 
+    /// The commands the session starts (M5.7b): the preset's
+    /// `[session] start`, else the release's list.
+    pub fn session_start(&self) -> Vec<String> {
+        presets::named(self.preset.as_deref()).0.session.start
+    }
+
     /// How many workspaces the preset has (M5.2a).
     pub fn workspaces(&self) -> usize {
         presets::named(self.preset.as_deref()).0.workspaces.count
@@ -307,6 +313,23 @@ mod tests {
             "tiling",
             "layout.tiling wins over the preset"
         );
+    }
+
+    #[test]
+    fn the_session_starts_the_sound_system_whatever_the_preset() {
+        // M5.7b: no preset names its own list, so every preset, and a name
+        // this release lacks, starts the release's.
+        for name in [None, Some("classic"), Some("hive"), Some("cinnamon")] {
+            let settings = Settings {
+                preset: name.map(str::to_string),
+                ..Settings::default()
+            };
+            assert_eq!(
+                settings.session_start(),
+                edel::presets::SESSION_START,
+                "{name:?}"
+            );
+        }
     }
 
     #[test]

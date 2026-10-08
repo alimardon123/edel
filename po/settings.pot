@@ -128,6 +128,39 @@ msgstr ""
 msgid "From the preset"
 msgstr ""
 
+msgid "Choose where sound plays and what listens, and how loud. This is the sound system's own state, kept for you by the machine, so it is not a line of your settings file; each row can copy the wpctl command that does the same."
+msgstr ""
+
+msgid "Output"
+msgstr ""
+
+msgid "Output device"
+msgstr ""
+
+msgid "Where sound plays"
+msgstr ""
+
+msgid "Volume"
+msgstr ""
+
+msgid "Mute"
+msgstr ""
+
+msgid "Input"
+msgstr ""
+
+msgid "Input device"
+msgstr ""
+
+msgid "What listens"
+msgstr ""
+
+msgid "Level"
+msgstr ""
+
+msgid "Devices"
+msgstr ""
+
 msgid "Your changes are live"
 msgstr ""
 

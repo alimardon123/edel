@@ -24,4 +24,5 @@ pub mod presets;
 pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
+pub mod sound;
 pub mod tokens;

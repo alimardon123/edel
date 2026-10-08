@@ -318,6 +318,21 @@ commands() {
 			say "settings_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
 			say "settings_rss_mib $(awk '/^VmRSS:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
 			;;
+		# Sound (M5.7b): Settings on its Sound page, as ci; what wpctl status
+		# shows on the sinks, one line each with the one in use starred,
+		# and the whole status for a failure to be read by; and what the
+		# sound system's programs hold.
+		'sound window')
+			as_ci edel-settings --page sound </dev/null >/tmp/sound.log 2>&1 &
+			;;
+		'sound status')
+			status=$(as_ci wpctl status 2>&1)
+			say "sound_sinks $(echo "$status" | awk '/Sinks:/ { on = 1; next } /Sink endpoints:|Sources:|Filters:|Streams:|Video/ { on = 0 } on && /vol:/ { sub(/^[^0-9*]*/, ""); printf "%s;", $0 }')"
+			say "sound_status $(echo "$status" | tr '\n' ';')"
+			;;
+		'sound memory')
+			say "sound_rss_kib $(for p in pipewire wireplumber pipewire-pulse; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
+			;;
 		# Keyboard layouts (M5.21): German first, then US; a layout
 		# xkeyboard-config lacks, refused with its message; and the file
 		# typing "touch y" in foot made, named after the key's letter.

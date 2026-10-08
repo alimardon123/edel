@@ -4,7 +4,7 @@
 # floating windows and four workspaces. Presets are built into edel, the compositor and
 # shell-ui; the settings file picks one by name with layout.preset, and its
 # own keys win over the preset's (ADR-008). Keys join this file with the
-# steps that read them: the session's services (M5.7).
+# steps that read them.
 format = 1
 
 [windows]
@@ -35,3 +35,13 @@ edge = "bottom"
 start = ["menu", "windows"]
 centre = []
 end = ["workspaces", "layout", "clock"]
+
+# What the session starts with the compositor and shell-ui (M5.7b), as
+# commands: a program on the PATH or an absolute path, then its arguments.
+# They start one after the other, once. This table is left out here, as in
+# every preset, and then the release's list holds (edel::presets::
+# SESSION_START, the sound system of the sound feature). A preset names its
+# own only to start others, and start = [] starts nothing:
+#
+#   [session]
+#   start = ["PROGRAM ARGUMENT...", "ANOTHER-PROGRAM"]

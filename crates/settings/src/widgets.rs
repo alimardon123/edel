@@ -65,6 +65,21 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
     (page.upcast(), content, problem)
 }
 
+/// The class main puts on a page that was asked for by name
+/// (`edel-settings --page NAME`): such a page gives the keyboard to its
+/// main control once that shows, so the keys act on it at once, as when the
+/// panel's volume opens Sound. Opened from the sidebar, a page leaves the
+/// keyboard where the person had it.
+pub const ASKED: &str = "edel-asked";
+
+/// Gives the keyboard to `control` if `page` was asked for by name, once.
+pub fn take_asked(page: &gtk::Widget, control: &impl IsA<gtk::Widget>) {
+    if page.has_css_class(ASKED) {
+        page.remove_css_class(ASKED);
+        control.grab_focus();
+    }
+}
+
 /// The bar a page shows once something on it changed (M5.6a): changes
 /// apply at once, so the desktop itself is the preview, and the bar
 /// offers to put back everything changed since the page opened, or to
