@@ -28,7 +28,10 @@ vm_memory_mib = 76
 # Seconds from the kernel's start to the session's first client.
 desktop_ready_seconds = 9.2
 
-# Memory in use with the session idle (MemTotal minus MemAvailable), MiB.
+# Memory in use with the session idle (MemTotal minus MemAvailable), MiB,
+# read with the kernel's file cache dropped, the middle of three reads:
+# without that, MemAvailable's estimate of the cache swung the number by
+# up to 19 MiB between runs of the same image (2026-10-08).
 desktop_memory_mib = 350
 
 # The compositor's resident memory (VmRSS), MiB.
@@ -72,7 +75,10 @@ settings_own_mib = 25
 # replaced frame_p99_ms for that check in PR #99: with motion off alone
 # those runs took 1.7 to 3.8 ms, so the absolute budget measured the
 # runner (4.5 and 4.8 ms failed changes that had not touched the
-# compositor) more than the animations (0.5 to 1.2 ms).
+# compositor) more than the animations (0.5 to 1.2 ms). Since 2026-10-08
+# it is the smaller of two pairs (off then full), as one busy moment of
+# the runner lifted one run to 1.8 ms added on a change that did not
+# touch the compositor.
 animation_p99_ms = 1.5
 
 # shell-ui's resident memory (VmRSS) with the session idle and no screen
