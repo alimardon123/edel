@@ -28,8 +28,15 @@ vm_memory_mib = 76
 # Seconds from the kernel's start to the session's first client.
 desktop_ready_seconds = 9.2
 
-# Memory in use with the session idle (MemTotal minus MemAvailable), MiB.
-desktop_memory_mib = 350
+# Memory the desktop holds with the session idle, MiB: AnonPages, Shmem,
+# SUnreclaim, KernelStack and PageTables from /proc/meminfo, the middle of
+# three reads. It replaced desktop_memory_mib (MemTotal less MemAvailable,
+# 350) on 2026-10-08: that number swung by up to 19 MiB between runs of
+# the same image (332 and 351 MiB) because MemAvailable estimates the
+# cache the kernel could free, while this one moved by 6 (142, 147 and
+# 148 MiB in the runs of #144, #145 and #147). The highest plus 10
+# percent, rounded up to 5: the old budget left about that much room.
+desktop_held_mib = 165
 
 # The compositor's resident memory (VmRSS), MiB.
 compositor_rss_mib = 169
@@ -72,7 +79,10 @@ settings_own_mib = 25
 # replaced frame_p99_ms for that check in PR #99: with motion off alone
 # those runs took 1.7 to 3.8 ms, so the absolute budget measured the
 # runner (4.5 and 4.8 ms failed changes that had not touched the
-# compositor) more than the animations (0.5 to 1.2 ms).
+# compositor) more than the animations (0.5 to 1.2 ms). Since 2026-10-08
+# it is the smaller of two pairs (off then full), as one busy moment of
+# the runner lifted one run to 1.8 ms added on a change that did not
+# touch the compositor.
 animation_p99_ms = 1.5
 
 # shell-ui's resident memory (VmRSS) with the session idle and no screen
