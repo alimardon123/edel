@@ -8,7 +8,7 @@
 
 | Command | What it does |
 |---|---|
-| `edel update` | Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails |
+| `edel update` | Install a newer Edel OS into the other slot from RELEASE, or from this machine's channel when none is named; it starts at the next restart, and falls back on its own if it fails |
 | `edel rollback` | Go back to the version in the other slot, the one before the last update; it starts at the next restart |
 | `edel status` | Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong |
 | `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings |
@@ -16,13 +16,13 @@
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
 
-## `edel update RELEASE [OPTIONS]`
+## `edel update [RELEASE] [OPTIONS]`
 
-Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails.
+Install a newer Edel OS into the other slot from RELEASE, or from this machine's channel when none is named; it starts at the next restart, and falls back on its own if it fails.
 
 | | What it does |
 |---|---|
-| `RELEASE` | The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one |
+| `RELEASE` | The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one; without it, the list of the channel this machine follows (updates.channel), or of --channel |
 | `--check` | Only check the version RELEASE holds against this one; change nothing |
 | `--allow-downgrade` | Install even when the release is not newer than this system |
 | `--channel CHANNEL` | Take a release list for this channel once, rather than the one this machine follows (updates.channel) |

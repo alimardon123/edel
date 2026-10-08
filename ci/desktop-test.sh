@@ -105,6 +105,11 @@
 #               slider holding the keyboard, takes Home and six presses of
 #               Right and wpctl status shows the sink at 0.30; kept as
 #               sound.png
+#   updates     updates.channel is refused unless it is a channel name,
+#               read back, and an edel update --check with no release
+#               takes that channel's list; Settings opened on its Updates
+#               page (edel-settings --page updates) runs edel status and
+#               says so on its stderr; kept as updates.png (M5.8c)
 #   tray        a StatusNotifierItem from edel-testclient --sni (a
 #               #33aa66 pixmap) registers with shell-ui's watcher and its
 #               icon lies in the panel's tray; AT-SPI names it, a click
@@ -896,6 +901,71 @@ case_display() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened on its Displays page showed Virtual-1's 100% scale chosen, a click on 200% logged output Virtual-1 scale 2 and wrote displays.Virtual-1.scale to ci's file, and Reset logged scale 1 and took the line out"
+}
+
+case_updates() {
+	# Updates (M5.8c): updates.channel, the channel `edel update` follows,
+	# is refused when it is not a channel name; set through the command
+	# (as root, the machine's file, as every service command) it reads
+	# back, and `edel update --check` with no release named says which
+	# channel's list it takes, before it reaches the network, so it works
+	# with or without one. Settings opened on its Updates page runs `edel
+	# status` and says so on its stderr, which the service reads back;
+	# the page is the window token's colour in its corner, kept as
+	# updates.png. Reset brings the image's own channel back (CI's images
+	# are built for their own, not preview).
+	guest 'channel bad'
+	wait_for 'DESKTOP-TEST: channel_bad ' || fail "the service did not report the refused channel"
+	value channel_bad | grep -q 'is not a channel name' ||
+		fail "edel settings set updates.channel=Beta was not refused with its message: $(value channel_bad)"
+	guest 'channel set'
+	asked=$(count 'DESKTOP-TEST: channel_value ')
+	guest 'channel get'
+	wait_more 'DESKTOP-TEST: channel_value ' "$asked" || fail "the service did not read updates.channel"
+	value channel_value | grep -q '"preview"' ||
+		fail "edel settings get updates.channel does not read back preview: $(value channel_value)"
+	asked=$(count 'DESKTOP-TEST: channel_update ')
+	guest 'channel update'
+	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s"
+	value channel_update | grep -q 'no release named; taking https://[^ ]*/preview/release.toml' ||
+		fail "edel update --check with no release does not take the preview channel's list: $(value channel_update)"
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'updates window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open a window on its Updates page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 3
+	shot updates $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+		fail "the Updates page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: updates_log ')
+		guest 'updates log'
+		wait_more 'DESKTOP-TEST: updates_log ' "$asked" || fail "the service did not read Settings' log"
+		value updates_log | grep -q 'edel-settings: updates page read edel status, exit' && break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the Updates page did not run edel status within 10 tries: $(value updates_log)"
+		sleep 2
+	done
+	status_line=$(value updates_log | tr ';' '\n' | grep 'edel-settings: updates page read edel status' | head -n 1)
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	guest 'channel reset'
+	asked=$(count 'DESKTOP-TEST: channel_value ')
+	guest 'channel get'
+	wait_more 'DESKTOP-TEST: channel_value ' "$asked" || fail "the service did not read updates.channel after the reset"
+	value channel_value | grep -q 'not set' ||
+		fail "edel settings reset updates.channel left it set: $(value channel_value)"
+	asked=$(count 'DESKTOP-TEST: channel_update ')
+	guest 'channel update'
+	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s after the reset"
+	value channel_update | grep -q 'no release named; taking https://[^ ]*/release.toml' ||
+		fail "edel update --check with no release names no channel's list after the reset: $(value channel_update)"
+	value channel_update | grep -q '/preview/' &&
+		fail "edel update --check still takes the preview channel after the reset: $(value channel_update)"
+	echo "PASS: updates.channel refused Beta, read back preview and made edel update --check take the preview channel's list, Settings opened on its Updates page and said it ran edel status ($status_line), and Reset gave the image's own channel back"
 }
 
 case_keyboard() {
@@ -2062,7 +2132,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')

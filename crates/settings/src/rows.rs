@@ -63,6 +63,11 @@ pub const ROWS: &[Row] = &[
         key: "displays.*.enabled",
         title: n_("On"),
     },
+    // The Updates page (M5.8c).
+    Row {
+        key: "updates.channel",
+        title: n_("Channel"),
+    },
 ];
 
 /// The title of `key`'s row, in the person's language.

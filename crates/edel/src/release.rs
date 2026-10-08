@@ -60,17 +60,54 @@ pub struct Accept {
     pub allow_http: bool,
 }
 
-/// The channel this machine follows: `updates.channel` in the machine's
-/// settings file, else the one its image was built for, else `stable`.
+/// Where the release lists of channels are served: a channel's is
+/// `CHANNEL_LISTS/NAME/release.toml` (`ci/channel.sh` puts `stable`'s there
+/// on the docs site, M3.4).
+pub const CHANNEL_LISTS: &str = "https://alimardon123.github.io/edel/channels";
+
+/// Where the preview's list is: a file of the rolling `preview`
+/// pre-release (`ci/release.sh`), which every merge replaces.
+pub const PREVIEW_LIST: &str =
+    "https://github.com/alimardon123/edel/releases/download/preview/release.toml";
+
+/// The address of `channel`'s release list.
+pub fn channel_list(channel: &str) -> String {
+    match channel {
+        "preview" => PREVIEW_LIST.to_string(),
+        _ => format!("{CHANNEL_LISTS}/{channel}/release.toml"),
+    }
+}
+
+/// The channel this machine follows ([`edel::settings::channel`]), from
+/// its settings files and the channel its image was built for.
 pub fn machine_channel() -> String {
-    let machine = fs::read_to_string(edel::places::found(&edel::places::machine_settings())).ok();
-    edel::settings::chosen("updates.channel", machine.as_deref(), None)
-        .or_else(|| {
-            let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-            os_release_value(&os_release, "EDEL_CHANNEL")
-        })
-        .filter(|c| !c.is_empty())
-        .unwrap_or_else(|| "stable".into())
+    let read = |path: PathBuf| fs::read_to_string(edel::places::found(&path)).ok();
+    let machine = read(edel::places::machine_settings());
+    let person = edel::places::person_settings().and_then(read);
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    edel::settings::channel(
+        machine.as_deref(),
+        person.as_deref(),
+        os_release_value(&os_release, "EDEL_CHANNEL").as_deref(),
+    )
+}
+
+/// The release list to take when none is named: `--channel`'s channel
+/// once, else the machine's (M5.8c). A channel the address cannot hold is
+/// refused before anything is fetched.
+pub fn default_location(accept: &Accept) -> Result<String> {
+    let channel = match accept.channel.as_deref() {
+        Some(wanted) if !edel::settings::is_channel(wanted) => bail!(
+            "{}",
+            trf(
+                "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\"",
+                &[("channel", &format!("{wanted:?}"))]
+            )
+        ),
+        Some(wanted) => wanted.to_string(),
+        None => machine_channel(),
+    };
+    Ok(channel_list(&channel))
 }
 
 /// Refuses a plain `http://` location unless `allow_http`: the signature
@@ -689,6 +726,42 @@ mod tests {
             "https://example.org/r/v1/edel-vm-x86_64.ext4.gz"
         );
         assert_eq!(beside("/srv/release.toml", "a.ext4"), "/srv/a.ext4");
+    }
+
+    #[test]
+    fn a_channel_names_its_release_list() {
+        assert_eq!(
+            channel_list("stable"),
+            "https://alimardon123.github.io/edel/channels/stable/release.toml"
+        );
+        assert_eq!(
+            channel_list("preview"),
+            "https://github.com/alimardon123/edel/releases/download/preview/release.toml",
+            "the preview is the rolling pre-release's file"
+        );
+        assert_eq!(
+            channel_list("fleet-1"),
+            "https://alimardon123.github.io/edel/channels/fleet-1/release.toml"
+        );
+        let once = Accept {
+            channel: Some("preview".into()),
+            ..Accept::default()
+        };
+        assert_eq!(
+            default_location(&once).unwrap(),
+            channel_list("preview"),
+            "--channel alone takes that channel's list once"
+        );
+        let bad = Accept {
+            channel: Some("../x".into()),
+            ..Accept::default()
+        };
+        assert_eq!(
+            default_location(&bad).unwrap_err().to_string(),
+            "\"../x\" is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
+        );
+        let machine = default_location(&Accept::default()).unwrap();
+        assert!(machine.starts_with("https://") && machine.ends_with("/release.toml"));
     }
 
     const MANIFEST: &str = "format = 1\nversion = \"2026.10.2\"\nchannel = \"stable\"\n\n[[images]]\nname = \"edel-vm-x86_64\"\nfile = \"edel-vm-x86_64.ext4\"\nsha256 = \"ab\"\nsize = 2\n";

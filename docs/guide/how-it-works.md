@@ -36,7 +36,7 @@ An installed machine's disk has four parts ([the disk layout](../FORMATS.md#the-
 
 An update never changes the running system. It fills the other slot, and the machine only switches when the new slot proves it works.
 
-1. **Check.** `edel update URL` reads the release's list, `release.toml`, and refuses it unless one of the keys the system carries signed it, unless it is newer than the running version, and unless it is still in date and for the machine's channel ([`release.toml`](../FORMATS.md#releasetoml-format-1-m16)).
+1. **Check.** `edel update URL` (or `edel update` alone, which takes the list of the channel the machine follows) reads the release's list, `release.toml`, and refuses it unless one of the keys the system carries signed it, unless it is newer than the running version, and unless it is still in date and for the machine's channel ([`release.toml`](../FORMATS.md#releasetoml-format-1-m16)).
 2. **Write.** It streams the new system into the other slot, checks it byte for byte against the signed list, and tells GRUB to try that slot next.
 3. **Try.** At the next start GRUB counts one try and starts the new slot.
 4. **Prove.** While the system starts, a guard (`edel boot guard`) keeps the machine's watchdog timer fed and waits for the image's health checks: every service started and, on a desktop, the compositor has shown its first frame. When they pass in time, the slot is **confirmed**, and only then does a new boot loader, if the update brought one, take its place.
