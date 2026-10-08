@@ -11,11 +11,13 @@
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
 mod about;
+mod display;
 mod files;
 mod icon;
 mod layout;
 mod preview;
 mod rows;
+mod screens;
 mod style;
 mod widgets;
 
@@ -24,7 +26,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 
 use crate::style::Theme;
 
@@ -59,9 +61,78 @@ fn main() -> gtk::glib::ExitCode {
     if let Some((language, words)) = edel::i18n::init("settings") {
         eprintln!("edel-settings: words in {language}, {words} translated");
     }
+    // `--page NAME` opens that page at the start, as a link to one page
+    // would: the Displays page from a screen's own menu, CI's screendumps.
+    let start = match start_page(std::env::args().skip(1), &pages()) {
+        Ok(at) => at,
+        Err(message) => {
+            eprintln!("edel-settings: {message}");
+            return gtk::glib::ExitCode::from(2);
+        }
+    };
     let app = adw::Application::builder().application_id(APP_ID).build();
-    app.connect_activate(window);
-    app.run()
+    app.connect_activate(move |app| window(app, start));
+    // GTK would refuse `--page`, which is read above.
+    app.run_with_args(&[APP_ID])
+}
+
+/// The page `--page NAME` asks for, as its place in [`pages`], or the first
+/// without it; an argument it does not know, or a page this machine
+/// lacks, is refused with what to do.
+fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<usize, String> {
+    let mut args = args.into_iter();
+    let mut name: Option<String> = None;
+    while let Some(arg) = args.next() {
+        match arg.strip_prefix("--page") {
+            Some("") => {
+                name = Some(args.next().ok_or_else(|| {
+                    tr("--page needs the name of a page, such as --page displays").to_string()
+                })?);
+            }
+            Some(rest) if rest.starts_with('=') => name = Some(rest[1..].to_string()),
+            _ => {
+                return Err(trf(
+                    "unknown option \"{option}\"; the only one is --page NAME",
+                    &[("option", &arg)],
+                ));
+            }
+        }
+    }
+    match name {
+        None => Ok(0),
+        Some(name) => page_named(pages, &name).ok_or_else(|| {
+            let titles: Vec<String> = pages.iter().map(|p| p.title.to_lowercase()).collect();
+            trf(
+                "there is no page \"{name}\" on this machine; the pages are {pages}",
+                &[("name", &name), ("pages", &titles.join(", "))],
+            )
+        }),
+    }
+}
+
+/// The page `name` means: its section or its title, whatever the case, or
+/// the start of exactly one of them (`display` is Displays).
+fn page_named(pages: &[Page], name: &str) -> Option<usize> {
+    let name = name.trim().to_lowercase();
+    if name.is_empty() {
+        return None;
+    }
+    let names = |page: &Page| -> [String; 2] {
+        [
+            page.section.unwrap_or_default().to_lowercase(),
+            page.title.to_lowercase(),
+        ]
+    };
+    let exact = pages.iter().position(|p| names(p).contains(&name));
+    let mut starts = pages.iter().enumerate().filter(|(_, p)| {
+        names(p)
+            .iter()
+            .any(|n| !name.is_empty() && n.starts_with(&name))
+    });
+    exact.or_else(|| {
+        let first = starts.next()?;
+        starts.next().is_none().then_some(first.0)
+    })
 }
 
 /// One page of the app: its name and icon in the sidebar, its section
@@ -76,7 +147,7 @@ struct Page {
 }
 
 /// The pages this release has, in `edel::settings::PAGES`' order, then
-/// About; a page is added here as its step lands (M5.7 to M5.10).
+/// About; a page is added here as its step lands (M5.7 to M5.10; Displays, M5.7a).
 fn all_pages() -> Vec<Page> {
     let mut pages: Vec<Page> = edel::settings::PAGES
         .iter()
@@ -87,6 +158,14 @@ fn all_pages() -> Vec<Page> {
                 icon: "page-layout",
                 section: Some(page.section),
                 build: layout::page,
+                needs: Some("shell"),
+            }),
+            // The screens are the compositor's too.
+            "displays" => Some(Page {
+                title: tr(page.title),
+                icon: "page-displays",
+                section: Some(page.section),
+                build: display::page,
                 needs: Some("shell"),
             }),
             _ => None,
@@ -130,7 +209,7 @@ fn finds(page: &Page, query: &str) -> bool {
             .is_some_and(|s| rows::on_page(s).any(|row| holds(tr(row.title))))
 }
 
-fn window(app: &adw::Application) {
+fn window(app: &adw::Application, start: usize) {
     let theme = Theme::new();
     let pages = Rc::new(pages());
     // Each page is built when first shown and kept.
@@ -141,7 +220,9 @@ fn window(app: &adw::Application) {
         .min_sidebar_width(SIDEBAR)
         .max_sidebar_width(SIDEBAR)
         .build();
-    let content = adw::NavigationPage::builder().title(pages[0].title).build();
+    let content = adw::NavigationPage::builder()
+        .title(pages[start.min(pages.len() - 1)].title)
+        .build();
     let back = gtk::Button::builder()
         .halign(gtk::Align::Start)
         .css_classes(["edel-back"])
@@ -185,7 +266,7 @@ fn window(app: &adw::Application) {
             content.set_title(page.title);
         }
     };
-    show(0);
+    show(start);
 
     let list = gtk::ListBox::builder()
         .css_classes(["edel-pages"])
@@ -204,7 +285,7 @@ fn window(app: &adw::Application) {
             split.set_show_content(true);
         });
     }
-    list.select_row(list.row_at_index(0).as_ref());
+    list.select_row(list.row_at_index(start as i32).as_ref());
 
     let search = gtk::Entry::builder()
         .placeholder_text(tr("Search"))
@@ -252,6 +333,8 @@ fn window(app: &adw::Application) {
         .build();
     split.set_sidebar(Some(&sidebar));
     split.set_content(Some(&content));
+    // Asked for a page, a narrow window opens on it, not on the list.
+    split.set_show_content(start > 0);
 
     let bin = adw::BreakpointBin::builder()
         .width_request(360)
@@ -287,7 +370,7 @@ fn window(app: &adw::Application) {
     window.present();
     // The pages' list takes the keyboard first, so the search field opens
     // quiet; it is a click away, or Ctrl+F.
-    if let Some(row) = list.row_at_index(0) {
+    if let Some(row) = list.row_at_index(start as i32) {
         row.grab_focus();
     }
 }
@@ -310,7 +393,7 @@ mod tests {
     #[test]
     fn the_pages_follow_the_page_table_then_about() {
         let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
-        assert_eq!(titles, ["Layout", "About"]);
+        assert_eq!(titles, ["Layout", "Displays", "About"]);
     }
 
     #[test]
@@ -335,10 +418,52 @@ mod tests {
                 .map(|p| p.title)
                 .collect()
         };
-        assert_eq!(titles(""), ["Layout", "About"]);
+        assert_eq!(titles(""), ["Layout", "Displays", "About"]);
         assert_eq!(titles("abo"), ["About"]);
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
+        assert_eq!(titles("resolution"), ["Displays"]);
+        assert_eq!(titles("scale"), ["Displays"]);
         assert!(titles("nothing like this").is_empty());
+    }
+
+    #[test]
+    fn a_page_is_asked_for_by_name() {
+        let pages = all_pages();
+        let at = |name: &str| page_named(&pages, name);
+        assert_eq!(at("layout"), Some(0));
+        assert_eq!(at("displays"), Some(1));
+        assert_eq!(at("Displays"), Some(1));
+        assert_eq!(at("display"), Some(1), "the start of one name");
+        assert_eq!(at("about"), Some(2));
+        assert_eq!(at("abo"), Some(2));
+        assert_eq!(at(""), None);
+        assert_eq!(at("sound"), None, "not a page of this release");
+        assert_eq!(at("l"), Some(0), "one start only");
+    }
+
+    #[test]
+    fn the_page_option_is_read_or_refused_with_what_to_do() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let pages = all_pages();
+        let start = |list: &[&str]| start_page(args(list), &pages);
+        assert_eq!(start(&[]), Ok(0));
+        assert_eq!(start(&["--page", "about"]), Ok(2));
+        assert_eq!(start(&["--page=about"]), Ok(2));
+        let refused = start(&["--page"]).unwrap_err();
+        assert!(
+            refused.contains("--page needs the name of a page"),
+            "{refused}"
+        );
+        let refused = start(&["--pge", "x"]).unwrap_err();
+        assert_eq!(
+            refused,
+            "unknown option \"--pge\"; the only one is --page NAME"
+        );
+        let refused = start(&["--page", "zzz"]).unwrap_err();
+        assert!(
+            refused.starts_with("there is no page \"zzz\" on this machine; the pages are "),
+            "{refused}"
+        );
     }
 
     #[test]
@@ -351,7 +476,7 @@ mod tests {
         };
         assert_eq!(titles(&dir), ["About"]);
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
-        assert_eq!(titles(&dir), ["Layout", "About"]);
+        assert_eq!(titles(&dir), ["Layout", "Displays", "About"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

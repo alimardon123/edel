@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Settings' Displays page (M5.7a): a screen on its stand. -->
+  <rect x="1.75" y="2.25" width="12.5" height="8.5" rx="2"/>
+  <path d="M8 10.75V13.75M5.25 13.75H10.75"/>
+</svg>

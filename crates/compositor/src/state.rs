@@ -666,6 +666,29 @@ impl Edel {
                     Value::Float(output.current_scale().fractional_scale()),
                 );
                 insert_rect(&mut t, area);
+                // What Settings' Displays page offers (M5.7a): the mode in
+                // use, every size the screen has, its preferred one and the
+                // scale it gets when the settings file names none.
+                let text = |size: smithay::utils::Size<i32, smithay::utils::Physical>| {
+                    format!("{}x{}", size.w, size.h)
+                };
+                if let Some(mode) = output.current_mode() {
+                    t.insert("mode".into(), Value::String(text(mode.size)));
+                }
+                if let Some(mode) = output.preferred_mode() {
+                    t.insert("preferred_mode".into(), Value::String(text(mode.size)));
+                }
+                let modes = edel_compositor::layout::mode_sizes(
+                    output.modes().iter().map(|m| (m.size.w, m.size.h)),
+                );
+                t.insert(
+                    "modes".into(),
+                    Value::Array(modes.into_iter().map(Value::String).collect()),
+                );
+                t.insert(
+                    "auto_scale".into(),
+                    Value::Float(crate::outputs::auto_scale(output)),
+                );
                 Some(Value::Table(t))
             })
             .collect();

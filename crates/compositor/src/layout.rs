@@ -500,6 +500,16 @@ pub fn parse_mode(text: &str) -> Option<(i32, i32, Option<f64>)> {
     (w > 0 && h > 0 && refresh.is_none_or(|r| r > 0.0)).then_some((w, h, refresh))
 }
 
+/// The sizes a screen offers as the state file lists them (M5.7a), `WIDTHxHEIGHT`
+/// as `displays.NAME.resolution` is written, each once, the largest first,
+/// whatever refresh rates it comes in.
+pub fn mode_sizes(modes: impl IntoIterator<Item = (i32, i32)>) -> Vec<String> {
+    let mut sizes: Vec<(i32, i32)> = modes.into_iter().collect();
+    sizes.sort_by_key(|&(w, h)| std::cmp::Reverse((i64::from(w) * i64::from(h), w)));
+    sizes.dedup();
+    sizes.into_iter().map(|(w, h)| format!("{w}x{h}")).collect()
+}
+
 /// Which of a screen's `modes` (width, height, refresh in mHz) `wanted`
 /// names: its size at the refresh nearest the one asked for, or at the
 /// highest when none is asked for; none when the screen lacks the size.
@@ -568,6 +578,21 @@ impl OutputLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_screen_lists_each_size_once_largest_first() {
+        assert_eq!(
+            mode_sizes([
+                (1280, 720),
+                (1920, 1080),
+                (1280, 720),
+                (1024, 768),
+                (1920, 1080)
+            ]),
+            ["1920x1080", "1280x720", "1024x768"]
+        );
+        assert!(mode_sizes([]).is_empty());
+    }
 
     fn output(w: i32, h: i32, scale: f64) -> OutputLayout {
         OutputLayout {

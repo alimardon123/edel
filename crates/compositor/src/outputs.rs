@@ -30,7 +30,10 @@ pub fn set_auto_scale(output: &Output, scale: f64) {
     }
 }
 
-fn auto_scale(output: &Output) -> f64 {
+/// The scale `output`'s size gives it when the settings file names none,
+/// which the state file reports so Settings knows what a choice of it
+/// would change (M5.7a).
+pub fn auto_scale(output: &Output) -> f64 {
     output
         .user_data()
         .get::<AutoScale>()
