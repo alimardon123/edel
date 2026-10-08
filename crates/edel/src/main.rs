@@ -92,14 +92,16 @@ fn translated(cmd: clap::Command) -> clap::Command {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Install a newer Edel OS into the other slot from RELEASE; it starts
-    /// at the next restart, and falls back on its own if it fails
+    /// Install a newer Edel OS into the other slot from RELEASE, or from this
+    /// machine's channel when none is named; it starts at the next restart,
+    /// and falls back on its own if it fails
     Update {
         /// The release: its release.toml, a path or an http(s) URL (its .sig
         /// and image beside it), or with --unsigned a slot image or a block
-        /// device holding one
+        /// device holding one; without it, the list of the channel this
+        /// machine follows (updates.channel), or of --channel
         #[arg(value_name = "RELEASE")]
-        location: String,
+        location: Option<String>,
         /// Only check the version RELEASE holds against this one; change
         /// nothing
         #[arg(long, conflicts_with = "unsigned")]
@@ -115,7 +117,7 @@ enum Commands {
         #[arg(long)]
         allow_http: bool,
         /// Install a slot image without a signed release.toml (for testing)
-        #[arg(long)]
+        #[arg(long, requires = "location")]
         unsigned: bool,
     },
     /// Go back to the version in the other slot, the one before the last
@@ -512,6 +514,20 @@ fn run(command: Commands) -> Result<()> {
                 channel,
                 allow_http,
             };
+            let location = match location {
+                Some(location) => location,
+                None => {
+                    let location = release::default_location(&accept)?;
+                    println!(
+                        "edel update: {}",
+                        trf(
+                            "no release named; taking {location}",
+                            &[("location", &location)]
+                        )
+                    );
+                    location
+                }
+            };
             if check {
                 release::check(&location, &accept)
             } else {
@@ -863,7 +879,7 @@ mod tests {
             shipped == reference,
             "docs/guide/commands.md differs from the command table; run EDEL_WRITE_DOCS=1 cargo test -p edel command_reference"
         );
-        assert!(reference.contains("## `edel update RELEASE [OPTIONS]`"));
+        assert!(reference.contains("## `edel update [RELEASE] [OPTIONS]`"));
         assert!(
             !reference.contains("edel boot"),
             "a hidden command is listed"

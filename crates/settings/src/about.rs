@@ -59,6 +59,14 @@ fn nothing_yet(dir: Option<&Path>) -> String {
     }
 }
 
+/// `key`'s value in this machine's os-release, its quotes taken off.
+pub fn os_release_field(key: &str) -> Option<String> {
+    field(
+        &std::fs::read_to_string(OS_RELEASE).unwrap_or_default(),
+        key,
+    )
+}
+
 /// `key`'s value in os-release text, its quotes taken off.
 fn field(text: &str, key: &str) -> Option<String> {
     text.lines()

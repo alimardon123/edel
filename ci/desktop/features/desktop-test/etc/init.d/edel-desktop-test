@@ -353,6 +353,21 @@ commands() {
 		'sound memory')
 			say "sound_rss_kib $(for p in pipewire wireplumber pipewire-pulse; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
+		# Updates (M5.8c): the channel `edel update` follows, set as root like
+		# every command here (it is the machine's file), refused when it is
+		# not a channel name, read back and used by `edel update --check`
+		# with no release named, which prints the list it takes before it
+		# reaches for the network; and Settings on its Updates page, as ci,
+		# whose own stderr is read back (it says it ran `edel status`).
+		'channel bad') say "channel_bad $(edel settings set updates.channel=Beta 2>&1 | tr '\n' ' ')" ;;
+		'channel set') edel settings set updates.channel=preview ;;
+		'channel reset') edel settings reset updates.channel ;;
+		'channel get') say "channel_value $(edel settings get updates.channel 2>&1 | tr '\n' ' ')" ;;
+		'channel update') say "channel_update $(timeout 30 edel update --check 2>&1 | tr '\n' ' ')" ;;
+		'updates window')
+			as_ci edel-settings --page updates </dev/null >/tmp/updates.log 2>&1 &
+			;;
+		'updates log') say "updates_log $(tr '\n' ';' </tmp/updates.log 2>/dev/null)" ;;
 		# Keyboard layouts (M5.21): German first, then US; a layout
 		# xkeyboard-config lacks, refused with its message; and the file
 		# typing "touch y" in foot made, named after the key's letter.

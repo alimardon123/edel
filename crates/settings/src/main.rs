@@ -11,6 +11,7 @@
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
 mod about;
+mod cmd;
 mod display;
 mod files;
 mod icon;
@@ -20,6 +21,8 @@ mod rows;
 mod screens;
 mod sound;
 mod style;
+mod system;
+mod updates;
 mod widgets;
 
 use std::cell::RefCell;
@@ -179,6 +182,21 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| sound::page(),
                 needs: Some("sound"),
+            }),
+            // Updates and System run `edel`, which every image has.
+            "updates" => Some(Page {
+                title: tr(page.title),
+                icon: "page-updates",
+                section: Some(page.section),
+                build: |_| updates::page(),
+                needs: None,
+            }),
+            "system" => Some(Page {
+                title: tr(page.title),
+                icon: "page-system",
+                section: Some(page.section),
+                build: |_| system::page(),
+                needs: None,
             }),
             _ => None,
         })
@@ -410,7 +428,10 @@ mod tests {
     #[test]
     fn the_pages_follow_the_page_table_then_about() {
         let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
-        assert_eq!(titles, ["Layout", "Displays", "Sound", "About"]);
+        assert_eq!(
+            titles,
+            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
+        );
     }
 
     #[test]
@@ -435,9 +456,13 @@ mod tests {
                 .map(|p| p.title)
                 .collect()
         };
-        assert_eq!(titles(""), ["Layout", "Displays", "Sound", "About"]);
+        assert_eq!(
+            titles(""),
+            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
+        );
         assert_eq!(titles("abo"), ["About"]);
         assert_eq!(titles("sou"), ["Sound"]);
+        assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
@@ -454,8 +479,11 @@ mod tests {
         assert_eq!(at("display"), Some(1), "the start of one name");
         assert_eq!(at("sound"), Some(2));
         assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("about"), Some(3));
-        assert_eq!(at("abo"), Some(3));
+        assert_eq!(at("updates"), Some(3));
+        assert_eq!(at("system"), Some(4));
+        assert_eq!(at("sy"), Some(4));
+        assert_eq!(at("about"), Some(5));
+        assert_eq!(at("abo"), Some(5));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
     }
@@ -466,8 +494,9 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(3));
-        assert_eq!(start(&["--page=about"]), Ok(3));
+        assert_eq!(start(&["--page", "about"]), Ok(5));
+        assert_eq!(start(&["--page=about"]), Ok(5));
+        assert_eq!(start(&["--page", "updates"]), Ok(3));
         assert_eq!(start(&["--page", "sound"]), Ok(2));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
@@ -494,11 +523,18 @@ mod tests {
         let titles = |dir: &std::path::Path| -> Vec<&str> {
             pages_in(dir).iter().map(|p| p.title).collect()
         };
-        assert_eq!(titles(&dir), ["About"]);
+        // Updates and System run `edel`, which every machine has.
+        assert_eq!(titles(&dir), ["Updates", "System", "About"]);
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
-        assert_eq!(titles(&dir), ["Layout", "Displays", "About"]);
+        assert_eq!(
+            titles(&dir),
+            ["Layout", "Displays", "Updates", "System", "About"]
+        );
         std::fs::write(dir.join("sound.toml"), "format = 1\n").unwrap();
-        assert_eq!(titles(&dir), ["Layout", "Displays", "Sound", "About"]);
+        assert_eq!(
+            titles(&dir),
+            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
