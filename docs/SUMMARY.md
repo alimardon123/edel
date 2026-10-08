@@ -34,6 +34,7 @@
 - [ADR-008: Features, defaults and install](ADR-008-features-defaults-and-install.md)
 - [ADR-009: Enterprise, the same system at work](ADR-009-enterprise-the-same-system-at-work.md)
 - [ADR-010: Parts that stand alone](ADR-010-parts-that-stand-alone.md)
+- [ADR-011: Your devices as one](ADR-011-your-devices-as-one.md)
 - [Review: other shells](REVIEW-shells.md)
 - [Review: AerynOS](REVIEW-aerynos.md)
 - [Review: postmarketOS](REVIEW-postmarketos.md)
