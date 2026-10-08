@@ -15,6 +15,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [ADR-008](ADR-008-features-defaults-and-install.md) | Features as one file each, files read across releases, defaults as the absence of a key, one way in from Settings, the terminal or a file | Proposed |
 | [ADR-009](ADR-009-enterprise-the-same-system-at-work.md) | Enterprise as the same system at home and at work, appliances first, the same security for everyone, ten years as the long channel's goal, a systemd adapter only as an add-on | Proposed |
 | [ADR-010](ADR-010-parts-that-stand-alone.md) | Every part can be changed, dropped or stand on its own: seams of files and protocols, one module for Edel OS's places, one owner file for every fact, checked in CI | Proposed |
+| [ADR-011](ADR-011-your-devices-as-one.md) | Your devices as one: pairing without an account, every app's window moving between devices, the strongest machine lending its power, one pointer, clipboard and files, phones of other systems through KDE Connect | Proposed |
 | [REVIEW-apps-and-lessons.md](REVIEW-apps-and-lessons.md) | How Windows, macOS, HarmonyOS and Flatpak keep apps working for decades; a 2014 Alpine app run today; why postmarketOS, AerynOS and COSMIC took years | Review |
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
 | [REVIEW-shells.md](REVIEW-shells.md) | What we take from Hyprland, niri, the Quickshell shells, GNOME, macOS and Windows 11 to look beautiful and feel instant, and what we skip | Review |

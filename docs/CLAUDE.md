@@ -13,7 +13,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 ## ADRs
 
-- File name `ADR-NNN-kebab-slug.md`; the next free number is 011. Title line `# ADR-NNN: Sentence-case title`.
+- File name `ADR-NNN-kebab-slug.md`; the next free number is 012. Title line `# ADR-NNN: Sentence-case title`.
 - Header, one bold label per line under the title:
 
   ```
@@ -50,6 +50,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 - A step that is wrong or too big is changed in place: split, reorder, or rewrite its "Done when". Never renumber, because other docs cite the numbers. A new step before step 1 takes 0 (M4.0, "Numbered 0 so later references keep their numbers"); a split or an insert elsewhere takes letters (M6.6a and M6.6b; M7.2 renamed M7.2a beside a new M7.2b). Change every reference to a renamed step in the same PR.
 - Every plan change gets an entry at the top of "Changes to the plan" (newest first): `- YYYY-MM-DD: what changed, why. Asked by Alimardon. PR #N.` Leave out "Asked by Alimardon." when it was Claude's call. Every split, reorder, rewritten "Done when" and overruled default gets a line. A finished step gets no line (since 2026-10-07): its tick and its "Done with:" note, added to its "Done when" line, record what it built, and a PR that only finishes a step leaves the log alone, so PRs side by side do not conflict there.
 - A step that takes an idea from another system (HarmonyOS, Apple, Android, Windows, KDE, GNOME, COSMIC, Hyprland, niri and the rest) names it and says in a "Beyond ...:" sentence how ours goes further for the person (Alimardon, 2026-10-07): fewer steps, one settings file for every machine, privacy, speed or looks, within the principles, never by adding options or parts.
+- A hard feature that waits for a later milestone names the seams it rests on, and the steps that build those parts now carry a "Seam (ADR-NNN):" note on their "Done when" line saying what they keep, so the feature comes later without a rewrite (Alimardon, 2026-10-08).
 - Open question: do not wait. Take the default in "Decisions taken by default", or pick one by the principles and add a row to its `| Question | Default | Why |` table, naming the principle ("Reliable over Efficient"). When Alimardon overrules, update the row, the affected steps and the log.
 - Names marked "check in CI" are from memory: correct the step's notes after its first CI run.
 - Milestone headings are `## Mn (phase 1, now): Title`, `## Mn (next): Title` or `## Mn (later): Title`. A step that adds or drops a part updates its milestone's "**Parts after Mn:** ... **Deliberately not added:** ..." line.
