@@ -50,6 +50,12 @@ msgstr ""
 msgid "Focused window: {title}"
 msgstr ""
 
+msgid "Tray item"
+msgstr ""
+
+msgid "Tray: {names}"
+msgstr ""
+
 msgid "{title} (focused)"
 msgstr ""
 

@@ -16,3 +16,6 @@ anyhow = "1.0.104"
 # Pinned (roadmap M4.3), without calloop and xkbcommon: the client only
 # draws and never reads keys.
 smithay-client-toolkit = { version = "=0.21.1", default-features = false }
+# --sni (M5.2e) is a StatusNotifierItem on the session's bus; the same zbus
+# shell-ui serves its tray with, blocking API only.
+zbus = { version = "5.5", default-features = false, features = ["async-io", "blocking-api"] }
