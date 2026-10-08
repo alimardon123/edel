@@ -33,9 +33,9 @@ style = "menu"
 # hide = "covered" steps aside while a window covers it (M5.4f).
 [[panels]]
 edge = "bottom"
-start = ["menu", "windows"]
+start = ["menu", "separator", "windows"]
 centre = []
-end = ["workspaces", "layout", "tray", "clock"]
+end = ["workspaces", "layout", "separator", "tray", "clock"]
 
 # What the session starts with the compositor and shell-ui (M5.7b), as
 # commands: a program on the PATH or an absolute path, then its arguments.

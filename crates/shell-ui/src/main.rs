@@ -478,6 +478,7 @@ impl Shell {
             .zip(&look.shown)
             .zip(&panel.places)
             .filter(|(_, (_, width))| *width > 0.0)
+            .filter(|((widget, shown), _)| !(widget.label)(shown).is_empty())
             .map(|((widget, shown), &(x, width))| a11y::Item {
                 role: widget.role,
                 label: (widget.label)(shown),
@@ -597,7 +598,23 @@ impl Shell {
         };
         let shown = look.shown.get(j).map_or("", String::as_str);
         let (left, width) = panel.places[j];
-        let action = (widget.input)(shown, input(x - left, width));
+        // A strip as wide as the panel to measure on, as drawing does:
+        // where the window list's buttons lie depends on its titles'
+        // widths.
+        let Some(mut strip) = Pixmap::new(panel.width * panel.scale, 1) else {
+            return;
+        };
+        let mut canvas = widgets::Canvas {
+            pixmap: &mut strip,
+            tokens: &self.tokens,
+            text: Some(&mut self.text),
+            icons: None,
+            scale: panel.scale as f32,
+            top: 0.0,
+            height: 1.0,
+            dock: panel.style == Style::Dock,
+        };
+        let action = (widget.input)(&mut canvas, shown, input(x - left, width));
         match action {
             Some(Action::Show(name)) => self.workspaces.show(&name),
             Some(Action::View(first)) => {
@@ -716,6 +733,9 @@ impl Shell {
         });
         self.launcher.open();
         self.menu = Some(Menu { popup, keyboard });
+        // The menu button's tile lights while the launcher is open.
+        self.live.launcher = true;
+        self.draw_all();
     }
 
     /// Closes the launcher and lets go of its keyboard, buffers and apps.
@@ -728,6 +748,8 @@ impl Shell {
         }
         drop(menu);
         self.launcher.close();
+        self.live.launcher = false;
+        self.draw_all();
         eprintln!("edel-shell-ui: launcher hidden");
     }
 

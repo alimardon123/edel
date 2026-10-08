@@ -17,15 +17,15 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
-    input,
+    input: |_, shown, what| input(shown, what),
     parts: super::no_parts,
     role: Role::Button,
     label,
 };
 
-/// The field and the room on each side of it, in logical pixels.
+/// The field and the room on each side of it, in logical pixels; its
+/// height is `size.panel_control`.
 const WIDTH: f32 = 180.0;
-const HEIGHT: f32 = 30.0;
 const ROOM: f32 = 4.0;
 /// The magnifier's inset from the field's left end and its size.
 const PAD: f32 = 11.0;
@@ -57,7 +57,10 @@ fn input(_: &str, input: Input) -> Option<Action> {
 fn draw(canvas: &mut Canvas, _: &str, x: f32) {
     let s = canvas.scale;
     let tokens = canvas.tokens;
-    let (fw, fh) = ((WIDTH * s).round(), (HEIGHT * s).round());
+    let (fw, fh) = (
+        (WIDTH * s).round(),
+        (tokens.panel_control as f32 * s).round(),
+    );
     let fx = (x + ROOM * s).round();
     let fy = canvas.top + ((canvas.height - fh) / 2.0).round();
     let field = mix(tokens.panel, tokens.panel_text, 0.1);
@@ -81,7 +84,7 @@ fn draw(canvas: &mut Canvas, _: &str, x: f32) {
             .stroke_path(&path, &paint_of(ink), &stroke, Transform::identity(), None);
     }
     if let Some(text) = canvas.text.as_deref_mut() {
-        let size = (tokens.panel_text_size as f32 * 0.96).round() * s;
+        let size = tokens.panel_text_size as f32 * s;
         let tx = gx + (GLASS + 8.0) * s;
         let mut line = text.fit(tr("Search"), size, fx + fw - tx - PAD * s);
         let ty = fy + (fh - size * 1.25) / 2.0;

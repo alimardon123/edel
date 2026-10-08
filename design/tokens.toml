@@ -74,6 +74,13 @@ gap = 8
 # shell-ui's panel along the screen's edge, and its clock's letters (M5.1b).
 panel = 40
 panel_text = 13
+# What is drawn on the panel, from the mockups (M5.29): the smaller text
+# (the clock's date), a button's height, the app icon in a button and the
+# shell's own icons (the menu's, the layout toggle's).
+panel_text_small = 11
+panel_control = 30
+panel_icon = 20
+panel_glyph = 18
 # Corner radii (M5.5e, the mockups' second round): windows (M5.14); menus
 # such as the launcher (M5.3b) and the fillets where the panel meets the
 # screen (M5.1b); and controls: the panel's buttons and a menu's rows.

@@ -8,7 +8,10 @@
 //! with no fillets. Sizes are logical pixels times the buffer's scale;
 //! colours come from the design tokens.
 
-use cosmic_text::{Attrs, Buffer, Color, Family, FontSystem, Metrics, Shaping, SwashCache};
+use cosmic_text::{
+    Attrs, Buffer, Color, Family, FeatureTag, FontFeatures, FontSystem, Metrics, Shaping,
+    SwashCache, Weight,
+};
 use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Rect, Transform};
 
 use edel::presets::{Edge, Style};
@@ -107,6 +110,39 @@ pub struct Text {
     family: String,
 }
 
+/// How heavy a line of text is and whether its figures all have one
+/// width (Inter's `tnum`), as the mockups set the clock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Face {
+    pub weight: u16,
+    pub tabular: bool,
+}
+
+impl Face {
+    pub const REGULAR: Face = Face {
+        weight: 400,
+        tabular: false,
+    };
+    /// Window buttons' titles.
+    pub const MEDIUM: Face = Face {
+        weight: 500,
+        tabular: false,
+    };
+    /// Numbers that stand out: the clock's time, the workspaces'.
+    pub const SEMIBOLD: Face = Face {
+        weight: 600,
+        tabular: false,
+    };
+
+    /// The same weight with tabular figures.
+    pub const fn tabular(self) -> Face {
+        Face {
+            tabular: true,
+            ..self
+        }
+    }
+}
+
 /// One line of text, shaped.
 pub struct Line {
     buffer: Buffer,
@@ -126,9 +162,21 @@ impl Text {
     /// `text` shaped in the interface font, falling back for other
     /// scripts, `size` pixels high.
     pub fn line(&mut self, text: &str, size: f32) -> Line {
+        self.line_in(text, size, Face::REGULAR)
+    }
+
+    /// [`Text::line`] in `face`.
+    pub fn line_in(&mut self, text: &str, size: f32, face: Face) -> Line {
         let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size, size * 1.25));
         buffer.set_size(None, None);
-        let attrs = Attrs::new().family(Family::Name(&self.family));
+        let mut attrs = Attrs::new()
+            .family(Family::Name(&self.family))
+            .weight(Weight(face.weight));
+        if face.tabular {
+            let mut features = FontFeatures::new();
+            features.enable(FeatureTag::new(b"tnum"));
+            attrs = attrs.font_features(features);
+        }
         buffer.set_text(text, &attrs, Shaping::Advanced, None);
         buffer.shape_until_scroll(&mut self.fonts, false);
         let width = buffer
@@ -142,17 +190,23 @@ impl Text {
     /// whole, or cut short with an ellipsis, or nothing if not even that
     /// fits.
     pub fn fit(&mut self, text: &str, size: f32, room: f32) -> Line {
-        let whole = self.line(text, size);
+        self.fit_in(text, size, room, Face::REGULAR)
+    }
+
+    /// [`Text::fit`] in `face`.
+    pub fn fit_in(&mut self, text: &str, size: f32, room: f32, face: Face) -> Line {
+        let whole = self.line_in(text, size, face);
         if whole.width <= room {
             return whole;
         }
         // The most characters that fit before the ellipsis, by halving.
         let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
         let (mut fits, mut over) = (0, ends.len());
-        let mut best = self.line("\u{2026}", size);
+        let mut best = self.line_in("\u{2026}", size, face);
         while fits + 1 < over {
             let mid = (fits + over) / 2;
-            let line = self.line(&format!("{}\u{2026}", text[..ends[mid]].trim_end()), size);
+            let cut = format!("{}\u{2026}", text[..ends[mid]].trim_end());
+            let line = self.line_in(&cut, size, face);
             if line.width <= room {
                 (fits, best) = (mid, line);
             } else {
@@ -160,7 +214,7 @@ impl Text {
             }
         }
         if best.width > room {
-            return self.line("", size);
+            return self.line_in("", size, face);
         }
         best
     }
@@ -545,7 +599,7 @@ pub fn to_argb(pixmap: &Pixmap, out: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::widgets::{find, menu};
+    use crate::widgets::{self, find, menu};
 
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap();
@@ -635,7 +689,8 @@ mod tests {
         let width = natural_width(&tokens, None, None, &row, &shown, 1);
         let h = DOCK_HEIGHT;
         assert_eq!(height(Style::Dock, &tokens), h);
-        assert_eq!(width, 2 * h + 2 * DOCK_PAD as u32);
+        let each = menu::logical_width(&tokens);
+        assert_eq!(width, (2.0 * each + 2.0 * DOCK_PAD) as u32);
         let look = Look {
             width,
             height: h,
@@ -647,10 +702,7 @@ mod tests {
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         let places = paint(&mut pixmap, &look, &tokens, None, None, &row);
-        assert_eq!(
-            places,
-            [(DOCK_PAD, h as f32), (DOCK_PAD + h as f32, h as f32)]
-        );
+        assert_eq!(places, [(DOCK_PAD, each), (DOCK_PAD + each, each)]);
         assert_eq!(pixel(&pixmap, width / 2, 1), tokens.panel.bytes());
         assert_ne!(
             pixel(&pixmap, width / 2, 0),
@@ -698,12 +750,21 @@ mod tests {
 
     #[test]
     fn widgets_sit_at_the_start_the_centre_and_the_end() {
-        // Whether the menu icon's first square has its middle at x + mid.
+        // Whether the menu icon's first square has its middle at the
+        // widget's left edge x plus the room before its tile, the
+        // icon's inset in the tile and half a square.
         let icon_at = |pixmap: &Pixmap, tokens: &Tokens, x: u32| {
             let strip = fillet_height(tokens);
-            let (cell, _, inset) = menu::icon(tokens.panel_height as f32);
-            let mid = (inset + cell / 2.0) as u32;
-            pixel(pixmap, x + mid, strip + mid) == tokens.panel_text.bytes()
+            let (tile_w, tile_h) = (
+                (tokens.panel_control as f32 * 1.2).round(),
+                tokens.panel_control as f32,
+            );
+            let glyph = tokens.panel_glyph as f32;
+            let across = 6.0 + ((tile_w - glyph) / 2.0).round() + glyph * 0.2;
+            let down = ((tokens.panel_height as f32 - tile_h) / 2.0).round()
+                + ((tile_h - glyph) / 2.0).round()
+                + glyph * 0.2;
+            pixel(pixmap, x + across as u32, strip + down as u32) == tokens.panel_text.bytes()
         };
         // Classic: the menu at the panel's start.
         let (pixmap, tokens) = drawn(Edge::Bottom, false, &classic());
@@ -716,10 +777,273 @@ mod tests {
             end: vec![menu],
         };
         let (pixmap, tokens) = drawn(Edge::Bottom, false, &row);
-        let h = tokens.panel_height;
+        let w = widgets::menu::logical_width(&tokens) as u32;
         assert!(!icon_at(&pixmap, &tokens, 0));
-        assert!(icon_at(&pixmap, &tokens, 640 - h / 2));
-        assert!(icon_at(&pixmap, &tokens, 1280 - h));
+        assert!(icon_at(&pixmap, &tokens, 640 - w / 2));
+        assert!(icon_at(&pixmap, &tokens, 1280 - w));
+    }
+
+    // The panel as the mockups draw it (M5.29), drawn with fonts and a
+    // few app icons from a theme of its own, for the tests below and to
+    // look at: `EDEL_PANEL_PNG=DIR cargo test -p edel-shell-ui panel_png`
+    // writes each panel as a PNG in DIR, light and dark.
+
+    use crate::widgets::{Pin, Task};
+    use edel::tokens::Scheme;
+
+    const FOLDER: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M5 12a4 4 0 0 1 4-4h10l5 5h15a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z" fill="#5b95ee"/><path d="M5 18h38v18a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z" fill="#3f7be0"/></svg>"##;
+    const TERMINAL: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="4" y="6" width="40" height="36" rx="8" fill="#23262d"/><path d="M13 18l8 6-8 6" fill="none" stroke="#eceef1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 32h10" stroke="#eceef1" stroke-width="3" stroke-linecap="round"/></svg>"##;
+    const GLOBE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="#4a9be8"/><path d="M5 24h38M24 5c-9 9-9 29 0 38M24 5c9 9 9 29 0 38" fill="none" stroke="#fff" stroke-width="2"/></svg>"##;
+
+    /// A theme with the three icons, in a directory of its own.
+    fn theme() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("edel-panel-icons-{}", std::process::id()));
+        let apps = dir.join("icons/hicolor/scalable/apps");
+        std::fs::create_dir_all(&apps).unwrap();
+        for (name, svg) in [("folder", FOLDER), ("terminal", TERMINAL), ("web", GLOBE)] {
+            std::fs::write(apps.join(format!("{name}.svg")), svg).unwrap();
+        }
+        dir
+    }
+
+    fn task(title: &str, app: &str, focused: bool, minimized: bool) -> Task {
+        Task {
+            title: title.into(),
+            app_id: app.into(),
+            focused,
+            minimized,
+        }
+    }
+
+    /// The windows and apps of the mockups: Pictures focused, Terminal and
+    /// Web running.
+    fn live(workspaces: usize, tiling: bool) -> Live {
+        let pin = |id: &str, name: &str, icon: &str| Pin {
+            id: id.into(),
+            name: name.into(),
+            icon: icon.into(),
+        };
+        let installed = vec![
+            pin("files", "Pictures", "folder"),
+            pin("term", "Terminal", "terminal"),
+            pin("web", "Web", "web"),
+        ];
+        Live {
+            workspaces: (1..=workspaces).map(|n| (n.to_string(), n == 1)).collect(),
+            windows: vec![
+                task("Pictures", "files", true, false),
+                task("Terminal", "term", false, false),
+                task("Web", "web", false, false),
+            ],
+            policy: if tiling { "tiling" } else { "floating" }.into(),
+            pinned: installed.clone(),
+            installed,
+            ..Live::default()
+        }
+    }
+
+    /// Where a panel's widgets lie, by name: left edge and width.
+    type Places = Vec<(&'static str, (f32, f32))>;
+
+    /// Panel number `index` of preset `name` in `scheme`, `width` logical
+    /// pixels wide at `scale`, with `live` showing and the clock at
+    /// 14:05 on Sat 3 Oct, on a wallpaper-coloured screen; also where its
+    /// widgets lie, in logical pixels, by name.
+    fn preview(
+        name: &str,
+        index: usize,
+        scheme: Scheme,
+        width: u32,
+        scale: u32,
+        live: &Live,
+    ) -> (Pixmap, Places, Tokens) {
+        let tokens = Tokens::built_in_scheme(scheme);
+        let (preset, _) = edel::presets::named(Some(name));
+        let spec = &preset.panels[index];
+        let pick = |names: &[String]| {
+            names
+                .iter()
+                .filter_map(|n| find(n))
+                .collect::<Vec<&'static Widget>>()
+        };
+        let row = Row {
+            start: pick(&spec.start),
+            centre: pick(&spec.centre),
+            end: pick(&spec.end),
+        };
+        let shown: Vec<String> = row
+            .all()
+            .map(|w| {
+                if w.name == "clock" {
+                    "14:05\nSat 3 Oct".to_string()
+                } else {
+                    (w.shows)(live)
+                }
+            })
+            .collect();
+        let dock = spec.style == Style::Dock;
+        let mut text = Text::load(&tokens.font);
+        let mut icons = edel::app_icons::Icons::new(vec![theme()]);
+        let natural = if dock {
+            natural_width(
+                &tokens,
+                Some(&mut text),
+                Some(&mut icons),
+                &row,
+                &shown,
+                scale,
+            )
+        } else {
+            width
+        };
+        let strip = strip(spec.style, &tokens);
+        let look = Look {
+            width: natural * scale,
+            height: (height(spec.style, &tokens) + strip) * scale,
+            scale,
+            edge: spec.edge,
+            style: spec.style,
+            fillets: true,
+            shown,
+        };
+        let mut panel = Pixmap::new(look.width, look.height).unwrap();
+        let places = paint(
+            &mut panel,
+            &look,
+            &tokens,
+            Some(&mut text),
+            Some(&mut icons),
+            &row,
+        );
+        // Over a screen's colour, as it would lie.
+        let mut screen = Pixmap::new(look.width, look.height).unwrap();
+        screen.fill(colour(mix(tokens.background, tokens.panel_text, 0.0)));
+        screen.draw_pixmap(
+            0,
+            0,
+            panel.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+        let named = row.all().map(|w| w.name).zip(places).collect();
+        (screen, named, tokens)
+    }
+
+    /// With `EDEL_PANEL_PNG` set, writes `pixmap` as `name`.png there.
+    fn write_png(name: &str, pixmap: &Pixmap) {
+        if let Some(dir) = std::env::var_os("EDEL_PANEL_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            pixmap.save_png(dir.join(format!("{name}.png"))).unwrap();
+        }
+    }
+
+    /// Whether a pixel differs from `base` by more than a little.
+    fn inked(p: [u8; 4], base: [u8; 4]) -> bool {
+        (0..3)
+            .map(|k| (i32::from(p[k]) - i32::from(base[k])).abs())
+            .sum::<i32>()
+            > 60
+    }
+
+    #[test]
+    fn panel_png() {
+        let mut crowded = live(4, false);
+        crowded
+            .windows
+            .push(task("Mystery", "nothing-has-this", false, true));
+        for (scheme, mode) in [(Scheme::Light, "light"), (Scheme::Dark, "dark")] {
+            for (name, index, width, tiling) in [
+                ("classic", 0, 1280, false),
+                ("classic", 0, 360, true),
+                ("mac-like", 0, 1280, false),
+                ("mac-like", 1, 1280, false),
+                ("windows-like", 0, 1280, false),
+                ("hive", 0, 1280, true),
+            ] {
+                let (pixmap, _, _) = preview(name, index, scheme, width, 1, &live(4, tiling));
+                write_png(&format!("{name}-{index}-{width}-{mode}"), &pixmap);
+            }
+            let (pixmap, _, _) = preview("classic", 0, scheme, 1280, 1, &crowded);
+            write_png(&format!("classic-crowded-{mode}"), &pixmap);
+            let (pixmap, _, _) = preview("classic", 0, scheme, 1280, 2, &live(4, false));
+            write_png(&format!("classic-x2-{mode}"), &pixmap);
+        }
+    }
+
+    #[test]
+    fn the_clock_draws_the_time_over_a_smaller_dimmer_date() {
+        let mut text = Text::load(&Tokens::built_in().font);
+        if text.line("A", 13.0).width == 0.0 {
+            return; // no fonts on this machine
+        }
+        let (pixmap, places, tokens) =
+            preview("classic", 0, Scheme::Light, 1280, 1, &live(4, false));
+        let (x, w) = places.iter().find(|(n, _)| *n == "clock").unwrap().1;
+        let strip = fillet_height(&tokens);
+        let base = tokens.panel.bytes();
+        // Each row of the panel inside the clock, under its edge's hairline: how dark its darkest
+        // pixel is, or none.
+        let rows: Vec<Option<u32>> = (strip + 1..strip + tokens.panel_height - 1)
+            .map(|y| {
+                (x as u32..(x + w) as u32)
+                    .map(|px| pixel(&pixmap, px, y))
+                    .filter(|p| inked(*p, base))
+                    .map(|p| 255 - u32::from(p[0]))
+                    .max()
+            })
+            .collect();
+        // Two bands of ink with clear rows between.
+        let mut bands: Vec<(usize, usize, u32)> = Vec::new();
+        for (y, row) in rows.iter().enumerate() {
+            match (row, bands.last_mut()) {
+                (Some(d), Some(b)) if b.1 + 1 == y => (b.1, b.2) = (y, b.2.max(*d)),
+                (Some(d), _) => bands.push((y, y, *d)),
+                _ => {}
+            }
+        }
+        assert_eq!(bands.len(), 2, "the time and the date: {rows:?}");
+        let (time, date) = (bands[0], bands[1]);
+        assert!(time.1 < date.0, "the date lies below the time");
+        assert!(
+            date.2 < time.2,
+            "the date is dimmer: {} against {}",
+            date.2,
+            time.2
+        );
+        assert!(
+            date.1 - date.0 <= time.1 - time.0 + 1,
+            "and no taller than the time"
+        );
+    }
+
+    #[test]
+    fn window_buttons_hug_their_titles_and_an_app_without_an_icon_gets_the_generic_one() {
+        let mut text = Text::load(&Tokens::built_in().font);
+        if text.line("A", 13.0).width == 0.0 {
+            return; // no fonts on this machine
+        }
+        let (_, places, _) = preview("classic", 0, Scheme::Light, 1280, 1, &live(4, false));
+        let (_, list) = places.iter().find(|(n, _)| *n == "windows").unwrap().1;
+        // Three short titles take far less than the old 180 px each.
+        assert!(list > 150.0 && list < 3.0 * 130.0, "the list is {list} px");
+        // A window of an app with no icon: the generic one is drawn in its
+        // button's icon place.
+        let mut mystery = live(4, false);
+        mystery.windows = vec![task("Mystery", "nothing-has-this", false, false)];
+        let (without, places, tokens) = preview("classic", 0, Scheme::Light, 1280, 1, &mystery);
+        let (left, _) = places.iter().find(|(n, _)| *n == "windows").unwrap().1;
+        let strip = fillet_height(&tokens);
+        let base = tokens.panel.bytes();
+        let (icon, size) = (tokens.panel_icon, tokens.panel_icon);
+        let first = left as u32 + 2 + 7;
+        let top = strip + (tokens.panel_height - icon) / 2;
+        let ink = (top..top + size)
+            .flat_map(|y| (first..first + icon).map(move |x| (x, y)))
+            .filter(|&(x, y)| inked(pixel(&without, x, y), base))
+            .count();
+        assert!(ink > 40, "the generic icon is drawn: {ink} px of ink");
     }
 
     #[test]

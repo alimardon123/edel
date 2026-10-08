@@ -23,7 +23,7 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
-    input,
+    input: |_, shown, what| input(shown, what),
     parts: super::no_parts,
     role: Role::Group,
     label,
