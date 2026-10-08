@@ -36,7 +36,9 @@ pub struct Page {
     pub about: &'static str,
 }
 
-/// The Settings app's pages, in its order; every section of the file is
+/// The Settings app's pages, in its order (the mockups' order, Alimardon
+/// 2026-10-08: the everyday pages first, people and the system last);
+/// every section of the file is
 /// one of them, and a page may have no section of the file (Sound, whose
 /// state is the sound system's own). Settings (M5.6) reads the same table.
 pub const PAGES: &[Page] = &[
@@ -44,6 +46,11 @@ pub const PAGES: &[Page] = &[
         section: "layout",
         title: n_("Layout"),
         about: n_("the preset, tiling, title bars and panels"),
+    },
+    Page {
+        section: "appearance",
+        title: n_("Appearance"),
+        about: n_("light or dark, the accent, fonts and animations"),
     },
     Page {
         section: "displays",
@@ -57,26 +64,6 @@ pub const PAGES: &[Page] = &[
         section: "sound",
         title: n_("Sound"),
         about: n_("the output and input devices and their volume"),
-    },
-    Page {
-        section: "appearance",
-        title: n_("Appearance"),
-        about: n_("light or dark, the accent, fonts and animations"),
-    },
-    Page {
-        section: "shortcuts",
-        title: n_("Shortcuts"),
-        about: n_("the keys for each action"),
-    },
-    Page {
-        section: "region",
-        title: n_("Region"),
-        about: n_("language, keyboard and time zone"),
-    },
-    Page {
-        section: "users",
-        title: n_("Users"),
-        about: n_("the people who log in, and their ssh keys"),
     },
     Page {
         // The connections and Wi-Fi passwords are NetworkManager's own
@@ -94,6 +81,21 @@ pub const PAGES: &[Page] = &[
         about: n_("pairing and connecting headphones, mice and other devices"),
     },
     Page {
+        section: "power",
+        title: n_("Power"),
+        about: n_("the lid, the power button and the screen lock"),
+    },
+    Page {
+        section: "region",
+        title: n_("Region"),
+        about: n_("language, keyboard and time zone"),
+    },
+    Page {
+        section: "shortcuts",
+        title: n_("Shortcuts"),
+        about: n_("the keys for each action"),
+    },
+    Page {
         section: "default_apps",
         title: n_("Default apps"),
         about: n_("the browser, files, editor, terminal and mail"),
@@ -104,21 +106,6 @@ pub const PAGES: &[Page] = &[
         about: n_("apps that start after login"),
     },
     Page {
-        section: "power",
-        title: n_("Power"),
-        about: n_("the lid, the power button and the screen lock"),
-    },
-    Page {
-        section: "services",
-        title: n_("Services"),
-        about: n_("optional services, on or off"),
-    },
-    Page {
-        section: "updates",
-        title: n_("Updates"),
-        about: n_("when updates are installed"),
-    },
-    Page {
         section: "apps",
         title: n_("Apps"),
         about: n_("the apps installed from Flathub"),
@@ -127,6 +114,21 @@ pub const PAGES: &[Page] = &[
         section: "addons",
         title: n_("Add-ons"),
         about: n_("signed extras to the system"),
+    },
+    Page {
+        section: "services",
+        title: n_("Services"),
+        about: n_("optional services, on or off"),
+    },
+    Page {
+        section: "users",
+        title: n_("Users"),
+        about: n_("the people who log in, and their ssh keys"),
+    },
+    Page {
+        section: "updates",
+        title: n_("Updates"),
+        about: n_("when updates are installed"),
     },
     Page {
         section: "system",
