@@ -2,8 +2,10 @@
 //! file (`presets/NAME.toml` through `edel::presets`) in the tokens'
 //! colours, so a new preset shows its panels, its dock, its windows and
 //! where windows open with no picture to make, and a changed preset or
-//! token changes its card.
+//! token changes its card. The Displays page's picture of the screens
+//! side by side is here too (M5.7a).
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk::cairo::Context;
@@ -12,6 +14,7 @@ use gtk::prelude::*;
 use edel::presets::{Edge, Policy, Preset, Style};
 use edel::tokens::{Colour, Tokens};
 
+use crate::screens::{self, Screen};
 use crate::style::Theme;
 
 /// The picture's height in logical pixels; it is as wide as its card.
@@ -36,6 +39,104 @@ pub fn area(name: &str, theme: &Rc<Theme>) -> gtk::DrawingArea {
         }
     });
     area
+}
+
+/// The arrangement picture's height in logical pixels.
+pub const ARRANGEMENT_HEIGHT: i32 = 150;
+
+/// The screens side by side as the layout places them (M5.7a): a pane
+/// for each, to scale with the others, in the tokens' colours, with its
+/// name and its size in logical pixels; one that is off is only an
+/// outline. It draws whatever `shown` holds when it is drawn, so a page
+/// sets the list and asks for a draw; it assumes no number of screens
+/// and none being local (ADR-011).
+pub fn arrangement(theme: &Rc<Theme>, shown: Rc<RefCell<Vec<Screen>>>) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::builder()
+        .content_height(ARRANGEMENT_HEIGHT)
+        .content_width(200)
+        .hexpand(true)
+        .css_classes(["edel-arrangement"])
+        .build();
+    let drawn = theme.clone();
+    area.set_draw_func(move |_, cr, w, h| {
+        draw_screens(
+            cr,
+            f64::from(w),
+            f64::from(h),
+            &shown.borrow(),
+            &drawn.tokens(),
+        );
+    });
+    let weak = area.downgrade();
+    theme.watch(move || {
+        if let Some(area) = weak.upgrade() {
+            area.queue_draw();
+        }
+    });
+    area
+}
+
+fn draw_screens(cr: &Context, w: f64, h: f64, screens: &[Screen], t: &Tokens) {
+    let rects = screens::arrange(screens, w, h, 18.0);
+    cr.select_font_face(
+        &t.font,
+        gtk::cairo::FontSlant::Normal,
+        gtk::cairo::FontWeight::Normal,
+    );
+    for (screen, rect) in screens.iter().zip(rects) {
+        let Some([x, y, sw, sh]) = rect else { continue };
+        // A hair of space between neighbours, so touching screens read as two.
+        let (x, y, sw, sh) = (x + 1.0, y + 1.0, (sw - 2.0).max(0.0), (sh - 2.0).max(0.0));
+        let radius = f64::from(t.radius_small);
+        if screen.on {
+            let sky = gtk::cairo::LinearGradient::new(x, y, x + sw * 0.1, y + sh);
+            let top = mix(t.background, t.accent, 0.22);
+            let bottom = mix(t.background, t.accent, 0.06);
+            for (at, c) in [(0.0, top), (1.0, bottom)] {
+                sky.add_color_stop_rgba(at, f64::from(c.r), f64::from(c.g), f64::from(c.b), 1.0);
+            }
+            rounded(cr, x, y, sw, sh, radius);
+            let _ = cr.set_source(&sky);
+            let _ = cr.fill_preserve();
+            set(cr, t.accent.with(0.55));
+        } else {
+            rounded(cr, x, y, sw, sh, radius);
+            set(cr, t.line);
+        }
+        cr.set_line_width(1.0);
+        let _ = cr.stroke();
+        let label = if screen.on {
+            t.title_text
+        } else {
+            t.title_text_unfocused
+        };
+        set(cr, label);
+        cr.set_font_size(f64::from(t.text_size));
+        let name = &screen.name;
+        if let Ok(extents) = cr.text_extents(name) {
+            if extents.width() < sw - 6.0 {
+                cr.move_to(
+                    x + (sw - extents.width()) / 2.0 - extents.x_bearing(),
+                    y + sh / 2.0 - 1.0,
+                );
+                let _ = cr.show_text(name);
+            }
+        }
+        if let Some(place) = screen.place.filter(|_| screen.on) {
+            set(cr, t.title_text_unfocused);
+            cr.set_font_size((f64::from(t.text_size) - 2.0).max(8.0));
+            let size = format!("{} x {}", place.w, place.h);
+            if let Ok(extents) = cr.text_extents(&size) {
+                if extents.width() < sw - 6.0 && sh > 44.0 {
+                    cr.move_to(
+                        x + (sw - extents.width()) / 2.0 - extents.x_bearing(),
+                        y + sh / 2.0 + 14.0,
+                    );
+                    let _ = cr.show_text(&size);
+                }
+            }
+        }
+    }
 }
 
 /// The mockups' sketch, 128 by 64: drawn in these units and scaled.

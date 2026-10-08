@@ -91,6 +91,12 @@
 #               language, whose launcher draws its one long word where
 #               English leaves the search line empty; unset, English
 #               (M5.24a)
+#   display     Settings opened on its Displays page (edel-settings --page
+#               displays) draws the chosen scale in the accent; a click on
+#               Scale 200% for Virtual-1 makes the compositor log
+#               `output Virtual-1 scale 2` and writes the line to ci's
+#               settings file, a click on its Reset logs scale 1 and takes
+#               the line out (M5.7a)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -755,6 +761,66 @@ case_settings() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened at $x,$y ${w}x$h under our title bar with its sidebar and page in the token colours, Classic's card chosen, Mac-like's card wrote layout.preset and moved the bar to the top at once, Classic and Reset took the key out again, it held $settings_own MiB of its own ($(value settings_rss_mib) MiB resident), and on a 512 px screen it folded its sidebar away"
+}
+
+case_display() {
+	# Displays (M5.7a): Settings opened on its Displays page lists each
+	# screen from the compositor's state file; the first screen's Scale
+	# row, 100% chosen in the accent, is where its rows start (a card of
+	# four rows under the arrangement picture, in crates/settings). A
+	# click on 200% writes displays.Virtual-1.scale to ci's settings file
+	# and the compositor logs the new scale; the screen is then 640x400
+	# logical pixels, the window keeps its size and is pulled to the top
+	# left, and the Reset the row shows once the value is the person's own
+	# takes the line out again. Kept as display.png and display-scale2.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'display window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open a window on its Displays page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3
+	# The page's card as in the settings case: at most 704 px wide with
+	# 32 px margins, centred beside the 204 px sidebar.
+	area=$((w - 204))
+	clamp=$((area < 704 ? area : 704))
+	left=$((x + 204 + (area - clamp) / 2 + 32))
+	right=$((left + clamp - 64))
+	# The first screen's Scale row, 314 px down the page; its 200% button
+	# 45 px in from the card's right edge, the chosen 100% button's left
+	# end 285 px in, and Reset 354 px in.
+	row=$((y + 314))
+	sleep 2
+	shot display $((right - 285)) "$row" "$(token accent)" >/dev/null ||
+		fail "the Displays page does not show Virtual-1's 100% scale chosen: $((right - 285)),$row is not the accent #$(token accent)"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 2$')
+	python3 ci/qmp.py click $((right - 45)) "$row"
+	wait_more 'edel-compositor: output Virtual-1 scale 2$' "$scaled" ||
+		fail "a click on Scale 200% at $((right - 45)),$row did not give Virtual-1 scale 2"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[displays.Virtual-1\];scale = 2' ||
+		fail "ci's settings file is not what edel settings set displays.Virtual-1.scale=2 writes: $(value settings_file)"
+	# Reset, where the window now lies on the 640x400 logical screen.
+	sleep 2
+	now=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
+	[ -n "$now" ] || fail "Settings is not in the windows line: $(value windows)"
+	set -- $(echo "$now" | sed 's/Settings@//; s/[,x]/ /g')
+	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + 314) * 2))
+	python3 ci/qmp.py screendump "$dir/display-scale2.png"
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
+	python3 ci/qmp.py click "$rx" "$ry"
+	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" ||
+		fail "a click on Reset at $rx,$ry (Settings at $now) did not bring scale 1 back"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'scale' &&
+		fail "Reset left displays.Virtual-1.scale in ci's file: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened on its Displays page showed Virtual-1's 100% scale chosen, a click on 200% logged output Virtual-1 scale 2 and wrote displays.Virtual-1.scale to ci's file, and Reset logged scale 1 and took the line out"
 }
 
 case_keyboard() {
@@ -1862,7 +1928,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display portal scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')

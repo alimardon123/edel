@@ -64,7 +64,7 @@ The desktop follows these keys at once (M4.5): it reads the machine's file and t
 
 ## Displays: `[displays.NAME]`
 
-Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; the desktop follows these at once (M4.6).
+Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; the desktop follows these at once (M4.6). Settings' Displays page (M5.7a) lists the screens the compositor reports and draws them side by side; a scale of 100, 125, 150, 175 or 200 percent, a resolution from the screen's own list, a position and an on switch each write one of these keys, and a choice that is what the screen would get anyway (its preferred resolution, the scale worked out from its size) is taken out of the file, never written. `edel-settings --page displays` opens the app on that page. The last screen that is on cannot be turned off from the page.
 
 | Key | Value | From |
 |---|---|---|

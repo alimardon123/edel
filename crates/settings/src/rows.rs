@@ -46,6 +46,23 @@ pub const ROWS: &[Row] = &[
         key: "layout.close_button",
         title: n_("Close button"),
     },
+    // The Displays page (M5.7a); the `*` is a screen's name.
+    Row {
+        key: "displays.*.resolution",
+        title: n_("Resolution"),
+    },
+    Row {
+        key: "displays.*.scale",
+        title: n_("Scale"),
+    },
+    Row {
+        key: "displays.*.position",
+        title: n_("Position"),
+    },
+    Row {
+        key: "displays.*.enabled",
+        title: n_("On"),
+    },
 ];
 
 /// The title of `key`'s row, in the person's language.
@@ -115,8 +132,23 @@ pub fn note(source: &Source, from_preset: bool) -> Option<&'static str> {
 /// line of the file); `edel settings set` takes several `KEY=VALUE` at
 /// once, for a row of several keys.
 pub fn command(pairs: &[(&str, String)]) -> String {
-    let assignments: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    let assignments: Vec<String> = pairs
+        .iter()
+        .map(|(k, v)| format!("{k}={}", quoted(v)))
+        .collect();
     format!("edel settings set {}", assignments.join(" "))
+}
+
+/// `value` as a shell takes it: as it is when it holds only letters,
+/// digits and `. , : / @ % + -`, else in single quotes, so a pair such as
+/// `[0, 0]` is one word and nothing in it is a glob.
+fn quoted(value: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || ".,:/@%+-_".contains(c);
+    if !value.is_empty() && value.chars().all(plain) {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
 }
 
 /// Whether the row can be reset: only the person's own value can, as
@@ -166,6 +198,26 @@ mod tests {
         assert_eq!(note(&Source::Release, false), None);
         assert_eq!(note(&own, true), Some("Your choice"));
         assert_eq!(note(&set, false), Some("Set by this machine"));
+    }
+
+    #[test]
+    fn a_value_with_spaces_is_one_word_for_the_shell() {
+        let line = command(&[("displays.eDP-1.position", "[1280, 0]".into())]);
+        assert_eq!(
+            line,
+            "edel settings set displays.eDP-1.position='[1280, 0]'"
+        );
+        assert_eq!(quoted("2.5"), "2.5");
+        assert_eq!(quoted("1920x1080"), "1920x1080");
+        assert_eq!(quoted("it's"), "'it'\\''s'");
+        assert_eq!(quoted(""), "''");
+    }
+
+    #[test]
+    fn the_displays_rows_are_found_by_search_and_belong_to_the_page() {
+        let titles: Vec<&str> = on_page("displays").map(|r| r.title).collect();
+        assert_eq!(titles, ["Resolution", "Scale", "Position", "On"]);
+        assert_eq!(title("displays.*.scale"), "Scale");
     }
 
     #[test]

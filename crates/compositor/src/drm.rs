@@ -528,6 +528,11 @@ impl Gpu {
                 model: "screen".into(),
             },
         );
+        // Every mode the screen has, so the state file can list them
+        // for Settings (M5.7a).
+        for other in info.modes() {
+            output.add_mode(Mode::from(*other));
+        }
         let wl_mode = Mode::from(mode);
         output.change_current_state(Some(wl_mode), None, None, None);
         output.set_preferred(wl_mode);
