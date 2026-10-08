@@ -1,10 +1,11 @@
-# Classic (M5.1c): Edel's default layout, like Cinnamon: one panel along
-# the bottom with the menu button and the window list at its start and
-# the workspace switcher, the layout toggle and the clock at its end,
-# floating windows and four workspaces. Presets are built into edel, the compositor and
-# shell-ui; the settings file picks one by name with layout.preset, and its
-# own keys win over the preset's (ADR-008). Keys join this file with the
-# steps that read them: the session's services (M5.7).
+# Classic (M5.1c): Edel's default layout, like Cinnamon: one panel
+# along the bottom with the menu button and the window list at its
+# start and the workspace switcher, the layout toggle, the tray
+# (M5.2e) and the clock at its end, floating windows and four
+# workspaces. Presets are built into edel, the compositor and
+# shell-ui; the settings file picks one by name with layout.preset,
+# and its own keys win over the preset's (ADR-008). Keys join this
+# file with the steps that read them: the session's services (M5.7).
 format = 1
 
 [windows]
@@ -34,4 +35,4 @@ style = "menu"
 edge = "bottom"
 start = ["menu", "windows"]
 centre = []
-end = ["workspaces", "layout", "clock"]
+end = ["workspaces", "layout", "tray", "clock"]

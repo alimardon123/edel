@@ -1,8 +1,9 @@
-# Windows-like (M5.4c): one taskbar along the bottom, as Windows has: the
-# menu button at its left edge and the search field beside it, the apps
-# in its centre, pinned ones first and then every other app with a
-# window open, and the workspace buttons, the layout toggle and the clock
-# at its end. Windows float, with their buttons on the right.
+# Windows-like (M5.4c): one taskbar along the bottom, as Windows has:
+# the menu button at its left edge and the search field beside it, the
+# apps in its centre, pinned ones first and then every other app with
+# a window open, and the workspace buttons, the layout toggle, the
+# tray (M5.2e) and the clock at its end. Windows float, with their
+# buttons on the right.
 format = 1
 
 [windows]
@@ -25,4 +26,4 @@ pinned = ["files", "browser", "terminal", "mail", "music"]
 edge = "bottom"
 start = ["menu", "search"]
 centre = ["apps"]
-end = ["workspaces", "layout", "clock"]
+end = ["workspaces", "layout", "tray", "clock"]
