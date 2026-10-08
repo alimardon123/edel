@@ -181,6 +181,14 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel scale slider {{ min-width: 17px; min-height: 17px; margin: -6px; border-radius: 999px; border: none; background-image: none;
   background-color: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2); }}
 .edel scale:focus-visible slider {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
+.edel-action {{ min-height: 26px; padding: 0 12px; border-radius: {rs}px; background-image: none; background-color: {fill};
+  box-shadow: none; border: none; color: {text}; font-weight: 500; }}
+.edel-action:hover {{ background-color: {fill_strong}; }}
+.edel-action:disabled {{ opacity: 0.5; }}
+.edel-action:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
+.edel-action-main {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
+.edel-action-main:hover {{ background-color: alpha({accent}, 0.88); }}
+.edel-output, .edel-output.edel-error {{ font-size: {tiny}px; margin-top: 0; }}
 .edel-choice {{ background: none; box-shadow: none; padding: 0; }}
 .edel-choice > button {{ min-height: 26px; padding: 0 8px 0 10px; border-radius: {rs}px; background-image: none;
   background-color: {fill}; box-shadow: none; border: none; color: {text}; font-weight: 400; }}

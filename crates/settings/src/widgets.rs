@@ -303,12 +303,15 @@ pub fn value_row(group: &gtk::Box, title: &str, value: &str) {
     let title_label = gtk::Label::builder()
         .label(title)
         .xalign(0.0)
-        .hexpand(true)
         .css_classes(["edel-row-title"])
         .build();
+    // The value takes the room the title leaves and only then wraps, so a
+    // short one never breaks beside a long title.
     let value_label = gtk::Label::builder()
         .label(value)
         .xalign(1.0)
+        .hexpand(true)
+        .justify(gtk::Justification::Right)
         .selectable(true)
         .wrap(true)
         .css_classes(["edel-value"])
@@ -329,6 +332,68 @@ pub fn text_row(group: &gtk::Box, text: &str) {
         .css_classes(["edel-row", "edel-row-subtitle"])
         .build();
     group.append(&label);
+}
+
+/// A button for something to do now, not a setting to choose: Check now,
+/// Roll back, Apply (M5.8c). `main` marks the one a page leads to.
+pub fn action(label: &str, main: bool) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .label(label)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-action"])
+        .build();
+    if main {
+        button.add_css_class("edel-action-main");
+    }
+    button
+}
+
+/// A row in `group` for what a command said, hidden until [`say`] gives it
+/// words: the output as it is, in a fixed-width font so a diff lines up,
+/// selectable so it can be copied, and in the problem colour when it is a
+/// failure.
+pub fn output_row(group: &gtk::Box) -> gtk::Label {
+    let label = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .wrap_mode(gtk::pango::WrapMode::WordChar)
+        .selectable(true)
+        .visible(false)
+        .css_classes(["edel-row", "edel-output", "monospace"])
+        .build();
+    group.append(&label);
+    label
+}
+
+/// Shows `text` in a row made by [`output_row`] (none hides it), as an
+/// error when `failed`.
+pub fn say(row: &gtk::Label, text: &str, failed: bool) {
+    row.set_label(text);
+    row.set_visible(!text.is_empty());
+    if failed {
+        row.add_css_class("edel-error");
+    } else {
+        row.remove_css_class("edel-error");
+    }
+}
+
+/// Asks which file, in the system's file chooser: one to save under `name`
+/// when it is given, else one to open. None when the person cancels.
+pub async fn pick_file(
+    near: &gtk::Widget,
+    title: &str,
+    name: Option<&str>,
+) -> Option<std::path::PathBuf> {
+    let dialog = gtk::FileDialog::builder().title(title).modal(true).build();
+    let window = near.root().and_downcast::<gtk::Window>();
+    let file = match name {
+        Some(name) => {
+            dialog.set_initial_name(Some(name));
+            dialog.save_future(window.as_ref()).await
+        }
+        None => dialog.open_future(window.as_ref()).await,
+    };
+    file.ok()?.path()
 }
 
 /// A row in `group` that opens to show `text` in a read-only box, in a

@@ -177,6 +177,8 @@ pub enum Kind {
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
     Hosts,
+    /// A release channel's name, such as `"stable"` ([`is_channel`], M5.8c)
+    Channel,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -299,7 +301,7 @@ pub const KEYS: &[Key] = &[
     ),
     later("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
-    now("updates.channel", Kind::Text),
+    now("updates.channel", Kind::Channel),
     later("updates.version", Kind::Text),
     later(
         "updates.automatic",
@@ -1217,6 +1219,12 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::Hosts, _) => fail(tr("a list of host names, such as [\"pool.ntp.org\"]")),
+        (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
+        (Kind::Channel, Value::String(s)) => Err(trf(
+            "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Channel, _) => fail(tr("a channel name in quotes, such as \"stable\"")),
         (Kind::Panels, _) => fail(tr(
             "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]",
         )),
@@ -1229,6 +1237,41 @@ pub fn is_hostname(name: &str) -> bool {
         && !name.starts_with('-')
         && !name.ends_with('-')
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// The longest channel name.
+pub const MOST_CHANNEL: usize = 32;
+
+/// A release channel's name (M5.8c): it is written into the address of the
+/// channel's release list, so only lowercase letters, digits and hyphens,
+/// not starting or ending with a hyphen, up to [`MOST_CHANNEL`].
+pub fn is_channel(name: &str) -> bool {
+    (1..=MOST_CHANNEL).contains(&name.len())
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The channels Edel OS publishes (`docs/RELEASE.md`): `stable` moves with
+/// each tagged release, `preview` with each merge. Settings offers these;
+/// a machine may follow another a fleet or a test serves, by name.
+pub const CHANNELS: &[&str] = &["stable", "preview"];
+
+/// The channel a machine with none chosen and none built in follows.
+pub const DEFAULT_CHANNEL: &str = "stable";
+
+/// The channel a machine follows (M5.8c): `updates.channel` in the
+/// person's file over the machine's, else `image`, the one its image was
+/// built for (os-release's `EDEL_CHANNEL`), else [`DEFAULT_CHANNEL`]. A
+/// name [`is_channel`] refuses is skipped, as every reader on a machine
+/// skips what it cannot use.
+pub fn channel(machine: Option<&str>, person: Option<&str>, image: Option<&str>) -> String {
+    chosen("updates.channel", machine, person)
+        .filter(|c| is_channel(c))
+        .or_else(|| image.filter(|c| !c.is_empty()).map(String::from))
+        .unwrap_or_else(|| DEFAULT_CHANNEL.into())
 }
 
 /// A host name as a time server is named: dot-separated labels (each
@@ -1329,6 +1372,7 @@ mod tests {
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
+            Kind::Channel => Value::String("stable".into()),
         }
     }
 
@@ -1647,6 +1691,51 @@ font_size = 11
         let read = read("format = 1\n[users.ali]\nlogin_shell = \"/bin/a:b\"\n").unwrap();
         assert_eq!(read.file.users["ali"].login_shell, None);
         assert_eq!(read.problems.len(), 1);
+    }
+
+    #[test]
+    fn a_channel_is_a_short_lowercase_name() {
+        let ok = set("format = 1\n", "updates.channel", "preview").unwrap();
+        assert_eq!(
+            read(&ok).unwrap().file.updates.channel.as_deref(),
+            Some("preview")
+        );
+        for good in ["stable", "preview", "ci", "long-2", "a"] {
+            assert!(is_channel(good), "{good}");
+        }
+        for bad in ["", "-x", "x-", "Stable", "a b", "a/b", "../x", "x.y"] {
+            assert!(!is_channel(bad), "{bad:?}");
+        }
+        assert!(!is_channel(&"x".repeat(MOST_CHANNEL + 1)));
+        let error = set("format = 1\n", "updates.channel", "Beta").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "updates.channel: \"Beta\" is not a channel name; use lowercase letters, digits and \
+             hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was \
+             built for, run edel settings reset on this key)"
+        );
+        let file = "format = 1\n[updates]\nchannel = \"a/b\"\n";
+        assert_eq!(check(file).unwrap().len(), 1);
+        assert_eq!(read(file).unwrap().file.updates.channel, None);
+    }
+
+    #[test]
+    fn the_channel_is_the_persons_then_the_machines_then_the_images() {
+        let file = |channel: &str| format!("format = 1\n[updates]\nchannel = \"{channel}\"\n");
+        assert_eq!(channel(None, None, None), "stable");
+        assert_eq!(channel(None, None, Some("ci")), "ci");
+        assert_eq!(channel(None, None, Some("")), "stable");
+        let (machine, person) = (file("preview"), file("beta"));
+        assert_eq!(channel(Some(&machine), None, Some("ci")), "preview");
+        assert_eq!(channel(Some(&machine), Some(&person), Some("ci")), "beta");
+        let bad = file("A/B");
+        assert_eq!(
+            channel(Some(&bad), None, Some("ci")),
+            "ci",
+            "a name the address cannot hold is skipped"
+        );
+        assert!(CHANNELS.iter().all(|c| is_channel(c)));
+        assert!(CHANNELS.contains(&DEFAULT_CHANNEL));
     }
 
     #[test]

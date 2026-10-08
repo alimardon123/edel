@@ -35,6 +35,9 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
+msgstr ""
+
 msgid "Each screen's size, scale and place. Changes apply at once. Each choice is also a line of your settings file and an edel settings set command."
 msgstr ""
 
@@ -219,6 +222,111 @@ msgid "Level"
 msgstr ""
 
 msgid "Devices"
+msgstr ""
+
+msgid "A machine is one settings file. Save this one to set up another the same way, or pick a file to see what it would change here before anything is changed."
+msgstr ""
+
+msgid "This machine already matches this file; there is nothing to apply."
+msgstr ""
+
+msgid "Copy this machine"
+msgstr ""
+
+msgid "Save as..."
+msgstr ""
+
+msgid "Save this machine's settings"
+msgstr ""
+
+msgid "Writes one file that describes this machine, without your files or any secret."
+msgstr ""
+
+msgid "Set this machine up from a file"
+msgstr ""
+
+msgid "Choose file..."
+msgstr ""
+
+msgid "Settings file"
+msgstr ""
+
+msgid "No file chosen yet."
+msgstr ""
+
+msgid "Apply"
+msgstr ""
+
+msgid "Apply the file"
+msgstr ""
+
+msgid "Makes the file this machine's settings. Choose a file first to see what it changes."
+msgstr ""
+
+msgid "Working..."
+msgstr ""
+
+msgid "Saved to {path}"
+msgstr ""
+
+msgid "Choose a settings file"
+msgstr ""
+
+msgid "could not write {path}: {why}; choose a folder you can write to"
+msgstr ""
+
+msgid "Which version this machine runs and which is waiting in the other slot, the channel it takes new versions from, and a way to look for one or go back. A new version is written to the other slot and starts at the next restart; if it does not start, the machine goes back by itself."
+msgstr ""
+
+msgid "Running now"
+msgstr ""
+
+msgid "Starts next"
+msgstr ""
+
+msgid "Slot {slot}"
+msgstr ""
+
+msgid "Effects"
+msgstr ""
+
+msgid "Logs"
+msgstr ""
+
+msgid "Empty"
+msgstr ""
+
+msgid "confirmed good"
+msgstr ""
+
+msgid "not confirmed yet"
+msgstr ""
+
+msgid "{version}, {state}"
+msgstr ""
+
+msgid "New versions"
+msgstr ""
+
+msgid "Check now"
+msgstr ""
+
+msgid "Look for a new version"
+msgstr ""
+
+msgid "Asks the channel for its newest version and installs nothing."
+msgstr ""
+
+msgid "Roll back"
+msgstr ""
+
+msgid "Go back a version"
+msgstr ""
+
+msgid "Starts the version in the other slot at the next restart."
+msgstr ""
+
+msgid "Click again to roll back"
 msgstr ""
 
 msgid "Your changes are live"

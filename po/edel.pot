@@ -248,6 +248,9 @@ msgstr ""
 msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
 msgstr ""
 
+msgid "no release named; taking {location}"
+msgstr ""
+
 msgid "{path}: ok"
 msgstr ""
 
@@ -282,6 +285,9 @@ msgid "Hive"
 msgstr ""
 
 msgid "this release has no preset {name}; the Classic preset is used"
+msgstr ""
+
+msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
 msgid "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
@@ -560,6 +566,12 @@ msgstr ""
 msgid "a list of host names, such as [\"pool.ntp.org\"]"
 msgstr ""
 
+msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
+msgstr ""
+
+msgid "a channel name in quotes, such as \"stable\""
+msgstr ""
+
 msgid "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]"
 msgstr ""
 
@@ -683,10 +695,10 @@ msgstr ""
 msgid "The Edel OS system tool"
 msgstr ""
 
-msgid "Install a newer Edel OS into the other slot from RELEASE; it starts at the next restart, and falls back on its own if it fails"
+msgid "Install a newer Edel OS into the other slot from RELEASE, or from this machine's channel when none is named; it starts at the next restart, and falls back on its own if it fails"
 msgstr ""
 
-msgid "The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one"
+msgid "The release: its release.toml, a path or an http(s) URL (its .sig and image beside it), or with --unsigned a slot image or a block device holding one; without it, the list of the channel this machine follows (updates.channel), or of --channel"
 msgstr ""
 
 msgid "Only check the version RELEASE holds against this one; change nothing"
