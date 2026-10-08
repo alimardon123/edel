@@ -196,6 +196,47 @@ svg { display: block; }
 .handle { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); width: 128px; height: 5px; border-radius: 3px; background: var(--text); opacity: .8; z-index: 3; }
 .tablet { position: absolute; border-radius: 30px; padding: 16px; background: #101216; box-shadow: 0 40px 80px -24px rgba(20,24,32,.5), inset 0 0 0 1.5px #3a3e46; }
 .tablet .scr { position: relative; width: 100%; height: 100%; border-radius: 16px; overflow: hidden; }
+
+/* Status area, quick settings, calendar and notifications (M5.9, fourth round, 2026-10-08). */
+.qt { position: relative; height: 56px; border-radius: var(--r-ctl); background: var(--fill); display: flex; align-items: stretch; overflow: hidden; box-shadow: inset 0 0 0 0.5px var(--line-2); }
+.qt .main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 0 8px 0 10px; }
+.qt .ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--fill-2); color: var(--text); flex: none; }
+.qt .tx { min-width: 0; }
+.qt b { display: block; font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qt small { display: block; font-size: 11.5px; color: var(--text-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qt .go { width: 28px; flex: none; display: grid; place-items: center; color: var(--text-2); border-left: 0.5px solid var(--line); }
+.qt.on { background: var(--accent-soft); box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 34%, transparent); }
+.qt.on .ic { background: var(--accent); color: var(--accent-text); box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+.qt.on small, .qt.on .go { color: var(--accent); }
+.qt.on .go { border-left-color: color-mix(in srgb, var(--accent) 24%, transparent); }
+.qt.touch { height: 64px; }
+.qt.touch .main { gap: 8px; padding: 0 4px 0 9px; }
+.qt.touch .ic { width: 34px; height: 34px; }
+.qt.touch .go { width: 34px; }
+.qt.touch b { font-size: 12.5px; letter-spacing: -0.012em; }
+.np { border-radius: 10px; background: var(--fill); box-shadow: inset 0 0 0 0.5px var(--line-2); padding: 12px; }
+.prog { height: 3px; border-radius: 2px; background: var(--fill-2); position: relative; }
+.prog i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--text-2); }
+.mbtn { width: 30px; height: 30px; border-radius: var(--r-ctl); display: grid; place-items: center; color: var(--text); }
+.play { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: var(--win); }
+.out { height: 24px; padding: 0 6px 0 9px; border-radius: var(--r-sm); background: var(--fill); display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.nc { border-radius: 10px; background: var(--fill); box-shadow: inset 0 0 0 0.5px var(--line-2); padding: 12px; display: flex; gap: 12px; }
+.nc .ib { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--fill-2); color: var(--text-2); }
+.nc .ib.acc { background: var(--accent-soft); color: var(--accent); }
+.nc .hd { display: flex; justify-content: space-between; align-items: baseline; }
+.nc .hd b { font-weight: 600; }
+.nc .hd span { color: var(--text-3); font-size: 11.5px; }
+.nc p { color: var(--text-2); margin-top: 3px; line-height: 1.45; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 2px; }
+.cal div { height: 34px; display: grid; place-items: center; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.cal .wd { height: 22px; font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+.cal .o { color: var(--text-3); opacity: .7; }
+.cal .today span { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-text); font-weight: 650; box-shadow: 0 1px 4px color-mix(in srgb, var(--accent) 40%, transparent); }
+.bsl { height: 44px; border-radius: 10px; background: var(--fill-2); position: relative; overflow: hidden; }
+.bsl i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.bsl svg { position: absolute; left: 14px; top: 13px; color: var(--accent-text); }
+.bsl.rest svg { color: var(--text-2); }
+.cap { position: absolute; height: 22px; padding: 0 9px; border-radius: 6px; background: rgba(12, 14, 18, .66); color: #fff; font-size: 11.5px; font-weight: 600; display: flex; align-items: center; backdrop-filter: blur(10px); }
 </style>
 </head>
 <body>
@@ -546,6 +587,182 @@ function phoneSwitcher() {
 screens.push(['phone', '', `<div style="position:absolute;inset:0;background:linear-gradient(170deg,#dfe3e9,#cfd4dc)"></div>
   <div class="phone" style="left:150px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneSettings()}</div></div>
   <div class="phone dark" style="left:740px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneSwitcher()}</div></div>`]);
+
+// 10 to 12. The status area, quick settings, the calendar and notifications
+// (M5.9, fourth round, 2026-10-08), on the desktop and on the phone.
+const chv = (d, s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+Object.assign(I, {
+  up: s => chv('M3 7.5l3-3 3 3', s), down: s => chv('M3 4.5l3 3 3-3', s), left: s => chv('M7.5 3l-3 3 3 3', s), right: s => chv('M4.5 3l3 3-3 3', s),
+  prev: s => `<svg width="${s||16}" height="${s||16}" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6.8v10.4L9.8 12z"/><path d="M6.5 6.5v11" fill="none"/></svg>`,
+  next: s => `<svg width="${s||16}" height="${s||16}" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6.8v10.4L14.2 12z"/><path d="M17.5 6.5v11" fill="none"/></svg>`,
+  pause: s => `<svg width="${s||16}" height="${s||16}" viewBox="0 0 24 24" fill="currentColor"><rect x="6.2" y="5" width="4" height="14" rx="1.3"/><rect x="13.8" y="5" width="4" height="14" rx="1.3"/></svg>`,
+  pencil: s => `${st(s||15)}<path d="M5 19l.9-3.9L16.4 3.8a2 2 0 0 1 2.8 2.8L8.9 17.1z"/><path d="M14.6 5.6l2.8 2.8"/></svg>`,
+  airplane: s => `${st(s||15)}<path d="M21 15v-1.6l-7.5-4.5V4.4a1.5 1.5 0 0 0-3 0v4.5L3 13.4V15l7.5-2.1v3.9L8.7 18.2v1.4l3.3-.9 3.3.9v-1.4l-1.8-1.4v-3.9z"/></svg>`,
+  bolt: s => `${st(s||15)}<path d="M13.2 3L5.5 13.4h5.3l-1 7.6 7.7-10.4h-5.3z"/></svg>`,
+  sunset: s => `${st(s||15)}<path d="M3.5 17.5h17"/><path d="M7.5 17.5a4.5 4.5 0 0 1 9 0"/><path d="M12 6v2.2M5.3 10l1.5 1.4M18.7 10l-1.5 1.4M2.8 14.2h1.7M19.5 14.2h1.7"/></svg>`,
+  access: s => `${st(s||15)}<circle cx="12" cy="12" r="9"/><circle cx="12" cy="7.8" r="1" fill="currentColor"/><path d="M7.4 10.4l4.6.8 4.6-.8M12 11.3v3.3M9.7 18l2.3-3.4 2.3 3.4"/></svg>`,
+  chat: s => `${st(s||16)}<path d="M5.5 5h13A1.5 1.5 0 0 1 20 6.5v8a1.5 1.5 0 0 1-1.5 1.5H12l-4 3.4V16H5.5A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5z"/></svg>`,
+  cloud: s => `${st(s||16)}<path d="M7.2 18.5a4 4 0 0 1-.6-7.95 5.5 5.5 0 0 1 10.6-.9 4.5 4.5 0 0 1 .1 8.85z"/></svg>`,
+  shield: s => `${st(s||16)}<path d="M12 3.5l7 2.5v5.4c0 4.2-3 7.4-7 9.1-4-1.7-7-4.9-7-9.1V6z"/><path d="M9 12l2.2 2.2L15.3 10"/></svg>`,
+  sticky: s => `${st(s||16)}<path d="M5 4.5h14v10l-5 5H5z"/><path d="M14 19.5v-5h5"/></svg>`,
+  pin: s => `${st(s||12)}<path d="M9 4.5h6l-.8 5 3 3.2H6.8l3-3.2z"/><path d="M12 12.7V20"/></svg>`,
+  shot: s => `${st(s||16)}<path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5"/><circle cx="12" cy="12" r="3"/></svg>`,
+  torch: s => `${st(s||22)}<path d="M8.5 3.5h7v3.8l-1.6 2.3v10.9h-3.8V9.6L8.5 7.3z"/><path d="M12 12.5v2"/></svg>`,
+  camera: s => `${st(s||22)}<path d="M3.5 8.5h3.2l1.6-2.3h7.4l1.6 2.3h3.2v10h-17z"/><circle cx="12" cy="13.5" r="3.3"/></svg>`,
+});
+
+let coverN = 0;
+const cover = s => { const n = ++coverN; return `<svg width="${s}" height="${s}" viewBox="0 0 56 56" style="border-radius:${Math.round(s / 7)}px;flex:none;box-shadow:0 0 0 0.5px rgba(0,0,0,.2),0 2px 6px -2px rgba(20,24,32,.4)"><defs><linearGradient id="cv${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2b6c"/><stop offset=".55" stop-color="#8a55b8"/><stop offset="1" stop-color="#f48a6c"/></linearGradient></defs><rect width="56" height="56" fill="url(#cv${n})"/><circle cx="28" cy="34" r="11" fill="#ffd6a8" opacity=".94"/><path d="M0 36h56v20H0z" fill="#1d1b3f"/><path d="M24.5 36h7L44 56H12z" fill="#2c2859"/><path d="M28 38.5v3M28 44.5v4M28 52v4" stroke="#ffd6a8" stroke-width="1.3" stroke-linecap="round" opacity=".85"/></svg>`; };
+
+// The status area: tray overflow arrow, keyboard layout, one pill of status icons, the clock.
+function statusPanel(tasks, o = {}) {
+  return `<div class="panel bottom">
+    <div class="pbtn" style="width:36px">${I.grid(18)}</div>
+    <div class="sep"></div>
+    ${tasks.map(t => `<div class="task${t[2] ? ' focused' : ''}">${app(t[0], 20)}<span>${t[1]}</span>${t[3] === false ? '' : '<div class="ind"></div>'}</div>`).join('')}
+    <div class="tray">
+      ${ws(0, 4, [1])}
+      ${lt(false, 15, 'margin-left:6px')}
+      <div class="sep"></div>
+      <div class="pbtn${o.overflow ? ' active' : ''}" style="min-width:24px;padding:0 5px;height:32px;color:var(--text-2)">${I.up(12)}</div>
+      <div class="pbtn" style="min-width:32px;padding:0 6px;height:32px;font-weight:600;font-size:12px;letter-spacing:.03em">EN</div>
+      <div class="pbtn${o.qs ? ' active' : ''}" style="gap:11px;padding:0 11px;height:32px">${I.wifi(16)}${I.vol(16)}${I.bat(15)}</div>
+      <div class="pbtn${o.clock ? ' active' : ''}" style="height:32px;padding:0 7px;margin-left:1px"><div class="clock" style="padding:0"><b>14:05</b><small>Sat 3 Oct</small></div></div>
+    </div>
+  </div>`;
+}
+
+// One quick settings tile: the left part toggles, the chevron opens its page.
+const qTile = (ic, name, state, o = {}) => `<div class="qt${o.on ? ' on' : ''}${o.touch ? ' touch' : ''}"><div class="main"><div class="ic">${ic}</div><div class="tx"><b>${name}</b><small>${state}</small></div></div>${o.go ? `<div class="go">${I.right(12)}</div>` : ''}</div>`;
+const qTiles = (touch, s) => [
+  [I.wifi(s), 'Wi-Fi', 'Home 5G', { on: 1, go: 1 }], [I.bt(s), 'Bluetooth', 'Off', { go: 1 }],
+  [I.airplane(s), 'Airplane mode', 'Off', {}], [I.bolt(s), 'Power mode', 'Balanced', { go: 1 }],
+  [I.dnd(s), 'Do not disturb', 'Off', {}], [I.sunset(s), 'Night light', 'Until 07:00', { on: 1, go: 1 }],
+  [I.access(s), 'Accessibility', 'Off', { go: 1 }], [I.moon(s), 'Dark style', 'Automatic', { go: 1 }],
+].map(t => qTile(t[0], t[1], t[2], { ...t[3], touch })).join('');
+const knob = p => `<div class="track"><div class="fill" style="width:${p}%"></div><div class="knob" style="left:${p}%"></div></div>`;
+
+function quickSettings() {
+  return `<div class="menu" style="right:8px;bottom:48px;width:360px;padding:12px;display:flex;flex-direction:column;gap:12px">
+    <div class="np">
+      <div style="display:flex;align-items:center;gap:12px">
+        ${cover(56)}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3);font-weight:550">${app('music', 12)}Music</div>
+          <div style="font-size:14.5px;font-weight:650;margin-top:3px;letter-spacing:-0.012em">Night Drive</div>
+          <div style="color:var(--text-2);font-size:12px">Lumen</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:2px"><div class="mbtn">${I.prev(16)}</div><div class="play">${I.pause(16)}</div><div class="mbtn">${I.next(16)}</div></div>
+      </div>
+      <div style="margin-top:12px"><div class="prog"><i style="width:37%"></i></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums"><span>1:24</span><span>3:47</span></div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${qTiles(false, 15)}</div>
+    <div style="padding:0 4px">
+      <div style="display:flex;justify-content:space-between;align-items:center"><span class="label">Volume</span><span class="out">Speakers ${I.down(11)}</span></div>
+      <div class="slider" style="margin-top:2px">${I.vol(16)}${knob(62)}</div>
+      <div class="label" style="margin-top:8px">Brightness</div>
+      <div class="slider" style="margin-top:2px">${I.sun(16)}${knob(78)}</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;padding:12px 4px 0;border-top:0.5px solid var(--line);color:var(--text-2)">${I.bat(15)}<span style="white-space:nowrap;font-size:12px">82 percent, 4 h 10 min left</span>
+      <div style="margin-left:auto;display:flex;gap:4px">${[I.pencil, I.gear, I.lock, I.power].map(f => `<div class="chip" style="width:28px;height:28px">${f(14)}</div>`).join('')}</div></div>
+  </div>`;
+}
+
+function overflowCard() {
+  return `<div class="menu" style="right:376px;bottom:48px;padding:10px 12px 9px;display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;gap:6px">${['chat', 'cloud', 'shield', 'sticky'].map(k => `<div class="chip" style="width:36px;height:34px">${I[k](17)}</div>`).join('')}</div>
+    <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-3)">${I.pin(11)}Drag here to pin</div>
+  </div>
+  <div class="cap" style="right:376px;bottom:${48 + 88 + 8}px">Tray overflow, opened from the arrow</div>`;
+}
+
+// 10. Quick settings, light: the status area complete, the tray overflow open.
+screens.push(['quick-settings', '', `${wall(false)}
+  ${win(290, 96, 740, 500, 'Files', 'files', files(), { focused: true })}
+  ${overflowCard()}
+  ${quickSettings()}
+  ${statusPanel([['files', 'Files', true], ['term', 'Terminal'], ['web', 'Web', false, false]], { qs: true, overflow: true })}`]);
+
+// 11. The clock's popup, dark: the calendar under the notification centre, and a volume OSD.
+function calendar() {
+  const days = [];
+  for (let d = 28; d <= 30; d++) days.push([d, 1]);
+  for (let d = 1; d <= 31; d++) days.push([d, 0]);
+  days.push([1, 1]);
+  return `<div class="menu" style="right:8px;bottom:48px;width:360px;padding:14px 16px 12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:0 -2px 8px 2px"><b style="font-size:14.5px;font-weight:650;letter-spacing:-0.012em">October 2026</b><div style="display:flex;gap:4px"><div class="chip" style="width:28px;height:28px">${I.left(12)}</div><div class="chip" style="width:28px;height:28px">${I.right(12)}</div></div></div>
+    <div class="cal">${'MTWTFSS'.split('').map(c => `<div class="wd">${c}</div>`).join('')}${days.map(([d, o]) => `<div class="${o ? 'o' : d === 3 ? 'today' : ''}"><span>${d}</span></div>`).join('')}</div>
+    <div style="display:flex;align-items:center;gap:9px;margin-top:10px;padding-top:11px;border-top:0.5px solid var(--line);color:var(--text-2)">${app('calendar', 18)}<span>No events today</span></div>
+  </div>`;
+}
+function notifCentre() {
+  return `<div class="menu" style="right:8px;bottom:${48 + 303 + 8}px;width:360px;padding:12px;display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px 4px"><b style="font-size:14.5px;font-weight:650;letter-spacing:-0.012em">Notifications</b><span style="font-size:12.5px;font-weight:550;color:var(--accent)">Clear all</span></div>
+    <div class="nc"><div class="ib acc">${I.update(16)}</div><div style="flex:1;min-width:0">
+      <div class="hd"><b>Update ready</b><span>Now</span></div>
+      <p>Edel OS 2026.11 starts on the next restart. If it fails to start, your computer goes back to this version by itself.</p>
+      <div style="display:flex;gap:8px;margin-top:10px"><div class="btn primary">Restart now</div><div class="btn">Later</div></div></div></div>
+    <div class="nc" style="align-items:center"><div class="ib">${I.shot(16)}</div><div style="flex:1;min-width:0">
+      <div class="hd"><b>Screenshot saved</b><span>2 min ago</span></div>
+      <p style="margin-top:2px">Saved in Pictures</p></div>
+      <div style="width:64px;height:42px;border-radius:6px;flex:none;position:relative;overflow:hidden;background:linear-gradient(170deg,#c8d6ea,#9fb2cd);box-shadow:0 0 0 0.5px var(--edge)"><div style="position:absolute;left:12px;top:8px;width:40px;height:26px;border-radius:3px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)"><div style="height:5px;background:#eceef1;border-radius:3px 3px 0 0"></div><div style="margin:5px 4px 0 14px;height:3px;border-radius:2px;background:#d3d7de"></div><div style="margin:3px 4px 0 14px;height:3px;border-radius:2px;background:#d3d7de;width:12px"></div></div></div></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 4px 0;margin-top:2px;border-top:0.5px solid var(--line)">
+      <div class="chip" style="width:30px;height:30px;color:var(--text-2)">${I.dnd(16)}</div>
+      <div style="flex:1"><div style="font-weight:550">Do not disturb</div><div style="font-size:11.5px;color:var(--text-3)">Silence banners and sounds</div></div><div class="switch"></div></div>
+  </div>`;
+}
+const osd = `<div class="menu" style="left:50%;margin-left:-118px;bottom:58px;width:236px;height:52px;padding:0 16px;display:flex;align-items:center;gap:12px;color:var(--text)">${I.vol(19)}<div class="track" style="flex:1;height:6px;border-radius:3px;background:var(--fill-2);position:relative"><div class="fill" style="position:absolute;left:0;top:0;bottom:0;width:64%;border-radius:3px;background:var(--accent)"></div></div><b style="width:22px;text-align:right;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums">64</b></div>`;
+screens.push(['quick-settings-dark', 'dark', `${wall(true)}
+  ${win(190, 100, 740, 500, 'Files', 'files', files(), { focused: true })}
+  ${notifCentre()}
+  ${calendar()}
+  ${osd}
+  ${statusPanel([['files', 'Files', true], ['term', 'Terminal'], ['web', 'Web', false, false]], { clock: true })}`]);
+
+// 12. Phones: quick settings pulled down over the home screen, and the lock screen's notifications.
+function phoneQuick() {
+  const homeApps = ['files', 'web', 'mail', 'chat', 'music', 'photos', 'calendar', 'calc', 'text', 'term', 'software', 'settings'];
+  const home = `<div style="position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);row-gap:20px;padding:70px 12px 0;align-content:start;justify-items:center;color:#fff;font-size:11px">${homeApps.map(k => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px">${app(k, 52)}<span>${apps[k][0]}</span></div>`).join('')}</div>
+    <div style="position:absolute;left:14px;right:14px;bottom:20px;height:78px;border-radius:26px;background:rgba(255,255,255,.28);display:flex;align-items:center;justify-content:space-around;padding:0 10px">${['files', 'web', 'mail', 'chat'].map(k => app(k, 54)).join('')}</div>`;
+  return `${wall(false)}${home}<div style="position:absolute;inset:0;background:rgba(14,18,26,.42)"></div>
+  <div style="position:absolute;left:0;right:0;top:0;height:706px;border-radius:0 0 30px 30px;background:var(--material-strong);backdrop-filter:blur(34px) saturate(180%);box-shadow:0 18px 44px -12px rgba(20,24,32,.45),0 0 0 0.5px rgba(20,24,32,.14);overflow:hidden">
+    <div class="status"><span>14:05</span><span style="display:flex;gap:6px;align-items:center">${I.wifi(16)}${I.bat(15)}</span></div>
+    <div style="position:absolute;left:14px;right:14px;top:54px;display:flex;align-items:flex-start;justify-content:space-between">
+      <div><div style="font-size:54px;line-height:56px;font-weight:650;letter-spacing:-0.035em;font-variant-numeric:tabular-nums">14:05</div><div style="font-size:15px;color:var(--text-2);margin-top:2px;font-weight:500">Saturday 3 October</div></div>
+      <div style="display:flex;gap:8px;margin-top:4px"><div class="chip" style="width:44px;height:44px">${I.pencil(18)}</div><div class="chip" style="width:44px;height:44px">${I.gear(18)}</div><div class="chip" style="width:44px;height:44px">${I.power(18)}</div></div>
+    </div>
+    <div style="position:absolute;left:14px;right:14px;top:148px;display:grid;grid-template-columns:1fr 1fr;gap:8px">${qTiles(true, 17)}</div>
+    <div style="position:absolute;left:14px;right:14px;top:452px;display:flex;flex-direction:column;gap:8px">
+      <div class="bsl"><i style="width:78%"></i>${I.sun(18)}</div>
+      <div class="bsl"><i style="width:62%"></i>${I.vol(18)}</div>
+    </div>
+    <div class="np" style="position:absolute;left:14px;right:14px;top:564px;height:76px;padding:0 6px 0 12px;display:flex;align-items:center;gap:10px">
+      ${cover(48)}<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:650;letter-spacing:-0.012em">Night Drive</div><div style="color:var(--text-2);font-size:12px">Lumen, Music</div></div>
+      <div class="mbtn" style="width:44px;height:44px">${I.prev(18)}</div><div class="play" style="width:44px;height:44px">${I.pause(18)}</div><div class="mbtn" style="width:44px;height:44px">${I.next(18)}</div>
+    </div>
+    <div style="position:absolute;left:0;right:0;top:658px;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--text-3);font-size:12px">${I.bat(14)}82 percent, 4 h 10 min left</div>
+    <div class="handle" style="bottom:10px;background:var(--text-3)"></div>
+  </div>`;
+}
+function phoneLock() {
+  const card = (ic, title, time, body) => `<div style="border-radius:16px;padding:14px;display:flex;gap:12px;background:rgba(40,44,54,.62);backdrop-filter:blur(30px) saturate(160%);box-shadow:0 0 0 0.5px rgba(255,255,255,.12),0 10px 24px -10px rgba(0,0,0,.5);min-height:76px">${ic}<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-weight:600;font-size:14px">${title}</b><span style="font-size:12px;color:var(--text-2)">${time}</span></div><div style="color:var(--text-2);margin-top:2px;line-height:1.4;font-size:13.5px">${body}</div></div></div>`;
+  return `${wall(true)}<div style="position:absolute;inset:0;background:rgba(5,7,12,.28)"></div>
+  <div class="status"><span></span><span style="display:flex;gap:6px;align-items:center">${I.wifi(16)}${I.bat(15)}</span></div>
+  <div style="position:absolute;left:0;right:0;top:50px;display:flex;justify-content:center;color:var(--text-2)">${I.lock(16)}</div>
+  <div style="position:absolute;left:0;right:0;top:82px;text-align:center"><div style="font-size:17px;font-weight:600;color:var(--text-2)">Saturday 3 October</div><div style="font-size:92px;line-height:96px;font-weight:650;letter-spacing:-0.04em;font-variant-numeric:tabular-nums;margin-top:2px">14:06</div></div>
+  <div style="position:absolute;left:16px;right:16px;top:318px;display:flex;flex-direction:column;gap:10px">
+    ${card(app('chat', 40), 'Mira', '4 min ago', 'Are we still on for Sunday? I booked the table for 19:00.')}
+    ${card(`<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none">${I.update(20)}</div>`, 'Update ready', 'Now', 'Edel OS 2026.11 starts on the next restart.')}
+  </div>
+  <div style="position:absolute;left:34px;bottom:62px;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center">${I.torch(21)}</div>
+  <div style="position:absolute;right:34px;bottom:62px;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center">${I.camera(21)}</div>
+  <div style="position:absolute;left:0;right:0;bottom:24px;text-align:center;font-size:12px;color:var(--text-3)">Swipe up to unlock</div>
+  <div class="handle"></div>`;
+}
+screens.push(['phone-quick', '', `<div style="position:absolute;inset:0;background:linear-gradient(170deg,#dfe3e9,#cfd4dc)"></div>
+  <div class="phone" style="left:150px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneQuick()}</div></div>
+  <div class="phone dark" style="left:740px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneLock()}</div></div>`]);
 
 document.getElementById('host').innerHTML = screens.map(([id, cls, html]) => `<div class="screen ${cls}" id="${id}">${html}</div>`).join('');
 </script>
