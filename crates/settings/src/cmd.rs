@@ -43,6 +43,22 @@ pub fn edel(args: &[&str]) -> Outcome {
     run("edel", args)
 }
 
+/// Restarts the machine, which is `reboot` (there is no `edel` command for
+/// it); the same call on a page's Restart now and a person's own hand.
+/// Like the commands that change the machine, it needs root until `doas`
+/// (M6.5), and its refusal is shown as it is.
+pub fn reboot() -> Outcome {
+    run("reboot", &[])
+}
+
+/// Whether Settings runs as root, which only a test or an appliance does:
+/// the Updates page words a refusal differently for a person, who cannot
+/// install until `doas` (M6.5).
+pub fn is_root() -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+}
+
 fn run(program: &str, args: &[&str]) -> Outcome {
     let started = Command::new(program)
         .args(args)

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Restart to finish (M5.8d): an arrow going round, in a circle. -->
+  <circle cx="8" cy="8" r="6.4"/>
+  <path d="M10.7 6.1A3.2 3.2 0 1 0 11.2 8.4"/>
+  <path d="M11 4.3V6.3H9"/>
+</svg>

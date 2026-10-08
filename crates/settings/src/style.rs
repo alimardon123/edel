@@ -115,6 +115,9 @@ pub fn css(t: &Tokens) -> String {
     let tiny = format!("{:.1}", f64::from(size) - 1.5);
     let key = format!("{:.1}", f64::from(size) - 2.5);
     let heading = size * 20 / 13;
+    let hero = size * 22 / 13;
+    let big = size + 1;
+    let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
     format!(
         r#"/* Written from design/tokens.toml by edel-settings (style.rs), after the mockups' own CSS. */
@@ -210,6 +213,26 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
   box-shadow: none; border: none; color: {text}; }}
 .edel-spin > button {{ background: none; box-shadow: none; border: none; color: {text}; }}
 .edel-arrangement {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
+.edel-hero {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; padding: 24px 26px 26px; }}
+.edel-hero-icon {{ color: {accent}; }}
+.edel-hero-icon.edel-problem {{ color: {error}; }}
+.edel-hero-title {{ font-size: {hero}px; font-weight: 650; letter-spacing: -0.4px; }}
+.edel-hero-sub {{ color: {secondary}; }}
+.edel-buttons {{ background: none; }}
+.edel-buttons > flowboxchild {{ padding: 0; margin: 0; background: none; border-radius: {rc}px; }}
+.edel-buttons > flowboxchild:focus-visible {{ outline: none; }}
+.edel-big {{ min-height: 44px; min-width: 168px; padding: 0 24px; border-radius: {rc}px; background-image: none; background-color: transparent;
+  box-shadow: none; border: 1px solid alpha({text}, 0.22); color: {text}; font-size: {big}px; font-weight: 550; }}
+.edel-big:hover {{ background-color: {fill}; }}
+.edel-big:disabled {{ opacity: 0.5; }}
+.edel-big:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 2px; }}
+.edel-big-main {{ background-color: {accent}; color: {accent_text}; border-color: transparent; font-weight: 600; }}
+.edel-big-main:hover {{ background-color: alpha({accent}, 0.88); }}
+.edel-name {{ font-size: {name}px; font-weight: 650; letter-spacing: -0.6px; }}
+.edel-name-version {{ color: {secondary}; font-size: {big}px; }}
+.edel-details > title {{ margin: 0 0 10px; padding: 4px 0; }}
+.edel-details > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
+.edel-details > title arrow {{ color: {muted}; }}
 .edel-change-bar {{ padding: 10px 20px 10px 32px; background-color: {card}; color: {text}; border-top: 1px solid {line}; }}
 .edel-change-mark {{ min-width: 22px; min-height: 22px; border-radius: 999px; background-color: {accent}; color: {accent_text}; }}
 .edel-change-text {{ font-weight: 600; }}
