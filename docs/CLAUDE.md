@@ -13,7 +13,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 ## ADRs
 
-- File name `ADR-NNN-kebab-slug.md`; the next free number is 012. Title line `# ADR-NNN: Sentence-case title`.
+- File name `ADR-NNN-kebab-slug.md`; the next free number is 013. Title line `# ADR-NNN: Sentence-case title`.
 - Header, one bold label per line under the title:
 
   ```
