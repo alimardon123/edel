@@ -3,14 +3,18 @@
 # names in region.time_servers or, without that key, pool.ntp.org (roadmap
 # M1.13, started by the edel-clock service). Prints one line saying what
 # happened, on the console and in the system log, and writes the hardware
-# clock when it set the system's. It always exits 0 and gives up after
-# EDEL_CLOCK_TIMEOUT seconds (30), so the clock stays as it was when no
-# server answers (after waiting up to 20 s for NetworkManager's address, where
-# it runs); it runs in the background, so nothing waits for it.
+# clock when it set the system's. It always exits 0: it asks up to
+# EDEL_CLOCK_TRIES times (3), each for up to EDEL_CLOCK_TIMEOUT seconds (20),
+# 5 s apart, then gives up and the clock stays as it was (after waiting up
+# to 20 s for NetworkManager's address, where it runs); it runs in the
+# background, so nothing waits for it. A pool name such as pool.ntp.org
+# names other servers at each try, so one silent server or a network that
+# comes up late does not leave the clock wrong.
 # Daily re-sync: no feature runs crond, so none (no service runs unless
 # someone uses what it serves); each boot sets the clock.
 
-timeout_s=${EDEL_CLOCK_TIMEOUT:-30}
+timeout_s=${EDEL_CLOCK_TIMEOUT:-20}
+tries=${EDEL_CLOCK_TRIES:-3}
 default_server=pool.ntp.org
 
 say() {
@@ -53,8 +57,19 @@ if command -v nm-online >/dev/null 2>&1; then
 fi
 
 before=$(now)
-# shellcheck disable=SC2086 # one -p per server
-if timeout "$timeout_s" ntpd -n -q $args >/dev/null 2>&1; then
+set_clock=
+try=1
+while :; do
+	# shellcheck disable=SC2086 # one -p per server
+	if timeout "$timeout_s" ntpd -n -q $args >/dev/null 2>&1; then
+		set_clock=yes
+		break
+	fi
+	[ "$try" -lt "$tries" ] || break
+	try=$((try + 1))
+	sleep 5
+done
+if [ -n "$set_clock" ]; then
 	hwclock -w -u 2>/dev/null || true
 	after=$(now)
 	# Say what the clock said before only when the minute is another one.
@@ -64,6 +79,6 @@ if timeout "$timeout_s" ntpd -n -q $args >/dev/null 2>&1; then
 		say "set the clock from $names: $after (it said $before)"
 	fi
 else
-	say "warning: no time server answered within $timeout_s s ($names); the clock stays as it was, $before; check the network, or name other servers with edel settings set region.time_servers"
+	say "warning: no time server answered in $tries tries of $timeout_s s ($names); the clock stays as it was, $before; check the network, or name other servers with edel settings set region.time_servers"
 fi
 exit 0
