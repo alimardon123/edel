@@ -273,24 +273,6 @@ fn run() -> Result<()> {
         .context("creating the shared memory pool")?;
     let mut event_loop: EventLoop<Shell> =
         EventLoop::try_new().context("starting the event loop")?;
-    // The portal and the tray share the session's bus and zbus's thread
-    // for it; the tray's news reaches the loop over a channel (M5.2e), but
-    // only when a panel holds the widget.
-    let portal = portal::serve(&tokens);
-    let tray_wanted = panels.iter().any(|p| p.row.all().any(|w| w.name == "tray"));
-    if let (Some(connection), true) = (&portal, tray_wanted) {
-        let (events, news) = channel::channel();
-        if tray::serve(connection, events) {
-            event_loop
-                .handle()
-                .insert_source(news, |event, _, shell: &mut Shell| {
-                    if let channel::Event::Msg(event) = event {
-                        shell.tray_changed(event);
-                    }
-                })
-                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
-        }
-    }
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -315,11 +297,33 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal,
+        _portal: portal::serve(&tokens),
         tokens,
         fillets: fillets(),
         exit: false,
     };
+    // The portal and the tray share the session's bus and zbus's thread
+    // for it; the tray's news reaches the loop over a channel (M5.2e), but
+    // only when a panel holds the widget. Served once the panel's fonts
+    // and icons are loaded, as the portal always was: served before them,
+    // shell-ui kept 3.7 MiB of its own instead of 1.6 (#138's first run).
+    let tray_wanted = shell
+        .panels
+        .iter()
+        .any(|p| p.row.all().any(|w| w.name == "tray"));
+    if let (Some(connection), true) = (&shell._portal, tray_wanted) {
+        let (events, news) = channel::channel();
+        if tray::serve(connection, events) {
+            event_loop
+                .handle()
+                .insert_source(news, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(event) = event {
+                        shell.tray_changed(event);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
+        }
+    }
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;

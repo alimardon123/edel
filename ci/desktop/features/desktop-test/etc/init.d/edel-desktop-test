@@ -112,6 +112,9 @@ report() {
 	samples=$(for i in 1 2 3 4 5 6 7 8; do own_mib "$pid"; echo; sleep 1; done)
 	say "shell_ui_threads $(awk '/^Threads:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
 	say "shell_ui_own_reads $(echo "$samples" | tr '\n' ' ')"
+	# Its five largest mappings by anonymous memory, `NAME:KIB` with NAME
+	# [heap], [stack], [anon] or the file, so a rise shows where it sits.
+	say "shell_ui_anon_top $(awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 > 0) print name ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | sort -t: -k2 -n -r | head -n 5 | tr '\n' ' ')"
 	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
 	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
