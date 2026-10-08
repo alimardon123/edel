@@ -35,6 +35,135 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Connect headphones, speakers, a mouse or a keyboard. Pairings are kept safely by this computer and never go in your settings file."
+msgstr ""
+
+msgid "This computer has no Bluetooth"
+msgstr ""
+
+msgid "If you plug in a Bluetooth adapter, it will show up here."
+msgstr ""
+
+msgid "Bluetooth is off"
+msgstr ""
+
+msgid "Turn it on to connect headphones, a mouse or a keyboard."
+msgstr ""
+
+msgid "Not connected to any device."
+msgstr ""
+
+msgid "Connected to {devices}."
+msgstr ""
+
+msgid "Bluetooth is on"
+msgstr ""
+
+msgid "Headphones or speaker"
+msgstr ""
+
+msgid "Keyboard"
+msgstr ""
+
+msgid "Mouse"
+msgstr ""
+
+msgid "Game controller"
+msgstr ""
+
+msgid "Phone"
+msgstr ""
+
+msgid "Computer"
+msgstr ""
+
+msgid "Device"
+msgstr ""
+
+msgid "connected"
+msgstr ""
+
+msgid "not connected"
+msgstr ""
+
+msgid "{kind}, {state}"
+msgstr ""
+
+msgid "Your devices"
+msgstr ""
+
+msgid "Nearby devices"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Search for devices"
+msgstr ""
+
+msgid "Put the device in pairing mode first, then search."
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "Turning Bluetooth on"
+msgstr ""
+
+msgid "Turning Bluetooth off"
+msgstr ""
+
+msgid "Searching"
+msgstr ""
+
+msgid "Bluetooth is not available"
+msgstr ""
+
+msgid "This can take a few seconds."
+msgstr ""
+
+msgid "No devices yet. Choose Search below, with the device in pairing mode."
+msgstr ""
+
+msgid "Nothing found nearby. Put the device in pairing mode and search again."
+msgstr ""
+
+msgid "Disconnect"
+msgstr ""
+
+msgid "Connect"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+msgid "Disconnecting from {name}"
+msgstr ""
+
+msgid "Connecting to {name}"
+msgstr ""
+
+msgid "Click again"
+msgstr ""
+
+msgid "Removing {name}"
+msgstr ""
+
+msgid "Pair"
+msgstr ""
+
+msgid "Pairing with {name}"
+msgstr ""
+
+msgid "Called"
+msgstr ""
+
+msgid "Address"
+msgstr ""
+
+msgid "Keyboards that ask you to type a code on them cannot be paired here yet; pair them with bluetoothctl."
+msgstr ""
+
 msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
 msgstr ""
 
@@ -119,10 +248,157 @@ msgstr ""
 msgid "Back to the pages"
 msgstr ""
 
-msgid "Search"
+msgid "Search the settings"
 msgstr ""
 
-msgid "Search the settings"
+msgid "Connect by cable or Wi-Fi. Wi-Fi passwords are kept safely by this computer and never go in your settings file."
+msgstr ""
+
+msgid "weak"
+msgstr ""
+
+msgid "fair"
+msgstr ""
+
+msgid "good"
+msgstr ""
+
+msgid "strong"
+msgstr ""
+
+msgid "Connected"
+msgstr ""
+
+msgid "By network cable, but the internet is not reachable."
+msgstr ""
+
+msgid "By network cable."
+msgstr ""
+
+msgid "By Wi-Fi, but the internet is not reachable."
+msgstr ""
+
+msgid "By Wi-Fi, {signal} signal."
+msgstr ""
+
+msgid "By Wi-Fi."
+msgstr ""
+
+msgid "Connected to {ssid}"
+msgstr ""
+
+msgid "Connecting"
+msgstr ""
+
+msgid "Networking is off"
+msgstr ""
+
+msgid "Flight mode is on. Turn it off to connect."
+msgstr ""
+
+msgid "Not connected"
+msgstr ""
+
+msgid "Plug in a network cable or choose a Wi-Fi network."
+msgstr ""
+
+msgid "Turn Wi-Fi on and choose a network, or plug in a network cable."
+msgstr ""
+
+msgid "Plug in a network cable."
+msgstr ""
+
+msgid "This computer has no network device NetworkManager can use."
+msgstr ""
+
+msgid "Cable unplugged"
+msgstr ""
+
+msgid "Not managed"
+msgstr ""
+
+msgid "Saved"
+msgstr ""
+
+msgid "Needs a password"
+msgstr ""
+
+msgid "Open network"
+msgstr ""
+
+msgid "Wired"
+msgstr ""
+
+msgid "Network cable"
+msgstr ""
+
+msgid "Wi-Fi"
+msgstr ""
+
+msgid "Look again"
+msgstr ""
+
+msgid "Turn it off to save power or in a place where radios are not allowed."
+msgstr ""
+
+msgid "Networks nearby"
+msgstr ""
+
+msgid "Turning Wi-Fi on"
+msgstr ""
+
+msgid "Turning Wi-Fi off"
+msgstr ""
+
+msgid "The network is not available"
+msgstr ""
+
+msgid "No Wi-Fi networks found. Move closer to the router, or choose Look again."
+msgstr ""
+
+msgid "Asks for a password"
+msgstr ""
+
+msgid "Forget"
+msgstr ""
+
+msgid "Disconnecting from {ssid}"
+msgstr ""
+
+msgid "Forgetting {ssid}"
+msgstr ""
+
+msgid "Connecting to {ssid}"
+msgstr ""
+
+msgid "Password"
+msgstr ""
+
+msgid "Password for {ssid}"
+msgstr ""
+
+msgid "Join"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "{device} {what}"
+msgstr ""
+
+msgid "address"
+msgstr ""
+
+msgid "gateway"
+msgstr ""
+
+msgid "DNS"
+msgstr ""
+
+msgid "hardware address"
+msgstr ""
+
+msgid "Nothing is connected, so there are no addresses to show."
 msgstr ""
 
 msgid "Preset"

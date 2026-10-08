@@ -1111,6 +1111,15 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             };
             println!("  {k:width$}  {shown}{later}");
         }
+        // Network's connections are not keys of the file either (M5.8a).
+        if section == Some(page.section) && page.section == "network" {
+            println!(
+                "  {}",
+                tr(
+                    "the wired and Wi-Fi connections and their passwords are NetworkManager's own, kept by this machine and never in this file; open Network in Settings, where each row can copy the nmcli command that does the same"
+                )
+            );
+        }
         println!();
     }
     Ok(())

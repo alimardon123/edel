@@ -105,6 +105,16 @@
 #               slider holding the keyboard, takes Home and six presses of
 #               Right and wpctl status shows the sink at 0.30; kept as
 #               sound.png
+#   network     NetworkManager and BlueZ (M5.8a): nmcli -t general status
+#               reports connected (the VM's user-mode network, by
+#               NetworkManager's own DHCP), ci, in group seat, may change the
+#               network and nobody may not (the network feature's D-Bus
+#               policy stands in for polkit), bluetoothctl list exits 0 with
+#               no adapter in the VM; Settings opened on its Network and
+#               Bluetooth pages (edel-settings --page network, --page
+#               bluetooth) draws each page and says on its stderr what its
+#               headline is ("Connected", "This computer has no Bluetooth");
+#               kept as network.png and bluetooth.png
 #   updates     updates.channel is refused unless it is a channel name,
 #               read back, and an edel update --check with no release
 #               takes that channel's list; Settings opened on its Updates
@@ -845,6 +855,87 @@ case_sound() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
+}
+
+case_network() {
+	# Network and Bluetooth (M5.8a). NetworkManager, started as a service,
+	# gives the VM's virtio network an address through its own DHCP client
+	# (busybox's networking is not on the desktop), so nmcli, run as ci,
+	# reports `connected`. With no polkit, NetworkManager authorizes what
+	# the D-Bus policy lets reach it: `nmcli radio wifi` changes
+	# something and works for ci, in group seat, and is refused for
+	# nobody. QEMU has no Bluetooth adapter: bluetoothd runs and
+	# bluetoothctl list exits 0 with nothing listed. Settings opened on
+	# each page draws it (the window token's colour in its corner, kept as
+	# network.png and bluetooth.png) and says what its headline is on its
+	# stderr, which the service reads back.
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: network_status ')
+		guest 'network status'
+		wait_more 'DESKTOP-TEST: network_status ' "$asked" 15 || fail "the service did not run nmcli"
+		case "$(value network_status)" in
+		connected:*) break ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "nmcli -t general status does not report connected after 60 s: \"$(value network_status)\"; devices: $(value network_devices); daemons: $(value network_daemons)"
+		sleep 3
+	done
+	asked=$(count 'DESKTOP-TEST: network_auth ')
+	guest 'network auth'
+	wait_more 'DESKTOP-TEST: network_auth ' "$asked" 30 || fail "the service did not try nmcli radio wifi"
+	case "$(value network_auth)" in
+	"ci=0 nobody="[1-9]*) ;;
+	*) fail "ci should change the network and nobody should be refused: $(value network_auth)" ;;
+	esac
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: bluetooth_list ')
+		guest 'bluetooth status'
+		wait_more 'DESKTOP-TEST: bluetooth_list ' "$asked" 30 || fail "the service did not run bluetoothctl"
+		case "$(value bluetooth_list)" in
+		"0: "*) break ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 6 ] || fail "bluetoothctl list does not exit 0: \"$(value bluetooth_list)\"; $(value bluetooth_daemon)"
+		sleep 5
+	done
+	for page in network bluetooth; do
+		opened=$(count 'edel-compositor: mapped window Settings')
+		guest "$page window"
+		wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its $page page: $(value windows)"
+		place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+		set -- $place
+		x=$1 y=$2 w=$3 h=$4
+		sleep 3
+		shot "$page" $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+			fail "the $page page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+		i=0
+		while :; do
+			asked=$(count "DESKTOP-TEST: ${page}_log ")
+			guest "$page log"
+			wait_more "DESKTOP-TEST: ${page}_log " "$asked" || fail "the service did not read Settings' log"
+			value "${page}_log" | grep -q "edel-settings: $page page shows" && break
+			i=$((i + 1))
+			[ "$i" -lt 10 ] || fail "the $page page did not say what it shows within 10 tries: $(value "${page}_log")"
+			sleep 2
+		done
+		shows=$(value "${page}_log" | tr ';' '\n' | grep "edel-settings: $page page shows" | head -n 1)
+		case "$page:$shows" in
+		'network:edel-settings: network page shows "Connected"') ;;
+		'bluetooth:edel-settings: bluetooth page shows "This computer has no Bluetooth"') ;;
+		*) fail "the $page page shows something else than expected: $shows" ;;
+		esac
+		closed=$(count 'edel-compositor: unmapped window Settings')
+		python3 ci/qmp.py key meta_l-q
+		wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	done
+	guest 'network memory'
+	wait_for 'DESKTOP-TEST: network_rss_kib ' || fail "the service did not read the daemons' memory"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Network and Bluetooth (M5.8a): resident (VmRSS) and proportional (Pss) memory of the daemons, KiB: $(value network_rss_kib)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: nmcli -t general status reports connected ($(value network_status)), ci may change the network and nobody may not, bluetoothctl list exits 0 with no adapter in the VM, and Settings drew its Network and Bluetooth pages (daemons, KiB: $(value network_rss_kib))"
 }
 
 case_display() {
@@ -2136,7 +2227,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound network updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')

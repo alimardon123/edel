@@ -1,0 +1,23 @@
+# Network (roadmap M5.8a): NetworkManager, wired and Wi-Fi, which the
+# Settings page Network and nmcli drive and the panel's quick settings will
+# read (M5.9). It replaces busybox's `networking` service on the desktop
+# (the `vm` feature keeps that one for VMs), so exactly one thing manages
+# eth0. features/network/ holds NetworkManager's drop-in (no polkit) and the
+# D-Bus policy that lets the people at the machine, group seat, configure it.
+format = 1
+summary = "Network: NetworkManager for wired and Wi-Fi, run from Settings"
+why = "People carry a laptop between networks, and a Wi-Fi password has to be asked for, remembered and forgotten, which busybox's ifup cannot do; NetworkManager is the one reused daemon that does all of it and that the panel, Settings and nmcli (networkmanager-cli) already speak to over D-Bus. It runs for the whole machine, as the one daemon the network needs (a second service, wpa_supplicant for Wi-Fi, is started by NetworkManager itself over D-Bus when a Wi-Fi adapter shows up, so a machine without one never runs it), and it replaces busybox's networking on the desktop. No polkit and no elogind daemon: NetworkManager is told not to ask polkit (auth-polkit=false) and a D-Bus policy lets only group seat, the people at the machine (no logind here), change anything, where polkit would need its own daemon and a session tracker; libelogind, the library NetworkManager links, is only the client side and runs nothing. dbus is the system bus NetworkManager needs, and loopback gives lo its address, which the networking service did; wireless-regdb gives the kernel the Wi-Fi channel rules of each country, so it does not fall back to the restricted world setting. The feature needs seat for its group."
+packages = [
+  "dbus",
+  "dbus-openrc",
+  "networkmanager",
+  "networkmanager-cli",
+  "networkmanager-openrc",
+  "networkmanager-wifi",
+  "wpa_supplicant",
+  "wireless-regdb",
+]
+
+[services]
+boot = ["loopback"]
+default = ["dbus", "networkmanager"]
