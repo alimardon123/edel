@@ -8,18 +8,23 @@ Alimardon: a little sharper, calm and polished rather than playful, and
 welcoming to everyone by default; the menu button's four squares, round
 workspace buttons on the right, one floating or tiling button, thinner
 title bars and app icons drawn as objects came with the second review.
+The fourth round, on 2026-10-08, added the status area, quick settings,
+the calendar and notifications for M5.9, as Alimardon asked.
 
 | Picture | What it shows |
 |---|---|
 | [classic.jpg](classic.jpg) | Classic, the default, light: a panel along the bottom with the menu and the windows, then the workspace buttons, the floating or tiling button, status and clock |
 | [classic-dark.jpg](classic-dark.jpg) | The same in the dark scheme |
 | [classic-menus.jpg](classic-menus.jpg) | The launcher, quick settings and a notification, over the Settings app's Layout page |
+| [quick-settings.jpg](quick-settings.jpg) | The status area in full (tray arrow, keyboard layout, one pill of status icons, the clock) and the quick settings above it, with the tray overflow open beside it |
+| [quick-settings-dark.jpg](quick-settings-dark.jpg) | The clock's popup in the dark scheme: the calendar under the notification centre, and the volume overlay |
 | [mac-like.jpg](mac-like.jpg) | Mac-like: a bar on top, a dock, window buttons on the left |
 | [windows-like.jpg](windows-like.jpg) | Windows-like, dark: a taskbar with search and centred apps |
 | [tiling.jpg](tiling.jpg) | Tiling, dark: gaps, and a title bar with its close button on every tile |
 | [tablet.jpg](tablet.jpg) | Tablet: windows tile by default, with larger targets |
 | [tiers.jpg](tiers.jpg) | The effect tiers Full, Balanced and Lite side by side |
 | [phone.jpg](phone.jpg) | Phone: Settings, and the card switcher |
+| [phone-quick.jpg](phone-quick.jpg) | Phone: quick settings pulled down at touch size, and notifications on the lock screen |
 
 What the look is made of, each a token:
 
