@@ -54,6 +54,40 @@ pub struct Preset {
     pub apps: Apps,
     #[serde(default)]
     pub panels: Vec<Panel>,
+    /// What the compositor starts with the session (M5.7b).
+    #[serde(default)]
+    pub session: Session,
+}
+
+/// The programs a person's session starts (M5.7b): the sound system, so
+/// that apps and Settings find it running, each as a command, a program
+/// found on the `PATH` or an absolute path, with its arguments after it.
+/// The compositor starts them one after the other, once, after shell-ui;
+/// one that keeps failing is given up on, as its log says. A preset that
+/// says nothing starts [`SESSION_START`], so the list is written once and
+/// a preset names its own only to start others (a phone's, say).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Session {
+    #[serde(default = "session_start")]
+    pub start: Vec<String>,
+}
+
+impl Default for Session {
+    fn default() -> Session {
+        Session {
+            start: session_start(),
+        }
+    }
+}
+
+/// What a session starts when its preset names nothing: PipeWire, then
+/// WirePlumber, which manages its devices, then the PulseAudio server apps
+/// speak to it through (the `sound` feature, M5.7b).
+pub const SESSION_START: &[&str] = &["pipewire", "wireplumber", "pipewire-pulse"];
+
+fn session_start() -> Vec<String> {
+    SESSION_START.iter().map(|c| c.to_string()).collect()
 }
 
 /// The apps widget's pinned apps (M5.4c), from its start: each a role
@@ -251,6 +285,17 @@ pub fn check(text: &str) -> Result<Preset> {
         );
     }
     check_panels(&preset.panels)?;
+    for command in &preset.session.start {
+        if command.trim().is_empty() || command.chars().any(char::is_control) {
+            bail!(
+                "{}",
+                trf(
+                    "{command} is not a command the session can start; write a program and its arguments on one line",
+                    &[("command", &format!("{command:?}"))]
+                )
+            );
+        }
+    }
     Ok(preset)
 }
 
@@ -350,6 +395,39 @@ mod tests {
                 "{name} is not in settings::PRESETS, so layout.preset could not name it"
             );
         }
+    }
+
+    #[test]
+    fn a_session_starts_the_sound_system_unless_its_preset_says_otherwise() {
+        // No preset names its own: the list is written once, here.
+        for (name, text) in BUILT_IN {
+            assert!(
+                !text.lines().any(|l| l.starts_with("[session]")),
+                "{name} repeats the default"
+            );
+            assert_eq!(named(Some(name)).0.session.start, SESSION_START);
+        }
+        assert_eq!(
+            SESSION_START,
+            ["pipewire", "wireplumber", "pipewire-pulse"],
+            "PipeWire first: the others connect to it"
+        );
+        let classic = BUILT_IN[0].1;
+        let own = format!("{classic}\n[session]\nstart = [\"pipewire\", \"foot --server\"]\n");
+        assert_eq!(
+            check(&own).unwrap().session.start,
+            ["pipewire", "foot --server"]
+        );
+        // An empty list starts nothing, for a preset that wants no sound.
+        let none = format!("{classic}\n[session]\nstart = []\n");
+        assert!(check(&none).unwrap().session.start.is_empty());
+        for bad in ["\"\"", "\"  \"", "\"a\\nb\""] {
+            let text = format!("{classic}\n[session]\nstart = [{bad}]\n");
+            let e = format!("{:#}", check(&text).unwrap_err());
+            assert!(e.contains("is not a command the session can start"), "{e}");
+        }
+        let text = format!("{classic}\n[session]\nrestart = true\n");
+        assert!(format!("{:#}", check(&text).unwrap_err()).contains("unknown field"));
     }
 
     #[test]

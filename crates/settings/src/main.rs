@@ -18,6 +18,7 @@ mod layout;
 mod preview;
 mod rows;
 mod screens;
+mod sound;
 mod style;
 mod widgets;
 
@@ -71,7 +72,10 @@ fn main() -> gtk::glib::ExitCode {
         }
     };
     let app = adw::Application::builder().application_id(APP_ID).build();
-    app.connect_activate(move |app| window(app, start));
+    // Any argument is --page (others were refused above), and a page
+    // opened by name gives the keyboard to its main control.
+    let asked = std::env::args().len() > 1;
+    app.connect_activate(move |app| window(app, start, asked));
     // GTK would refuse `--page`, which is read above.
     app.run_with_args(&[APP_ID])
 }
@@ -168,6 +172,14 @@ fn all_pages() -> Vec<Page> {
                 build: display::page,
                 needs: Some("shell"),
             }),
+            // Sound talks to PipeWire through wpctl; no sound feature, no page.
+            "sound" => Some(Page {
+                title: tr(page.title),
+                icon: "page-sound",
+                section: Some(page.section),
+                build: |_| sound::page(),
+                needs: Some("sound"),
+            }),
             _ => None,
         })
         .collect();
@@ -209,7 +221,7 @@ fn finds(page: &Page, query: &str) -> bool {
             .is_some_and(|s| rows::on_page(s).any(|row| holds(tr(row.title))))
 }
 
-fn window(app: &adw::Application, start: usize) {
+fn window(app: &adw::Application, start: usize, asked: bool) {
     let theme = Theme::new();
     let pages = Rc::new(pages());
     // Each page is built when first shown and kept.
@@ -267,6 +279,11 @@ fn window(app: &adw::Application, start: usize) {
         }
     };
     show(start);
+    if asked {
+        if let Some(page) = built.borrow()[start].as_ref() {
+            page.add_css_class(widgets::ASKED);
+        }
+    }
 
     let list = gtk::ListBox::builder()
         .css_classes(["edel-pages"])
@@ -393,7 +410,7 @@ mod tests {
     #[test]
     fn the_pages_follow_the_page_table_then_about() {
         let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
-        assert_eq!(titles, ["Layout", "Displays", "About"]);
+        assert_eq!(titles, ["Layout", "Displays", "Sound", "About"]);
     }
 
     #[test]
@@ -418,8 +435,9 @@ mod tests {
                 .map(|p| p.title)
                 .collect()
         };
-        assert_eq!(titles(""), ["Layout", "Displays", "About"]);
+        assert_eq!(titles(""), ["Layout", "Displays", "Sound", "About"]);
         assert_eq!(titles("abo"), ["About"]);
+        assert_eq!(titles("sou"), ["Sound"]);
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
@@ -434,10 +452,11 @@ mod tests {
         assert_eq!(at("displays"), Some(1));
         assert_eq!(at("Displays"), Some(1));
         assert_eq!(at("display"), Some(1), "the start of one name");
-        assert_eq!(at("about"), Some(2));
-        assert_eq!(at("abo"), Some(2));
+        assert_eq!(at("sound"), Some(2));
+        assert_eq!(at("Sound"), Some(2));
+        assert_eq!(at("about"), Some(3));
+        assert_eq!(at("abo"), Some(3));
         assert_eq!(at(""), None);
-        assert_eq!(at("sound"), None, "not a page of this release");
         assert_eq!(at("l"), Some(0), "one start only");
     }
 
@@ -447,8 +466,9 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(2));
-        assert_eq!(start(&["--page=about"]), Ok(2));
+        assert_eq!(start(&["--page", "about"]), Ok(3));
+        assert_eq!(start(&["--page=about"]), Ok(3));
+        assert_eq!(start(&["--page", "sound"]), Ok(2));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -477,6 +497,8 @@ mod tests {
         assert_eq!(titles(&dir), ["About"]);
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(titles(&dir), ["Layout", "Displays", "About"]);
+        std::fs::write(dir.join("sound.toml"), "format = 1\n").unwrap();
+        assert_eq!(titles(&dir), ["Layout", "Displays", "Sound", "About"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

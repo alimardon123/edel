@@ -83,7 +83,7 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 | **edel-shell-ui** | Draws the panels and docks, the launcher, the window switcher and the workspace buttons, and tells apps the colour scheme and accent; the compositor starts it and starts it again if it stops |
 | **edel-settings** | Settings, the app for every setting: a sidebar of pages, with Layout (the presets and tiling), Displays (each screen's scale, resolution, place and whether it is on) and About so far, each change one line of the person's settings file, which the desktop follows at once (M5.6) |
 | greetd | Logs people in; its greeter runs on our compositor and comes back if a session ends |
-| Mesa, and from roadmap M6 PipeWire, NetworkManager and Flatpak | Graphics, sound, networks and apps, reused as they are |
+| Mesa and PipeWire, and from roadmap M6 NetworkManager and Flatpak | Graphics, sound, networks and apps, reused as they are |
 
 **Layouts are presets.** One setting, `layout.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like and Hive (tiling), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
 

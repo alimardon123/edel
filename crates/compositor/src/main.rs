@@ -26,6 +26,7 @@ mod pointer;
 mod program;
 mod render;
 mod sandbox;
+mod session;
 mod shellui;
 mod shortcuts;
 mod state;

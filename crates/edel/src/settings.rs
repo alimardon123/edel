@@ -37,7 +37,8 @@ pub struct Page {
 }
 
 /// The Settings app's pages, in its order; every section of the file is
-/// one of them. Settings (M5.6) reads the same table.
+/// one of them, and a page may have no section of the file (Sound, whose
+/// state is the sound system's own). Settings (M5.6) reads the same table.
 pub const PAGES: &[Page] = &[
     Page {
         section: "layout",
@@ -48,6 +49,14 @@ pub const PAGES: &[Page] = &[
         section: "displays",
         title: n_("Displays"),
         about: n_("each screen's place, scale and resolution"),
+    },
+    Page {
+        // The sound system's own state, not a section of the file: the
+        // volume and the chosen devices are WirePlumber's (M5.7b), so this
+        // page has no key, and `edel settings get sound` says so.
+        section: "sound",
+        title: n_("Sound"),
+        about: n_("the output and input devices and their volume"),
     },
     Page {
         section: "appearance",
@@ -115,6 +124,14 @@ pub const PAGES: &[Page] = &[
         about: n_("developer mode and profiles"),
     },
 ];
+
+/// Whether the settings file has no key under `section`, as a page such as
+/// Sound has none (M5.7b).
+pub fn no_keys(section: &str) -> bool {
+    !KEYS
+        .iter()
+        .any(|k| k.path.split('.').next() == Some(section))
+}
 
 /// The page holding `section`.
 pub fn page(section: &str) -> Option<&'static Page> {

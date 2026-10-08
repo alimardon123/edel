@@ -224,6 +224,9 @@ msgstr ""
 msgid "this machine"
 msgstr ""
 
+msgid "{page} has no settings in the settings file, because it shows what the machine is doing now; open it in Settings, where each row can copy the command that does the same"
+msgstr ""
+
 msgid "not set: the release decides"
 msgstr ""
 
@@ -252,6 +255,9 @@ msgid "{path} has 1 problem, listed above; fix it and run edel settings check ag
 msgstr ""
 
 msgid "{path} has {count} problems, listed above; fix them and run edel settings check again"
+msgstr ""
+
+msgid "{command} is not a command the session can start; write a program and its arguments on one line"
 msgstr ""
 
 msgid "two panels along the {edge} edge"
@@ -354,6 +360,12 @@ msgid "Displays"
 msgstr ""
 
 msgid "each screen's place, scale and resolution"
+msgstr ""
+
+msgid "Sound"
+msgstr ""
+
+msgid "the output and input devices and their volume"
 msgstr ""
 
 msgid "Appearance"
@@ -552,6 +564,18 @@ msgid "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]"
 msgstr ""
 
 msgid "{others} or {last}"
+msgstr ""
+
+msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"
+msgstr ""
+
+msgid "could not run {program}: {error}"
+msgstr ""
+
+msgid "{command} failed: {said}; the sound system runs in your session, so log in again if it is not running"
+msgstr ""
+
+msgid "No sound device found. Plug in speakers or a headset, or check that the machine has a sound card."
 msgstr ""
 
 msgid "could not read /proc/self/mountinfo"

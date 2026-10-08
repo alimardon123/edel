@@ -1,0 +1,4 @@
+# The people at the machine use its sound cards (roadmap M5.7b): group seat,
+# which the seat feature holds them in, instead of audio, since nothing here
+# (no logind) gives the person at the machine access to a device by itself.
+SUBSYSTEM=="sound", GROUP="seat", MODE="0660"

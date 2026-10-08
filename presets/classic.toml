@@ -36,3 +36,13 @@ edge = "bottom"
 start = ["menu", "windows"]
 centre = []
 end = ["workspaces", "layout", "tray", "clock"]
+
+# What the session starts with the compositor and shell-ui (M5.7b), as
+# commands: a program on the PATH or an absolute path, then its arguments.
+# They start one after the other, once. This table is left out here, as in
+# every preset, and then the release's list holds (edel::presets::
+# SESSION_START, the sound system of the sound feature). A preset names its
+# own only to start others, and start = [] starts nothing:
+#
+#   [session]
+#   start = ["PROGRAM ARGUMENT...", "ANOTHER-PROGRAM"]

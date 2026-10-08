@@ -1,0 +1,9 @@
+# Sound (roadmap M5.7b): PipeWire, WirePlumber and the PulseAudio server,
+# which the session starts for each person (the preset's [session] start,
+# edel::presets::SESSION_START), never a service of the machine. features/
+# sound/ holds one udev rule that gives the people at the machine the
+# sound devices, which the seat feature's group already holds.
+format = 1
+summary = "Sound: PipeWire and WirePlumber, started in each person's session"
+why = "PipeWire is the one sound server for apps that play (PulseAudio and ALSA apps through pipewire-pulse and pipewire-alsa, Flatpak ones above all), record and, later, lend a paired phone's speakers over the network (ADR-011); WirePlumber picks and remembers each person's devices and its wpctl is the one command Settings' Sound page, the panel's volume and the shell read and set them with. They run per person in the session, started by the compositor, so nothing runs on a machine nobody is using; alsa-ucm-conf gives laptops' sound cards their speaker and microphone profiles. The udev rule gives group seat, the people at the machine (no logind here), the sound devices, so the feature needs seat."
+packages = ["pipewire", "pipewire-pulse", "pipewire-alsa", "wireplumber", "alsa-ucm-conf"]

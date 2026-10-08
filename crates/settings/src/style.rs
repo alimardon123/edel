@@ -175,6 +175,12 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel switch > slider {{ min-width: 17px; min-height: 17px; margin: 2px; border-radius: 999px; border: none; background-image: none;
   background-color: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2); }}
 .edel switch image {{ opacity: 0; }}
+.edel scale {{ min-height: 20px; }}
+.edel scale trough {{ min-height: 5px; border-radius: 999px; border: none; background-image: none; background-color: {fill_strong}; }}
+.edel scale highlight {{ border-radius: 999px; border: none; background-image: none; background-color: {accent}; }}
+.edel scale slider {{ min-width: 17px; min-height: 17px; margin: -6px; border-radius: 999px; border: none; background-image: none;
+  background-color: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.2); }}
+.edel scale:focus-visible slider {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
 .edel-choice {{ background: none; box-shadow: none; padding: 0; }}
 .edel-choice > button {{ min-height: 26px; padding: 0 8px 0 10px; border-radius: {rs}px; background-image: none;
   background-color: {fill}; box-shadow: none; border: none; color: {text}; font-weight: 400; }}

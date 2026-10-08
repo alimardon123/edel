@@ -1075,6 +1075,17 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             .filter(|(k, _, _)| k.split('.').next() == Some(page.section))
             .collect();
         if mine.is_empty() {
+            // A page asked for by name that holds nothing in the file, such
+            // as Sound, whose state is the sound system's own (M5.7b).
+            if section == Some(page.section) && settings::no_keys(page.section) {
+                println!(
+                    "{}",
+                    trf(
+                        "{page} has no settings in the settings file, because it shows what the machine is doing now; open it in Settings, where each row can copy the command that does the same",
+                        &[("page", tr(page.title))],
+                    )
+                );
+            }
             continue;
         }
         mine.sort_by(|a, b| (a.2.is_empty(), &a.0).cmp(&(b.2.is_empty(), &b.0)));

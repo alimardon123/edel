@@ -134,6 +134,8 @@ pub struct Edel {
     pub x11: Option<crate::xwayland::X11Display>,
     /// shell-ui, started and started again (`shellui.rs`, M5.1b).
     pub shell_ui: crate::shellui::ShellUi,
+    /// The programs the preset's `[session] start` lists (`session.rs`, M5.7b).
+    pub services: crate::session::Services,
     /// The Wayland socket's name, for programs the compositor starts.
     pub socket: String,
     /// The keyboard shortcuts that act (`shortcuts.rs`, M5.13a).
@@ -276,6 +278,7 @@ impl Edel {
             )),
             x11: None,
             shell_ui: Default::default(),
+            services: Default::default(),
             program: None,
             socket: String::new(),
             bindings: crate::shortcuts::bind(&Default::default()).0,
