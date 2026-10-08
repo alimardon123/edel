@@ -1,9 +1,10 @@
-# Hive (M5.4a): tiling, for people who live on the keyboard. Windows tile from
-# the start, side by side with their title bars and close buttons, and
-# one slim bar along the top holds the menu button and the focused
-# window's title at its start and the workspace buttons, the layout
-# toggle, the tray (M5.2e) and the clock at its end. Super+T, or the toggle, still floats
-# a workspace; minimized windows come back with Alt+Tab.
+# Hive (M5.4a): tiling, for people who live on the keyboard. Windows
+# tile from the start, side by side with their title bars and close
+# buttons, and one slim bar along the top holds the menu button and
+# the focused window's title at its start and the workspace buttons,
+# the layout toggle, the tray (M5.2e) and the clock at its end.
+# Super+T, or the toggle, still floats a workspace; minimized windows
+# come back with Alt+Tab.
 format = 1
 
 [windows]

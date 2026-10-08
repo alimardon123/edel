@@ -1,8 +1,9 @@
-# Mac-like (M5.4d): a slim bar along the top with the menu button and the
-# focused window's title at its start and the workspace buttons, the
-# layout toggle, the tray (M5.2e) and the clock at its end, and a dock along the bottom, a
-# card as wide as its apps: the pinned ones, then every other app with a
-# window open. Windows float, with their buttons on the left.
+# Mac-like (M5.4d): a slim bar along the top with the menu button and
+# the focused window's title at its start and the workspace buttons,
+# the layout toggle, the tray (M5.2e) and the clock at its end, and a
+# dock along the bottom, a card as wide as its apps: the pinned ones,
+# then every other app with a window open. Windows float, with their
+# buttons on the left.
 format = 1
 
 [windows]
