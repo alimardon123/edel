@@ -156,6 +156,35 @@ fn quoted(value: &str) -> String {
     }
 }
 
+/// `Version 2026.10.5 · Stable`, or what is known of it: the version alone,
+/// the channel alone, or nothing; one line for the Updates page's card and
+/// About's.
+pub fn version_line(version: Option<&str>, channel: Option<&str>) -> String {
+    match (version, channel) {
+        (Some(v), Some(c)) => trf(
+            "Version {version} · {channel}",
+            &[("version", v), ("channel", c)],
+        ),
+        (Some(v), None) => trf("Version {version}", &[("version", v)]),
+        (None, Some(c)) => c.to_string(),
+        (None, None) => String::new(),
+    }
+}
+
+/// A size as people read it: `412 MB`, `1.4 GB`. Decimal units, as the
+/// stores and the disk makers use, so a size here matches the one on the box.
+pub fn bytes_text(bytes: u64) -> String {
+    const MB: f64 = 1_000_000.0;
+    let mb = bytes as f64 / MB;
+    if mb < 1000.0 {
+        trf("{n} MB", &[("n", &format!("{:.0}", mb.max(1.0)))])
+    } else if mb < 10_000.0 {
+        trf("{n} GB", &[("n", &format!("{:.1}", mb / 1000.0))])
+    } else {
+        trf("{n} GB", &[("n", &format!("{:.0}", mb / 1000.0))])
+    }
+}
+
 /// Whether the row can be reset: only the person's own value can, as
 /// Settings writes only the person's file.
 pub fn resettable(source: &Source) -> bool {
@@ -203,6 +232,25 @@ mod tests {
         assert_eq!(note(&Source::Release, false), None);
         assert_eq!(note(&own, true), Some("Your choice"));
         assert_eq!(note(&set, false), Some("Set by this machine"));
+    }
+
+    #[test]
+    fn the_version_line_says_what_is_known() {
+        assert_eq!(
+            version_line(Some("2026.10.5"), Some("Stable")),
+            "Version 2026.10.5 · Stable"
+        );
+        assert_eq!(version_line(Some("2026.10.5"), None), "Version 2026.10.5");
+        assert_eq!(version_line(None, Some("Stable")), "Stable");
+        assert_eq!(version_line(None, None), "");
+    }
+
+    #[test]
+    fn sizes_read_in_megabytes_then_gigabytes() {
+        assert_eq!(bytes_text(412_000_000), "412 MB");
+        assert_eq!(bytes_text(1_400_000_000), "1.4 GB");
+        assert_eq!(bytes_text(128_000_000_000), "128 GB");
+        assert_eq!(bytes_text(200), "1 MB");
     }
 
     #[test]

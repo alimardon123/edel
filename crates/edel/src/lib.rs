@@ -26,3 +26,4 @@ pub mod settings;
 pub mod shortcuts;
 pub mod sound;
 pub mod tokens;
+pub mod version;

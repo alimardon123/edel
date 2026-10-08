@@ -109,7 +109,10 @@
 #               read back, and an edel update --check with no release
 #               takes that channel's list; Settings opened on its Updates
 #               page (edel-settings --page updates) runs edel status and
-#               says so on its stderr; kept as updates.png (M5.8c)
+#               says so on its stderr, and its card at the top is the
+#               card token's colour; kept as updates.png (M5.8c); the
+#               About page (edel-settings --page about) likewise, kept
+#               as about.png (M5.8d)
 #   tray        a StatusNotifierItem from edel-testclient --sni (a
 #               #33aa66 pixmap) registers with shell-ui's watcher and its
 #               icon lies in the panel's tray; AT-SPI names it, a click
@@ -931,7 +934,10 @@ case_updates() {
 	# with or without one. Settings opened on its Updates page runs `edel
 	# status` and says so on its stderr, which the service reads back;
 	# the page is the window token's colour in its corner, kept as
-	# updates.png. Reset brings the image's own channel back (CI's images
+	# updates.png; the card at its top (M5.8d), the headline and the big
+	# buttons, is the card token's colour. The About page opened the same
+	# way is kept as about.png, its window and its card at the top
+	# checked alike. Reset brings the image's own channel back (CI's images
 	# are built for their own, not preview).
 	guest 'channel bad'
 	wait_for 'DESKTOP-TEST: channel_bad ' || fail "the service did not report the refused channel"
@@ -957,6 +963,14 @@ case_updates() {
 	sleep 3
 	shot updates $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
 		fail "the Updates page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	# The card at the top (crates/settings, M5.8d): the page's cards are
+	# at most 704 px wide with 32 px margins, centred beside the 204 px
+	# sidebar; 80 px down is inside the card, above its words.
+	area=$((w - 204))
+	clamp=$((area < 704 ? area : 704))
+	card_x=$((x + 204 + (area - clamp) / 2 + 32 + clamp - 64 - 40))
+	shot updates $card_x $((y + 80)) "$(token card)" >/dev/null ||
+		fail "the Updates page has no card at the top at $card_x,$((y + 80)) in the card token's #$(token card)"
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: updates_log ')
@@ -971,6 +985,24 @@ case_updates() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	# The About page (M5.8d): the window and its card at the top.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'about window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open a window on its About page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 3
+	shot about $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+		fail "the About page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	area=$((w - 204))
+	clamp=$((area < 704 ? area : 704))
+	card_x=$((x + 204 + (area - clamp) / 2 + 32 + clamp - 64 - 40))
+	shot about $card_x $((y + 80)) "$(token card)" >/dev/null ||
+		fail "the About page has no card at the top at $card_x,$((y + 80)) in the card token's #$(token card)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings after the About page"
 	guest 'channel reset'
 	asked=$(count 'DESKTOP-TEST: channel_value ')
 	guest 'channel get'
@@ -984,7 +1016,7 @@ case_updates() {
 		fail "edel update --check with no release names no channel's list after the reset: $(value channel_update)"
 	value channel_update | grep -q '/preview/' &&
 		fail "edel update --check still takes the preview channel after the reset: $(value channel_update)"
-	echo "PASS: updates.channel refused Beta, read back preview and made edel update --check take the preview channel's list, Settings opened on its Updates page and said it ran edel status ($status_line), and Reset gave the image's own channel back"
+	echo "PASS: updates.channel refused Beta, read back preview and made edel update --check take the preview channel's list, Settings opened on its Updates page with its card at the top and said it ran edel status ($status_line), the About page opened with its card too, and Reset gave the image's own channel back"
 }
 
 case_keyboard() {
