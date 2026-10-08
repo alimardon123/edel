@@ -339,6 +339,10 @@ commands() {
 			;;
 		'sound status')
 			status=$(as_ci wpctl status 2>&1)
+			# The compositor starts these before its log reaches the
+			# console, so their lines are read from the log itself.
+			say "sound_started $(grep -a -o 'edel-compositor: started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
+			say "sound_said $(grep -a -E 'edel-compositor: (pipewire|wireplumber|pipewire-pulse) ' "$session_log" | tail -n 3 | tr '\n' ';')"
 			say "sound_sinks $(echo "$status" | awk '/Sinks:/ { on = 1; next } /Sink endpoints:|Sources:|Filters:|Streams:|Video/ { on = 0 } on && /vol:/ { sub(/^[^0-9*]*/, ""); printf "%s;", $0 }')"
 			say "sound_status $(echo "$status" | tr '\n' ';')"
 			;;

@@ -787,9 +787,12 @@ case_sound() {
 	# Right (a step is 5 percent) set the sink to 0.30, which wpctl status
 	# shows. The volume is the sound system's own state, so nothing is
 	# read from a settings file. Kept as sound.png.
+	sink_volume >/dev/null || :
 	for program in pipewire wireplumber pipewire-pulse; do
-		wait_for "edel-compositor: started $program, pid" ||
-			fail "the compositor did not start $program from the session's list"
+		case " $(value sound_started) " in
+		*" $program "*) ;;
+		*) fail "the compositor did not start $program from the session's list; it started: $(value sound_started); it said: $(value sound_said)" ;;
+		esac
 	done
 	i=0
 	while :; do
