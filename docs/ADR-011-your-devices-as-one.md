@@ -1,14 +1,14 @@
 # ADR-011: Your devices as one
 
 **Status:** Proposed
-**Date:** 2026-10-08
+**Date:** 2026-10-08, amended 2026-10-08 (sections 7 to 11, what only one system everywhere can do)
 **Deciders:** Alimardon
 **Extends:** M7.10 (the phone and the computer together, planned on 2026-10-07, now M7.10a)
 **Related:** ADR-004 (one app adapts to every size), ADR-006 (one settings file), ADR-007 (add-ons), ADR-009 (no telemetry, no account), [review of other systems](REVIEW-apps-and-lessons.md), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
 
 ## Context
 
-On 2026-10-07 Alimardon asked for the phone and the computer to work together, and on 2026-10-08 that it be "more seamless and interchangeble and more versatile", learning from Googlebook, Apple, HarmonyOS NEXT and NVIDIA's DGX Spark, and "far greater and better" than them, "as we are running same os everywhere".
+On 2026-10-07 Alimardon asked for the phone and the computer to work together, and on 2026-10-08 that it be "more seamless and interchangeble and more versatile", learning from Googlebook, Apple, HarmonyOS NEXT and NVIDIA's DGX Spark, and "far greater and better" than them, "as we are running same os everywhere". Later that day they added that we should "make use of that same os everywhere core of us" to give "even more features and seamless user experience at the top quality than others"; sections 7 to 11 are that.
 
 What the others do, as far as we found:
 
@@ -47,6 +47,26 @@ A tablet or a phone becomes an extra screen for a laptop (Sidecar), a phone's ca
 
 Android phones join through the open KDE Connect protocol (M7.10a): notifications, replies, the clipboard, files, battery, media and remote input. An Edel OS phone speaks it too, and everything above on top.
 
+### 7. Your setup follows you
+
+The settings file is the same format on every device, so a person chooses, section by section, what their paired devices share: the look (`[appearance]`, the wallpaper, the accent), the shortcuts, the apps, the Wi-Fi networks, the permissions (M6.14). A change on one shows on the others live, and the layout stays each device's own, as a phone and a laptop want different ones. A whole workspace moves too: "Move this desk to my laptop" carries every window of a workspace across (section 2), so a person stands up from the desk and carries on from the sofa. An app installed on one device can be offered on the others, the same Flatpak for x86_64 and arm64 (ADR-004).
+
+### 8. One update for all your devices
+
+Every device runs the same release, so one paired device downloads it and the others take it from that device over the local network, checking the same signature (M1.6), and a household or an office downloads each release once. The first device to confirm the new slot tells the others it is safe; if it rolls back, the others wait and say why. A person's own devices become each other's early warning, which no vendor gives a household. This shares whole signed images between a person's own devices; it is neither delta updates nor a mirror network, which stay out of the plan.
+
+### 9. Your devices back each other up
+
+Each device's `/data` (the settings file, `/etc`'s changes, the homes) is copied, encrypted, to another paired device the person chooses, a home server or a desktop, on a schedule they set; a new or repaired device is restored from it in the welcome (M6.12), its slots coming from the release and its data from the backup. No cloud, and any device can hold another's backup.
+
+### 10. Every device's hardware is yours
+
+Paired devices lend each other their hardware: speakers and microphones over PipeWire's network audio, a printer or a scanner, a phone's mobile data when the laptop has no Wi-Fi (as Apple's Instant Hotspot, for any phone that shares), storage, and the camera and screen of section 5.
+
+### 11. Find, lock, unlock, and one of everything
+
+A lost device can be made to ring, shown on a map when it shares its location, locked or wiped from another paired device, through the person's own tunnel when away (section 1). A phone near the laptop can unlock it, if the person turns that on. A notification dismissed on one device leaves all of them, "do not disturb" is one switch for all, and the launcher's search finds apps, files and settings on every paired device. Quick settings show every device's battery.
+
 ## Options Considered
 
 | Option | Verdict |
@@ -58,7 +78,7 @@ Android phones join through the open KDE Connect protocol (M7.10a): notification
 
 ## Consequences
 
-- **Easier:** every app gains continuity on the day it is installed; a person's devices, permissions and setup move with one file; a weak device borrows a strong one's power.
+- **Easier:** every app gains continuity on the day it is installed; a household downloads each release once and learns from its first device whether it is safe; a lost or broken device comes back whole from another; a person's devices, permissions and setup move with one file; a weak device borrows a strong one's power.
 - **Harder:** windows over the network must stay smooth (Instant), so each step measures latency on the local network in CI before it merges, and falls back to the window staying where it was.
 - **Revisit:** whether a full handoff (section 2's second path) is worth asking apps for, once the window move is in people's hands.
 - **Cost:** the steps below, each one PR or two; no new long-running part, as each feature runs only while a device is paired and in use.
@@ -70,6 +90,11 @@ Android phones join through the open KDE Connect protocol (M7.10a): notification
 3. [ ] Windows that move to another device, and "Run on" a stronger one (M7.10c).
 4. [ ] One pointer and keyboard across devices' screens, arranged in `[displays]` (M7.10d).
 5. [ ] A device as another's screen or camera, and setup from another device (M7.10e).
+6. [ ] Setup that follows you, whole workspaces moving, apps offered on every device (M7.10f).
+7. [ ] One download per release for all your devices, the first to confirm telling the others (M7.10g).
+8. [ ] Devices backing each other up, and a new device restored from that (M7.10h).
+9. [ ] Hardware lent between devices: sound, printers, mobile data, storage (M7.10i).
+10. [ ] Find, lock and unlock devices; one notification, one "do not disturb" and one search for all (M7.10j).
 
 ## Sources
 
