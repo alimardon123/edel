@@ -976,8 +976,9 @@ case_power() {
 	# corner, kept as power.png and users.png) and says what its headline
 	# is on its stderr, which the service reads back: a machine with no
 	# battery is "Plugged in", and the Users page leads with ci. Then the
-	# Compact rule (crates/settings/CLAUDE.md): tiled alone on a screen
-	# made 366 logical px wide by scale 3.5, each page is drawn again
+	# Compact rule (crates/settings/CLAUDE.md): maximized on an empty
+	# workspace of a screen made 366 logical px wide by scale 3.5, each
+	# page is drawn again
 	# (power-compact.png, users-compact.png); GTK sizes a window to its
 	# content's minimum, so a page too wide would leave the window wider
 	# than the screen, and the page's margins on both sides must be the
@@ -1029,10 +1030,16 @@ case_power() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Power (M5.8b): resident (VmRSS) and proportional (Pss) memory of upowerd, KiB: $(value power_rss_kib)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	# Compact: 366 logical px wide, tiled alone.
-	tiled=$(count 'edel-compositor: windows now tiling')
-	guest 'tiling on'
-	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile the windows"
+	# Compact: 366 logical px wide, Settings maximized on an empty
+	# workspace, as a phone shows an app (tiled beside another window it
+	# would get a tile narrower than its own minimum).
+	python3 ci/qmp.py key meta_l-4
+	i=0
+	while [ "$(value windows | cut -d" " -f1)" != 0 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "Super+4 did not show an empty workspace: $(value windows)"
+		sleep 0.2
+	done
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 3.5')
 	guest 'scale 3.5'
 	wait_more 'edel-compositor: output Virtual-1 scale 3.5' "$scaled" || fail "displays.Virtual-1.scale = 3.5 was not followed"
@@ -1040,14 +1047,16 @@ case_power() {
 		opened=$(count 'edel-compositor: mapped window Settings')
 		guest "$page window"
 		wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its $page page at 366 px: $(value windows)"
-		sleep 4
+		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 3
 		compact=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 		[ -n "$compact" ] || fail "Settings is not in the windows line: $(value windows)"
 		set -- $(echo "$compact" | sed 's/Settings@//; s/[,x]/ /g')
 		x=$1 y=$2 w=$3 h=$4
 		# The screen is 366 logical px wide at scale 3.5; a page that
 		# does not fit makes GTK size the window to the page's minimum.
-		[ "$w" -le 366 ] || fail "the $page page does not fit at Compact width: Settings is $w px wide on a 366 px screen ($compact)"
+		[ "$((x + w))" -le 366 ] || fail "the $page page does not fit at Compact width: Settings reaches $((x + w)) px on a 366 px screen ($compact)"
 		# Margins left and right of the page, and the page between them: the
 		# window token. Physical pixels are logical ones times 3.5.
 		mid=$(((y + h / 2) * 7 / 2))
@@ -1062,10 +1071,8 @@ case_power() {
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	guest 'scale default'
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
-	floated=$(count 'edel-compositor: windows now floating')
-	guest 'tiling off'
-	wait_more 'edel-compositor: windows now floating' "$floated" || fail "layout.tiling = false did not float the windows again"
-	echo "PASS: upower -e exits 0 with upowerd running ($(value power_list)), Settings drew its Power page (\"Plugged in\") and its Users page (\"ci\"), and at Compact width, 366 px, both fit with the sidebar folded away (upowerd, KiB: $(value power_rss_kib))"
+	python3 ci/qmp.py key meta_l-1
+	echo "PASS: upower -e exits 0 with upowerd running ($(value power_list)), Settings drew its Power page (\"Plugged in\") and its Users page (\"ci\"), and at Compact width, 366 px, maximized, both fit with the sidebar folded away (upowerd, KiB: $(value power_rss_kib))"
 }
 
 case_display() {
