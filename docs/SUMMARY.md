@@ -37,6 +37,7 @@
 - [Review: other shells](REVIEW-shells.md)
 - [Review: AerynOS](REVIEW-aerynos.md)
 - [Review: postmarketOS](REVIEW-postmarketos.md)
+- [Review: apps that last, and why new systems take years](REVIEW-apps-and-lessons.md)
 - [Spike: Flatpak](SPIKE-flatpak.md)
 
 # Plan

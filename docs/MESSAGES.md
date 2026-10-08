@@ -25,6 +25,7 @@ One line when it fits; the cause chain after it, most specific last, only when i
 - **Warnings** start `warning:` and say what still worked: `warning: the clock could not be read; the panel shows no time`.
 - **Progress** says what is happening now and what it led to, never only "done": `edel update: slot B written and checked (412 MiB, 9 s); restart to use it`.
 - **Numbers carry units** (MiB, s, ms) and come from measurements.
+- **Every message a person reads is marked for translation** (M5.24b): `edel` writes it with `tr` or `trf` and `{names}` for its values (`trf("could not read {path}", ...)`), never glued from pieces, so a translator sees the whole sentence; lines a program reads (`running: A`, `change: ...`, TOML) and the boot logs stay English. A structured start such as `refused: expired:` is part of the sentence and is translated with it.
 - **The same mistake gives the same text** everywhere: Settings, `edel`, the boot log. Write it once, in the part that finds the mistake, and show it from there (ADR-010).
 
 ## Where to find things

@@ -10,6 +10,8 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::{n_, tr, trf};
+
 /// The only preset format so far.
 pub const FORMAT: i64 = 1;
 
@@ -258,15 +260,30 @@ pub fn check(text: &str) -> Result<Preset> {
 pub fn check_panels(panels: &[Panel]) -> Result<()> {
     for (i, panel) in panels.iter().enumerate() {
         if panels[..i].iter().any(|p| p.edge == panel.edge) {
-            bail!("two panels along the {} edge", panel.edge.name());
+            bail!(
+                "{}",
+                trf(
+                    "two panels along the {edge} edge",
+                    &[("edge", panel.edge.name())]
+                )
+            );
         }
         if let Some(bad) = panel.widgets().find(|w| !crate::features::is_name(w)) {
-            bail!("{bad:?} is not a widget name");
+            bail!(
+                "{}",
+                trf(
+                    "{widget} is not a widget name",
+                    &[("widget", &format!("{bad:?}"))]
+                )
+            );
         }
         if panel.hide != Hide::Never && panel.style != Style::Dock {
             bail!(
-                "only a dock hides; the {} panel is a bar",
-                panel.edge.name()
+                "{}",
+                trf(
+                    "only a dock hides; the {edge} panel is a bar",
+                    &[("edge", panel.edge.name())]
+                )
             );
         }
     }
@@ -280,14 +297,37 @@ pub fn dock_hides(panels: &[Panel]) -> bool {
         .any(|p| p.style == Style::Dock && p.hide == Hide::Covered)
 }
 
+/// A preset's name as people read it, in their language: `mac-like` is
+/// Mac-like. A person's own preset (`[presets.NAME]`) is its name with a
+/// capital. These words are `edel`'s to translate, as the Settings app
+/// shows them too (`po/edel.pot` owns them).
+pub fn title(name: &str) -> String {
+    match name {
+        "classic" => tr(n_("Classic")).to_string(),
+        "mac-like" => tr(n_("Mac-like")).to_string(),
+        "windows-like" => tr(n_("Windows-like")).to_string(),
+        "hive" => tr(n_("Hive")).to_string(),
+        _ => {
+            let mut chars = name.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        }
+    }
+}
+
 /// The preset `name` names, else Classic and a note saying why. A missing
 /// name is Classic without a note.
 pub fn named(name: Option<&str>) -> (Preset, Option<String>) {
     let wanted = name.unwrap_or(DEFAULT);
     let found = BUILT_IN.iter().find(|(n, _)| *n == wanted);
-    let note = found
-        .is_none()
-        .then(|| format!("this release has no preset {wanted:?}; the Classic preset is used"));
+    let note = found.is_none().then(|| {
+        trf(
+            "this release has no preset {name}; the Classic preset is used",
+            &[("name", &format!("{wanted:?}"))],
+        )
+    });
     let (_, text) = found.unwrap_or(&BUILT_IN[0]);
     // Every built-in preset is checked by the tests.
     let preset = check(text).expect("the built-in presets are checked by the tests");

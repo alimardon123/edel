@@ -9,6 +9,8 @@ use std::fmt;
 
 use anyhow::{Result, bail};
 
+use crate::i18n::{tr, trf};
+
 const MIB: u64 = 1024 * 1024;
 /// The EFI system partition, as `boot.rs` lays it out.
 pub const ESP_MIB: u64 = 64;
@@ -64,10 +66,15 @@ impl Plan {
         if self.data_mib() < MIN_DATA_MIB {
             let need = 2 + ESP_MIB + 2 * self.slot_mib + MIN_DATA_MIB;
             bail!(
-                "/dev/{} has {}, and Edel OS needs at least {}; use a larger disk",
-                self.disk.name,
-                size(self.disk.bytes),
-                size(need * MIB)
+                "{}",
+                trf(
+                    "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk",
+                    &[
+                        ("disk", &self.disk.name),
+                        ("has", &size(self.disk.bytes)),
+                        ("needs", &size(need * MIB))
+                    ]
+                )
             );
         }
         Ok(())
@@ -102,20 +109,32 @@ fn fs_name(fs: &str) -> String {
 impl fmt::Display for Partition {
     /// `sda3: Windows (NTFS, 420 GB)`
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let label = self.label.as_deref().unwrap_or("no name");
+        let label = self.label.as_deref().unwrap_or(tr("no name"));
         match &self.fs {
             Some(fs) => write!(
                 f,
-                "{}: {label} ({}, {})",
-                self.name,
-                fs_name(fs),
-                size(self.bytes)
+                "{}",
+                trf(
+                    "{name}: {label} ({fs}, {size})",
+                    &[
+                        ("name", &self.name),
+                        ("label", label),
+                        ("fs", &fs_name(fs)),
+                        ("size", &size(self.bytes))
+                    ]
+                )
             ),
             None => write!(
                 f,
-                "{}: {label} (no file system, {})",
-                self.name,
-                size(self.bytes)
+                "{}",
+                trf(
+                    "{name}: {label} (no file system, {size})",
+                    &[
+                        ("name", &self.name),
+                        ("label", label),
+                        ("size", &size(self.bytes))
+                    ]
+                )
             ),
         }
     }
@@ -124,38 +143,62 @@ impl fmt::Display for Partition {
 impl fmt::Display for Plan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let disk = &self.disk;
-        let model = disk.model.as_deref().unwrap_or("no model name");
+        let model = disk.model.as_deref().unwrap_or(tr("no model name"));
         writeln!(
             f,
-            "Install Edel OS on /dev/{} ({model}, {})",
-            disk.name,
-            size(disk.bytes)
+            "{}",
+            trf(
+                "Install Edel OS on /dev/{disk} ({model}, {size})",
+                &[
+                    ("disk", &disk.name),
+                    ("model", model),
+                    ("size", &size(disk.bytes))
+                ]
+            )
         )?;
         if disk.partitions.is_empty() {
-            writeln!(f, "The disk has no partitions.")?;
+            writeln!(f, "{}", tr("The disk has no partitions."))?;
         } else {
-            writeln!(f, "This erases everything on it:")?;
+            writeln!(f, "{}", tr("This erases everything on it:"))?;
             for partition in &disk.partitions {
                 writeln!(f, "  {partition}")?;
             }
         }
-        writeln!(f, "and writes:")?;
-        writeln!(f, "  1: EFI system partition, {ESP_MIB} MiB")?;
+        writeln!(f, "{}", tr("and writes:"))?;
         writeln!(
             f,
-            "  2: slot A, {} MiB, a copy of the running system",
-            self.slot_mib
+            "{}",
+            trf(
+                "  1: EFI system partition, {mib} MiB",
+                &[("mib", &ESP_MIB.to_string())]
+            )
         )?;
         writeln!(
             f,
-            "  3: slot B, {} MiB, empty until the first update",
-            self.slot_mib
+            "{}",
+            trf(
+                "  2: slot A, {mib} MiB, a copy of the running system",
+                &[("mib", &self.slot_mib.to_string())]
+            )
         )?;
         writeln!(
             f,
-            "  4: data, {} MiB, starting from the settings file {}",
-            self.data_mib(),
-            self.system_file
+            "{}",
+            trf(
+                "  3: slot B, {mib} MiB, empty until the first update",
+                &[("mib", &self.slot_mib.to_string())]
+            )
+        )?;
+        writeln!(
+            f,
+            "{}",
+            trf(
+                "  4: data, {mib} MiB, starting from the settings file {file}",
+                &[
+                    ("mib", &self.data_mib().to_string()),
+                    ("file", &self.system_file)
+                ]
+            )
         )
     }
 }
