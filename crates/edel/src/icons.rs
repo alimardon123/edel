@@ -1,7 +1,7 @@
-//! The shell's own icons (M5.5d): the menu button, the layout toggle and
-//! the title bar buttons, one SVG file each in `design/icons/`, built into
-//! the compositor and shell-ui, so changing one file changes every place
-//! that shows it. Each is drawn as a shape in black and coloured by the
+//! The shell's own icons (M5.5d): the menu button, the layout toggle, the
+//! status area's and the title bar buttons, one SVG file each in
+//! `design/icons/`, built into the compositor and shell-ui, so changing one
+//! file changes every place that shows it. Each is drawn as a shape in black and coloured by the
 //! caller with a token, as GNOME's symbolic icons are.
 
 use resvg::tiny_skia::{Pixmap, Transform};
@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 29] = [
+pub const BUILT_IN: [(&str, &str); 46] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -110,6 +110,68 @@ pub const BUILT_IN: [(&str, &str); 29] = [
         "status-problem",
         include_str!("../../../design/icons/status-problem.svg"),
     ),
+    // The panel's status area and quick settings (M5.9a): the network by
+    // its kind and signal, the volume by its level, the battery and the
+    // marks of a charging one, and the tiles' and buttons' own.
+    (
+        "net-wired",
+        include_str!("../../../design/icons/net-wired.svg"),
+    ),
+    (
+        "net-wifi-1",
+        include_str!("../../../design/icons/net-wifi-1.svg"),
+    ),
+    (
+        "net-wifi-2",
+        include_str!("../../../design/icons/net-wifi-2.svg"),
+    ),
+    (
+        "net-wifi-3",
+        include_str!("../../../design/icons/net-wifi-3.svg"),
+    ),
+    (
+        "net-offline",
+        include_str!("../../../design/icons/net-offline.svg"),
+    ),
+    (
+        "airplane",
+        include_str!("../../../design/icons/airplane.svg"),
+    ),
+    (
+        "volume-muted",
+        include_str!("../../../design/icons/volume-muted.svg"),
+    ),
+    (
+        "volume-low",
+        include_str!("../../../design/icons/volume-low.svg"),
+    ),
+    (
+        "volume-medium",
+        include_str!("../../../design/icons/volume-medium.svg"),
+    ),
+    (
+        "volume-high",
+        include_str!("../../../design/icons/volume-high.svg"),
+    ),
+    ("battery", include_str!("../../../design/icons/battery.svg")),
+    (
+        "battery-level",
+        include_str!("../../../design/icons/battery-level.svg"),
+    ),
+    (
+        "battery-bolt",
+        include_str!("../../../design/icons/battery-bolt.svg"),
+    ),
+    ("moon", include_str!("../../../design/icons/moon.svg")),
+    (
+        "chevron-right",
+        include_str!("../../../design/icons/chevron-right.svg"),
+    ),
+    (
+        "chevron-down",
+        include_str!("../../../design/icons/chevron-down.svg"),
+    ),
+    ("gear", include_str!("../../../design/icons/gear.svg")),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name

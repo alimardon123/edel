@@ -16,6 +16,7 @@ pub mod layout;
 pub mod menu;
 pub mod search;
 pub mod separator;
+pub mod status;
 pub mod title;
 pub mod tray;
 pub mod windows;
@@ -87,6 +88,12 @@ pub struct Live {
     pub policy: String,
     /// Whether the launcher is open, for the menu button's lit tile.
     pub launcher: bool,
+    /// Whether quick settings are open, for the status area's lit pill
+    /// (M5.9a).
+    pub quick: bool,
+    /// How the machine is connected, how loud it is and how full its
+    /// battery is (M5.9a); each part only where the machine has it.
+    pub status: crate::status::Status,
     pub pinned: Vec<Pin>,
     pub installed: Vec<Pin>,
 }
@@ -161,6 +168,8 @@ pub enum Action {
     Launcher,
     /// Open the tiling styles' menu beside the widget (M5.16b).
     Styles,
+    /// Open quick settings above the status area, or close them (M5.9a).
+    Quick,
     /// The app with this desktop file id: bring its window forward, or
     /// minimize it if it is the focused one, or start the app (M5.4c).
     App(String),
@@ -191,6 +200,7 @@ pub const TABLE: &[Widget] = &[
     apps::WIDGET,
     search::WIDGET,
     separator::WIDGET,
+    status::WIDGET,
 ];
 
 /// Scrolling added up but not yet a step: a high-resolution wheel's

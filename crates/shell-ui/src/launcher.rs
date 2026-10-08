@@ -181,10 +181,19 @@ impl Launcher {
     /// Starts `app`, kept as a child to collect when it ends; whether it
     /// started.
     pub fn run(&mut self, app: &App) -> bool {
-        let argv = apps::command(app);
-        let mut command = Command::new(&argv[0]);
+        self.spawn(&apps::command(app), &app.name)
+    }
+
+    /// Starts `argv`, a program and its arguments, called `name` in what
+    /// is logged, kept as a child to collect when it ends (quick settings
+    /// start Settings this way too); whether it started.
+    pub fn spawn(&mut self, argv: &[String], name: &str) -> bool {
+        let Some((program, args)) = argv.split_first() else {
+            return false;
+        };
+        let mut command = Command::new(program);
         command
-            .args(&argv[1..])
+            .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
@@ -194,13 +203,13 @@ impl Launcher {
         match command.spawn() {
             Ok(child) => {
                 self.children.push(child);
-                eprintln!("edel-shell-ui: launched {} ({})", app.name, argv.join(" "));
+                eprintln!("edel-shell-ui: launched {name} ({})", argv.join(" "));
                 true
             }
             Err(e) => {
                 eprintln!(
                     "edel-shell-ui: {}",
-                    crate::messages::app_not_started(&app.name, e)
+                    crate::messages::app_not_started(name, e)
                 );
                 false
             }

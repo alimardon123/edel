@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Wi-Fi at a middling signal (M5.9a): the outer arc dimmed. -->
+  <path d="M3 9.5a13 13 0 0 1 18 0" stroke-opacity=".3"/>
+  <path d="M6 12.8a8.5 8.5 0 0 1 12 0"/>
+  <path d="M9 16a4 4 0 0 1 6 0"/>
+  <circle cx="12" cy="19" r="1" fill="#000"/>
+</svg>

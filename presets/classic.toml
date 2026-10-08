@@ -26,6 +26,14 @@ count = 4
 # line over the apps beside the panel's start.
 style = "menu"
 
+# The tiles of quick settings, which the status area's click opens
+# (M5.9a), in two columns in this order: wifi, bluetooth, airplane
+# (every radio off) and dark_style (appearance.mode). A tile whose
+# feature or hardware this machine lacks is left out. Left out, the
+# table shows these four.
+[quick]
+tiles = ["wifi", "bluetooth", "airplane", "dark_style"]
+
 # Each panel is one layer-shell surface along a screen's edge, top or
 # bottom, holding shell-ui's widgets by name: from its start, in its
 # centre and towards its end. It is a bar along the whole edge, or with
@@ -35,7 +43,7 @@ style = "menu"
 edge = "bottom"
 start = ["menu", "separator", "windows"]
 centre = []
-end = ["workspaces", "layout", "separator", "tray", "clock"]
+end = ["workspaces", "layout", "separator", "tray", "status", "clock"]
 
 # What the session starts with the compositor and shell-ui (M5.7b), as
 # commands: a program on the PATH or an absolute path, then its arguments.

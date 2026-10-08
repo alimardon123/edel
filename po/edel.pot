@@ -314,6 +314,27 @@ msgstr ""
 msgid "{hours} {minutes}"
 msgstr ""
 
+msgid "Charging"
+msgstr ""
+
+msgid "Fully charged"
+msgstr ""
+
+msgid "Battery"
+msgstr ""
+
+msgid "{percent} percent, {time} until full"
+msgstr ""
+
+msgid "{percent} percent, charging"
+msgstr ""
+
+msgid "{percent} percent, {time} left"
+msgstr ""
+
+msgid "{percent} percent"
+msgstr ""
+
 msgid "1 minute"
 msgstr ""
 
@@ -336,6 +357,12 @@ msgid "{command} failed: {said}; the power service (upowerd) starts with the mac
 msgstr ""
 
 msgid "{command} is not a command the session can start; write a program and its arguments on one line"
+msgstr ""
+
+msgid "{tile} is not a quick settings tile; the tiles are {tiles}"
+msgstr ""
+
+msgid "the quick settings tile {tile} is listed twice"
 msgstr ""
 
 msgid "two panels along the {edge} edge"

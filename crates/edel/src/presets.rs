@@ -57,6 +57,42 @@ pub struct Preset {
     /// What the compositor starts with the session (M5.7b).
     #[serde(default)]
     pub session: Session,
+    /// The tiles of the panel's quick settings (M5.9a).
+    #[serde(default)]
+    pub quick: Quick,
+}
+
+/// The tiles quick settings can hold (M5.9a), the names a preset's
+/// `[quick] tiles` may list; shell-ui has one tile for each, and its tests
+/// fail when this list and its tiles differ. A new tile is a name here and
+/// a tile there.
+pub const TILES: &[&str] = &["wifi", "bluetooth", "airplane", "dark_style"];
+
+/// The tiles a preset that names none shows, in this order: the four every
+/// built-in preset lists today.
+pub const DEFAULT_TILES: &[&str] = &["wifi", "bluetooth", "airplane", "dark_style"];
+
+/// Quick settings (M5.9a): the tiles a preset shows, in two columns, in
+/// this order. A tile whose feature or hardware this machine lacks is left
+/// out by shell-ui, not here. A person's own list, a key beside
+/// `layout.panels`, comes with M5.31's editor.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Quick {
+    #[serde(default = "default_tiles")]
+    pub tiles: Vec<String>,
+}
+
+impl Default for Quick {
+    fn default() -> Quick {
+        Quick {
+            tiles: default_tiles(),
+        }
+    }
+}
+
+fn default_tiles() -> Vec<String> {
+    DEFAULT_TILES.iter().map(|t| t.to_string()).collect()
 }
 
 /// The programs a person's session starts (M5.7b): the sound system, so
@@ -285,6 +321,7 @@ pub fn check(text: &str) -> Result<Preset> {
         );
     }
     check_panels(&preset.panels)?;
+    check_quick(&preset.quick)?;
     for command in &preset.session.start {
         if command.trim().is_empty() || command.chars().any(char::is_control) {
             bail!(
@@ -297,6 +334,32 @@ pub fn check(text: &str) -> Result<Preset> {
         }
     }
     Ok(preset)
+}
+
+/// What a preset's `[quick] tiles` must be: names of tiles this release has
+/// ([`TILES`]), none twice.
+pub fn check_quick(quick: &Quick) -> Result<()> {
+    for (i, tile) in quick.tiles.iter().enumerate() {
+        if !TILES.contains(&tile.as_str()) {
+            bail!(
+                "{}",
+                trf(
+                    "{tile} is not a quick settings tile; the tiles are {tiles}",
+                    &[("tile", &format!("{tile:?}")), ("tiles", &TILES.join(", "))]
+                )
+            );
+        }
+        if quick.tiles[..i].contains(tile) {
+            bail!(
+                "{}",
+                trf(
+                    "the quick settings tile {tile} is listed twice",
+                    &[("tile", tile)]
+                )
+            );
+        }
+    }
+    Ok(())
 }
 
 /// What a preset's panels, or `[[layout.panels]]` in a settings file
@@ -449,6 +512,7 @@ mod tests {
                 "layout",
                 "separator",
                 "tray",
+                "status",
                 "clock"
             ]
         );
@@ -485,6 +549,60 @@ mod tests {
         assert_eq!(mac.panels[1].centre, ["apps"]);
         // A panel names its style only when it is a dock.
         assert!(named(None).0.panels.iter().all(|p| p.style == Style::Bar));
+    }
+
+    #[test]
+    fn every_preset_lists_quick_tiles_this_release_has_and_none_twice() {
+        for (name, text) in BUILT_IN {
+            let preset = check(text).unwrap();
+            assert!(!preset.quick.tiles.is_empty(), "{name} lists no tiles");
+            check_quick(&preset.quick).unwrap();
+        }
+        assert_eq!(named(None).0.quick.tiles, DEFAULT_TILES);
+        // A preset that says nothing shows the default tiles.
+        let classic = BUILT_IN[0].1;
+        let bare: String = classic
+            .lines()
+            .filter(|l| !l.starts_with("tiles =") && !l.starts_with("[quick]"))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        assert_eq!(check(&bare).unwrap().quick, Quick::default());
+        let own = format!("{bare}\n[quick]\ntiles = [\"dark_style\", \"wifi\"]\n");
+        assert_eq!(check(&own).unwrap().quick.tiles, ["dark_style", "wifi"]);
+    }
+
+    #[test]
+    fn a_quick_tile_this_release_lacks_or_lists_twice_is_refused() {
+        let classic = BUILT_IN[0].1;
+        let with = |tiles: &str| {
+            let lines: Vec<String> = classic
+                .lines()
+                .map(|l| {
+                    if l.starts_with("tiles =") {
+                        format!("tiles = {tiles}")
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .collect();
+            format!("{}\n", lines.join("\n"))
+        };
+        let e = format!(
+            "{:#}",
+            check(&with("[\"wifi\", \"night_light\"]")).unwrap_err()
+        );
+        assert!(
+            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, dark_style"),
+            "{e}"
+        );
+        let e = format!("{:#}", check(&with("[\"wifi\", \"wifi\"]")).unwrap_err());
+        assert!(
+            e.contains("the quick settings tile wifi is listed twice"),
+            "{e}"
+        );
+        let text = classic.replace("[quick]", "[quick]\nrows = 3");
+        assert!(format!("{:#}", check(&text).unwrap_err()).contains("unknown field `rows`"));
+        assert!(check(&with("[]")).is_ok(), "an empty list shows no tiles");
     }
 
     #[test]

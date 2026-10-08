@@ -169,11 +169,12 @@ thread_local! {
 }
 
 /// The parts whose words a part shows beside its own: the Settings app
-/// shows `edel`'s pages' titles and presets' names, which `po/edel.pot`
-/// owns.
+/// shows `edel`'s pages' titles and presets' names, and shell-ui's quick
+/// settings (M5.9a) the battery's line and the name of a page, which
+/// `po/edel.pot` owns.
 fn shared_with(part: &str) -> &'static [&'static str] {
     match part {
-        "settings" => &["edel"],
+        "settings" | "shell-ui" => &["edel"],
         _ => &[],
     }
 }

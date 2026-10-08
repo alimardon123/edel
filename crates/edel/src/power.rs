@@ -303,6 +303,35 @@ pub fn duration_text(minutes: u32) -> String {
     }
 }
 
+/// What the panel's quick settings say under the battery's icon (M5.9a),
+/// as the mockups' "82 percent, 4 h 10 min left", in [`duration_text`]'s
+/// words: how full it is, then how long it lasts, or takes to fill, when
+/// UPower knows; a full battery says so, and one whose charge is not
+/// reported says only what it is doing.
+pub fn battery_line(battery: &Device) -> String {
+    let time = battery.minutes.map(duration_text);
+    let Some(percent) = battery.percent_whole().map(|p| p.to_string()) else {
+        return match battery.state {
+            State::Charging => tr("Charging").to_string(),
+            State::FullyCharged => tr("Fully charged").to_string(),
+            _ => tr("Battery").to_string(),
+        };
+    };
+    let at = [("percent", percent.as_str())];
+    match (battery.state, time) {
+        (State::FullyCharged, _) => tr("Fully charged").to_string(),
+        (State::Charging, Some(t)) => trf(
+            "{percent} percent, {time} until full",
+            &[at[0], ("time", &t)],
+        ),
+        (State::Charging, None) => trf("{percent} percent, charging", &at),
+        (State::Discharging, Some(t)) => {
+            trf("{percent} percent, {time} left", &[at[0], ("time", &t)])
+        }
+        _ => trf("{percent} percent", &at),
+    }
+}
+
 fn minutes_text(n: u32) -> String {
     if n == 1 {
         tr("1 minute").to_string()
@@ -572,6 +601,40 @@ Daemon:
         let battery = snapshot.battery().unwrap();
         assert_eq!(battery.state, State::Unknown);
         assert_eq!(battery.percent_whole(), Some(7));
+    }
+
+    #[test]
+    fn the_battery_line_says_how_full_and_how_long() {
+        let battery = |state, percent, minutes| Device {
+            path: "/org/freedesktop/UPower/devices/DisplayDevice".into(),
+            kind: "battery".into(),
+            name: String::new(),
+            present: true,
+            state,
+            percent,
+            minutes,
+            online: None,
+        };
+        let line = |state, percent, minutes| battery_line(&battery(state, percent, minutes));
+        assert_eq!(
+            line(State::Discharging, Some(82.0), Some(250)),
+            "82 percent, 4 hours 10 minutes left"
+        );
+        assert_eq!(
+            line(State::Charging, Some(41.4), Some(41)),
+            "41 percent, 41 minutes until full"
+        );
+        assert_eq!(
+            line(State::Charging, Some(41.0), None),
+            "41 percent, charging"
+        );
+        assert_eq!(
+            line(State::FullyCharged, Some(100.0), None),
+            "Fully charged"
+        );
+        assert_eq!(line(State::Discharging, Some(7.0), None), "7 percent");
+        assert_eq!(line(State::Charging, None, None), "Charging");
+        assert_eq!(line(State::Unknown, None, None), "Battery");
     }
 
     #[test]

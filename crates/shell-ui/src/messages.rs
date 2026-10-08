@@ -83,6 +83,26 @@ pub fn style_no_home(style: &str) -> String {
     )
 }
 
+/// The system bus cannot be listened to for the status area.
+pub fn status_no_bus(why: impl Display) -> String {
+    format!(
+        "could not listen to NetworkManager and UPower on the system bus: {why}; the status icons are read when quick settings open and at each minute instead of at each change"
+    )
+}
+
+/// A click on quick settings could not do what it asked.
+pub fn quick_not_done(what: &str, why: impl Display) -> String {
+    format!("could not {what}: {why}; quick settings show what the machine reports")
+}
+
+/// Dark style cannot be written down.
+pub fn dark_style_not_kept(why: impl Display) -> String {
+    format!("could not keep the colour scheme: {why}; it stays as it was")
+}
+
+/// There is no home folder to keep the colour scheme in.
+pub const DARK_STYLE_NO_HOME: &str = "no home folder to keep the colour scheme in; run edel settings set appearance.mode=dark instead";
+
 /// The clock's timer cannot start.
 pub fn clock_not_started(why: impl Display) -> String {
     format!("the clock's timer did not start: {why}; the clock may stop updating")
@@ -163,6 +183,22 @@ mod tests {
     }
 
     #[test]
+    fn quick_settings_say_what_they_could_not_do_and_what_still_works() {
+        assert_eq!(
+            quick_not_done("turn Wi-Fi off", "nmcli failed: not authorized"),
+            "could not turn Wi-Fi off: nmcli failed: not authorized; quick settings show what the machine reports"
+        );
+        assert_eq!(
+            dark_style_not_kept("Permission denied (os error 13)"),
+            "could not keep the colour scheme: Permission denied (os error 13); it stays as it was"
+        );
+        assert!(DARK_STYLE_NO_HOME.contains("edel settings set appearance.mode=dark"));
+        assert!(
+            status_no_bus("no bus").starts_with("could not listen to NetworkManager and UPower")
+        );
+    }
+
+    #[test]
     fn no_message_has_a_dash_or_a_final_full_stop() {
         let all = [
             NO_COMPOSITOR.to_string(),
@@ -175,6 +211,10 @@ mod tests {
             tray_not_said("x"),
             tray_bad_item("x"),
             tray_call_failed("a", "b", "x"),
+            status_no_bus("x"),
+            quick_not_done("a", "x"),
+            dark_style_not_kept("x"),
+            DARK_STYLE_NO_HOME.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

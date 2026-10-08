@@ -315,7 +315,21 @@ pub fn read() -> Result<Snapshot> {
     read_in(Path::new(SYSFS))
 }
 
-fn read_in(sysfs: &Path) -> Result<Snapshot> {
+/// The adapter alone, without the devices it knows: two quick calls, for
+/// the panel's quick settings (M5.9a), which only needs to know whether
+/// there is one and whether it is on. None is no adapter, as in [`read`].
+pub fn adapter() -> Result<Option<Adapter>> {
+    let sysfs = Path::new(SYSFS);
+    if !has_adapter(sysfs)? {
+        return Ok(None);
+    }
+    let show = bluetoothctl(&words(&["show"]), READ_TIME)?;
+    Ok(parse_show(&show.out))
+}
+
+/// Whether `bluetoothctl list` names an adapter. An adapter the kernel
+/// has but `bluetoothd` does not answer for is an error, not none.
+fn has_adapter(sysfs: &Path) -> Result<bool> {
     let list = bluetoothctl(&words(&["list"]), READ_TIME)?;
     if !list.ok() || parse_list(&list.out).is_empty() {
         if kernel_has_adapter(sysfs) {
@@ -326,6 +340,13 @@ fn read_in(sysfs: &Path) -> Result<Snapshot> {
                 )
             );
         }
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn read_in(sysfs: &Path) -> Result<Snapshot> {
+    if !has_adapter(sysfs)? {
         return Ok(Snapshot {
             adapter: None,
             devices: Vec::new(),
