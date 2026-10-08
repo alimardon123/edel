@@ -81,10 +81,10 @@ impl Default for Session {
     }
 }
 
-/// What a session starts when its preset names nothing: PipeWire, then
-/// WirePlumber, which manages its devices, then the PulseAudio server apps
-/// speak to it through (the `sound` feature, M5.7b).
-pub const SESSION_START: &[&str] = &["pipewire", "wireplumber", "pipewire-pulse"];
+/// What a session starts when its preset names nothing: PipeWire, which
+/// also serves the PulseAudio apps speak (the `sound` feature loads that
+/// server inside it), then WirePlumber, which manages its devices (M5.7b).
+pub const SESSION_START: &[&str] = &["pipewire", "wireplumber"];
 
 fn session_start() -> Vec<String> {
     SESSION_START.iter().map(|c| c.to_string()).collect()
@@ -409,7 +409,7 @@ mod tests {
         }
         assert_eq!(
             SESSION_START,
-            ["pipewire", "wireplumber", "pipewire-pulse"],
+            ["pipewire", "wireplumber"],
             "PipeWire first: the others connect to it"
         );
         let classic = BUILT_IN[0].1;
