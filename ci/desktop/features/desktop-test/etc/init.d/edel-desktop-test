@@ -320,6 +320,10 @@ commands() {
 		'settings window')
 			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
 			;;
+		# Settings on its Displays page (M5.7a), as ci.
+		'display window')
+			as_ci edel-settings --page displays </dev/null >/tmp/settings-display.log 2>&1 &
+			;;
 		'settings file') say "settings_file $(tr '\n' ';' <"/home/ci/.config/edel/$settings_name" 2>/dev/null)" ;;
 		# What Settings holds of its own while open (M5.6a), read as
 		# shell-ui's is: the least of three reads a second apart, the

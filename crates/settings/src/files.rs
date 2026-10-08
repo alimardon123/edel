@@ -5,6 +5,7 @@
 //! that is what would apply anyway is taken out of the file rather than
 //! written, as writers never write a default (ADR-008).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use edel::presets::{self, Policy};
@@ -169,6 +170,44 @@ impl Files {
         }
     }
 
+    /// Each screen's `[displays.NAME]` as the desktop follows it: the
+    /// person's keys over the machine's, key by key.
+    pub fn displays(&self) -> BTreeMap<String, settings::Display> {
+        let mut all = Self::read(Some(&self.machine))
+            .map(|f| f.displays)
+            .unwrap_or_default();
+        let person = Self::read(self.person.as_ref())
+            .map(|f| f.displays)
+            .unwrap_or_default();
+        for (name, own) in person {
+            let d = all.entry(name).or_default();
+            d.position = own.position.or(d.position);
+            d.scale = own.scale.or(d.scale);
+            d.resolution = own.resolution.or(d.resolution.take());
+            d.refresh_rate = own.refresh_rate.or(d.refresh_rate);
+            d.enabled = own.enabled.or(d.enabled);
+            d.rotation = own.rotation.or(d.rotation);
+        }
+        all
+    }
+
+    /// Chooses `value` for `key`: written to the person's file, or taken
+    /// out of it when it is what would apply without it, the machine's
+    /// value or else `release`, the one the release gives (ADR-008:
+    /// writers never write a default). Numbers are compared as numbers,
+    /// so `2` and `2.0` are one value.
+    pub fn choose_over(&self, key: &str, value: &str, release: Option<&str>) -> Result<(), String> {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        let machine = settings::chosen(key, read(Some(&self.machine)).as_deref(), None);
+        let without = machine.or_else(|| release.map(String::from));
+        let had = matches!(self.source(key), settings::Source::Person(_));
+        match (without.is_some_and(|w| same_value(&w, value)), had) {
+            (false, _) => self.set(key, Some(value)),
+            (true, true) => self.set(key, None),
+            (true, false) => Ok(()),
+        }
+    }
+
     /// The keys of `action` as the desktop follows them: the person's
     /// `[shortcuts]` over the machine's over the release's.
     pub fn shortcut(&self, action: &str) -> Option<String> {
@@ -232,6 +271,15 @@ impl Files {
             .ok_or("there is no home folder to keep your settings in")?;
         settings::write(path, key, value).map_err(|e| format!("{e:#}"))
     }
+}
+
+/// Whether two values are one: equal, or equal as numbers (`2` and `2.0`).
+fn same_value(a: &str, b: &str) -> bool {
+    a == b
+        || a.parse::<f64>()
+            .ok()
+            .zip(b.parse::<f64>().ok())
+            .is_some_and(|(a, b)| (a - b).abs() < 1e-9)
 }
 
 /// A value's name as people read it, with a capital: `floating only` is
@@ -385,6 +433,55 @@ mod tests {
         assert_eq!(files.layout().preset, "mac-like");
         let text = std::fs::read_to_string(&person).unwrap();
         assert!(text.contains("mode = \"dark\""), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_screens_default_is_never_written() {
+        let dir = scratch("displays");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let read = || std::fs::read_to_string(&person).unwrap_or_default();
+        let key = "displays.Virtual-1.scale";
+        // The compositor worked out 1.5 for this screen: choosing it
+        // writes nothing, another scale is written, and 1.5 takes it out.
+        files.choose_over(key, "1.5", Some("1.5")).unwrap();
+        assert!(!read().contains("scale"), "{}", read());
+        files.choose_over(key, "2", Some("1.5")).unwrap();
+        assert!(
+            read().contains("[displays.Virtual-1]\nscale = 2"),
+            "{}",
+            read()
+        );
+        assert_eq!(files.displays()["Virtual-1"].scale, Some(2.0));
+        files.choose_over(key, "1.50", Some("1.5")).unwrap();
+        assert!(!read().contains("scale"), "{}", read());
+        // With the machine on 2, 1.5 must be written to override it, and
+        // 2 is the machine's own, so it is taken out again.
+        std::fs::write(
+            &files.machine,
+            "format = 1\n[displays.Virtual-1]\nscale = 2.0\nposition = [5, 6]\n",
+        )
+        .unwrap();
+        files.choose_over(key, "1.5", Some("1.5")).unwrap();
+        assert!(read().contains("scale = 1.5"), "{}", read());
+        files
+            .set("displays.Virtual-1.enabled", Some("false"))
+            .unwrap();
+        let merged = &files.displays()["Virtual-1"];
+        assert_eq!(merged.scale, Some(1.5), "the person's over the machine's");
+        assert_eq!(merged.position, Some([5, 6]), "the machine's, key by key");
+        assert_eq!(merged.enabled, Some(false));
+        files.choose_over(key, "2", Some("1.5")).unwrap();
+        assert!(!read().contains("scale"), "{}", read());
+        // A flag: on is the default and is never written.
+        files
+            .choose_over("displays.Virtual-1.enabled", "true", Some("true"))
+            .unwrap();
+        assert!(!read().contains("enabled"), "{}", read());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

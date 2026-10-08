@@ -192,6 +192,16 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-choices {{ background: none; }}
 .edel-choices > row {{ min-height: 26px; padding: 0 10px 0 6px; border-radius: {rs}px; color: {text}; }}
 .edel-choices > row:hover {{ background-color: {accent}; color: {accent_text}; }}
+.edel-segments {{ background-color: {fill}; border-radius: {rs}px; padding: 2px; }}
+.edel-segment {{ min-height: 22px; min-width: 38px; padding: 0 8px; border-radius: {rs}px; background-image: none;
+  background-color: transparent; box-shadow: none; border: none; color: {text}; font-weight: 400; }}
+.edel-segment:hover {{ background-color: {fill_strong}; }}
+.edel-segment:checked {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
+.edel-segment:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
+.edel-spin {{ min-height: 26px; border-radius: {rs}px; background-image: none; background-color: {fill};
+  box-shadow: none; border: none; color: {text}; }}
+.edel-spin > button {{ background: none; box-shadow: none; border: none; color: {text}; }}
+.edel-arrangement {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
 .edel-change-bar {{ padding: 10px 20px 10px 32px; background-color: {card}; color: {text}; border-top: 1px solid {line}; }}
 .edel-change-mark {{ min-width: 22px; min-height: 22px; border-radius: 999px; background-color: {accent}; color: {accent_text}; }}
 .edel-change-text {{ font-weight: 600; }}

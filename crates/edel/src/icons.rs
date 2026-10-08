@@ -38,6 +38,10 @@ pub const BUILT_IN: [(&str, &str); 15] = [
         include_str!("../../../design/icons/page-layout.svg"),
     ),
     (
+        "page-displays",
+        include_str!("../../../design/icons/page-displays.svg"),
+    ),
+    (
         "page-about",
         include_str!("../../../design/icons/page-about.svg"),
     ),

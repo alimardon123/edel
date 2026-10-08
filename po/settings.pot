@@ -35,6 +35,45 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Each screen's size, scale and place. Changes apply at once. Each choice is also a line of your settings file and an edel settings set command."
+msgstr ""
+
+msgid "Automatic"
+msgstr ""
+
+msgid "Across"
+msgstr ""
+
+msgid "Down"
+msgstr ""
+
+msgid "{name} cannot be turned off: it is the only screen that is on. Turn another screen on first."
+msgstr ""
+
+msgid "No screen is reported yet. Screens show here once the desktop is running, or once your settings file names them under [displays]."
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "{width} x {height} in the layout"
+msgstr ""
+
+msgid "Not connected or not reported"
+msgstr ""
+
+msgid "The screen's own is {size}"
+msgstr ""
+
+msgid "Looks like {width} x {height}"
+msgstr ""
+
+msgid "Where this screen's top left corner lies in the layout"
+msgstr ""
+
+msgid "A screen that is off stays dark"
+msgstr ""
+
 msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
 msgstr ""
 
@@ -65,6 +104,15 @@ msgstr ""
 msgid "Closes a window even with its button hidden"
 msgstr ""
 
+msgid "--page needs the name of a page, such as --page displays"
+msgstr ""
+
+msgid "unknown option \"{option}\"; the only one is --page NAME"
+msgstr ""
+
+msgid "there is no page \"{name}\" on this machine; the pages are {pages}"
+msgstr ""
+
 msgid "Back to the pages"
 msgstr ""
 
@@ -93,6 +141,18 @@ msgid "Maximize button"
 msgstr ""
 
 msgid "Close button"
+msgstr ""
+
+msgid "Resolution"
+msgstr ""
+
+msgid "Scale"
+msgstr ""
+
+msgid "Position"
+msgstr ""
+
+msgid "On"
 msgstr ""
 
 msgid "Always"

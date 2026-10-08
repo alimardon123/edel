@@ -580,3 +580,105 @@ impl Choice {
         self.changed.borrow_mut().push(Box::new(f));
     }
 }
+
+/// A value chosen from a few that are all in view, as a row of buttons
+/// joined into one, the chosen one in the accent: a click is the whole
+/// change, where a [`Choice`] needs a click to open and another to pick.
+/// The labels may be replaced (a screen's scale list gains the odd value
+/// a file names).
+pub struct Segments {
+    bar: gtk::Box,
+    buttons: std::cell::RefCell<Vec<gtk::ToggleButton>>,
+    selected: std::cell::Cell<usize>,
+    /// Set while the control itself moves a button, which is not a pick.
+    quiet: std::cell::Cell<bool>,
+    changed: std::cell::RefCell<Vec<Box<dyn Fn()>>>,
+}
+
+impl Segments {
+    /// Segments of `labels`, the first chosen.
+    pub fn new(labels: &[String]) -> std::rc::Rc<Segments> {
+        let bar = gtk::Box::builder()
+            .css_classes(["edel-segments"])
+            .valign(gtk::Align::Center)
+            .build();
+        let segments = std::rc::Rc::new(Segments {
+            bar,
+            buttons: std::cell::RefCell::new(Vec::new()),
+            selected: std::cell::Cell::new(0),
+            quiet: std::cell::Cell::new(false),
+            changed: std::cell::RefCell::new(Vec::new()),
+        });
+        segments.replace(labels, 0);
+        segments
+    }
+
+    pub fn widget(&self) -> gtk::Widget {
+        self.bar.clone().upcast()
+    }
+
+    pub fn selected(&self) -> usize {
+        self.selected.get()
+    }
+
+    /// Shows choice `at` as chosen, without calling back.
+    pub fn set_selected(&self, at: usize) {
+        self.selected.set(at);
+        self.quiet.set(true);
+        if let Some(button) = self.buttons.borrow().get(at) {
+            button.set_active(true);
+        }
+        self.quiet.set(false);
+    }
+
+    /// Calls `f` when a person picks a value.
+    pub fn connect_changed(&self, f: impl Fn() + 'static) {
+        self.changed.borrow_mut().push(Box::new(f));
+    }
+
+    /// Shows `labels` with choice `at` chosen, without calling back; does
+    /// nothing when they are the labels already shown.
+    pub fn replace(self: &std::rc::Rc<Self>, labels: &[String], at: usize) {
+        let same = {
+            let buttons = self.buttons.borrow();
+            buttons.len() == labels.len()
+                && buttons
+                    .iter()
+                    .zip(labels)
+                    .all(|(b, l)| b.label().as_deref() == Some(l.as_str()))
+        };
+        if same {
+            self.set_selected(at);
+            return;
+        }
+        while let Some(child) = self.bar.first_child() {
+            self.bar.remove(&child);
+        }
+        let mut buttons: Vec<gtk::ToggleButton> = Vec::new();
+        for (i, text) in labels.iter().enumerate() {
+            let button = gtk::ToggleButton::builder()
+                .label(text)
+                .css_classes(["edel-segment"])
+                .build();
+            if let Some(first) = buttons.first() {
+                button.set_group(Some(first));
+            }
+            let weak = std::rc::Rc::downgrade(self);
+            button.connect_toggled(move |button| {
+                let Some(segments) = weak.upgrade() else {
+                    return;
+                };
+                if button.is_active() && !segments.quiet.get() {
+                    segments.selected.set(i);
+                    for f in segments.changed.borrow().iter() {
+                        f();
+                    }
+                }
+            });
+            self.bar.append(&button);
+            buttons.push(button);
+        }
+        *self.buttons.borrow_mut() = buttons;
+        self.set_selected(at);
+    }
+}
