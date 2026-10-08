@@ -125,6 +125,11 @@ report() {
 	say "x11 $(grep 'edel-compositor: X11 apps' "$session_log" | tail -n 1)"
 	say "x11_processes $(pgrep -f 'Xwayland|xwayland-satellite' | wc -l)"
 	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
+	# Where that memory is, so a budget that is tight shows what to trim:
+	# the kernel's parts in MiB, then the eight processes with the most
+	# memory of their own (Pss, shared pages split between their users).
+	say "memory_parts $(awk '/^(AnonPages|Shmem|Slab|SUnreclaim|KernelStack|PageTables|Buffers|Cached):/ { printf "%s %.0f, ", $1, $2 / 1024 }' /proc/meminfo)"
+	say "memory_top $(for f in /proc/[0-9]*/smaps_rollup; do d=${f%/smaps_rollup}; awk -v n="$(cat "$d/comm" 2>/dev/null)" '/^Pss:/ { printf "%d %s\n", $2 / 1024, n }' "$f" 2>/dev/null; done | sort -rn | head -n 8 | tr '\n' ',')"
 	# Every screen's first frame, not only the first screen's (M4.6c).
 	grep 'edel-compositor: output .* ready' "$session_log" | while IFS= read -r line; do
 		say "screen ${line#edel-compositor: }"
@@ -346,12 +351,20 @@ commands() {
 			# The compositor starts these before its log reaches the
 			# console, so their lines are read from the log itself.
 			say "sound_started $(grep -a -o 'edel-compositor: started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
-			say "sound_said $(grep -a -E 'edel-compositor: (pipewire|wireplumber|pipewire-pulse) ' "$session_log" | tail -n 3 | tr '\n' ';')"
+			say "sound_said $(grep -a -E 'edel-compositor: (pipewire|wireplumber) ' "$session_log" | tail -n 3 | tr '\n' ';')"
+			# The PulseAudio server runs inside PipeWire: its socket, and
+			# no second process.
+			pulse=/run/user/$(id -u ci)/pulse/native
+			if [ -S "$pulse" ] && ! pidof pipewire-pulse >/dev/null; then
+				say "sound_pulse yes"
+			else
+				say "sound_pulse no: socket $(ls -l "$pulse" 2>&1), pipewire-pulse $(pidof pipewire-pulse)"
+			fi
 			say "sound_sinks $(echo "$status" | awk '/Sinks:/ { on = 1; next } /Sink endpoints:|Sources:|Filters:|Streams:|Video/ { on = 0 } on && /vol:/ { sub(/^[^0-9*]*/, ""); printf "%s;", $0 }')"
 			say "sound_status $(echo "$status" | tr '\n' ';')"
 			;;
 		'sound memory')
-			say "sound_rss_kib $(for p in pipewire wireplumber pipewire-pulse; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
+			say "sound_rss_kib $(for p in pipewire wireplumber; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
 		# Updates (M5.8c): the channel `edel update` follows, set as root like
 		# every command here (it is the machine's file), refused when it is

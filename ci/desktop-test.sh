@@ -310,6 +310,8 @@ case_compositor() {
 	check 'Compositor RSS' "$(value compositor_rss_mib)" compositor_rss_mib MiB
 	check 'Time between frames, p99' "$(value frame_p99_ms)" frame_p99_ms ms
 	check 'Frames drawn while idle' "$(value idle_frames)" idle_frames ''
+	echo "memory in use, by part (MiB): $(value memory_parts)"
+	echo "memory in use, the most per process (Pss MiB): $(value memory_top)"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		cat >>"$GITHUB_STEP_SUMMARY" <<-EOF
 			### Desktop budgets (our compositor under llvmpipe, M4.2b)
@@ -802,12 +804,14 @@ case_sound() {
 	# shows. The volume is the sound system's own state, so nothing is
 	# read from a settings file. Kept as sound.png.
 	sink_volume >/dev/null || :
-	for program in pipewire wireplumber pipewire-pulse; do
+	for program in pipewire wireplumber; do
 		case " $(value sound_started) " in
 		*" $program "*) ;;
 		*) fail "the compositor did not start $program from the session's list; it started: $(value sound_started); it said: $(value sound_said)" ;;
 		esac
 	done
+	[ "$(value sound_pulse)" = yes ] ||
+		fail "PipeWire serves no PulseAudio socket for ci: $(value sound_pulse)"
 	i=0
 	while :; do
 		now=$(sink_volume)
@@ -843,7 +847,7 @@ case_sound() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: the compositor started pipewire, wireplumber and pipewire-pulse, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
+	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
 }
 
 case_display() {
