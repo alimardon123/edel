@@ -315,27 +315,8 @@ pub fn parse_manifest(text: &str) -> Result<Manifest> {
     Ok(toml::from_str(text)?)
 }
 
-/// Compares dotted versions number by number (`2026.10.2` > `2026.9.9`);
-/// a missing part counts as 0 and a part that is not a number compares as
-/// text.
-pub fn compare_versions(a: &str, b: &str) -> Ordering {
-    let parts = |v: &str| -> Vec<String> { v.split('.').map(str::to_string).collect() };
-    let (a, b) = (parts(a), parts(b));
-    for i in 0..a.len().max(b.len()) {
-        let (x, y) = (
-            a.get(i).map_or("0", String::as_str),
-            b.get(i).map_or("0", String::as_str),
-        );
-        let order = match (x.parse::<u64>(), y.parse::<u64>()) {
-            (Ok(x), Ok(y)) => x.cmp(&y),
-            _ => x.cmp(y),
-        };
-        if order != Ordering::Equal {
-            return order;
-        }
-    }
-    Ordering::Equal
-}
+/// Compares dotted versions number by number (`edel::version::compare`).
+pub use edel::version::compare as compare_versions;
 
 /// The entry for `image` in `manifest`, refused when the version is not
 /// newer than `running` (unless `allow_downgrade`).
@@ -518,14 +499,36 @@ pub fn check(location: &str, accept: &Accept) -> Result<()> {
     let manifest = verified_manifest(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
-    let newer = compare_versions(&manifest.version, &running) == Ordering::Greater;
-    println!("running: {running}");
-    println!(
-        "available: {} ({})",
-        manifest.version,
-        if newer { tr("newer") } else { tr("not newer") }
-    );
+    let image = os_release_value(&os_release, "EDEL_IMAGE");
+    for line in check_lines(&manifest, &running, image.as_deref()) {
+        println!("{line}");
+    }
     Ok(())
+}
+
+/// The lines `edel update --check` prints. The first two are for people;
+/// the rest are `key: value` lines a program reads, as `edel status`'s
+/// are, so they stay English: `newer: yes` or `no`, `released: DATE` when
+/// the list has one and `size: BYTES`, the image of this system as it
+/// lands in a slot, when the list holds one (Settings' Updates page, M5.8d).
+fn check_lines(manifest: &Manifest, running: &str, image: Option<&str>) -> Vec<String> {
+    let newer = compare_versions(&manifest.version, running) == Ordering::Greater;
+    let mut lines = vec![
+        format!("running: {running}"),
+        format!(
+            "available: {} ({})",
+            manifest.version,
+            if newer { tr("newer") } else { tr("not newer") }
+        ),
+        format!("newer: {}", if newer { "yes" } else { "no" }),
+    ];
+    if !manifest.date.is_empty() {
+        lines.push(format!("released: {}", manifest.date));
+    }
+    if let Some(entry) = image.and_then(|i| manifest.images.iter().find(|e| e.name == i)) {
+        lines.push(format!("size: {}", entry.size));
+    }
+    lines
 }
 
 /// The value of `key` in an os-release text, without quotes.
@@ -872,6 +875,38 @@ mod tests {
         assert!(pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", false).is_err());
         assert!(pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", true).is_ok());
         assert!(pick_image(&manifest, "edel-laptop-x86_64", "0.1", false).is_err());
+    }
+
+    #[test]
+    fn a_check_prints_lines_a_program_can_read() {
+        let mut manifest = parse_manifest(MANIFEST).unwrap();
+        let size = manifest.images[0].size;
+        let name = manifest.images[0].name.clone();
+        let lines = check_lines(&manifest, "2026.10.1", Some(&name));
+        assert!(
+            !lines.iter().any(|l| l.starts_with("released:")),
+            "{lines:?}"
+        );
+        manifest.date = "2026-10-08".into();
+        let lines = check_lines(&manifest, "2026.10.1", Some(&name));
+        assert!(
+            lines.contains(&"released: 2026-10-08".to_string()),
+            "{lines:?}"
+        );
+        assert_eq!(lines[0], "running: 2026.10.1");
+        assert_eq!(lines[1], "available: 2026.10.2 (newer)");
+        assert_eq!(lines[2], "newer: yes");
+        assert!(
+            lines.contains(&format!("size: {size}")),
+            "the size of this system's image: {lines:?}"
+        );
+        // Not newer, and an image the list lacks: no size.
+        let lines = check_lines(&manifest, "2026.10.2", Some("edel-nothing"));
+        assert_eq!(lines[1], "available: 2026.10.2 (not newer)");
+        assert_eq!(lines[2], "newer: no");
+        assert!(!lines.iter().any(|l| l.starts_with("size:")), "{lines:?}");
+        let lines = check_lines(&manifest, "2026.10.1", None);
+        assert!(!lines.iter().any(|l| l.starts_with("size:")), "{lines:?}");
     }
 
     #[test]

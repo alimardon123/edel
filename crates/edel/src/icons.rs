@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 21] = [
+pub const BUILT_IN: [(&str, &str); 26] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     (
         "layout-floating",
@@ -75,6 +75,27 @@ pub const BUILT_IN: [(&str, &str); 21] = [
     ("check", include_str!("../../../design/icons/check.svg")),
     ("back", include_str!("../../../design/icons/back.svg")),
     ("updown", include_str!("../../../design/icons/updown.svg")),
+    // The Updates page's big status icons (M5.8d).
+    (
+        "status-ok",
+        include_str!("../../../design/icons/status-ok.svg"),
+    ),
+    (
+        "status-sync",
+        include_str!("../../../design/icons/status-sync.svg"),
+    ),
+    (
+        "status-new",
+        include_str!("../../../design/icons/status-new.svg"),
+    ),
+    (
+        "status-restart",
+        include_str!("../../../design/icons/status-restart.svg"),
+    ),
+    (
+        "status-problem",
+        include_str!("../../../design/icons/status-problem.svg"),
+    ),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name

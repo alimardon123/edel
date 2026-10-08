@@ -29,3 +29,4 @@ pub mod shortcuts;
 pub mod sound;
 pub mod tokens;
 pub mod tool;
+pub mod version;
