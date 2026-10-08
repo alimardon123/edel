@@ -8,25 +8,73 @@ msgstr ""
 msgid "About"
 msgstr ""
 
-msgid "The system this machine runs and the release it follows."
+msgid "Edel OS"
 msgstr ""
 
-msgid "This system"
+msgid "Check for updates"
 msgstr ""
 
-msgid "Version"
+msgid "Copy system info"
 msgstr ""
 
-msgid "Channel"
+msgid "Copied"
 msgstr ""
 
-msgid "Unknown"
+msgid "This computer"
 msgstr ""
 
 msgid "Session log"
 msgstr ""
 
 msgid "The last lines of this session"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "Device"
+msgstr ""
+
+msgid "Processor"
+msgstr ""
+
+msgid "Memory"
+msgstr ""
+
+msgid "Graphics"
+msgstr ""
+
+msgid "Storage"
+msgstr ""
+
+msgid "{n} GB"
+msgstr ""
+
+msgid "Intel graphics"
+msgstr ""
+
+msgid "AMD graphics"
+msgstr ""
+
+msgid "NVIDIA graphics"
+msgstr ""
+
+msgid "VMware graphics"
+msgstr ""
+
+msgid "Virtual graphics"
+msgstr ""
+
+msgid "Apple graphics"
+msgstr ""
+
+msgid "Arm graphics"
+msgstr ""
+
+msgid "Graphics driver {driver}"
+msgstr ""
+
+msgid "{free} free of {size}"
 msgstr ""
 
 msgid "There is no session log yet. The desktop starts one when you log in, in {folder}."
@@ -158,6 +206,9 @@ msgstr ""
 msgid "On"
 msgstr ""
 
+msgid "Channel"
+msgstr ""
+
 msgid "Always"
 msgstr ""
 
@@ -191,6 +242,15 @@ msgstr ""
 msgid "From the preset"
 msgstr ""
 
+msgid "Version {version} · {channel}"
+msgstr ""
+
+msgid "Version {version}"
+msgstr ""
+
+msgid "{n} MB"
+msgstr ""
+
 msgid "Choose where sound plays and what listens, and how loud. This is the sound system's own state, kept for you by the machine, so it is not a line of your settings file; each row can copy the wpctl command that does the same."
 msgstr ""
 
@@ -222,6 +282,99 @@ msgid "Level"
 msgstr ""
 
 msgid "Devices"
+msgstr ""
+
+msgid "Checking for updates..."
+msgstr ""
+
+msgid "Installing the update..."
+msgstr ""
+
+msgid "This takes a few minutes. You can keep using the computer; the new version starts after a restart."
+msgstr ""
+
+msgid "Update now"
+msgstr ""
+
+msgid "Going back..."
+msgstr ""
+
+msgid "The version before the last update is being made ready."
+msgstr ""
+
+msgid "Restarting..."
+msgstr ""
+
+msgid "The computer restarts in a moment."
+msgstr ""
+
+msgid "Restart now"
+msgstr ""
+
+msgid "Version {version} is installed and starts after a restart. If it does not start, the computer goes back by itself."
+msgstr ""
+
+msgid "Version {version} starts after a restart."
+msgstr ""
+
+msgid "The new version starts after a restart. If it does not start, the computer goes back by itself."
+msgstr ""
+
+msgid "Restart to finish updating"
+msgstr ""
+
+msgid "Restart to go back"
+msgstr ""
+
+msgid "An update is available"
+msgstr ""
+
+msgid "Version {version} is ready to install ({size})"
+msgstr ""
+
+msgid "Version {version} is ready to install"
+msgstr ""
+
+msgid "Edel OS is up to date"
+msgstr ""
+
+msgid "Version {version} · {channel} · Checked at {time}"
+msgstr ""
+
+msgid "{channel} · Checked at {time}"
+msgstr ""
+
+msgid "Edel OS {version}"
+msgstr ""
+
+msgid "{channel} · Not checked yet"
+msgstr ""
+
+msgid "Couldn't check for updates"
+msgstr ""
+
+msgid "Try again"
+msgstr ""
+
+msgid "Couldn't install the update"
+msgstr ""
+
+msgid "Couldn't go back"
+msgstr ""
+
+msgid "Couldn't restart"
+msgstr ""
+
+msgid "Installing needs administrator rights, which Settings cannot ask for yet. For now, run edel update as the administrator."
+msgstr ""
+
+msgid "Going back needs administrator rights, which Settings cannot ask for yet. For now, run edel rollback as the administrator."
+msgstr ""
+
+msgid "Restarting needs administrator rights, which Settings cannot ask for yet. For now, restart from the power button."
+msgstr ""
+
+msgid "Can't reach the update server. Check your internet connection and try again."
 msgstr ""
 
 msgid "A machine is one settings file. Save this one to set up another the same way, or pick a file to see what it would change here before anything is changed."
@@ -275,9 +428,6 @@ msgstr ""
 msgid "could not write {path}: {why}; choose a folder you can write to"
 msgstr ""
 
-msgid "Which version this machine runs and which is waiting in the other slot, the channel it takes new versions from, and a way to look for one or go back. A new version is written to the other slot and starts at the next restart; if it does not start, the machine goes back by itself."
-msgstr ""
-
 msgid "Running now"
 msgstr ""
 
@@ -305,28 +455,49 @@ msgstr ""
 msgid "{version}, {state}"
 msgstr ""
 
-msgid "New versions"
+msgid "Tested releases. Recommended."
 msgstr ""
 
-msgid "Check now"
+msgid "The newest features first; may have rough edges."
 msgstr ""
 
-msgid "Look for a new version"
+msgid "A channel this machine was set up to follow."
 msgstr ""
 
-msgid "Asks the channel for its newest version and installs nothing."
+msgid "What's new"
 msgstr ""
 
-msgid "Roll back"
+msgid "Update settings"
 msgstr ""
 
-msgid "Go back a version"
+msgid "Install updates automatically"
 msgstr ""
 
-msgid "Starts the version in the other slot at the next restart."
+msgid "Not available yet. For now, check for updates here."
 msgstr ""
 
-msgid "Click again to roll back"
+msgid "Details"
+msgstr ""
+
+msgid "Runs {command}"
+msgstr ""
+
+msgid "Click again to go back to {version}"
+msgstr ""
+
+msgid "Go back to {version}"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
+msgid "Released"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "the command stopped without an answer; try again"
 msgstr ""
 
 msgid "Your changes are live"

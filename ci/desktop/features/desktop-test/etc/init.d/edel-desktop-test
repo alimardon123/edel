@@ -389,6 +389,10 @@ commands() {
 		'updates window')
 			as_ci edel-settings --page updates </dev/null >/tmp/updates.log 2>&1 &
 			;;
+		# Settings on its About page (M5.8d), as ci.
+		'about window')
+			as_ci edel-settings --page about </dev/null >/tmp/about.log 2>&1 &
+			;;
 		'updates log') say "updates_log $(tr '\n' ';' </tmp/updates.log 2>/dev/null)" ;;
 		# Keyboard layouts (M5.21): German first, then US; a layout
 		# xkeyboard-config lacks, refused with its message; and the file

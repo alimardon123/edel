@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The Updates page before it has looked (M5.8d): two arrows going round, in a circle. -->
+  <circle cx="8" cy="8" r="6.4"/>
+  <path d="M5.3 7.1A2.9 2.9 0 0 1 10.4 6"/>
+  <path d="M10.8 4.5V6.3H9"/>
+  <path d="M10.7 8.9A2.9 2.9 0 0 1 5.6 10"/>
+  <path d="M5.2 11.5V9.7H7"/>
+</svg>

@@ -1,16 +1,23 @@
-//! The Updates page (roadmap M5.8c): what `edel status` reports about the
-//! two slots, the channel `edel update` follows (`updates.channel`, one
-//! line of the person's settings file like any other row), and two
-//! buttons that run what the command line runs, `edel update --check` and
-//! `edel rollback` (`cmd.rs`), each showing the command's own result or
-//! its own message, so the page and the command are one level and read
-//! alike (ADR-008, `docs/MESSAGES.md`).
+//! The Updates page (roadmap M5.8c, made plain and familiar in M5.8d, at
+//! Alimardon's ask of 2026-10-08): what a person expects of an updates
+//! page, in the order they expect it. A card at the top says in one
+//! headline whether Edel OS is up to date, an update waits, a restart is
+//! due or something failed (`status.rs` decides, from what `edel status`
+//! and `edel update --check` print), with big buttons under it:
+//! Check for updates, then Update now, then Restart now, and Go back to
+//! the version before. A card of What's new follows a check that found a
+//! newer version; a small Update settings section holds the channel
+//! (`updates.channel`, one line of the person's settings file like any
+//! other row, with Reset and Copy as command); and Details, closed, hold
+//! what technical people want: the two slots and the raw output of the
+//! last command. Only there does the word slot appear.
 //!
 //! The page runs nothing in the background: `edel status` is read when
-//! the page is shown and after a button, and every command runs on a
-//! thread of its own, never the one that draws. Installing needs root
-//! until `doas` arrives (M6.5): until then a click that lacks the right
-//! shows `edel`'s refusal as it is, and the page changes nothing itself.
+//! the page is shown and after each action, and every command runs on a
+//! thread of its own, never the one that draws (`cmd.rs`). Installing and
+//! restarting need root until `doas` arrives (M6.5): until then a click
+//! that lacks the right says so in plain words and shows `edel`'s refusal
+//! in the Details; the page changes nothing itself.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -20,21 +27,12 @@ use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
 
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::settings;
 
 use crate::files::Files;
+use crate::status::{self, Action, Doing, Found, Inputs, Phase, Status};
 use crate::{about, cmd, rows, widgets};
-
-const INTRO: &str = n_(
-    "Which version this machine runs and which is waiting in the other slot, the channel it \
-     takes new versions from, and a way to look for one or go back. A new version is written \
-     to the other slot and starts at the next restart; if it does not start, the machine \
-     goes back by itself.",
-);
-
-/// How long the Roll back button waits for its second click.
-const CONFIRM: Duration = Duration::from_secs(5);
 
 /// One line of `edel status`, as a row shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,20 +86,18 @@ fn slot(name: &str) -> String {
 /// A slot's line, `ok=1 try=0 /dev/vda2 2026.10.3`, as its version and
 /// whether it was confirmed good, or none when the line is another shape.
 fn slot_state(value: &str) -> Option<String> {
-    let words: Vec<&str> = value.split_whitespace().collect();
-    let ok = words.iter().find_map(|w| w.strip_prefix("ok="))?;
-    let version = words.last().filter(|_| words.len() >= 4)?;
-    if *version == "empty" {
+    let (confirmed, version) = status::slot_line(value)?;
+    let Some(version) = version else {
         return Some(tr("Empty").to_string());
-    }
-    let state = if ok == "1" {
+    };
+    let state = if confirmed {
         tr("confirmed good")
     } else {
         tr("not confirmed yet")
     };
     Some(trf(
         "{version}, {state}",
-        &[("version", version), ("state", state)],
+        &[("version", &version), ("state", state)],
     ))
 }
 
@@ -116,19 +112,50 @@ fn channel_names(current: &str) -> Vec<String> {
     names
 }
 
+/// How long Go back waits for its second click.
+const CONFIRM: Duration = Duration::from_secs(5);
+
+/// What the Channel row says under its title.
+fn blurb(channel: &str) -> &'static str {
+    match channel {
+        "stable" => tr("Tested releases. Recommended."),
+        "preview" => tr("The newest features first; may have rough edges."),
+        _ => tr("A channel this machine was set up to follow."),
+    }
+}
+
+/// What the page is and has been doing.
+struct State {
+    phase: Phase,
+    /// `edel status`, none until it was read or when it was refused.
+    status: Option<Status>,
+}
+
 /// The page's widgets and what it needs to change them.
 struct Ui {
+    hero: widgets::Hero,
+    primary: gtk::Button,
+    rollback: gtk::Button,
+    news_head: gtk::Box,
+    news: gtk::Box,
     facts: gtk::Box,
+    last_group: gtk::Box,
+    last: gtk::Label,
     problem: gtk::Label,
     holder: gtk::Box,
     choice: RefCell<Option<Rc<widgets::Choice>>>,
     names: RefCell<Vec<String>>,
     channel_row: widgets::Row,
-    check: gtk::Button,
-    check_out: gtk::Label,
-    rollback: gtk::Button,
-    rollback_out: gtk::Label,
-    /// Whether Roll back waits for its second click.
+    /// The version running (os-release), read once.
+    version: Option<String>,
+    /// Whether Settings runs as root (it does not until `doas`, M6.5).
+    root: bool,
+    state: RefCell<State>,
+    /// What the leading button does now.
+    action: Cell<Action>,
+    /// The channel followed now.
+    channel: RefCell<String>,
+    /// Whether Go back waits for its second click.
     armed: Cell<bool>,
     /// Set while the page itself moves a control, which is not a choice.
     quiet: Cell<bool>,
@@ -136,49 +163,81 @@ struct Ui {
 }
 
 pub fn page() -> gtk::Widget {
-    let (page, content, problem) = widgets::page(tr("Updates"), tr(INTRO));
+    let (page, content, problem) = widgets::page(tr("Updates"), "");
 
-    widgets::heading(&content, tr("This system"));
-    let facts = widgets::group(&content);
+    let hero = widgets::Hero::new(&content);
+    let primary = widgets::big_button(tr("Check for updates"), true);
+    let rollback = widgets::big_button("", false);
+    hero.add(&primary);
+    hero.add(&rollback);
+    hero.show_button(&rollback, false);
 
-    widgets::heading(&content, tr("New versions"));
+    // Seam: release notes (a `notes` field in release.toml) are shown here
+    // when releases carry them; today the card holds what the list says.
+    let news_head = widgets::heading(&content, tr("What's new"));
+    let news = widgets::group(&content);
+    news_head.set_visible(false);
+    news.set_visible(false);
+
+    widgets::heading(&content, tr("Update settings"));
     let group = widgets::group(&content);
     let holder = gtk::Box::builder().build();
     let channel_row = widgets::row(&group, rows::title("updates.channel"), holder.upcast_ref());
+    // Seam (ADR-008): `updates.automatic` and `updates.restart_window` are
+    // keys of the table that nothing follows yet (M7.5). Until then this
+    // row only says so; with M7.5 it becomes a row of the key, like Channel.
+    let switch = gtk::Switch::new();
+    switch.set_sensitive(false);
+    let automatic = widgets::row(
+        &group,
+        tr("Install updates automatically"),
+        switch.upcast_ref(),
+    );
+    automatic
+        .subtitle
+        .set_label(tr("Not available yet. For now, check for updates here."));
+    automatic.reset.set_visible(false);
+    automatic.copy.set_visible(false);
 
-    let check = widgets::action(tr("Check now"), false);
-    let check_row = widgets::row(&group, tr("Look for a new version"), check.upcast_ref());
-    check_row.subtitle.set_label(tr(
-        "Asks the channel for its newest version and installs nothing.",
-    ));
-    check_row.reset.set_visible(false);
-    let check_out = widgets::output_row(&group);
-
-    let rollback = widgets::action(tr("Roll back"), false);
-    let rollback_row = widgets::row(&group, tr("Go back a version"), rollback.upcast_ref());
-    rollback_row.subtitle.set_label(tr(
-        "Starts the version in the other slot at the next restart.",
-    ));
-    rollback_row.reset.set_visible(false);
-    let rollback_out = widgets::output_row(&group);
+    // Details, closed: the slots, and the last command as it ran.
+    let inner = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(10)
+        .build();
+    let facts = widgets::group(&inner);
+    let last_group = widgets::group(&inner);
+    last_group.set_visible(false);
+    let last = widgets::output_row(&last_group);
+    widgets::disclosure(&content, tr("Details"), &inner);
 
     let ui = Rc::new(Ui {
+        hero,
+        primary,
+        rollback,
+        news_head,
+        news,
         facts,
+        last_group,
+        last,
         problem,
         holder,
         choice: RefCell::new(None),
         names: RefCell::new(Vec::new()),
         channel_row,
-        check,
-        check_out,
-        rollback,
-        rollback_out,
+        version: about::os_release_field("VERSION_ID"),
+        root: cmd::is_root(),
+        state: RefCell::new(State {
+            phase: Phase::Idle,
+            status: None,
+        }),
+        action: Cell::new(Action::Check),
+        channel: RefCell::new(String::new()),
         armed: Cell::new(false),
         quiet: Cell::new(false),
         monitors: RefCell::new(Vec::new()),
     });
     ui.update();
-    ui.wire(&check_row, &rollback_row);
+    ui.wire();
 
     // What the slots hold is read when the page is shown, not on a timer.
     let shown = ui.clone();
@@ -263,12 +322,20 @@ impl Ui {
         }
         self.quiet.set(false);
         let source = files.source("updates.channel");
-        self.channel_row
-            .subtitle
-            .set_label(&rows::describe(&source, &current));
+        let line = match rows::note(&source, false) {
+            Some(note) => format!("{} · {note}", blurb(&current)),
+            None => blurb(&current).to_string(),
+        };
+        self.channel_row.subtitle.set_label(&line);
         self.channel_row
             .reset
             .set_visible(rows::resettable(&source));
+        // The headline names the channel followed.
+        let changed = *self.channel.borrow() != current;
+        *self.channel.borrow_mut() = current;
+        if changed {
+            self.render();
+        }
     }
 
     /// Shows a refusal in the page's problem line, or clears it.
@@ -282,7 +349,81 @@ impl Ui {
         }
     }
 
-    /// Reads `edel status` off the drawing thread and shows its lines.
+    /// Draws the card at the top, the buttons and What's new for what the
+    /// page knows now.
+    fn render(&self) {
+        let channel = rows::label(&self.channel.borrow());
+        let view = {
+            let state = self.state.borrow();
+            status::view(&Inputs {
+                phase: &state.phase,
+                status: state.status.as_ref(),
+                version: self.version.as_deref(),
+                channel: &channel,
+                root: self.root,
+            })
+        };
+        self.hero
+            .show(view.icon, view.busy, view.problem, &view.title, &view.sub);
+        self.primary.set_label(&view.primary.label);
+        self.primary.set_sensitive(!view.busy);
+        self.action.set(view.primary.action);
+        let command = match view.primary.action {
+            Action::Check => cmd::line(&["update", "--check"]),
+            Action::Install => cmd::line(&["update"]),
+            Action::Restart => "reboot".to_string(),
+        };
+        self.primary
+            .set_tooltip_text(Some(&trf("Runs {command}", &[("command", &command)])));
+        match &view.rollback {
+            Some(version) => {
+                let label = if self.armed.get() {
+                    trf(
+                        "Click again to go back to {version}",
+                        &[("version", version)],
+                    )
+                } else {
+                    trf("Go back to {version}", &[("version", version)])
+                };
+                self.rollback.set_label(&label);
+                self.rollback.set_sensitive(!view.busy);
+                self.rollback.set_tooltip_text(Some(&trf(
+                    "Runs {command}",
+                    &[("command", &cmd::line(&["rollback"]))],
+                )));
+                self.hero.show_button(&self.rollback, true);
+            }
+            None => {
+                self.armed.set(false);
+                self.hero.show_button(&self.rollback, false);
+            }
+        }
+        self.show_news(view.news.as_ref());
+    }
+
+    /// What's new: the version a check found, when it was made and its size.
+    fn show_news(&self, found: Option<&Found>) {
+        while let Some(child) = self.news.first_child() {
+            self.news.remove(&child);
+        }
+        self.news_head.set_visible(found.is_some());
+        self.news.set_visible(found.is_some());
+        let Some(found) = found else { return };
+        widgets::value_row(&self.news, tr("Version"), &found.version);
+        if let Some(date) = &found.released {
+            widgets::value_row(&self.news, tr("Released"), date);
+        }
+        if let Some(size) = found.size {
+            widgets::value_row(&self.news, tr("Size"), &rows::bytes_text(size));
+        }
+    }
+
+    fn set_phase(&self, phase: Phase) {
+        self.state.borrow_mut().phase = phase;
+        self.render();
+    }
+
+    /// Reads `edel status` off the drawing thread and shows what it says.
     fn read_status(self: &Rc<Self>) {
         let ui = self.clone();
         glib::spawn_future_local(async move {
@@ -302,22 +443,28 @@ impl Ui {
         while let Some(child) = self.facts.first_child() {
             self.facts.remove(&child);
         }
+        self.state.borrow_mut().status = if status.ok {
+            Status::parse(&status.out)
+        } else {
+            None
+        };
         if !status.ok {
             // Why there is nothing to show, in `edel`'s own words.
             widgets::text_row(&self.facts, &status.shown());
-            return;
-        }
-        for fact in facts(&status.out) {
-            if fact.title.is_empty() {
-                widgets::text_row(&self.facts, &fact.value);
-            } else {
-                widgets::value_row(&self.facts, &fact.title, &fact.value);
+        } else {
+            for fact in facts(&status.out) {
+                if fact.title.is_empty() {
+                    widgets::text_row(&self.facts, &fact.value);
+                } else {
+                    widgets::value_row(&self.facts, &fact.title, &fact.value);
+                }
             }
         }
+        self.render();
     }
 
-    /// Connects Reset, Copy as command and the two buttons.
-    fn wire(self: &Rc<Self>, check_row: &widgets::Row, rollback_row: &widgets::Row) {
+    /// Connects Reset and the buttons.
+    fn wire(self: &Rc<Self>) {
         let ui = Rc::downgrade(self);
         self.channel_row.reset.connect_clicked(move |_| {
             if let Some(ui) = ui.upgrade() {
@@ -336,13 +483,14 @@ impl Ui {
                 widgets::copied(button);
             }
         });
-        copies(check_row, &["update", "--check"]);
-        copies(rollback_row, &["rollback"]);
 
         let ui = Rc::downgrade(self);
-        self.check.connect_clicked(move |_| {
-            if let Some(ui) = ui.upgrade() {
-                ui.run(&ui.check, &ui.check_out, &["update", "--check"]);
+        self.primary.connect_clicked(move |_| {
+            let Some(ui) = ui.upgrade() else { return };
+            match ui.action.get() {
+                Action::Check => ui.check(),
+                Action::Install => ui.install(),
+                Action::Restart => ui.restart(),
             }
         });
         let ui = Rc::downgrade(self);
@@ -351,50 +499,130 @@ impl Ui {
             if !ui.armed.get() {
                 // Going back changes which version starts next: ask twice.
                 ui.armed.set(true);
-                ui.rollback.set_label(tr("Click again to roll back"));
+                ui.render();
                 let later = Rc::downgrade(&ui);
                 glib::timeout_add_local_once(CONFIRM, move || {
                     if let Some(ui) = later.upgrade() {
-                        ui.disarm();
+                        ui.armed.set(false);
+                        ui.render();
                     }
                 });
                 return;
             }
-            ui.disarm();
-            ui.run(&ui.rollback, &ui.rollback_out, &["rollback"]);
+            ui.armed.set(false);
+            ui.go_back();
         });
     }
 
-    fn disarm(&self) {
-        self.armed.set(false);
-        self.rollback.set_label(tr("Roll back"));
+    /// Runs `edel args` off the drawing thread and gives what it did, after
+    /// showing it in the Details as the command line shows it.
+    async fn run(self: &Rc<Self>, args: &'static [&'static str]) -> Option<cmd::Outcome> {
+        let done = gio::spawn_blocking(move || cmd::edel(args)).await.ok()?;
+        self.show_last(&cmd::line(args), &done);
+        Some(done)
     }
 
-    /// Runs `edel args` off the drawing thread with `button` held, shows
-    /// what it printed (or its message) in `out`, then reads the status
-    /// again.
-    fn run(self: &Rc<Self>, button: &gtk::Button, out: &gtk::Label, args: &'static [&'static str]) {
-        button.set_sensitive(false);
-        widgets::say(out, tr("Working..."), false);
-        let (ui, button, out) = (self.clone(), button.clone(), out.clone());
+    fn show_last(&self, command: &str, done: &cmd::Outcome) {
+        self.last_group.set_visible(true);
+        widgets::say(
+            &self.last,
+            &format!("$ {command}\n{}", done.shown()),
+            !done.ok,
+        );
+    }
+
+    /// Check for updates: `edel update --check` against the channel's list.
+    fn check(self: &Rc<Self>) {
+        self.set_phase(Phase::Checking);
+        let ui = self.clone();
         glib::spawn_future_local(async move {
-            let done = gio::spawn_blocking(move || cmd::edel(args)).await;
-            button.set_sensitive(true);
-            match done {
-                Ok(done) => widgets::say(&out, &done.shown(), !done.ok),
-                Err(_) => widgets::say(&out, "", false),
-            }
+            let phase = match ui.run(&["update", "--check"]).await {
+                Some(done) if done.ok => match status::parse_check(&done.out) {
+                    Some(found) if found.newer => Phase::Available(found),
+                    Some(_) => Phase::UpToDate { at: now() },
+                    None => failed(Doing::Check, &done),
+                },
+                Some(done) => failed(Doing::Check, &done),
+                None => stopped(Doing::Check),
+            };
+            ui.set_phase(phase);
+        });
+    }
+
+    /// Update now: `edel update`, which takes the channel's newest version
+    /// into the other slot.
+    fn install(self: &Rc<Self>) {
+        let version = match &self.state.borrow().phase {
+            Phase::Available(found) => Some(found.version.clone()),
+            _ => None,
+        };
+        self.set_phase(Phase::Installing);
+        let ui = self.clone();
+        glib::spawn_future_local(async move {
+            let phase = match ui.run(&["update"]).await {
+                Some(done) if done.ok => Phase::Installed { version },
+                Some(done) => failed(Doing::Install, &done),
+                None => stopped(Doing::Install),
+            };
+            ui.set_phase(phase);
             ui.read_status();
+        });
+    }
+
+    /// Go back: `edel rollback`, which makes the version before the last
+    /// update start next.
+    fn go_back(self: &Rc<Self>) {
+        self.set_phase(Phase::GoingBack);
+        let ui = self.clone();
+        glib::spawn_future_local(async move {
+            let phase = match ui.run(&["rollback"]).await {
+                Some(done) if done.ok => Phase::Idle,
+                Some(done) => failed(Doing::GoBack, &done),
+                None => stopped(Doing::GoBack),
+            };
+            ui.set_phase(phase);
+            ui.read_status();
+        });
+    }
+
+    /// Restart now: `reboot`.
+    fn restart(self: &Rc<Self>) {
+        self.set_phase(Phase::Restarting);
+        let ui = self.clone();
+        glib::spawn_future_local(async move {
+            let Ok(done) = gio::spawn_blocking(cmd::reboot).await else {
+                return ui.set_phase(stopped(Doing::Restart));
+            };
+            ui.show_last("reboot", &done);
+            if !done.ok {
+                ui.set_phase(failed(Doing::Restart, &done));
+            }
         });
     }
 }
 
-/// Copy as command on an action's row copies the command it runs.
-fn copies(row: &widgets::Row, args: &'static [&'static str]) {
-    row.copy.connect_clicked(move |button| {
-        button.clipboard().set_text(&cmd::line(args));
-        widgets::copied(button);
-    });
+/// The phase after a command failed, with what it said.
+fn failed(doing: Doing, done: &cmd::Outcome) -> Phase {
+    Phase::Failed {
+        doing,
+        message: done.shown(),
+    }
+}
+
+/// The phase after a command's thread stopped without an answer.
+fn stopped(doing: Doing) -> Phase {
+    Phase::Failed {
+        doing,
+        message: tr("the command stopped without an answer; try again").to_string(),
+    }
+}
+
+/// The time of day, for `Checked at 14:32`.
+fn now() -> String {
+    glib::DateTime::now_local()
+        .ok()
+        .and_then(|t| t.format("%H:%M").ok())
+        .map_or_else(String::new, |t| t.to_string())
 }
 
 /// The channel this image was built for (os-release's `EDEL_CHANNEL`).

@@ -35,6 +35,7 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
         .label(intro)
         .xalign(0.0)
         .wrap(true)
+        .visible(!intro.is_empty())
         .css_classes(["edel-intro"])
         .build();
     let problem = gtk::Label::builder()
@@ -334,8 +335,8 @@ pub fn text_row(group: &gtk::Box, text: &str) {
     group.append(&label);
 }
 
-/// A button for something to do now, not a setting to choose: Check now,
-/// Roll back, Apply (M5.8c). `main` marks the one a page leads to.
+/// A button for something to do now, not a setting to choose: Save as,
+/// Choose file, Apply (M5.8c). `main` marks the one a page leads to.
 pub fn action(label: &str, main: bool) -> gtk::Button {
     let button = gtk::Button::builder()
         .label(label)
@@ -346,6 +347,200 @@ pub fn action(label: &str, main: bool) -> gtk::Button {
         button.add_css_class("edel-action-main");
     }
     button
+}
+
+/// A big button for the thing a page leads to, as an updates page has its
+/// Check for updates: tall, `main` filled with the accent, the others
+/// outlined (M5.8d).
+pub fn big_button(label: &str, main: bool) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .label(label)
+        .css_classes(["edel-big"])
+        .build();
+    if main {
+        button.add_css_class("edel-big-main");
+    }
+    button
+}
+
+/// The card at the head of a page that is about one state, as an updates
+/// page tells whether the system is up to date (M5.8d): a big icon or a
+/// spinner, a headline in plain words, a line under it, and big buttons
+/// below, which wrap on a narrow window.
+pub struct Hero {
+    card: gtk::Box,
+    icon: gtk::Image,
+    spinner: gtk::Spinner,
+    title: gtk::Label,
+    sub: gtk::Label,
+    buttons: gtk::FlowBox,
+}
+
+/// The card a hero and About's name sit on, appended to `content`.
+pub fn hero_card(content: &gtk::Box) -> gtk::Box {
+    let card = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .margin_top(18)
+        .css_classes(["edel-hero"])
+        .build();
+    content.append(&card);
+    card
+}
+
+/// A row of big buttons that wraps when the window is narrow.
+pub fn button_flow() -> gtk::FlowBox {
+    gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .homogeneous(false)
+        // The card's whole width, so the row and its height are measured
+        // at the same width; a button wraps when the next does not fit.
+        .min_children_per_line(1)
+        .max_children_per_line(4)
+        .column_spacing(12)
+        .row_spacing(10)
+        .margin_top(20)
+        .css_classes(["edel-buttons"])
+        .build()
+}
+
+/// The card at the head of About (M5.8d): the system's name large, its
+/// version under it, and a row of big buttons, which [`add_big`] fills.
+pub fn banner(content: &gtk::Box, name: &str, version: &str) -> gtk::FlowBox {
+    let card = hero_card(content);
+    card.append(
+        &gtk::Label::builder()
+            .label(name)
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-name"])
+            .build(),
+    );
+    card.append(
+        &gtk::Label::builder()
+            .label(version)
+            .xalign(0.0)
+            .wrap(true)
+            .margin_top(2)
+            .css_classes(["edel-name-version"])
+            .build(),
+    );
+    let buttons = button_flow();
+    card.append(&buttons);
+    buttons
+}
+
+/// A big button added to the row of a [`banner`].
+pub fn add_big(buttons: &gtk::FlowBox, label: &str, main: bool) -> gtk::Button {
+    let button = big_button(label, main);
+    place(buttons, &button);
+    button
+}
+
+/// Appends `button` to a [`button_flow`] at its own width, not stretched
+/// to fill what the row has left.
+fn place(flow: &gtk::FlowBox, button: &gtk::Button) {
+    flow.append(button);
+}
+
+/// The hero's icon, in logical pixels.
+const HERO_ICON: i32 = 52;
+
+impl Hero {
+    /// Appends an empty hero to `content`.
+    pub fn new(content: &gtk::Box) -> Hero {
+        let icon = icon::image("status-ok", HERO_ICON);
+        icon.add_css_class("edel-hero-icon");
+        let spinner = gtk::Spinner::builder()
+            .width_request(HERO_ICON)
+            .height_request(HERO_ICON)
+            .visible(false)
+            .css_classes(["edel-hero-icon"])
+            .build();
+        let mark = gtk::Box::builder()
+            .valign(gtk::Align::Start)
+            .width_request(HERO_ICON)
+            .build();
+        mark.append(&icon);
+        mark.append(&spinner);
+        let title = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-hero-title"])
+            .build();
+        let sub = gtk::Label::builder()
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-hero-sub"])
+            .build();
+        let words = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .hexpand(true)
+            .valign(gtk::Align::Center)
+            .build();
+        words.append(&title);
+        words.append(&sub);
+        let head = gtk::Box::builder().spacing(18).build();
+        head.append(&mark);
+        head.append(&words);
+        let buttons = button_flow();
+        let card = hero_card(content);
+        card.append(&head);
+        card.append(&buttons);
+        Hero {
+            card,
+            icon,
+            spinner,
+            title,
+            sub,
+            buttons,
+        }
+    }
+
+    /// Adds a big button after the others.
+    pub fn add(&self, button: &gtk::Button) {
+        place(&self.buttons, button);
+    }
+
+    /// Shows or hides `button`, with the place the card holds for it.
+    pub fn show_button(&self, button: &gtk::Button, shown: bool) {
+        if let Some(place) = button.parent() {
+            place.set_visible(shown);
+        }
+        button.set_visible(shown);
+    }
+
+    /// Shows `icon` (or a spinner when `busy`), the headline and the line
+    /// under it; `problem` reads in the problem colour.
+    pub fn show(&self, icon_name: &str, busy: bool, problem: bool, title: &str, sub: &str) {
+        self.icon
+            .set_paintable(Some(&icon::Icon::new(icon_name, HERO_ICON)));
+        self.icon.set_visible(!busy);
+        self.spinner.set_visible(busy);
+        self.spinner.set_spinning(busy);
+        self.title.set_label(title);
+        self.sub.set_label(sub);
+        if problem {
+            self.icon.add_css_class("edel-problem");
+        } else {
+            self.icon.remove_css_class("edel-problem");
+        }
+        self.card
+            .update_property(&[gtk::accessible::Property::Label(title)]);
+    }
+}
+
+/// A fold-out in `content` that starts closed, for what only some people
+/// want to read; `child` is shown when it opens. The title is its heading.
+pub fn disclosure(content: &gtk::Box, title: &str, child: &impl IsA<gtk::Widget>) -> gtk::Expander {
+    let expander = gtk::Expander::builder()
+        .label(title)
+        .child(child)
+        .margin_top(26)
+        .css_classes(["edel-details"])
+        .build();
+    content.append(&expander);
+    expander
 }
 
 /// A row in `group` for what a command said, hidden until [`say`] gives it

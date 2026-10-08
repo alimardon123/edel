@@ -20,6 +20,7 @@ mod preview;
 mod rows;
 mod screens;
 mod sound;
+mod status;
 mod style;
 mod system;
 mod updates;
@@ -29,6 +30,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
+use gtk::gio;
 
 use edel::i18n::{tr, trf};
 
@@ -281,10 +283,10 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
     shown.append(&back);
     shown.append(&holder);
     content.set_child(Some(&shown));
-    let show = {
+    let show: Rc<dyn Fn(usize)> = {
         let (pages, built, theme, content) =
             (pages.clone(), built.clone(), theme.clone(), content.clone());
-        move |at: usize| {
+        Rc::new(move |at: usize| {
             let Some(page) = pages.get(at) else { return };
             let widget = built.borrow_mut()[at]
                 .get_or_insert_with(|| (page.build)(&theme))
@@ -294,7 +296,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
             }
             holder.append(&widget);
             content.set_title(page.title);
-        }
+        })
     };
     show(start);
     if asked {
@@ -314,7 +316,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         list.append(&row);
     }
     {
-        let split = split.clone();
+        let (split, show) = (split.clone(), show.clone());
         list.connect_row_activated(move |_, row| {
             show(row.index().max(0) as usize);
             split.set_show_content(true);
@@ -391,6 +393,24 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         .css_classes(["edel"])
         .child(&bin)
         .build();
+    // `win.show-page` opens a page by name, as About's Check for updates
+    // button does: the sidebar follows, and a narrow window shows the page.
+    let go = gio::SimpleAction::new("show-page", Some(gtk::glib::VariantTy::STRING));
+    {
+        let (pages, list, split) = (pages.clone(), list.clone(), split.clone());
+        go.connect_activate(move |_, name| {
+            let Some(at) = name
+                .and_then(|n| n.str())
+                .and_then(|n| page_named(&pages, n))
+            else {
+                return;
+            };
+            show(at);
+            list.select_row(list.row_at_index(at as i32).as_ref());
+            split.set_show_content(true);
+        });
+    }
+    window.add_action(&go);
     // Ctrl+F goes to the search field, as in every app with one.
     let keys = gtk::ShortcutController::new();
     let find = search.clone();
