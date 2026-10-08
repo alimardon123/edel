@@ -24,6 +24,10 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  print the first Y from Y0 to Y1 in column X
                                  within 24 of RRGGBB in each channel, or
                                  none (M5.6a)
+    qmp.py findlast FILE.png Y X0 X1 RRGGBB
+                                 print the last X from X0 to X1 in row Y
+                                 within 24 of RRGGBB in each channel, or
+                                 none (M5.29)
 
 The first ten talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
@@ -234,7 +238,7 @@ def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
     command, args = argv[1], argv[2:]
-    if command in ("pixel", "size", "uniform", "find"):
+    if command in ("pixel", "size", "uniform", "find", "findlast"):
         width, height, rows = read_png(args[0])
         if command == "size":
             print(width, height)
@@ -248,6 +252,15 @@ def main(argv):
             want = tuple(int(args[4][i:i + 2], 16) for i in (0, 2, 4))
             found = next(
                 (y for y in range(max(y0, 0), min(y1, height))
+                 if all(abs(a - b) <= 24 for a, b in zip(rows[y][x], want))),
+                None,
+            )
+            print("none" if found is None else found)
+        elif command == "findlast":
+            y, x0, x1 = int(args[1]), int(args[2]), int(args[3])
+            want = tuple(int(args[4][i:i + 2], 16) for i in (0, 2, 4))
+            found = next(
+                (x for x in range(min(x1, width) - 1, max(x0, 0) - 1, -1)
                  if all(abs(a - b) <= 24 for a, b in zip(rows[y][x], want))),
                 None,
             )

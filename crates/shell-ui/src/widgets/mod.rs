@@ -15,6 +15,7 @@ pub mod clock;
 pub mod layout;
 pub mod menu;
 pub mod search;
+pub mod separator;
 pub mod title;
 pub mod tray;
 pub mod windows;
@@ -56,8 +57,11 @@ pub struct Widget {
     pub width: fn(&mut Canvas, shown: &str) -> f32,
     /// Draws it showing `shown`, its left edge at `x`.
     pub draw: fn(&mut Canvas, shown: &str, x: f32),
-    /// What `input` on it does while it shows `shown`, if anything.
-    pub input: fn(shown: &str, input: Input) -> Option<Action>,
+    /// What `input` on it does while it shows `shown`, if anything. The
+    /// canvas is the panel's, to measure on as `width` does, for a
+    /// widget whose parts' places depend on what text measures (the
+    /// window list's buttons); it is drawn on by no one here.
+    pub input: fn(&mut Canvas, shown: &str, input: Input) -> Option<Action>,
     /// The parts of it a screen reader reads one by one, such as each
     /// icon of the tray (M5.2e); most widgets are one thing, `no_parts`.
     pub parts: fn(shown: &str) -> Vec<Part>,
@@ -81,6 +85,8 @@ pub struct Live {
     pub view: Option<usize>,
     pub windows: Vec<Task>,
     pub policy: String,
+    /// Whether the launcher is open, for the menu button's lit tile.
+    pub launcher: bool,
     pub pinned: Vec<Pin>,
     pub installed: Vec<Pin>,
 }
@@ -164,7 +170,7 @@ pub enum Action {
 }
 
 /// For widgets that take no input.
-pub fn no_input(_: &str, _: Input) -> Option<Action> {
+pub fn no_input(_: &mut Canvas, _: &str, _: Input) -> Option<Action> {
     None
 }
 
@@ -184,6 +190,7 @@ pub const TABLE: &[Widget] = &[
     title::WIDGET,
     apps::WIDGET,
     search::WIDGET,
+    separator::WIDGET,
 ];
 
 /// Scrolling added up but not yet a step: a high-resolution wheel's

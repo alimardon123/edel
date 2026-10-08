@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 15">
-  <!-- The menu button (M5.1b): four rounded squares. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.5 -1.5 18 18">
+  <!-- The menu button (M5.1b): four rounded squares, 15 units across in
+       an 18-unit box, as the mockups' (M5.29). -->
   <rect x="0" y="0" width="6" height="6" rx="1.8"/>
   <rect x="9" y="0" width="6" height="6" rx="1.8"/>
   <rect x="0" y="9" width="6" height="6" rx="1.8"/>

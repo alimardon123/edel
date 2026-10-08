@@ -137,6 +137,15 @@ pub struct Tokens {
     pub panel_height: u32,
     /// The panel's text, logical pixels per em.
     pub panel_text_size: u32,
+    /// The panel's smaller text, such as the clock's date, logical
+    /// pixels per em.
+    pub panel_text_small_size: u32,
+    /// A button in the panel: its height, the app icon in it and the
+    /// shell's own icon (the menu's, the layout toggle's), logical
+    /// pixels (M5.29, from the mockups).
+    pub panel_control: u32,
+    pub panel_icon: u32,
+    pub panel_glyph: u32,
     /// Corner radii, logical pixels (M5.5e): windows' (M5.14), menus' and
     /// the panel's fillets', and controls': the panel's buttons and rows.
     pub radius_window: u32,
@@ -379,6 +388,10 @@ impl Tokens {
                 "gap" => (&mut self.gap, 100),
                 "panel" => (&mut self.panel_height, 200),
                 "panel_text" => (&mut self.panel_text_size, 100),
+                "panel_text_small" => (&mut self.panel_text_small_size, 100),
+                "panel_control" => (&mut self.panel_control, 200),
+                "panel_icon" => (&mut self.panel_icon, 100),
+                "panel_glyph" => (&mut self.panel_glyph, 100),
                 "radius_window" => (&mut self.radius_window, 100),
                 "radius_menu" => (&mut self.radius_menu, 100),
                 "radius_control" => (&mut self.radius_control, 100),
@@ -453,6 +466,10 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "gap",
                 "panel",
                 "panel_text",
+                "panel_text_small",
+                "panel_control",
+                "panel_icon",
+                "panel_glyph",
                 "radius_window",
                 "radius_menu",
                 "radius_control",
@@ -506,6 +523,10 @@ pub fn check(text: &str) -> Result<Tokens> {
         accent: BLACK,
         panel_height: 0,
         panel_text_size: 0,
+        panel_text_small_size: 0,
+        panel_control: 0,
+        panel_icon: 0,
+        panel_glyph: 0,
         radius_window: 0,
         radius_menu: 0,
         radius_control: 0,

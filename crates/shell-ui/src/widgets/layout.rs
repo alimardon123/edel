@@ -8,6 +8,7 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
+use edel::tokens::Tokens;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{self, fill, lit, mix};
@@ -18,7 +19,7 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
-    input,
+    input: |_, shown, what| input(shown, what),
     parts: super::no_parts,
     role: Role::Button,
     label,
@@ -33,16 +34,11 @@ fn label(shown: &str) -> String {
     }
 }
 
-/// The button and the space on each side of it; its corners are the
-/// tokens' controls'.
-const WIDTH: f32 = 32.0;
-const HEIGHT: f32 = 28.0;
+/// The space on each side of the button, in logical pixels. The button
+/// is `size.panel_control` wide and four pixels less high, as the
+/// mockups' is (30 by 26), its corners the tokens' controls'.
 const ROOM: f32 = 2.0;
-/// The icon's size; `design/icons/layout-floating.svg` and
-/// `layout-tiling.svg` are drawn on a 24-unit square, as the mockups' are
-/// (M5.5d). 19 px, so its shape stands about as tall as the workspace
-/// buttons' digits beside it (Alimardon, 2026-10-06: 15 read too small).
-const ICON: f32 = 19.0;
+const SHORTER: f32 = 4.0;
 
 /// What it shows: the shown workspace's policy, `floating` or `tiling`,
 /// or nothing before the compositor has said.
@@ -51,16 +47,16 @@ fn shows(live: &Live) -> String {
 }
 
 /// Its width in logical pixels.
-pub fn logical_width(shown: &str) -> f32 {
+pub fn logical_width(shown: &str, tokens: &Tokens) -> f32 {
     if shown.is_empty() {
         0.0
     } else {
-        WIDTH + 2.0 * ROOM
+        tokens.panel_control as f32 + 2.0 * ROOM
     }
 }
 
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
-    logical_width(shown) * canvas.scale
+    logical_width(shown, canvas.tokens) * canvas.scale
 }
 
 fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
@@ -69,7 +65,8 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     }
     let s = canvas.scale;
     let tokens = canvas.tokens;
-    let (bw, bh) = (WIDTH * s, HEIGHT * s);
+    let control = tokens.panel_control as f32;
+    let (bw, bh) = ((control * s).round(), ((control - SHORTER) * s).round());
     let bx = (x + ROOM * s).round();
     let by = canvas.top + ((canvas.height - bh) / 2.0).round();
     let tiled = shown == "tiling";
@@ -85,8 +82,11 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     } else {
         "layout-floating"
     };
-    let px = ICON * s;
-    let (ix, iy) = (bx + (bw - px) / 2.0, by + (bh - px) / 2.0);
+    let px = (tokens.panel_glyph as f32 * s).round();
+    let (ix, iy) = (
+        bx + ((bw - px) / 2.0).round(),
+        by + ((bh - px) / 2.0).round(),
+    );
     paint::icon(canvas.pixmap, name, px, ix, iy, ink);
 }
 
@@ -145,14 +145,15 @@ mod tests {
         // edge, half way down the panel.
         let y = fillet_height(&tokens) + tokens.panel_height / 2;
         let x = ROOM as u32 + 3;
+        let width = tokens.panel_control as f32;
         assert_eq!(pixel(&floating, x, y), tokens.panel.bytes());
         let (tiling, tokens) = drawn("tiling");
         assert_ne!(pixel(&tiling, x, y), tokens.panel.bytes());
         // The icon is drawn in its middle, in both.
-        let middle = (ROOM + WIDTH / 2.0) as u32;
+        let middle = (ROOM + width / 2.0) as u32;
         assert_ne!(pixel(&tiling, middle, y), pixel(&tiling, x, y));
-        assert_eq!(logical_width(""), 0.0);
-        assert_eq!(logical_width("tiling"), WIDTH + 2.0 * ROOM);
+        assert_eq!(logical_width("", &tokens), 0.0);
+        assert_eq!(logical_width("tiling", &tokens), width + 2.0 * ROOM);
     }
 
     #[test]

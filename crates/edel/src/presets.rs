@@ -441,7 +441,16 @@ mod tests {
         assert_eq!(panel.edge, Edge::Bottom);
         assert_eq!(
             panel.widgets().collect::<Vec<_>>(),
-            ["menu", "windows", "workspaces", "layout", "tray", "clock"]
+            [
+                "menu",
+                "separator",
+                "windows",
+                "workspaces",
+                "layout",
+                "separator",
+                "tray",
+                "clock"
+            ]
         );
     }
 

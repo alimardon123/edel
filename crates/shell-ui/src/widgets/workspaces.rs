@@ -15,7 +15,7 @@ use tiny_skia::{FillRule, Pixmap, PixmapPaint, Transform};
 use edel::tokens::Colour;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{Text, paint_of, rounded};
+use crate::paint::{Face, Text, mix, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
     name: "workspaces",
@@ -23,7 +23,7 @@ pub const WIDGET: Widget = Widget {
     shows,
     width,
     draw,
-    input,
+    input: |_, shown, what| input(shown, what),
     parts: super::no_parts,
     role: Role::Group,
     label,
@@ -166,10 +166,14 @@ fn button(
         pixmap.fill_path(&path, &fill, FillRule::Winding, Transform::identity(), None);
     }
     if let Some(text) = text {
-        let mut line = text.line(name, size);
+        let mut line = text.line_in(name, size, Face::SEMIBOLD.tabular());
         let tx = x + (w - line.width) / 2.0;
         let ty = y + (h - size * 1.25) / 2.0;
-        let ink = if on { tokens.panel } else { tokens.panel_text };
+        let ink = if on {
+            tokens.accent_text
+        } else {
+            mix(tokens.panel_text, tokens.panel, 0.3)
+        };
         text.draw(pixmap, &mut line, tx, ty, ink);
     }
 }
@@ -183,7 +187,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let tokens = canvas.tokens;
     let height = BUTTON * s;
     let y = canvas.top + ((canvas.height - height) / 2.0).round();
-    let size = (tokens.panel_text_size as f32 * 0.82).round() * s;
+    let size = tokens.panel_text_small_size as f32 * s;
     for (name, on, left, w) in buttons(shown) {
         let place = ((x + left * s).round(), y, w * s, height);
         button(

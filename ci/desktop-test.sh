@@ -546,12 +546,23 @@ case_panel() {
 		fail "shell-ui's panel is not along the bottom in the state file: $(value layers)"
 	shot panel 640 790 "$panel" >/dev/null || fail "640,790 is not the panel's #$panel"
 	shot panel 640 761 "$panel" >/dev/null || fail "640,761, the panel's top row, is not #$panel"
-	# The clock, at the panel's right end, is drawn: not one colour.
+	# The clock, at the panel's right end, is drawn: not one colour. It
+	# is two lines (M5.29), the time over a short date, right-aligned to
+	# 8 px from the panel's end: the time's letters lie in rows 768 to
+	# 779 and the date's, a step smaller, in rows 784 to 792, so each
+	# region is not one colour and the rows between them are.
 	clock=$(python3 ci/qmp.py uniform "$dir/panel.png" 1214 765 62 30)
 	[ "$clock" = varied ] || fail "the clock's region at the panel's right end is $clock"
+	time_lines=$(python3 ci/qmp.py uniform "$dir/panel.png" 1236 768 36 12)
+	[ "$time_lines" = varied ] || fail "the clock's time, at 1236,768 36x12, is $time_lines"
+	date_lines=$(python3 ci/qmp.py uniform "$dir/panel.png" 1226 784 46 9)
+	[ "$date_lines" = varied ] || fail "the clock's date, below the time at 1226,784 46x9, is $date_lines"
+	between=$(python3 ci/qmp.py uniform "$dir/panel.png" 1226 781 46 2)
+	[ "$between" = "uniform $panel" ] || fail "the rows between the clock's time and date, at 1226,781 46x2, are $between, not the panel's #$panel"
+	cp "$dir/panel.png" "$dir/panel-polished.png"
 	# The layout toggle (M5.3a): a click switches the shown workspace's
 	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
-	# wide after 3 px of room, with the accent; another switches it back.
+	# wide after 2 px of room, with the accent; another switches it back.
 	# The checked pixel is left of where the cursor lies after a click.
 	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
 	[ -n "$toggle" ] || fail "shell-ui did not say where its layout toggle lies"
@@ -574,7 +585,7 @@ case_panel() {
 		echo "$tree" | grep -qx "$want" ||
 			fail "AT-SPI does not hold \"$want\"; it holds: $(echo "$tree" | tr '\n' ';')"
 	done
-	echo "$tree" | grep -qE '^3 label: [0-9]{2}:[0-9]{2}$' ||
+	echo "$tree" | grep -qE '^3 label: [0-9]{2}:[0-9]{2}, [A-Z][a-z]{2} [0-9]{1,2} [A-Z][a-z]{2}$' ||
 		fail "AT-SPI holds no clock among the panel's widgets: $(echo "$tree" | tr '\n' ';')"
 	# Its memory, as the service read it once the desktop was idle, with
 	# no screen reader: what it holds of its own, without the pages it
@@ -1615,7 +1626,7 @@ case_dock() {
 case_panels() {
 	# The panels as a setting (M5.4e): layout.panels with one panel along
 	# the bottom holding only the clock restarts shell-ui with it in place
-	# of Classic's, so 20,768, inside the menu button's first square, is
+	# of Classic's, so 20,776, inside the menu button's first square, is
 	# the panel's colour; unsetting it brings Classic's panel back. Kept
 	# as panels-clock.png.
 	panel=$(token panel)
@@ -1624,7 +1635,7 @@ case_panels() {
 	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
 		fail "edel settings set layout.panels did not restart shell-ui"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
-	shot panels-clock 20 768 "$panel" >/dev/null || fail "20,768 is not the panel's colour: the menu button is still there"
+	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
 	guest 'panels default'
@@ -1890,24 +1901,39 @@ list_until() {
 	[ "${place#* }" $1 ] 2>/dev/null
 }
 
-# list_width N: the window list's width with N buttons on CI's 1280 px
-# panel, as shell-ui's windows widget lays them out: each button at most
-# 180 px and together at most 45% of the panel (576 px), 4 px at each end
-# and between them.
-list_width() {
-	[ "$1" -gt 0 ] || { echo 0; return; }
-	b=$(((576 - 8 - ($1 - 1) * 4) / $1))
-	[ "$b" -le 180 ] || b=180
-	[ "$b" -ge 32 ] || b=32
-	echo $((8 + $1 * b + ($1 - 1) * 4))
+# accent_line: waits up to 10 s for the accent line of the
+# focused window's button, which lies at row 791, 2 px high and 14 px
+# wide, in the middle of its button, inside the window list, whose place
+# it reads afresh at each try from shell-ui's last places line, and
+# prints the line's middle column and the list's x and width.
+accent_line() {
+	i=0
+	while :; do
+		place=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*windows \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+		if [ -n "$place" ]; then
+			python3 ci/qmp.py screendump "$dir/windows.png"
+			last=$(python3 ci/qmp.py findlast "$dir/windows.png" 791 "${place% *}" "$((${place% *} + ${place#* }))" "$accent")
+			if [ "$last" != none ]; then
+				echo "$((last - 6)) $place"
+				return 0
+			fi
+		fi
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || return 1
+		sleep 0.2
+	done
 }
 
 case_windows() {
-	# The panel's window list (M5.2h): a button for each window on the
-	# screen, sharing its width, 4 px at each end and between them.
-	# Launching away adds one, lit with the accent line along its foot,
-	# 2 px high and 4 px above the foot of a 30 px button in the middle of
-	# the 40 px panel that starts at 760: row 791.
+	# The panel's window list (M5.2h, M5.29): a button for each window on
+	# the screen, as wide as its icon and title, at most 200 px, together
+	# at most 45% of the panel (576 px), 2 px at each end and between
+	# them. Launching away adds one at the end, lit, with the accent line
+	# 2 px high and 14 px wide in the middle of its button, 4 px above the
+	# foot of a 30 px button in the middle of the 40 px panel that starts
+	# at 760: row 791. The button's width is not computed here, as it
+	# follows the title's width in the font; it is read from where the
+	# line lies, the line being the list's last accent at that row.
 	panel=$(token panel)
 	accent=$(token accent)
 	opened=$(count 'edel-compositor: mapped window away')
@@ -1916,17 +1942,19 @@ case_windows() {
 	guest 'away window'
 	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open: $(value windows)"
 	wait_more 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$' "$listed" || fail "away is not on top in the state file: $(value windows)"
-	# The width is waited for, not compared with an earlier one: the
-	# panel may still be catching up with the case before.
 	n=$(value windows | cut -d' ' -f1)
-	place=$(list_until "-eq $(list_width "$n")") ||
-		fail "the window list is not $(list_width "$n") px wide with $n windows, away among them: $place"
-	read -r x w <<-EOF
-		$place
+	line=$(accent_line) || fail "the window list holds no accent line at row 791 for away, the last of $n windows"
+	read -r cx x w <<-EOF
+		$line
 	EOF
-	button=$(((w - 8 - (n - 1) * 4) / n))
-	cx=$((x + w - 4 - button / 2))
-	shot windows "$cx" 791 "$accent" >/dev/null || fail "away's button, the last of $n at $cx, has no accent line at row 791"
+	# The list is within its share of the panel, and away's button, whose
+	# line lies in its middle, hugs its short title: the list ends 2 px
+	# after the button, so the button is twice the distance from the
+	# line to there, between 56 and 100 px for a four letter title.
+	[ "$w" -le 576 ] || fail "the window list is $w px wide, over 45% of the panel"
+	half=$((x + w - 2 - cx))
+	[ $((2 * half)) -ge 56 ] && [ $((2 * half)) -le 100 ] ||
+		fail "away's button is about $((2 * half)) px wide, not 56 to 100 for its icon and four letters; the list is $x+$w, the line at $cx"
 	# Its title bar's minimize button, the third square from the right,
 	# hides it; its button stays, with no mark.
 	read -r ax ay aw <<-EOF
@@ -1937,17 +1965,17 @@ case_windows() {
 	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150-$' || fail "the state file does not say away is minimized: $(value windows)"
 	shot windows 640 393 '!7744aa' >/dev/null || fail "away is still drawn at 640,393"
 	shot windows "$cx" 791 "$panel" >/dev/null || fail "away's button still has a mark at $cx,791"
-	# A click on its button brings it back, focused; 40 px left of the
+	# A click on its button brings it back, focused; 22 px left of the
 	# line, which the cursor would cover.
-	python3 ci/qmp.py click $((cx - 40)) 780
-	wait_for 'edel-compositor: restored window away' || fail "a click on away's button at $((cx - 40)),780 did not bring it back"
+	python3 ci/qmp.py click $((cx - 22)) 780
+	wait_for 'edel-compositor: restored window away' || fail "a click on away's button at $((cx - 22)),780 did not bring it back"
 	shot windows "$cx" 791 "$accent" >/dev/null || fail "away's button has no accent line after it came back"
 	shot windows 640 393 7744aa >/dev/null || fail "away is not drawn at 640,393 after it came back"
-	# Closed, its button goes.
+	# Closed, its button goes: the list is narrower than it was.
 	guest 'away off'
-	place=$(list_until "-eq $(list_width $((n - 1)))") ||
-		fail "the window list is not $(list_width $((n - 1))) px wide for $((n - 1)) windows after away closed: $place"
-	echo "PASS: away's opening added a button to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
+	place=$(list_until "-lt $w") ||
+		fail "the window list is still $w px wide after away closed: $place"
+	echo "PASS: away's opening added a button of $((2 * half)) px to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
 }
 
 case_completion() {
@@ -2166,15 +2194,15 @@ case_scroll() {
 		[ "$i" -lt 50 ] || fail "Super+Left three times did not bring s1 whole: $(value windows)"
 		sleep 0.2
 	done
-	# The window list's fourth button, s4: the list's place from the
-	# panel's log, four buttons 4 px apart with 4 px at each end.
+	# The window list's fourth button, s4, the last: the list's place from
+	# the panel's log; a click 14 px from the list's end is in it, as the
+	# button is wider than that.
 	asked=$(count 'DESKTOP-TEST: places ')
 	guest 'panel places'
 	wait_more 'DESKTOP-TEST: places ' "$asked" || fail "the service did not say where the panel's widgets lie"
 	set -- $(value places | sed -n 's/.*windows \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "$1" ] || fail "shell-ui did not say where its window list lies"
-	b=$((($2 - 20) / 4))
-	python3 ci/qmp.py click $(($1 + 4 + 3 * (b + 4) + b / 2)) 780
+	python3 ci/qmp.py click $(($1 + $2 - 14)) 780
 	i=0
 	until whole s4; do
 		i=$((i + 1))
