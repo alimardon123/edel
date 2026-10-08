@@ -53,13 +53,14 @@ name_of() {
 		--method org.freedesktop.DBus.Properties.Get org.a11y.atspi.Accessible Name | string
 }
 
-# walk BUSNAME PATH DEPTH: the node, then its children, three deep.
+# walk BUSNAME PATH DEPTH: the node, then its children, four deep (the
+# tray's icons, M5.2e, are the fourth).
 walk() {
 	local role children
 	role=$(call --address "$a11y" --dest "$1" --object-path "$2" --method org.a11y.atspi.Accessible.GetRole | sed -n 's/^(uint32 \([0-9]*\),)$/\1/p')
 	role=$(role_name "$role")
 	echo "$3 $role: $(name_of "$1" "$2")"
-	[ "$3" -lt 3 ] || return 0
+	[ "$3" -lt 4 ] || return 0
 	children=$(call --address "$a11y" --dest "$1" --object-path "$2" --method org.a11y.atspi.Accessible.GetChildren | children)
 	echo "$children" | while read -r bus path; do
 		[ -n "$bus" ] && walk "$bus" "$path" $(($3 + 1))

@@ -99,6 +99,11 @@
 #               slider holding the keyboard, takes Home and six presses of
 #               Right and wpctl status shows the sink at 0.30; kept as
 #               sound.png
+#   tray        a StatusNotifierItem from edel-testclient --sni (a
+#               #33aa66 pixmap) registers with shell-ui's watcher and its
+#               icon lies in the panel's tray; AT-SPI names it, a click
+#               and a right click reach it, and the icon goes with its app
+#               (M5.2e)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1910,6 +1915,65 @@ case_outputs() {
 	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off"
 }
 
+case_tray() {
+	# The tray (M5.2e): shell-ui serves org.kde.StatusNotifierWatcher on
+	# the session's bus. `sni` starts the test item (edel-testclient --sni:
+	# titled "edel test", its icon a 22x22 pixmap of #33aa66), which
+	# registers by its object path; shell-ui logs `tray: 1 items`, the
+	# panel's places line gives the tray 34 px (two 2 px margins and one
+	# 30 px cell), and the icon is at the middle of the cell. Kept as
+	# tray.png. A screen reader reads the icon as a button named by the
+	# item's title, a click asks the item to Activate and a right click for
+	# its ContextMenu; when the item's app ends, the icon goes.
+	panel=$(token panel)
+	python3 ci/qmp.py move 640 300
+	items=$(count 'edel-shell-ui: tray: 1 items')
+	guest 'sni'
+	wait_more 'edel-shell-ui: tray: 1 items' "$items" 30 ||
+		fail "shell-ui did not log tray: 1 items after the test item registered"
+	wait_for 'edel-shell-ui: panel places .*tray [0-9]+\+34' ||
+		fail "shell-ui's places line does not give the tray 34 px for one item"
+	place=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*tray \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	read -r x w <<-EOF
+		$place
+	EOF
+	[ "$w" = 34 ] || fail "the tray is $w px wide in the last places line, not 34"
+	# The icon's middle, 17 px along the tray in the panel's row, and the
+	# cell's margin beside it.
+	shot tray $((x + 17)) 780 33aa66 >/dev/null ||
+		fail "the test item's icon is not #33aa66 at its middle, $((x + 17)),780"
+	shot tray $((x + 3)) 780 "$panel" >/dev/null ||
+		fail "the margin beside the icon, $((x + 3)),780, is not the panel's #$panel"
+	# A screen reader (M5.1d): the icon is the fourth level of AT-SPI's
+	# tree, a button named by the item's title.
+	asked=$(count 'DESKTOP-TEST: a11y_done')
+	guest 'a11y tree'
+	wait_more 'DESKTOP-TEST: a11y_done' "$asked" 30 || fail "the screen reader's walk of AT-SPI did not finish"
+	tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: a11y ' | sed 's/.*DESKTOP-TEST: a11y //' | grep -qx '4 button: edel test' ||
+		fail "AT-SPI holds no button named edel test under the panel's tray"
+	# A left click asks the item to Activate, a right click for its menu;
+	# the item prints what it was asked, at the click's place along the
+	# panel.
+	python3 ci/qmp.py click $((x + 17)) 780
+	python3 ci/qmp.py rightclick $((x + 17)) 780
+	i=0
+	while :; do
+		guest 'sni log'
+		wait_for 'DESKTOP-TEST: sni .*activate [0-9]+ 0;context menu [0-9]+ 0;' 3 && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "the test item was not asked to Activate and then for its ContextMenu: $(value sni)"
+	done
+	python3 ci/qmp.py move 640 300
+	items=$(count 'edel-shell-ui: tray: 0 items')
+	guest 'sni off'
+	wait_more 'edel-shell-ui: tray: 0 items' "$items" 30 ||
+		fail "shell-ui did not log tray: 0 items after the test item's app ended"
+	# The panel closes up: the layout toggle lies where the tray did.
+	shot tray $((x + 17)) 780 '!33aa66' >/dev/null ||
+		fail "the icon is still at $((x + 17)),780 after its app ended"
+	echo "PASS: the test item registered with shell-ui's watcher and its #33aa66 icon lay at $((x + 17)),780 in a 34 px tray, AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, and the icon went when its app ended"
+}
+
 case_scale() {
 	guest 'scale 2'
 	wait_for 'DESKTOP-TEST: ran scale 2: 0' ||
@@ -1929,7 +1993,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings portal scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')

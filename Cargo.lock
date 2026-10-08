@@ -1015,6 +1015,7 @@ dependencies = [
  "anyhow",
  "cosmic-text",
  "edel",
+ "futures-lite",
  "jiff",
  "smithay-client-toolkit 0.21.1",
  "tiny-skia",
@@ -1029,6 +1030,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "smithay-client-toolkit 0.21.1",
+ "zbus",
 ]
 
 [[package]]
