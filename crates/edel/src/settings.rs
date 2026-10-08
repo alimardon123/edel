@@ -79,9 +79,19 @@ pub const PAGES: &[Page] = &[
         about: n_("the people who log in, and their ssh keys"),
     },
     Page {
+        // The connections and Wi-Fi passwords are NetworkManager's own
+        // state, never in the file (ADR-006, M5.8a); the file holds the
+        // device's name.
         section: "network",
         title: n_("Network"),
-        about: n_("the device's name"),
+        about: n_("wired and Wi-Fi connections, and the device's name"),
+    },
+    Page {
+        // BlueZ's own state, like Sound's: no key, and `edel settings get
+        // bluetooth` says so (M5.8a).
+        section: "bluetooth",
+        title: n_("Bluetooth"),
+        about: n_("pairing and connecting headphones, mice and other devices"),
     },
     Page {
         section: "default_apps",

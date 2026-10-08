@@ -241,6 +241,22 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-change-undo {{ background-color: {fill}; color: {text}; }}
 .edel-change-undo:hover {{ background-color: {fill_strong}; }}
 .edel-change-keep {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
+.edel-glance {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; padding: 20px 22px; }}
+.edel-glance-icon {{ color: {accent}; }}
+.edel-glance-icon.edel-off {{ color: {muted}; }}
+.edel-glance-title {{ font-size: {heading}px; font-weight: 650; letter-spacing: -0.3px; }}
+.edel-glance-sub {{ color: {secondary}; }}
+.edel-bars {{ min-width: 20px; }}
+.edel-bar-part {{ min-width: 3px; border-radius: 1px; background-color: {fill_strong}; }}
+.edel-bar-part.edel-lit {{ background-color: {accent}; }}
+.edel-lock {{ color: {muted}; }}
+.edel-entry {{ min-height: 26px; padding: 0 8px; border-radius: {rs}px; background-image: none; background-color: {fill};
+  box-shadow: none; border: none; color: {text}; }}
+.edel-entry:focus-within {{ outline: 2px solid alpha({accent}, 0.4); outline-offset: 0; }}
+.edel-entry text {{ background: none; color: {text}; }}
+.edel-fold > title {{ margin: 0 0 10px; padding: 4px 0; }}
+.edel-fold > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
+.edel-fold > title arrow {{ color: {muted}; }}
 "#
     )
 }

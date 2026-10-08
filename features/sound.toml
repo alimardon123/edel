@@ -4,7 +4,8 @@
 # edel::presets::SESSION_START), never a service of the machine. features/
 # sound/ holds a udev rule that gives the people at the machine the
 # sound devices, which the seat feature's group already holds, and the
-# PipeWire and WirePlumber drop-ins.
+# PipeWire and WirePlumber drop-ins. WirePlumber's Bluetooth monitor is off
+# here and on again in the bluetooth feature (M5.8a), which brings the plugin.
 format = 1
 summary = "Sound: PipeWire and WirePlumber, started in each person's session"
 why = "PipeWire is the one sound server for apps that play (PulseAudio and ALSA apps through the pulse module of pipewire-pulse, loaded inside PipeWire so no second process runs, and pipewire-alsa, Flatpak ones above all), record and, later, lend a paired phone's speakers over the network (ADR-011); WirePlumber picks and remembers each person's devices and its wpctl is the one command Settings' Sound page, the panel's volume and the shell read and set them with. They run per person in the session, started by the compositor, so nothing runs on a machine nobody is using; alsa-ucm-conf gives laptops' sound cards their speaker and microphone profiles. The udev rule gives group seat, the people at the machine (no logind here), the sound devices, so the feature needs seat."

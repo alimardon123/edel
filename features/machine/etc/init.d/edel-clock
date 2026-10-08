@@ -11,7 +11,7 @@
 description="Set the clock from the network"
 
 depend() {
-	after networking
+	after networking networkmanager
 	use logger
 }
 

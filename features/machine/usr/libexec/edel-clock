@@ -5,7 +5,8 @@
 # happened, on the console and in the system log, and writes the hardware
 # clock when it set the system's. It always exits 0 and gives up after
 # EDEL_CLOCK_TIMEOUT seconds (30), so the clock stays as it was when no
-# server answers; it runs in the background, so nothing waits for it.
+# server answers (after waiting up to 20 s for NetworkManager's address, where
+# it runs); it runs in the background, so nothing waits for it.
 # Daily re-sync: no feature runs crond, so none (no service runs unless
 # someone uses what it serves); each boot sets the clock.
 
@@ -43,6 +44,13 @@ for server in $servers; do
 	args="$args -p $server"
 	names="${names:+$names, }$server"
 done
+
+# NetworkManager (the desktop's) counts as started before the machine has an
+# address, so wait for one, for up to 20 s, where it runs (M5.8a); busybox's
+# networking (the VM's) has the address by the time this starts.
+if command -v nm-online >/dev/null 2>&1; then
+	nm-online -q -t 20 >/dev/null 2>&1 || true
+fi
 
 before=$(now)
 # shellcheck disable=SC2086 # one -p per server

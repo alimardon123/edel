@@ -1,0 +1,14 @@
+# Bluetooth (roadmap M5.8a): BlueZ, whose daemon the Settings page
+# Bluetooth, bluetoothctl and, for sound, WirePlumber talk to over D-Bus.
+# features/bluetooth/ holds the D-Bus policy that lets the people at the
+# machine, group seat, use it, and WirePlumber's drop-in that turns
+# Bluetooth audio back on (features/sound/ keeps it off until this feature is
+# in the image).
+format = 1
+summary = "Bluetooth: BlueZ, and Bluetooth sound through PipeWire"
+why = "Headphones, speakers, mice and keyboards are a basic (principle 6), and BlueZ is the one Linux Bluetooth stack: bluetoothd owns the adapters and pairing, and Settings, bluetoothctl and WirePlumber speak to it over D-Bus. bluetoothd starts with the machine and sits idle when there is no adapter (CI prints what it holds); starting it only when an adapter appears would need a udev rule that starts a service while the boot is still running, which can stall it, so the simple way is kept until a measurement asks for the other (Simple over Efficient). pipewire-spa-bluez is the plugin that lets WirePlumber play to Bluetooth headphones, and the drop-in turns WirePlumber's Bluetooth monitor on as optional, so a failure to load it never stops sound. The D-Bus policy replaces BlueZ's own, which lets every local user pair and connect, with root and group seat, the people at the machine (no logind here, as for sound), so the feature needs seat. dbus is the system bus; no polkit and no elogind. Switchable, so an image for machines that never have Bluetooth can ship it off (ADR-008)."
+packages = ["bluez", "bluez-openrc", "dbus", "dbus-openrc", "pipewire-spa-bluez"]
+switchable = true
+
+[services]
+default = ["dbus", "bluetooth"]

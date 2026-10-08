@@ -11,11 +11,14 @@
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
 mod about;
+mod bluetooth;
+mod card;
 mod cmd;
 mod display;
 mod files;
 mod icon;
 mod layout;
+mod network;
 mod preview;
 mod rows;
 mod screens;
@@ -184,6 +187,22 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| sound::page(),
                 needs: Some("sound"),
+            }),
+            // Network talks to NetworkManager through nmcli, Bluetooth to
+            // BlueZ through bluetoothctl; no such feature, no page (M5.8a).
+            "network" => Some(Page {
+                title: tr(page.title),
+                icon: "page-network",
+                section: Some(page.section),
+                build: |_| network::page(),
+                needs: Some("network"),
+            }),
+            "bluetooth" => Some(Page {
+                title: tr(page.title),
+                icon: "page-bluetooth",
+                section: Some(page.section),
+                build: |_| bluetooth::page(),
+                needs: Some("bluetooth"),
             }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
@@ -450,7 +469,16 @@ mod tests {
         let titles: Vec<&str> = all_pages().iter().map(|p| p.title).collect();
         assert_eq!(
             titles,
-            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
+            [
+                "Layout",
+                "Displays",
+                "Sound",
+                "Network",
+                "Bluetooth",
+                "Updates",
+                "System",
+                "About"
+            ]
         );
     }
 
@@ -478,10 +506,21 @@ mod tests {
         };
         assert_eq!(
             titles(""),
-            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
+            [
+                "Layout",
+                "Displays",
+                "Sound",
+                "Network",
+                "Bluetooth",
+                "Updates",
+                "System",
+                "About"
+            ]
         );
         assert_eq!(titles("abo"), ["About"]);
         assert_eq!(titles("sou"), ["Sound"]);
+        assert_eq!(titles("blue"), ["Bluetooth"]);
+        assert_eq!(titles("net"), ["Network"]);
         assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
         assert_eq!(titles("resolution"), ["Displays"]);
@@ -499,11 +538,14 @@ mod tests {
         assert_eq!(at("display"), Some(1), "the start of one name");
         assert_eq!(at("sound"), Some(2));
         assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("updates"), Some(3));
-        assert_eq!(at("system"), Some(4));
-        assert_eq!(at("sy"), Some(4));
-        assert_eq!(at("about"), Some(5));
-        assert_eq!(at("abo"), Some(5));
+        assert_eq!(at("network"), Some(3));
+        assert_eq!(at("bluetooth"), Some(4));
+        assert_eq!(at("blue"), Some(4));
+        assert_eq!(at("updates"), Some(5));
+        assert_eq!(at("system"), Some(6));
+        assert_eq!(at("sy"), Some(6));
+        assert_eq!(at("about"), Some(7));
+        assert_eq!(at("abo"), Some(7));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
     }
@@ -514,10 +556,12 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(5));
-        assert_eq!(start(&["--page=about"]), Ok(5));
-        assert_eq!(start(&["--page", "updates"]), Ok(3));
+        assert_eq!(start(&["--page", "about"]), Ok(7));
+        assert_eq!(start(&["--page=about"]), Ok(7));
+        assert_eq!(start(&["--page", "updates"]), Ok(5));
         assert_eq!(start(&["--page", "sound"]), Ok(2));
+        assert_eq!(start(&["--page", "network"]), Ok(3));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(4));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -555,6 +599,16 @@ mod tests {
             titles(&dir),
             ["Layout", "Displays", "Sound", "Updates", "System", "About"]
         );
+        // Network and Bluetooth each need a feature of their own.
+        std::fs::write(dir.join("network.toml"), "format = 1\n").unwrap();
+        assert_eq!(
+            titles(&dir),
+            [
+                "Layout", "Displays", "Sound", "Network", "Updates", "System", "About"
+            ]
+        );
+        std::fs::write(dir.join("bluetooth.toml"), "format = 1\n").unwrap();
+        assert!(titles(&dir).contains(&"Bluetooth"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -13,12 +13,14 @@
 #[cfg(feature = "icons")]
 pub mod app_icons;
 pub mod apps;
+pub mod bluetooth;
 pub mod features;
 pub mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod install;
 pub mod keyboard;
+pub mod network;
 pub mod places;
 pub mod presets;
 pub mod session_log;
@@ -26,4 +28,5 @@ pub mod settings;
 pub mod shortcuts;
 pub mod sound;
 pub mod tokens;
+pub mod tool;
 pub mod version;

@@ -5,6 +5,30 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
+msgstr ""
+
+msgid "could not run {program}: {error}"
+msgstr ""
+
+msgid "this computer has no Bluetooth adapter"
+msgstr ""
+
+msgid "Bluetooth is turned off by a switch or key on this computer; turn it on there and try again"
+msgstr ""
+
+msgid "{name} refused to pair; put it in pairing mode and try again"
+msgstr ""
+
+msgid "{name} did not answer; check that it is on and close by, then try again"
+msgstr ""
+
+msgid "{command} failed: {said}"
+msgstr ""
+
+msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
@@ -233,6 +257,9 @@ msgstr ""
 msgid "not supported yet"
 msgstr ""
 
+msgid "the wired and Wi-Fi connections and their passwords are NetworkManager's own, kept by this machine and never in this file; open Network in Settings, where each row can copy the nmcli command that does the same"
+msgstr ""
+
 msgid "passed over the settings file on {from}: {why}"
 msgstr ""
 
@@ -258,6 +285,27 @@ msgid "{path} has 1 problem, listed above; fix it and run edel settings check ag
 msgstr ""
 
 msgid "{path} has {count} problems, listed above; fix them and run edel settings check again"
+msgstr ""
+
+msgid "this machine has no {program}, so it has no network manager; the network feature brings NetworkManager"
+msgstr ""
+
+msgid "{command} did not answer within {seconds} s; NetworkManager may be busy, so try again in a moment"
+msgstr ""
+
+msgid "NetworkManager is not running, so there is no network to show; it starts with the machine, so restart the computer if it stays off"
+msgstr ""
+
+msgid "NetworkManager refused, because only the people at this machine (group seat) may change the network"
+msgstr ""
+
+msgid "could not read the state of the network from nmcli, which printed {text:?}"
+msgstr ""
+
+msgid "the password for {ssid} was missing or wrong; try again with the right one"
+msgstr ""
+
+msgid "{ssid} is not in range now; move closer and try again"
 msgstr ""
 
 msgid "{command} is not a command the session can start; write a program and its arguments on one line"
@@ -401,7 +449,13 @@ msgstr ""
 msgid "Network"
 msgstr ""
 
-msgid "the device's name"
+msgid "wired and Wi-Fi connections, and the device's name"
+msgstr ""
+
+msgid "Bluetooth"
+msgstr ""
+
+msgid "pairing and connecting headphones, mice and other devices"
 msgstr ""
 
 msgid "Default apps"
@@ -579,9 +633,6 @@ msgid "{others} or {last}"
 msgstr ""
 
 msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"
-msgstr ""
-
-msgid "could not run {program}: {error}"
 msgstr ""
 
 msgid "{command} failed: {said}; the sound system runs in your session, so log in again if it is not running"

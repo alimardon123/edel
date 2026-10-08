@@ -375,6 +375,44 @@ commands() {
 		'sound memory')
 			say "sound_rss_kib $(for p in pipewire wireplumber; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
+		# Network and Bluetooth (M5.8a): what nmcli says as ci, who may
+		# change the network (ci, in group seat, may; nobody may not: the
+		# D-Bus policy of the network feature, as there is no polkit),
+		# what bluetoothctl says (the VM has no adapter, so it lists none),
+		# Settings on each page as ci with its own stderr read back, and
+		# what the daemons hold.
+		'network status')
+			say "network_status $(as_ci nmcli -t general status 2>&1 | tr '\n' ' ')"
+			say "network_devices $(as_ci nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device status 2>&1 | tr '\n' ';')"
+			say "network_daemons NetworkManager $(pidof NetworkManager | wc -w), wpa_supplicant $(pidof wpa_supplicant | wc -w), dbus_system $(pgrep -f 'dbus-daemon --system' | wc -l)"
+			;;
+		'network auth')
+			# Wi-Fi off, then on by nobody, then on again by ci: a change
+			# that goes through is a change whatever the state was.
+			as_ci nmcli radio wifi off >/tmp/network-ci.log 2>&1
+			ci_status=$?
+			su -s /bin/sh nobody -c 'nmcli radio wifi on' >/tmp/network-nobody.log 2>&1
+			nobody_status=$?
+			as_ci nmcli radio wifi on >/dev/null 2>&1
+			say "network_auth ci=$ci_status nobody=$nobody_status, ci said: $(tr '\n' ' ' </tmp/network-ci.log), nobody said: $(tr '\n' ' ' </tmp/network-nobody.log)"
+			;;
+		'bluetooth status')
+			out=$(as_ci timeout 10 bluetoothctl list 2>&1)
+			status=$?
+			say "bluetooth_list $status: $(echo "$out" | tr '\n' ';')"
+			say "bluetooth_daemon $(pidof bluetoothd >/dev/null && echo running || echo stopped), adapters in the kernel: $(ls /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
+			;;
+		'network window')
+			as_ci edel-settings --page network </dev/null >/tmp/network.log 2>&1 &
+			;;
+		'bluetooth window')
+			as_ci edel-settings --page bluetooth </dev/null >/tmp/bluetooth.log 2>&1 &
+			;;
+		'network log') say "network_log $(tr '\n' ';' </tmp/network.log 2>/dev/null)" ;;
+		'bluetooth log') say "bluetooth_log $(tr '\n' ';' </tmp/bluetooth.log 2>/dev/null)" ;;
+		'network memory')
+			say "network_rss_kib $(for p in NetworkManager bluetoothd; do pid=$(pidof $p | cut -d' ' -f1); echo "$p rss $(awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status" 2>/dev/null) pss $(awk '/^Pss:/ { print $2 }' "/proc/$pid/smaps_rollup" 2>/dev/null)"; done | tr '\n' ';')"
+			;;
 		# Updates (M5.8c): the channel `edel update` follows, set as root like
 		# every command here (it is the machine's file), refused when it is
 		# not a channel name, read back and used by `edel update --check`

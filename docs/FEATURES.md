@@ -10,12 +10,12 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 |---|---|---|---|---|
 | `base` | The identity (os-release, issue, motd) and what apk needs; modules `ext4`, `overlay` | `alpine-keys`, `busybox-binsh`, `ca-certificates-bundle` | none | every image |
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
-| `machine` | A booted machine: OpenRC, logs, console and serial logins, DHCP, and the clock set from the network once at each start (`edel-clock`, busybox `ntpd`, M1.13) | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog, networking; edel-clock; mount-ro, killprocs, savecache | vm, desktop |
+| `machine` | A booted machine: OpenRC, logs, console and serial logins, and the clock set from the network once at each start (`edel-clock`, busybox `ntpd`, M1.13; it waits for NetworkManager's address where that runs) | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog; edel-clock; mount-ro, killprocs, savecache | vm, desktop |
 | `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm |
 | `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle | desktop |
 | `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, desktop |
 | `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; the desktop ships it off |
-| `vm` | The small kernel for virtual machines | `linux-virt` | none | vm |
+| `vm` | The small kernel for virtual machines, and the network by DHCP on eth0 with busybox's `networking` (`etc/network/interfaces`); the desktop has NetworkManager instead, so one thing manages eth0 | `linux-virt` | networking | vm |
 | `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | desktop |
 | `graphics` | Mesa for every common GPU (llvmpipe where none loads; svga for VirtualBox's VMSVGA), DRM, libinput, keyboard layouts; modules `virtio_gpu` and `vmwgfx` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
 | `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
@@ -27,6 +27,8 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `xwayland` | X11 apps: XWayland through xwayland-satellite, which the compositor starts when the first X11 app connects (M4.7) | `xwayland`, `xwayland-satellite` | none | desktop |
 | `settings` | Settings, program `edel-settings` (M5.6a), with GTK4, libadwaita and its icons, and its desktop file, so the launcher lists it and the presets pin it; nothing runs until a person opens it | `gtk4.0`, `libadwaita`, `adwaita-icon-theme` | none | desktop |
 | `sound` | Sound (M5.7b): PipeWire, which also serves PulseAudio's socket from inside itself (`etc/pipewire/pipewire.conf.d/90-edel-pulse.conf`), and WirePlumber, which the compositor starts in each person's session from the preset's `[session] start`; a udev rule gives group `seat` the sound devices, so it needs `seat` | `pipewire`, `pipewire-pulse`, `pipewire-alsa`, `wireplumber`, `alsa-ucm-conf` | none | desktop |
+| `network` | Network (M5.8a): NetworkManager for wired and Wi-Fi, which replaces busybox's `networking` on the desktop; with no polkit, its drop-in (`etc/NetworkManager/conf.d/90-edel.conf`, `auth-polkit=false`) and a D-Bus policy (`etc/dbus-1/system.d/edel-network.conf`) let root and group `seat`, the people at the machine, change the network and nobody else; wpa_supplicant is started by NetworkManager over D-Bus only when a Wi-Fi adapter appears; the feature needs `seat` | `dbus`, `dbus-openrc`, `networkmanager`, `networkmanager-cli`, `networkmanager-openrc`, `networkmanager-wifi`, `wpa_supplicant`, `wireless-regdb` | loopback; dbus, networkmanager | desktop |
+| `bluetooth` | Bluetooth (M5.8a): BlueZ, whose bluetoothd starts with the machine (idle without an adapter, measured in CI); a D-Bus policy (`etc/dbus-1/system.d/edel-bluetooth.conf`) for root and group `seat`; the plugin and the drop-in (`etc/wireplumber/wireplumber.conf.d/91-edel-bluetooth.conf`) that turn WirePlumber's Bluetooth monitor back on, which `sound` keeps off for images without this feature; switchable; needs `seat` | `bluez`, `bluez-openrc`, `dbus`, `dbus-openrc`, `pipewire-spa-bluez` | dbus, bluetooth | desktop |
 
 CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus, flatpak and its test service) to the VM's list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, wayland-utils for `wayland-info`, xclock for an X11 window, the program `edel-testclient`, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.
 
@@ -70,7 +72,7 @@ name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "settings", "xwayland", "sound"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "terminal", "compositor", "shell", "settings", "xwayland", "sound", "network", "bluetooth"]
 off = ["ssh"]       # installed, its service off
 
 [vm]

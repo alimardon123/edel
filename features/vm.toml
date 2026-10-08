@@ -1,5 +1,12 @@
-# Only the VM image needs this (a feature named after its image).
+# Only the VM image needs this (a feature named after its image):
+# features/vm/ holds busybox's network by DHCP on eth0
+# (etc/network/interfaces), which the `networking` service brings up. The
+# desktop has NetworkManager instead (the `network` feature, M5.8a), so the
+# one thing that manages eth0 is the image's own choice.
 format = 1
-summary = "The small kernel for virtual machines"
-why = "linux-virt, not linux-lts as on the laptop: lts installs 152 MiB against virt's 49 (Alpine's package index, 2026-10-02), more than the whole 91 MiB root, and a VM needs none of its hardware drivers. One kernel would be simpler; a VM image that doubles in size for drivers it never loads is waste people see in every download and update (M3.3a)."
+summary = "The small kernel for virtual machines, and the network by DHCP"
+why = "linux-virt, not linux-lts as on the laptop: lts installs 152 MiB against virt's 49 (Alpine's package index, 2026-10-02), more than the whole 91 MiB root, and a VM needs none of its hardware drivers. One kernel would be simpler; a VM image that doubles in size for drivers it never loads is waste people see in every download and update (M3.3a). The network is busybox's ifup and udhcpc on eth0, which alpine-base already carries (no package): a VM or server has one wired interface and needs no daemon to manage it, where the desktop's people move between networks and use NetworkManager."
 packages = ["linux-virt"]
+
+[services]
+boot = ["networking"]
