@@ -303,7 +303,8 @@ case_compositor() {
 "
 	}
 	check 'Boot to the compositor ready' "$(value ready_seconds)" desktop_ready_seconds s
-	check 'Memory in use, session idle' "$(value memory_in_use_mib)" desktop_memory_mib MiB
+	check 'Memory the desktop holds, session idle' "$(value memory_held_mib)" desktop_held_mib MiB
+	echo "memory in use (MemTotal less MemAvailable, not budgeted): $(value memory_in_use_mib) MiB"
 	check 'Compositor RSS' "$(value compositor_rss_mib)" compositor_rss_mib MiB
 	check 'Time between frames, p99' "$(value frame_p99_ms)" frame_p99_ms ms
 	check 'Frames drawn while idle' "$(value idle_frames)" idle_frames ''

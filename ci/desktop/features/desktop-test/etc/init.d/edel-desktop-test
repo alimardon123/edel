@@ -124,17 +124,16 @@ report() {
 	# X11 process yet: they start with the first X11 app.
 	say "x11 $(grep 'edel-compositor: X11 apps' "$session_log" | tail -n 1)"
 	say "x11_processes $(pgrep -f 'Xwayland|xwayland-satellite' | wc -l)"
-	# Memory in use (MemTotal less MemAvailable), read with the kernel's
-	# file cache dropped first and as the middle of three reads a second
-	# apart: MemAvailable only estimates how much of the cache could be
-	# freed, and that estimate swung by up to 19 MiB between runs of the
-	# same image (332 and 351 MiB on 2026-10-08) while what the processes
-	# held moved by 7. Dropping the cache frees nothing the desktop holds.
-	sync
-	echo 3 >/proc/sys/vm/drop_caches
-	sleep 2
-	say "memory_in_use_reads $(for i in 1 2 3; do awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f\n", (t - a) / 1024 }' /proc/meminfo; sleep 1; done | tr '\n' ' ')"
-	say "memory_in_use_mib $(for i in 1 2 3; do awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f\n", (t - a) / 1024 }' /proc/meminfo; sleep 1; done | sort -n | sed -n 2p)"
+	# Memory in use (MemTotal less MemAvailable), reported only: the
+	# kernel's estimate of the cache it could free moves it by up to 19 MiB
+	# between runs of the same image (332 and 351 MiB on 2026-10-08).
+	say "memory_in_use_mib $(awk '/^MemTotal:/ { t = $2 } /^MemAvailable:/ { a = $2 } END { printf "%.0f", (t - a) / 1024 }' /proc/meminfo)"
+	# What the desktop holds, the budgeted number: the processes' own
+	# memory, shared memory (tmpfs and the buffers apps share with the
+	# compositor), and what the kernel cannot reclaim (slab, stacks, page
+	# tables), none of it an estimate. It moved by 6 MiB across the same
+	# runs. The middle of three reads a second apart.
+	say "memory_held_mib $(for i in 1 2 3; do awk '/^(AnonPages|Shmem|SUnreclaim|KernelStack|PageTables):/ { k += $2 } END { printf "%.0f\n", k / 1024 }' /proc/meminfo; sleep 1; done | sort -n | sed -n 2p)"
 	# Where that memory is, so a budget that is tight shows what to trim:
 	# the kernel's parts in MiB, then the eight processes with the most
 	# memory of their own (Pss, shared pages split between their users).
