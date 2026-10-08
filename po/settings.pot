@@ -125,9 +125,6 @@ msgstr ""
 msgid "Computer"
 msgstr ""
 
-msgid "Device"
-msgstr ""
-
 msgid "connected"
 msgstr ""
 
@@ -750,9 +747,6 @@ msgid "Install updates automatically"
 msgstr ""
 
 msgid "Not available yet. For now, check for updates here."
-msgstr ""
-
-msgid "Details"
 msgstr ""
 
 msgid "Runs {command}"
