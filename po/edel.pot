@@ -437,6 +437,12 @@ msgstr ""
 msgid "the preset, tiling, title bars and panels"
 msgstr ""
 
+msgid "Appearance"
+msgstr ""
+
+msgid "light or dark, the accent, fonts and animations"
+msgstr ""
+
 msgid "Displays"
 msgstr ""
 
@@ -447,30 +453,6 @@ msgid "Sound"
 msgstr ""
 
 msgid "the output and input devices and their volume"
-msgstr ""
-
-msgid "Appearance"
-msgstr ""
-
-msgid "light or dark, the accent, fonts and animations"
-msgstr ""
-
-msgid "Shortcuts"
-msgstr ""
-
-msgid "the keys for each action"
-msgstr ""
-
-msgid "Region"
-msgstr ""
-
-msgid "language, keyboard and time zone"
-msgstr ""
-
-msgid "Users"
-msgstr ""
-
-msgid "the people who log in, and their ssh keys"
 msgstr ""
 
 msgid "Network"
@@ -485,6 +467,24 @@ msgstr ""
 msgid "pairing and connecting headphones, mice and other devices"
 msgstr ""
 
+msgid "Power"
+msgstr ""
+
+msgid "the lid, the power button and the screen lock"
+msgstr ""
+
+msgid "Region"
+msgstr ""
+
+msgid "language, keyboard and time zone"
+msgstr ""
+
+msgid "Shortcuts"
+msgstr ""
+
+msgid "the keys for each action"
+msgstr ""
+
 msgid "Default apps"
 msgstr ""
 
@@ -497,24 +497,6 @@ msgstr ""
 msgid "apps that start after login"
 msgstr ""
 
-msgid "Power"
-msgstr ""
-
-msgid "the lid, the power button and the screen lock"
-msgstr ""
-
-msgid "Services"
-msgstr ""
-
-msgid "optional services, on or off"
-msgstr ""
-
-msgid "Updates"
-msgstr ""
-
-msgid "when updates are installed"
-msgstr ""
-
 msgid "Apps"
 msgstr ""
 
@@ -525,6 +507,24 @@ msgid "Add-ons"
 msgstr ""
 
 msgid "signed extras to the system"
+msgstr ""
+
+msgid "Services"
+msgstr ""
+
+msgid "optional services, on or off"
+msgstr ""
+
+msgid "Users"
+msgstr ""
+
+msgid "the people who log in, and their ssh keys"
+msgstr ""
+
+msgid "Updates"
+msgstr ""
+
+msgid "when updates are installed"
 msgstr ""
 
 msgid "System"

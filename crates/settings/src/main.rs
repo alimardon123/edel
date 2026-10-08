@@ -491,10 +491,10 @@ mod tests {
                 "Layout",
                 "Displays",
                 "Sound",
-                "Users",
                 "Network",
                 "Bluetooth",
                 "Power",
+                "Users",
                 "Updates",
                 "System",
                 "About"
@@ -530,10 +530,10 @@ mod tests {
                 "Layout",
                 "Displays",
                 "Sound",
-                "Users",
                 "Network",
                 "Bluetooth",
                 "Power",
+                "Users",
                 "Updates",
                 "System",
                 "About"
@@ -562,11 +562,11 @@ mod tests {
         assert_eq!(at("display"), Some(1), "the start of one name");
         assert_eq!(at("sound"), Some(2));
         assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("users"), Some(3));
-        assert_eq!(at("network"), Some(4));
-        assert_eq!(at("bluetooth"), Some(5));
-        assert_eq!(at("blue"), Some(5));
-        assert_eq!(at("power"), Some(6));
+        assert_eq!(at("users"), Some(6));
+        assert_eq!(at("network"), Some(3));
+        assert_eq!(at("bluetooth"), Some(4));
+        assert_eq!(at("blue"), Some(4));
+        assert_eq!(at("power"), Some(5));
         assert_eq!(at("updates"), Some(7));
         assert_eq!(at("system"), Some(8));
         assert_eq!(at("sy"), Some(8));
@@ -586,10 +586,10 @@ mod tests {
         assert_eq!(start(&["--page=about"]), Ok(9));
         assert_eq!(start(&["--page", "updates"]), Ok(7));
         assert_eq!(start(&["--page", "sound"]), Ok(2));
-        assert_eq!(start(&["--page", "users"]), Ok(3));
-        assert_eq!(start(&["--page", "network"]), Ok(4));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(5));
-        assert_eq!(start(&["--page", "power"]), Ok(6));
+        assert_eq!(start(&["--page", "users"]), Ok(6));
+        assert_eq!(start(&["--page", "network"]), Ok(3));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(4));
+        assert_eq!(start(&["--page", "power"]), Ok(5));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
