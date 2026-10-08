@@ -18,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use edel::i18n::{tr, trf};
 use edel::places;
 use edel::settings::{self, SettingsFile, User};
+use edel::users::ADMIN_GROUP;
 
 use crate::boot::GRUB_PREFIX;
 use crate::release::os_release_value;
@@ -51,8 +52,6 @@ pub fn default_shell() -> &'static str {
         DEFAULT_SHELL
     }
 }
-/// Members of this group are admins.
-const ADMIN_GROUP: &str = "admin";
 /// The group seatd lets use the screen and input (the `seat` feature,
 /// M4.1); only images with a seat have it.
 const SEAT_GROUP: &str = "seat";

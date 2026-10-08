@@ -230,6 +230,8 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-big-main:hover {{ background-color: alpha({accent}, 0.88); }}
 .edel-name {{ font-size: {name}px; font-weight: 650; letter-spacing: -0.6px; }}
 .edel-name-version {{ color: {secondary}; font-size: {big}px; }}
+.edel-avatar {{ min-width: 56px; min-height: 56px; border-radius: 999px; background-color: {accent}; color: {accent_text};
+  font-size: {hero}px; font-weight: 650; }}
 .edel-details > title {{ margin: 0 0 10px; padding: 4px 0; }}
 .edel-details > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
 .edel-details > title arrow {{ color: {muted}; }}

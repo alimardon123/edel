@@ -1,0 +1,12 @@
+# Power (roadmap M5.8b): UPower, which tells Settings' Power page, upower
+# and later the panel's battery and quick settings whether the machine is on
+# battery or plugged in and how much is left. Alpine's upower package ships
+# the daemon but no OpenRC script, so features/power/ holds the service
+# (etc/init.d/upower); its D-Bus policy already lets everyone read.
+format = 1
+summary = "Power: UPower reports the battery and whether the machine is plugged in"
+why = "A laptop's battery and whether it is plugged in are a basic people look at all day (principle 6): the panel, Settings and every app that wants to save power need one answer, and UPower is the reused daemon that gives it over D-Bus, from the kernel's power_supply files, with the time left worked out from the history. It is one small daemon that runs for the whole machine and sits idle on a machine with no battery; nothing else is added. No elogind and no polkit daemon: UPower only links polkit's client library for methods that change something (charge limits), which nothing here calls, so polkit-noelogind-libs is named to keep apk from taking the elogind build, and reading needs no authorization (its own D-Bus policy lets everyone read). Lid and critical-battery actions would go through logind, which this system does not run; they are the later power step's (M7.8, Edel OS's own keys), not UPower's. dbus is the system bus UPower is on, and a service script is added because Alpine's package has none."
+packages = ["dbus", "dbus-openrc", "polkit-noelogind-libs", "upower"]
+
+[services]
+default = ["dbus", "upower"]

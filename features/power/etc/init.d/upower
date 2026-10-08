@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+# UPower (roadmap M5.8b): upowerd answers org.freedesktop.UPower on the
+# system bus, so Settings' Power page, `upower` and later the panel know the
+# battery and whether the machine is plugged in. Alpine's upower package
+# has no OpenRC script, so this is it. upowerd stays in the foreground and
+# OpenRC puts it in the background; on a machine with no battery it has
+# nothing to watch and sits idle.
+
+description="Battery and power source reports over D-Bus"
+
+command=/usr/libexec/upowerd
+command_background=true
+pidfile=/run/upowerd.pid
+
+depend() {
+	need dbus
+	use logger udev
+	after udev-settle
+}
+
+start_pre() {
+	# Where it keeps the charge history it works the time left out from.
+	checkpath --directory --mode 0755 /var/lib/upower
+}

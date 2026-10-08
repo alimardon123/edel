@@ -446,6 +446,90 @@ msgstr ""
 msgid "Nothing is connected, so there are no addresses to show."
 msgstr ""
 
+msgid "How much battery is left, and what the lid and the power button do."
+msgstr ""
+
+msgid "When the lid closes"
+msgstr ""
+
+msgid "Not available yet. Sleep, lock, do nothing or shut down."
+msgstr ""
+
+msgid "Lock the screen after"
+msgstr ""
+
+msgid "Not available yet. Lock when the computer sits unused."
+msgstr ""
+
+msgid "Power button"
+msgstr ""
+
+msgid "Not available yet. What pressing the power button does."
+msgstr ""
+
+msgid "On battery"
+msgstr ""
+
+msgid "Not available yet. Save power or run at full speed."
+msgstr ""
+
+msgid "Plugged in"
+msgstr ""
+
+msgid "This computer has no battery."
+msgstr ""
+
+msgid "Running on battery"
+msgstr ""
+
+msgid "The battery's charge is not reported."
+msgstr ""
+
+msgid "Battery at {percent}%"
+msgstr ""
+
+msgid "Battery"
+msgstr ""
+
+msgid "Plugged in and charging. About {time} until full."
+msgstr ""
+
+msgid "Plugged in and charging."
+msgstr ""
+
+msgid "Fully charged"
+msgstr ""
+
+msgid "Plugged in."
+msgstr ""
+
+msgid "Plugged in, not charging at the moment."
+msgstr ""
+
+msgid "Battery empty"
+msgstr ""
+
+msgid "Plug in the charger to keep working."
+msgstr ""
+
+msgid "On battery. About {time} left."
+msgstr ""
+
+msgid "On battery."
+msgstr ""
+
+msgid "Looking at the battery"
+msgstr ""
+
+msgid "Other batteries"
+msgstr ""
+
+msgid "Power settings"
+msgstr ""
+
+msgid "Power information is not available"
+msgstr ""
+
 msgid "Preset"
 msgstr ""
 
@@ -768,6 +852,63 @@ msgid "Size"
 msgstr ""
 
 msgid "the command stopped without an answer; try again"
+msgstr ""
+
+msgid "The people who use this computer. Passwords are never shown here."
+msgstr ""
+
+msgid "Administrator"
+msgstr ""
+
+msgid "Standard user"
+msgstr ""
+
+msgid "{name} · {role}"
+msgstr ""
+
+msgid "Settings could not find your account in /etc/passwd, so there is no one to show."
+msgstr ""
+
+msgid "Your account"
+msgstr ""
+
+msgid "Can change the system. Changing it needs administrator rights, which Settings cannot ask for yet."
+msgstr ""
+
+msgid "Other people"
+msgstr ""
+
+msgid "No one else has an account on this computer."
+msgstr ""
+
+msgid "Add or remove people"
+msgstr ""
+
+msgid "Adding a person needs administrator rights, which Settings cannot ask for yet. An administrator can add one now with edel settings set users.NAME.admin=false and then edel settings apply."
+msgstr ""
+
+msgid "Removing a person is not available yet."
+msgstr ""
+
+msgid "Add a person"
+msgstr ""
+
+msgid "Remove a person"
+msgstr ""
+
+msgid "Not available yet"
+msgstr ""
+
+msgid "Login name"
+msgstr ""
+
+msgid "User ID"
+msgstr ""
+
+msgid "Home folder"
+msgstr ""
+
+msgid "Login shell"
 msgstr ""
 
 msgid "Your changes are live"

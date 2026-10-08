@@ -19,6 +19,7 @@ mod files;
 mod icon;
 mod layout;
 mod network;
+mod power;
 mod preview;
 mod rows;
 mod screens;
@@ -27,6 +28,7 @@ mod status;
 mod style;
 mod system;
 mod updates;
+mod users;
 mod widgets;
 
 use std::cell::RefCell;
@@ -188,6 +190,14 @@ fn all_pages() -> Vec<Page> {
                 build: |_| sound::page(),
                 needs: Some("sound"),
             }),
+            // Users reads the accounts every machine has (M5.8b).
+            "users" => Some(Page {
+                title: tr(page.title),
+                icon: "page-users",
+                section: Some(page.section),
+                build: |_| users::page(),
+                needs: None,
+            }),
             // Network talks to NetworkManager through nmcli, Bluetooth to
             // BlueZ through bluetoothctl; no such feature, no page (M5.8a).
             "network" => Some(Page {
@@ -203,6 +213,14 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| bluetooth::page(),
                 needs: Some("bluetooth"),
+            }),
+            // Power talks to UPower through upower (M5.8b).
+            "power" => Some(Page {
+                title: tr(page.title),
+                icon: "page-power",
+                section: Some(page.section),
+                build: |_| power::page(),
+                needs: Some("power"),
             }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
@@ -473,8 +491,10 @@ mod tests {
                 "Layout",
                 "Displays",
                 "Sound",
+                "Users",
                 "Network",
                 "Bluetooth",
+                "Power",
                 "Updates",
                 "System",
                 "About"
@@ -510,8 +530,10 @@ mod tests {
                 "Layout",
                 "Displays",
                 "Sound",
+                "Users",
                 "Network",
                 "Bluetooth",
+                "Power",
                 "Updates",
                 "System",
                 "About"
@@ -521,6 +543,8 @@ mod tests {
         assert_eq!(titles("sou"), ["Sound"]);
         assert_eq!(titles("blue"), ["Bluetooth"]);
         assert_eq!(titles("net"), ["Network"]);
+        assert_eq!(titles("pow"), ["Power"]);
+        assert_eq!(titles("user"), ["Users"]);
         assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
         assert_eq!(titles("resolution"), ["Displays"]);
@@ -538,14 +562,16 @@ mod tests {
         assert_eq!(at("display"), Some(1), "the start of one name");
         assert_eq!(at("sound"), Some(2));
         assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("network"), Some(3));
-        assert_eq!(at("bluetooth"), Some(4));
-        assert_eq!(at("blue"), Some(4));
-        assert_eq!(at("updates"), Some(5));
-        assert_eq!(at("system"), Some(6));
-        assert_eq!(at("sy"), Some(6));
-        assert_eq!(at("about"), Some(7));
-        assert_eq!(at("abo"), Some(7));
+        assert_eq!(at("users"), Some(3));
+        assert_eq!(at("network"), Some(4));
+        assert_eq!(at("bluetooth"), Some(5));
+        assert_eq!(at("blue"), Some(5));
+        assert_eq!(at("power"), Some(6));
+        assert_eq!(at("updates"), Some(7));
+        assert_eq!(at("system"), Some(8));
+        assert_eq!(at("sy"), Some(8));
+        assert_eq!(at("about"), Some(9));
+        assert_eq!(at("abo"), Some(9));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
     }
@@ -556,12 +582,14 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(7));
-        assert_eq!(start(&["--page=about"]), Ok(7));
-        assert_eq!(start(&["--page", "updates"]), Ok(5));
+        assert_eq!(start(&["--page", "about"]), Ok(9));
+        assert_eq!(start(&["--page=about"]), Ok(9));
+        assert_eq!(start(&["--page", "updates"]), Ok(7));
         assert_eq!(start(&["--page", "sound"]), Ok(2));
-        assert_eq!(start(&["--page", "network"]), Ok(3));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(4));
+        assert_eq!(start(&["--page", "users"]), Ok(3));
+        assert_eq!(start(&["--page", "network"]), Ok(4));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(5));
+        assert_eq!(start(&["--page", "power"]), Ok(6));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -587,28 +615,29 @@ mod tests {
         let titles = |dir: &std::path::Path| -> Vec<&str> {
             pages_in(dir).iter().map(|p| p.title).collect()
         };
-        // Updates and System run `edel`, which every machine has.
-        assert_eq!(titles(&dir), ["Updates", "System", "About"]);
+        // Users, Updates and System need no feature: every machine has
+        // accounts and `edel`.
+        assert_eq!(titles(&dir), ["Users", "Updates", "System", "About"]);
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(
             titles(&dir),
-            ["Layout", "Displays", "Updates", "System", "About"]
+            ["Layout", "Displays", "Users", "Updates", "System", "About"]
         );
         std::fs::write(dir.join("sound.toml"), "format = 1\n").unwrap();
         assert_eq!(
             titles(&dir),
-            ["Layout", "Displays", "Sound", "Updates", "System", "About"]
-        );
-        // Network and Bluetooth each need a feature of their own.
-        std::fs::write(dir.join("network.toml"), "format = 1\n").unwrap();
-        assert_eq!(
-            titles(&dir),
             [
-                "Layout", "Displays", "Sound", "Network", "Updates", "System", "About"
+                "Layout", "Displays", "Sound", "Users", "Updates", "System", "About"
             ]
         );
+        // Network, Bluetooth and Power each need a feature of their own.
+        std::fs::write(dir.join("network.toml"), "format = 1\n").unwrap();
+        assert!(titles(&dir).contains(&"Network"));
         std::fs::write(dir.join("bluetooth.toml"), "format = 1\n").unwrap();
         assert!(titles(&dir).contains(&"Bluetooth"));
+        assert!(!titles(&dir).contains(&"Power"));
+        std::fs::write(dir.join("power.toml"), "format = 1\n").unwrap();
+        assert!(titles(&dir).contains(&"Power"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

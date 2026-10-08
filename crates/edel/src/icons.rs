@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 26] = [
+pub const BUILT_IN: [(&str, &str); 28] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     (
         "layout-floating",
@@ -61,6 +61,15 @@ pub const BUILT_IN: [(&str, &str); 26] = [
         include_str!("../../../design/icons/page-bluetooth.svg"),
     ),
     ("lock", include_str!("../../../design/icons/lock.svg")),
+    // The Power and Users pages' (M5.8b).
+    (
+        "page-power",
+        include_str!("../../../design/icons/page-power.svg"),
+    ),
+    (
+        "page-users",
+        include_str!("../../../design/icons/page-users.svg"),
+    ),
     // The Updates and System pages' (M5.8c).
     (
         "page-updates",
