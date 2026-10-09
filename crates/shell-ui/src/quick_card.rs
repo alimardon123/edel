@@ -45,6 +45,11 @@ pub struct QuickCard {
 }
 
 impl QuickCard {
+    /// Do not disturb is `on` now: its tile shows it.
+    pub fn set_dnd(&mut self, on: bool) {
+        self.state.dnd = on;
+    }
+
     /// The card's surface, for the handlers of the compositor's events.
     pub fn popup_mut(&mut self) -> &mut Popup<quick::View> {
         &mut self.popup
@@ -177,7 +182,7 @@ impl Shell {
 
     /// The width of the screen the panels lie on, logical pixels: a bar
     /// spans it; 0 before any panel is configured.
-    fn screen_width(&self) -> u32 {
+    pub fn screen_width(&self) -> u32 {
         use edel::presets::Style;
         self.panels
             .iter()
@@ -203,6 +208,7 @@ impl Shell {
     fn open_quick(&mut self) {
         self.close_launcher();
         self.close_styles();
+        self.close_centre();
         let Some(panel) = self
             .panels
             .iter()
@@ -219,6 +225,7 @@ impl Shell {
             width,
             compact,
             dark: quick::is_dark(machine.as_deref(), person.as_deref()),
+            dnd: crate::notify::do_not_disturb(machine.as_deref(), person.as_deref()),
             ..quick::State::default()
         };
         let size_px = self.tokens.panel_text_size as f32 - 1.0;
@@ -540,8 +547,11 @@ impl Shell {
     /// Switches `tile` to `on`: shown at once, then done by a thread.
     fn toggle_tile(&mut self, tile: quick::Tile, on: bool) {
         use quick::Tile;
-        if tile == Tile::DarkStyle {
-            return self.toggle_dark(on);
+        match tile {
+            // Lines of the person's settings file, written as Settings does.
+            Tile::DarkStyle => return self.toggle_dark(on),
+            Tile::DoNotDisturb => return self.set_dnd(on),
+            _ => {}
         }
         let status = &self.live.status;
         let (wifi, bluetooth) = (status.has_wifi(), status.bluetooth.is_some());
@@ -573,7 +583,7 @@ impl Shell {
                     bluetooth,
                 }
             }
-            Tile::DarkStyle => return,
+            Tile::DarkStyle | Tile::DoNotDisturb => return,
         };
         self.run_and_read(Some(cmd), true);
         self.draw_quick();

@@ -115,6 +115,12 @@ report() {
 	# Its five largest mappings by anonymous memory, `NAME:KIB` with NAME
 	# [heap], [stack], [anon] or the file, so a rise shows where it sits.
 	say "shell_ui_anon_top $(awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 > 0) print name ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | sort -t: -k2 -n -r | head -n 5 | tr '\n' ' ')"
+	# Where its largest anonymous mappings lie, and each thread's name and
+	# stack pointer (the next to last field of its syscall file), so a
+	# mapping that is a thread's stack names its thread: #159 once met a
+	# single 2 MiB anonymous mapping that local runs never show.
+	say "shell_ui_anon_ranges $(awk '/^[0-9a-f]+-[0-9a-f]+ / { range = $1; name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 >= 512 && name == "[anon]") print range ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | tr '\n' ' ')"
+	say "shell_ui_thread_stacks $(for t in /proc/$pid/task/*; do printf '%s:%s ' "$(cat "$t/comm" 2>/dev/null)" "$(awk '{ print $(NF - 1) }' "$t/syscall" 2>/dev/null)"; done)"
 	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
 	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
@@ -270,6 +276,23 @@ commands() {
 		# The sound system's volume (M5.9a): the default output at 20
 		# percent, for the quick settings slider to start from.
 		'volume 20') as_ci wpctl set-volume @DEFAULT_AUDIO_SINK@ 20% ;;
+		# Notifications (M5.9b): an app's call on ci's session bus, as
+		# notify-send makes it (gdbus, which the image has through GLib;
+		# libnotify is not in it): app name, no replaced id, an icon name
+		# no theme has, a summary, a body, no actions, no hints, 5 s.
+		'notify one' | 'notify two' | 'notify three')
+			case "$command" in
+			'notify one') words="'Hello from CI' 'a banner for the test'" ;;
+			'notify two') words="'Second one' 'listed, not shown'" ;;
+			*) words="'Third one' 'a banner again'" ;;
+			esac
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.Notifications --object-path /org/freedesktop/Notifications --method org.freedesktop.Notifications.Notify ci-test 0 dialog-information $words '[]' '{}' 5000" </dev/null
+			;;
+		# Do not disturb (M5.9b) in the machine's file, and back to the
+		# release's own.
+		'dnd on') edel settings set notifications.do_not_disturb=true ;;
+		'dnd default') edel settings reset notifications.do_not_disturb ;;
 		# appearance.animations (M5.11b), reduced and back to the default.
 		'motion reduced') edel settings set appearance.animations=reduced ;;
 		'motion off') edel settings set appearance.animations=off ;;

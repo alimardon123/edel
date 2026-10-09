@@ -86,6 +86,12 @@ pub const PAGES: &[Page] = &[
         about: n_("the lid, the power button and the screen lock"),
     },
     Page {
+        // Banners and the notification centre are shell-ui's (M5.9b).
+        section: "notifications",
+        title: n_("Notifications"),
+        about: n_("banners and do not disturb"),
+    },
+    Page {
         section: "region",
         title: n_("Region"),
         about: n_("language, keyboard and time zone"),
@@ -322,6 +328,8 @@ pub const KEYS: &[Key] = &[
     later("updates.restart_window", Kind::Text),
     later("apps.installed", Kind::Texts),
     later("addons.installed", Kind::Texts),
+    // Banners stay away while the notification list still fills (M5.9b).
+    now("notifications.do_not_disturb", Kind::Flag),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -351,6 +359,8 @@ pub struct SettingsFile {
     pub startup: Startup,
     #[serde(default, skip_serializing_if = "is_default")]
     pub power: Power,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub notifications: Notifications,
     /// Feature name to on or off, such as `ssh = false`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub services: BTreeMap<String, bool>,
@@ -379,6 +389,7 @@ impl Default for SettingsFile {
             default_apps: DefaultApps::default(),
             startup: Startup::default(),
             power: Power::default(),
+            notifications: Notifications::default(),
             services: BTreeMap::new(),
             updates: Updates::default(),
             apps: Apps::default(),
@@ -556,6 +567,15 @@ pub struct Power {
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_battery: Option<String>,
+}
+
+/// The Notifications page (M5.9b).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Notifications {
+    /// Whether banners stay away while the notification centre still
+    /// lists what arrives; absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub do_not_disturb: Option<bool>,
 }
 
 /// The Updates page.
@@ -763,6 +783,19 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
             other => Some(other.to_string()),
         },
         Source::Release => None,
+    }
+}
+
+/// The key banners and sounds are kept away with (M5.9b), the one name
+/// shell-ui, Settings and `edel settings` share.
+pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
+
+/// `key`'s value as a flag, the person's file over the machine's; none
+/// when neither sets it, or what they say is not `true` or `false`.
+pub fn flag(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<bool> {
+    match source(key, machine, person) {
+        Source::Person(Value::Boolean(on)) | Source::Machine(Value::Boolean(on)) => Some(on),
+        _ => None,
     }
 }
 
@@ -1879,5 +1912,43 @@ font_size = 11
                 key.path
             );
         }
+    }
+    #[test]
+    fn do_not_disturb_is_a_flag_whose_mistakes_explain_themselves() {
+        let file = |on: &str| format!("format = 1\n[notifications]\ndo_not_disturb = {on}\n");
+        let (on, off) = (file("true"), file("false"));
+        // Absent, it is off: the release decides, and no flag is read.
+        assert_eq!(flag(DO_NOT_DISTURB, None, None), None);
+        assert_eq!(flag(DO_NOT_DISTURB, Some("format = 1\n"), None), None);
+        // The person's file over the machine's.
+        assert_eq!(flag(DO_NOT_DISTURB, Some(&on), None), Some(true));
+        assert_eq!(flag(DO_NOT_DISTURB, Some(&on), Some(&off)), Some(false));
+        assert_eq!(flag(DO_NOT_DISTURB, None, Some(&on)), Some(true));
+        // `set` writes the one line, and `check` accepts the file.
+        let written = set("format = 1\n", DO_NOT_DISTURB, "true").unwrap();
+        assert_eq!(
+            written,
+            "format = 1\n\n[notifications]\ndo_not_disturb = true\n"
+        );
+        assert!(check(&written).unwrap().is_empty());
+        assert!(
+            !unset(&written, DO_NOT_DISTURB)
+                .unwrap()
+                .contains("notifications")
+        );
+        // A word that is no flag is refused with what to write.
+        let refused = set("format = 1\n", DO_NOT_DISTURB, "maybe").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "notifications.do_not_disturb: expected true or false, not \"maybe\""
+        );
+        // A near name is corrected, and `get notifications` knows the page.
+        let near = set("format = 1\n", "notification.do_not_disturb", "true").unwrap_err();
+        assert!(
+            format!("{near:#}").contains("did you mean notifications.do_not_disturb?"),
+            "{near:#}"
+        );
+        assert_eq!(page("notifications").unwrap().title, "Notifications");
+        assert!(!no_keys("notifications"));
     }
 }

@@ -500,6 +500,12 @@ msgstr ""
 msgid "the lid, the power button and the screen lock"
 msgstr ""
 
+msgid "Notifications"
+msgstr ""
+
+msgid "banners and do not disturb"
+msgstr ""
+
 msgid "Region"
 msgstr ""
 

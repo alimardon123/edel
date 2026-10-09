@@ -28,11 +28,12 @@ style = "menu"
 
 # The tiles of quick settings, which the status area's click opens
 # (M5.9a), in two columns in this order: wifi, bluetooth, airplane
-# (every radio off) and dark_style (appearance.mode). A tile whose
-# feature or hardware this machine lacks is left out. Left out, the
-# table shows these four.
+# (every radio off), do_not_disturb (notifications.do_not_disturb,
+# M5.9b) and dark_style (appearance.mode). A tile whose feature or
+# hardware this machine lacks is left out. Left out, the table shows
+# these five.
 [quick]
-tiles = ["wifi", "bluetooth", "airplane", "dark_style"]
+tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
 
 # Each panel is one layer-shell surface along a screen's edge, top or
 # bottom, holding shell-ui's widgets by name: from its start, in its

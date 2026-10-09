@@ -81,6 +81,13 @@
 #               appearance.mode to ci's settings file and the compositor takes
 #               the dark colours; Escape and a second click on the pill close
 #               the card (M5.9a)
+#   notify      a notification sent on ci's session bus as an app sends it
+#               (gdbus call, org.freedesktop.Notifications.Notify) shows a
+#               banner at the panel's corner in the panel's colour; a click
+#               on the clock opens the notification centre with it listed;
+#               with notifications.do_not_disturb set, a second one is
+#               listed but shows no banner; unset, a third shows one again
+#               and it goes by itself (M5.9b)
 #   switcher    with Alt held, Tab shows the window switcher with the
 #               window used before chosen; letting go switches (M5.3c)
 #   styles      layout.tiling_style = "split" leaves workspace 4 floating;
@@ -604,7 +611,7 @@ case_panel() {
 	rss=$(value shell_ui_rss_mib)
 	limit=$(budget shell_ui_own_mib)
 	awk -v m="$own" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "edel-shell-ui keeps ${own:-?} MiB of its own once settled (${peak:-?} MiB at most over 8 s, reads $(value shell_ui_own_reads), $(value shell_ui_threads) threads, $rss MiB resident), over its budget of $limit MiB"
+		fail "edel-shell-ui keeps ${own:-?} MiB of its own once settled (${peak:-?} MiB at most over 8 s, reads $(value shell_ui_own_reads), $(value shell_ui_threads) threads, $rss MiB resident), over its budget of $limit MiB; its largest mappings $(value shell_ui_anon_top), anonymous ranges $(value shell_ui_anon_ranges), threads and stack pointers $(value shell_ui_thread_stacks)"
 	# Killed, it comes back: the compositor starts it again.
 	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'kill panel'
@@ -1474,7 +1481,8 @@ case_quick() {
 	# above it, 8 px from the screen's side and the panel, in the panel's
 	# colour: 1000,745 lies in its bottom padding and is the background
 	# before. The VM has a network but no Wi-Fi adapter and no Bluetooth, so
-	# its card holds the Dark style tile, the volume and Settings; shell-ui
+	# its card holds the Do not disturb and Dark style tiles, the volume and
+	# Settings; shell-ui
 	# logs where each lies (`quick places`), in logical pixels from the
 	# card's corner, which the layers line (the card and its shadow's room)
 	# places on screen. Kept as quick.png.
@@ -1584,6 +1592,105 @@ case_quick() {
 	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "Escape did not close quick settings"
 	shot quick 1000 745 "$background" >/dev/null || fail "1000,745 is not the background after Escape"
 	echo "PASS: a click on the status area opened quick settings in the panel's colour, a drag on the volume slider took the sink from 0.20 to $volume as wpctl status shows, a second click on the pill closed the card, a click on Dark style wrote appearance.mode to ci's file and the compositor took the dark colours, and Escape closed the card"
+}
+
+case_notify() {
+	# Notifications (M5.9b). An app sends a notification as ci on the
+	# session bus (gdbus call, the one tool every image has for it), and
+	# shell-ui shows a banner at the panel's corner, 8 px from the screen's
+	# side and the panel, in the panel's colour: 1200,745 lies in its
+	# padding, clear of its words and its cross, and is the background
+	# before. A click on the clock opens the notification centre over it,
+	# which lists the notification; Escape closes it. With
+	# notifications.do_not_disturb set by `edel settings set`, a second
+	# notification is listed in the centre, which the log says, and shows no
+	# banner; with the key taken out again a third shows one, which goes by
+	# itself after its few seconds. The layers lines (the card and its
+	# shadow's room) are the regions. Kept as notify.png.
+	background=$(token background)
+	panel=$(token panel)
+	clock() {
+		tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+			sed -n 's/.*clock \([0-9]*\)+\([0-9]*\).*/\1 \2/p'
+	}
+	set -- $(clock)
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its clock lies: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	clock_x=$(($1 + $2 / 2))
+	shot notify 1200 745 "$background" >/dev/null || fail "1200,745 is not the background before a notification"
+	# The first notification: a banner in the panel's colour.
+	shown=$(count 'edel-shell-ui: banner shown')
+	guest 'notify one'
+	wait_more 'edel-shell-ui: banner shown' "$shown" || fail "a notification sent on the session bus showed no banner: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	tr -d '\r' <"$log" | grep -aEq 'edel-shell-ui: notification [0-9]+ from ci-test: Hello from CI' ||
+		fail "shell-ui did not log the notification it was sent"
+	shot notify 1200 745 "$panel" >/dev/null || fail "the banner is not drawn at 1200,745 in the panel's colour"
+	i=0
+	until value layers | grep -q 'edel-notification@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no notification surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-notification@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-notification@//; s/[,x]/ /g')
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: banner places' | tail -n 1)
+	set -- $1 $2 $3 $4 $(echo "$line" | sed -n 's/.*banner places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	[ -n "${5:-}" ] || fail "shell-ui did not say how big the banner is: $line"
+	[ "$5" = 360 ] || fail "the banner is $5 px wide, not 360"
+	# Its surface is the card and the room for its shadow round it.
+	[ "$3" -ge "$5" ] && [ "$4" -ge "$6" ] || fail "the banner's region ${3}x$4 is smaller than its card ${5}x$6: $(value layers)"
+	python3 ci/qmp.py screendump "$dir/notify.png"
+	# A click on the clock opens the centre over it: the banner gives way.
+	shown=$(count 'edel-shell-ui: notification centre shown')
+	python3 ci/qmp.py click "$clock_x" 780
+	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the clock at $clock_x,780 did not open the notification centre"
+	i=0
+	until value layers | grep -q 'edel-centre@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no notification centre: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-centre@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-centre@//; s/[,x]/ /g')
+	cw=$3 ch=$4
+	shot notify 1200 745 "$panel" >/dev/null || fail "the centre is not drawn at 1200,745 in the panel's colour"
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1)
+	echo "$line" | grep -q 'centre places card 360x[0-9]*, clear .*notification0 ' ||
+		fail "the centre does not list the notification: $line"
+	echo "$line" | grep -q 'notification1 ' && fail "the centre lists two notifications after one was sent: $line"
+	# Its surface is the card and, on Full and Balanced, the room for its
+	# shadow round it; CI runs on Lite, where there is none (M5.5e).
+	[ "$cw" -ge 360 ] && [ "$ch" -gt 300 ] || fail "the centre's region is only ${cw}x$ch: $(value layers)"
+	python3 ci/qmp.py screendump "$dir/notify-centre.png"
+	# Do not disturb: the next notification is listed and shows no banner.
+	shown=$(count 'edel-shell-ui: banner shown')
+	listed=$(count 'edel-shell-ui: notification [0-9]+ is listed, with no banner while do not disturb is on')
+	guest 'dnd on'
+	sleep 1
+	guest 'notify two'
+	wait_more 'edel-shell-ui: notification [0-9]+ is listed, with no banner while do not disturb is on' "$listed" ||
+		fail "with do not disturb set, the second notification was not logged as listed without a banner: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	sleep 2
+	[ "$(count 'edel-shell-ui: banner shown')" = "$shown" ] || fail "a banner showed while do not disturb was set"
+	value layers | grep -q 'edel-notification@' && fail "a notification surface is listed while do not disturb is set: $(value layers)"
+	i=0
+	until tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1 | grep -q 'notification1 '; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the open centre does not list the second notification: $(tr -d '\r' <"$log" | grep -a 'centre places' | tail -n 1)"
+		sleep 0.2
+	done
+	# Escape closes the centre.
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the notification centre"
+	shot notify 1200 745 "$background" >/dev/null || fail "1200,745 is not the background after the centre closed"
+	# The key taken out, banners are back; this one goes by itself.
+	guest 'dnd default'
+	sleep 1
+	shown=$(count 'edel-shell-ui: banner shown')
+	hidden=$(count 'edel-shell-ui: banner hidden')
+	guest 'notify three'
+	wait_more 'edel-shell-ui: banner shown' "$shown" || fail "with do not disturb taken out again, the third notification showed no banner"
+	wait_more 'edel-shell-ui: banner hidden' "$hidden" 15 || fail "the banner did not go away by itself after its few seconds"
+	shot notify 1200 745 "$background" >/dev/null || fail "1200,745 is not the background after the banner went"
+	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself"
 }
 
 case_switcher() {

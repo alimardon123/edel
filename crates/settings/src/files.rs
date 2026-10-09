@@ -222,6 +222,18 @@ impl Files {
             .map(|keys| keys.to_string())
     }
 
+    /// Whether banners are kept away (M5.9b): the person's file over the
+    /// machine's, off when neither says.
+    pub fn do_not_disturb(&self) -> bool {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        settings::flag(
+            settings::DO_NOT_DISTURB,
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
+        .unwrap_or(false)
+    }
+
     /// Where `key`'s value comes from: the person's file, the machine's,
     /// or neither (M5.6b).
     pub fn source(&self, key: &str) -> settings::Source {
@@ -482,6 +494,49 @@ mod tests {
             .choose_over("displays.Virtual-1.enabled", "true", Some("true"))
             .unwrap();
         assert!(!read().contains("enabled"), "{}", read());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn do_not_disturb_is_off_until_a_file_says_so_and_is_never_written_off() {
+        let dir = scratch("dnd");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let read = || std::fs::read_to_string(&person).unwrap_or_default();
+        let key = settings::DO_NOT_DISTURB;
+        assert!(!files.do_not_disturb());
+        // Off is the default: choosing it writes nothing.
+        files.choose_over(key, "false", Some("false")).unwrap();
+        assert!(!read().contains("do_not_disturb"), "{}", read());
+        files.choose_over(key, "true", Some("false")).unwrap();
+        assert!(read().contains("do_not_disturb = true"), "{}", read());
+        assert!(files.do_not_disturb());
+        files.choose_over(key, "false", Some("false")).unwrap();
+        assert!(!read().contains("do_not_disturb"), "{}", read());
+        // With the machine keeping banners away, off must be written.
+        std::fs::write(
+            &files.machine,
+            "format = 1\n[notifications]\ndo_not_disturb = true\n",
+        )
+        .unwrap();
+        assert!(files.do_not_disturb());
+        files.choose_over(key, "false", Some("false")).unwrap();
+        assert!(read().contains("do_not_disturb = false"), "{}", read());
+        assert!(!files.do_not_disturb());
+        // The row's file is what `edel settings set` writes, and a refusal reads the same.
+        let by_command = settings::set("format = 1\n", key, "true").unwrap();
+        files.set(key, None).unwrap();
+        std::fs::remove_file(&files.machine).unwrap();
+        files.choose_over(key, "true", Some("false")).unwrap();
+        assert_eq!(read(), by_command);
+        let refused = files.set(key, Some("maybe")).unwrap_err();
+        assert_eq!(
+            refused,
+            "notifications.do_not_disturb: expected true or false, not \"maybe\""
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

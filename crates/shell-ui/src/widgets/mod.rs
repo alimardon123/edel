@@ -91,6 +91,9 @@ pub struct Live {
     /// Whether quick settings are open, for the status area's lit pill
     /// (M5.9a).
     pub quick: bool,
+    /// Whether the notification centre is open, for the clock's lit
+    /// button (M5.9b).
+    pub centre: bool,
     /// How the machine is connected, how loud it is and how full its
     /// battery is (M5.9a); each part only where the machine has it.
     pub status: crate::status::Status,
@@ -170,6 +173,8 @@ pub enum Action {
     Styles,
     /// Open quick settings above the status area, or close them (M5.9a).
     Quick,
+    /// Open the notification centre over the clock, or close it (M5.9b).
+    Centre,
     /// The app with this desktop file id: bring its window forward, or
     /// minimize it if it is the focused one, or start the app (M5.4c).
     App(String),

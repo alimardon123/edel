@@ -98,6 +98,12 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 |---|---|---|
 | `shortcuts.*` | keys for the action `*`, such as `close_window = "Super+W"`, or `""` for none; the actions, their default keys and the key names are in [Keyboard shortcuts](SHORTCUTS.md). Check and set refuse an unknown action, two actions on one key and a way out (close a window, the launcher, the lock) without keys. The desktop follows them at once | M5.13a |
 
+## Notifications: `[notifications]`
+
+| Key | Value | From |
+|---|---|---|
+| `notifications.do_not_disturb` | `true` or `false`: whether banners stay away; missing is `false`. Notifications still arrive and are listed in the notification centre, which the clock opens, and a critical one still shows its banner. shell-ui reads the file at each notification, so a change by `edel settings set` applies to the next one. Settings' Notifications page has it as the Do not disturb row, quick settings as its tile, and the centre as its switch row. `edel settings set notifications.do_not_disturb=maybe` is refused with `expected true or false` | M5.9b |
+
 ## Region: `[region]`
 
 | Key | Value | From |
