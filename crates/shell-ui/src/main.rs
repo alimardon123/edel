@@ -218,6 +218,13 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    // Huge pages stay off for this small process, before any thread starts:
+    // with them on, a thread stack that happens to cover a 2 MiB boundary is
+    // backed by one 2 MiB page at its first touch, which CI read as 2 MiB
+    // more of shell-ui's own memory on some runs.
+    if let Err(e) = rustix::thread::disable_transparent_huge_pages(true) {
+        eprintln!("edel-shell-ui: {}", messages::huge_pages_on(e));
+    }
     if let Some((language, words)) = edel::i18n::init("shell-ui") {
         eprintln!("edel-shell-ui: words in {language}, {words} translated");
     }

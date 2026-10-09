@@ -41,7 +41,7 @@ wayland-scanner = "0.31.11"
 # The kernel's netlink news of network and power changes for the status
 # area (M5.9a), on the event loop, and giving back the pages of panel
 # buffers no longer shown; already in the tree through smithay.
-rustix = { version = "1.1.5", default-features = false, features = ["std", "net", "mm", "param"] }
+rustix = { version = "1.1.5", default-features = false, features = ["std", "net", "mm", "param", "thread"] }
 # 2D drawing into the panel's shared-memory buffers.
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "simd", "png-format"] }
 # The settings portal's backend (M5.5a), on the zbus AccessKit already
