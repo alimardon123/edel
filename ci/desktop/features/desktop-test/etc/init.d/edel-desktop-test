@@ -115,6 +115,12 @@ report() {
 	# Its five largest mappings by anonymous memory, `NAME:KIB` with NAME
 	# [heap], [stack], [anon] or the file, so a rise shows where it sits.
 	say "shell_ui_anon_top $(awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 > 0) print name ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | sort -t: -k2 -n -r | head -n 5 | tr '\n' ' ')"
+	# Where its largest anonymous mappings lie, and each thread's name and
+	# stack pointer (the next to last field of its syscall file), so a
+	# mapping that is a thread's stack names its thread: #159 once met a
+	# single 2 MiB anonymous mapping that local runs never show.
+	say "shell_ui_anon_ranges $(awk '/^[0-9a-f]+-[0-9a-f]+ / { range = $1; name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 >= 512 && name == "[anon]") print range ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | tr '\n' ' ')"
+	say "shell_ui_thread_stacks $(for t in /proc/$pid/task/*; do printf '%s:%s ' "$(cat "$t/comm" 2>/dev/null)" "$(awk '{ print $(NF - 1) }' "$t/syscall" 2>/dev/null)"; done)"
 	say "shell_ui_own_mib $(echo "$samples" | sort -n | grep . | head -n 1)"
 	say "shell_ui_own_peak_mib $(echo "$samples" | sort -n | tail -n 1)"
 	say "shell_ui_file_mib $(awk '/^RssFile:/ { printf "%.1f", $2 / 1024 }' "/proc/$pid/status" 2>/dev/null)"
