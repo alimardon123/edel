@@ -143,6 +143,13 @@ pub fn pages_not_given_back(why: impl Display) -> String {
     )
 }
 
+/// Huge pages could not be turned off for shell-ui.
+pub fn huge_pages_on(why: impl Display) -> String {
+    format!(
+        "could not turn off huge pages: {why}; shell-ui may hold up to 2 MiB more memory than it needs"
+    )
+}
+
 /// The compositor ended the connection.
 pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes with it";
 
