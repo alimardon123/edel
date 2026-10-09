@@ -69,6 +69,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/states.jpg](shell/states.jpg) | Hover, pressed, on and off, focus, and how each part moves |
 | [shell/tray.jpg](shell/tray.jpg) | The tray: one arrow, as on Windows, opening a frosted grid |
 | [shell/settings.jpg](shell/settings.jpg) | Every setting these pictures need: its choices, its default and its proposed key; Alimardon's decisions, and four defaults Claude picked by the principles (how many workspaces show, the ends of their strip, the volume pop-up on, new tray apps behind the arrow), which they can overrule |
+| [shell/standing-slider.jpg](shell/standing-slider.jpg) | How Sound is reached from a standing volume slider: six ways compared, and the one chosen, no button, a right click or a still hold |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
 
 The rules under them:
@@ -88,6 +89,12 @@ The rules under them:
 - **Edit, Settings and power** sit on the anchored edge: the footer on a
   bottom panel, the header's second line when the sheet hangs from the
   top. A chevron on a pill opens its details in place.
+- **A slider is only a slider.** One lying on a shelf has its chevron
+  beside it; one standing in the grid has no button at all: a right
+  click on a laptop, or a still hold of half a second on touch, opens
+  Sound (Displays for brightness). The slider follows only a moving
+  finger, so a hold is never mistaken for a drag (Alimardon,
+  2026-10-09).
 - **Notifications** open from the clock on a laptop, apart from the
   calendar card below; on a phone or tablet from a swipe down at the top
   left, as a full shade. Do not disturb is a moon button that fills with
