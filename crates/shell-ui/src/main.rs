@@ -376,7 +376,7 @@ fn run() -> Result<()> {
                 }
             })
             .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
-        shell._system = watch::serve(features, &shell.status_tx);
+        shell._system = watch::serve(features, &shell.status_tx, shell._portal.as_ref());
         shell.request_status(false);
     }
     WaylandSource::new(connection, queue)
