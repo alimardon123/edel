@@ -86,7 +86,10 @@ sleep 2
 pixel() {
 	convert "$work/screen.png" -format "%[hex:p{$1,$2}]" info: | cut -c1-6
 }
-# The window's middle, from the place the compositor gave it.
+# A point a quarter in from the window's lower left, from the place the
+# compositor gave it: the pointer rests near the screen's middle, and a
+# window placed before the panel took its room has its middle under the
+# pointer's white arrow.
 place=$(sed -n 's/^edel-compositor: mapped window elsewhere at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\)$/\1 \2 \3 \4/p' "$work/compositor.log" | head -n 1)
 set -- $place
 want=$(echo "$colour" | tr a-f A-F)
@@ -96,7 +99,7 @@ want=$(echo "$colour" | tr a-f A-F)
 tries=0
 while :; do
 	import -display "$display" -window root "$work/screen.png"
-	window=$(pixel $(($1 + $3 / 2)) $(($2 + $4 / 2)))
+	window=$(pixel $(($1 + $3 / 4)) $(($2 + $4 * 3 / 4)))
 	# The panel lies along the bottom; its middle is empty in Classic.
 	bar=$(pixel 640 796)
 	[ "$bar" = "$panel" ] && [ "$window" = "$want" ] && break
