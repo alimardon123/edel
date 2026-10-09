@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notifications, phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+
+.scr{position:relative;overflow:hidden;font-family:Inter,system-ui,sans-serif;color:#17191d;-webkit-font-smoothing:antialiased;background:radial-gradient(70% 60% at 85% 15%,#e8dccd 0%,rgba(232,220,205,0) 60%),radial-gradient(70% 70% at 10% 90%,#c7d4e6 0%,rgba(199,212,230,0) 60%),#dde0e5}
+.glass{background:rgba(242,243,246,.86);backdrop-filter:blur(32px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 0 0 .5px rgba(20,22,28,.09),0 22px 54px -18px rgba(28,34,48,.42)}
+.card{border-radius:30px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px}
+.hd{display:flex;align-items:center;justify-content:space-between;padding:0 4px}
+.hd h4{margin:0;font-size:15px;font-weight:600;letter-spacing:-.005em}
+.hd .lnk{border:0;background:rgba(20,22,28,.05);border-radius:14px;height:28px;padding:0 12px;font:inherit;font-size:12px;font-weight:600;color:#2459c9}
+.dnd{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 10px;border-radius:20px;background:rgba(20,22,28,.045)}
+.dnd .ic{width:36px;height:36px;border-radius:18px;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 0 0 .5px rgba(20,22,28,.06)}
+.dnd .t{flex:1;min-width:0}
+.dnd .t b{display:block;font-size:13px;font-weight:600}
+.dnd .t span{display:block;font-size:11.5px;color:#6b7079;margin-top:1px}
+.sw{width:44px;height:26px;border-radius:13px;background:rgba(20,22,28,.16);position:relative;flex:none}
+.sw:after{content:"";position:absolute;left:2px;top:2px;width:22px;height:22px;border-radius:11px;background:#fff;box-shadow:0 1px 3px rgba(20,22,28,.3)}
+.sw.on{background:#2459c9}
+.sw.on:after{left:20px}
+.n{background:rgba(255,255,255,.92);border-radius:20px;padding:12px 14px;box-shadow:0 0 0 .5px rgba(20,22,28,.05),0 1px 2px rgba(20,22,28,.05)}
+.n .top{display:flex;align-items:center;gap:8px;font-size:11.5px;color:#6b7079}
+.n .top .app{font-weight:600;color:#3b4048}
+.n .top .when{margin-left:auto}
+.n .ti{font-size:13.5px;font-weight:600;margin-top:7px}
+.n .bd{font-size:12.5px;color:#3b4048;line-height:1.4;margin-top:2px}
+.n .acts{display:flex;gap:8px;margin-top:10px}
+.n .acts button{flex:1;height:32px;border-radius:16px;border:0;font:inherit;font-size:12px;font-weight:600;background:rgba(20,22,28,.06);color:#17191d}
+.n .acts button.p{background:#2459c9;color:#fff}
+.stack{position:relative}
+.stack:after{content:"";position:absolute;left:14px;right:14px;bottom:-6px;height:12px;border-radius:0 0 16px 16px;background:rgba(255,255,255,.6);z-index:-1}
+.cal .mh{display:flex;align-items:center;gap:4px;padding:0 4px}
+.cal .mh h4{margin:0;font-size:15px;font-weight:600;flex:1}
+.cal .nav{width:28px;height:28px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:rgba(20,22,28,.05);color:#3b4048}
+.cal .wd,.cal .days{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.cal .wd{font-size:10.5px;font-weight:600;color:#8a9099;margin-top:4px}
+.cal .days{row-gap:2px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.cal .days span{height:30px;display:flex;align-items:center;justify-content:center}
+.cal .days i{font-style:normal;width:30px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center;position:relative}
+.cal .days .o{color:#b3b8c0}
+.cal .days .t i{background:#2459c9;color:#fff;font-weight:600}
+.cal .days .ev i:after{content:"";position:absolute;bottom:2px;left:50%;margin-left:-2px;width:4px;height:4px;border-radius:2px;background:#2459c9}
+.cal .ag{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(20,22,28,.045);font-size:12.5px}
+.cal .ag i{width:3px;align-self:stretch;border-radius:2px;background:#2459c9}
+.cal .ag b{font-weight:600}
+.cal .ag span{color:#6b7079;margin-left:auto;font-variant-numeric:tabular-nums}
+.panel{position:absolute;left:0;right:0;bottom:0;height:44px;display:flex;align-items:center;gap:6px;padding:0 8px;background:rgba(246,247,249,.94);backdrop-filter:blur(20px);box-shadow:0 -.5px 0 rgba(20,22,28,.1)}
+.clock{display:flex;flex-direction:column;align-items:flex-end;line-height:1.1;padding:4px 10px;border-radius:12px;font-variant-numeric:tabular-nums}
+.clock.lit{background:rgba(20,22,28,.085)}
+.stp{height:28px;border-radius:14px;display:flex;align-items:center;gap:7px;padding:0 10px;background:rgba(20,22,28,.07)}
+.banner{position:absolute;width:340px;box-sizing:border-box;border-radius:22px;padding:12px 14px}
+.more2{align-self:flex-end;height:26px;border-radius:13px;border:0;padding:0 12px;font:inherit;font-size:11.5px;font-weight:600;color:#2459c9;background:rgba(242,243,246,.92);box-shadow:0 0 0 .5px rgba(20,22,28,.1),0 6px 16px -8px rgba(16,24,40,.35)}
+.note2{position:absolute;font-size:12.5px;color:#4b5059;line-height:1.45}
+.bx{width:22px;height:22px;border-radius:11px;border:0;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(20,22,28,.08);color:#3b4048}
+.hd .hdr{display:flex;align-items:center;gap:8px}
+.dndb{width:28px;height:28px;border-radius:14px;border:0;padding:0;display:flex;align-items:center;justify-content:center;background:rgba(20,22,28,.05);color:#3b4048}
+.dndb.on{background:#2459c9;color:#fff;box-shadow:0 3px 10px -4px rgba(36,89,201,.7)}
+.shade .dndb{background:rgba(255,255,255,.9);color:#3b4048}
+.shade .dndb.on{background:#2459c9;color:#fff}
+.dnd2{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:#5b6069}
+.sw.sm{width:34px;height:20px;border-radius:10px}
+.sw.sm:after{width:16px;height:16px;border-radius:8px}
+.sw.sm.on:after{left:16px}
+.shade{position:absolute;inset:0;background:rgba(20,22,28,.28);backdrop-filter:blur(26px) saturate(150%)}
+.shade .n{background:rgba(255,255,255,.88);backdrop-filter:blur(20px)}
+.shade .hd h4{color:#fff;font-size:17px}
+.shade .dnd2{color:rgba(255,255,255,.9)}
+.shade .lnk{background:rgba(255,255,255,.9);color:#2459c9}
+.shade .sw{background:rgba(255,255,255,.3)}
+.sbar{display:flex;align-items:center;color:#fff;font-variant-numeric:tabular-nums}
+.sbar .ic{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600}
+
+</style>
+</helmet>
+<div class="scr" style="width:390px;height:844px;border-radius:46px;box-shadow:inset 0 0 0 1px rgba(20,22,28,.12)"><div class="shade"><div style="position:absolute;left:16px;right:16px;top:18px;display:flex;flex-direction:column;gap:14px"><div class="sbar" style="padding:0 6px"><span style="font-size:30px;font-weight:600;letter-spacing:-.02em">14:05</span><span style="font-size:13px;opacity:.85;margin-left:10px;align-self:flex-end;padding-bottom:5px">Sat 3 Oct</span><span class="ic" aria-label="Wi-Fi, mobile signal, battery 82 percent"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/></svg><svg width="16" height="14" viewBox="0 0 24 20" fill="currentColor"><rect x="1" y="12" width="4" height="7" rx="1"/><rect x="7" y="8" width="4" height="11" rx="1"/><rect x="13" y="4" width="4" height="15" rx="1"/><rect x="19" y="0" width="4" height="19" rx="1" opacity=".4"/></svg>82%<svg width="18" height="14" viewBox="0 0 28 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1" y="2" width="22" height="12" rx="3.5"/><rect x="3.5" y="4.5" width="14" height="7" rx="1.5" fill="currentColor" stroke="none"/><path d="M25.5 6v4" stroke-linecap="round"/></svg></span></div><div class="hd" style="padding:6px 4px 0"><h4>Notifications</h4><span class="hdr"><button class="dndb" role="switch" aria-checked="false" aria-label="Do not disturb" title="Do not disturb"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></button><button class="lnk">Clear all</button></span></div><div role="list" style="display:flex;flex-direction:column;gap:8px"><div class="n" role="listitem"><div class="top"><span role="img" aria-label="Updates" style="width:20px;height:20px;border-radius:5px;background:#2e9e6a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none">E</span><span class="app">Updates</span><span class="when">now</span></div><div class="ti">Edel OS 2026.10 is ready</div><div class="bd">Restart to finish the update. Your apps and files stay as they are.</div><div class="acts"><button class="p">Restart</button><button class="">Later</button></div></div><div class="n stack" role="listitem"><div class="top"><span role="img" aria-label="Mail" style="width:20px;height:20px;border-radius:5px;background:#e0694f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none">M</span><span class="app">Mail</span><span style="font-size:11px;font-weight:600;color:#2459c9;margin-left:6px">+2</span><span class="when">12 min</span></div><div class="ti">Lena Park</div><div class="bd">Can we move tomorrow's review to 10:00? I have a clash at 9.</div></div><div class="n" role="listitem"><div class="top"><span role="img" aria-label="Calendar" style="width:20px;height:20px;border-radius:5px;background:#2459c9;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none">3</span><span class="app">Calendar</span><span class="when">25 min</span></div><div class="ti">Design review in 15 minutes</div><div class="bd">Room 2 and online</div></div></div></div></div><div style="position:absolute;left:50%;bottom:9px;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(255,255,255,.7)"></div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

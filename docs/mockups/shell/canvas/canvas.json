@@ -1,0 +1,224 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "DecDrill.dc.html": {
+      "h": 700,
+      "page": "dec",
+      "title": "Going deeper: the chevron; Wi-Fi and Sound in place",
+      "w": 1040,
+      "x": 0,
+      "y": 5140
+    },
+    "DecLaptop.dc.html": {
+      "h": 800,
+      "page": "dec",
+      "title": "Laptop: Classic panel; quick settings with the player above and the sliders on the bottom shelf",
+      "w": 1280,
+      "x": 0,
+      "y": 0
+    },
+    "DecNotifyBanner.dc.html": {
+      "h": 560,
+      "page": "dec",
+      "title": "New notifications: they stack by the status area, newest at the bottom",
+      "w": 720,
+      "x": 1830,
+      "y": 2940
+    },
+    "DecNotifyLaptop.dc.html": {
+      "h": 800,
+      "page": "dec",
+      "title": "Notifications: a click on the clock; Do not disturb in the title row, the calendar below",
+      "w": 1280,
+      "x": 0,
+      "y": 2940
+    },
+    "DecNotifyPhone.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Notifications on a phone: a swipe down from the top left; no card, no calendar",
+      "w": 390,
+      "x": 1360,
+      "y": 2940
+    },
+    "DecNotifyTablet.dc.html": {
+      "h": 820,
+      "page": "dec",
+      "title": "Notifications on a tablet: a swipe down from the top left, over the dimmed screen",
+      "w": 1180,
+      "x": 2630,
+      "y": 2940
+    },
+    "DecOptBoth.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Option: both shelves, the player on top, the sliders below; edit, Settings and power by the clock",
+      "w": 390,
+      "x": 3480,
+      "y": 1240
+    },
+    "DecOptLying.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Option: player inside the grid, sliders on the pinned shelf (dark)",
+      "w": 390,
+      "x": 2540,
+      "y": 1240
+    },
+    "DecOptOutside.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Option: the pinned shelf at the bottom",
+      "w": 390,
+      "x": 1600,
+      "y": 1240
+    },
+    "DecOptPlayerGrid.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Option: the player inside the grid",
+      "w": 390,
+      "x": 2070,
+      "y": 1240
+    },
+    "DecOptShelfTop.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Option: the pinned shelf at the top",
+      "w": 390,
+      "x": 3010,
+      "y": 1240
+    },
+    "DecPhone.dc.html": {
+      "h": 844,
+      "page": "dec",
+      "title": "Phone: quick settings with the player below, and the volume pop-up",
+      "w": 820,
+      "x": 2620,
+      "y": 0
+    },
+    "DecSettings.dc.html": {
+      "h": 1740,
+      "page": "dec",
+      "title": "Every setting and its default",
+      "w": 1520,
+      "x": 0,
+      "y": 1000
+    },
+    "DecStates.dc.html": {
+      "h": 480,
+      "page": "dec",
+      "title": "States and motion",
+      "w": 1100,
+      "x": 1120,
+      "y": 5140
+    },
+    "DecTablet.dc.html": {
+      "h": 820,
+      "page": "dec",
+      "title": "Tablet: tiled, a top bar; quick settings at touch size, the player below",
+      "w": 1180,
+      "x": 1360,
+      "y": 0
+    },
+    "DecTray.dc.html": {
+      "h": 980,
+      "page": "dec",
+      "title": "Tray: the arrow, as on Windows",
+      "w": 1520,
+      "x": 0,
+      "y": 4000
+    },
+    "DecVolAlts.dc.html": {
+      "h": 700,
+      "page": "dec",
+      "title": "Decided: no button on a standing slider; hold it on touch, right click on a laptop",
+      "w": 2190,
+      "x": 1600,
+      "y": 2120
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-08T21:05:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "page": "dec",
+    "view": "canvas"
+  },
+  "notes": {
+    "dect1": {
+      "kind": "title1",
+      "maxW": 3440,
+      "page": "dec",
+      "text": "The defaults to build toward (2026-10-09): laptop, tablet, phone and every setting",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "dect2": {
+      "kind": "title1",
+      "maxW": 2280,
+      "page": "dec",
+      "text": "Other layouts, each a setting on every device",
+      "w": 240,
+      "x": 1600,
+      "y": 1140
+    },
+    "dect3": {
+      "kind": "title1",
+      "maxW": 3810,
+      "page": "dec",
+      "text": "Notifications and calendar",
+      "w": 240,
+      "x": 0,
+      "y": 2840
+    },
+    "dect4": {
+      "kind": "title1",
+      "maxW": 1520,
+      "page": "dec",
+      "text": "Tray",
+      "w": 240,
+      "x": 0,
+      "y": 3900
+    },
+    "dect5": {
+      "kind": "title1",
+      "maxW": 2220,
+      "page": "dec",
+      "text": "Going deeper, states and motion",
+      "w": 240,
+      "x": 0,
+      "y": 5040
+    }
+  },
+  "order": [
+    "DecLaptop.dc.html",
+    "DecTablet.dc.html",
+    "DecPhone.dc.html",
+    "DecSettings.dc.html",
+    "DecOptOutside.dc.html",
+    "DecOptShelfTop.dc.html",
+    "DecOptBoth.dc.html",
+    "DecNotifyLaptop.dc.html",
+    "DecNotifyPhone.dc.html",
+    "DecNotifyBanner.dc.html",
+    "DecNotifyTablet.dc.html",
+    "DecDrill.dc.html",
+    "DecStates.dc.html",
+    "DecTray.dc.html",
+    "DecOptPlayerGrid.dc.html",
+    "DecOptLying.dc.html",
+    "DecVolAlts.dc.html"
+  ],
+  "pages": [
+    {
+      "id": "dec",
+      "name": "Decisions: the defaults (2026-10-09)"
+    }
+  ],
+  "title": "Edel shell designs"
+}

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pinned shelf at the bottom</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2459c9}
+.scr{position:relative;width:390px;height:844px;overflow:hidden;border-radius:46px;font-family:Inter,system-ui,sans-serif;color:#17191d;-webkit-font-smoothing:antialiased;background:radial-gradient(80% 50% at 85% 10%,#e8dccd 0%,rgba(232,220,205,0) 70%),radial-gradient(80% 60% at 10% 90%,#c7d4e6 0%,rgba(199,212,230,0) 70%),#dde0e5;box-shadow:inset 0 0 0 1px rgba(20,22,28,.12)}
+.glass{background:rgba(242,243,246,.88);backdrop-filter:blur(32px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 22px 54px -18px rgba(28,34,48,.42)}
+.sheet{border-radius:38px;padding:18px 14px 12px;box-sizing:border-box;display:flex;flex-direction:column;gap:12px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:88px;gap:8px}
+.pill{border:0;border-radius:40px;background:rgba(255,255,255,.9);display:flex;align-items:center;gap:10px;padding:0 12px 0 10px;text-align:left;font:inherit;color:inherit;grid-column:span 2}
+.pill .i{width:46px;height:46px;border-radius:23px;display:flex;align-items:center;justify-content:center;background:#eceef2;flex:none}
+.pill.on{background:#2459c9;color:#fff}
+.pill.on .i{background:rgba(255,255,255,.18)}
+.n{font-size:14px;font-weight:600;line-height:1.15}
+.s{font-size:12px;opacity:.68}
+.r{border:0;background:transparent;padding:0;font:inherit;color:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+.r .o{width:60px;height:60px;border-radius:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.9);box-shadow:0 0 0 .5px rgba(20,22,28,.06),0 1px 2px rgba(20,22,28,.06);color:#2b2f36}
+.r.on .o{background:#2459c9;color:#fff;box-shadow:0 4px 12px -4px rgba(36,89,201,.6)}
+.r span.l{font-size:11px;font-weight:500;color:#3b4048}
+.grp{grid-column:span 2;grid-row:span 2;border-radius:26px;background:rgba(255,255,255,.62);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;justify-items:center;padding:6px}
+.grp .r .o{width:50px;height:50px;border-radius:25px;background:#eceef2;box-shadow:none}
+.grp .r.on .o{background:#2459c9}
+.vs{grid-row:span 2;width:60px;justify-self:center;border-radius:30px;background:rgba(20,22,28,.07);position:relative;overflow:hidden}
+.vs i{position:absolute;left:0;right:0;bottom:0;background:#fff;box-shadow:0 -1px 3px rgba(20,22,28,.12)}
+.vs svg.ic{position:absolute;left:50%;margin-left:-10px;bottom:20px}
+.more{width:52px;height:52px;border-radius:26px;border:0;padding:0;display:flex;align-items:center;justify-content:center;background:#fff;color:#17191d;box-shadow:0 0 0 .5px rgba(20,22,28,.08),0 1px 2px rgba(20,22,28,.08)}
+.ib{width:44px;height:44px;border-radius:22px;border:0;background:transparent;display:flex;align-items:center;justify-content:center;color:#2b2f36;padding:0}
+/* unit grid */
+.sheet{border-radius:50px;padding-left:16px !important;padding-right:16px !important}
+.grid{grid-template-columns:repeat(4,69px) !important;grid-auto-rows:69px !important;grid-template-rows:none !important;gap:22px !important;justify-content:center;margin-bottom:22px}
+.r{display:block !important;position:relative;height:69px;width:69px}
+.r .o{position:absolute;left:0;top:0;width:69px !important;height:69px !important;border-radius:34px !important}
+.r span.l{position:absolute;top:73px;left:-12px;right:-12px;text-align:center;white-space:nowrap;font-size:11px;line-height:1}
+.pill{height:69px;border-radius:34px !important;padding:0 14px 0 9px !important;gap:10px !important}
+.pill .i{width:51px !important;height:51px !important;border-radius:25px !important}
+.grp{margin:0;padding:0 !important;background:transparent !important;box-shadow:none !important;display:grid !important;grid-template-columns:repeat(2,69px) !important;grid-template-rows:repeat(2,69px) !important;gap:22px !important;align-items:start !important;justify-items:start !important}
+.grp .r{display:block !important;height:69px;width:69px}
+.grp .r .o{width:69px !important;height:69px !important;border-radius:34px !important}
+.grp .r span.l{position:absolute;top:73px}
+.grp .r:not(.on) .o{background:rgba(255,255,255,.9) !important;box-shadow:0 0 0 .5px rgba(20,22,28,.06),0 1px 2px rgba(20,22,28,.06) !important}
+.vs{width:69px !important;border-radius:34px !important;overflow:visible !important}
+.vs i{border-radius:0 0 34px 34px}
+.vs:after{content:attr(aria-label);position:absolute;top:calc(100% + 4px);left:-12px;right:-12px;text-align:center;white-space:nowrap;font-size:11px;line-height:1;font-weight:500;color:#3b4048}
+.vs svg.ic{left:50% !important;margin-left:-10px;bottom:21px !important}
+.vs .more{width:61px !important;height:61px !important;border-radius:30px !important}
+.hs{gap:22px !important}
+.cap{height:69px !important;border-radius:34px !important}
+.cap i{border-radius:34px !important}
+.cap svg{top:24px !important;left:21px !important}
+.hs .more{width:69px !important;height:69px !important;border-radius:34px !important}
+.play{height:69px;border-radius:34px !important}
+.tile{border-radius:34px !important}
+.outs{display:flex;flex-direction:column;gap:18px;padding:0}
+.hs{display:flex;align-items:center}
+.cap{flex:1;position:relative;overflow:hidden;background:rgba(20,22,28,.07)}
+.cap i{position:absolute;left:0;top:0;bottom:0;background:#fff;box-shadow:0 1px 3px rgba(20,22,28,.14)}
+.cap svg{position:absolute}
+.cap b{position:absolute;right:22px;top:0;bottom:0;display:flex;align-items:center;font-size:13px;font-weight:600;color:#5b6069;font-variant-numeric:tabular-nums}
+.hs .more{background:#fff;color:#17191d;box-shadow:0 0 0 .5px rgba(20,22,28,.08),0 1px 2px rgba(20,22,28,.08)}
+/* unit grid */
+.sheet{border-radius:50px;padding-left:16px !important;padding-right:16px !important}
+.grid{grid-template-columns:repeat(4,69px) !important;grid-auto-rows:69px !important;grid-template-rows:none !important;gap:22px !important;justify-content:center;margin-bottom:22px}
+.r{display:block !important;position:relative;height:69px;width:69px}
+.r .o{position:absolute;left:0;top:0;width:69px !important;height:69px !important;border-radius:34px !important}
+.r span.l{position:absolute;top:73px;left:-12px;right:-12px;text-align:center;white-space:nowrap;font-size:11px;line-height:1}
+.pill{height:69px;border-radius:34px !important;padding:0 14px 0 9px !important;gap:10px !important}
+.pill .i{width:51px !important;height:51px !important;border-radius:25px !important}
+.grp{margin:0;padding:0 !important;background:transparent !important;box-shadow:none !important;display:grid !important;grid-template-columns:repeat(2,69px) !important;grid-template-rows:repeat(2,69px) !important;gap:22px !important;align-items:start !important;justify-items:start !important}
+.grp .r{display:block !important;height:69px;width:69px}
+.grp .r .o{width:69px !important;height:69px !important;border-radius:34px !important}
+.grp .r span.l{position:absolute;top:73px}
+.grp .r:not(.on) .o{background:rgba(255,255,255,.9) !important;box-shadow:0 0 0 .5px rgba(20,22,28,.06),0 1px 2px rgba(20,22,28,.06) !important}
+.vs{width:69px !important;border-radius:34px !important;overflow:visible !important}
+.vs i{border-radius:0 0 34px 34px}
+.vs:after{content:attr(aria-label);position:absolute;top:calc(100% + 4px);left:-12px;right:-12px;text-align:center;white-space:nowrap;font-size:11px;line-height:1;font-weight:500;color:#3b4048}
+.vs svg.ic{left:50% !important;margin-left:-10px;bottom:21px !important}
+.vs .more{width:61px !important;height:61px !important;border-radius:30px !important}
+.hs{gap:22px !important}
+.cap{height:69px !important;border-radius:34px !important}
+.cap i{border-radius:34px !important}
+.cap svg{top:24px !important;left:21px !important}
+.hs .more{width:69px !important;height:69px !important;border-radius:34px !important}
+.play{height:69px;border-radius:34px !important}
+.tile{border-radius:34px !important}
+
+.shelf{position:relative;display:flex;flex-direction:column;gap:12px;padding:20px 0 4px}
+.shelf.top{padding:4px 0 20px;margin-bottom:6px}
+.shelf:before{content:"";position:absolute;top:0;left:10px;right:10px;height:1px;background:linear-gradient(90deg,transparent,rgba(20,22,28,.14) 18%,rgba(20,22,28,.14) 82%,transparent)}
+.shelf.top:before{top:auto;bottom:0}
+.shelf .hs{display:flex;align-items:center;gap:12px !important}
+.shelf .cap{flex:1;height:52px !important;border-radius:26px !important;position:relative;overflow:hidden}
+.shelf .cap i{position:absolute;left:0;top:0;bottom:0;border-radius:26px !important}
+.shelf .cap svg{position:absolute;top:16px !important;left:18px !important}
+.shelf .cap b{position:absolute;right:20px;top:0;bottom:0;display:flex;align-items:center;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.shelf .more{width:52px !important;height:52px !important;border-radius:26px !important;flex:none}
+
+.shelf .cap{background:rgba(20,22,28,.07)}
+.shelf .cap i{background:#fff;box-shadow:0 1px 3px rgba(20,22,28,.14)}
+.shelf .cap b{color:#5b6069}
+.shelf .more{background:#fff;color:#17191d;box-shadow:0 0 0 .5px rgba(20,22,28,.08),0 1px 2px rgba(20,22,28,.08)}
+/* header actions */
+.head{display:flex;flex-direction:column;gap:2px;padding:0 4px 0 6px;font-variant-numeric:tabular-nums}
+.head .l1,.head .l2{display:flex;align-items:center;justify-content:space-between}
+.head .acts{display:flex;gap:10px}
+.head .acts .ib{width:32px !important;height:32px !important;border-radius:16px !important;background:rgba(20,22,28,.04) !important}
+.head .acts .ib svg{width:15px;height:15px}
+.head .bat{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.head .date{font-size:13px;opacity:.62}
+.dots{display:flex;justify-content:center;gap:5px;margin:-8px 0 2px}
+.dots i{display:block}
+.pill .s,.pill .n{white-space:nowrap}
+.pill .chev{margin-left:auto;display:flex;opacity:.75}
+</style>
+</helmet>
+<div class="scr">
+  <div style="position:absolute;left:8px;right:8px;top:8px;display:flex;flex-direction:column;gap:8px">
+    <div class="sheet glass">
+      <div class="head"><div class="l1"><span style="font-size:30px;font-weight:600;letter-spacing:-.02em">14:05</span><span class="bat" aria-label="Battery 82 percent">82%<svg width="24" height="13" viewBox="0 0 28 15" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="1" y="1.5" width="22" height="12" rx="3.6"/><rect x="3.4" y="3.9" width="14.6" height="7.2" rx="1.6" fill="currentColor" stroke="none"/><path d="M25.4 5.8v3.4" stroke-linecap="round"/></svg></span></div><div class="l2"><span class="date">Sat 3 Oct</span><span class="acts"><button class="ib" aria-label="Edit"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button><button class="ib" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2.8l1.7 2.4 2.9-.5.9 2.8 2.7 1.2-.6 2.9 1.6 2.4-2.3 1.8.1 2.9-2.9.4-1.3 2.6L12 21.2l-2.7.9-1.3-2.6-2.9-.4.1-2.9-2.3-1.8 1.6-2.4-.6-2.9 2.7-1.2.9-2.8 2.9.5z"/></svg></button><button class="ib" aria-label="Power: lock, log out, restart or power off"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></button></span></div></div>
+      <div class="grid">
+        <button class="pill on" aria-label="Wi-Fi, on, Home 5G"><span class="i"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/></svg></span><span><div class="n">Wi-Fi</div><div class="s">Home 5G</div></span><span class="chev" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></button>
+        <button class="pill on" aria-label="Mobile data, on"><span class="i"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="14" width="3.2" height="6" rx="1"/><rect x="8.3" y="10.5" width="3.2" height="9.5" rx="1"/><rect x="13.6" y="7" width="3.2" height="13" rx="1"/><rect x="18.9" y="3.5" width="3.2" height="16.5" rx="1" opacity=".4"/></svg></span><span><div class="n">Mobile</div><div class="s">5G</div></span><span class="chev" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></button>
+        <button class="r on" aria-label="Bluetooth, on"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg></span><span class="l">Bluetooth</span></button>
+        <button class="r" aria-label="Airplane mode, off"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M10.5 3.8c0-1 .7-1.8 1.5-1.8s1.5.8 1.5 1.8V9l7.5 4.5v2L13.5 13v5l2.5 2v1.5L12 20.5l-4 1V20l2.5-2v-5L3 15.5v-2L10.5 9z"/></svg></span><span class="l">Airplane</span></button>
+        <button class="r on" aria-label="Do not disturb, on"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span><span class="l">Do not disturb</span></button>
+        <button class="r" aria-label="Rotation lock, off"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4.5h-4.5"/></svg></span><span class="l">Rotation</span></button>
+        <div class="grp" role="group" aria-label="More toggles">
+          <button class="r" aria-label="Torch, off"><span class="o"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M7 3h10v4l-3 4v10h-4V11L7 7z"/></svg></span><span class="l">Torch</span></button>
+          <button class="r" aria-label="Hotspot, off"><span class="o"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M8.2 15.8a5.4 5.4 0 0 1 0-7.6M15.8 8.2a5.4 5.4 0 0 1 0 7.6"/></svg></span><span class="l">Hotspot</span></button>
+          <button class="r" aria-label="Screen recording, off"><span class="o"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></svg></span><span class="l">Record</span></button>
+          <button class="r on" aria-label="Dark style, on"><span class="o"><svg width="17" height="17" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></span><span class="l">Dark</span></button>
+        </div>
+        <button class="r" aria-label="Night light, off"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 18h16M7 14.5a5 5 0 0 1 10 0M12 5v2M5.5 8l1.4 1.4M18.5 8l-1.4 1.4"/></svg></span><span class="l">Night light</span></button>
+        <button class="r" aria-label="Keep awake, off"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M5 8h11v6a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4z"/><path d="M16 10h1.5a2 2 0 0 1 0 4H16"/></svg></span><span class="l">Awake</span></button>
+        <button class="r" aria-label="Screenshot"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/></svg></span><span class="l">Screenshot</span></button>
+        <button class="r" aria-label="Cast screen, off"><span class="o"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 16a5 5 0 0 1 5 5M3 12a9 9 0 0 1 9 9M3 8V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/></svg></span><span class="l">Cast</span></button>
+      </div>
+      <div class="dots" aria-label="Page 1 of 2"><i style="width:14px;height:5px;border-radius:3px;background:#17191d"></i><i style="width:5px;height:5px;border-radius:3px;background:rgba(20,22,28,.22)"></i></div>
+      <div class="shelf" role="group" aria-label="Pinned">
+        <div class="hs"><div class="cap" role="slider" aria-label="Brightness" aria-valuenow="70"><i style="width:70%"></i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg><b>70</b></div></div>
+        <div class="hs"><div class="cap" role="slider" aria-label="Volume" aria-valuenow="55"><i style="width:55%"></i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6"/></svg><b>55</b></div><button class="more" aria-label="Sound: outputs, apps and microphone"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button></div>
+      </div>
+    </div>
+    <div class="glass" style="height:101px;border-radius:50px;display:flex;align-items:center;gap:12px;padding:0 14px" role="group" aria-label="Now playing">
+      <span style="width:69px;height:69px;border-radius:34px;flex:none;background:linear-gradient(180deg,#2b2346 0%,#6d4f8f 55%,#f0a47a 100%)"></span>
+      <span style="flex:1;min-width:0"><div class="n">Night Drive</div><div class="s">Lumen</div></span>
+      <button class="ib" aria-label="Pause" style="background:#17191d;color:#fff"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1.2"/><rect x="14" y="5" width="4" height="14" rx="1.2"/></svg></button>
+      <button class="ib" aria-label="Next"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5.5v13L14.5 12z"/></svg></button>
+    </div>
+  </div>
+  <div style="position:absolute;left:50%;bottom:9px;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:rgba(20,22,28,.5)"></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
