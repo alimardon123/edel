@@ -123,7 +123,7 @@ When docs disagree, the newer ADR wins.
 
 ## Commands
 
-Run from the repository root. CI's "Rust checks" job runs exactly these; run all nine before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
+Run from the repository root. CI's "Rust checks" job runs exactly these; run all ten before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
 
 ```sh
 cargo fmt --all --check
@@ -133,6 +133,7 @@ for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; d
 cargo build --locked --lib --no-default-features
 sh ci/keys-check.sh
 sh ci/one-place.sh && sh ci/one-place.sh --self-test   # every fact at its owner (M5.27)
+sh ci/seams.sh && sh ci/seams.sh --self-test   # every part stands alone (M8.13)
 sh ci/audit.sh         # the dependency audit (M3.9); installs cargo-audit with cargo the first time, needs the network for the advisory database
 sh ci/site.sh build    # the docs site (M8.10a); installs mdBook with cargo the first time
 ```
