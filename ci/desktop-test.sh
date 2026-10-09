@@ -1655,7 +1655,9 @@ case_notify() {
 	echo "$line" | grep -q 'centre places card 360x[0-9]*, clear .*notification0 ' ||
 		fail "the centre does not list the notification: $line"
 	echo "$line" | grep -q 'notification1 ' && fail "the centre lists two notifications after one was sent: $line"
-	[ "$cw" -gt 360 ] && [ "$ch" -gt 300 ] || fail "the centre's region is only ${cw}x$ch: $(value layers)"
+	# Its surface is the card and, on Full and Balanced, the room for its
+	# shadow round it; CI runs on Lite, where there is none (M5.5e).
+	[ "$cw" -ge 360 ] && [ "$ch" -gt 300 ] || fail "the centre's region is only ${cw}x$ch: $(value layers)"
 	python3 ci/qmp.py screendump "$dir/notify-centre.png"
 	# Do not disturb: the next notification is listed and shows no banner.
 	shown=$(count 'edel-shell-ui: banner shown')
