@@ -34,8 +34,11 @@ pub struct Popup<V> {
     /// The room for the shadow on every side of the card, logical pixels:
     /// none on Lite (M5.5e). The surface is the card and this round it.
     room: u32,
-    /// The shadow, drawn once for a card size and scale.
-    shadow: Option<((u32, u32, u32), Pixmap)>,
+    /// The cards it holds, logical pixels from its top left corner; none
+    /// means one card, the whole of it, in the menus' corners.
+    cards: Vec<Card>,
+    /// The shadow, drawn once for a card size, scale and cards.
+    shadow: Option<((u32, u32, u32), Vec<Card>, Pixmap)>,
     /// Configured, so it may draw.
     ready: bool,
     /// Drawn and not yet shown by the compositor: the next drawing waits
@@ -72,6 +75,7 @@ impl<V: Clone + PartialEq> Popup<V> {
             size,
             scale,
             room,
+            cards: Vec::new(),
             shadow: None,
             ready: false,
             waiting: false,
@@ -82,13 +86,24 @@ impl<V: Clone + PartialEq> Popup<V> {
     }
 
     /// The surface's size, the card's and the room round it, and where it
-    /// takes clicks: on the card alone.
+    /// takes clicks: on the cards alone.
     fn set_size(&self, compositor: &CompositorState) {
         let (w, h) = self.size;
         let room = self.room;
         self.surface.set_size(w + 2 * room, h + 2 * room);
         if let Ok(region) = Region::new(compositor) {
-            region.add(room as i32, room as i32, w as i32, h as i32);
+            if self.cards.is_empty() {
+                region.add(room as i32, room as i32, w as i32, h as i32);
+            }
+            for c in &self.cards {
+                let (x, y, w, h) = c.rect.device(1.0);
+                region.add(
+                    room as i32 + x as i32,
+                    room as i32 + y as i32,
+                    w as i32,
+                    h as i32,
+                );
+            }
             self.surface
                 .wl_surface()
                 .set_input_region(Some(region.wl_region()));
@@ -102,6 +117,17 @@ impl<V: Clone + PartialEq> Popup<V> {
             self.ready = false;
             self.set_size(compositor);
             self.surface.commit();
+        }
+    }
+
+    /// The cards it holds apart on its surface (the notification centre's
+    /// notifications and calendar), each with its own shadow and taking
+    /// clicks, the room between them neither; none for one card, the whole
+    /// surface. Takes effect with the next drawing.
+    pub fn set_cards(&mut self, cards: Vec<Card>, compositor: &CompositorState) {
+        if cards != self.cards {
+            self.cards = cards;
+            self.set_size(compositor);
         }
     }
 
@@ -160,12 +186,43 @@ impl<V: Clone + PartialEq> Popup<V> {
         }
         let s = self.scale;
         let key = (pixmap.width(), pixmap.height(), s);
-        if self.shadow.as_ref().is_none_or(|(k, _)| *k != key) {
-            let r = tokens.radius_menu as f32 * s as f32;
-            let shadow = paint::shadow(key.0, key.1, self.room * s, r, tokens, s as f32)?;
-            self.shadow = Some((key, shadow));
+        if self
+            .shadow
+            .as_ref()
+            .is_none_or(|(k, c, _)| *k != key || *c != self.cards)
+        {
+            let room = self.room * s;
+            let shadow = if self.cards.is_empty() {
+                let r = tokens.radius_menu as f32 * s as f32;
+                paint::shadow(key.0, key.1, room, r, tokens, s as f32)?
+            } else {
+                // Each card's own shadow, laid where the card lies.
+                let mut all = Pixmap::new(key.0 + 2 * room, key.1 + 2 * room)?;
+                for c in &self.cards {
+                    let (x, y, w, h) = c.rect.device(s as f32);
+                    let one = paint::shadow(
+                        w as u32,
+                        h as u32,
+                        room,
+                        c.radius * s as f32,
+                        tokens,
+                        s as f32,
+                    )?;
+                    let paint = PixmapPaint::default();
+                    all.draw_pixmap(
+                        x as i32,
+                        y as i32,
+                        one.as_ref(),
+                        &paint,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+                all
+            };
+            self.shadow = Some((key, self.cards.clone(), shadow));
         }
-        let (_, shadow) = self.shadow.as_ref()?;
+        let (_, _, shadow) = self.shadow.as_ref()?;
         let mut out = shadow.clone();
         let at = (self.room * s) as i32;
         let paint = PixmapPaint::default();
@@ -347,6 +404,24 @@ pub fn wrap(
         out.push(words.into_iter().collect::<Vec<_>>().join(" "));
     }
     out
+}
+
+/// A card a popup holds, logical pixels from its top left corner, with its
+/// corners' radius: where it is drawn, casts its shadow and takes clicks.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Card {
+    pub rect: Rect,
+    pub radius: f32,
+}
+
+/// Clears `pixmap` and draws `cards` in the panel's colour at scale `s`,
+/// the room between them left clear.
+pub fn cards(pixmap: &mut Pixmap, tokens: &Tokens, s: f32, cards: &[Card]) {
+    pixmap.fill(tiny_skia::Color::TRANSPARENT);
+    for c in cards {
+        let (x, y, w, h) = c.rect.device(s);
+        fill(pixmap, x, y, w, h, c.radius * s, tokens.panel);
+    }
 }
 
 /// Clears `pixmap` and draws the card, the whole of it, at scale `s`.
