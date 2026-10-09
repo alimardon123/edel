@@ -114,6 +114,47 @@ fn open_seat() -> Result<(
     }
 }
 
+/// The GPU to draw with: the primary one, else the first, once its
+/// device file exists. At boot udev can name a card a moment before its
+/// file under /dev/dri is made (the desktop stick's greeter failed five
+/// times in 12 s on 2026-10-08, seatd saying it could not find
+/// /dev/dri/card0, and greetd gave up); so wait for it as for the seat, up
+/// to 10 s, saying so once.
+fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
+    let find = || -> Result<Option<std::path::PathBuf>> {
+        Ok(match primary_gpu(seat).context(messages::GPU_LIST)? {
+            Some(path) => Some(path),
+            None => all_gpus(seat)
+                .context(messages::GPU_LIST)?
+                .into_iter()
+                .next(),
+        })
+    };
+    let until = Instant::now() + Duration::from_secs(10);
+    let mut said = false;
+    loop {
+        let found = find()?;
+        match found {
+            Some(path) if path.exists() => return Ok(path),
+            _ if Instant::now() >= until => {
+                return match found {
+                    Some(path) => Err(anyhow::anyhow!(messages::gpu_open(&path))),
+                    None => Err(anyhow::anyhow!(messages::NO_GPU)),
+                };
+            }
+            _ => {
+                if !said {
+                    let what =
+                        found.map_or("a graphics card".to_string(), |p| p.display().to_string());
+                    eprintln!("edel-compositor: waiting for {what} to appear");
+                    said = true;
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+    }
+}
+
 /// Why the seat may not open, in words a person can act on: whether
 /// seatd's socket takes a connection, and whether this user is in group
 /// seat, as the socket wants.
@@ -196,14 +237,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
 
     let (mut session, session_events) = open_seat()?;
     let seat = session.seat();
-    let path = match primary_gpu(&seat).context(messages::GPU_LIST)? {
-        Some(path) => path,
-        None => all_gpus(&seat)
-            .context(messages::GPU_LIST)?
-            .into_iter()
-            .next()
-            .context(messages::NO_GPU)?,
-    };
+    let path = wait_for_gpu(&seat)?;
     let fd = session
         .open(
             &path,
