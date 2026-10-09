@@ -106,6 +106,9 @@ jobs:
         # image, so nothing else names either.
         run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)@$(sed -n 's/^image_digest = "\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
 
+      - name: Pull the Alpine image
+        run: sh ci/pull-alpine.sh
+
       - name: Build images inside Alpine
         run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
 
@@ -233,6 +236,9 @@ jobs:
       - name: The Alpine release to build in
         # The base feature owns the Alpine branch and its image's digest.
         run: echo "ALPINE=alpine:$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)@$(sed -n 's/^image_digest = "\(.*\)"$/\1/p' features/base.toml)" >> "$GITHUB_ENV"
+
+      - name: Pull the Alpine image
+        run: sh ci/pull-alpine.sh
 
       - name: Build the desktop test image inside Alpine
         run: docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh desktop-test
