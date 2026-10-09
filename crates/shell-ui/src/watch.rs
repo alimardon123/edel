@@ -1,269 +1,140 @@
-//! The system bus's news for the status area (M5.9a): when NetworkManager
-//! (`org.freedesktop.NetworkManager`, its `StateChanged` and
-//! `PropertiesChanged`) or UPower (the display device's
-//! `PropertiesChanged`) say something changed, the event loop is woken
-//! with [`Msg::Changed`] and reads the status afresh, so the icons follow
-//! the machine without a timer of their own. It listens, never asks: the
-//! system bus's connection is driven by a task on the session bus's zbus
-//! thread, the one the portal and the tray already use, with a task for
-//! each daemon, so it adds no thread (a thread of its own put shell-ui
-//! 0.1 MiB over its budget on #157's first run). A machine without a
-//! system bus, or a daemon that is not running, gives no news, and the
-//! status is read on the clock's minute and when the card opens instead.
+//! The kernel's news for the status area (M5.9a): when a network link or
+//! address changes (rtnetlink's link and address groups) or a power
+//! supply does (the kernel's uevents for `power_supply`, a charger plugged
+//! in, a battery's level), the event loop is woken with [`Msg::Changed`]
+//! and reads the status afresh, so the icons follow the machine without a
+//! timer of their own. Two netlink sockets on the event loop itself: no
+//! thread and no D-Bus connection, which cost shell-ui 0.1 MiB over its
+//! budget on #157's first runs (a second zbus connection held about 160
+//! KiB). A socket that cannot be opened gives no news, and the status is
+//! read on the clock's minute and when the card opens instead.
 
+use std::os::fd::OwnedFd;
 use std::path::Path;
 
-use futures_lite::StreamExt;
+use rustix::net::{
+    AddressFamily, RecvFlags, SocketFlags, SocketType, bind, netlink, recv, socket_with,
+};
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
+use smithay_client_toolkit::reexports::calloop::generic::Generic;
+use smithay_client_toolkit::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
 use crate::messages;
 use crate::status::Msg;
 
-const NETWORK: &str = "org.freedesktop.NetworkManager";
-const NETWORK_PATH: &str = "/org/freedesktop/NetworkManager";
-const POWER: &str = "org.freedesktop.UPower";
-const POWER_PATH: &str = "/org/freedesktop/UPower/devices/DisplayDevice";
-const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+/// rtnetlink's groups for links and IPv4 and IPv6 addresses
+/// (`RTMGRP_LINK`, `RTMGRP_IPV4_IFADDR`, `RTMGRP_IPV6_IFADDR`).
+const ROUTE_GROUPS: u32 = 0x1 | 0x10 | 0x100;
+/// The kernel's own uevents (not udev's re-sent ones).
+const KERNEL_UEVENTS: u32 = 1;
 
-/// Connects to the system bus and listens for the news of each daemon
-/// whose feature `features` has; nothing, and nothing said, when there is
-/// none of them, and a line saying why when the bus cannot be reached.
-/// The connection is driven on `host`'s zbus thread, the session bus's,
-/// and lives as long as that thread does; without a host it gets a thread
-/// of its own, and lives as long as what this returns.
-pub fn serve(
-    features: &Path,
-    wake: &Sender<Msg>,
-    host: Option<&zbus::blocking::Connection>,
-) -> Option<zbus::blocking::Connection> {
+/// Listens for the kernel's news of each part whose feature `features`
+/// has, network and power; nothing when neither, and a line saying why
+/// when a socket cannot be opened.
+pub fn serve<D: 'static>(features: &Path, wake: &Sender<Msg>, handle: &LoopHandle<'static, D>) {
     let has = |name: &str| features.join(format!("{name}.toml")).is_file();
-    let wanted = (has("network"), has("power"));
-    if wanted == (false, false) {
-        return None;
+    if has("network") {
+        listen(handle, None, ROUTE_GROUPS, wake, |_| true);
     }
-    if let Some(host) = host {
-        let task = drive(zbus::connection::Builder::system(), wanted, wake.clone());
-        host.inner().executor().spawn(task, "system bus").detach();
-        return None;
-    }
-    match zbus::blocking::Connection::system() {
-        Ok(connection) => {
-            follow(&connection, wanted, wake);
-            Some(connection)
-        }
-        Err(e) => {
-            eprintln!("edel-shell-ui: {}", messages::status_no_bus(e));
-            None
-        }
+    if has("power") {
+        listen(
+            handle,
+            Some(netlink::KOBJECT_UEVENT),
+            KERNEL_UEVENTS,
+            wake,
+            concerns_power,
+        );
     }
 }
 
-/// Connects to the system bus without zbus's own thread, starts the
-/// daemons' tasks on it and runs them for as long as the thread it is
-/// spawned on runs.
-async fn drive(
-    builder: zbus::Result<zbus::connection::Builder<'static>>,
-    wanted: (bool, bool),
-    wake: Sender<Msg>,
-) {
-    let built = async { builder?.internal_executor(false).build().await };
-    let connection = match built.await {
-        Ok(connection) => connection,
-        Err(e) => {
-            eprintln!("edel-shell-ui: {}", messages::status_no_bus(e));
-            return;
-        }
-    };
-    spawn_signals(&connection, wanted, &wake);
-    let executor = connection.executor().clone();
-    loop {
-        executor.tick().await;
-    }
-}
-
-/// Starts a task on `connection` for each daemon asked for, `(network,
-/// power)`.
-pub fn follow(connection: &zbus::blocking::Connection, wanted: (bool, bool), wake: &Sender<Msg>) {
-    spawn_signals(connection.inner(), wanted, wake);
-}
-
-/// Starts the tasks of [`follow`] on an async connection's executor.
-fn spawn_signals(
-    connection: &zbus::Connection,
-    (network, power): (bool, bool),
+/// Opens a netlink socket of `protocol` joined to `groups` and wakes the
+/// loop once for each batch of messages of which one `matters`.
+fn listen<D: 'static>(
+    handle: &LoopHandle<'static, D>,
+    protocol: Option<rustix::net::Protocol>,
+    groups: u32,
     wake: &Sender<Msg>,
+    matters: fn(&[u8]) -> bool,
 ) {
-    let executor = connection.executor().clone();
-    if network {
-        let task = signals(
-            connection.clone(),
-            NETWORK,
-            NETWORK_PATH,
-            NETWORK,
-            None,
-            wake.clone(),
-        );
-        executor.spawn(task, "network news").detach();
-    }
-    if power {
-        let task = signals(
-            connection.clone(),
-            POWER,
-            POWER_PATH,
-            PROPERTIES,
-            Some("PropertiesChanged"),
-            wake.clone(),
-        );
-        executor.spawn(task, "power news").detach();
-    }
-}
-
-/// A proxy to `interface` of `path` on `name`, reading no properties.
-async fn proxy(
-    connection: &zbus::Connection,
-    name: &'static str,
-    path: &'static str,
-    interface: &'static str,
-) -> zbus::Result<zbus::Proxy<'static>> {
-    zbus::proxy::Builder::new(connection)
-        .destination(name)?
-        .path(path)?
-        .interface(interface)?
-        .cache_properties(zbus::proxy::CacheProperties::No)
-        .build()
-        .await
-}
-
-/// Says `Changed` for each signal of `interface` (only `member` if one is
-/// named) the object `path` of `name` sends, until the loop is gone.
-async fn signals(
-    connection: zbus::Connection,
-    name: &'static str,
-    path: &'static str,
-    interface: &'static str,
-    member: Option<&'static str>,
-    wake: Sender<Msg>,
-) {
-    let Ok(proxy) = proxy(&connection, name, path, interface).await else {
-        return;
-    };
-    let stream = match member {
-        Some(member) => proxy.receive_signal(member).await,
-        None => proxy.receive_all_signals().await,
-    };
-    let Ok(mut stream) = stream else {
-        return;
-    };
-    while stream.next().await.is_some() {
-        if wake.send(Msg::Changed).is_err() {
+    let socket = match open(protocol, groups) {
+        Ok(socket) => socket,
+        Err(e) => {
+            eprintln!("edel-shell-ui: {}", messages::status_no_news(e));
             return;
         }
+    };
+    let wake = wake.clone();
+    let mut buffer = vec![0u8; 8192];
+    let source = Generic::new(socket, Interest::READ, Mode::Level);
+    let inserted = handle.insert_source(source, move |_, socket, _| {
+        let mut news = false;
+        loop {
+            match recv(&*socket, &mut buffer[..], RecvFlags::DONTWAIT) {
+                Ok((0, _)) => break,
+                Ok((n, _)) => news |= matters(&buffer[..n.min(buffer.len())]),
+                Err(rustix::io::Errno::AGAIN) => break,
+                // The kernel had more news than the socket held: read the
+                // status anyway, as something changed.
+                Err(rustix::io::Errno::NOBUFS) => news = true,
+                Err(_) => break,
+            }
+        }
+        if news && wake.send(Msg::Changed).is_err() {
+            return Ok(PostAction::Remove);
+        }
+        Ok(PostAction::Continue)
+    });
+    if let Err(e) = inserted {
+        eprintln!("edel-shell-ui: {}", messages::status_no_news(e));
     }
+}
+
+/// A non-blocking netlink socket of `protocol` (none is rtnetlink,
+/// `NETLINK_ROUTE`, protocol 0), joined to `groups`.
+fn open(protocol: Option<rustix::net::Protocol>, groups: u32) -> rustix::io::Result<OwnedFd> {
+    let socket = socket_with(
+        AddressFamily::NETLINK,
+        SocketType::DGRAM,
+        SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+        protocol,
+    )?;
+    bind(&socket, &netlink::SocketAddrNetlink::new(0, groups))?;
+    Ok(socket)
+}
+
+/// Whether a kernel uevent is about a power supply: its lines, after the
+/// header, are `KEY=VALUE`, nul-separated.
+fn concerns_power(message: &[u8]) -> bool {
+    message
+        .split(|b| *b == 0)
+        .any(|field| field == b"SUBSYSTEM=power_supply")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smithay_client_toolkit::reexports::calloop;
-    use zbus::object_server::SignalEmitter;
-
-    /// A stand-in for NetworkManager: the interface and the signal.
-    struct Manager;
-
-    #[zbus::interface(name = "org.freedesktop.NetworkManager")]
-    impl Manager {
-        #[zbus(signal)]
-        async fn state_changed(emitter: &SignalEmitter<'_>, state: u32) -> zbus::Result<()>;
-    }
-
-    /// Needs a bus (`dbus-run-session -- cargo test -p edel-shell-ui
-    /// watch`), else it has nothing to check and passes: a signal from the
-    /// object that stands for NetworkManager wakes the loop, and one from
-    /// something else does not.
-    /// As the test below, with the listening connection driven on another
-    /// connection's thread, as shell-ui drives the system bus's on the
-    /// session bus's: it connects, and the signal still wakes the loop.
-    #[test]
-    fn a_connection_driven_on_another_thread_hears_the_signal() {
-        if std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
-            eprintln!("no bus: the news is not tried");
-            return;
-        }
-        let (sender, channel) = calloop::channel::channel();
-        let daemon = zbus::blocking::connection::Builder::session()
-            .unwrap()
-            .name(NETWORK)
-            .unwrap()
-            .serve_at(NETWORK_PATH, Manager)
-            .unwrap()
-            .build()
-            .unwrap();
-        let host = zbus::blocking::Connection::session().unwrap();
-        let task = drive(zbus::connection::Builder::session(), (true, false), sender);
-        host.inner().executor().spawn(task, "driven").detach();
-        let mut events = calloop::EventLoop::<u32>::try_new().unwrap();
-        events
-            .handle()
-            .insert_source(channel, |event, _, seen| {
-                if let calloop::channel::Event::Msg(Msg::Changed) = event {
-                    *seen += 1;
-                }
-            })
-            .unwrap();
-        let emitter = daemon
-            .object_server()
-            .interface::<_, Manager>(NETWORK_PATH)
-            .unwrap();
-        let mut seen = 0;
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while seen == 0 && std::time::Instant::now() < until {
-            zbus::block_on(Manager::state_changed(emitter.signal_emitter(), 70)).unwrap();
-            events
-                .dispatch(std::time::Duration::from_millis(100), &mut seen)
-                .unwrap();
-        }
-        assert!(seen > 0, "no wake after a StateChanged");
-    }
 
     #[test]
-    fn a_signal_from_networkmanager_wakes_the_loop() {
-        if std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
-            eprintln!("no bus: the news is not tried");
-            return;
+    fn only_power_supply_uevents_matter() {
+        let charger = b"change@/devices/LNXSYSTM:00/ACPI0003:00/power_supply/AC\0ACTION=change\0SUBSYSTEM=power_supply\0POWER_SUPPLY_ONLINE=1\0";
+        let usb = b"add@/devices/pci0000:00/usb1/1-1\0ACTION=add\0SUBSYSTEM=usb\0";
+        assert!(concerns_power(charger));
+        assert!(!concerns_power(usb));
+        assert!(!concerns_power(b"SUBSYSTEM=power_supply_x\0"));
+    }
+
+    /// Opening the sockets needs a kernel that allows them here; where it
+    /// does not, the test says so and passes, as shell-ui then just reads
+    /// on the minute.
+    #[test]
+    fn the_sockets_open_where_the_kernel_allows() {
+        for (protocol, groups) in [
+            (None, ROUTE_GROUPS),
+            (Some(netlink::KOBJECT_UEVENT), KERNEL_UEVENTS),
+        ] {
+            if let Err(e) = open(protocol, groups) {
+                eprintln!("netlink not allowed here: {e}");
+            }
         }
-        let (sender, channel) = calloop::channel::channel();
-        let daemon = zbus::blocking::connection::Builder::session()
-            .unwrap()
-            .name(NETWORK)
-            .unwrap()
-            .serve_at(NETWORK_PATH, Manager)
-            .unwrap()
-            .build()
-            .unwrap();
-        let listener = zbus::blocking::Connection::session().unwrap();
-        follow(&listener, (true, false), &sender);
-        let mut events = calloop::EventLoop::<u32>::try_new().unwrap();
-        events
-            .handle()
-            .insert_source(channel, |event, _, seen| {
-                if let calloop::channel::Event::Msg(Msg::Changed) = event {
-                    *seen += 1;
-                }
-            })
-            .unwrap();
-        let emitter = daemon
-            .object_server()
-            .interface::<_, Manager>(NETWORK_PATH)
-            .unwrap();
-        let mut seen = 0;
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        // The listener's match rule is added by a task; say it until heard.
-        while seen == 0 && std::time::Instant::now() < until {
-            zbus::block_on(Manager::state_changed(emitter.signal_emitter(), 70)).unwrap();
-            events
-                .dispatch(std::time::Duration::from_millis(100), &mut seen)
-                .unwrap();
-        }
-        assert!(seen > 0, "no wake after a StateChanged");
     }
 }

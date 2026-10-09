@@ -83,10 +83,10 @@ pub fn style_no_home(style: &str) -> String {
     )
 }
 
-/// The system bus cannot be listened to for the status area.
-pub fn status_no_bus(why: impl Display) -> String {
+/// The kernel's news of network and power changes cannot be listened to.
+pub fn status_no_news(why: impl Display) -> String {
     format!(
-        "could not listen to NetworkManager and UPower on the system bus: {why}; the status icons are read when quick settings open and at each minute instead of at each change"
+        "could not listen for network and power changes: {why}; the status icons are read when quick settings open and at each minute instead of at each change"
     )
 }
 
@@ -194,7 +194,7 @@ mod tests {
         );
         assert!(DARK_STYLE_NO_HOME.contains("edel settings set appearance.mode=dark"));
         assert!(
-            status_no_bus("no bus").starts_with("could not listen to NetworkManager and UPower")
+            status_no_news("denied").starts_with("could not listen for network and power changes")
         );
     }
 
@@ -211,7 +211,7 @@ mod tests {
             tray_not_said("x"),
             tray_bad_item("x"),
             tray_call_failed("a", "b", "x"),
-            status_no_bus("x"),
+            status_no_news("x"),
             quick_not_done("a", "x"),
             dark_style_not_kept("x"),
             DARK_STYLE_NO_HOME.to_string(),

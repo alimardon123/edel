@@ -132,7 +132,6 @@ struct Shell {
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
-    _system: Option<zbus::blocking::Connection>,
     /// Scrolling over a panel not yet a whole step.
     scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
@@ -329,7 +328,6 @@ fn run() -> Result<()> {
         status_busy: 0,
         status_again: None,
         status_tx,
-        _system: None,
         flip: None,
         flipped: switcher::View::default(),
         scrolled: widgets::Scrolled::default(),
@@ -376,7 +374,7 @@ fn run() -> Result<()> {
                 }
             })
             .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
-        shell._system = watch::serve(features, &shell.status_tx, shell._portal.as_ref());
+        watch::serve(features, &shell.status_tx, &event_loop.handle());
         shell.request_status(false);
     }
     WaylandSource::new(connection, queue)
