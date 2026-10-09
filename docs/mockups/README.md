@@ -68,7 +68,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/details.jpg](shell/details.jpg) | Going deeper: a pill's chevron opens Wi-Fi or Sound in place of the grid |
 | [shell/states.jpg](shell/states.jpg) | Hover, pressed, on and off, focus, and how each part moves |
 | [shell/tray.jpg](shell/tray.jpg) | The tray: one arrow, as on Windows, opening a frosted grid |
-| [shell/settings.jpg](shell/settings.jpg) | Every setting these pictures need: its choices, its default, its proposed key, and whether it is decided or still the person's to pick |
+| [shell/settings.jpg](shell/settings.jpg) | Every setting these pictures need: its choices, its default and its proposed key; Alimardon's decisions, and four defaults Claude picked by the principles (how many workspaces show, the ends of their strip, the volume pop-up on, new tray apps behind the arrow), which they can overrule |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
 
 The rules under them:
