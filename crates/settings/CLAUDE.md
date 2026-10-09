@@ -9,6 +9,7 @@ Settings, the app for every setting (ADR-008, roadmap M5.6): GTK4 and libadwaita
 - Every page works at every size class (M5.6c): at Compact width, 360 logical px, nothing is cut off and nothing scrolls sideways, and in touch mode every control is at least 44 px (Alimardon, 2026-10-08: phones later, so nothing built now needs rework, M9). From M5.8b on, a page's CI case also draws it at Compact width.
 - Nothing of its own runs in the background; the desktop follows the file it writes (the compositor watches it, M4.5).
 - Every word people read, shown or spoken to a screen reader, is marked with `edel::i18n`'s `tr`, `trf` or `n_` (M5.24a), and `po/settings.pot` is written afresh with `EDEL_WRITE_DOCS=1 cargo test -p edel i18n` in the same commit; log lines stay English.
+- **Stands alone (M8.13):** it needs the `edel` library without its `cli` feature, GTK 4 and libadwaita, and the settings file, which it writes through `edel::settings`. It depends on no other part of ours, and the desktop follows it only through that file (`ci/seams.sh`).
 
 ## Layout
 

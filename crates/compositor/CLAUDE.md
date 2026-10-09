@@ -8,6 +8,7 @@
 - No extension API, no theme engine, no second renderer (GLES only), no IPC daemon (ADR-002). Floating and tiling are two implementations of `layout::WindowPolicy`, chosen per workspace.
 - Colours and sizes come only from `design/tokens.toml` through `tokens::Tokens`; never hard-code one in drawing code.
 - Readers of files other releases write (tokens, later `settings.toml`) are lenient: unknown keys and bad values keep the built-in value and are reported, never fatal (ADR-008). `tokens::check` is the strict reader for tests and builds.
+- **Stands alone (M8.13):** it needs the `edel` library without its `cli` feature, a Wayland and DRM stack (libinput, libseat, GBM, EGL, libxkbcommon) and the files `edel::places` names. It never depends on shell-ui, Settings or the test client, and speaks to shell-ui only through Wayland protocols, `edel-shell-v1` among them (`ci/seams.sh`).
 
 ## Layout
 
