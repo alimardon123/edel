@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The battery's outline and its nub (M5.9a); the code fills it from battery-level by the charge. -->
+  <rect x="1.8" y="7" width="18.4" height="10" rx="2.6" stroke-width="1.5"/>
+  <path d="M22.4 10.4v3.2" stroke-width="1.5"/>
+</svg>

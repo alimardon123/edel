@@ -5,13 +5,49 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
-msgid "Panel"
-msgstr ""
-
 msgid "Type to search"
 msgstr ""
 
 msgid "No app matches"
+msgstr ""
+
+msgid "Wi-Fi"
+msgstr ""
+
+msgid "Airplane mode"
+msgstr ""
+
+msgid "Dark style"
+msgstr ""
+
+msgid "On"
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "Not connected"
+msgstr ""
+
+msgid "{title}, {state}"
+msgstr ""
+
+msgid "{title} settings"
+msgstr ""
+
+msgid "Output: {name}"
+msgstr ""
+
+msgid "Mute"
+msgstr ""
+
+msgid "Volume"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Quick settings"
 msgstr ""
 
 msgid "Stack"
@@ -45,6 +81,36 @@ msgid "Menu"
 msgstr ""
 
 msgid "Search"
+msgstr ""
+
+msgid "wired"
+msgstr ""
+
+msgid "Wi-Fi {name}"
+msgstr ""
+
+msgid "connecting"
+msgstr ""
+
+msgid "airplane mode"
+msgstr ""
+
+msgid "offline"
+msgstr ""
+
+msgid "volume muted"
+msgstr ""
+
+msgid "volume {percent} percent"
+msgstr ""
+
+msgid "battery {percent} percent, charging"
+msgstr ""
+
+msgid "battery {percent} percent"
+msgstr ""
+
+msgid "Status: {parts}"
 msgstr ""
 
 msgid "Focused window: {title}"

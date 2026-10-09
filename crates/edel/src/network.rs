@@ -436,6 +436,13 @@ pub fn radio_args(on: bool) -> Vec<String> {
     words(&["radio", "wifi", if on { "on" } else { "off" }])
 }
 
+/// The arguments that switch every radio NetworkManager looks after, Wi-Fi
+/// and mobile broadband, on or off: flight mode, with Bluetooth's own
+/// switch (the panel's Airplane mode tile, M5.9a).
+pub fn radios_args(on: bool) -> Vec<String> {
+    words(&["radio", "all", if on { "on" } else { "off" }])
+}
+
 /// The arguments that join the Wi-Fi network `ssid`, with `password` when
 /// it is a new one that asks for it.
 pub fn join_args(ssid: &str, password: Option<&str>) -> Vec<String> {
@@ -542,6 +549,11 @@ pub fn rescan() {
 /// Switches Wi-Fi on or off.
 pub fn set_wifi(on: bool) -> Result<()> {
     nmcli(&radio_args(on), READ_TIME).map(drop)
+}
+
+/// Switches every radio NetworkManager looks after on or off.
+pub fn set_radios(on: bool) -> Result<()> {
+    nmcli(&radios_args(on), READ_TIME).map(drop)
 }
 
 /// Joins the Wi-Fi network `ssid`: a remembered one by its name, a new one
@@ -838,6 +850,8 @@ mod tests {
     #[test]
     fn the_commands_are_nmclis() {
         assert_eq!(radio_args(false), ["radio", "wifi", "off"]);
+        assert_eq!(radios_args(false), ["radio", "all", "off"]);
+        assert_eq!(radios_args(true), ["radio", "all", "on"]);
         assert_eq!(
             command_line(&join_args("Cafe Guest", Some("secret one"))),
             "nmcli device wifi connect 'Cafe Guest' password 'secret one'"

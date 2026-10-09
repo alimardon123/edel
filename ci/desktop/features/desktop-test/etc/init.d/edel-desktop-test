@@ -264,6 +264,12 @@ commands() {
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;
+		# The mode the panel's Dark style tile wrote to ci's own file
+		# (M5.9a), taken out again.
+		'scheme mine default') as_ci "sed -i '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The sound system's volume (M5.9a): the default output at 20
+		# percent, for the quick settings slider to start from.
+		'volume 20') as_ci wpctl set-volume @DEFAULT_AUDIO_SINK@ 20% ;;
 		# appearance.animations (M5.11b), reduced and back to the default.
 		'motion reduced') edel settings set appearance.animations=reduced ;;
 		'motion off') edel settings set appearance.animations=off ;;

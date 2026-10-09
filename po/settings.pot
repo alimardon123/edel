@@ -488,16 +488,10 @@ msgstr ""
 msgid "Battery at {percent}%"
 msgstr ""
 
-msgid "Battery"
-msgstr ""
-
 msgid "Plugged in and charging. About {time} until full."
 msgstr ""
 
 msgid "Plugged in and charging."
-msgstr ""
-
-msgid "Fully charged"
 msgstr ""
 
 msgid "Plugged in."

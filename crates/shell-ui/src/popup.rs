@@ -105,6 +105,12 @@ impl<V: Clone + PartialEq> Popup<V> {
         }
     }
 
+    /// The card's size now, logical pixels: what [`Popup::resize`] last
+    /// asked for.
+    pub fn size(&self) -> (u32, u32) {
+        self.size
+    }
+
     /// The room round the card, logical pixels: where the card starts.
     pub fn room(&self) -> u32 {
         self.room

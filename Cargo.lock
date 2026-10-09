@@ -1017,6 +1017,7 @@ dependencies = [
  "edel",
  "futures-lite",
  "jiff",
+ "rustix 1.1.5",
  "smithay-client-toolkit 0.21.1",
  "tiny-skia",
  "toml",

@@ -12,7 +12,8 @@
 //! only when what a widget shows, or the panel's size or scale, changes;
 //! a click or a scroll on a widget does what the widget says. Super,
 //! tapped alone, or the menu button opens the launcher (M5.3b,
-//! `launcher.rs`). It exits when the compositor goes away.
+//! `launcher.rs`), and the status area's click opens quick settings
+//! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
 mod a11y;
 mod launcher;
@@ -21,10 +22,14 @@ mod messages;
 mod paint;
 mod popup;
 mod portal;
+mod quick;
+mod quick_card;
+mod status;
 mod styles;
 mod switcher;
 mod toplevels;
 mod tray;
+mod watch;
 mod widgets;
 mod workspaces;
 
@@ -68,6 +73,7 @@ use edel::{app_icons as icons, apps};
 
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
+use crate::quick_card::QuickCard;
 use crate::widgets::{Action, Input, Live};
 
 /// The panels' layer surfaces' namespace, as the compositor's state file
@@ -80,6 +86,12 @@ const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
 /// The layout button's menu of tiling styles (M5.16b).
 const STYLES: &str = "edel-styles";
+/// Quick settings, opened from the status area (M5.9a).
+const QUICK: &str = "edel-quick";
+/// What opens when the Settings button is pressed, and the way to a page.
+const SETTINGS: &str = "edel-settings";
+/// The feature that brings it.
+const SETTINGS_FEATURE: &str = "settings";
 /// The launcher's distance from the panel and the screen's side.
 const MARGIN: i32 = 8;
 
@@ -107,6 +119,19 @@ struct Shell {
     menu: Option<Menu>,
     /// The tiling styles' menu while it is open (M5.16b).
     styles: Option<StylesMenu>,
+    /// Quick settings while open (M5.9a), the preset's tiles for it, and
+    /// whether the machine has the Settings app.
+    quick: Option<QuickCard>,
+    quick_tiles: Vec<String>,
+    quick_settings: bool,
+    /// The status area's reading (M5.9a): whether a panel holds it, how
+    /// many threads read or run something, whether another reading is
+    /// wanted when they end (and whether with Bluetooth), the way back to
+    /// the loop and the system bus's connection.
+    status_wanted: bool,
+    status_busy: u32,
+    status_again: Option<bool>,
+    status_tx: channel::Sender<status::Msg>,
     /// Scrolling over a panel not yet a whole step.
     scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
@@ -249,7 +274,7 @@ fn run() -> Result<()> {
             drawn: None,
             waiting: false,
             places: Vec::new(),
-            reader: a11y::Reader::new(),
+            reader: a11y::Reader::panel(),
         });
     }
     // The apps a panel's apps widget shows, and whose icons the window
@@ -273,6 +298,10 @@ fn run() -> Result<()> {
         .context("creating the shared memory pool")?;
     let mut event_loop: EventLoop<Shell> =
         EventLoop::try_new().context("starting the event loop")?;
+    let (status_tx, status_rx) = channel::channel::<status::Msg>();
+    let status_wanted = panels
+        .iter()
+        .any(|p| p.row.all().any(|w| w.name == "status"));
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -290,6 +319,15 @@ fn run() -> Result<()> {
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
+        quick: None,
+        quick_tiles: preset.quick.tiles.clone(),
+        quick_settings: features
+            .join(format!("{}.toml", SETTINGS_FEATURE))
+            .is_file(),
+        status_wanted,
+        status_busy: 0,
+        status_again: None,
+        status_tx,
         flip: None,
         flipped: switcher::View::default(),
         scrolled: widgets::Scrolled::default(),
@@ -323,6 +361,21 @@ fn run() -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
         }
+    }
+    // The status area (M5.9a): what the machine says is read once now, and
+    // again when the system bus says NetworkManager or UPower changed
+    // something; only when a panel holds the widget.
+    if status_wanted {
+        event_loop
+            .handle()
+            .insert_source(status_rx, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(msg) = event {
+                    shell.status_msg(msg);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
+        watch::serve(features, &shell.status_tx, &event_loop.handle());
+        shell.request_status(false);
     }
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
@@ -408,6 +461,9 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
                 shell.draw(i);
             }
             shell.launcher.reap();
+            // The status area follows the machine on the minute too, for
+            // a change no daemon signalled.
+            shell.request_status(false);
             TimeoutAction::ToDuration(next())
         },
     );
@@ -495,8 +551,12 @@ impl Shell {
                             bottom,
                         ),
                         children: Vec::new(),
+                        toggled: None,
+                        value: None,
                     })
                     .collect(),
+                toggled: None,
+                value: None,
             })
             .collect();
         let size = (
@@ -629,6 +689,7 @@ impl Shell {
             Some(Action::TogglePolicy) => self.link.toggle_policy(),
             Some(Action::Launcher) => self.toggle_launcher(),
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
+            Some(Action::Quick) => self.toggle_quick(),
             Some(Action::App(id)) => self.open_app(&id),
             Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
             None => {}
@@ -699,6 +760,7 @@ impl Shell {
     /// the compositor picks, with the keyboard.
     fn open_launcher(&mut self) {
         self.close_styles();
+        self.close_quick();
         let (edge, scale) = self
             .panels
             .first()
@@ -818,6 +880,7 @@ impl Shell {
             return self.close_styles();
         }
         self.close_launcher();
+        self.close_quick();
         let Some(panel) = self.panels.get(i) else {
             return;
         };
@@ -1040,6 +1103,8 @@ impl LayerShellHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
+        } else if self.is_quick(surface.wl_surface()) {
+            self.close_quick();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -1066,6 +1131,12 @@ impl LayerShellHandler for Shell {
                 menu.popup.configured();
             }
             return self.draw_styles();
+        }
+        if self.is_quick(surface.wl_surface()) {
+            if let Some(card) = &mut self.quick {
+                card.popup_mut().configured();
+            }
+            return self.draw_quick();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -1104,6 +1175,12 @@ impl CompositorHandler for Shell {
                 menu.popup.set_scale(factor);
             }
             return self.draw_styles();
+        }
+        if self.is_quick(surface) {
+            if let Some(card) = &mut self.quick {
+                card.popup_mut().set_scale(factor);
+            }
+            return self.draw_quick();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1147,6 +1224,12 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_styles();
+        }
+        if self.is_quick(surface) {
+            if let Some(card) = &mut self.quick {
+                card.popup_mut().framed();
+            }
+            return self.draw_quick();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1305,6 +1388,10 @@ impl PointerHandler for Shell {
                 }
                 continue;
             }
+            if self.is_quick(&event.surface) {
+                self.quick_pointer(event);
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
@@ -1366,6 +1453,8 @@ impl KeyboardHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface) {
             self.close_styles();
+        } else if self.is_quick(surface) {
+            self.close_quick();
         }
     }
 
@@ -1377,7 +1466,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.styles.is_some() {
+        if self.quick.is_some() {
+            self.quick_key(event);
+        } else if self.styles.is_some() {
             self.styles_key(event);
         } else {
             self.launcher_key(event);
@@ -1392,7 +1483,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.styles.is_some() {
+        if self.quick.is_some() {
+            self.quick_key(event);
+        } else if self.styles.is_some() {
             self.styles_key(event);
         } else {
             self.launcher_key(event);

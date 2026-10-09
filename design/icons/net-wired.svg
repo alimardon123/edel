@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Connected by a cable (M5.9a): three machines on one line. -->
+  <rect x="9" y="3.5" width="6" height="5" rx="1.2"/>
+  <rect x="3" y="15.5" width="6" height="5" rx="1.2"/>
+  <rect x="15" y="15.5" width="6" height="5" rx="1.2"/>
+  <path d="M12 8.5V12M6 15.5V12H18V15.5"/>
+</svg>

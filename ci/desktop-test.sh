@@ -72,6 +72,15 @@
 #               on its button brings it back (M5.2h)
 #   launcher    Super opens the launcher; typing foot and Return starts
 #               foot; Escape closes it (M5.3b)
+#   quick       the status area's pill in the panel (a click on it) opens quick
+#               settings above it, the panel's colour at 1000,745 where the
+#               background was; the output's volume, set to 20 percent, is
+#               the slider's accent at a tenth of its track, a drag on the
+#               track from three tenths to half sets the sink to about 0.50 as
+#               wpctl status shows, a click on the Dark style tile writes
+#               appearance.mode to ci's settings file and the compositor takes
+#               the dark colours; Escape and a second click on the pill close
+#               the card (M5.9a)
 #   switcher    with Alt held, Tab shows the window switcher with the
 #               window used before chosen; letting go switches (M5.3c)
 #   styles      layout.tiling_style = "split" leaves workspace 4 floating;
@@ -1459,6 +1468,124 @@ case_launcher() {
 	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
+case_quick() {
+	# Quick settings (M5.9a). The status area is a pill in the panel,
+	# shell-ui says where (`panel places`); a click on it opens the card
+	# above it, 8 px from the screen's side and the panel, in the panel's
+	# colour: 1000,745 lies in its bottom padding and is the background
+	# before. The VM has a network but no Wi-Fi adapter and no Bluetooth, so
+	# its card holds the Dark style tile, the volume and Settings; shell-ui
+	# logs where each lies (`quick places`), in logical pixels from the
+	# card's corner, which the layers line (the card and its shadow's room)
+	# places on screen. Kept as quick.png.
+	background=$(token background)
+	panel=$(token panel)
+	accent=$(token accent)
+	pill() {
+		tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+			sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p'
+	}
+	# The sound card comes up a little after the desktop.
+	i=0
+	while [ -z "$(sink_volume)" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "wpctl status lists no sink in use after 60 s: $(value sound_status)"
+		sleep 3
+	done
+	guest 'volume 20'
+	i=0
+	while [ "$(sink_volume)" != 0.20 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the sink is at $(sink_volume), not 0.20, after wpctl set-volume"
+		sleep 1
+	done
+	set -- $(pill)
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	pill_x=$(($1 + $2 / 2))
+	shot quick 1000 745 "$background" >/dev/null || fail "1000,745 is not the background before quick settings open"
+	# A click on the pill opens the card.
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "a click on the status area at $pill_x,780 did not open quick settings"
+	shot quick 1000 745 "$panel" >/dev/null || fail "the card is not drawn at 1000,745 in the panel's colour"
+	i=0
+	until value layers | grep -q 'edel-quick@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no quick settings surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-quick@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-quick@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*quick places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where the card's parts lie: $line"
+	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
+	[ "$1" = 360 ] || fail "the card is $1 px wide, not 360"
+	set -- $(echo "$line" | sed -n 's/.*track \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "the card has no volume track: $line"
+	tx=$(($1 + cx)) ty=$(($2 + cy + $4 / 2)) tw=$3
+	# 20 percent: the accent a tenth of the way along the track, the
+	# track's own colour near its end.
+	shot quick $((tx + tw / 10)) "$ty" "$accent" >/dev/null || fail "the slider at $((tx + tw / 10)),$ty is not the accent at 20 percent"
+	shot quick $((tx + tw - 14)) "$ty" "!$accent" >/dev/null || fail "the slider at $((tx + tw - 14)),$ty is still the accent near its end"
+	# A drag from three tenths of the track to half of it.
+	python3 ci/qmp.py drag $((tx + tw * 3 / 10)) "$ty" $((tx + tw / 2)) "$ty"
+	i=0
+	until awk -v v="$(sink_volume)" 'BEGIN { exit !(v >= 0.45 && v <= 0.55) }'; do
+		i=$((i + 1))
+		[ "$i" -lt 15 ] || fail "after dragging the slider to half, wpctl status shows the sink at $(sink_volume), not about 0.50"
+		sleep 1
+	done
+	volume=$(sink_volume)
+	shot quick $((tx + tw * 2 / 5)) "$ty" "$accent" >/dev/null || fail "after the drag the slider at $((tx + tw * 2 / 5)),$ty is not the accent"
+	# A second click on the pill closes the card, and it opens again.
+	hidden=$(count 'edel-shell-ui: quick settings hidden')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "a second click on the status area did not close quick settings"
+	shot quick 1000 745 "$background" >/dev/null || fail "1000,745 is not the background after the card closed"
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "the status area did not open quick settings again"
+	# The Dark style tile: a click on its left part writes appearance.mode
+	# to ci's file and the compositor takes the dark colours.
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*dark_style \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "the card has no Dark style tile: $line"
+	dx=$(($1 + cx + 24)) dy=$(($2 + cy + $4 / 2))
+	said=$(count 'edel-compositor: colour scheme dark')
+	python3 ci/qmp.py click "$dx" "$dy"
+	wait_more 'edel-compositor: colour scheme dark' "$said" || fail "a click on Dark style at $dx,$dy did not turn the colour scheme dark"
+	guest 'settings file'
+	i=0
+	until value settings_file | grep -q 'mode = "dark"'; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "ci's settings file does not hold appearance.mode = \"dark\": $(value settings_file)"
+		guest 'settings file'
+		sleep 1
+	done
+	# Back to light, as the person's file without the key; shell-ui starts
+	# again in each scheme, which closes the card.
+	said=$(count 'edel-compositor: colour scheme light')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colour scheme is now light')
+	guest 'scheme mine default'
+	wait_more 'edel-compositor: colour scheme light' "$said" || fail "taking appearance.mode out of ci's file did not bring the light scheme back"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colour scheme is now light' "$restarts" || fail "shell-ui did not start again for the light scheme"
+	shot quick 640 790 "$panel" >/dev/null || fail "the panel at 640,790 is not the light scheme's #$panel"
+	sleep 3
+	# Escape closes the card.
+	set -- $(pill)
+	pill_x=$(($1 + $2 / 2))
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "the status area did not open quick settings after shell-ui started again"
+	shot quick 1000 745 "$panel" >/dev/null || fail "the card is not drawn at 1000,745 in the panel's colour"
+	hidden=$(count 'edel-shell-ui: quick settings hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "Escape did not close quick settings"
+	shot quick 1000 745 "$background" >/dev/null || fail "1000,745 is not the background after Escape"
+	echo "PASS: a click on the status area opened quick settings in the panel's colour, a drag on the volume slider took the sink from 0.20 to $volume as wpctl status shows, a second click on the pill closed the card, a click on Dark style wrote appearance.mode to ci's file and the compositor took the dark colours, and Escape closed the card"
+}
+
 case_switcher() {
 	# The window switcher (M5.3c): with away opened over one, Alt held
 	# and Tab chooses one, the window used before away; shell-ui draws
@@ -2421,7 +2548,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')

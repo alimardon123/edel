@@ -294,6 +294,99 @@ pub fn icon(pixmap: &mut Pixmap, name: &str, px: f32, x: f32, y: f32, colour: Co
     }
 }
 
+/// A battery `px` pixels across, its top left corner at `at` (M5.9a):
+/// the outline (`battery.svg`) with its charge, `percent` of the bar inside
+/// it (`battery-level.svg`, cut at that share of its own width, so the
+/// file alone decides where the bar lies), and when `charging` the bolt
+/// (`battery-bolt.svg`) over it with a clear edge round it, so it reads
+/// on a full battery too (`charge` is the percent and whether it charges).
+/// All in `colour`; `halo` is that edge's width in pixels.
+pub fn battery(
+    pixmap: &mut Pixmap,
+    px: f32,
+    at: (f32, f32),
+    charge: (u32, bool),
+    colour: Colour,
+    halo: i32,
+) {
+    let (percent, charging) = charge;
+    let side = px.round() as u32;
+    let Some(mut layer) = Pixmap::new(side, side) else {
+        return;
+    };
+    let plain = PixmapPaint::default();
+    icon(&mut layer, "battery", px, 0.0, 0.0, colour);
+    if let Some(mut level) = edel::icons::draw("battery-level", side, colour) {
+        keep_share(&mut level, percent.min(100) as f32 / 100.0);
+        layer.draw_pixmap(0, 0, level.as_ref(), &plain, Transform::identity(), None);
+    }
+    if charging {
+        if let Some(bolt) = edel::icons::mask("battery-bolt", side) {
+            let clear = PixmapPaint {
+                blend_mode: tiny_skia::BlendMode::DestinationOut,
+                ..PixmapPaint::default()
+            };
+            for dy in -halo..=halo {
+                for dx in -halo..=halo {
+                    layer.draw_pixmap(dx, dy, bolt.as_ref(), &clear, Transform::identity(), None);
+                }
+            }
+        }
+        icon(&mut layer, "battery-bolt", px, 0.0, 0.0, colour);
+    }
+    let (x, y) = (at.0.round() as i32, at.1.round() as i32);
+    pixmap.draw_pixmap(x, y, layer.as_ref(), &plain, Transform::identity(), None);
+}
+
+/// Clears everything of `pixmap`'s shape to the right of `share` (0 to 1)
+/// of its width, the shape's own, from its leftmost covered column to its
+/// rightmost; some of a shape that has any is always kept, so a nearly
+/// empty battery still shows a sliver.
+fn keep_share(pixmap: &mut Pixmap, share: f32) {
+    let (w, h) = (pixmap.width() as usize, pixmap.height() as usize);
+    let covered = |data: &[u8], x: usize| (0..h).any(|y| data[(y * w + x) * 4 + 3] > 0);
+    let (first, last) = {
+        let data = pixmap.data();
+        let Some(first) = (0..w).find(|&x| covered(data, x)) else {
+            return;
+        };
+        let last = (0..w).rev().find(|&x| covered(data, x)).unwrap_or(first);
+        (first, last)
+    };
+    let share = share.clamp(0.0, 1.0);
+    let mut keep = ((last - first + 1) as f32 * share).round() as usize;
+    if share > 0.0 {
+        keep = keep.max(1);
+    }
+    let data = pixmap.data_mut();
+    for y in 0..h {
+        for x in (first + keep).min(w)..w {
+            data[(y * w + x) * 4..][..4].fill(0);
+        }
+    }
+}
+
+/// Strokes the rounded rectangle's edge, inside it, `width` pixels wide:
+/// the hairline round a tile or a card.
+pub fn outline(pixmap: &mut Pixmap, rect: (f32, f32, f32, f32), r: f32, width: f32, c: Colour) {
+    let (x, y, w, h) = rect;
+    let half = width / 2.0;
+    let Some(path) = rounded(
+        x + half,
+        y + half,
+        w - width,
+        h - width,
+        (r - half).max(0.0),
+    ) else {
+        return;
+    };
+    let stroke = tiny_skia::Stroke {
+        width,
+        ..tiny_skia::Stroke::default()
+    };
+    pixmap.stroke_path(&path, &paint_of(c), &stroke, Transform::identity(), None);
+}
+
 /// The accent, faint: under a chosen row or a switched-on button.
 pub fn lit(tokens: &Tokens) -> Colour {
     Colour {
