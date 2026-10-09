@@ -77,7 +77,7 @@ impl Shell {
     fn run_and_read(&mut self, ran: Option<Cmd>, bluetooth: bool) {
         self.status_busy += 1;
         let tx = self.status_tx.clone();
-        let features = std::path::PathBuf::from(edel::features::DIR);
+        let features = edel::places::found_shared(edel::features::DIR);
         let spawned = std::thread::Builder::new()
             .name("status".into())
             .spawn(move || {

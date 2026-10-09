@@ -232,7 +232,7 @@ fn run() -> Result<()> {
     let layers = LayerShell::bind(&globals, &qh)
         .with_context(|| messages::missing("zwlr_layer_shell_v1"))?;
     let strip = paint::fillet_height(&tokens);
-    let features = std::path::Path::new(edel::features::DIR);
+    let features = &edel::places::found_shared(edel::features::DIR);
     let mut panels = Vec::new();
     for spec in &preset.panels {
         let pick = |names: &[String]| {

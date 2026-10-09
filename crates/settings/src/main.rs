@@ -272,7 +272,7 @@ fn pages_in(features: &std::path::Path) -> Vec<Page> {
 }
 
 fn pages() -> Vec<Page> {
-    pages_in(std::path::Path::new(edel::features::DIR))
+    pages_in(&edel::places::found_shared(edel::features::DIR))
 }
 
 /// Whether search text `query` finds `page`: its title or one of its rows'

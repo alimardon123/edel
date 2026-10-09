@@ -100,7 +100,7 @@ impl Scheme {
 /// The image's tokens in `scheme` if it has a file, else the built-in
 /// ones; what was skipped comes back as notes, never fatal (ADR-008).
 pub fn load(scheme: Scheme) -> (Tokens, Vec<String>) {
-    match std::fs::read_to_string(PATH) {
+    match std::fs::read_to_string(crate::places::found_shared(PATH)) {
         Ok(text) => Tokens::read_scheme(&text, scheme),
         Err(_) => (Tokens::built_in_scheme(scheme), Vec::new()),
     }
