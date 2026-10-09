@@ -66,7 +66,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
     LayerSurfaceConfigure,
 };
-use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
@@ -124,6 +124,9 @@ struct Shell {
     layers: LayerShell,
     shm: Shm,
     pool: SlotPool,
+    /// Panel buffers drawn before the one shown, kept until the compositor
+    /// lets go of them so their pages can be given back (free_spent).
+    spent: Vec<Buffer>,
     panels: Vec<Panel>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
@@ -200,6 +203,9 @@ struct Panel {
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
+    /// The buffer attached last, kept so the one before it can be freed
+    /// once the compositor releases it.
+    shown: Option<Buffer>,
     /// What screen readers read of it (M5.1d).
     reader: a11y::Reader,
 }
@@ -291,6 +297,7 @@ fn run() -> Result<()> {
             drawn: None,
             waiting: false,
             places: Vec::new(),
+            shown: None,
             reader: a11y::Reader::panel(),
         });
     }
@@ -332,6 +339,7 @@ fn run() -> Result<()> {
         layers,
         shm,
         pool,
+        spent: Vec::new(),
         panels,
         launcher: launcher::Launcher::default(),
         menu: None,
@@ -423,6 +431,7 @@ fn run() -> Result<()> {
             eprintln!("edel-shell-ui: {}", messages::COMPOSITOR_GONE);
             break;
         }
+        shell.free_spent();
     }
     Ok(())
 }
@@ -648,7 +657,25 @@ impl Shell {
         panel.surface.commit();
         self.panels[i].places = places;
         self.panels[i].waiting = true;
+        if let Some(old) = self.panels[i].shown.replace(buffer) {
+            self.spent.push(old);
+        }
         Ok(())
+    }
+
+    /// Gives back the pages of panel buffers the compositor has let go
+    /// of: a freed slot stays mapped in the pool and resident until its
+    /// pages are removed, which would keep a second panel's worth of
+    /// shared memory for good.
+    fn free_spent(&mut self) {
+        let pool = &mut self.pool;
+        self.spent.retain(|buffer| {
+            let Some(canvas) = buffer.canvas(pool) else {
+                return true; // still held by the compositor
+            };
+            release_pages(canvas);
+            false
+        });
     }
 
     /// The compositor said the workspaces anew: the switcher's view
@@ -1616,6 +1643,30 @@ fn settings_texts() -> (Option<String>, Option<String>) {
         read(places::machine_settings()),
         places::person_settings().and_then(read),
     )
+}
+
+/// Removes the whole pages inside `bytes` from memory; reading them
+/// again gives zeros. Only for a buffer no one draws from any more.
+fn release_pages(bytes: &mut [u8]) {
+    let page = rustix::param::page_size();
+    let start = bytes.as_mut_ptr() as usize;
+    let first = start.div_ceil(page) * page;
+    let end = (start + bytes.len()) / page * page;
+    if end <= first {
+        return;
+    }
+    // SAFETY: the range lies inside `bytes`, a mapping of the shm pool
+    // that this process owns and nothing reads until it is drawn anew.
+    let removed = unsafe {
+        rustix::mm::madvise(
+            first as *mut _,
+            end - first,
+            rustix::mm::Advice::LinuxRemove,
+        )
+    };
+    if let Err(e) = removed {
+        eprintln!("edel-shell-ui: {}", messages::pages_not_given_back(e));
+    }
 }
 
 delegate_registry!(Shell);

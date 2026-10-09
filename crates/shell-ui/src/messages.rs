@@ -136,6 +136,13 @@ pub fn panel_not_drawn(why: impl Display) -> String {
     format!("could not draw the panel: {why}; it is drawn again at the next change")
 }
 
+/// The pages of a panel buffer no longer shown cannot be given back.
+pub fn pages_not_given_back(why: impl Display) -> String {
+    format!(
+        "could not give back the memory of an old panel picture: {why}; it stays in use until the panel closes"
+    )
+}
+
 /// The compositor ended the connection.
 pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes with it";
 
