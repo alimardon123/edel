@@ -1,0 +1,20 @@
+[package]
+name = "edel-settings"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Edel OS's Settings app: every setting as a row, written to the system file"
+
+[[bin]]
+name = "edel-settings"
+path = "src/main.rs"
+
+[dependencies]
+# The system file, the presets and the features, read and written as the
+# edel command does (M5.6a).
+edel = { path = "../edel", default-features = false }
+# GTK4 and libadwaita (ADR-004, ADR-002's toolkit decision for Settings),
+# limited to what Ubuntu 24.04's GTK 4.14 and libadwaita 1.5 offer, which
+# the Rust checks build against; the image has newer ones.
+gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }

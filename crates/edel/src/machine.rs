@@ -597,34 +597,12 @@ pub fn diff(file: Option<&Path>) -> Result<bool> {
 /// writers). Never applies it.
 fn edit(what: &str, key: &str, change: impl Fn(&str) -> Result<String>) -> Result<()> {
     let _lock = Lock::take("system", "edel system")?;
-    let machine = Path::new(SYSTEM_FILE);
-    let mut path = machine.to_path_buf();
-    let mut newer = None;
-    if let Ok(text) = fs::read_to_string(machine) {
-        let format = system::format(&text).with_context(|| format!("reading {SYSTEM_FILE}"))?;
-        if format > system::FORMAT {
-            path = system::versioned(machine, system::FORMAT);
-            newer = Some(format);
-        }
-    }
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(_) if newer.is_none() => format!("format = {}\n", system::FORMAT),
-        Err(_) => bail!(
-            "{SYSTEM_FILE} is format {}, newer than this release, and there is no {} beside it to change",
-            newer.unwrap_or_default(),
-            path.display()
-        ),
-    };
-    let edited = change(&text)?;
-    for problem in system::read(&edited)?.problems {
+    let edited = system::edit_file(Path::new(SYSTEM_FILE), change)?;
+    for problem in &edited.problems {
         println!("edel system: kept, not used by this release: {problem}");
     }
-    fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))?;
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    fs::write(&new, &edited)?;
-    fs::File::open(&new)?.sync_all()?;
-    fs::rename(&new, &path).with_context(|| format!("replacing {}", path.display()))?;
+    let path = edited.path;
+    let newer = edited.newer;
     println!(
         "edel system: {what} in {}; {}",
         path.display(),

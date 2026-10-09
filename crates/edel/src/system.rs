@@ -42,6 +42,55 @@ pub fn person_file() -> Option<PathBuf> {
     Some(config.join("edel/system.toml"))
 }
 
+/// A system file changed by [`edit_file`]: where it was written, the
+/// newer format beside it when there was one, and what in the result this
+/// release does not use.
+pub struct Edited {
+    pub path: PathBuf,
+    pub newer: Option<i64>,
+    pub problems: Vec<Problem>,
+}
+
+/// Changes the system file at `path` through `change` ([`set`] or
+/// [`unset`]), or, when it is in a newer format, the `system.toml.v<N>`
+/// beside it that this release reads (ADR-008, writers); a missing file
+/// starts as `format = 1`. The `edel` command and Settings both write
+/// through here (M5.6a): the result is written whole to a new file,
+/// synced, then renamed over the old one.
+pub fn edit_file(path: &Path, change: impl FnOnce(&str) -> Result<String>) -> Result<Edited> {
+    let mut target = path.to_path_buf();
+    let mut newer = None;
+    if let Ok(text) = fs::read_to_string(path) {
+        let format = format(&text).with_context(|| format!("reading {}", path.display()))?;
+        if format > FORMAT {
+            target = versioned(path, FORMAT);
+            newer = Some(format);
+        }
+    }
+    let text = match fs::read_to_string(&target) {
+        Ok(text) => text,
+        Err(_) if newer.is_none() => format!("format = {FORMAT}\n"),
+        Err(_) => bail!(
+            "{} is format {}, newer than this release, and there is no {} beside it to change",
+            path.display(),
+            newer.unwrap_or_default(),
+            target.display()
+        ),
+    };
+    let edited = change(&text)?;
+    let problems = read(&edited)?.problems;
+    fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
+    let new = PathBuf::from(format!("{}.edel-new", target.display()));
+    fs::write(&new, &edited)?;
+    fs::File::open(&new)?.sync_all()?;
+    fs::rename(&new, &target).with_context(|| format!("replacing {}", target.display()))?;
+    Ok(Edited {
+        path: target,
+        newer,
+        problems,
+    })
+}
+
 /// What a key's value must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -893,6 +942,37 @@ acent = "red"
 color_scheme = "sepia"
 font_size = 11
 "#;
+
+    #[test]
+    fn edit_file_writes_the_same_text_as_set_and_keeps_newer_files() {
+        let dir = std::env::temp_dir().join(format!("edel-edit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("edel/system.toml");
+        // A missing file starts as format 1, and the text is set's.
+        let edited = edit_file(&path, |t| set(t, "shell.preset", "mac-like")).unwrap();
+        assert_eq!(edited.path, path);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            set("format = 1\n", "shell.preset", "mac-like").unwrap()
+        );
+        let edited = edit_file(&path, |t| unset(t, "shell.preset")).unwrap();
+        assert!(edited.problems.is_empty());
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("preset"));
+        // A newer release's file is left alone; the one beside it changes.
+        std::fs::write(&path, "format = 2\n").unwrap();
+        let edited = edit_file(&path, |t| set(t, "shell.tiling", "true"));
+        assert!(edited.is_err(), "no system.toml.v1 beside it yet");
+        std::fs::write(versioned(&path, FORMAT), "format = 1\n").unwrap();
+        let edited = edit_file(&path, |t| set(t, "shell.tiling", "true")).unwrap();
+        assert_eq!(edited.newer, Some(2));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "format = 2\n");
+        assert!(
+            std::fs::read_to_string(&edited.path)
+                .unwrap()
+                .contains("tiling = true")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn parses_the_adr_006_example() {
