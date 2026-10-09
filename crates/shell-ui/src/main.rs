@@ -16,9 +16,15 @@
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
 mod a11y;
+mod banner;
+mod calendar;
+mod centre;
 mod launcher;
 mod link;
 mod messages;
+mod notice;
+mod notify;
+mod notify_card;
 mod paint;
 mod popup;
 mod portal;
@@ -60,7 +66,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
     Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface,
     LayerSurfaceConfigure,
 };
-use smithay_client_toolkit::shm::slot::SlotPool;
+use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
@@ -71,6 +77,7 @@ use edel::settings;
 use edel::tokens::{self, Scheme, Tokens};
 use edel::{app_icons as icons, apps};
 
+use crate::notify_card::{BannerCard, CentreCard};
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
 use crate::quick_card::QuickCard;
@@ -88,6 +95,10 @@ const SWITCHER: &str = "edel-switcher";
 const STYLES: &str = "edel-styles";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
+/// A new notification's banner and the notification centre, which the
+/// clock opens (M5.9b).
+const BANNER: &str = "edel-notification";
+const CENTRE: &str = "edel-centre";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
 /// The feature that brings it.
@@ -113,6 +124,9 @@ struct Shell {
     layers: LayerShell,
     shm: Shm,
     pool: SlotPool,
+    /// Panel buffers drawn before the one shown, kept until the compositor
+    /// lets go of them so their pages can be given back (free_spent).
+    spent: Vec<Buffer>,
     panels: Vec<Panel>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
@@ -124,6 +138,12 @@ struct Shell {
     quick: Option<QuickCard>,
     quick_tiles: Vec<String>,
     quick_settings: bool,
+    /// The notifications (M5.9b), at most fifty and text only, the banner
+    /// of the newest while it shows, and the notification centre while
+    /// open.
+    notifications: notify::List,
+    banner: Option<BannerCard>,
+    centre: Option<CentreCard>,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -183,6 +203,9 @@ struct Panel {
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
+    /// The buffer attached last, kept so the one before it can be freed
+    /// once the compositor releases it.
+    shown: Option<Buffer>,
     /// What screen readers read of it (M5.1d).
     reader: a11y::Reader,
 }
@@ -274,6 +297,7 @@ fn run() -> Result<()> {
             drawn: None,
             waiting: false,
             places: Vec::new(),
+            shown: None,
             reader: a11y::Reader::panel(),
         });
     }
@@ -315,6 +339,7 @@ fn run() -> Result<()> {
         layers,
         shm,
         pool,
+        spent: Vec::new(),
         panels,
         launcher: launcher::Launcher::default(),
         menu: None,
@@ -324,6 +349,9 @@ fn run() -> Result<()> {
         quick_settings: features
             .join(format!("{}.toml", SETTINGS_FEATURE))
             .is_file(),
+        notifications: notify::List::default(),
+        banner: None,
+        centre: None,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -362,6 +390,22 @@ fn run() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
         }
     }
+    // Notifications (M5.9b): served on the same connection, the calls
+    // reaching the loop over a channel as the tray's news does; nothing
+    // is kept until an app calls.
+    if let Some(connection) = &shell._portal {
+        let (calls, notices) = channel::channel();
+        if notify::serve(connection, calls) {
+            event_loop
+                .handle()
+                .insert_source(notices, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(msg) = event {
+                        shell.notify_msg(msg);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
+        }
+    }
     // The status area (M5.9a): what the machine says is read once now, and
     // again when the system bus says NetworkManager or UPower changed
     // something; only when a panel holds the widget.
@@ -387,6 +431,7 @@ fn run() -> Result<()> {
             eprintln!("edel-shell-ui: {}", messages::COMPOSITOR_GONE);
             break;
         }
+        shell.free_spent();
     }
     Ok(())
 }
@@ -612,7 +657,25 @@ impl Shell {
         panel.surface.commit();
         self.panels[i].places = places;
         self.panels[i].waiting = true;
+        if let Some(old) = self.panels[i].shown.replace(buffer) {
+            self.spent.push(old);
+        }
         Ok(())
+    }
+
+    /// Gives back the pages of panel buffers the compositor has let go
+    /// of: a freed slot stays mapped in the pool and resident until its
+    /// pages are removed, which would keep a second panel's worth of
+    /// shared memory for good.
+    fn free_spent(&mut self) {
+        let pool = &mut self.pool;
+        self.spent.retain(|buffer| {
+            let Some(canvas) = buffer.canvas(pool) else {
+                return true; // still held by the compositor
+            };
+            release_pages(canvas);
+            false
+        });
     }
 
     /// The compositor said the workspaces anew: the switcher's view
@@ -690,6 +753,7 @@ impl Shell {
             Some(Action::Launcher) => self.toggle_launcher(),
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::Quick) => self.toggle_quick(),
+            Some(Action::Centre) => self.toggle_centre(),
             Some(Action::App(id)) => self.open_app(&id),
             Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
             None => {}
@@ -761,6 +825,7 @@ impl Shell {
     fn open_launcher(&mut self) {
         self.close_styles();
         self.close_quick();
+        self.close_centre();
         let (edge, scale) = self
             .panels
             .first()
@@ -881,6 +946,7 @@ impl Shell {
         }
         self.close_launcher();
         self.close_quick();
+        self.close_centre();
         let Some(panel) = self.panels.get(i) else {
             return;
         };
@@ -1105,6 +1171,10 @@ impl LayerShellHandler for Shell {
             self.close_styles();
         } else if self.is_quick(surface.wl_surface()) {
             self.close_quick();
+        } else if self.is_banner(surface.wl_surface()) {
+            self.hide_banner();
+        } else if self.is_centre(surface.wl_surface()) {
+            self.close_centre();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -1137,6 +1207,18 @@ impl LayerShellHandler for Shell {
                 card.popup_mut().configured();
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface.wl_surface()) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().configured();
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface.wl_surface()) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().configured();
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -1181,6 +1263,18 @@ impl CompositorHandler for Shell {
                 card.popup_mut().set_scale(factor);
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().set_scale(factor);
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().set_scale(factor);
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1230,6 +1324,18 @@ impl CompositorHandler for Shell {
                 card.popup_mut().framed();
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().framed();
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().framed();
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1392,6 +1498,14 @@ impl PointerHandler for Shell {
                 self.quick_pointer(event);
                 continue;
             }
+            if self.is_banner(&event.surface) {
+                self.banner_pointer(event);
+                continue;
+            }
+            if self.is_centre(&event.surface) {
+                self.centre_pointer(event);
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
@@ -1455,6 +1569,8 @@ impl KeyboardHandler for Shell {
             self.close_styles();
         } else if self.is_quick(surface) {
             self.close_quick();
+        } else if self.is_centre(surface) {
+            self.close_centre();
         }
     }
 
@@ -1468,6 +1584,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.quick.is_some() {
             self.quick_key(event);
+        } else if self.centre.is_some() {
+            self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else {
@@ -1485,6 +1603,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.quick.is_some() {
             self.quick_key(event);
+        } else if self.centre.is_some() {
+            self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else {
@@ -1523,6 +1643,30 @@ fn settings_texts() -> (Option<String>, Option<String>) {
         read(places::machine_settings()),
         places::person_settings().and_then(read),
     )
+}
+
+/// Removes the whole pages inside `bytes` from memory; reading them
+/// again gives zeros. Only for a buffer no one draws from any more.
+fn release_pages(bytes: &mut [u8]) {
+    let page = rustix::param::page_size();
+    let start = bytes.as_mut_ptr() as usize;
+    let first = start.div_ceil(page) * page;
+    let end = (start + bytes.len()) / page * page;
+    if end <= first {
+        return;
+    }
+    // SAFETY: the range lies inside `bytes`, a mapping of the shm pool
+    // that this process owns and nothing reads until it is drawn anew.
+    let removed = unsafe {
+        rustix::mm::madvise(
+            first as *mut _,
+            end - first,
+            rustix::mm::Advice::LinuxRemove,
+        )
+    };
+    if let Err(e) = removed {
+        eprintln!("edel-shell-ui: {}", messages::pages_not_given_back(e));
+    }
 }
 
 delegate_registry!(Shell);

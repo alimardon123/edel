@@ -19,6 +19,7 @@ mod files;
 mod icon;
 mod layout;
 mod network;
+mod notifications;
 mod power;
 mod preview;
 mod rows;
@@ -221,6 +222,14 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| power::page(),
                 needs: Some("power"),
+            }),
+            // Notifications are shell-ui's, so the desktop's (M5.9b).
+            "notifications" => Some(Page {
+                title: tr(page.title),
+                icon: "bell",
+                section: Some(page.section),
+                build: |_| notifications::page(),
+                needs: Some("shell"),
             }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
@@ -494,6 +503,7 @@ mod tests {
                 "Network",
                 "Bluetooth",
                 "Power",
+                "Notifications",
                 "Users",
                 "Updates",
                 "System",
@@ -533,6 +543,7 @@ mod tests {
                 "Network",
                 "Bluetooth",
                 "Power",
+                "Notifications",
                 "Users",
                 "Updates",
                 "System",
@@ -544,6 +555,12 @@ mod tests {
         assert_eq!(titles("blue"), ["Bluetooth"]);
         assert_eq!(titles("net"), ["Network"]);
         assert_eq!(titles("pow"), ["Power"]);
+        assert_eq!(
+            titles("disturb"),
+            ["Notifications"],
+            "the Do not disturb row"
+        );
+        assert_eq!(titles("notif"), ["Notifications"]);
         assert_eq!(titles("user"), ["Users"]);
         assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
@@ -562,16 +579,18 @@ mod tests {
         assert_eq!(at("display"), Some(1), "the start of one name");
         assert_eq!(at("sound"), Some(2));
         assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("users"), Some(6));
+        assert_eq!(at("users"), Some(7));
         assert_eq!(at("network"), Some(3));
         assert_eq!(at("bluetooth"), Some(4));
         assert_eq!(at("blue"), Some(4));
         assert_eq!(at("power"), Some(5));
-        assert_eq!(at("updates"), Some(7));
-        assert_eq!(at("system"), Some(8));
-        assert_eq!(at("sy"), Some(8));
-        assert_eq!(at("about"), Some(9));
-        assert_eq!(at("abo"), Some(9));
+        assert_eq!(at("notifications"), Some(6));
+        assert_eq!(at("notif"), Some(6));
+        assert_eq!(at("updates"), Some(8));
+        assert_eq!(at("system"), Some(9));
+        assert_eq!(at("sy"), Some(9));
+        assert_eq!(at("about"), Some(10));
+        assert_eq!(at("abo"), Some(10));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
     }
@@ -582,11 +601,12 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(9));
-        assert_eq!(start(&["--page=about"]), Ok(9));
-        assert_eq!(start(&["--page", "updates"]), Ok(7));
+        assert_eq!(start(&["--page", "about"]), Ok(10));
+        assert_eq!(start(&["--page=about"]), Ok(10));
+        assert_eq!(start(&["--page", "updates"]), Ok(8));
         assert_eq!(start(&["--page", "sound"]), Ok(2));
-        assert_eq!(start(&["--page", "users"]), Ok(6));
+        assert_eq!(start(&["--page", "users"]), Ok(7));
+        assert_eq!(start(&["--page", "notifications"]), Ok(6));
         assert_eq!(start(&["--page", "network"]), Ok(3));
         assert_eq!(start(&["--page", "bluetooth"]), Ok(4));
         assert_eq!(start(&["--page", "power"]), Ok(5));
@@ -621,13 +641,28 @@ mod tests {
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(
             titles(&dir),
-            ["Layout", "Displays", "Users", "Updates", "System", "About"]
+            [
+                "Layout",
+                "Displays",
+                "Notifications",
+                "Users",
+                "Updates",
+                "System",
+                "About"
+            ]
         );
         std::fs::write(dir.join("sound.toml"), "format = 1\n").unwrap();
         assert_eq!(
             titles(&dir),
             [
-                "Layout", "Displays", "Sound", "Users", "Updates", "System", "About"
+                "Layout",
+                "Displays",
+                "Sound",
+                "Notifications",
+                "Users",
+                "Updates",
+                "System",
+                "About"
             ]
         );
         // Network, Bluetooth and Power each need a feature of their own.

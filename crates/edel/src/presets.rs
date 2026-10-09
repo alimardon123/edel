@@ -66,11 +66,23 @@ pub struct Preset {
 /// `[quick] tiles` may list; shell-ui has one tile for each, and its tests
 /// fail when this list and its tiles differ. A new tile is a name here and
 /// a tile there.
-pub const TILES: &[&str] = &["wifi", "bluetooth", "airplane", "dark_style"];
+pub const TILES: &[&str] = &[
+    "wifi",
+    "bluetooth",
+    "airplane",
+    "do_not_disturb",
+    "dark_style",
+];
 
-/// The tiles a preset that names none shows, in this order: the four every
+/// The tiles a preset that names none shows, in this order: the five every
 /// built-in preset lists today.
-pub const DEFAULT_TILES: &[&str] = &["wifi", "bluetooth", "airplane", "dark_style"];
+pub const DEFAULT_TILES: &[&str] = &[
+    "wifi",
+    "bluetooth",
+    "airplane",
+    "do_not_disturb",
+    "dark_style",
+];
 
 /// Quick settings (M5.9a): the tiles a preset shows, in two columns, in
 /// this order. A tile whose feature or hardware this machine lacks is left
@@ -592,7 +604,7 @@ mod tests {
             check(&with("[\"wifi\", \"night_light\"]")).unwrap_err()
         );
         assert!(
-            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, dark_style"),
+            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, do_not_disturb, dark_style"),
             "{e}"
         );
         let e = format!("{:#}", check(&with("[\"wifi\", \"wifi\"]")).unwrap_err());

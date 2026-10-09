@@ -28,7 +28,7 @@ use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
 use crate::paint::{self, Face, Text, fill, lit, mix, outline};
-use crate::popup;
+use crate::popup::{self, Rect, dim, icon_in, knob, veil};
 use crate::status::{Link, Status};
 
 /// The card's width on a screen of any size from Compact up, logical
@@ -53,11 +53,20 @@ pub enum Tile {
     Wifi,
     Bluetooth,
     Airplane,
+    /// A plain toggle of `notifications.do_not_disturb` (M5.9b), with no
+    /// page behind an arrow: its row is in the notification centre.
+    DoNotDisturb,
     DarkStyle,
 }
 
 /// Every tile, in the order `edel::presets::TILES` lists them.
-pub const ALL: [Tile; 4] = [Tile::Wifi, Tile::Bluetooth, Tile::Airplane, Tile::DarkStyle];
+pub const ALL: [Tile; 5] = [
+    Tile::Wifi,
+    Tile::Bluetooth,
+    Tile::Airplane,
+    Tile::DoNotDisturb,
+    Tile::DarkStyle,
+];
 
 impl Tile {
     pub fn name(self) -> &'static str {
@@ -65,6 +74,7 @@ impl Tile {
             Tile::Wifi => "wifi",
             Tile::Bluetooth => "bluetooth",
             Tile::Airplane => "airplane",
+            Tile::DoNotDisturb => "do_not_disturb",
             Tile::DarkStyle => "dark_style",
         }
     }
@@ -78,6 +88,7 @@ impl Tile {
             Tile::Wifi => tr("Wi-Fi"),
             Tile::Bluetooth => tr("Bluetooth"),
             Tile::Airplane => tr("Airplane mode"),
+            Tile::DoNotDisturb => tr("Do not disturb"),
             Tile::DarkStyle => tr("Dark style"),
         }
     }
@@ -88,6 +99,7 @@ impl Tile {
             Tile::Wifi => "net-wifi-3",
             Tile::Bluetooth => "page-bluetooth",
             Tile::Airplane => "airplane",
+            Tile::DoNotDisturb => "do-not-disturb",
             Tile::DarkStyle => "moon",
         }
     }
@@ -98,7 +110,7 @@ impl Tile {
         match self {
             Tile::Wifi => Some("network"),
             Tile::Bluetooth => Some("bluetooth"),
-            Tile::Airplane => None,
+            Tile::Airplane | Tile::DoNotDisturb => None,
             Tile::DarkStyle => Some(DARK_PAGE),
         }
     }
@@ -206,13 +218,14 @@ pub enum Key {
 /// The tiles `names` lists that this machine can show, in order, with
 /// what each says now: a tile needs the thing it switches (the Wi-Fi tile
 /// a Wi-Fi adapter, the Bluetooth tile an adapter, Airplane mode either)
-/// and one named twice or not known is left out. `dark` is whether the
-/// colour scheme is dark; `pending` holds what a person just chose and
-/// the machine has not yet said, which shows at once.
+/// and one named twice or not known is left out. `switches` says whether
+/// the colour scheme is dark and whether banners are kept away, which
+/// are lines of the settings file; `pending` holds what a person just
+/// chose and the machine has not yet said, which shows at once.
 pub fn tiles(
     names: &[String],
     status: &Status,
-    dark: bool,
+    switches: Switches,
     pending: &[(Tile, bool)],
 ) -> Vec<TileView> {
     let on = |tile: Tile, now: bool| {
@@ -272,10 +285,15 @@ pub fn tiles(
                     on: is_on,
                 }
             }
+            Tile::DoNotDisturb => TileView {
+                tile,
+                state: switch(switches.dnd),
+                on: switches.dnd,
+            },
             Tile::DarkStyle => TileView {
                 tile,
-                state: switch(dark),
-                on: dark,
+                state: switch(switches.dark),
+                on: switches.dark,
             },
         };
         shown.push(view);
@@ -309,6 +327,14 @@ pub fn volume(
     })
 }
 
+/// The two tiles that are lines of the person's settings file: whether
+/// the colour scheme is dark and whether banners are kept away.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Switches {
+    pub dark: bool,
+    pub dnd: bool,
+}
+
 /// What the open card keeps besides what the machine says: its width, the
 /// colour scheme, whether the list of outputs is open, where the keyboard
 /// and the pointer are, what a person just chose and the machine has not
@@ -318,6 +344,7 @@ pub struct State {
     pub width: u32,
     pub compact: bool,
     pub dark: bool,
+    pub dnd: bool,
     pub list: bool,
     pub focus: Option<Focus>,
     pub hover: Option<Focus>,
@@ -339,7 +366,15 @@ pub fn view(
     View {
         width: state.width,
         compact: state.compact,
-        tiles: tiles(names, status, state.dark, &state.pending),
+        tiles: tiles(
+            names,
+            status,
+            Switches {
+                dark: state.dark,
+                dnd: state.dnd,
+            },
+            &state.pending,
+        ),
         volume: volume(status, state.volume, state.muted, chip),
         battery: status.battery.as_ref().map(|b| BatteryView {
             percent: b.percent,
@@ -388,43 +423,6 @@ const CHIP_CHEVRON: f32 = 11.0;
 const CHIP_RIGHT: f32 = 6.0;
 
 // ---- Where it lies ----
-
-/// A rectangle, logical pixels from the card's top left corner.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
-}
-
-impl Rect {
-    fn new(x: f32, y: f32, w: f32, h: f32) -> Rect {
-        Rect { x, y, w, h }
-    }
-
-    pub fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
-    }
-
-    fn right(&self) -> f32 {
-        self.x + self.w
-    }
-
-    fn middle(&self) -> f32 {
-        self.y + self.h / 2.0
-    }
-
-    /// At scale `s`, on whole pixels.
-    fn device(&self, s: f32) -> (f32, f32, f32, f32) {
-        let (x, y) = ((self.x * s).round(), (self.y * s).round());
-        let (r, b) = (
-            ((self.x + self.w) * s).round(),
-            ((self.y + self.h) * s).round(),
-        );
-        (x, y, r - x, b - y)
-    }
-}
 
 /// The sizes of the card's parts: touch sizes on a Compact screen (at
 /// least 44 px where a finger lands), the mockups' otherwise.
@@ -875,46 +873,6 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 }
 
 // ---- How it looks ----
-
-/// The panel's text dimmed towards the card: secondary text and the
-/// quieter kind, as the mockups' `text-2` and `text-3`.
-fn dim(tokens: &Tokens) -> Colour {
-    mix(tokens.panel_text, tokens.panel, 0.38)
-}
-
-/// The text's colour at `alpha` over the card: what the mockups' `fill`
-/// and `fill-2` are.
-fn veil(tokens: &Tokens, alpha: f32) -> Colour {
-    Colour {
-        a: alpha,
-        ..tokens.panel_text
-    }
-}
-
-/// The slider's knob: the lighter of the window's and the text's colour,
-/// white on the light scheme and near white on the dark.
-fn knob(tokens: &Tokens) -> Colour {
-    let light = |c: Colour| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    if light(tokens.window) > light(tokens.panel_text) {
-        tokens.window
-    } else {
-        tokens.panel_text
-    }
-}
-
-/// An icon centred in `r`, `px` logical pixels across.
-fn icon_in(pixmap: &mut Pixmap, name: &str, px: f32, r: Rect, s: f32, c: Colour) {
-    let side = (px * s).round();
-    let (x, y, w, h) = r.device(s);
-    paint::icon(
-        pixmap,
-        name,
-        side,
-        x + ((w - side) / 2.0).round(),
-        y + ((h - side) / 2.0).round(),
-        c,
-    );
-}
 
 /// Draws `view` at `scale` into `pixmap`, which is the card's size times
 /// it; without `text`, everything but the words.
@@ -1384,7 +1342,7 @@ mod tests {
     #[test]
     fn a_laptop_shows_every_tile_in_the_presets_order_with_what_each_says() {
         let list = names(edel::presets::DEFAULT_TILES);
-        let shown = tiles(&list, &laptop(), false, &[]);
+        let shown = tiles(&list, &laptop(), Switches::default(), &[]);
         let says: Vec<(&str, &str, bool)> = shown
             .iter()
             .map(|t| (t.tile.name(), t.state.as_str(), t.on))
@@ -1395,11 +1353,21 @@ mod tests {
                 ("wifi", "Home 5G", true),
                 ("bluetooth", "Off", false),
                 ("airplane", "Off", false),
+                ("do_not_disturb", "Off", false),
                 ("dark_style", "Off", false),
             ]
         );
-        let dark = tiles(&list, &laptop(), true, &[]);
+        let dark = tiles(
+            &list,
+            &laptop(),
+            Switches {
+                dark: true,
+                dnd: true,
+            },
+            &[],
+        );
         assert_eq!((dark[3].state.as_str(), dark[3].on), ("On", true));
+        assert_eq!((dark[4].state.as_str(), dark[4].on), ("On", true));
     }
 
     #[test]
@@ -1410,24 +1378,32 @@ mod tests {
             network: network(Link::Wired, false, false),
             ..Status::default()
         };
-        let shown: Vec<_> = tiles(&list, &vm, false, &[])
+        let shown: Vec<_> = tiles(&list, &vm, Switches::default(), &[])
             .iter()
             .map(|t| t.tile)
             .collect();
-        assert_eq!(shown, [Tile::DarkStyle]);
+        assert_eq!(shown, [Tile::DoNotDisturb, Tile::DarkStyle]);
         // Bluetooth alone is enough for flight mode.
         let bluetooth = Status {
             bluetooth: Some(true),
             ..Status::default()
         };
-        let shown: Vec<_> = tiles(&list, &bluetooth, false, &[])
+        let shown: Vec<_> = tiles(&list, &bluetooth, Switches::default(), &[])
             .iter()
             .map(|t| t.tile)
             .collect();
-        assert_eq!(shown, [Tile::Bluetooth, Tile::Airplane, Tile::DarkStyle]);
+        assert_eq!(
+            shown,
+            [
+                Tile::Bluetooth,
+                Tile::Airplane,
+                Tile::DoNotDisturb,
+                Tile::DarkStyle
+            ]
+        );
         // A name twice or unknown shows nothing extra.
         let odd = names(&["dark_style", "dark_style", "night_light"]);
-        assert_eq!(tiles(&odd, &laptop(), false, &[]).len(), 1);
+        assert_eq!(tiles(&odd, &laptop(), Switches::default(), &[]).len(), 1);
     }
 
     #[test]
@@ -1435,10 +1411,13 @@ mod tests {
         let mut status = laptop();
         status.network = network(Link::Offline, true, true);
         let list = names(&["wifi", "airplane"]);
-        assert_eq!(tiles(&list, &status, false, &[])[0].state, "Not connected");
+        assert_eq!(
+            tiles(&list, &status, Switches::default(), &[])[0].state,
+            "Not connected"
+        );
         // Just switched off, the machine not yet saying so.
         let pending = [(Tile::Wifi, false), (Tile::Airplane, true)];
-        let shown = tiles(&list, &laptop(), false, &pending);
+        let shown = tiles(&list, &laptop(), Switches::default(), &pending);
         assert_eq!((shown[0].state.as_str(), shown[0].on), ("Off", false));
         assert_eq!((shown[1].state.as_str(), shown[1].on), ("On", true));
     }
@@ -1495,7 +1474,7 @@ mod tests {
         // From 600 px on it is the 360 px card.
         view.compact = false;
         view.width = WIDTH;
-        assert!(layout(&view).size.1 < 300);
+        assert!(layout(&view).size.1 < 340);
     }
 
     #[test]
@@ -1519,7 +1498,11 @@ mod tests {
         let mut bare = view_of(&Status::default(), false, 1280);
         bare.settings = false;
         let l = layout(&bare);
-        assert_eq!(l.tiles.len(), 1, "only Dark style");
+        assert_eq!(
+            l.tiles.len(),
+            2,
+            "only the two tiles that are lines of the settings file"
+        );
         assert!(l.track.is_none() && l.rule.is_none() && l.settings.is_none());
         let mut one = view_of(&laptop(), false, 1280);
         one.tiles.truncate(3);
@@ -1544,7 +1527,7 @@ mod tests {
             "{line}"
         );
         assert!(
-            line.contains(", dark_style 184+76+164x56, track 42+"),
+            line.contains(", do_not_disturb 184+76+164x56, dark_style 12+140+164x56, track 42+"),
             "{line}"
         );
         assert!(
@@ -1666,9 +1649,10 @@ mod tests {
             key(&view, Some(Focus::Toggle(0)), Key::Down).0,
             Some(Focus::Toggle(2))
         );
+        // The tile below has no arrow (Do not disturb), so the toggle.
         assert_eq!(
             key(&view, Some(Focus::Page(1)), Key::Down).0,
-            Some(Focus::Page(3))
+            Some(Focus::Toggle(3))
         );
         assert_eq!(
             key(&view, Some(Focus::Toggle(3)), Key::Down).0,

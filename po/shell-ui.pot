@@ -5,10 +5,109 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "January"
+msgstr ""
+
+msgid "February"
+msgstr ""
+
+msgid "March"
+msgstr ""
+
+msgid "April"
+msgstr ""
+
+msgid "May"
+msgstr ""
+
+msgid "June"
+msgstr ""
+
+msgid "July"
+msgstr ""
+
+msgid "August"
+msgstr ""
+
+msgid "September"
+msgstr ""
+
+msgid "October"
+msgstr ""
+
+msgid "November"
+msgstr ""
+
+msgid "December"
+msgstr ""
+
+msgid "Monday"
+msgstr ""
+
+msgid "Tuesday"
+msgstr ""
+
+msgid "Wednesday"
+msgstr ""
+
+msgid "Thursday"
+msgstr ""
+
+msgid "Friday"
+msgstr ""
+
+msgid "Saturday"
+msgstr ""
+
+msgid "Sunday"
+msgstr ""
+
+msgid "{older} older"
+msgstr ""
+
+msgid "{newer} newer"
+msgstr ""
+
+msgid "{newer} newer, {older} older"
+msgstr ""
+
+msgid "Clear all"
+msgstr ""
+
+msgid "No new notifications"
+msgstr ""
+
+msgid "Do not disturb"
+msgstr ""
+
+msgid "Previous month"
+msgstr ""
+
+msgid "Next month"
+msgstr ""
+
+msgid "Silence banners"
+msgstr ""
+
 msgid "Type to search"
 msgstr ""
 
 msgid "No app matches"
+msgstr ""
+
+msgid "Close notification"
+msgstr ""
+
+msgid "Notification"
+msgstr ""
+
+msgid "Notification: {text}"
+msgstr ""
+
+msgid "Notification from {app}"
+msgstr ""
+
+msgid "Notification from {app}: {text}"
 msgstr ""
 
 msgid "Wi-Fi"

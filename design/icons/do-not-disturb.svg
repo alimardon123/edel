@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Do not disturb (M5.9b): the tile's and the notification centre's row's mark, a circle with a bar. -->
+  <circle cx="12" cy="12" r="8.5"/>
+  <path d="M8 12h8"/>
+</svg>
