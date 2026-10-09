@@ -16,9 +16,15 @@
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
 mod a11y;
+mod banner;
+mod calendar;
+mod centre;
 mod launcher;
 mod link;
 mod messages;
+mod notice;
+mod notify;
+mod notify_card;
 mod paint;
 mod popup;
 mod portal;
@@ -71,6 +77,7 @@ use edel::settings;
 use edel::tokens::{self, Scheme, Tokens};
 use edel::{app_icons as icons, apps};
 
+use crate::notify_card::{BannerCard, CentreCard};
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
 use crate::quick_card::QuickCard;
@@ -88,6 +95,10 @@ const SWITCHER: &str = "edel-switcher";
 const STYLES: &str = "edel-styles";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
+/// A new notification's banner and the notification centre, which the
+/// clock opens (M5.9b).
+const BANNER: &str = "edel-notification";
+const CENTRE: &str = "edel-centre";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
 /// The feature that brings it.
@@ -124,6 +135,12 @@ struct Shell {
     quick: Option<QuickCard>,
     quick_tiles: Vec<String>,
     quick_settings: bool,
+    /// The notifications (M5.9b), at most fifty and text only, the banner
+    /// of the newest while it shows, and the notification centre while
+    /// open.
+    notifications: notify::List,
+    banner: Option<BannerCard>,
+    centre: Option<CentreCard>,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -324,6 +341,9 @@ fn run() -> Result<()> {
         quick_settings: features
             .join(format!("{}.toml", SETTINGS_FEATURE))
             .is_file(),
+        notifications: notify::List::default(),
+        banner: None,
+        centre: None,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -360,6 +380,22 @@ fn run() -> Result<()> {
                     }
                 })
                 .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
+        }
+    }
+    // Notifications (M5.9b): served on the same connection, the calls
+    // reaching the loop over a channel as the tray's news does; nothing
+    // is kept until an app calls.
+    if let Some(connection) = &shell._portal {
+        let (calls, notices) = channel::channel();
+        if notify::serve(connection, calls) {
+            event_loop
+                .handle()
+                .insert_source(notices, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(msg) = event {
+                        shell.notify_msg(msg);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
     }
     // The status area (M5.9a): what the machine says is read once now, and
@@ -690,6 +726,7 @@ impl Shell {
             Some(Action::Launcher) => self.toggle_launcher(),
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::Quick) => self.toggle_quick(),
+            Some(Action::Centre) => self.toggle_centre(),
             Some(Action::App(id)) => self.open_app(&id),
             Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
             None => {}
@@ -761,6 +798,7 @@ impl Shell {
     fn open_launcher(&mut self) {
         self.close_styles();
         self.close_quick();
+        self.close_centre();
         let (edge, scale) = self
             .panels
             .first()
@@ -881,6 +919,7 @@ impl Shell {
         }
         self.close_launcher();
         self.close_quick();
+        self.close_centre();
         let Some(panel) = self.panels.get(i) else {
             return;
         };
@@ -1105,6 +1144,10 @@ impl LayerShellHandler for Shell {
             self.close_styles();
         } else if self.is_quick(surface.wl_surface()) {
             self.close_quick();
+        } else if self.is_banner(surface.wl_surface()) {
+            self.hide_banner();
+        } else if self.is_centre(surface.wl_surface()) {
+            self.close_centre();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -1137,6 +1180,18 @@ impl LayerShellHandler for Shell {
                 card.popup_mut().configured();
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface.wl_surface()) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().configured();
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface.wl_surface()) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().configured();
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -1181,6 +1236,18 @@ impl CompositorHandler for Shell {
                 card.popup_mut().set_scale(factor);
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().set_scale(factor);
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().set_scale(factor);
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1230,6 +1297,18 @@ impl CompositorHandler for Shell {
                 card.popup_mut().framed();
             }
             return self.draw_quick();
+        }
+        if self.is_banner(surface) {
+            if let Some(card) = &mut self.banner {
+                card.popup_mut().framed();
+            }
+            return self.draw_banner();
+        }
+        if self.is_centre(surface) {
+            if let Some(card) = &mut self.centre {
+                card.popup_mut().framed();
+            }
+            return self.draw_centre();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1392,6 +1471,14 @@ impl PointerHandler for Shell {
                 self.quick_pointer(event);
                 continue;
             }
+            if self.is_banner(&event.surface) {
+                self.banner_pointer(event);
+                continue;
+            }
+            if self.is_centre(&event.surface) {
+                self.centre_pointer(event);
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
@@ -1455,6 +1542,8 @@ impl KeyboardHandler for Shell {
             self.close_styles();
         } else if self.is_quick(surface) {
             self.close_quick();
+        } else if self.is_centre(surface) {
+            self.close_centre();
         }
     }
 
@@ -1468,6 +1557,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.quick.is_some() {
             self.quick_key(event);
+        } else if self.centre.is_some() {
+            self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else {
@@ -1485,6 +1576,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.quick.is_some() {
             self.quick_key(event);
+        } else if self.centre.is_some() {
+            self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else {

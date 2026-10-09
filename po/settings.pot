@@ -446,6 +446,12 @@ msgstr ""
 msgid "Nothing is connected, so there are no addresses to show."
 msgstr ""
 
+msgid "Banners appear in the corner when an app has something to say, and the clock keeps them all."
+msgstr ""
+
+msgid "Banners stay away; notifications still collect in the list the clock opens"
+msgstr ""
+
 msgid "How much battery is left, and what the lid and the power button do."
 msgstr ""
 
@@ -555,6 +561,9 @@ msgid "Position"
 msgstr ""
 
 msgid "On"
+msgstr ""
+
+msgid "Do not disturb"
 msgstr ""
 
 msgid "Channel"

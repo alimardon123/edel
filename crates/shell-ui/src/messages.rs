@@ -71,6 +71,29 @@ pub fn tray_call_failed(id: &str, method: &str, why: impl Display) -> String {
     )
 }
 
+/// The notification server cannot be served.
+pub fn notifications_not_served(why: impl Display) -> String {
+    format!(
+        "could not serve notifications: {why}; apps' notifications are not shown, and another notification daemon on the session's bus may be using the name"
+    )
+}
+
+/// A signal to an app (a notification closed, a button pressed) could not
+/// be sent.
+pub fn notification_not_said(signal: &str, why: impl Display) -> String {
+    format!(
+        "could not send {signal} to the app: {why}; the notification is handled here all the same"
+    )
+}
+
+/// Do not disturb cannot be written down.
+pub fn dnd_not_kept(why: impl Display) -> String {
+    format!("could not keep do not disturb: {why}; it stays as it was")
+}
+
+/// There is no home folder to keep do not disturb in.
+pub const DND_NO_HOME: &str = "no home folder to keep do not disturb in; run edel settings set notifications.do_not_disturb=true instead";
+
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
     format!("could not keep the {style} tiling style: {why}; it stays as it was")
@@ -171,6 +194,23 @@ mod tests {
     }
 
     #[test]
+    fn notifications_say_what_apps_lose_and_what_still_works() {
+        assert_eq!(
+            notifications_not_served("name already taken"),
+            "could not serve notifications: name already taken; apps' notifications are not shown, and another notification daemon on the session's bus may be using the name"
+        );
+        assert_eq!(
+            notification_not_said("NotificationClosed", "connection closed"),
+            "could not send NotificationClosed to the app: connection closed; the notification is handled here all the same"
+        );
+        assert_eq!(
+            dnd_not_kept("Permission denied (os error 13)"),
+            "could not keep do not disturb: Permission denied (os error 13); it stays as it was"
+        );
+        assert!(DND_NO_HOME.contains("edel settings set notifications.do_not_disturb=true"));
+    }
+
+    #[test]
     fn a_style_that_is_not_kept_says_the_command_that_works() {
         assert_eq!(
             style_no_home("split"),
@@ -211,6 +251,10 @@ mod tests {
             tray_not_said("x"),
             tray_bad_item("x"),
             tray_call_failed("a", "b", "x"),
+            notifications_not_served("x"),
+            notification_not_said("a", "x"),
+            dnd_not_kept("x"),
+            DND_NO_HOME.to_string(),
             status_no_news("x"),
             quick_not_done("a", "x"),
             dark_style_not_kept("x"),

@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 46] = [
+pub const BUILT_IN: [(&str, &str); 49] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -172,6 +172,16 @@ pub const BUILT_IN: [(&str, &str); 46] = [
         include_str!("../../../design/icons/chevron-down.svg"),
     ),
     ("gear", include_str!("../../../design/icons/gear.svg")),
+    // The notification centre's and the Do not disturb tile's (M5.9b).
+    ("bell", include_str!("../../../design/icons/bell.svg")),
+    (
+        "do-not-disturb",
+        include_str!("../../../design/icons/do-not-disturb.svg"),
+    ),
+    (
+        "chevron-left",
+        include_str!("../../../design/icons/chevron-left.svg"),
+    ),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name

@@ -63,6 +63,11 @@ pub const ROWS: &[Row] = &[
         key: "displays.*.enabled",
         title: n_("On"),
     },
+    // The Notifications page (M5.9b).
+    Row {
+        key: edel::settings::DO_NOT_DISTURB,
+        title: n_("Do not disturb"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",

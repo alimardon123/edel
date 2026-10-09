@@ -14,7 +14,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
 use smithay_client_toolkit::shm::slot::SlotPool;
 use tiny_skia::{Pixmap, PixmapPaint, Stroke, Transform};
 
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 
 use crate::Shell;
 use crate::paint::{self, Text, fill, lit, mix, paint_of};
@@ -213,6 +213,142 @@ impl<V: Clone + PartialEq> Popup<V> {
     }
 }
 
+/// A rectangle, logical pixels from a card's top left corner: what quick
+/// settings, the banner and the notification centre lay their parts out in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+impl Rect {
+    pub fn new(x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect { x, y, w, h }
+    }
+
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
+    }
+
+    pub fn right(&self) -> f32 {
+        self.x + self.w
+    }
+
+    pub fn middle(&self) -> f32 {
+        self.y + self.h / 2.0
+    }
+
+    /// At scale `s`, on whole pixels.
+    pub fn device(&self, s: f32) -> (f32, f32, f32, f32) {
+        let (x, y) = ((self.x * s).round(), (self.y * s).round());
+        let (r, b) = (
+            ((self.x + self.w) * s).round(),
+            ((self.y + self.h) * s).round(),
+        );
+        (x, y, r - x, b - y)
+    }
+}
+
+/// The panel's text dimmed towards the card: secondary text and the
+/// quieter kind, as the mockups' `text-2` and `text-3`.
+pub fn dim(tokens: &Tokens) -> Colour {
+    mix(tokens.panel_text, tokens.panel, 0.38)
+}
+
+/// The text's colour at `alpha` over the card: what the mockups' `fill`
+/// and `fill-2` are.
+pub fn veil(tokens: &Tokens, alpha: f32) -> Colour {
+    Colour {
+        a: alpha,
+        ..tokens.panel_text
+    }
+}
+
+/// The slider's knob: the lighter of the window's and the text's colour,
+/// white on the light scheme and near white on the dark.
+pub fn knob(tokens: &Tokens) -> Colour {
+    let light = |c: Colour| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    if light(tokens.window) > light(tokens.panel_text) {
+        tokens.window
+    } else {
+        tokens.panel_text
+    }
+}
+
+/// An icon of the shell's own centred in `r`, `px` logical pixels across.
+pub fn icon_in(pixmap: &mut Pixmap, name: &str, px: f32, r: Rect, s: f32, c: Colour) {
+    let side = (px * s).round();
+    let (x, y, w, h) = r.device(s);
+    paint::icon(
+        pixmap,
+        name,
+        side,
+        x + ((w - side) / 2.0).round(),
+        y + ((h - side) / 2.0).round(),
+        c,
+    );
+}
+
+/// `text` broken into at most `lines` lines that `measure` finds no wider
+/// than `room`, at spaces; a word wider than a line is broken where it
+/// fills one. The last line holds everything left, to be cut short with an
+/// ellipsis when drawn (`Text::fit`), so a long text never grows the card
+/// past its lines. No text, no lines.
+pub fn wrap(
+    text: &str,
+    lines: usize,
+    room: f32,
+    mut measure: impl FnMut(&str) -> f32,
+) -> Vec<String> {
+    let mut words: std::collections::VecDeque<String> =
+        text.split_whitespace().map(String::from).collect();
+    let mut out = Vec::new();
+    while out.len() + 1 < lines {
+        let Some(mut line) = words.pop_front() else {
+            break;
+        };
+        if measure(&line) > room {
+            // The most characters that fit, by halving, and at least one.
+            let ends: Vec<usize> = line.char_indices().map(|(i, _)| i).skip(1).collect();
+            let (mut fits, mut over) = (0usize, ends.len() + 1);
+            while fits + 1 < over {
+                let mid = (fits + over) / 2;
+                if measure(&line[..ends[mid - 1]]) <= room {
+                    fits = mid;
+                } else {
+                    over = mid;
+                }
+            }
+            let at = if fits == 0 {
+                ends.first().copied()
+            } else {
+                ends.get(fits - 1).copied()
+            };
+            if let Some(at) = at {
+                let rest = line.split_off(at);
+                words.push_front(rest);
+            }
+            out.push(line);
+            continue;
+        }
+        while let Some(next) = words.front() {
+            let joined = format!("{line} {next}");
+            if measure(&joined) > room {
+                break;
+            }
+            line = joined;
+            words.pop_front();
+        }
+        out.push(line);
+    }
+    if lines > 0 && !words.is_empty() {
+        out.push(words.into_iter().collect::<Vec<_>>().join(" "));
+    }
+    out
+}
+
 /// Clears `pixmap` and draws the card, the whole of it, at scale `s`.
 pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
@@ -325,6 +461,48 @@ mod tests {
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
+    }
+
+    /// Six pixels a character.
+    fn six(s: &str) -> f32 {
+        s.chars().count() as f32 * 6.0
+    }
+
+    #[test]
+    fn text_wraps_at_spaces_and_the_last_line_keeps_the_rest() {
+        // Room for 10 characters.
+        let room = 60.0;
+        assert_eq!(wrap("", 2, room, six), Vec::<String>::new());
+        assert_eq!(wrap("hello", 2, room, six), ["hello"]);
+        assert_eq!(
+            wrap("hello brave new world", 3, room, six),
+            ["hello", "brave new", "world"]
+        );
+        // Two lines: the second holds the rest, to be cut when drawn.
+        assert_eq!(
+            wrap("one two three four five six seven", 2, room, six),
+            ["one two", "three four five six seven"]
+        );
+        assert_eq!(wrap("a  b\n c", 1, room, six), ["a b c"]);
+        assert!(wrap("anything", 0, room, six).is_empty());
+    }
+
+    #[test]
+    fn a_word_wider_than_a_line_is_broken_where_it_fills_one() {
+        let room = 30.0;
+        // Five characters a line.
+        assert_eq!(wrap("abcdefghijkl", 3, room, six), ["abcde", "fghij", "kl"]);
+        assert_eq!(
+            wrap("ab abcdefghij", 3, room, six),
+            ["ab", "abcde", "fghij"]
+        );
+        // Never an empty line, even when one character is too wide.
+        assert_eq!(wrap("abc", 3, 2.0, six), ["a", "b", "c"]);
+        // Multi-byte characters are cut at a character.
+        assert_eq!(
+            wrap("\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}", 3, room, six),
+            ["\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}", "\u{e9}"]
+        );
     }
 
     #[test]
