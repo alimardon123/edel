@@ -10,6 +10,7 @@
 - Colours and sizes come only from the design tokens (`edel::tokens`); never hard-code one in drawing code. The panel's own (M5.29, from the mockups): `size.panel` (40, the bar), `panel_control` (30, a button's height), `panel_icon` (20, an app's icon in a button), `panel_glyph` (18, the shell's own icons), `panel_text` (13) and `panel_text_small` (11, the date and the workspaces' digits); the paddings between them are consts in each widget.
 - Redraw only what changed, and only when it changed: an idle panel draws nothing between minutes. Draw a surface at most once per frame: after each drawing it waits for the compositor's frame callback, then draws what shows by then, so its shared buffers stay two however fast things change.
 - Every word people read, shown or spoken to a screen reader, is marked with `edel::i18n`'s `tr`, `trf` or `n_` (M5.24a), and `po/shell-ui.pot` is written afresh with `EDEL_WRITE_DOCS=1 cargo test -p edel i18n` in the same commit; log lines stay English.
+- **Stands alone (M8.13):** it needs the `edel` library without its `cli` feature, a Wayland compositor with the layer shell, the session bus for the tray, notifications and the settings portal, and the files `edel::places` names. It never depends on the compositor's code, Settings or the test client, and speaks to the compositor only through Wayland protocols, `edel-shell-v1` among them (`ci/seams.sh`).
 
 ## Layout
 

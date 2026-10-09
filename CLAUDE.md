@@ -11,7 +11,7 @@ Start at [docs/README.md](docs/README.md) for the architecture and [docs/ROADMAP
 1. The ranked principles below decide every choice. Name the one that decided it.
 2. No roadmap step starts without Alimardon's go in their own words (see "How work flows").
 3. Never reopen anything under "Decisions already taken".
-4. Never push to `main`. Merge only your own PR, only when every CI check on it is green (today "Rust checks", "Build and boot images" and "Desktop tests"), and not when Alimardon has asked to review it first. Their latest instruction wins: on 2026-10-01 they asked to review the roadmap PR, then said "No, no, no, you can merge it."
+4. Never push to `main`. Merge only your own PR, only when every CI check on it is green (today "Rust checks", "Build and boot images", "Desktop tests" and "Desktop on another distribution"), and not when Alimardon has asked to review it first. Their latest instruction wins: on 2026-10-01 they asked to review the roadmap PR, then said "No, no, no, you can merge it."
 5. A short list of actions always waits for Alimardon (see "What waits for Alimardon's own words"). Decide everything else by the principles and say what you chose.
 6. Write "developer mode", never "unlocked mode". No em-dashes or en-dashes anywhere.
 7. Do not create scheduled or periodic Claude runs (triggers, cron routines, check-in sessions). Alimardon had the last one deleted. Scheduled CI workflows that a roadmap step asks for (M8.3 monthly rebuilds, M9.1 nightly arm64) are fine. One exception, Alimardon's of 2026-10-06 ("If the session limits hit, please ... start yourself again after the limit resets"): a session working through the roadmap alone may arm one one-shot wake-up of itself (`send_later`) to resume after its limits reset, never a repeating one.
@@ -114,7 +114,7 @@ When docs disagree, the newer ADR wins.
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-010, the reviews of other projects, the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
-| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
+| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
 | `Cargo.toml`, `Cargo.lock` | Workspace of five crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
@@ -123,7 +123,7 @@ When docs disagree, the newer ADR wins.
 
 ## Commands
 
-Run from the repository root. CI's "Rust checks" job runs exactly these; run all nine before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
+Run from the repository root. CI's "Rust checks" job runs exactly these; run all ten before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
 
 ```sh
 cargo fmt --all --check
@@ -133,6 +133,7 @@ for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; d
 cargo build --locked --lib --no-default-features
 sh ci/keys-check.sh
 sh ci/one-place.sh && sh ci/one-place.sh --self-test   # every fact at its owner (M5.27)
+sh ci/seams.sh && sh ci/seams.sh --self-test   # every part stands alone (M8.13)
 sh ci/audit.sh         # the dependency audit (M3.9); installs cargo-audit with cargo the first time, needs the network for the advisory database
 sh ci/site.sh build    # the docs site (M8.10a); installs mdBook with cargo the first time
 ```
@@ -149,6 +150,12 @@ sh ci/initramfs-check.sh
 sh ci/vm-tests.sh    # boot, system, install, ab and flatpak tests, two lanes at once
 sh ci/sizes.sh
 sh ci/desktop-test.sh floating titlebar ...   # CI's "Desktop tests" job, after build.sh desktop-test
+```
+
+CI's "Desktop on another distribution" job (M5.15a) needs only Ubuntu's libraries, Xvfb, ImageMagick and Mesa (`xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0`), on a machine without `/usr/share/edel`, `/data/edel` or `/run/edel`:
+
+```sh
+cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient && sh ci/elsewhere-test.sh
 ```
 
 ## Environment
@@ -231,7 +238,7 @@ This section holds only what changes slowly; it names no PR and repeats no step,
 - The tool's commands are its own table, shown by `edel --help` and written into `docs/guide/commands.md`. Images are lists of features (`features/NAME.toml`, [docs/FEATURES.md](docs/FEATURES.md)); the desktop image logs people in with greetd, whose greeter is our compositor, and logs `live` in by itself on a USB stick (`edel boot live`).
 - Waiting for Alimardon: making CI's jobs required for `main` (branch protection, M2.5); the release key and `EDEL_PUBLISH` for the first preview ([docs/RELEASE.md](docs/RELEASE.md)), which also waits for the narrow review of the updater, the guard and the signing path (M3.4), and M3.5 is skipped while no preview exists; `EDEL_SITE` and GitHub Pages to publish the docs site (M8.10a); required reviewers on the `release` environment, if wanted (M3.7).
 - Known gaps: GRUB also writes its try counter at every boot; that stays on purpose (the "Decisions taken by default" row, Reliable over Efficient). The VM's boot budget swings (6.0 to 7.9 s against 7.7), all of it in `ifup eth0` after the DHCP lease; if it keeps failing, the gate should measure the boot rather than the runner, as `shell_ui_own_mib` and `animation_p99_ms` do. The desktop stick's `live` test sometimes finds nobody logged in; its cause is still open, and the test now prints the stick's logs when it happens.
-- Order: M1 to M3 are done but for M3.4's publishing and M3.5. In M5, M5.15a and M8.13 (the seams checked in CI, pulled forward on 2026-10-09) run next; then the steps still open run in the roadmap's order, with M5.31 (editing the panels where they are, asked on 2026-10-08) right after M5.9, then M5.30 (a lighter stick, asked on 2026-10-07); M6 to M8 follow (apps and the basics; developer mode, add-ons and fleets; the first public release). M9 (phones, arm64, a docked phone as a desktop), M10 (the compatibility promise) and M11 (enterprise appliances) come later; M12 (glasses and pocket PCs) is an idea, not scheduled; M13 (devices as one, the deep parts) waits for the stable OS. Each starts on Alimardon's go, given for the whole roadmap on 2026-10-02.
+- Order: M1 to M3 are done but for M3.4's publishing and M3.5. In M5, M5.15a and M8.13 (the seams checked in CI) were pulled forward and done on 2026-10-09; the steps still open run in the roadmap's order, with M5.31 (editing the panels where they are, asked on 2026-10-08) right after M5.9, then M5.30 (a lighter stick, asked on 2026-10-07); M6 to M8 follow (apps and the basics; developer mode, add-ons and fleets; the first public release). M9 (phones, arm64, a docked phone as a desktop), M10 (the compatibility promise) and M11 (enterprise appliances) come later; M12 (glasses and pocket PCs) is an idea, not scheduled; M13 (devices as one, the deep parts) waits for the stable OS. Each starts on Alimardon's go, given for the whole roadmap on 2026-10-02.
 - Reviews: the next end-to-end review waits until about M8 (#93); one narrow review (Opus) of the updater, the guard and the signing path comes just before the first preview.
 - Design: the shell's decided look is the pictures in `docs/mockups/shell/` (the fifth round, 2026-10-09), and their boards are in `docs/mockups/shell/canvas/` as HTML any session can change; Alimardon also has them on a private design canvas only this account's sessions open. Building them into shell-ui (quick settings, notifications, the tray, the workspaces) comes before and with M5.9c to M5.9e.
 - Hardware: Alimardon's test laptop is an HP 250 G8 (Intel i7-1165G7, Iris Xe graphics, 16 GB), started from a USB stick only (M3.6); the about-2016 speed reference is still to be chosen.

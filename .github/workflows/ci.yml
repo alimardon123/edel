@@ -41,6 +41,13 @@ jobs:
         # Alpine branch only at their owners, and the check catching one
         # of each planted elsewhere.
         run: sh ci/one-place.sh && sh ci/one-place.sh --self-test
+      - name: Every part stands alone
+        # ADR-010's seams (M8.13): the library uses no binary, the desktop
+        # parts stand apart, nothing uses the test client, the desktop
+        # parts take edel without its cli feature, and the settings file is
+        # written by edel::settings, with the check catching one planted of
+        # each kind. Cargo only; the registry the steps above fetched.
+        run: sh ci/seams.sh && sh ci/seams.sh --self-test
       - name: Keep cargo-audit between runs
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -61,6 +68,29 @@ jobs:
         # mdBook, at the version ci/site.sh names, builds docs/ into
         # out/site (M8.10a); publishing it waits for EDEL_SITE below.
         run: sh ci/site.sh build
+
+
+  elsewhere:
+    name: Desktop on another distribution
+    # M5.15a: the compositor and shell-ui built against Ubuntu's own
+    # libraries, outside the Alpine build, and run nested under Xvfb with
+    # none of Edel OS's folders, so the desktop stays one that other
+    # distributions could ship (ADR-002's separable desktop decision).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install the libraries, Xvfb and Mesa's software renderer
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0
+      - name: Keep the desktop's build between runs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: target
+          key: elsewhere-${{ hashFiles('Cargo.lock') }}
+          restore-keys: elsewhere-
+      - name: Build the compositor, shell-ui and the test client
+        run: cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient
+      - name: The desktop runs without Edel OS's folders
+        run: sh ci/elsewhere-test.sh
 
   images:
     name: Build and boot images
