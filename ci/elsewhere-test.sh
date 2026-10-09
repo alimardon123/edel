@@ -83,20 +83,32 @@ wait_for "$work/compositor.log" 'mapped window elsewhere at' 30
 # The panel redraws its window list for the new window; let it land.
 sleep 2
 
-import -display "$display" -window root "$work/screen.png"
 pixel() {
 	convert "$work/screen.png" -format "%[hex:p{$1,$2}]" info: | cut -c1-6
 }
-# The window's middle, from the place the compositor gave it.
+# A point a quarter in from the window's lower left, from the place the
+# compositor gave it: the pointer rests near the screen's middle, and a
+# window placed before the panel took its room has its middle under the
+# pointer's white arrow.
 place=$(sed -n 's/^edel-compositor: mapped window elsewhere at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\)$/\1 \2 \3 \4/p' "$work/compositor.log" | head -n 1)
 set -- $place
-window=$(pixel $(($1 + $3 / 2)) $(($2 + $4 / 2)))
-# The panel lies along the bottom; its middle is empty in Classic.
-bar=$(pixel 640 796)
-
-if [ "$bar" != "$panel" ] || [ "$window" != "$(echo "$colour" | tr a-f A-F)" ]; then
-	echo "FAIL: the panel is #$bar (its token is #$panel) and the test client #$window (it draws #$colour)" >&2
-	show
-	exit 1
-fi
+want=$(echo "$colour" | tr a-f A-F)
+# A window is placed before its first picture reaches the screen, and a
+# software renderer on a busy runner can take a while: look again, on a
+# new screenshot, for up to 10 s before calling it a failure.
+tries=0
+while :; do
+	import -display "$display" -window root "$work/screen.png"
+	window=$(pixel $(($1 + $3 / 4)) $(($2 + $4 * 3 / 4)))
+	# The panel lies along the bottom; its middle is empty in Classic.
+	bar=$(pixel 640 796)
+	[ "$bar" = "$panel" ] && [ "$window" = "$want" ] && break
+	tries=$((tries + 1))
+	if [ "$tries" -ge 10 ]; then
+		echo "FAIL: the panel is #$bar (its token is #$panel) and the test client #$window (it draws #$colour), after $tries screenshots 1 s apart" >&2
+		show
+		exit 1
+	fi
+	sleep 1
+done
 echo "PASS: on this machine's libraries, with no $share_dir, $data_dir or $run_dir, the compositor started shell-ui, whose panel is #$panel as its token says, and mapped a test client in #$colour"
