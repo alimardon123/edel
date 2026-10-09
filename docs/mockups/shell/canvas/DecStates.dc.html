@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>States and motion</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+
+.wall{position:relative;overflow:hidden;font-family:Inter,system-ui,sans-serif;color:#17191d;-webkit-font-smoothing:antialiased;background:radial-gradient(70% 60% at 85% 15%,#e8dccd 0%,rgba(232,220,205,0) 60%),radial-gradient(70% 70% at 10% 90%,#c7d4e6 0%,rgba(199,212,230,0) 60%),#dde0e5}
+.glass{background:rgba(242,243,246,.86);backdrop-filter:blur(32px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 0 0 .5px rgba(20,22,28,.09),0 22px 54px -18px rgba(28,34,48,.42)}
+.card{position:absolute;width:298px;border-radius:41px;padding:14px;box-sizing:border-box;display:flex;flex-direction:column;gap:10px}
+.top{display:flex;align-items:center;gap:8px;height:36px}
+.back{width:36px;height:36px;border-radius:18px;border:0;background:rgba(20,22,28,.05);display:flex;align-items:center;justify-content:center;color:#17191d;padding:0}
+.top h4{margin:0;font-size:15px;font-weight:600;flex:1}
+.sw{width:40px;height:24px;border-radius:12px;background:rgba(20,22,28,.16);position:relative;flex:none}
+.sw:after{content:"";position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(20,22,28,.3)}
+.sw.on{background:#2459c9}
+.sw.on:after{left:18px}
+.list{background:rgba(255,255,255,.9);border-radius:22px;padding:4px;box-shadow:0 0 0 .5px rgba(20,22,28,.05)}
+.row{display:flex;align-items:center;gap:10px;height:40px;padding:0 10px;border-radius:18px;font-size:13px}
+.row.sel{background:rgba(36,89,201,.08)}
+.row .sub{font-size:11px;color:#6b7079}
+.row .end{margin-left:auto;display:flex;align-items:center;gap:8px;color:#6b7079}
+.cap{font-size:10.5px;font-weight:600;color:#8a9099;text-transform:uppercase;letter-spacing:.06em;padding:4px 10px 0}
+.link{display:flex;align-items:center;justify-content:space-between;height:36px;padding:0 14px;border-radius:18px;background:rgba(20,22,28,.05);font-size:12.5px;font-weight:500}
+.sl{position:relative;height:30px;border-radius:15px;background:rgba(20,22,28,.07);overflow:hidden;flex:1}
+.sl i{position:absolute;left:0;top:0;bottom:0;border-radius:15px;background:#fff;box-shadow:0 1px 3px rgba(20,22,28,.14)}
+.lbl{position:absolute;left:12px;top:0;bottom:0;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500}
+.note{position:absolute;font-size:12.5px;color:#4b5059;line-height:1.45;width:300px}
+
+.st{position:absolute;display:flex;flex-direction:column;align-items:center;gap:8px;font-size:11px;color:#5b6069;width:110px;text-align:center}
+.o{width:54px;height:54px;border-radius:27px;background:rgba(255,255,255,.9);box-shadow:0 0 0 .5px rgba(20,22,28,.06),0 1px 2px rgba(20,22,28,.06);display:flex;align-items:center;justify-content:center;color:#2b2f36;position:relative}
+.o.on{background:#2459c9;color:#fff;box-shadow:0 4px 12px -4px rgba(36,89,201,.6)}
+.o.hov{background:#fff;box-shadow:0 0 0 .5px rgba(20,22,28,.1),0 4px 10px -4px rgba(20,22,28,.25)}
+.o.on.hov{background:#2d63d6}
+.o.pr{transform:scale(.94);background:#eef0f4}
+.o.on.pr{background:#1f4fb6}
+.o.foc{box-shadow:0 0 0 2px #fff,0 0 0 4px #2459c9}
+.o.dis{opacity:.38}
+.o.busy:after{content:"";position:absolute;inset:-3px;border-radius:50%;border:2px solid transparent;border-top-color:#2459c9;border-right-color:#2459c9}
+.h{font-size:14px;font-weight:600;color:#17191d;position:absolute}
+
+</style>
+</helmet>
+<div class="wall" style="width:1100px;height:480px;border-radius:16px"><div class="h" style="left:40px;top:30px">A round toggle</div><div class="st" style="left:40px;top:70px"><span class="o "><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Resting</div><div class="st" style="left:155px;top:70px"><span class="o hov"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Pointer over it</div><div class="st" style="left:270px;top:70px"><span class="o pr"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Pressed</div><div class="st" style="left:385px;top:70px"><span class="o foc"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Keyboard focus</div><div class="st" style="left:500px;top:70px"><span class="o on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>On</div><div class="st" style="left:615px;top:70px"><span class="o on hov"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>On, pointer over</div><div class="st" style="left:730px;top:70px"><span class="o on pr"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>On, pressed</div><div class="st" style="left:845px;top:70px"><span class="o dis"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Unavailable</div><div class="st" style="left:960px;top:70px"><span class="o busy"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg></span>Connecting</div><div class="h" style="left:40px;top:196px">A pill and a slider</div><div style="position:absolute;left:40px;top:230px;display:flex;gap:24px;align-items:center"><div class="st" style="position:static;width:150px"><span style="width:126px;height:54px;border-radius:27px;display:flex;align-items:center;gap:8px;padding:0 10px 0 7px;box-sizing:border-box;background:#2459c9;color:#fff;font-size:12.5px;font-weight:600;"><span style="width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/></svg></span>Wi-Fi<span style="margin-left:auto;display:flex;padding:6px 2px;border-radius:10px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></span>Resting</div><div class="st" style="position:static;width:150px"><span style="width:126px;height:54px;border-radius:27px;display:flex;align-items:center;gap:8px;padding:0 10px 0 7px;box-sizing:border-box;background:#2459c9;color:#fff;font-size:12.5px;font-weight:600"><span style="width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,.34);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/></svg></span>Wi-Fi<span style="margin-left:auto;display:flex"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></span>Pointer on the icon: toggles</div><div class="st" style="position:static;width:150px"><span style="width:126px;height:54px;border-radius:27px;display:flex;align-items:center;gap:8px;padding:0 10px 0 7px;box-sizing:border-box;background:#2d63d6;color:#fff;font-size:12.5px;font-weight:600"><span style="width:40px;height:40px;border-radius:20px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/></svg></span>Wi-Fi<span style="margin-left:auto;display:flex;transform:translateX(2px)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span></span>Pointer on the rest: opens</div><div class="st" style="position:static;width:230px"><div style="width:220px;display:flex"><div class="sl" style="height:36px;border-radius:18px"><i style="width:62%;border-radius:18px"></i></div></div>Slider: the fill follows the pointer at once; the number shows while dragging</div></div><div class="note" style="left:40px;top:380px;width:940px"><b>Motion, the same everywhere, from the tokens:</b> a press shrinks a tile to 94 % in 80 ms and lets it spring back; on and off cross-fade the colour in 150 ms; a card or sheet opens in 220 ms on a soft spring and closes in 160 ms; a detail view slides one card width in 250 ms. With reduced motion (appearance.animations = "reduced") every one of these becomes a short fade. Nothing moves while idle, and no frame is drawn when nothing changes.</div></div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 # ADR-002: Build our own lightweight desktop shell
 
 **Status:** Proposed
-**Date:** 2026-10-01, amended 2026-10-02 (sharing presets, ADR-008; power-profiles-daemon dropped, roadmap M7.8) and 2026-10-06 (the separable desktop as the first case of ADR-010)
+**Date:** 2026-10-01, amended 2026-10-09 (the glass decision: the wallpaper's blur on every tier) and 2026-10-02 (sharing presets, ADR-008; power-profiles-daemon dropped, roadmap M7.8) and 2026-10-06 (the separable desktop as the first case of ADR-010)
 **Deciders:** Alimardon
 **Supersedes:** the shell decision in ADR-001 (COSMIC vs Plasma spike)
 
@@ -95,11 +95,13 @@ Alimardon's reference for smoothness is Hyprland, which looks great but leans on
 
 | Tier | Effects |
 |------|---------|
-| Full | Live blur, shadows, rounded corners, full animations |
+| Full | Live blur behind short-lived surfaces (at low resolution, redone only where what is behind changed), shadows, rounded corners, full animations |
 | Balanced | Blur of the wallpaper only (computed once, not every frame), shadows, rounded corners |
-| Lite | Flat surfaces, short fades |
+| Lite | The wallpaper's blur behind shell-ui's surfaces (computed once), square corners, short fades |
 
   The look stays consistent across tiers because all three share the same colors, shapes and spacing; only the expensive effects change.
+
+  **Glass decision (2026-10-09):** Alimardon asked whether frosted glass must cost so much, since a blurred background is itself only colours. It need not: a blur costs only when what is behind it changes. So the frosted look comes from the wallpaper blurred once, at a quarter of its resolution, with a faint static grain, on every tier, Lite included: after that it is a picture, as cheap to show as a flat colour. Only Full blurs live, behind short-lived surfaces (the launcher, quick settings, menus), at low resolution, only where what is behind changed, and frozen while the surface slides in (M5.14).
 - **Games:** variable refresh rate and optional tearing for full-screen games that ask for it.
 - **Measured in CI** on the old reference laptop: frame times while opening, moving and closing windows, and input latency. A change that makes frames miss the refresh deadline does not merge.
 

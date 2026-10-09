@@ -41,8 +41,9 @@ What the look is made of, each a token:
 - title bars 28 px high, as the compositor draws them;
 - app icons drawn as objects, a folder, a globe, a gear, each lit from
   above, never a glyph on a coloured tile;
-- frosted panels and menus on Full, the wallpaper blurred once on
-  Balanced, solid colours on Lite.
+- frosted panels and menus from the wallpaper blurred once, on every
+  tier, and live blur behind short-lived surfaces on Full only
+  (ADR-002's glass decision).
 
 ## Fifth round (2026-10-09): the defaults to build toward
 
@@ -107,7 +108,8 @@ The rules under them:
   costs no frames on old hardware.
 
 The canvas these came from is Alimardon's design artifact (private). The
-pictures here are the copy every session and agent reads.
+pictures here are the copy every session and agent reads, and their
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`.
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
