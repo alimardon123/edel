@@ -11,7 +11,7 @@ Start at [docs/README.md](docs/README.md) for the architecture and [docs/ROADMAP
 1. The ranked principles below decide every choice. Name the one that decided it.
 2. No roadmap step starts without Alimardon's go in their own words (see "How work flows").
 3. Never reopen anything under "Decisions already taken".
-4. Never push to `main`. Merge only your own PR, only when every CI check on it is green (today "Rust checks", "Build and boot images" and "Desktop tests"), and not when Alimardon has asked to review it first. Their latest instruction wins: on 2026-10-01 they asked to review the roadmap PR, then said "No, no, no, you can merge it."
+4. Never push to `main`. Merge only your own PR, only when every CI check on it is green (today "Rust checks", "Build and boot images", "Desktop tests" and "Desktop on another distribution"), and not when Alimardon has asked to review it first. Their latest instruction wins: on 2026-10-01 they asked to review the roadmap PR, then said "No, no, no, you can merge it."
 5. A short list of actions always waits for Alimardon (see "What waits for Alimardon's own words"). Decide everything else by the principles and say what you chose.
 6. Write "developer mode", never "unlocked mode". No em-dashes or en-dashes anywhere.
 7. Do not create scheduled or periodic Claude runs (triggers, cron routines, check-in sessions). Alimardon had the last one deleted. Scheduled CI workflows that a roadmap step asks for (M8.3 monthly rebuilds, M9.1 nightly arm64) are fine. One exception, Alimardon's of 2026-10-06 ("If the session limits hit, please ... start yourself again after the limit resets"): a session working through the roadmap alone may arm one one-shot wake-up of itself (`send_later`) to resume after its limits reset, never a repeating one.
@@ -114,7 +114,7 @@ When docs disagree, the newer ADR wins.
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-010, the reviews of other projects, the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
-| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
+| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
 | `Cargo.toml`, `Cargo.lock` | Workspace of five crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
@@ -150,6 +150,12 @@ sh ci/initramfs-check.sh
 sh ci/vm-tests.sh    # boot, system, install, ab and flatpak tests, two lanes at once
 sh ci/sizes.sh
 sh ci/desktop-test.sh floating titlebar ...   # CI's "Desktop tests" job, after build.sh desktop-test
+```
+
+CI's "Desktop on another distribution" job (M5.15a) needs only Ubuntu's libraries, Xvfb, ImageMagick and Mesa (`xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0`), on a machine without `/usr/share/edel`, `/data/edel` or `/run/edel`:
+
+```sh
+cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient && sh ci/elsewhere-test.sh
 ```
 
 ## Environment

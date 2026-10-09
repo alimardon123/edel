@@ -199,6 +199,43 @@ pub fn person_state_dir() -> Option<PathBuf> {
     }
 }
 
+/// Where one of Edel OS's shared places, such as [`TOKENS_FILE`] or
+/// [`FEATURES_DIR`], is found at run time (M5.15a). On Edel OS it is where
+/// the constant says. On another system the desktop may be installed
+/// elsewhere, so the same place under the first `edel` folder of the XDG
+/// data directories that has it is used: `$XDG_DATA_HOME` (else
+/// `~/.local/share`), then each of `$XDG_DATA_DIRS` (else
+/// `/usr/local/share` and `/usr/share`). When none has it, the constant
+/// comes back, so a message names where it was looked for.
+pub fn found_shared(place: &str) -> PathBuf {
+    if Path::new(place).exists() {
+        return PathBuf::from(place);
+    }
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    let mut dirs: Vec<PathBuf> = var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| var("HOME").map(|home| PathBuf::from(home).join(".local/share")))
+        .into_iter()
+        .collect();
+    match var("XDG_DATA_DIRS") {
+        Some(list) => dirs.extend(std::env::split_paths(&list)),
+        None => dirs.extend(["/usr/local/share", "/usr/share"].map(PathBuf::from)),
+    }
+    shared_in(place, &dirs)
+}
+
+/// [`found_shared`] with the data directories given.
+fn shared_in(place: &str, dirs: &[PathBuf]) -> PathBuf {
+    let within = place
+        .strip_prefix(SHARE_DIR)
+        .unwrap_or(place)
+        .trim_start_matches('/');
+    dirs.iter()
+        .map(|dir| dir.join("edel").join(within))
+        .find(|path| path.exists())
+        .unwrap_or_else(|| PathBuf::from(place))
+}
+
 /// `part`'s words in `language`, such as `de` or `pt_BR` (M5.24).
 pub fn catalogue(language: &str, part: &str) -> PathBuf {
     Path::new(LOCALE_DIR)
@@ -247,6 +284,62 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn a_shared_place_is_found_in_the_xdg_data_dirs_elsewhere() {
+        let root = std::env::temp_dir().join(format!("edel-shared-{}", std::process::id()));
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(second.join("edel/design")).unwrap();
+        fs::write(second.join("edel/design/tokens.toml"), "").unwrap();
+        let dirs = [first, second.clone()];
+        assert_eq!(
+            shared_in(TOKENS_FILE, &dirs),
+            second.join("edel/design/tokens.toml")
+        );
+        // A place no data directory has stays Edel OS's own.
+        assert_eq!(shared_in(FEATURES_DIR, &dirs), PathBuf::from(FEATURES_DIR));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    // M5.15a: the desktop finds Edel OS's places only through this module,
+    // so it can ship on another distribution.
+    #[test]
+    fn the_desktop_names_no_place_of_edel_os_itself() {
+        let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let roots = [SHARE_DIR, RUN_DIR, DATA_DIR];
+        let mut found = Vec::new();
+        for part in ["compositor", "shell-ui"] {
+            let mut files = vec![crates.join(part).join("src")];
+            while let Some(path) = files.pop() {
+                if path.is_dir() {
+                    files.extend(fs::read_dir(&path).unwrap().map(|e| e.unwrap().path()));
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                let text = fs::read_to_string(&path).unwrap();
+                for (n, line) in text.lines().enumerate() {
+                    let code = line.trim_start();
+                    if code == "#[cfg(test)]" {
+                        break;
+                    }
+                    if code.starts_with("//") {
+                        continue;
+                    }
+                    if roots.iter().any(|root| code.contains(&format!("\"{root}"))) {
+                        found.push(format!("{}:{}: {}", path.display(), n + 1, code));
+                    }
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "name these through edel::places instead:\n{}",
+            found.join("\n")
+        );
+    }
 
     #[test]
     fn a_former_name_is_found_when_the_new_one_is_missing() {
