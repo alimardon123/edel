@@ -109,7 +109,7 @@ The rules under them:
 
 The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
-boards, as HTML to change, are in [shell/canvas/](shell/canvas/README.md).
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`.
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
