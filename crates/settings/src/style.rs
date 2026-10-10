@@ -206,6 +206,7 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-segments {{ background-color: {fill}; border-radius: {rs}px; padding: 2px; }}
 .edel-segment {{ min-height: 22px; min-width: 38px; padding: 0 8px; border-radius: {rs}px; background-image: none;
   background-color: transparent; box-shadow: none; border: none; color: {text}; font-weight: 400; }}
+.edel-segments-tight > .edel-segment {{ min-width: 24px; padding: 0 4px; }}
 .edel-segment:hover {{ background-color: {fill_strong}; }}
 .edel-segment:checked {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
 .edel-segment:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}

@@ -958,6 +958,12 @@ impl Segments {
         self.selected.get()
     }
 
+    /// Narrower buttons, for a row of short labels such as the numbers 1
+    /// to 9, so the row's title keeps its room (M5.2n).
+    pub fn tight(&self) {
+        self.bar.add_css_class("edel-segments-tight");
+    }
+
     /// The buttons, in the order of the labels (CI's places and focus).
     pub fn buttons(&self) -> Vec<gtk::ToggleButton> {
         self.buttons.borrow().clone()
