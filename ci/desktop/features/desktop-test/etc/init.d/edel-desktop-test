@@ -635,6 +635,12 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# What the greeter, its compositor and greetd said (M5.10b), for
+		# a login that does not finish.
+		'greeter log')
+			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /'
+			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /'
+			;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd
 			before=$(cut -d' ' -f1 /proc/uptime)

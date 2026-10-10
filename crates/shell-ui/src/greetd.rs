@@ -200,6 +200,20 @@ pub fn reply(json: &str) -> Option<Reply> {
     })
 }
 
+/// A reply as the log says it: its kind, and an error's words.
+fn said(reply: &Reply) -> String {
+    match reply {
+        Reply::Success => "success".to_string(),
+        Reply::Prompt { secret: true, .. } => "secret prompt".to_string(),
+        Reply::Prompt { secret: false, .. } => "visible prompt".to_string(),
+        Reply::Info(_) => "message".to_string(),
+        Reply::Error { auth, words } => format!(
+            "{} error: {words}",
+            if *auth { "authentication" } else { "other" }
+        ),
+    }
+}
+
 /// A connection to greetd.
 pub struct Greetd(UnixStream);
 
@@ -263,7 +277,18 @@ pub fn log_in(greetd: &mut Greetd, user: &str, password: &str, cmd: &[&str]) -> 
     // At most a few prompts: PAM asks once for a password, maybe once
     // more for a message.
     for _ in 0..8 {
-        match greetd.ask(&next) {
+        let answer = greetd.ask(&next);
+        // What greetd said to each step, for the greeter's log; never
+        // the password.
+        let step = fields(&next)
+            .and_then(|f| f.into_iter().next())
+            .map(|(_, v)| v)
+            .unwrap_or_default();
+        match &answer {
+            Ok(reply) => eprintln!("edel-shell-ui: greetd: {step}: {}", said(reply)),
+            Err(e) => eprintln!("edel-shell-ui: greetd: {step}: {e:#}"),
+        }
+        match answer {
             Ok(Reply::Success) if next.contains("\"start_session\"") => return Login::Started,
             Ok(Reply::Success) => next = start_session(cmd),
             Ok(Reply::Prompt { secret: true, .. }) => next = answer(Some(password)),

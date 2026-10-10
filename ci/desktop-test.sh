@@ -520,7 +520,11 @@ case_respawn() {
 	python3 ci/qmp.py key ret
 	sleep 1
 	python3 ci/qmp.py type 'edel-desktop-test\n'
-	wait_for 'DESKTOP-TEST: login_ready ' || fail "no word from the test service after the login"
+	if ! wait_for 'DESKTOP-TEST: login_ready ' 90; then
+		guest 'greeter log'
+		sleep 3
+		fail "no word from the test service after the login: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	fi
 	case "$(value login_ready)" in
 	"ci output "*" ready") ;;
 	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
