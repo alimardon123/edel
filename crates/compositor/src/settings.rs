@@ -71,6 +71,10 @@ pub struct Settings {
     /// `layout.workspace_names` (M5.2i), the first workspace's first; an
     /// empty text is no name.
     pub workspace_names: Vec<String>,
+    /// `layout.app_workspaces` (M5.2l): each app id and the workspace it
+    /// opens on, from 0, in the file's order; absent opens every app on
+    /// the workspace in use.
+    pub app_workspaces: Vec<(String, usize)>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -132,6 +136,15 @@ impl Settings {
             }
             if let Some(names) = &file.layout.workspace_names {
                 settings.workspace_names.clone_from(names);
+            }
+            if let Some(apps) = &file.layout.app_workspaces {
+                // The person's table replaces the machine's whole, as the
+                // other keys do; a number out of range is left out.
+                settings.app_workspaces = apps
+                    .iter()
+                    .filter(|(_, n)| (1..=edel::presets::MOST_WORKSPACES as i64).contains(n))
+                    .filter_map(|(app, n)| Some((app.clone(), usize::try_from(n - 1).ok()?)))
+                    .collect();
             }
             if let Some(motion) = file
                 .appearance
@@ -220,6 +233,15 @@ impl Settings {
     /// The workspaces' names, the first workspace's first (M5.2i).
     pub fn names(&self) -> &[String] {
         &self.workspace_names
+    }
+
+    /// The workspace, from 0, that `app_id`'s windows open on
+    /// (`layout.app_workspaces`, M5.2l); `None` when the app has none.
+    pub fn app_workspace(&self, app_id: &str) -> Option<usize> {
+        self.app_workspaces
+            .iter()
+            .find(|(id, _)| id == app_id)
+            .map(|(_, workspace)| *workspace)
     }
 
     /// Whether `other` lays the desktop out by another preset (M5.4a): a
@@ -531,6 +553,25 @@ mod tests {
         );
         assert_eq!(both.names(), ["Mail"]);
         assert_eq!(Settings::from_files(Some(&machine), None).workspaces(), 2);
+        // Apps with a workspace of their own (M5.2l).
+        let machine = file(
+            "format = 1\n[layout]\napp_workspaces = { \"org.mozilla.firefox\" = 2, \"org.gnome.Nautilus\" = 4 }\n",
+        );
+        let settings = Settings::from_files(Some(&machine), None);
+        assert_eq!(settings.app_workspace("org.mozilla.firefox"), Some(1));
+        assert_eq!(settings.app_workspace("org.gnome.Nautilus"), Some(3));
+        assert_eq!(settings.app_workspace("foot"), None);
+        assert_eq!(
+            Settings::default().app_workspace("org.mozilla.firefox"),
+            None
+        );
+        // The person's table replaces the machine's whole, so Nautilus
+        // no longer has a rule.
+        let person = file("format = 1\n[layout]\napp_workspaces = { \"foot\" = 9 }\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(both.app_workspace("org.gnome.Nautilus"), None);
+        assert_eq!(both.app_workspace("foot"), Some(8));
+        assert_eq!(both.app_workspaces, [("foot".to_string(), 8)]);
     }
 
     #[test]

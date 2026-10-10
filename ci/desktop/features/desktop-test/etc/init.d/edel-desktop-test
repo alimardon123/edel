@@ -376,6 +376,14 @@ commands() {
 		# screen switching together.
 		'screens apart on') edel settings set layout.workspaces_per_screen=true ;;
 		'screens apart off') edel settings reset layout.workspaces_per_screen ;;
+		# Apps on their workspace (M5.2l): a rule for the test client's app id,
+		# the window it opens with that id, and the rule's reset.
+		'apps on 3') edel settings set 'layout.app_workspaces={ "edel-placed" = 3 }' ;;
+		'apps off') edel settings reset layout.app_workspaces ;;
+		'placed window')
+			as_ci edel-testclient --size 200x150 --colour 44aa77 --title placed --app-id edel-placed </dev/null >/dev/null 2>&1 &
+			;;
+		'placed off') pkill -f '[e]del-testclient --size 200x150 --colour 44aa77' ;;
 		# The state file as it is now (M5.2k), between two markers, so the
 		# case reads one whole copy; report prints it once, at start only.
 		'state now')

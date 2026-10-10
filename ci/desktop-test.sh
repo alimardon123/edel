@@ -76,6 +76,11 @@
 #               follows it, closing it leaves one again, layout.workspace_names
 #               = ["Mail"] keeps Mail with one empty after it, and the keys'
 #               reset brings Classic's four back (M5.2i)
+#   app-workspaces  layout.app_workspaces = { "edel-placed" = 3 } opens a
+#               window of that app on workspace 3 while the person stays on
+#               workspace 1: the state file's window reads 3, the top level
+#               one 1; closing it logs unmapped, and the rule's reset ends
+#               the case (M5.2l)
 #   windows     a new window adds a button to the panel's window list,
 #               lit; its title bar's minimize button hides it and a click
 #               on its button brings it back (M5.2h)
@@ -1557,6 +1562,40 @@ case_workspaces_dynamic() {
 		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+T did not float the first workspace again"
 	fi
 	echo "PASS: with layout.dynamic_workspaces on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; layout.workspace_names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
+}
+
+case_app_workspaces() {
+	# Apps on their workspace (M5.2l): layout.app_workspaces names the test
+	# client's app id, edel-placed, for workspace 3. Its window opens there
+	# while the person stays on workspace 1, so the state file's window
+	# reads workspace 3 and the top level one 1. Closing it logs unmapped,
+	# as a window closed while hidden does, and the rule's reset ends it.
+	guest 'apps on 3'
+	wait_for 'DESKTOP-TEST: ran apps on 3: 0' || fail "layout.app_workspaces did not run in the VM"
+	opened=$(count 'edel-compositor: window placed opened on workspace 3 \(layout.app_workspaces\)')
+	guest 'placed window'
+	wait_more 'edel-compositor: window placed opened on workspace 3 \(layout.app_workspaces\)' "$opened" || fail "placed did not open on workspace 3 under its rule: $(value windows)"
+	# The state file may lag the log by a moment, so it is read up to 5 times.
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/app.now" <<-'EOF' && break
+			import sys, tomllib
+			state = tomllib.load(open(sys.argv[1], "rb"))
+			placed = [w.get("workspace") for w in state.get("windows", []) if w.get("title") == "placed"]
+			print(f"placed is on workspace {placed}, the person on workspace {state.get('workspace')}")
+			sys.exit(0 if placed == [3] and state.get("workspace") == 1 else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "placed did not wait on workspace 3 while the person stayed on 1: $(cat "$dir/app.now")"
+		sleep 1
+	done
+	closed=$(count 'edel-compositor: unmapped window placed$')
+	guest 'placed off'
+	wait_more 'edel-compositor: unmapped window placed$' "$closed" || fail "placed did not close from workspace 3"
+	guest 'apps off'
+	wait_for 'DESKTOP-TEST: ran apps off: 0' || fail "the layout.app_workspaces reset did not run in the VM"
+	echo "PASS: layout.app_workspaces = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
@@ -3206,18 +3245,24 @@ case_pointer() {
 	echo "PASS: the cursor is where the pointer is, and the compositor offers tablets, cursor shapes, fractional scale and viewporter"
 }
 
-# outputs_show A B: asks the VM for the state file (guest 'state now') until
+# state_now: asks the VM for the state file (guest 'state now') and leaves
+# one whole copy of it in $dir/state-now.toml, read between the VM's two
+# markers (M5.2k, M5.2l); false when the VM does not answer.
+state_now() {
+	seen=$(count 'DESKTOP-TEST: ran state now: 0')
+	guest 'state now'
+	wait_more 'DESKTOP-TEST: ran state now: 0' "$seen" || return 1
+	tr -d '\r' <"$log" | awk '/DESKTOP-TEST: state_begin/ { buf = "" } /DESKTOP-TEST: state / { sub(/.*DESKTOP-TEST: state /, ""); buf = buf $0 "\n" } /DESKTOP-TEST: state_end/ { last = buf } END { printf "%s", last }' >"$dir/state-now.toml"
+}
+
+# outputs_show A B: asks the VM for the state file (state_now) until
 # Virtual-1 shows workspace A and Virtual-2 workspace B, up to 5 tries a
-# second apart (M5.2k); what it last read is left in $outputs_now. The
-# state file is read from one copy between the VM's two markers.
+# second apart (M5.2k); what it last read is left in $outputs_now.
 outputs_show() {
 	i=0
 	while :; do
-		seen=$(count 'DESKTOP-TEST: ran state now: 0')
-		guest 'state now'
-		wait_more 'DESKTOP-TEST: ran state now: 0' "$seen" || return 1
-		tr -d '\r' <"$log" | awk '/DESKTOP-TEST: state_begin/ { buf = "" } /DESKTOP-TEST: state / { sub(/.*DESKTOP-TEST: state /, ""); buf = buf $0 "\n" } /DESKTOP-TEST: state_end/ { last = buf } END { printf "%s", last }' >"$dir/outputs.toml"
-		python3 - "$dir/outputs.toml" "$1" "$2" >"$dir/outputs.now" <<-'EOF'
+		state_now || return 1
+		python3 - "$dir/state-now.toml" "$1" "$2" >"$dir/outputs.now" <<-'EOF'
 			import sys, tomllib
 			outputs = {o["name"]: o.get("workspace") for o in tomllib.load(open(sys.argv[1], "rb")).get("outputs", [])}
 			want = {"Virtual-1": int(sys.argv[2]), "Virtual-2": int(sys.argv[3])}
@@ -3479,7 +3524,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces workspaces-dynamic windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces workspaces-dynamic app-workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

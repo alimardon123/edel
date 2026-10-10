@@ -16,7 +16,7 @@
 //! Plain data, so it is tested without a display; `workspaces.rs` in the
 //! compositor maps and unmaps the windows.
 
-use smithay::utils::{Logical, Rectangle};
+use smithay::utils::{Logical, Rectangle, Size};
 
 use crate::layout::{Areas, Workspace};
 use crate::tiling::Style;
@@ -601,6 +601,33 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         Some(place)
     }
 
+    /// Opens a new `window` on workspace `desk` (M5.2l), through that
+    /// workspace's policies on `screen` as a window opening there is placed,
+    /// given its size and the screen's area in `areas`. It returns its frame
+    /// and whether it shows now, that is, whether `screen` shows `desk`. When
+    /// it does not show, it waits on top of that workspace's hidden windows,
+    /// as [`Desks::send`] leaves one. None when there is no such workspace.
+    pub fn open_on(
+        &mut self,
+        desk: usize,
+        window: W,
+        size: Size<i32, Logical>,
+        screen: &str,
+        area: Rectangle<i32, Logical>,
+    ) -> Option<(Rectangle<i32, Logical>, bool)> {
+        if desk >= self.desks.len() {
+            return None;
+        }
+        let place = self.desks[desk]
+            .layout
+            .open(window.clone(), size, screen, area);
+        let shows = self.shown_on(screen) == desk;
+        if !shows {
+            self.desks[desk].hidden.push((window, place));
+        }
+        Some((place, shows))
+    }
+
     /// `window` closed, on whichever workspace it was.
     pub fn close(&mut self, window: &W) {
         for desk in &mut self.desks {
@@ -1091,5 +1118,62 @@ mod tests {
         assert_eq!(desks.neighbour(false), None);
         desks.switch(1, Vec::new());
         assert_eq!(desks.neighbour(true), None);
+    }
+
+    #[test]
+    fn an_app_rule_opens_a_window_on_its_workspace_and_hides_it_unless_shown() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        // Shown: workspace 1 is the one in use, so the window shows.
+        let (place, shows) = desks
+            .open_on(0, 1, (300, 200).into(), "one", area())
+            .unwrap();
+        assert!(shows);
+        assert_eq!(place.size, (300, 200).into());
+        assert_eq!(desks.hidden_on(&1), None);
+        assert_eq!(desks.window_counts(), [1, 0, 0]);
+        // Hidden: workspace 3 is not shown, so the window waits there.
+        let (place, shows) = desks
+            .open_on(2, 2, (300, 200).into(), "one", area())
+            .unwrap();
+        assert!(!shows);
+        assert_eq!(desks.hidden_on(&2), Some(2));
+        assert_eq!(
+            desks.hidden().map(|(_, _, p)| p).collect::<Vec<_>>(),
+            [place]
+        );
+        assert_eq!(desks.window_counts(), [1, 0, 1]);
+        // Showing it brings it back with its frame, as a switch does.
+        let back = desks.switch(2, Vec::new()).unwrap();
+        assert_eq!(back, [(2, place)]);
+        // A workspace there is not: nothing opens.
+        assert!(
+            desks
+                .open_on(3, 3, (300, 200).into(), "one", area())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn with_workspaces_on_each_screen_a_window_shows_where_its_screen_shows_its_workspace() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.set_per_screen(true);
+        let two_areas = vec![("one".to_string(), area()), ("two".to_string(), area())];
+        desks.use_screen("one");
+        // Screen two shows workspace 1 too, so workspace 2 is hidden on it.
+        assert_eq!(desks.shown_on("two"), 0);
+        let (_, shows) = desks
+            .open_on(1, 1, (300, 200).into(), "two", area())
+            .unwrap();
+        assert!(!shows, "screen two shows workspace 1, not 2");
+        assert_eq!(desks.hidden_on(&1), Some(1));
+        // Screen one shows workspace 1 when the pointer is there and switched
+        // to 2 on its own, so a window for 2 opened there shows at once.
+        desks.switch_on(1, "one", Vec::new());
+        let (_, shows) = desks
+            .open_on(1, 2, (300, 200).into(), "one", area())
+            .unwrap();
+        assert!(shows);
+        assert_eq!(desks.hidden_on(&2), None);
+        assert!(desks.arrange(&two_areas).iter().any(|(w, _)| *w == 2));
     }
 }
