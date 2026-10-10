@@ -61,6 +61,13 @@ pub struct Settings {
     pub language: Option<String>,
     /// `layout.tiling_style` (M5.16a): absent means stack.
     pub tiling_style: Style,
+    /// `layout.workspaces` (M5.2i): absent means the preset's count.
+    pub workspace_count: Option<usize>,
+    /// `layout.dynamic_workspaces` (M5.2i): absent means off.
+    pub dynamic_workspaces: bool,
+    /// `layout.workspace_names` (M5.2i), the first workspace's first; an
+    /// empty text is no name.
+    pub workspace_names: Vec<String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -110,6 +117,15 @@ impl Settings {
             }
             if let Some(style) = file.layout.tiling_style.as_deref().and_then(Style::parse) {
                 settings.tiling_style = style;
+            }
+            if let Some(count) = file.layout.workspaces {
+                settings.workspace_count = usize::try_from(count).ok();
+            }
+            if let Some(dynamic) = file.layout.dynamic_workspaces {
+                settings.dynamic_workspaces = dynamic;
+            }
+            if let Some(names) = &file.layout.workspace_names {
+                settings.workspace_names.clone_from(names);
             }
             if let Some(motion) = file
                 .appearance
@@ -177,9 +193,21 @@ impl Settings {
         presets::named(self.preset.as_deref()).0.session.start
     }
 
-    /// How many workspaces the preset has (M5.2a).
+    /// How many workspaces there are (M5.2a): `layout.workspaces` if set,
+    /// else the preset's count. Dynamic workspaces ignore it (M5.2i).
     pub fn workspaces(&self) -> usize {
-        presets::named(self.preset.as_deref()).0.workspaces.count
+        self.workspace_count
+            .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.workspaces.count)
+    }
+
+    /// Whether empty workspaces come and go as the windows do (M5.2i).
+    pub fn dynamic(&self) -> bool {
+        self.dynamic_workspaces
+    }
+
+    /// The workspaces' names, the first workspace's first (M5.2i).
+    pub fn names(&self) -> &[String] {
+        &self.workspace_names
     }
 
     /// Whether `other` lays the desktop out by another preset (M5.4a): a
@@ -468,6 +496,21 @@ mod tests {
         };
         let names: Vec<&str> = Style::ALL.iter().map(|s| s.name()).collect();
         assert_eq!(names, values);
+    }
+
+    #[test]
+    fn the_workspace_keys_are_the_persons_over_the_machines_and_the_preset_counts() {
+        assert_eq!(Settings::default().workspaces(), 4, "Classic has four");
+        assert!(!Settings::default().dynamic());
+        let machine = file(
+            "format = 1\n[layout]\nworkspaces = 2\ndynamic_workspaces = true\nworkspace_names = [\"Mail\"]\n",
+        );
+        let person = file("format = 1\n[layout]\nworkspaces = 6\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(both.workspaces(), 6, "the person's count wins");
+        assert!(both.dynamic());
+        assert_eq!(both.names(), ["Mail"]);
+        assert_eq!(Settings::from_files(Some(&machine), None).workspaces(), 2);
     }
 
     #[test]

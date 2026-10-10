@@ -215,6 +215,30 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h)",
     ),
+    action(
+        "next_workspace",
+        "Super+Ctrl+Right",
+        false,
+        "Show the workspace after the shown one; stops at the last (M5.2i)",
+    ),
+    action(
+        "previous_workspace",
+        "Super+Ctrl+Left",
+        false,
+        "Show the workspace before the shown one; stops at the first (M5.2i)",
+    ),
+    action(
+        "move_to_next_workspace",
+        "Super+Ctrl+Shift+Right",
+        false,
+        "Move the focused window to the workspace after the shown one, and follow it (M5.2i)",
+    ),
+    action(
+        "move_to_previous_workspace",
+        "Super+Ctrl+Shift+Left",
+        false,
+        "Move the focused window to the workspace before the shown one, and follow it (M5.2i)",
+    ),
 ];
 
 /// The action called `name`.

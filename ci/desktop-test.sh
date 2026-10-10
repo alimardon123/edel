@@ -67,6 +67,13 @@
 #               hidden, and activating it shows workspace 2 (M5.2d); the
 #               panel's switcher shows the first as the accent pill, and
 #               a click on its 3 shows the third (M5.2c)
+#   workspaces-dynamic  layout.dynamic_workspaces = true leaves one workspace
+#               with no window, a window adds an empty one after it,
+#               Super+Ctrl+Right and Left show the next and the first,
+#               Super+Ctrl+Shift+Right moves the window to the next and
+#               follows it, closing it leaves one again, layout.workspace_names
+#               = ["Mail"] keeps Mail with one empty after it, and the keys'
+#               reset brings Classic's four back (M5.2i)
 #   windows     a new window adds a button to the panel's window list,
 #               lit; its title bar's minimize button hides it and a click
 #               on its button brings it back (M5.2h)
@@ -1457,6 +1464,99 @@ case_workspaces() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
 	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
+}
+
+# state_is WANT: asks the test service for the workspaces the state file holds
+# (`shown N count N names [...]`) until they read WANT, up to five times a second
+# apart; prints the last answer and fails if they never did.
+state_is() {
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: workspace_state ')
+		guest 'workspace state'
+		wait_more 'DESKTOP-TEST: workspace_state ' "$seen" || return 1
+		now=$(value workspace_state)
+		[ "$now" = "$1" ] && return 0
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || break
+		sleep 1
+	done
+	echo "$now"
+	return 1
+}
+
+case_workspaces_dynamic() {
+	# Dynamic workspaces (M5.2i): with no window and layout.dynamic_workspaces
+	# on, one workspace is left. A window adds an empty one after it, and
+	# Super+Ctrl+Right and Left show the second and the first, stopping at
+	# the ends. Super+Ctrl+Shift+Right moves the window to the second and
+	# follows it, so the first, empty now and not shown, closes. Closing
+	# the window leaves one again. A named workspace stays when it is empty,
+	# so Mail keeps the first with one empty after it. Resetting both keys
+	# brings Classic's four back.
+	cleared=$(count 'DESKTOP-TEST: windows 0$')
+	guest 'dynamic clear'
+	# Run last, after respawn's new session, there may be none to close.
+	[ "$(value windows)" = 0 ] || wait_more 'DESKTOP-TEST: windows 0$' "$cleared" || fail "the test windows did not close: $(value windows)"
+	left=$(count 'edel-compositor: workspaces now 1 \(dynamic\)')
+	guest 'dynamic on'
+	wait_more 'edel-compositor: workspaces now 1 \(dynamic\)' "$left" || fail "layout.dynamic_workspaces did not leave one workspace"
+	state_is 'shown 1 count 1 names [""]' || fail "the state file does not hold one workspace: $(value workspace_state)"
+	# A window adds an empty second workspace after the first.
+	added=$(count 'edel-compositor: workspaces now 2 \(dynamic\)')
+	guest 'away window'
+	wait_more 'edel-compositor: workspaces now 2 \(dynamic\)' "$added" || fail "a window did not add a second workspace"
+	state_is 'shown 1 count 2 names ["", ""]' || fail "the state file does not hold two: $(value workspace_state)"
+	# Super+Ctrl+Right shows the second; Right again stays there.
+	shows=$(count 'edel-compositor: workspace 2$')
+	python3 ci/qmp.py key meta_l-ctrl-right
+	wait_more 'edel-compositor: workspace 2$' "$shows" || fail "Super+Ctrl+Right did not show workspace 2"
+	state_is 'shown 2 count 2 names ["", ""]' || fail "Super+Ctrl+Right did not leave workspace 2 shown: $(value workspace_state)"
+	python3 ci/qmp.py key meta_l-ctrl-right
+	state_is 'shown 2 count 2 names ["", ""]' || fail "Super+Ctrl+Right went past the last workspace: $(value workspace_state)"
+	# Super+Ctrl+Left shows the first again, where away is.
+	shows=$(count 'edel-compositor: workspace 1$')
+	shown_away=$(count 'DESKTOP-TEST: windows 1 away@')
+	python3 ci/qmp.py key meta_l-ctrl-left
+	wait_more 'edel-compositor: workspace 1$' "$shows" || fail "Super+Ctrl+Left did not show workspace 1"
+	wait_more 'DESKTOP-TEST: windows 1 away@' "$shown_away" || fail "workspace 1 does not show away: $(value windows)"
+	state_is 'shown 1 count 2 names ["", ""]' || fail "Super+Ctrl+Left did not leave workspace 1 shown: $(value workspace_state)"
+	# Super+Ctrl+Shift+Right sends away to the second and follows it: the
+	# first, empty now, closes, so away's workspace is the first of two.
+	sent=$(count 'edel-compositor: window away to workspace 2$')
+	python3 ci/qmp.py key meta_l-ctrl-shift-right
+	wait_more 'edel-compositor: window away to workspace 2$' "$sent" || fail "Super+Ctrl+Shift+Right did not send away to workspace 2"
+	# Alone on screen before and after, away may print no new windows
+	# line; the state file below shows where it is.
+	wait_for 'DESKTOP-TEST: windows 1 away@' || fail "the window did not follow to its workspace: $(value windows)"
+	state_is 'shown 1 count 2 names ["", ""]' || fail "after the move, away's workspace is not the first of two: $(value workspace_state)"
+	# Closing away leaves one workspace again.
+	closed=$(count 'edel-compositor: workspaces now 1 \(dynamic\)')
+	guest 'away off'
+	wait_more 'edel-compositor: workspaces now 1 \(dynamic\)' "$closed" || fail "closing away did not leave one workspace"
+	state_is 'shown 1 count 1 names [""]' || fail "closing away did not leave one: $(value workspace_state)"
+	# A named workspace stays when empty: Mail, with one empty after it.
+	named=$(count 'edel-compositor: workspaces now 2 \(dynamic\)')
+	guest 'dynamic names'
+	wait_more 'edel-compositor: workspaces now 2 \(dynamic\)' "$named" || fail "Mail did not keep its place with one empty workspace after it"
+	state_is 'shown 1 count 2 names ["Mail", ""]' || fail "the state file does not name Mail: $(value workspace_state)"
+	# Both keys reset: Classic's four workspaces, without names.
+	fours=$(count 'edel-compositor: 4 workspaces$')
+	guest 'dynamic default'
+	wait_more 'edel-compositor: 4 workspaces$' "$fours" || fail "the preset's four workspaces did not come back"
+	state_is 'shown 1 count 4 names ["", "", "", ""]' || fail "the reset did not give four unnamed workspaces: $(value workspace_state)"
+	# Workspaces added here start in layout.tiling's policy, tiling since
+	# the tiling case, and the floated first closed while empty: Super+T
+	# floats the first again, as the cases after this one expect.
+	toggled=$(count 'edel-compositor: windows now (tiling|floating)$')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now (tiling|floating)$' "$toggled" || fail "Super+T did not switch the first workspace's policy"
+	if tr -d '\r' <"$log" | grep -aE 'edel-compositor: windows now (tiling|floating)$' | tail -n 1 | grep -q tiling; then
+		toggled=$(count 'edel-compositor: windows now floating$')
+		python3 ci/qmp.py key meta_l-t
+		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+T did not float the first workspace again"
+	fi
+	echo "PASS: with layout.dynamic_workspaces on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; layout.workspace_names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
@@ -3329,7 +3429,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn workspaces-dynamic
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

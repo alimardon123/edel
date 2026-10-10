@@ -175,6 +175,9 @@ pub enum Kind {
     OneOf(&'static [&'static str]),
     /// One of these whole numbers
     WholeOf(&'static [i64]),
+    /// A whole number from the first to the last, both included
+    /// (M5.2i, the workspace count)
+    WholeFromTo(i64, i64),
     /// A hostname: letters, digits and hyphens, up to 63
     Hostname,
     /// A login shell: an absolute path with no `:` and no control
@@ -283,6 +286,14 @@ pub const KEYS: &[Key] = &[
     // The tray's apps kept in the panel, by their item's Id; the rest wait
     // behind its arrow (M5.9g).
     now("layout.tray_in_panel", Kind::Texts),
+    // The workspaces (M5.2i): their count, whether empty ones come and go
+    // as needed, and their names, the first workspace's first.
+    now(
+        "layout.workspaces",
+        Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
+    ),
+    now("layout.dynamic_workspaces", Kind::Flag),
+    now("layout.workspace_names", Kind::Texts),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),
@@ -487,6 +498,18 @@ pub struct Layout {
     /// behind the tray's arrow (M5.9g).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tray_in_panel: Option<Vec<String>>,
+    /// How many workspaces, 1 to the preset's most (M5.2i); absent is the
+    /// preset's count. Dynamic workspaces ignore it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces: Option<u32>,
+    /// Whether an empty workspace always waits at the end and other empty
+    /// ones close (M5.2i); absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic_workspaces: Option<bool>,
+    /// The workspaces' names, the first workspace's first, an empty text
+    /// meaning no name (M5.2i).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_names: Option<Vec<String>>,
 }
 
 /// One screen on the Displays page, by its connector's name.
@@ -1270,6 +1293,13 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         }),
         (Kind::OneOf(allowed), _) => fail(&or_list(allowed)),
         (Kind::WholeOf(allowed), Value::Integer(n)) if allowed.contains(n) => Ok(value.clone()),
+        (Kind::WholeFromTo(least, most), Value::Integer(n)) if (least..=most).contains(n) => {
+            Ok(value.clone())
+        }
+        (Kind::WholeFromTo(least, most), _) => fail(&trf(
+            "a whole number from {least} to {most}",
+            &[("least", &least.to_string()), ("most", &most.to_string())],
+        )),
         (Kind::WholeOf(allowed), _) => {
             let allowed: Vec<String> = allowed.iter().map(|n| n.to_string()).collect();
             let allowed: Vec<&str> = allowed.iter().map(String::as_str).collect();
@@ -1472,6 +1502,7 @@ mod tests {
             Kind::Pair => Value::Array(vec![Value::Integer(0), Value::Integer(-1)]),
             Kind::OneOf(allowed) => Value::String(allowed[0].into()),
             Kind::WholeOf(allowed) => Value::Integer(allowed[0]),
+            Kind::WholeFromTo(least, _) => Value::Integer(least),
             Kind::Hostname => Value::String("x".into()),
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+W".into()),
@@ -2093,5 +2124,46 @@ font_size = 11
         );
         assert_eq!(page("notifications").unwrap().title, "Notifications");
         assert!(!no_keys("notifications"));
+    }
+
+    #[test]
+    fn the_workspace_keys_are_checked_and_written_one_way() {
+        let text = |line: &str| format!("format = 1\n[layout]\n{line}\n");
+        assert!(check(&text("workspaces = 9")).unwrap().is_empty());
+        assert_eq!(
+            read(&text("workspaces = 3"))
+                .unwrap()
+                .file
+                .layout
+                .workspaces,
+            Some(3)
+        );
+        assert_eq!(
+            check(&text("workspaces = 10")).unwrap(),
+            ["layout.workspaces: expected a whole number from 1 to 9, not 10"]
+        );
+        assert_eq!(
+            check(&text("workspaces = 0")).unwrap(),
+            ["layout.workspaces: expected a whole number from 1 to 9, not 0"]
+        );
+        let refused = set("format = 1\n", "layout.workspaces", "10").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.workspaces: expected a whole number from 1 to 9, not 10"
+        );
+        assert_eq!(
+            set("format = 1\n", "layout.workspaces", "4").unwrap(),
+            "format = 1\n\n[layout]\nworkspaces = 4\n"
+        );
+        assert_eq!(
+            set("format = 1\n", "layout.dynamic_workspaces", "true").unwrap(),
+            "format = 1\n\n[layout]\ndynamic_workspaces = true\n"
+        );
+        let names = set("format = 1\n", "layout.workspace_names", r#"["Mail", ""]"#).unwrap();
+        assert_eq!(
+            texts("layout.workspace_names", None, Some(&names)),
+            Some(vec!["Mail".to_string(), String::new()])
+        );
+        assert!(check(&names).unwrap().is_empty());
     }
 }

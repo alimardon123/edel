@@ -39,6 +39,13 @@ pub enum Act {
     Workspace(usize),
     /// Move the focused window to workspace N, from 0.
     MoveTo(usize),
+    /// Show the workspace after the shown one, or before it (M5.2i).
+    NextWorkspace,
+    PreviousWorkspace,
+    /// Move the focused window to the workspace after the shown one, or
+    /// before it, and show that workspace with it (M5.2i).
+    MoveToNext,
+    MoveToPrevious,
     /// Show or hide shell-ui's launcher (M5.3b).
     Launcher,
     /// Show or hide shell-ui's tray grid, the apps behind the tray's
@@ -68,6 +75,10 @@ impl Act {
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
             "cycle_column_width" => Some(Act::Widen),
+            "next_workspace" => Some(Act::NextWorkspace),
+            "previous_workspace" => Some(Act::PreviousWorkspace),
+            "move_to_next_workspace" => Some(Act::MoveToNext),
+            "move_to_previous_workspace" => Some(Act::MoveToPrevious),
             _ if name.starts_with("focus_window_") => {
                 Direction::parse(&name["focus_window_".len()..]).map(Act::Focus)
             }

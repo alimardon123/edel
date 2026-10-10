@@ -376,7 +376,13 @@ impl Edel {
             }
             Act::Terminal => crate::program::open(self, "foot"),
             Act::Workspace(n) => self.switch_workspace(n),
-            Act::MoveTo(n) => self.move_to_workspace(n),
+            Act::MoveTo(n) => {
+                self.move_to_workspace(n);
+            }
+            Act::NextWorkspace => self.switch_neighbour(true),
+            Act::PreviousWorkspace => self.switch_neighbour(false),
+            Act::MoveToNext => self.move_to_neighbour(true),
+            Act::MoveToPrevious => self.move_to_neighbour(false),
             Act::Launcher => self.show_launcher(),
             Act::Tray => self.show_tray(),
             Act::Switcher => self.switcher_step(false),
