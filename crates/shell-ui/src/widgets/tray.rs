@@ -42,6 +42,12 @@ const CELL: f32 = 30.0;
 const EDGE: f32 = 2.0;
 const ICON: f32 = 22.0;
 
+/// The middle of the arrow along the widget, in logical pixels: where the
+/// grid opens from (M5.9g).
+pub fn arrow_middle() -> f32 {
+    EDGE + CELL / 2.0
+}
+
 /// The arrow's glyph is this share of the panel's glyph size (M5.9g).
 const ARROW_SHARE: f32 = 0.7;
 /// The attention dot's diameter and its distance from a cell's top right

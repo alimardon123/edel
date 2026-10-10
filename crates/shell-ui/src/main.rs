@@ -90,6 +90,7 @@ use crate::osd_card::OsdCard;
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
 use crate::quick_card::QuickCard;
+use crate::tray_card::TrayCard;
 use crate::widgets::{Action, Input, Live};
 
 /// The panels' layer surfaces' namespace, as the compositor's state file
@@ -110,6 +111,8 @@ const BANNER: &str = "edel-notification";
 const CENTRE: &str = "edel-centre";
 /// The volume and brightness pop-up a media key shows (M5.9c).
 const OSD: &str = "edel-osd";
+/// The tray's grid of the apps behind its arrow (M5.9g).
+const TRAY_GRID: &str = "edel-tray";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
 /// The feature that brings it.
@@ -157,6 +160,15 @@ struct Shell {
     centre: Option<CentreCard>,
     /// The volume and brightness pop-up while it shows (M5.9c).
     osd: Option<OsdCard>,
+    /// The tray's grid of the apps behind its arrow while open (M5.9g),
+    /// the number of apps behind the arrow as last logged, and a press on
+    /// a kept icon that may become a drag: its panel, its item's id and
+    /// where it went down.
+    tray_grid: Option<TrayCard>,
+    tray_behind: usize,
+    tray_press: Option<(usize, String, f32, f32)>,
+    /// Whether Shift is held, for Shift+F10 on the tray's grid.
+    shift: bool,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -375,6 +387,10 @@ fn run() -> Result<()> {
         banner: None,
         centre: None,
         osd: None,
+        tray_grid: None,
+        tray_behind: 0,
+        tray_press: None,
+        shift: false,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -808,25 +824,34 @@ impl Shell {
     /// `input` at `x` logical pixels along panel `i`: the widget there,
     /// told how far along it and how wide it is, says what it does.
     fn input(&mut self, i: usize, x: f32, input: impl Fn(f32, f32) -> Input) {
+        if let Some((action, left, width)) = self.action_at(i, x, input) {
+            self.run_action(i, x, action, left, width);
+        }
+    }
+
+    /// The action of the widget at `x` logical pixels along panel `i`, not
+    /// yet run, with the widget's left edge and width: the widget, told how
+    /// far along it and how wide it is, says what it does.
+    fn action_at(
+        &mut self,
+        i: usize,
+        x: f32,
+        input: impl Fn(f32, f32) -> Input,
+    ) -> Option<(Action, f32, f32)> {
         let panel = &self.panels[i];
-        let Some(j) = panel
+        let j = panel
             .places
             .iter()
-            .position(|(left, w)| (*left..left + w).contains(&x))
-        else {
-            return;
-        };
+            .position(|(left, w)| (*left..left + w).contains(&x))?;
         let (Some(widget), Some(look)) = (panel.row.widget(j), &panel.drawn) else {
-            return;
+            return None;
         };
         let shown = look.shown.get(j).map_or("", String::as_str);
         let (left, width) = panel.places[j];
         // A strip as wide as the panel to measure on, as drawing does:
         // where the window list's buttons lie depends on its titles'
         // widths.
-        let Some(mut strip) = Pixmap::new(panel.width * panel.scale, 1) else {
-            return;
-        };
+        let mut strip = Pixmap::new(panel.width * panel.scale, 1)?;
         let mut canvas = widgets::Canvas {
             pixmap: &mut strip,
             tokens: &self.tokens,
@@ -838,28 +863,33 @@ impl Shell {
             dock: panel.style == Style::Dock,
             along_top: panel.edge == Edge::Top,
         };
-        let action = (widget.input)(&mut canvas, shown, input(x - left, width));
+        let action = (widget.input)(&mut canvas, shown, input(x - left, width))?;
+        Some((action, left, width))
+    }
+
+    /// Does `action`, the widget at `x` along panel `i` (`left` and `width`
+    /// as `action_at` gave them).
+    fn run_action(&mut self, i: usize, x: f32, action: Action, left: f32, width: f32) {
         match action {
-            Some(Action::Show(name)) => self.workspaces.show(&name),
-            Some(Action::View(first)) => {
+            Action::Show(name) => self.workspaces.show(&name),
+            Action::View(first) => {
                 self.live.view = Some(first);
                 self.draw_all();
             }
-            Some(Action::Activate(window)) => {
+            Action::Activate(window) => {
                 let seat = self.seat.seats().next();
                 self.toplevels.activate(window, seat.as_ref());
             }
-            Some(Action::Minimize(window)) => self.toplevels.minimize(window),
-            Some(Action::TogglePolicy) => self.link.toggle_policy(),
-            Some(Action::NextKeyboardLayout) => self.link.next_keyboard_layout(),
-            Some(Action::Launcher) => self.toggle_launcher(),
-            Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
-            Some(Action::Quick) => self.toggle_quick(),
-            Some(Action::Centre) => self.toggle_centre(),
-            Some(Action::TrayOpen) => self.toggle_tray_grid(),
-            Some(Action::App(id)) => self.open_app(&id),
-            Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
-            None => {}
+            Action::Minimize(window) => self.toplevels.minimize(window),
+            Action::TogglePolicy => self.link.toggle_policy(),
+            Action::NextKeyboardLayout => self.link.next_keyboard_layout(),
+            Action::Launcher => self.toggle_launcher(),
+            Action::Styles => self.toggle_styles(i, left + width / 2.0),
+            Action::Quick => self.toggle_quick(),
+            Action::Centre => self.toggle_centre(),
+            Action::TrayOpen => self.toggle_tray_grid(i, left + widgets::tray::arrow_middle()),
+            Action::App(id) => self.open_app(&id),
+            Action::Tray(id, menu) => self.tray_call(&id, menu, x),
         }
     }
 
@@ -889,6 +919,7 @@ impl Shell {
             eprintln!("edel-shell-ui: tray: {} items", self.live.tray.len());
         }
         self.live.tray_in_panel = tray_in_panel();
+        self.tray_split_changed();
         self.draw_all();
     }
 
@@ -930,6 +961,7 @@ impl Shell {
         self.close_styles();
         self.close_quick();
         self.close_centre();
+        self.close_tray_grid();
         let (edge, scale) = self
             .panels
             .first()
@@ -1051,6 +1083,7 @@ impl Shell {
         self.close_launcher();
         self.close_quick();
         self.close_centre();
+        self.close_tray_grid();
         let Some(panel) = self.panels.get(i) else {
             return;
         };
@@ -1281,6 +1314,8 @@ impl LayerShellHandler for Shell {
             self.hide_osd();
         } else if self.is_centre(surface.wl_surface()) {
             self.close_centre();
+        } else if self.is_tray_grid(surface.wl_surface()) {
+            self.close_tray_grid();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -1331,6 +1366,12 @@ impl LayerShellHandler for Shell {
                 card.popup_mut().configured();
             }
             return self.draw_centre();
+        }
+        if self.is_tray_grid(surface.wl_surface()) {
+            if let Some(card) = &mut self.tray_grid {
+                card.popup.configured();
+            }
+            return self.draw_tray_grid();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -1393,6 +1434,12 @@ impl CompositorHandler for Shell {
                 card.popup_mut().set_scale(factor);
             }
             return self.draw_centre();
+        }
+        if self.is_tray_grid(surface) {
+            if let Some(card) = &mut self.tray_grid {
+                card.popup.set_scale(factor);
+            }
+            return self.draw_tray_grid();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1460,6 +1507,12 @@ impl CompositorHandler for Shell {
                 card.popup_mut().framed();
             }
             return self.draw_centre();
+        }
+        if self.is_tray_grid(surface) {
+            if let Some(card) = &mut self.tray_grid {
+                card.popup.framed();
+            }
+            return self.draw_tray_grid();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1634,18 +1687,40 @@ impl PointerHandler for Shell {
                 self.centre_pointer(event);
                 continue;
             }
+            if self.is_tray_grid(&event.surface) {
+                self.tray_pointer(event);
+                continue;
+            }
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
             let x = event.position.0 as f32;
             match &event.kind {
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
-                    self.input(i, x, Input::Click);
+                    // A kept tray icon's click waits for the release, so
+                    // the icon can be dragged (M5.9g).
+                    match self.action_at(i, x, Input::Click) {
+                        Some((Action::Tray(id, false), ..)) => {
+                            let y = event.position.1 as f32;
+                            self.tray_press = Some((i, id, x, y));
+                        }
+                        Some((action, left, width)) => {
+                            self.run_action(i, x, action, left, width);
+                        }
+                        None => {}
+                    }
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
                     self.input(i, x, Input::Menu);
                 }
-                PointerEventKind::Leave { .. } => self.scrolled.reset(),
+                PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
+                    let y = event.position.1 as f32;
+                    self.tray_panel_release(i, x, y);
+                }
+                PointerEventKind::Leave { .. } => {
+                    self.scrolled.reset();
+                    self.tray_press = None;
+                }
                 PointerEventKind::Axis {
                     horizontal,
                     vertical,
@@ -1699,6 +1774,8 @@ impl KeyboardHandler for Shell {
             self.close_quick();
         } else if self.is_centre(surface) {
             self.close_centre();
+        } else if self.is_tray_grid(surface) {
+            self.close_tray_grid();
         }
     }
 
@@ -1716,6 +1793,8 @@ impl KeyboardHandler for Shell {
             self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
+        } else if self.tray_grid.is_some() {
+            self.tray_key(event);
         } else {
             self.launcher_key(event);
         }
@@ -1735,6 +1814,8 @@ impl KeyboardHandler for Shell {
             self.centre_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
+        } else if self.tray_grid.is_some() {
+            self.tray_key(event);
         } else {
             self.launcher_key(event);
         }
@@ -1756,10 +1837,11 @@ impl KeyboardHandler for Shell {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        _: Modifiers,
+        modifiers: Modifiers,
         _: RawModifiers,
         _: u32,
     ) {
+        self.shift = modifiers.shift;
     }
 }
 

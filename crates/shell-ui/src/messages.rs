@@ -113,6 +113,14 @@ pub fn dnd_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep do not disturb in.
 pub const DND_NO_HOME: &str = "no home folder to keep do not disturb in; run edel settings set notifications.do_not_disturb=true instead";
 
+/// The tray's apps kept in the panel cannot be written down.
+pub fn tray_not_kept(why: impl Display) -> String {
+    format!("could not keep the tray's apps in the panel: {why}; they stay as they were")
+}
+
+/// There is no home folder to keep the tray's apps in the panel in.
+pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set layout.tray_in_panel='[\"APP\"]' instead, naming the apps by their tray Id";
+
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
     format!("could not keep the {style} tiling style: {why}; it stays as it was")
@@ -252,6 +260,15 @@ mod tests {
     }
 
     #[test]
+    fn a_tray_layout_that_is_not_kept_says_what_stays() {
+        assert_eq!(
+            tray_not_kept("Permission denied (os error 13)"),
+            "could not keep the tray's apps in the panel: Permission denied (os error 13); they stay as they were"
+        );
+        assert!(TRAY_NO_HOME.contains("edel settings set layout.tray_in_panel="));
+    }
+
+    #[test]
     fn a_style_that_is_not_kept_says_the_command_that_works() {
         assert_eq!(
             style_no_home("split"),
@@ -296,6 +313,8 @@ mod tests {
             notifications_not_served("x"),
             notification_not_said("a", "x"),
             dnd_not_kept("x"),
+            tray_not_kept("x"),
+            TRAY_NO_HOME.to_string(),
             update_check_failed("x"),
             stamp_not_kept("a", "x"),
             DND_NO_HOME.to_string(),

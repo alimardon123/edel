@@ -267,6 +267,9 @@ commands() {
 			;;
 		'sni log') say "sni $(tr '\n' ';' </tmp/sni.log)" ;;
 		'sni off') pkill -f '[e]del-testclient --sni' ;;
+		# The tray's key taken out of ci's settings file again (M5.9g), as
+		# the tray case's drag wrote it.
+		'tray reset') as_ci "edel settings reset layout.tray_in_panel" ;;
 		# Now playing (M5.9d): a test MPRIS player on ci's session bus,
 		# printing what quick settings asks of it into a file, read back
 		# with `mpris log`; `mpris off` ends it.

@@ -212,6 +212,9 @@ msgstr ""
 msgid "Later"
 msgstr ""
 
+msgid "Hidden tray icons"
+msgstr ""
+
 msgid "Tray item"
 msgstr ""
 

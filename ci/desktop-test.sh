@@ -2710,32 +2710,78 @@ case_outputs() {
 }
 
 case_tray() {
-	# The tray (M5.2e): shell-ui serves org.kde.StatusNotifierWatcher on
+	# The tray (M5.2e, M5.9g): shell-ui serves org.kde.StatusNotifierWatcher on
 	# the session's bus. `sni` starts the test item (edel-testclient --sni:
-	# titled "edel test", its icon a 22x22 pixmap of #33aa66), which
-	# registers by its object path; shell-ui logs `tray: 1 items`, the
-	# panel's places line gives the tray 34 px (two 2 px margins and one
-	# 30 px cell), and the icon is at the middle of the cell. Kept as
-	# tray.png. A screen reader reads the icon as a button named by the
-	# item's title, a click asks the item to Activate and a right click for
-	# its ContextMenu; when the item's app ends, the icon goes.
+	# titled "edel test", its icon a 22x22 pixmap of #33aa66, its Id
+	# edel-testclient), which registers by its object path. A new app waits
+	# behind the tray's arrow: shell-ui logs `tray: 1 items`, then `tray: 1
+	# behind the arrow`, and the panel's places line gives the tray 34 px
+	# (two 2 px margins and the arrow's 30 px cell). A click on the arrow opens
+	# the grid above the panel, where the icon lies at the middle of its cell
+	# (kept as traygrid.png); dragging it onto the panel keeps it there and
+	# writes layout.tray_in_panel into ci's settings file, and the icon lies
+	# at the arrow's place in a 34 px tray with no arrow. The icon is at the
+	# middle of its cell in the panel, and a screen reader reads it as a
+	# button named by the item's title, a click asks the item to Activate and
+	# a right click for its ContextMenu; when the item's app ends, the icon
+	# goes. The key is taken out again at the end (`tray reset`).
 	panel=$(token panel)
 	python3 ci/qmp.py move 640 300
 	items=$(count 'edel-shell-ui: tray: 1 items')
 	guest 'sni'
 	wait_more 'edel-shell-ui: tray: 1 items' "$items" 30 ||
 		fail "shell-ui did not log tray: 1 items after the test item registered"
+	wait_for 'edel-shell-ui: tray: 1 behind the arrow' ||
+		fail "shell-ui did not log tray: 1 behind the arrow: the new app should wait behind the arrow"
 	wait_for 'edel-shell-ui: panel places .*tray [0-9]+\+34' ||
-		fail "shell-ui's places line does not give the tray 34 px for one item"
+		fail "shell-ui's places line does not give the tray 34 px for the arrow"
 	place=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*tray \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	read -r x w <<-EOF
 		$place
 	EOF
 	[ "$w" = 34 ] || fail "the tray is $w px wide in the last places line, not 34"
-	# The icon's middle, 17 px along the tray in the panel's row, and the
-	# cell's margin beside it.
+	# The arrow, 17 px along the tray in the panel's row, opens the grid.
+	shown=$(count 'edel-shell-ui: tray grid shown, 1 icons')
+	python3 ci/qmp.py click $((x + 17)) 780
+	wait_more 'edel-shell-ui: tray grid shown, 1 icons' "$shown" ||
+		fail "a click on the arrow at $((x + 17)),780 did not open the tray's grid"
+	# The grid's places, in logical pixels from its card's corner, which
+	# the state file's layers line (the card and its shadow's room) places
+	# on screen, as quick settings' are found.
+	i=0
+	until value layers | grep -q 'edel-tray@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no tray grid surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-tray@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-tray@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	grid=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: tray grid places' | tail -n 1)
+	read -r cw ch <<-EOF
+		$(echo "$grid" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
+	EOF
+	read -r ix iy iw ih <<-EOF
+		$(echo "$grid" | sed -n 's/.*icon edel-testclient \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	EOF
+	[ -n "$ch" ] && [ -n "$ih" ] || fail "the tray grid's places line is not what CI reads: $grid"
+	mx=$((sx + (sw - cw) / 2 + ix + iw / 2))
+	my=$((sy + (sh - ch) / 2 + iy + ih / 2))
+	shot traygrid $mx $my 33aa66 >/dev/null ||
+		fail "the test item's icon is not #33aa66 at its middle in the grid, $mx,$my"
+	# Dragged from the grid onto the panel's arrow place: kept in the panel,
+	# the grid closes (no icon is left behind the arrow) and the key is written.
+	python3 ci/qmp.py drag $mx $my $((x + 17)) 780
+	wait_for 'edel-shell-ui: tray: edel-testclient kept in the panel' ||
+		fail "dragging the icon from $mx,$my onto the panel at $((x + 17)),780 did not keep it there"
+	wait_for 'edel-shell-ui: tray grid hidden' || fail "the grid did not close once its icon was kept"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'tray_in_panel = \["edel-testclient"\]' ||
+		fail "ci's settings file does not hold layout.tray_in_panel = [\"edel-testclient\"]: $(value settings_file)"
+	# The kept icon takes the arrow's cell: the tray is still 34 px wide, at x.
 	shot tray $((x + 17)) 780 33aa66 >/dev/null ||
-		fail "the test item's icon is not #33aa66 at its middle, $((x + 17)),780"
+		fail "the kept icon is not #33aa66 at its middle, $((x + 17)),780"
 	shot tray $((x + 3)) 780 "$panel" >/dev/null ||
 		fail "the margin beside the icon, $((x + 3)),780, is not the panel's #$panel"
 	# A screen reader (M5.1d): the icon is the fourth level of AT-SPI's
@@ -2765,7 +2811,16 @@ case_tray() {
 	# The panel closes up: the layout toggle lies where the tray did.
 	shot tray $((x + 17)) 780 '!33aa66' >/dev/null ||
 		fail "the icon is still at $((x + 17)),780 after its app ended"
-	echo "PASS: the test item registered with shell-ui's watcher and its #33aa66 icon lay at $((x + 17)),780 in a 34 px tray, AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, and the icon went when its app ended"
+	# The key taken out again, as ci's file had none before the test.
+	ran='DESKTOP-TEST: ran tray reset: 0'
+	guest 'tray reset'
+	wait_for "$ran" || fail "edel settings reset layout.tray_in_panel did not run as ci in the VM"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'tray_in_panel' &&
+		fail "ci's settings file still holds layout.tray_in_panel after tray reset: $(value settings_file)"
+	echo "PASS: the test item first waited behind the arrow, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {

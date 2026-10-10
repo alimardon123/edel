@@ -267,6 +267,7 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_centre();
+        self.close_tray_grid();
         // The pop-up's level would show over the card, so it goes.
         self.hide_osd();
         let Some(panel) = self
