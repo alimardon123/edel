@@ -378,6 +378,7 @@ impl Edel {
             Act::Workspace(n) => self.switch_workspace(n),
             Act::MoveTo(n) => self.move_to_workspace(n),
             Act::Launcher => self.show_launcher(),
+            Act::Tray => self.show_tray(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
         }

@@ -41,6 +41,9 @@ pub enum Act {
     MoveTo(usize),
     /// Show or hide shell-ui's launcher (M5.3b).
     Launcher,
+    /// Show or hide shell-ui's tray grid, the apps behind the tray's
+    /// arrow, with the keyboard on them (M5.9h).
+    Tray,
     /// The next window in the switcher, held open while the keys'
     /// modifiers are (M5.3c); with Shift as well, the one before.
     Switcher,
@@ -57,6 +60,7 @@ impl Act {
         match name {
             "close_window" => Some(Act::Close),
             "open_launcher" => Some(Act::Launcher),
+            "show_tray" => Some(Act::Tray),
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),

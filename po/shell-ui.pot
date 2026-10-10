@@ -284,6 +284,9 @@ msgstr ""
 msgid "Focused window: {title}"
 msgstr ""
 
+msgid "Hidden icons ({count})"
+msgstr ""
+
 msgid "Tray: {names}"
 msgstr ""
 
@@ -291,9 +294,6 @@ msgid "Tray: {count} hidden"
 msgstr ""
 
 msgid "Tray: {names}, {count} hidden"
-msgstr ""
-
-msgid "Hidden icons ({count})"
 msgstr ""
 
 msgid "{title} (focused)"

@@ -42,3 +42,4 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `move_window_up` | `Super+Shift+Up` | Swap the focused window with the one above it, when tiled (M5.16a) |  |
 | `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled (M5.16a) |  |
 | `cycle_column_width` | `Super+R` | Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c) |  |
+| `show_tray` | `Super+B` | Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h) |  |

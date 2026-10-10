@@ -551,6 +551,9 @@ msgstr ""
 msgid "Close button"
 msgstr ""
 
+msgid "Tray"
+msgstr ""
+
 msgid "Resolution"
 msgstr ""
 
@@ -786,6 +789,18 @@ msgid "Choose a settings file"
 msgstr ""
 
 msgid "could not write {path}: {why}; choose a folder you can write to"
+msgstr ""
+
+msgid "No app has put an icon in the tray yet"
+msgstr ""
+
+msgid "In the panel"
+msgstr ""
+
+msgid "Behind the arrow"
+msgstr ""
+
+msgid "Its icon's name: {app}"
 msgstr ""
 
 msgid "Running now"

@@ -49,6 +49,9 @@ pub struct Popup<V> {
     /// for its frame, as the panel's does.
     waiting: bool,
     drawn: Option<(V, u32)>,
+    /// Takes no clicks at all (the tray's tooltip, M5.9h): its input
+    /// region is empty, so the pointer goes on to what lies under it.
+    passive: bool,
 }
 
 impl<V: Clone + PartialEq> Popup<V> {
@@ -84,6 +87,7 @@ impl<V: Clone + PartialEq> Popup<V> {
             ready: false,
             waiting: false,
             drawn: None,
+            passive: false,
         };
         popup.set_size(&shell.compositor);
         Some(popup)
@@ -96,10 +100,11 @@ impl<V: Clone + PartialEq> Popup<V> {
         let room = self.room;
         self.surface.set_size(w + 2 * room, h + 2 * room);
         if let Ok(region) = Region::new(compositor) {
-            if self.cards.is_empty() {
+            // A passive surface adds nothing: its region stays empty.
+            if !self.passive && self.cards.is_empty() {
                 region.add(room as i32, room as i32, w as i32, h as i32);
             }
-            for c in &self.cards {
+            for c in self.cards.iter().filter(|_| !self.passive) {
                 let (x, y, w, h) = c.rect.device(1.0);
                 region.add(
                     room as i32 + x as i32,
@@ -133,6 +138,13 @@ impl<V: Clone + PartialEq> Popup<V> {
             self.cards = cards;
             self.set_size(compositor);
         }
+    }
+
+    /// Makes the surface take no clicks at all, as the tray's tooltip does
+    /// (M5.9h): the pointer goes on to what lies under it.
+    pub fn set_no_input(&mut self, compositor: &CompositorState) {
+        self.passive = true;
+        self.set_size(compositor);
     }
 
     /// The card's size now, logical pixels: what [`Popup::resize`] last

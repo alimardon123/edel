@@ -28,6 +28,7 @@ mod sound;
 mod status;
 mod style;
 mod system;
+mod tray;
 mod updates;
 mod users;
 mod widgets;

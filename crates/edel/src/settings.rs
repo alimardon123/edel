@@ -822,6 +822,30 @@ pub fn texts(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<V
     }
 }
 
+/// The apps kept in the panel after `app` is kept (appended, once) or taken
+/// out of it (M5.9h): the one rule the panel's drag and Settings' Tray card
+/// both follow.
+pub fn tray_list_with(current: &[String], app: &str, keep: bool) -> Vec<String> {
+    let mut list = current.to_vec();
+    if keep {
+        if !list.iter().any(|a| a == app) {
+            list.push(app.to_string());
+        }
+    } else {
+        list.retain(|a| a != app);
+    }
+    list
+}
+
+/// The value to write for the tray list `list` in the person's file, as a
+/// TOML array; none when `list` is what applies without the person's file
+/// (the machine's, or none), since writers never write a default (ADR-008).
+pub fn tray_value(list: &[String], machine: Option<&str>) -> Option<String> {
+    let without = texts(TRAY_IN_PANEL, machine, None).unwrap_or_default();
+    (list != without.as_slice())
+        .then(|| Value::Array(list.iter().map(|a| Value::String(a.clone())).collect()).to_string())
+}
+
 /// `key`'s value as a flag, the person's file over the machine's; none
 /// when neither sets it, or what they say is not `true` or `false`.
 pub fn flag(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<bool> {
@@ -1945,6 +1969,41 @@ font_size = 11
             );
         }
     }
+    #[test]
+    fn keeping_appends_once_and_taking_out_removes() {
+        let now = vec!["nm-applet".to_string()];
+        assert_eq!(
+            tray_list_with(&now, "blueman", true),
+            vec!["nm-applet".to_string(), "blueman".to_string()]
+        );
+        assert_eq!(
+            tray_list_with(&now, "nm-applet", true),
+            now,
+            "no duplicates"
+        );
+        assert!(tray_list_with(&now, "nm-applet", false).is_empty());
+        assert_eq!(tray_list_with(&now, "other", false), now);
+    }
+
+    #[test]
+    fn the_list_is_written_as_toml_that_reads_back_as_it_was() {
+        let list = vec!["plain".to_string(), "say \"hi\" \\ there".to_string()];
+        let value = tray_value(&list, None).expect("a list the machine does not give is written");
+        let text = format!("format = 1\n[layout]\ntray_in_panel = {value}\n");
+        assert_eq!(texts(TRAY_IN_PANEL, Some(text.as_str()), None), Some(list));
+    }
+
+    #[test]
+    fn a_list_the_machine_already_gives_is_not_written() {
+        let machine = "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\"]\n";
+        let same = vec!["nm-applet".to_string()];
+        assert_eq!(tray_value(&same, Some(machine)), None);
+        // Taking the machine's app out is a choice, written as an empty list.
+        assert_eq!(tray_value(&[], Some(machine)), Some("[]".to_string()));
+        // With nothing from the machine, no list at all is what applies.
+        assert_eq!(tray_value(&[], None), None);
+    }
+
     #[test]
     fn the_tray_lists_are_read_from_the_person_over_the_machine() {
         let machine =

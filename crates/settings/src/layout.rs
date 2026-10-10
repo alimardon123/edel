@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{icon, preview, rows};
+use crate::{icon, preview, rows, tray};
 
 const INTRO: &str = n_(
     "One preset sets up the whole desktop: its panels, where windows open \
@@ -113,6 +113,8 @@ struct Ui {
     quiet: Cell<bool>,
     /// Kept so the page follows the files while it is open.
     monitors: Vec<gio::FileMonitor>,
+    /// The Tray card, which follows the files too (M5.9h).
+    tray: Rc<tray::Card>,
 }
 
 impl Ui {
@@ -132,6 +134,7 @@ impl Ui {
         self.quiet.set(false);
         self.changes
             .show(files.own_layout() != *self.before.borrow());
+        self.tray.show();
         self.bar.show(
             now.window_buttons == "left",
             [now.minimize_button, now.maximize_button, now.close_button],
@@ -268,6 +271,10 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         ));
     }
 
+    // The tray's apps (M5.9h): kept in the panel or behind its arrow, as the
+    // panel's drag keeps them, read from the bus when the page opens.
+    let tray = tray::card(&content, &problem);
+
     let mut monitors = Vec::new();
     for path in std::iter::once(&files.machine).chain(files.person.as_ref()) {
         let file = gio::File::for_path(path);
@@ -287,8 +294,10 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         before: std::cell::RefCell::new(files.own_layout()),
         quiet: Cell::new(false),
         monitors,
+        tray: tray.clone(),
     });
     ui.update();
+    tray.refresh();
     for monitor in &ui.monitors {
         let weak = Rc::downgrade(&ui);
         monitor.connect_changed(move |_, _, _, _| {

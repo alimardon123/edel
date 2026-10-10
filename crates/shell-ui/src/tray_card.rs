@@ -3,7 +3,9 @@
 //! own, hung on the arrow, with the keyboard. An icon dragged from it onto
 //! the panel is kept there, and an icon dragged off the panel goes behind
 //! the arrow again; both write `layout.tray_in_panel` with
-//! `edel::settings::write`, as do-not-disturb does.
+//! `edel::settings::write`, as do-not-disturb does, and the list's rule is
+//! `edel::settings::tray_list_with` and `tray_value`, which Settings' Tray
+//! card follows too (M5.9h).
 
 use edel::i18n::tr;
 use edel::places;
@@ -17,7 +19,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity};
 
 use crate::popup::Popup;
 use crate::trayview::{self, Act, Key, Part, Step};
-use crate::widgets::tray::split;
+use crate::widgets::tray::{WIDGET as TRAY, arrow_middle, split};
 use crate::{
     MARGIN, SETTINGS, Shell, TRAY_GRID, a11y, fillets, messages, paint, quick, settings_texts,
 };
@@ -51,30 +53,6 @@ fn moved(from: (f32, f32), to: (f32, f32)) -> bool {
     dx * dx + dy * dy > DRAG * DRAG
 }
 
-/// The apps kept in the panel after `app` is kept (appended, once) or
-/// taken out of it.
-fn kept_list(current: &[String], app: &str, keep: bool) -> Vec<String> {
-    let mut list = current.to_vec();
-    if keep {
-        if !list.iter().any(|a| a == app) {
-            list.push(app.to_string());
-        }
-    } else {
-        list.retain(|a| a != app);
-    }
-    list
-}
-
-/// `list` as a TOML array of strings, quotes and backslashes escaped.
-fn toml_list(list: &[String]) -> String {
-    toml::Value::Array(
-        list.iter()
-            .map(|a| toml::Value::String(a.clone()))
-            .collect(),
-    )
-    .to_string()
-}
-
 impl Shell {
     // ---- The grid's surface ----
 
@@ -83,6 +61,8 @@ impl Shell {
     /// it does nothing. Opening closes the other cards and pop-ups as
     /// quick settings does.
     pub fn toggle_tray_grid(&mut self, i: usize, at: f32) {
+        // A tooltip over the arrow goes as the grid comes (M5.9h).
+        self.hide_tooltip();
         if self.tray_grid.is_some() {
             return self.close_tray_grid();
         }
@@ -162,6 +142,39 @@ impl Shell {
         // The arrow lights while the grid is open.
         self.live.tray_open = true;
         self.draw_all();
+    }
+
+    /// The tray's key (Super+B unless `[shortcuts]` says otherwise, M5.9h):
+    /// the grid of the apps behind the arrow opens with the keyboard on its
+    /// first app, or closes if it is open. With nothing behind the arrow,
+    /// or no tray on the panels, nothing opens.
+    pub fn tray_key_pressed(&mut self) {
+        if self.tray_grid.is_some() {
+            return self.close_tray_grid();
+        }
+        // The first panel holding the tray, and the tray's left edge there.
+        let tray = self.panels.iter().enumerate().find_map(|(i, panel)| {
+            let j = (0..panel.places.len())
+                .find(|&j| panel.row.widget(j).is_some_and(|w| w.name == TRAY.name))?;
+            Some((i, panel.places[j].0))
+        });
+        let behind = !split(&self.live).1.is_empty();
+        match tray {
+            Some((i, left)) if behind => {
+                self.toggle_tray_grid(i, left + arrow_middle());
+            }
+            _ => {
+                eprintln!("edel-shell-ui: tray key, but no app waits behind the arrow");
+                return;
+            }
+        }
+        // The keyboard starts on the first app.
+        let Some(card) = &mut self.tray_grid else {
+            return;
+        };
+        card.view.focus = Some(Part::Icon(0));
+        self.draw_tray_grid();
+        eprintln!("edel-shell-ui: tray grid opened from the keyboard");
     }
 
     /// Closes the grid and lets go of its keyboard and buffers.
@@ -450,10 +463,9 @@ impl Shell {
     /// key, and what applies without the person's file is left out, as
     /// writers never write a default (ADR-008).
     pub fn keep_in_panel(&mut self, app: &str, keep: bool) {
-        let list = kept_list(&self.live.tray_in_panel, app, keep);
+        let list = settings::tray_list_with(&self.live.tray_in_panel, app, keep);
         let (machine, _) = settings_texts();
-        let without = settings::texts(TRAY_IN_PANEL, machine.as_deref(), None).unwrap_or_default();
-        let value = (list != without).then(|| toml_list(&list));
+        let value = settings::tray_value(&list, machine.as_deref());
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, TRAY_IN_PANEL, value.as_deref()) {
                 Ok(()) => {
@@ -473,6 +485,19 @@ impl Shell {
             None => eprintln!("edel-shell-ui: {}", messages::TRAY_NO_HOME),
         }
         self.draw_all();
+    }
+
+    /// The settings files changed (M5.9h): what the panel reads from them
+    /// is read again, so a change by Settings or `edel settings set` shows
+    /// at once. shell-ui's own writes come back here too and change
+    /// nothing more.
+    pub fn settings_changed(&mut self) {
+        let now = crate::tray_in_panel();
+        if now != self.live.tray_in_panel {
+            self.live.tray_in_panel = now;
+            self.tray_split_changed();
+            self.draw_all();
+        }
     }
 
     /// The tray's split changed: the number behind the arrow is logged when
@@ -513,33 +538,6 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn keeping_appends_once_and_taking_out_removes() {
-        let now = vec!["nm-applet".to_string()];
-        assert_eq!(
-            kept_list(&now, "blueman", true),
-            vec!["nm-applet".to_string(), "blueman".to_string()]
-        );
-        assert_eq!(kept_list(&now, "nm-applet", true), now, "no duplicates");
-        assert!(kept_list(&now, "nm-applet", false).is_empty());
-        assert_eq!(kept_list(&now, "other", false), now);
-    }
-
-    #[test]
-    fn the_list_is_written_as_toml_that_reads_back_as_it_was() {
-        let list = vec!["plain".to_string(), "say \"hi\" \\ there".to_string()];
-        let text = format!("v = {}", toml_list(&list));
-        let read: toml::Table = text.parse().expect("valid TOML");
-        let back: Vec<String> = read["v"]
-            .as_array()
-            .expect("an array")
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect();
-        assert_eq!(back, list);
-        assert_eq!(toml_list(&[]), "[]");
-    }
 
     #[test]
     fn a_drag_is_more_than_six_pixels() {
