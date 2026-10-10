@@ -303,6 +303,30 @@ pub fn duration_text(minutes: u32) -> String {
     }
 }
 
+/// The same length short, where room is small, as quick settings' battery
+/// shows it beside the charge: `<1 min`, `41 min`, `4 h 10 min`, `2 h`,
+/// rounded as [`duration_text`] rounds.
+pub fn duration_short(minutes: u32) -> String {
+    if minutes == 0 {
+        return tr("<1 min").to_string();
+    }
+    let min = |n: u32| trf("{n} min", &[("n", &n.to_string())]);
+    if minutes < 60 {
+        return min(minutes);
+    }
+    let rounded = (minutes + 2) / 5 * 5;
+    let (hours, rest) = (rounded / 60, rounded % 60);
+    let h = trf("{n} h", &[("n", &hours.to_string())]);
+    if rest == 0 {
+        h
+    } else {
+        trf(
+            "{hours} {minutes}",
+            &[("hours", &h), ("minutes", &min(rest))],
+        )
+    }
+}
+
 /// What the panel's quick settings say under the battery's icon (M5.9a),
 /// as the mockups' "82 percent, 4 h 10 min left", in [`duration_text`]'s
 /// words: how full it is, then how long it lasts, or takes to fill, when
@@ -591,6 +615,14 @@ Daemon:
         assert_eq!(duration_text(324), "5 hours 25 minutes");
         assert_eq!(duration_text(120), "2 hours");
         assert_eq!(duration_text(121), "2 hours");
+    }
+
+    #[test]
+    fn a_short_duration_fits_a_small_room() {
+        assert_eq!(duration_short(0), "<1 min");
+        assert_eq!(duration_short(41), "41 min");
+        assert_eq!(duration_short(250), "4 h 10 min");
+        assert_eq!(duration_short(120), "2 h");
     }
 
     #[test]

@@ -71,22 +71,19 @@ msgstr ""
 msgid "{newer} newer, {older} older"
 msgstr ""
 
+msgid "Do not disturb"
+msgstr ""
+
 msgid "Clear all"
 msgstr ""
 
 msgid "No new notifications"
 msgstr ""
 
-msgid "Do not disturb"
-msgstr ""
-
 msgid "Previous month"
 msgstr ""
 
 msgid "Next month"
-msgstr ""
-
-msgid "Silence banners"
 msgstr ""
 
 msgid "Type to search"
@@ -119,6 +116,12 @@ msgstr ""
 msgid "Dark style"
 msgstr ""
 
+msgid "Airplane"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
 msgid "On"
 msgstr ""
 
@@ -134,16 +137,22 @@ msgstr ""
 msgid "{title} settings"
 msgstr ""
 
-msgid "Output: {name}"
+msgid "Sound: outputs"
 msgstr ""
 
-msgid "Mute"
+msgid "Sound settings"
 msgstr ""
 
 msgid "Volume"
 msgstr ""
 
 msgid "Settings"
+msgstr ""
+
+msgid "{percent}%"
+msgstr ""
+
+msgid "charging"
 msgstr ""
 
 msgid "Quick settings"

@@ -1,14 +1,18 @@
 //! The notification centre (M5.9b): what a click on the panel's clock
-//! opens, one card holding, from the top, a heading with Clear all, the
+//! opens, two cards holding the notifications and the month. The first
+//! card has a heading with a Do not disturb button (a moon) and, when two
+//! or more notifications lie in the list, Clear all; below it the
 //! notifications newest first, each a card of its own drawn as
-//! `notice.rs` draws every notification, a Do not disturb row with its
-//! switch, and a month calendar (the month and year with buttons to the
-//! month before and after, the weekdays' letters from Monday, the days,
-//! today in the accent). [`layout`] is the one function that says where
-//! everything lies, so a redesign of the centre replaces it alone; on a
-//! Compact screen the card is a sheet as wide as the screen and every
-//! target is at least 44 px. The list shows as many whole cards as fit a
-//! budget and scrolls by the wheel; a count says how many lie beyond.
+//! `notice.rs` draws every notification. The second card is the month
+//! calendar: the month and year with buttons to the month before and
+//! after, the weekdays' letters from Monday, the days, today in the accent.
+//! The two cards lie [`CARD_GAP`] apart on one surface; the room between
+//! them takes no clicks ([`cards`] tells the popup where they are).
+//! [`layout`] is the one function that says where everything lies, so a
+//! redesign of the centre replaces it alone; on a Compact screen the card
+//! is a sheet as wide as the screen and every target is at least 44 px.
+//! The list shows as many whole cards as fit a budget and scrolls by the
+//! wheel; a count says how many lie beyond.
 //!
 //! Plain data and drawing, tested without a display: [`view`] says what
 //! shows, [`layout`] where, [`paint`] draws, [`hit`] and [`key`] turn the
@@ -26,14 +30,27 @@ use crate::calendar::{self, Month, Ymd};
 use crate::notice::{self, Hit, Placed};
 use crate::notify::Notification;
 use crate::paint::{Face, Text, fill, mix, outline};
-use crate::popup::{self, Rect, dim, icon_in, knob, veil};
+use crate::popup::{self, Card, Rect, dim, icon_in, veil};
 use crate::quick::Key;
 
-/// The size of the words the centre sets: the heading's, the rows' and
-/// the small ones' offsets from the tokens' `panel_text`.
+/// The corner radius of both cards, logical pixels.
+pub const RADIUS: f32 = 30.0;
+/// The room between the two cards, logical pixels.
+pub const CARD_GAP: f32 = 10.0;
+/// The room round Clear all's label inside its pill, each side.
+const CLEAR_PAD: f32 = 12.0;
+/// Between Clear all and the Do not disturb button, logical pixels.
+const HEAD_GAP: f32 = 8.0;
+/// The room the month's name keeps from the card's edge, to line up with
+/// the heading.
+const TITLE_INDENT: f32 = 4.0;
+
+/// The size of the words the centre sets, logical pixels: the titles',
+/// the body's and the small ones' (Clear all, the count), from the
+/// tokens' `panel_text`.
 pub fn sizes(tokens: &Tokens) -> (f32, f32, f32) {
     let text = tokens.panel_text_size as f32;
-    (text + 1.0, text, text - 1.0)
+    (text + 2.0, text - 0.5, text - 1.5)
 }
 
 /// What the open centre keeps besides the list: its width, whether
@@ -52,7 +69,8 @@ pub struct State {
 }
 
 /// Where a pointer or the keyboard can be: a part of the shown
-/// notification `i`, Clear all, the Do not disturb row, or a month button.
+/// notification `i`, Clear all, the Do not disturb button (the moon), or
+/// a month button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Part {
     Clear,
@@ -76,7 +94,7 @@ pub struct View {
     pub newer: usize,
     pub older: usize,
     pub dnd: bool,
-    /// The width of the Clear all button, logical pixels.
+    /// The width of the Clear all pill, logical pixels.
     pub clear: f32,
     pub month: Month,
     pub today: Ymd,
@@ -113,59 +131,60 @@ pub enum Act {
 /// Compact screen.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Metrics {
+    /// The card's padding, all round its contents
     pub pad: f32,
-    /// Between the card's sections
-    pub section: f32,
-    pub header: f32,
-    /// The Do not disturb row, its circle and its switch
+    /// The heading row and the month's row: the moon button is as big as
+    /// a row is high, and so are the month's buttons
     pub row: f32,
-    pub circle: f32,
-    pub switch: (f32, f32),
-    /// A month button's square, a weekday row, a week
-    pub nav: f32,
-    pub weekday: f32,
-    pub day: f32,
-    /// What the list of notifications may take, and the room between
-    /// its cards
-    pub list: f32,
+    /// Clear all's pill
+    pub pill: f32,
+    /// Between the heading and the list, and between the list and nothing
+    pub section: f32,
+    /// Between two notifications
     pub between: f32,
-    /// The line saying how many lie beyond, and the empty list's
+    /// The line saying how many lie beyond, and the empty list's row
     pub more: f32,
     pub empty: f32,
+    /// The weekdays' row, a week of days, the room between two weeks
+    pub weekday: f32,
+    pub day: f32,
+    pub week_gap: f32,
+    /// Today's disc
+    pub today: f32,
+    /// What the list of notifications may take
+    pub list: f32,
 }
 
 pub fn metrics(compact: bool) -> Metrics {
     if compact {
         Metrics {
             pad: 14.0,
-            section: 12.0,
-            header: 44.0,
-            row: 60.0,
-            circle: 36.0,
-            switch: (48.0, 28.0),
-            nav: 44.0,
-            weekday: 28.0,
-            day: 40.0,
-            list: 230.0,
+            row: 44.0,
+            pill: 44.0,
+            section: 10.0,
             between: 8.0,
             more: 28.0,
-            empty: 56.0,
+            empty: 52.0,
+            weekday: 28.0,
+            day: 40.0,
+            week_gap: 2.0,
+            today: 36.0,
+            list: 320.0,
         }
     } else {
         Metrics {
-            pad: 12.0,
+            pad: 16.0,
+            row: 28.0,
+            pill: 26.0,
             section: 10.0,
-            header: 32.0,
-            row: 52.0,
-            circle: 30.0,
-            switch: (38.0, 22.0),
-            nav: 28.0,
-            weekday: 24.0,
-            day: 34.0,
-            list: 250.0,
             between: 8.0,
             more: 22.0,
             empty: 52.0,
+            weekday: 20.0,
+            day: 30.0,
+            week_gap: 2.0,
+            today: 30.0,
+            list: 280.0,
         }
     }
 }
@@ -176,13 +195,16 @@ pub fn width_for(screen: u32) -> (u32, bool) {
     crate::banner::width_for(screen)
 }
 
-/// The room round the Clear all label inside its button, each side.
-const CLEAR_PAD: f32 = 10.0;
+/// Whether Clear all shows: when two or more notifications lie in the
+/// list, shown or not.
+pub fn shows_clear(view: &View) -> bool {
+    view.items.len() + view.newer + view.older >= 2
+}
 
 /// The centre showing `list` as `state` has it: the notifications from
 /// `state.first` that fit the list's budget (at least one), each as
 /// `notice::item` makes them with `measure`; `clear` is the width of the
-/// words Clear all at the row's size and face.
+/// words Clear all at their size and face.
 pub fn view(
     state: &State,
     list: &[Notification],
@@ -242,20 +264,19 @@ pub fn more(view: &View) -> Option<String> {
 /// corner.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
+    /// The whole surface: the two cards and the room between them.
     pub size: (u32, u32),
     pub metrics: Metrics,
+    /// The notifications card and the calendar card, from the top
+    pub boxes: [Rect; 2],
     pub title: Rect,
     pub clear: Option<Rect>,
     /// The words of an empty list
     pub empty: Option<Rect>,
     pub cards: Vec<Placed>,
     pub more: Option<Rect>,
-    /// The hairlines above the Do not disturb row and above the calendar
-    pub rules: [f32; 2],
+    /// The Do not disturb button, the moon
     pub dnd: Rect,
-    pub circle: Rect,
-    pub words: Rect,
-    pub switch: Rect,
     pub month: Rect,
     pub prev: Rect,
     pub next: Rect,
@@ -264,21 +285,27 @@ pub struct Layout {
 }
 
 /// Where the parts of `view` lie: the one function that lays the centre
-/// out.
+/// out. The notifications card is `boxes[0]`, the calendar `boxes[1]`,
+/// [`CARD_GAP`] apart.
 pub fn layout(view: &View) -> Layout {
     let m = metrics(view.compact);
     let w = view.width as f32;
     let inner = w - 2.0 * m.pad;
-    let mut y = m.pad;
-    let clear = (!view.items.is_empty())
-        .then(|| Rect::new(w - m.pad - view.clear, y, view.clear, m.header));
-    let title = Rect::new(
-        m.pad + 4.0,
-        y,
-        inner - 4.0 - clear.map_or(0.0, |c| c.w),
-        m.header,
-    );
-    y += m.header;
+    // The heading row, from the right: the moon, then Clear all.
+    let moon = Rect::new(w - m.pad - m.row, m.pad, m.row, m.row);
+    let clear = shows_clear(view).then(|| {
+        Rect::new(
+            moon.x - HEAD_GAP - view.clear,
+            m.pad + (m.row - m.pill) / 2.0,
+            view.clear,
+            m.pill,
+        )
+    });
+    let title_x = m.pad + TITLE_INDENT;
+    let title_right = clear.unwrap_or(moon).x - HEAD_GAP;
+    let title = Rect::new(title_x, m.pad, (title_right - title_x).max(0.0), m.row);
+    // The notifications, or what an empty list says.
+    let mut y = m.pad + m.row + m.section;
     let mut cards = Vec::new();
     let mut empty = None;
     let mut more_rect = None;
@@ -299,52 +326,31 @@ pub fn layout(view: &View) -> Layout {
             y += 2.0 + m.more;
         }
     }
-    y += m.section;
-    let rule_a = y;
-    y += 1.0 + m.section / 2.0;
-    let dnd = Rect::new(m.pad, y, inner, m.row);
-    let circle = Rect::new(
-        m.pad + 4.0,
-        y + (m.row - m.circle) / 2.0,
-        m.circle,
-        m.circle,
-    );
-    let switch = Rect::new(
-        w - m.pad - 4.0 - m.switch.0,
-        y + (m.row - m.switch.1) / 2.0,
-        m.switch.0,
-        m.switch.1,
-    );
-    let words = Rect::new(
-        circle.right() + 10.0,
-        y,
-        switch.x - 10.0 - (circle.right() + 10.0),
-        m.row,
-    );
-    y += m.row + m.section / 2.0;
-    let rule_b = y;
-    y += 1.0 + m.section / 2.0;
-    let next = Rect::new(w - m.pad - m.nav, y, m.nav, m.nav);
-    let prev = Rect::new(next.x - 4.0 - m.nav, y, m.nav, m.nav);
-    let month = Rect::new(m.pad + 4.0, y, prev.x - m.pad - 8.0, m.nav);
-    y += m.nav + 2.0;
+    let first = Rect::new(0.0, 0.0, w, y + m.pad);
+    // The calendar card: the month row, the weekdays, the days.
+    let top = first.y + first.h + CARD_GAP;
+    let mut y = top + m.pad;
+    let next = Rect::new(w - m.pad - m.row, y, m.row, m.row);
+    let prev = Rect::new(next.x - 4.0 - m.row, y, m.row, m.row);
+    let month = Rect::new(title_x, y, (prev.x - 8.0 - title_x).max(0.0), m.row);
+    y += m.row + 4.0;
     let weekdays = Rect::new(m.pad, y, inner, m.weekday);
     y += m.weekday;
-    let grid = Rect::new(m.pad, y, inner, m.day * calendar::WEEKS as f32);
-    y += grid.h + m.pad;
+    let weeks = calendar::WEEKS as f32;
+    let grid_h = weeks * m.day + (weeks - 1.0) * m.week_gap;
+    let grid = Rect::new(m.pad, y, inner, grid_h);
+    y += grid_h + m.pad;
+    let second = Rect::new(0.0, top, w, y - top);
     Layout {
-        size: (view.width, y.ceil() as u32),
+        size: (view.width, (second.y + second.h).ceil() as u32),
         metrics: m,
+        boxes: [first, second],
         title,
         clear,
         empty,
         cards,
         more: more_rect,
-        rules: [rule_a, rule_b],
-        dnd,
-        circle,
-        words,
-        switch,
+        dnd: moon,
         month,
         prev,
         next,
@@ -353,25 +359,33 @@ pub fn layout(view: &View) -> Layout {
     }
 }
 
+/// The two cards as the popup holds them, the notifications card first.
+pub fn cards(layout: &Layout) -> Vec<Card> {
+    layout
+        .boxes
+        .iter()
+        .map(|&rect| Card {
+            rect,
+            radius: RADIUS,
+        })
+        .collect()
+}
+
 /// Where the card's parts lie, as one log line CI reads: `card WxH,
-/// clear X+Y+WxH, dnd X+Y+WxH, prev ..., next ...` and, for each
-/// notification shown, `notificationN X+Y+WxH`, logical pixels from the
-/// card's corner.
+/// clear X+Y+WxH, dnd X+Y+WxH, notificationN X+Y+WxH, closeN ..., prev
+/// ..., next ...`, logical pixels from the card's corner.
 pub fn places(layout: &Layout) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut parts = vec![format!("card {}x{}", layout.size.0, layout.size.1)];
     if let Some(clear) = layout.clear {
         parts.push(format!("clear {}", at(clear)));
     }
+    parts.push(format!("dnd {}", at(layout.dnd)));
     for (i, card) in layout.cards.iter().enumerate() {
         parts.push(format!("notification{i} {}", at(card.whole)));
         parts.push(format!("close{i} {}", at(card.close)));
     }
-    for (name, rect) in [
-        ("dnd", layout.dnd),
-        ("prev", layout.prev),
-        ("next", layout.next),
-    ] {
+    for (name, rect) in [("prev", layout.prev), ("next", layout.next)] {
         parts.push(format!("{name} {}", at(rect)));
     }
     parts.join(", ")
@@ -417,12 +431,13 @@ pub fn press(view: &View, part: Part) -> Option<Act> {
 
 // ---- Keys ----
 
-/// What a keyboard can reach, in Tab's order: Clear all, then each
-/// notification's body (when the app gave a `default` action), buttons
-/// and close button, then Do not disturb and the two month buttons.
+/// What a keyboard can reach, in Tab's order: Do not disturb, Clear all
+/// when shown, then each notification's body (when the app gave a
+/// `default` action), buttons and close button, then the two month
+/// buttons.
 pub fn ring(view: &View) -> Vec<Part> {
-    let mut ring = Vec::new();
-    if !view.items.is_empty() {
+    let mut ring = vec![Part::Dnd];
+    if shows_clear(view) {
         ring.push(Part::Clear);
     }
     for (i, item) in view.items.iter().enumerate() {
@@ -432,7 +447,7 @@ pub fn ring(view: &View) -> Vec<Part> {
         ring.extend((0..item.buttons.len()).map(|a| Part::Card(i, Hit::Button(a))));
         ring.push(Part::Card(i, Hit::Close));
     }
-    ring.extend([Part::Dnd, Part::Prev, Part::Next]);
+    ring.extend([Part::Prev, Part::Next]);
     ring
 }
 
@@ -466,8 +481,10 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> (Option<Part>, Option<
 // ---- What a screen reader reads ----
 
 /// The card's parts as a screen reader finds them, flat and in Tab's
-/// order, each notification an alert followed by its buttons and close
-/// button; the index of the one holding the keyboard.
+/// order: the heading, the Do not disturb toggle, Clear all, each
+/// notification as an alert followed by its buttons and close button,
+/// then the month's heading and buttons; the index of the one holding the
+/// keyboard.
 pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
     let rect = |r: Rect| {
         accesskit::Rect::new(
@@ -502,6 +519,16 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
             None,
         ),
         None,
+    );
+    put(
+        &mut out,
+        plain(
+            accesskit::Role::Switch,
+            tr("Do not disturb").to_string(),
+            layout.dnd,
+            Some(view.dnd),
+        ),
+        Some(Part::Dnd),
     );
     if let Some(clear) = layout.clear {
         put(
@@ -547,16 +574,6 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
     put(
         &mut out,
         plain(
-            accesskit::Role::Switch,
-            tr("Do not disturb").to_string(),
-            layout.dnd,
-            Some(view.dnd),
-        ),
-        Some(Part::Dnd),
-    );
-    put(
-        &mut out,
-        plain(
             accesskit::Role::Heading,
             view.month.title(),
             layout.month,
@@ -589,8 +606,9 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
 
 // ---- How it looks ----
 
-/// Draws `view` at `scale` into `pixmap`, which is the card's size times
-/// it; without `text`, everything but the words.
+/// Draws `view` at `scale` into `pixmap`, which is the surface's size
+/// times it: the two cards, then their contents; without `text`,
+/// everything but the words.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -599,19 +617,23 @@ pub fn paint(
     mut icons: Option<&mut Icons>,
     s: f32,
 ) {
-    popup::card(pixmap, tokens, s);
     let l = layout(view);
     let m = l.metrics;
-    let hair = (0.5 * s).max(1.0);
-    let (big, row, small) = sizes(tokens);
+    popup::cards(pixmap, tokens, s, &cards(&l));
+    let (title_px, body_px, small_px) = sizes(tokens);
     let hovered = |part: Part| view.hover == Some(part);
     let focused = |part: Part| view.focus == Some(part);
-    let r_control = tokens.radius_control as f32 * s;
+    let accent = tokens.accent;
 
-    // The heading and Clear all.
+    // The heading, the moon and Clear all.
     if let Some(text) = text.as_deref_mut() {
-        let mut line = text.fit_in(tr("Notifications"), big * s, l.title.w * s, Face::SEMIBOLD);
-        let y = popup::middle(l.title.y, l.title.h, big * s, s);
+        let mut line = text.fit_in(
+            tr("Notifications"),
+            title_px * s,
+            l.title.w * s,
+            Face::SEMIBOLD,
+        );
+        let y = popup::middle(l.title.y, l.title.h, title_px * s, s);
         text.draw(
             pixmap,
             &mut line,
@@ -620,28 +642,43 @@ pub fn paint(
             tokens.panel_text,
         );
     }
+    let (mx, my, mw, mh) = l.dnd.device(s);
+    let (back, ink) = if view.dnd {
+        (accent, tokens.accent_text)
+    } else {
+        (veil(tokens, 0.05), dim(tokens))
+    };
+    fill(pixmap, mx, my, mw, mh, mw / 2.0, back);
+    if hovered(Part::Dnd) {
+        fill(pixmap, mx, my, mw, mh, mw / 2.0, veil(tokens, 0.05));
+    }
+    icon_in(pixmap, "moon", 14.0, l.dnd, s, ink);
+    if focused(Part::Dnd) {
+        outline(pixmap, (mx, my, mw, mh), mw / 2.0, 2.0 * s, accent);
+    }
     if let Some(clear) = l.clear {
         let (x, y, w, h) = clear.device(s);
+        fill(pixmap, x, y, w, h, h / 2.0, veil(tokens, 0.05));
         if hovered(Part::Clear) {
-            fill(pixmap, x, y, w, h, r_control, veil(tokens, 0.06));
+            fill(pixmap, x, y, w, h, h / 2.0, veil(tokens, 0.05));
         }
         if let Some(text) = text.as_deref_mut() {
-            let mut line = text.line_in(tr("Clear all"), row * s, Face::MEDIUM);
+            let mut line = text.line_in(tr("Clear all"), small_px * s, Face::SEMIBOLD);
             let at = x + (w - line.width) / 2.0;
-            let ty = popup::middle(clear.y, clear.h, row * s, s);
-            text.draw(pixmap, &mut line, at, ty, tokens.accent);
+            let ty = popup::middle(clear.y, clear.h, small_px * s, s);
+            text.draw(pixmap, &mut line, at, ty, accent);
         }
         if focused(Part::Clear) {
-            outline(pixmap, (x, y, w, h), r_control, 2.0 * s, tokens.accent);
+            outline(pixmap, (x, y, w, h), h / 2.0, 2.0 * s, accent);
         }
     }
 
     // The notifications, or what an empty list says.
     if let Some(empty) = l.empty {
         if let Some(text) = text.as_deref_mut() {
-            let mut line = text.line(tr("No new notifications"), row * s);
+            let mut line = text.line(tr("No new notifications"), body_px * s);
             let (x, _, w, _) = empty.device(s);
-            let ty = popup::middle(empty.y, empty.h, row * s, s);
+            let ty = popup::middle(empty.y, empty.h, body_px * s, s);
             let at = x + (w - line.width) / 2.0;
             text.draw(pixmap, &mut line, at, ty, dim(tokens));
         }
@@ -659,67 +696,28 @@ pub fn paint(
             item,
             placed,
             (view.hover.and_then(on), view.focus.and_then(on)),
-            (true, tokens.radius_control as f32),
+            (true, notice::CARD_RADIUS),
             view.compact,
             s,
         );
     }
     if let (Some(rect), Some(words), Some(text)) = (l.more, more(view), text.as_deref_mut()) {
-        let mut line = text.fit(&words, small * s, rect.w * s);
+        let mut line = text.fit(&words, small_px * s, rect.w * s);
         let (x, _, w, _) = rect.device(s);
-        let ty = popup::middle(rect.y, rect.h, small * s, s);
+        let ty = popup::middle(rect.y, rect.h, small_px * s, s);
         let at = x + (w - line.width) / 2.0;
         text.draw(pixmap, &mut line, at, ty, dim(tokens));
     }
 
-    // The two hairlines.
-    for rule in l.rules {
-        let (x, y, w, _) = Rect::new(m.pad, rule, view.width as f32 - 2.0 * m.pad, 1.0).device(s);
-        fill(pixmap, x, y, w, hair, 0.0, tokens.line);
-    }
-
-    // The Do not disturb row.
-    let (rx, ry, rw, rh) = l.dnd.device(s);
-    if hovered(Part::Dnd) {
-        fill(pixmap, rx, ry, rw, rh, r_control, veil(tokens, 0.04));
-    }
-    let (cx, cy, cw, ch) = l.circle.device(s);
-    let (disc, ink) = if view.dnd {
-        (tokens.accent, tokens.accent_text)
-    } else {
-        (veil(tokens, 0.085), tokens.panel_text)
-    };
-    fill(pixmap, cx, cy, cw, ch, cw / 2.0, disc);
-    icon_in(pixmap, "do-not-disturb", m.circle * 0.55, l.circle, s, ink);
+    // The calendar: its month, the two buttons, the weekdays and the days.
     if let Some(text) = text.as_deref_mut() {
-        let block = row * 1.25 + small * 1.25 + 1.0;
-        let top = l.words.y + (l.words.h - block) / 2.0;
-        let mut title = text.fit_in(tr("Do not disturb"), row * s, l.words.w * s, Face::SEMIBOLD);
-        text.draw(
-            pixmap,
-            &mut title,
-            (l.words.x * s).round(),
-            (top * s).round(),
-            tokens.panel_text,
+        let mut line = text.fit_in(
+            &view.month.title(),
+            title_px * s,
+            l.month.w * s,
+            Face::SEMIBOLD,
         );
-        let mut sub = text.fit(tr("Silence banners"), small * s, l.words.w * s);
-        text.draw(
-            pixmap,
-            &mut sub,
-            (l.words.x * s).round(),
-            ((top + row * 1.25 + 1.0) * s).round(),
-            dim(tokens),
-        );
-    }
-    switch(pixmap, tokens, l.switch, view.dnd, s);
-    if focused(Part::Dnd) {
-        outline(pixmap, (rx, ry, rw, rh), r_control, 2.0 * s, tokens.accent);
-    }
-
-    // The calendar.
-    if let Some(text) = text.as_deref_mut() {
-        let mut line = text.fit_in(&view.month.title(), row * s, l.month.w * s, Face::SEMIBOLD);
-        let y = popup::middle(l.month.y, l.month.h, row * s, s);
+        let y = popup::middle(l.month.y, l.month.h, title_px * s, s);
         text.draw(
             pixmap,
             &mut line,
@@ -732,23 +730,15 @@ pub fn paint(
         (Part::Prev, l.prev, "chevron-left"),
         (Part::Next, l.next, "chevron-right"),
     ] {
-        // The button is drawn at its desktop size inside a touch-sized hit area.
-        let side = m.nav.min(28.0);
-        let shown = Rect::new(
-            rect.x + (rect.w - side) / 2.0,
-            rect.y + (rect.h - side) / 2.0,
-            side,
-            side,
-        );
-        let (x, y, w, h) = shown.device(s);
-        let back = if hovered(part) { 0.085 } else { 0.055 };
-        fill(pixmap, x, y, w, h, r_control, veil(tokens, back));
-        icon_in(pixmap, icon, 12.0, shown, s, dim(tokens));
+        let (x, y, w, h) = rect.device(s);
+        let back = if hovered(part) { 0.085 } else { 0.05 };
+        fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, back));
+        icon_in(pixmap, icon, 12.0, rect, s, dim(tokens));
         if focused(part) {
-            outline(pixmap, (x, y, w, h), r_control, 2.0 * s, tokens.accent);
+            outline(pixmap, (x, y, w, h), w / 2.0, 2.0 * s, accent);
         }
     }
-    let cell = (l.grid.w / 7.0, m.day);
+    let cell = (l.grid.w / 7.0, m.day + m.week_gap);
     let faint = mix(tokens.panel_text, tokens.panel, 0.65);
     if let Some(text) = text.as_deref_mut() {
         for d in 0..7 {
@@ -758,13 +748,12 @@ pub fn paint(
                 cell.0,
                 l.weekdays.h,
             );
-            let face = Face::SEMIBOLD;
             centred(
                 pixmap,
                 text,
                 &calendar::initial(d),
-                (c, small * s, face),
-                dim(tokens),
+                (c, (small_px - 1.0) * s, Face::SEMIBOLD),
+                mix(tokens.panel_text, tokens.panel, 0.5),
                 s,
             );
         }
@@ -778,10 +767,10 @@ pub fn paint(
                 l.grid.x + d as f32 * cell.0,
                 l.grid.y + w as f32 * cell.1,
                 cell.0,
-                cell.1,
+                m.day,
             );
             if day.today {
-                let side = (cell.1 - 6.0).min(cell.0 - 4.0).min(32.0);
+                let side = m.today.min(cell.0);
                 let disc = Rect::new(
                     c.x + (c.w - side) / 2.0,
                     c.y + (c.h - side) / 2.0,
@@ -789,7 +778,7 @@ pub fn paint(
                     side,
                 );
                 let (x, y, w, h) = disc.device(s);
-                fill(pixmap, x, y, w, h, w / 2.0, tokens.accent);
+                fill(pixmap, x, y, w, h, w / 2.0, accent);
             }
             let Some(text) = text.as_deref_mut() else {
                 continue;
@@ -803,7 +792,7 @@ pub fn paint(
                 pixmap,
                 text,
                 &day.day.to_string(),
-                (c, row * s, face),
+                (c, body_px * s, face),
                 ink,
                 s,
             );
@@ -825,23 +814,6 @@ fn centred(
     let y = popup::middle(rect.y, rect.h, size, s);
     let at = x + (w - line.width) / 2.0;
     text.draw(pixmap, &mut line, at, y, ink);
-}
-
-/// A switch in `rect`: a track, accent when on, and a knob at the end it
-/// is set towards.
-fn switch(pixmap: &mut Pixmap, tokens: &Tokens, rect: Rect, on: bool, s: f32) {
-    let (x, y, w, h) = rect.device(s);
-    let track = if on { tokens.accent } else { veil(tokens, 0.2) };
-    fill(pixmap, x, y, w, h, h / 2.0, track);
-    let d = h - (4.0 * s).round();
-    let inset = ((h - d) / 2.0).round();
-    let kx = if on { x + w - inset - d } else { x + inset };
-    let shadow = edel::tokens::Colour {
-        a: 0.22,
-        ..tokens.shadow
-    };
-    fill(pixmap, kx, y + inset + s, d, d, d / 2.0, shadow);
-    fill(pixmap, kx, y + inset, d, d, d / 2.0, knob(tokens));
 }
 
 #[cfg(test)]
@@ -887,16 +859,13 @@ mod tests {
 
     fn two() -> Vec<Notification> {
         vec![
-            note(
-                2,
-                "Screenshot saved",
-                "Saved in Pictures",
-                &["default", "", "open", "Open"],
-            ),
+            // Two cards that fit the list's budget together: the first is
+            // a line of body and no button, the second two buttons.
+            note(2, "Screenshot saved", "Saved in Pictures", &["default", ""]),
             note(
                 1,
                 "Update ready",
-                "Edel OS 2026.11 starts on the next restart. If it fails to start, your computer goes back.",
+                "",
                 &["now", "Restart now", "later", "Later"],
             ),
         ]
@@ -920,7 +889,7 @@ mod tests {
         // Fifty fill the budget: a few whole cards show and the rest are counted.
         let many: Vec<Notification> = (1..=50)
             .rev()
-            .map(|id| note(id, "Hello", "A short body", &["a", "A"]))
+            .map(|id| note(id, "Hello", "A short body", &[]))
             .collect();
         let v = view_of(1280, &many);
         assert!(
@@ -969,33 +938,70 @@ mod tests {
         let m = l.metrics;
         assert!(l.clear.is_some());
         assert_eq!(l.cards.len(), 2);
-        // From the top: the heading, the cards, the hairline, the row, the hairline, the calendar.
+        // From the top: the heading and the moon, the cards, then the month, the weekdays, the days.
         assert!(l.cards[0].whole.y >= l.title.y + l.title.h);
         assert!(l.cards[1].whole.y >= l.cards[0].whole.y + l.cards[0].whole.h + m.between - 0.01);
-        let last = l.cards[1].whole;
-        assert!(l.rules[0] > last.y + last.h);
-        assert!(l.dnd.y > l.rules[0] && l.rules[1] > l.dnd.y + l.dnd.h);
-        assert!(l.prev.y > l.rules[1]);
+        assert!(l.boxes[0].y + l.boxes[0].h >= l.cards[1].whole.y + l.cards[1].whole.h);
+        assert!(l.prev.y >= l.boxes[1].y + m.pad - 0.01);
         assert!(l.weekdays.y >= l.prev.y + l.prev.h);
         assert!(l.grid.y >= l.weekdays.y + l.weekdays.h);
-        assert_eq!(l.grid.h, 6.0 * m.day);
-        assert_eq!(l.size.1, (l.grid.y + l.grid.h + m.pad).ceil() as u32);
-        // Everything lies inside the card.
-        for r in [
-            l.title, l.dnd, l.switch, l.circle, l.prev, l.next, l.weekdays, l.grid,
-        ]
-        .iter()
-        .chain(l.clear.iter())
+        assert_eq!(l.grid.h, 6.0 * m.day + 5.0 * m.week_gap);
+        assert_eq!(
+            l.size.1,
+            (l.grid.y + l.grid.h + m.pad).ceil() as u32,
+            "the calendar card ends a pad below the days"
+        );
+        // Everything lies inside the card it is in.
+        for r in [l.title, l.dnd, l.prev, l.next, l.weekdays, l.grid]
+            .iter()
+            .chain(l.clear.iter())
         {
             assert!(r.x >= 0.0 && r.right() <= 360.0 + 0.01, "{r:?}");
             assert!(r.y >= 0.0 && r.y + r.h <= l.size.1 as f32 + 0.01, "{r:?}");
         }
+        // The moon ends the heading row, Clear all lies left of it with 8 px between.
+        assert!(l.dnd.right() <= 360.0 - m.pad + 0.01);
+        assert_eq!(l.clear.unwrap().right(), l.dnd.x - 8.0);
         // The month's buttons sit at the right end, next after prev.
         assert!(l.next.right() <= 360.0 - m.pad + 0.01);
         assert!(l.prev.right() < l.next.x);
         assert!(l.month.right() < l.prev.x);
-        // The switch ends the row and the words keep clear of it.
-        assert!(l.words.right() < l.switch.x);
+    }
+
+    #[test]
+    fn the_centre_is_two_cards_apart() {
+        let v = view_of(1280, &two());
+        let l = layout(&v);
+        let [a, b] = l.boxes;
+        assert_eq!((a.w, b.w), (360.0, 360.0), "both as wide as the card");
+        assert_eq!(a.y, 0.0);
+        assert!((a.y + a.h + 10.0 - b.y).abs() < 0.01, "{a:?} {b:?}");
+        assert_eq!(l.size.1, (b.y + b.h).ceil() as u32);
+        let held = cards(&l);
+        assert_eq!(held.len(), 2);
+        assert_eq!(held[0].rect, a);
+        assert_eq!(held[1].rect, b);
+        assert!(held.iter().all(|c| c.radius == RADIUS));
+    }
+
+    #[test]
+    fn clear_all_shows_with_two_or_more() {
+        let one = [note(1, "Saved", "", &[])];
+        let v = view_of(1280, &one);
+        assert!(!shows_clear(&v));
+        assert!(layout(&v).clear.is_none());
+        let v = view_of(1280, &two());
+        assert!(shows_clear(&v));
+        assert!(layout(&v).clear.is_some());
+        // Scrolled to the last, with one newer beyond the list's end, it still shows.
+        let mut s = state(1280);
+        s.first = 1;
+        let v = view(&s, &two(), 60.0, six);
+        assert_eq!((v.items.len(), v.newer), (1, 1));
+        assert!(layout(&v).clear.is_some());
+        // The ring holds it only when it shows.
+        assert!(!ring(&view_of(1280, &one)).contains(&Part::Clear));
+        assert!(ring(&view_of(1280, &two())).contains(&Part::Clear));
     }
 
     #[test]
@@ -1005,9 +1011,9 @@ mod tests {
         let l = layout(&v);
         assert!(l.clear.is_none() && l.cards.is_empty() && l.more.is_none());
         let empty = l.empty.unwrap();
-        assert!(empty.y >= l.title.y + l.title.h && empty.y + empty.h <= l.rules[0]);
-        // Still the row and the calendar, and the same card height whatever the list.
-        assert!(l.dnd.y > l.rules[0]);
+        assert!(empty.y >= l.title.y + l.title.h && empty.y + empty.h <= l.boxes[0].h);
+        // Still the calendar, the same card layout whatever the list.
+        assert!(l.prev.y > l.boxes[0].y + l.boxes[0].h);
         let ring: Vec<Part> = ring(&v);
         assert_eq!(ring, [Part::Dnd, Part::Prev, Part::Next]);
     }
@@ -1019,14 +1025,14 @@ mod tests {
         let l = layout(&v);
         assert_eq!(l.size.0, 360);
         assert!(l.clear.unwrap().h >= 44.0);
-        assert!(l.dnd.h >= 44.0);
+        assert!(l.dnd.h >= 44.0 && l.dnd.w >= 44.0);
         assert!(l.prev.w >= 44.0 && l.prev.h >= 44.0 && l.next.w >= 44.0);
         for card in &l.cards {
             assert!(card.close.w >= 44.0 && card.buttons.iter().all(|b| b.h >= 44.0));
         }
         let m = l.metrics;
-        assert!(m.day >= 40.0 && m.row >= 44.0 && m.header >= 44.0);
-        for r in [l.title, l.dnd, l.switch, l.prev, l.next, l.grid] {
+        assert!(m.day >= 40.0 && m.row >= 44.0 && m.pill >= 44.0);
+        for r in [l.title, l.dnd, l.prev, l.next, l.grid] {
             assert!(r.x >= 0.0 && r.right() <= 360.0 + 0.01, "{r:?}");
         }
     }
@@ -1053,7 +1059,9 @@ mod tests {
             hit(&l, 100.0, l.cards[0].whole.y + 25.0),
             Some(Part::Card(0, Hit::Body))
         );
+        // The padding round the notifications is the card's own, and the room between the cards is none.
         assert_eq!(hit(&l, 5.0, 5.0), None);
+        assert_eq!(hit(&l, 100.0, l.boxes[0].y + l.boxes[0].h + 5.0), None);
         // What each press asks.
         assert_eq!(press(&v, Part::Clear), Some(Act::Clear));
         assert_eq!(press(&v, Part::Dnd), Some(Act::Dnd));
@@ -1077,31 +1085,31 @@ mod tests {
         assert_eq!(
             ring,
             [
+                Part::Dnd,
                 Part::Clear,
                 Part::Card(0, Hit::Body),
-                Part::Card(0, Hit::Button(0)),
                 Part::Card(0, Hit::Close),
                 Part::Card(1, Hit::Button(0)),
                 Part::Card(1, Hit::Button(1)),
                 Part::Card(1, Hit::Close),
-                Part::Dnd,
                 Part::Prev,
                 Part::Next,
             ]
         );
         // The first key gives the first part; Shift+Tab the last.
-        assert_eq!(key(&v, None, Key::Tab(false)), (Some(Part::Clear), None));
+        assert_eq!(key(&v, None, Key::Tab(false)), (Some(Part::Dnd), None));
         assert_eq!(key(&v, None, Key::Tab(true)), (Some(Part::Next), None));
         // Tab goes on and wraps, Shift+Tab goes back.
         assert_eq!(
             key(&v, Some(Part::Next), Key::Tab(false)).0,
-            Some(Part::Clear)
+            Some(Part::Dnd)
         );
+        assert_eq!(key(&v, Some(Part::Dnd), Key::Tab(true)).0, Some(Part::Next));
+        assert_eq!(key(&v, Some(Part::Dnd), Key::Down).0, Some(Part::Clear));
         assert_eq!(
             key(&v, Some(Part::Clear), Key::Tab(true)).0,
-            Some(Part::Next)
+            Some(Part::Dnd)
         );
-        assert_eq!(key(&v, Some(Part::Dnd), Key::Down).0, Some(Part::Prev));
         // Return and space act, Escape closes.
         assert_eq!(
             key(&v, Some(Part::Card(0, Hit::Close)), Key::Activate),
@@ -1112,12 +1120,12 @@ mod tests {
         // A part that is gone (its notification was dismissed) starts again.
         assert_eq!(
             key(&v, Some(Part::Card(5, Hit::Close)), Key::Tab(false)),
-            (Some(Part::Clear), None)
+            (Some(Part::Dnd), None)
         );
     }
 
     #[test]
-    fn a_screen_reader_hears_each_notification_then_the_row_and_the_month() {
+    fn a_screen_reader_hears_the_heading_the_toggle_each_notification_then_the_month() {
         let mut v = view_of(1280, &two());
         v.dnd = true;
         v.focus = Some(Part::Dnd);
@@ -1126,21 +1134,18 @@ mod tests {
         let said: Vec<(accesskit::Role, &str)> =
             nodes.iter().map(|n| (n.role, n.label.as_str())).collect();
         assert_eq!(said[0], (accesskit::Role::Heading, "Notifications"));
-        assert_eq!(said[1], (accesskit::Role::Button, "Clear all"));
+        assert_eq!(said[1], (accesskit::Role::Switch, "Do not disturb"));
+        assert_eq!(said[2], (accesskit::Role::Button, "Clear all"));
         assert_eq!(
-            said[2],
+            said[3],
             (
                 accesskit::Role::Alert,
                 "Notification from Files: Screenshot saved, Saved in Pictures"
             )
         );
         assert!(said.contains(&(accesskit::Role::Button, "Restart now")));
-        let dnd = nodes
-            .iter()
-            .position(|n| n.label == "Do not disturb")
-            .unwrap();
-        assert_eq!(nodes[dnd].toggled, Some(true));
-        assert_eq!(focused, Some(dnd), "the node holding the keyboard");
+        assert_eq!(nodes[1].toggled, Some(true));
+        assert_eq!(focused, Some(1), "the node holding the keyboard");
         assert!(said.contains(&(accesskit::Role::Heading, "October 2026")));
         assert_eq!(
             said.last().unwrap(),
@@ -1160,10 +1165,10 @@ mod tests {
             "{line}"
         );
         for want in [
+            "dnd ",
             "notification0 ",
             "close0 ",
             "notification1 ",
-            "dnd ",
             "prev ",
             "next ",
         ] {
@@ -1172,7 +1177,7 @@ mod tests {
     }
 
     #[test]
-    fn it_draws_the_card_the_row_the_calendar_and_today_in_the_accent() {
+    fn it_draws_the_cards_the_moon_the_calendar_and_today_in_the_accent() {
         for scheme in [edel::tokens::Scheme::Light, edel::tokens::Scheme::Dark] {
             let tokens = Tokens::built_in_scheme(scheme);
             for width in [1280, 360] {
@@ -1193,23 +1198,42 @@ mod tests {
                         [c.red(), c.green(), c.blue()]
                     };
                     assert_eq!(pixmap.pixel(0, 0).unwrap().alpha(), 0, "a round corner");
-                    // Today, 3 October, is the 6th cell of the first week: an accent disc.
+                    // The room between the two cards is clear.
+                    let gap_y = l.boxes[0].y + l.boxes[0].h + 5.0;
+                    assert_eq!(
+                        pixmap
+                            .pixel((180.0 * s) as u32, (gap_y * s) as u32)
+                            .unwrap()
+                            .alpha(),
+                        0,
+                        "{width}: the room between the cards"
+                    );
+                    // The notifications card, in its padding above the heading, is the panel's.
+                    assert_eq!(at(180.0, 8.0), tokens.panel.bytes()[..3], "{width}");
+                    // Today, 3 October, is the 6th cell of the first week: an accent disc,
+                    // sampled off its digit.
                     let cell_w = l.grid.w / 7.0;
-                    let today = (l.grid.x + 5.5 * cell_w, l.grid.y + l.metrics.day / 2.0);
+                    let today = (
+                        l.grid.x + 5.5 * cell_w + 10.0,
+                        l.grid.y + l.metrics.day / 2.0,
+                    );
                     assert_eq!(
                         at(today.0, today.1),
                         tokens.accent.bytes()[..3],
                         "{width} {dnd}"
                     );
-                    // Another day is the card's own colour.
-                    let other = (l.grid.x + 1.5 * cell_w, l.grid.y + l.metrics.day * 2.5);
+                    // Another day, Tuesday the 6th, is the card's own colour.
+                    let other = (
+                        l.grid.x + 1.1 * cell_w,
+                        l.grid.y + l.metrics.day + l.metrics.week_gap + 2.0,
+                    );
                     assert_eq!(at(other.0, other.1), tokens.panel.bytes()[..3]);
-                    // The switch's track is the accent only when on.
-                    let track = (l.switch.x + 4.0, l.switch.y + l.switch.h / 2.0);
+                    // The moon is the accent only when on.
+                    let moon = (l.dnd.x + 3.0, l.dnd.y + l.dnd.h / 2.0);
                     assert_eq!(
-                        at(track.0, track.1) == tokens.accent.bytes()[..3],
+                        at(moon.0, moon.1) == tokens.accent.bytes()[..3],
                         dnd,
-                        "the switch shows {dnd}"
+                        "the moon shows {dnd}"
                     );
                 }
             }
@@ -1235,23 +1259,25 @@ mod tests {
             (edel::tokens::Scheme::Dark, "dark"),
         ] {
             let tokens = Tokens::built_in_scheme(scheme);
-            let (_, row, small) = sizes(&tokens);
+            let (_, body, _, _) = notice::sizes(&tokens);
+            let (_, _, small) = sizes(&tokens);
             for screen in [1280u32, 360] {
                 let s = 2.0;
                 // The centre.
                 let mut st = state(screen);
                 st.dnd = true;
                 st.hover = None;
-                let clear = text.line_in("Clear all", row, Face::MEDIUM).width;
+                let clear = text.line_in("Clear all", small, Face::SEMIBOLD).width;
                 let v = view(&st, &list, clear, |t, face| {
-                    text.line_in(t, small, face).width
+                    let _ = face;
+                    text.line_in(t, body, Face::REGULAR).width
                 });
                 let l = layout(&v);
                 let mut pixmap =
                     Pixmap::new((l.size.0 as f32 * s) as u32, (l.size.1 as f32 * s) as u32)
                         .unwrap();
                 paint(&mut pixmap, &v, &tokens, Some(&mut text), None, s);
-                // Some ink in the heading, the row and a day.
+                // Some ink in the heading, the moon and the days.
                 let ink = |r: Rect| {
                     let (x, y, w, h) = r.device(s);
                     (y as u32..(y + h) as u32)
@@ -1263,15 +1289,13 @@ mod tests {
                         .count()
                 };
                 assert!(ink(l.title) > 20, "{screen} {mode}: the heading is drawn");
-                assert!(
-                    ink(l.words) > 20,
-                    "{screen} {mode}: the row's words are drawn"
-                );
+                assert!(ink(l.month) > 20, "{screen} {mode}: the month is drawn");
                 assert!(ink(l.grid) > 100, "{screen} {mode}: the days are drawn");
                 preview(&pixmap, &tokens, &format!("centre-{mode}-{screen}"));
                 // The banner for the second notification, with buttons.
                 let b = crate::banner::view(&list[1], screen, |t, face| {
-                    text.line_in(t, small, face).width
+                    let _ = face;
+                    text.line_in(t, body, Face::REGULAR).width
                 });
                 let bl = crate::banner::layout(&b);
                 let mut pixmap =

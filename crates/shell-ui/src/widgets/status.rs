@@ -288,6 +288,7 @@ mod tests {
                 percent: 82,
                 charging: false,
                 line: String::new(),
+                time: None,
             }),
             ..Status::default()
         }

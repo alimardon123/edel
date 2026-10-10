@@ -1,13 +1,14 @@
 //! The banner (M5.9b): the card a new notification shows in the panel's
 //! corner for a few seconds. It is one notification, drawn as
-//! `notice.rs` draws every notification, on the menus' card: its icon,
-//! the summary, the body in up to two lines, the actions as small
-//! buttons and a close button. [`layout`] is the one function that says
-//! how big the card is and where its parts lie, so a redesign of the
-//! banner replaces it alone. On a Compact screen the card is as wide as
-//! the screen and every target is at least 44 px. Plain data and drawing,
-//! tested without a display; `notify_card.rs` owns the surface, which
-//! exists only while a banner shows.
+//! `notice.rs` draws every notification, on a card of its own with
+//! [`RADIUS`] corners: its head row with the app and the close button,
+//! the summary, the body in up to two lines, the actions as pill buttons.
+//! [`layout`] is the one function that says how big the card is and where
+//! its parts lie, so a redesign of the banner replaces it alone. On a
+//! Compact screen the card is as wide as the screen and every target is
+//! at least 44 px. Plain data and drawing, tested without a display;
+//! `notify_card.rs` owns the surface, which exists only while a banner
+//! shows, and gives it [`card`] as its one card.
 
 use edel::app_icons::Icons;
 use edel::tokens::Tokens;
@@ -17,7 +18,7 @@ use crate::a11y::Item as Node;
 use crate::notice::{self, Hit, Placed};
 use crate::notify::Notification;
 use crate::paint::{Face, Text};
-use crate::popup::{self, Rect};
+use crate::popup::{self, Card, Rect};
 
 /// The card's width on a screen of any size from Compact up, logical
 /// pixels; below `COMPACT_BELOW` it is as wide as the screen.
@@ -25,6 +26,8 @@ pub const WIDTH: u32 = 360;
 /// A screen narrower than this is Compact (M5.6c's size classes), as
 /// quick settings count it.
 pub const COMPACT_BELOW: u32 = crate::quick::COMPACT_BELOW;
+/// The card's corner radius, logical pixels.
+pub const RADIUS: f32 = 22.0;
 
 /// The card's width and whether it is a sheet, for a screen `screen`
 /// logical pixels wide (0 when not yet known: the desktop's card).
@@ -75,6 +78,14 @@ pub fn layout(view: &View) -> Layout {
     }
 }
 
+/// The card a banner holds, as `notify_card.rs` gives its popup.
+pub fn card(layout: &Layout) -> Card {
+    Card {
+        rect: Rect::new(0.0, 0.0, layout.size.0 as f32, layout.size.1 as f32),
+        radius: RADIUS,
+    }
+}
+
 /// The part of the banner at `x`, `y`, logical pixels from the card's
 /// corner.
 pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Hit> {
@@ -102,7 +113,8 @@ pub fn nodes(view: &View, layout: &Layout) -> Vec<Node> {
 }
 
 /// Draws `view` at `scale` into `pixmap`, which is the card's size times
-/// it; without `text` everything but the words.
+/// it: the card in the menus' colour, then the notification on it; without
+/// `text` everything but the words.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -111,8 +123,8 @@ pub fn paint(
     icons: Option<&mut Icons>,
     scale: f32,
 ) {
-    popup::card(pixmap, tokens, scale);
     let l = layout(view);
+    popup::cards(pixmap, tokens, scale, &[card(&l)]);
     notice::paint(
         pixmap,
         tokens,
@@ -121,7 +133,7 @@ pub fn paint(
         &view.item,
         &l.notice,
         (view.hover, None),
-        (false, tokens.radius_menu as f32),
+        (false, RADIUS),
         view.compact,
         scale,
     );
@@ -173,12 +185,12 @@ mod tests {
             .body
             .iter()
             .chain(&n.buttons)
-            .chain([&n.summary, &n.tile, &n.close])
+            .chain([&n.summary, &n.tile, &n.close, &n.app])
         {
             assert!(r.x >= 0.0 && r.right() <= 360.0, "{r:?}");
             assert!(r.y >= 0.0 && r.y + r.h <= l.size.1 as f32, "{r:?}");
         }
-        assert_eq!(n.buttons[0].h, 28.0);
+        assert_eq!(n.buttons[0].h, 32.0);
         // A click on its parts is told apart.
         assert_eq!(hit(&l, n.close.x + 1.0, n.close.y + 1.0), Some(Hit::Close));
         assert_eq!(
@@ -186,6 +198,14 @@ mod tests {
             Some(Hit::Button(1))
         );
         assert_eq!(hit(&l, 100.0, 15.0), Some(Hit::Body));
+    }
+
+    #[test]
+    fn the_card_is_the_banner_with_its_corners() {
+        let l = layout(&view(&update(), 1280, six));
+        let c = card(&l);
+        assert_eq!(c.radius, 22.0);
+        assert_eq!(c.rect, Rect::new(0.0, 0.0, 360.0, l.size.1 as f32));
     }
 
     #[test]
@@ -216,7 +236,7 @@ mod tests {
         let line = places(&l);
         assert!(
             line.starts_with(&format!(
-                "card 360x{}, close 328+8+24x24, button0 ",
+                "card 360x{}, close 324+11+22x22, button0 ",
                 l.size.1
             )),
             "{line}"

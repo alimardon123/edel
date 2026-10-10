@@ -1488,7 +1488,7 @@ case_quick() {
 	# places on screen. Kept as quick.png.
 	background=$(token background)
 	panel=$(token panel)
-	accent=$(token accent)
+	fill=$(token window)
 	pill() {
 		tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
 			sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p'
@@ -1528,14 +1528,15 @@ case_quick() {
 	set -- $(echo "$line" | sed -n 's/.*quick places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where the card's parts lie: $line"
 	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
-	[ "$1" = 360 ] || fail "the card is $1 px wide, not 360"
+	[ "$1" = 352 ] || fail "the card is $1 px wide, not 352"
 	set -- $(echo "$line" | sed -n 's/.*track \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "${1:-}" ] || fail "the card has no volume track: $line"
 	tx=$(($1 + cx)) ty=$(($2 + cy + $4 / 2)) tw=$3
-	# 20 percent: the accent a tenth of the way along the track, the
-	# track's own colour near its end.
-	shot quick $((tx + tw / 10)) "$ty" "$accent" >/dev/null || fail "the slider at $((tx + tw / 10)),$ty is not the accent at 20 percent"
-	shot quick $((tx + tw - 14)) "$ty" "!$accent" >/dev/null || fail "the slider at $((tx + tw - 14)),$ty is still the accent near its end"
+	# 20 percent: the fill (the tokens' window colour, white on the light
+	# scheme) three twentieths of the way along the track, clear of the
+	# speaker at its left end, and the track's own colour near its end.
+	shot quick $((tx + tw * 3 / 20)) "$ty" "$fill" >/dev/null || fail "the slider at $((tx + tw * 3 / 20)),$ty is not filled at 20 percent"
+	shot quick $((tx + tw - 14)) "$ty" "!$fill" >/dev/null || fail "the slider at $((tx + tw - 14)),$ty is still filled near its end"
 	# A drag from three tenths of the track to half of it.
 	python3 ci/qmp.py drag $((tx + tw * 3 / 10)) "$ty" $((tx + tw / 2)) "$ty"
 	i=0
@@ -1545,7 +1546,7 @@ case_quick() {
 		sleep 1
 	done
 	volume=$(sink_volume)
-	shot quick $((tx + tw * 2 / 5)) "$ty" "$accent" >/dev/null || fail "after the drag the slider at $((tx + tw * 2 / 5)),$ty is not the accent"
+	shot quick $((tx + tw * 2 / 5)) "$ty" "$fill" >/dev/null || fail "after the drag the slider at $((tx + tw * 2 / 5)),$ty is not filled"
 	# A second click on the pill closes the card, and it opens again.
 	hidden=$(count 'edel-shell-ui: quick settings hidden')
 	python3 ci/qmp.py click "$pill_x" 780
@@ -1652,8 +1653,9 @@ case_notify() {
 	cw=$3 ch=$4
 	shot notify 1200 745 "$panel" >/dev/null || fail "the centre is not drawn at 1200,745 in the panel's colour"
 	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1)
-	echo "$line" | grep -q 'centre places card 360x[0-9]*, clear .*notification0 ' ||
+	echo "$line" | grep -q 'centre places card 360x[0-9]*, .*notification0 ' ||
 		fail "the centre does not list the notification: $line"
+	echo "$line" | grep -q 'clear ' && fail "Clear all shows with one notification in the centre: $line"
 	echo "$line" | grep -q 'notification1 ' && fail "the centre lists two notifications after one was sent: $line"
 	# Its surface is the card and, on Full and Balanced, the room for its
 	# shadow round it; CI runs on Lite, where there is none (M5.5e).
@@ -1676,6 +1678,8 @@ case_notify() {
 		[ "$i" -lt 25 ] || fail "the open centre does not list the second notification: $(tr -d '\r' <"$log" | grep -a 'centre places' | tail -n 1)"
 		sleep 0.2
 	done
+	tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1 | grep -q 'clear ' ||
+		fail "Clear all does not show with two notifications in the centre: $(tr -d '\r' <"$log" | grep -a 'centre places' | tail -n 1)"
 	# Escape closes the centre.
 	hidden=$(count 'edel-shell-ui: notification centre hidden')
 	python3 ci/qmp.py key esc

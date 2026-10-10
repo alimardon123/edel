@@ -66,6 +66,9 @@ pub struct Battery {
     pub charging: bool,
     /// "82 percent, 4 hours 10 minutes left"
     pub line: String,
+    /// The time to empty or to full, "4 h 10 min", while the battery
+    /// is charging or discharging and UPower knows it; none otherwise.
+    pub time: Option<String>,
 }
 
 /// Everything the status area and quick settings show; each part is none
@@ -167,10 +170,19 @@ pub fn from_sound(devices: &sound::Devices) -> (Option<Volume>, Vec<Output>) {
 /// does not say how full it is.
 pub fn from_power(snapshot: &power::Snapshot) -> Option<Battery> {
     let battery = snapshot.battery()?;
+    let moving = matches!(
+        battery.state,
+        power::State::Charging | power::State::Discharging
+    );
     Some(Battery {
         percent: battery.percent_whole()?,
         charging: battery.state == power::State::Charging,
         line: power::battery_line(battery),
+        time: if moving {
+            battery.minutes.map(power::duration_short)
+        } else {
+            None
+        },
     })
 }
 
@@ -376,6 +388,7 @@ mod tests {
         assert_eq!(battery.percent, 82);
         assert!(battery.charging);
         assert_eq!(battery.line, "82 percent, 41 minutes until full");
+        assert_eq!(battery.time.as_deref(), Some("41 min"));
         assert_eq!(
             from_power(&power::parse("Daemon:\n  on-battery: no\n")),
             None
