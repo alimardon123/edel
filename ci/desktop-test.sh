@@ -1697,6 +1697,38 @@ case_notify() {
 	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself"
 }
 
+case_osd() {
+	# The volume keys (M5.9c): the compositor keeps the keyboard's volume
+	# up key from apps and tells shell-ui, which turns the sink in use up
+	# by five percent and shows the pop-up, the slider and its button
+	# above the status area, gone 1.5 s after the last key. Kept as
+	# osd.png.
+	before=$(sink_volume)
+	[ -n "$before" ] || fail "wpctl status lists no sink in use: $(value sound_status)"
+	want=$(awk -v v="$before" 'BEGIN { w = v + 0.05; if (w > 1) w = 1; printf "%.2f", w }')
+	pressed=$(count 'edel-compositor: media key volume_up')
+	shown=$(count 'edel-shell-ui: osd shown')
+	hidden=$(count 'edel-shell-ui: osd hidden')
+	python3 ci/qmp.py key volumeup
+	wait_more 'edel-compositor: media key volume_up' "$pressed" || fail "the volume up key did not reach the compositor as a media key"
+	wait_more 'edel-shell-ui: osd shown' "$shown" || fail "the volume up key showed no pop-up: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	i=0
+	until value layers | grep -q 'edel-osd@'; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the state file lists no pop-up surface: $(value layers)"
+		sleep 0.2
+	done
+	python3 ci/qmp.py screendump "$dir/osd.png"
+	i=0
+	until [ "$(sink_volume)" = "$want" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "after the volume up key the sink is at $(sink_volume), not $want (it was $before)"
+		sleep 1
+	done
+	wait_more 'edel-shell-ui: osd hidden' "$hidden" 10 || fail "the pop-up did not go by itself"
+	echo "PASS: the volume up key took the sink from $before to $want as wpctl status shows, and shell-ui showed its pop-up above the status area and took it away by itself"
+}
+
 case_switcher() {
 	# The window switcher (M5.3c): with away opened over one, Alt held
 	# and Tab chooses one, the window used before away; shell-ui draws
