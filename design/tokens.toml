@@ -42,6 +42,13 @@ accent_text = "#0b1220"
 # The hairline round every window and along the panels' inner edge, as
 # the mockups draw them, a little stronger than a line.
 edge = "#00000099"
+# The overview's backdrop where there is no wallpaper (M5.2j-b), as the
+# mockup draws it (docs/mockups/shell/overview.jpg): a gradient from the
+# first at the top to the second at the bottom, and the text and marks
+# drawn straight on it.
+backdrop = "#4b5263"
+backdrop_deep = "#23272f"
+backdrop_text = "#f4f6fa"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -62,6 +69,9 @@ card = "#f5f6f8"
 line = "#14182017"
 accent_text = "#ffffff"
 edge = "#14182024"
+backdrop = "#8d9aba"
+backdrop_deep = "#3c4868"
+backdrop_text = "#f7f8fb"
 
 [size]
 # In logical pixels.

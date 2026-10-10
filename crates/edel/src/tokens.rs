@@ -168,6 +168,12 @@ pub struct Tokens {
     pub accent_text: Colour,
     /// The hairline round windows and along the panels' inner edge.
     pub edge: Colour,
+    /// The overview's backdrop where there is no wallpaper (M5.2j-b): a
+    /// gradient from `backdrop` at the top to `backdrop_deep` at the bottom.
+    pub backdrop: Colour,
+    pub backdrop_deep: Colour,
+    /// Text and marks drawn straight on the backdrop.
+    pub backdrop_text: Colour,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
@@ -368,6 +374,9 @@ impl Tokens {
                 "line" => &mut self.line,
                 "accent_text" => &mut self.accent_text,
                 "edge" => &mut self.edge,
+                "backdrop" => &mut self.backdrop,
+                "backdrop_deep" => &mut self.backdrop_deep,
+                "backdrop_text" => &mut self.backdrop_text,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -460,6 +469,9 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "line",
                 "accent_text",
                 "edge",
+                "backdrop",
+                "backdrop_deep",
+                "backdrop_text",
             ][..],
         ),
         (
@@ -546,6 +558,9 @@ pub fn check(text: &str) -> Result<Tokens> {
         line: BLACK,
         accent_text: BLACK,
         edge: BLACK,
+        backdrop: BLACK,
+        backdrop_deep: BLACK,
+        backdrop_text: BLACK,
         shadow_blur: 0,
         shadow_offset: 0,
         row: 0,
