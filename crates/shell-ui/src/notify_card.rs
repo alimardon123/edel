@@ -503,6 +503,7 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_quick();
+        self.close_tray_grid();
         self.hide_banner();
         let (edge, scale) = self.panel_for("clock");
         let (width, compact) = centre::width_for(self.screen_width());

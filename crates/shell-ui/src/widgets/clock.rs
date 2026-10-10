@@ -211,6 +211,7 @@ mod tests {
             top: 0.0,
             height: 60.0,
             dock: false,
+            along_top: false,
         };
         assert_eq!(
             input(&mut canvas, "14:05\nSat 3 Oct", Input::Click(10.0, 60.0)),
@@ -244,6 +245,7 @@ mod tests {
                 top: 0.0,
                 height: 60.0,
                 dock: false,
+                along_top: false,
             };
             draw(&mut canvas, shown, 0.0);
             // Inside the button's corner, clear of the letters.

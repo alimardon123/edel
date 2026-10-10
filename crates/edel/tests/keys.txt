@@ -57,3 +57,4 @@ layout.maximize_button
 layout.tiling_style
 region.time_servers
 notifications.do_not_disturb
+layout.tray_in_panel

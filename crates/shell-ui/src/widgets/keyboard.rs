@@ -181,6 +181,7 @@ mod tests {
             top: 0.0,
             height: 1.0,
             dock: false,
+            along_top: false,
         };
         assert_eq!(width(&mut canvas, ""), 0.0);
         // Without the fonts the text measures nothing, so the button is

@@ -280,6 +280,9 @@ pub const KEYS: &[Key] = &[
         "layout.tiling_style",
         Kind::OneOf(&["stack", "split", "scroll"]),
     ),
+    // The tray's apps kept in the panel, by their item's Id; the rest wait
+    // behind its arrow (M5.9g).
+    now("layout.tray_in_panel", Kind::Texts),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),
@@ -477,6 +480,11 @@ pub struct Layout {
     /// How tiling lays windows out (M5.16a); absent is `stack`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiling_style: Option<String>,
+    /// The tray's apps kept in the panel, by their item's `Id`, in the
+    /// panel's order; absent keeps none in the panel, so every app waits
+    /// behind the tray's arrow (M5.9g).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tray_in_panel: Option<Vec<String>>,
 }
 
 /// One screen on the Displays page, by its connector's name.
@@ -789,6 +797,30 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.
 pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
+
+/// The key the tray's apps kept in the panel are listed under (M5.9g), the
+/// one name shell-ui, Settings and `edel settings` share.
+pub const TRAY_IN_PANEL: &str = "layout.tray_in_panel";
+
+/// `key`'s value as a list of texts, the person's file over the machine's;
+/// none when neither sets it, or what they say is not a list of texts. An
+/// empty list is a list: `[]` over a machine's list says none.
+pub fn texts(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<Vec<String>> {
+    let list = |value: Value| match value {
+        Value::Array(items) => items
+            .into_iter()
+            .map(|item| match item {
+                Value::String(s) => Some(s),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    };
+    match source(key, machine, person) {
+        Source::Person(value) | Source::Machine(value) => list(value),
+        Source::Release => None,
+    }
+}
 
 /// `key`'s value as a flag, the person's file over the machine's; none
 /// when neither sets it, or what they say is not `true` or `false`.
@@ -1913,6 +1945,43 @@ font_size = 11
             );
         }
     }
+    #[test]
+    fn the_tray_lists_are_read_from_the_person_over_the_machine() {
+        let machine =
+            "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\", \"edel-testclient\"]\n";
+        let person = "format = 1\n[layout]\ntray_in_panel = [\"blueman\"]\n";
+        let none = "format = 1\n[layout]\ntray_in_panel = []\n";
+        let kept = |a: &str, b: &str| Some(vec![a.to_string(), b.to_string()]);
+        // A machine list, and the person's over it.
+        assert_eq!(
+            texts(TRAY_IN_PANEL, Some(machine), None),
+            kept("nm-applet", "edel-testclient")
+        );
+        assert_eq!(
+            texts(TRAY_IN_PANEL, Some(machine), Some(person)),
+            Some(vec!["blueman".to_string()])
+        );
+        // An empty list from the person keeps none, over the machine's.
+        assert_eq!(
+            texts(TRAY_IN_PANEL, Some(machine), Some(none)),
+            Some(Vec::new())
+        );
+        // Neither sets it: none, so the release decides.
+        assert_eq!(texts(TRAY_IN_PANEL, None, None), None);
+        assert_eq!(texts(TRAY_IN_PANEL, Some("format = 1\n"), None), None);
+        // Not a list of texts is no list.
+        let text = "format = 1\n[layout]\ntray_in_panel = \"nm-applet\"\n";
+        assert_eq!(texts(TRAY_IN_PANEL, Some(text), None), None);
+        let numbers = "format = 1\n[layout]\ntray_in_panel = [1, 2]\n";
+        assert_eq!(texts(TRAY_IN_PANEL, Some(numbers), None), None);
+        // A bare name is refused with what to write.
+        let refused = set("format = 1\n", TRAY_IN_PANEL, "nm-applet").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.tray_in_panel: expected a list of texts in quotes, not \"nm-applet\""
+        );
+    }
+
     #[test]
     fn do_not_disturb_is_a_flag_whose_mistakes_explain_themselves() {
         let file = |on: &str| format!("format = 1\n[notifications]\ndo_not_disturb = {on}\n");

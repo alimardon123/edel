@@ -48,6 +48,11 @@ pub struct Item {
     pub name: String,
     /// Its icon pixmap as [`encode`] writes it; empty when it has none.
     pub pixels: String,
+    /// The `Id` it gives, which `layout.tray_in_panel` names it by; its
+    /// title when it gives none (M5.9g).
+    pub app: String,
+    /// Whether its `Status` is `NeedsAttention`: it has news (M5.9g).
+    pub attention: bool,
 }
 
 /// What the tray's tasks tell the event loop.
@@ -326,6 +331,8 @@ async fn read(connection: &zbus::Connection, id: &str) -> Option<Item> {
     let icon = proxy.get_property::<String>("IconName").await;
     let pixmaps = proxy.get_property::<Vec<Pixmap>>("IconPixmap").await;
     let title = proxy.get_property::<String>("Title").await;
+    let app_id = proxy.get_property::<String>("Id").await;
+    let status = proxy.get_property::<String>("Status").await;
     let tip = proxy
         .get_property::<(String, Vec<Pixmap>, String, String)>("ToolTip")
         .await;
@@ -340,16 +347,22 @@ async fn read(connection: &zbus::Connection, id: &str) -> Option<Item> {
         })
         .map(|pixmap| encode(&pixmap))
         .unwrap_or_default();
-    let label = [title.ok(), tip.ok().map(|t| t.2)]
+    let label = [title.as_ref().ok().cloned(), tip.ok().map(|t| t.2)]
         .into_iter()
         .flatten()
         .find(|s| !s.is_empty())
         .unwrap_or_default();
+    let app = match app_id {
+        Ok(app) if !app.is_empty() => app,
+        _ => title.as_deref().unwrap_or_default().to_string(),
+    };
     Some(Item {
         id: id.to_string(),
         label,
         name: icon.unwrap_or_default(),
         pixels,
+        app,
+        attention: status.is_ok_and(|s| s == "NeedsAttention"),
     })
 }
 
