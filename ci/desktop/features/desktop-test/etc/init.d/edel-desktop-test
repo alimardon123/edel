@@ -658,15 +658,18 @@ commands() {
 	say "commands: ttyS1 closed"
 }
 
-# follow: for 10 minutes, the compositor's log lines as they come and the
-# windows each time they change, for the cases that click and drag.
+# follow: for 45 minutes, the compositor's log lines as they come and the
+# windows each time they change, for the cases that click and drag. The
+# cases took past 10 minutes on 2026-10-10, and the last ones then waited
+# for lines that were never printed; 45 minutes is several times what
+# the cases take, so the follower stops only after them.
 follow() {
 	tail -n 0 -F "$session_log" >/dev/console 2>&1 &
 	last=''
 	last_hidden=''
 	last_layers=''
 	i=0
-	while [ "$i" -lt 3000 ]; do
+	while [ "$i" -lt 13500 ]; do
 		now=$(windows)
 		if [ "$now" != "$last" ]; then
 			say "windows $now"
