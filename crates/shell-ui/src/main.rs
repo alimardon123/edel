@@ -22,6 +22,7 @@ mod centre;
 mod launcher;
 mod link;
 mod messages;
+mod mpris;
 mod notice;
 mod notify;
 mod notify_card;
@@ -171,6 +172,8 @@ struct Shell {
     /// The settings portal's backend on the session's bus (M5.5a), and
     /// the tray's watcher (M5.2e), served while this lives.
     _portal: Option<zbus::blocking::Connection>,
+    /// Where the players' news goes while quick settings is open (M5.9d).
+    player_tx: Option<channel::Sender<mpris::Event>>,
     text: Text,
     icons: icons::Icons,
     fillets: bool,
@@ -379,6 +382,7 @@ fn run() -> Result<()> {
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
         _portal: portal::serve(&tokens),
+        player_tx: None,
         tokens,
         fillets: fillets(),
         exit: false,
@@ -420,6 +424,20 @@ fn run() -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
+    }
+    // What plays (M5.9d): read over MPRIS only while quick settings is open,
+    // its news reaching the loop over a channel as the tray's does.
+    if shell._portal.is_some() {
+        let (events, news) = channel::channel();
+        event_loop
+            .handle()
+            .insert_source(news, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(event) = event {
+                    shell.player_changed(event);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
+        shell.player_tx = Some(events);
     }
     // The status area (M5.9a): what the machine says is read once now, and
     // again when the system bus says NetworkManager or UPower changed

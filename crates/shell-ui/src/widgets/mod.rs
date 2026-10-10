@@ -99,6 +99,8 @@ pub struct Live {
     pub status: crate::status::Status,
     pub pinned: Vec<Pin>,
     pub installed: Vec<Pin>,
+    /// What plays now, read while quick settings is open (M5.9d).
+    pub player: Option<crate::mpris::Player>,
 }
 
 /// One part of a widget for a screen reader: what it is called and where

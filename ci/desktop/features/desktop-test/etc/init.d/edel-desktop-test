@@ -267,6 +267,15 @@ commands() {
 			;;
 		'sni log') say "sni $(tr '\n' ';' </tmp/sni.log)" ;;
 		'sni off') pkill -f '[e]del-testclient --sni' ;;
+		# Now playing (M5.9d): a test MPRIS player on ci's session bus,
+		# printing what quick settings asks of it into a file, read back
+		# with `mpris log`; `mpris off` ends it.
+		mpris)
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --mpris" </dev/null >/tmp/mpris.log 2>&1 &
+			;;
+		'mpris log') say "mpris $(tr '\n' ';' </tmp/mpris.log)" ;;
+		'mpris off') pkill -f '[e]del-testclient --mpris' ;;
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;

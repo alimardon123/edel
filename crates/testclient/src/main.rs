@@ -16,7 +16,9 @@
 //! is offered (`sandbox.rs`, M5.22). `--lock-pointer` locks the pointer
 //! and prints the mouse's motion, and `--inhibit-idle` keeps the screen
 //! on (`hold.rs`, M5.23). `--sni` draws nothing: it is a tray item on the
-//! session's bus (`sni.rs`, M5.2e).
+//! session's bus (`sni.rs`, M5.2e). `--mpris` draws nothing either: it is
+//! a media player on the session's bus for quick settings' now playing
+//! (`mpris.rs`, M5.9d).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -24,6 +26,7 @@
 //!     edel-testclient --toplevels away
 //!     edel-testclient --security-context
 //!     edel-testclient --sni
+//!     edel-testclient --mpris
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -111,7 +114,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context or --sni alone"
+                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni or --mpris alone"
             ),
         }
     }
@@ -166,6 +169,7 @@ struct Client {
 }
 
 mod hold;
+mod mpris;
 mod sandbox;
 mod sni;
 mod toplevels;
@@ -177,6 +181,7 @@ fn main() -> Result<()> {
         ["--workspace", name] => return workspaces::run(name),
         ["--toplevels"] => return toplevels::run(None),
         ["--sni"] => return sni::run(),
+        ["--mpris"] => return mpris::run(),
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),
         ["--toplevels", title] => return toplevels::run(Some(title)),

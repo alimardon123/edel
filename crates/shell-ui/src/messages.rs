@@ -71,6 +71,14 @@ pub fn tray_call_failed(id: &str, method: &str, why: impl Display) -> String {
     )
 }
 
+/// A play, pause or track command could not reach a media player (M5.9d).
+#[allow(dead_code)] // Read by mpris::call, which the card's buttons use.
+pub fn player_call_failed(bus: &str, method: &str, why: impl Display) -> String {
+    format!(
+        "could not ask the media player {bus} to {method}: {why}; the app may have closed or may not offer it"
+    )
+}
+
 /// The notification server cannot be served.
 pub fn notifications_not_served(why: impl Display) -> String {
     format!(
@@ -208,6 +216,14 @@ mod tests {
     }
 
     #[test]
+    fn a_media_player_that_does_not_answer_says_what_to_check() {
+        assert_eq!(
+            player_call_failed("org.mpris.MediaPlayer2.vlc", "PlayPause", "no such method"),
+            "could not ask the media player org.mpris.MediaPlayer2.vlc to PlayPause: no such method; the app may have closed or may not offer it"
+        );
+    }
+
+    #[test]
     fn notifications_say_what_apps_lose_and_what_still_works() {
         assert_eq!(
             notifications_not_served("name already taken"),
@@ -265,6 +281,7 @@ mod tests {
             tray_not_said("x"),
             tray_bad_item("x"),
             tray_call_failed("a", "b", "x"),
+            player_call_failed("a", "b", "x"),
             notifications_not_served("x"),
             notification_not_said("a", "x"),
             dnd_not_kept("x"),

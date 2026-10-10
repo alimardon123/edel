@@ -21,10 +21,10 @@ use smithay_client_toolkit::seat::pointer::{BTN_LEFT, BTN_RIGHT, PointerEvent, P
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity};
 
-use crate::paint;
 use crate::popup::{Card, Popup, Rect};
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
+use crate::{mpris, paint};
 
 /// Which slider a drag is moving, if one is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,6 +54,10 @@ pub struct QuickCard {
     /// Where the card's parts were last logged, so a line says it only
     /// when it changed.
     logged: String,
+    /// Follows the players while the card is open (M5.9d); dropped with it.
+    #[allow(dead_code)]
+    // Held only for its drop: the players are followed while the card lives.
+    follow: Option<mpris::Follow>,
 }
 
 impl QuickCard {
@@ -319,6 +323,11 @@ impl Shell {
                 .inspect_err(|e| eprintln!("edel-shell-ui: no keyboard for quick settings: {e}"))
                 .ok()
         });
+        let follow = self
+            ._portal
+            .as_ref()
+            .zip(self.player_tx.clone())
+            .map(|(connection, events)| mpris::follow(connection, events));
         self.quick = Some(QuickCard {
             popup,
             keyboard,
@@ -330,6 +339,7 @@ impl Shell {
             sent_light: None,
             setting_light: false,
             logged: String::new(),
+            follow,
         });
         // The pill lights while the card is open.
         self.live.quick = true;
@@ -347,8 +357,32 @@ impl Shell {
         }
         drop(card);
         self.live.quick = false;
+        self.live.player = None;
         self.draw_all();
         eprintln!("edel-shell-ui: quick settings hidden");
+    }
+
+    /// What plays changed while quick settings is open (M5.9d). A change
+    /// that comes after the card closed is dropped: nothing is kept then.
+    pub fn player_changed(&mut self, event: mpris::Event) {
+        if self.quick.is_none() {
+            return;
+        }
+        let mpris::Event::Player(player) = event;
+        if player != self.live.player {
+            match &player {
+                Some(p) => eprintln!(
+                    "edel-shell-ui: player: {} by {} ({}), {}",
+                    p.title,
+                    p.artist,
+                    p.identity,
+                    if p.playing { "playing" } else { "paused" }
+                ),
+                None => eprintln!("edel-shell-ui: player: none"),
+            }
+        }
+        self.live.player = player;
+        self.draw_quick();
     }
 
     pub fn is_quick(&self, surface: &wl_surface::WlSurface) -> bool {
