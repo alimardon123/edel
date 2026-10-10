@@ -38,6 +38,7 @@ mod osd_card;
 mod paint;
 mod panel_menu;
 mod panel_menu_card;
+mod player;
 mod popup;
 mod portal;
 mod quick;
@@ -2112,6 +2113,10 @@ impl PointerHandler for Shell {
                 }
                 continue;
             }
+            if self.is_lock(&event.surface) {
+                self.lock_pointer(event);
+                continue;
+            }
             if self.is_panel_menu(&event.surface) {
                 self.panel_menu_pointer(event);
                 continue;
@@ -2369,6 +2374,7 @@ impl KeyboardHandler for Shell {
         _: u32,
     ) {
         self.shift = modifiers.shift;
+        self.lock_caps(modifiers.caps_lock);
     }
 }
 

@@ -1,7 +1,7 @@
 //! The lock screen (roadmap M5.10): ext-session-lock-v1, which shell-ui
 //! uses to cover every screen with its lock surface until the person's
 //! password is typed. While locked the compositor draws only each
-//! screen's lock surface, over the tokens' `backdrop_deep` until it has
+//! screen's lock surface, over the tokens' `lock_backdrop_deep` until it has
 //! drawn, gives the keyboard and the pointer to it alone and acts on no
 //! shortcut, so a click on a window does nothing; Super+L (`lock_screen`)
 //! asks shell-ui to lock over `edel-shell-v1`. A lock is confirmed to its
@@ -147,7 +147,7 @@ impl Edel {
     }
 
     /// What a locked screen draws: its lock surface over a plain cover in
-    /// the tokens' `backdrop_deep`, which shows alone until the lock
+    /// the tokens' `lock_backdrop_deep`, which shows alone until the lock
     /// surface has drawn.
     pub fn lock_elements(
         &mut self,
@@ -173,7 +173,7 @@ impl Edel {
                 .map(|e| Drawn::Plain(Element::Surface(e))),
             );
         }
-        let colour = self.tokens.backdrop_deep.rgba();
+        let colour = self.tokens.lock_backdrop_deep.rgba();
         let Some(locked) = self.locked.as_mut() else {
             return drawn;
         };

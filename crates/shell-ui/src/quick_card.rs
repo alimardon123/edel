@@ -25,7 +25,7 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 use crate::popup::Popup;
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
-use crate::{mpris, paint, widgets};
+use crate::{mpris, paint, player, widgets};
 
 /// The side of a cover's picture, pixels (M5.9d).
 const COVER_PX: u32 = 128;
@@ -499,7 +499,7 @@ impl Shell {
             .map(|p| p.identity.clone())
             .collect();
         view.page = self.player_page();
-        view.player = self.shown_player().map(|p| quick::PlayerView {
+        view.player = self.shown_player().map(|p| player::PlayerView {
             title: p.title.clone(),
             artist: p.artist.clone(),
             identity: p.identity.clone(),
@@ -537,7 +537,7 @@ impl Shell {
     fn quick_view(&mut self) -> Option<(quick::View, quick::Layout)> {
         let cover = self.player_cover();
         let scale = self.quick.as_ref()?.popup.scale();
-        let icon = self.player_icon((quick::APP_ICON * scale).round() as u32);
+        let icon = self.player_icon((player::APP_ICON * scale).round() as u32);
         let card = self.quick.as_ref()?;
         let mut view = self.card_view(&card.state);
         if let Some(player) = &mut view.player {
@@ -660,7 +660,11 @@ impl Shell {
                 horizontal,
                 vertical,
                 ..
-            } if layout.player.is_some_and(|p| p.contains(x, y)) => {
+            } if layout
+                .player
+                .as_ref()
+                .is_some_and(|p| p.card.contains(x, y)) =>
+            {
                 let n = card.scrolled.steps(
                     vertical.value120 + horizontal.value120,
                     vertical.discrete + horizontal.discrete,

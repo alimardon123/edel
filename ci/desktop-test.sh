@@ -518,11 +518,11 @@ case_respawn() {
 	"edel-shell-ui: greeter shown, "*) ;;
 	*) fail "shell-ui's greeter did not show: \"$(value greeter_shown)\"" ;;
 	esac
-	shot greeter 640 790 "$(token backdrop_deep)" >/dev/null ||
-		fail "the greeter at 640,790 is not the lock's #$(token backdrop_deep)"
+	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
+		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
 	python3 ci/qmp.py type 'ci\n'
 	sleep 1
-	shot greeter-name 640 790 "$(token backdrop_deep)" >/dev/null || true
+	shot greeter-name 640 790 "$(token lock_backdrop_deep)" >/dev/null || true
 	python3 ci/qmp.py type 'not-it\n'
 	# greetd answers a wrong password after PAM's own wait; the greeter
 	# keeps the user name, and Return takes it to the password again.
@@ -3235,9 +3235,10 @@ case_portal() {
 case_lock() {
 	# The lock screen (M5.10): Super+L asks shell-ui to lock, the
 	# compositor shows nothing of the session but each screen's lock
-	# surface, whose bottom is the tokens' backdrop_deep where the panel
+	# surface, whose bottom is the tokens' lock_backdrop_deep where the panel
 	# was, and a click where a window was reaches no window. A wrong
-	# password is said, and ci's own unlocks. Kept as lock.png.
+	# password is said, and ci's own, typed without Return and sent by a
+	# click on the go button, unlocks. Kept as lock.png and lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3246,7 +3247,7 @@ case_lock() {
 	wait_for 'edel-compositor: screen locked$' || fail "Super+L did not lock the screen"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up its lock screen"
-	deep=$(token backdrop_deep)
+	deep=$(token lock_backdrop_deep)
 	shot lock 640 790 "$deep" >/dev/null ||
 		fail "the locked screen at 640,790 is not the lock's #$deep but $(python3 ci/qmp.py pixel "$dir/lock.png" 640 790)"
 	# A click where a window lies reaches no window: nothing moves and
@@ -3259,14 +3260,23 @@ case_lock() {
 	python3 ci/qmp.py type 'not-it\n'
 	wait_more 'edel-shell-ui: lock: wrong password$' "$wrong" || fail "a wrong password was not said to be wrong"
 	shot lock-wrong 640 790 "$deep" >/dev/null || fail "a wrong password unlocked the screen"
-	# The wrong one's wait ends before the right one is typed.
+	# The wrong one's wait ends before the right one is typed. The right
+	# password is typed without Return: the go button is clicked at the
+	# middle of the place shell-ui logs, after its middle is checked to be
+	# the tokens' accent (8 px left of the middle, clear of the arrow).
 	sleep 3
-	python3 ci/qmp.py type 'edel-desktop-test\n'
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies"
+	set -- $go
+	shot lock-go $(($1 + $3 / 2 - 8)) $(($2 + $4 / 2)) "$(token accent)" >/dev/null ||
+		fail "the lock's go button at $(($1 + $3 / 2 - 8)),$(($2 + $4 / 2)) is not the accent #$(token accent)"
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
 	wait_for 'edel-shell-ui: lock: checking a password of 17 letters$' ||
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, a click reached no window, a wrong password was refused and ci's own unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
 }
 
 case_scheme() {
