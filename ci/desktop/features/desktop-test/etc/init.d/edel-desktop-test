@@ -372,6 +372,11 @@ commands() {
 		'dynamic on') edel settings set layout.dynamic_workspaces=true ;;
 		'dynamic names') edel settings set 'layout.workspace_names=["Mail"]' ;;
 		'dynamic default') edel settings reset layout.dynamic_workspaces && edel settings reset layout.workspace_names ;;
+		# The switcher's look and names (M5.2m): a name for workspace 1,
+		# the button look, and both keys' reset.
+		'switcher names') edel settings set 'layout.workspace_names=["Mail"]' ;;
+		'switcher button') edel settings set layout.workspaces_look=button ;;
+		'switcher default') edel settings reset layout.workspace_names && edel settings reset layout.workspaces_look ;;
 		# Each screen's own workspaces (M5.2k), on and back to every
 		# screen switching together.
 		'screens apart on') edel settings set layout.workspaces_per_screen=true ;;

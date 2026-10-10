@@ -97,6 +97,13 @@ pub struct Live {
     pub tray_open: bool,
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
+    /// The switcher's look, how many numbers show at once and its ends, as
+    /// `layout.workspaces_look`, `layout.workspaces_shown` and
+    /// `layout.workspaces_ends` say them; read at start and when the files
+    /// change (M5.2m).
+    pub workspaces_look: workspaces::Look,
+    pub workspaces_shown: usize,
+    pub workspaces_ends: workspaces::Ends,
     pub windows: Vec<Task>,
     pub policy: String,
     /// The keyboard's layouts' xkb names and the one in use (M5.9f).
@@ -173,8 +180,9 @@ pub enum Input {
 /// What a widget asks shell-ui to do.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    /// Show the workspace called this.
-    Show(String),
+    /// Show the workspace at this place, from 0 (M5.2m: a button finds its
+    /// workspace by its place, never by its name).
+    Show(usize),
     /// Start the workspace switcher's view at this button.
     View(usize),
     /// Bring the window at this place in [`Live::windows`] forward, back

@@ -68,7 +68,10 @@
 #               wlr-foreign-toplevel-management away is on no screen while
 #               hidden, and activating it shows workspace 2 (M5.2d); the
 #               panel's switcher shows the first as the accent pill, and
-#               a click on its 3 shows the third (M5.2c)
+#               a click on its 3 shows the third (M5.2c); a name shows in
+#               the label (AT-SPI: Workspaces: Mail shown, 1 of 4), and the
+#               button look's third underline segment shows the third
+#               (M5.2m)
 #   workspaces-dynamic  layout.dynamic_workspaces = true leaves one workspace
 #               with no window, a window adds an empty one after it,
 #               Super+Ctrl+Right and Left show the next and the first,
@@ -1470,7 +1473,50 @@ case_workspaces() {
 	back=$(count "DESKTOP-TEST: windows $first\$")
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third"
+	# The switcher's look and names (M5.2m). With layout.workspace_names
+	# = ["Mail"] the label of the shown workspace reads Mail, as AT-SPI
+	# holds it (workspace 1 is shown here). Then layout.workspaces_look
+	# = button draws the word over an underline split per workspace, and
+	# a click at the middle of its third segment shows workspace 3. Both
+	# keys are reset last, so the numbers look is back for what follows.
+	guest 'switcher names'
+	wait_for 'DESKTOP-TEST: ran switcher names: 0' || fail "layout.workspace_names did not run in the VM"
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: a11y_done')
+		guest 'a11y tree'
+		wait_more 'DESKTOP-TEST: a11y_done' "$asked" 30 || fail "the screen reader's walk of AT-SPI did not finish"
+		# The lines of the last walk only: each walk ends with a11y_done.
+		tree=$(tr -d '\r' <"$log" | awk '/DESKTOP-TEST: a11y_done/ { last = now; now = "" } /DESKTOP-TEST: a11y / { sub(/.*DESKTOP-TEST: a11y /, ""); now = now $0 "\n" } END { printf "%s", last }')
+		echo "$tree" | grep -qE ': Workspaces: Mail shown, 1 of 4$' && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "AT-SPI does not hold Workspaces: Mail shown, 1 of 4; it holds: $(echo "$tree" | tr '\n' ';')"
+		sleep 1
+	done
+	looks=$(count 'edel-shell-ui: workspaces look button')
+	guest 'switcher button'
+	wait_for 'DESKTOP-TEST: ran switcher button: 0' || fail "layout.workspaces_look did not run in the VM"
+	wait_more 'edel-shell-ui: workspaces look button' "$looks" || fail "shell-ui did not read the button look"
+	wait_for 'edel-shell-ui: workspace segments ' || fail "shell-ui did not log the button look's underline"
+	placed=$(count 'DESKTOP-TEST: places ')
+	guest 'panel places'
+	wait_more 'DESKTOP-TEST: places ' "$placed" || fail "shell-ui did not say where its widgets lie"
+	x=$(value places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	segment=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: workspace segments ' | tail -n 1 | sed 's/.*workspace segments //' | cut -d, -f3)
+	middle=$(echo "$segment" | awk -F+ '{ printf "%d", $1 + $2 / 2 + 0.5 }')
+	[ -n "$x" ] && [ -n "$middle" ] || fail "the switcher's place ($x) or its third segment ($segment) is not in the log"
+	shows=$(count 'edel-compositor: workspace 3')
+	python3 ci/qmp.py click $((x + middle)) 780
+	wait_more 'edel-compositor: workspace 3' "$shows" || fail "a click at $((x + middle)),780, on the third segment of the button look, did not show workspace 3"
+	python3 ci/qmp.py screendump "$dir/switcher-button.png" || fail "the switcher's screenshot was not taken"
+	back=$(count 'edel-compositor: workspace 1')
+	python3 ci/qmp.py key meta_l-1
+	wait_more 'edel-compositor: workspace 1' "$back" || fail "Super+1 did not show workspace 1 after the button look"
+	looks=$(count 'edel-shell-ui: workspaces look numbers')
+	guest 'switcher default'
+	wait_for 'DESKTOP-TEST: ran switcher default: 0' || fail "the switcher's keys did not reset in the VM"
+	wait_more 'edel-shell-ui: workspaces look numbers' "$looks" || fail "shell-ui did not go back to the numbers look"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with layout.workspace_names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", layout.workspaces_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back"
 }
 
 # state_is WANT: asks the test service for the workspaces the state file holds

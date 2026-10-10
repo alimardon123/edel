@@ -200,6 +200,9 @@ struct Shell {
     tray_grid: Option<TrayCard>,
     tray_behind: usize,
     tray_press: Option<(usize, String, f32, f32)>,
+    /// The workspace switcher's underline segments as last logged, for the
+    /// button look (M5.2m).
+    workspace_segments: String,
     /// The tray's tooltip while it shows (M5.9h), and the timer that shows
     /// it once the pointer has rested on the arrow.
     tooltip: Option<tooltip::Tip>,
@@ -336,6 +339,9 @@ fn run() -> Result<()> {
     // The apps a panel's apps widget shows, and whose icons the window
     // list shows, read once (M5.4c); none read when no panel holds either.
     let mut live = Live::default();
+    // The workspace switcher's look, count and ends (M5.2m).
+    let switcher = widgets::workspaces::Settings::read(machine.as_deref(), person.as_deref());
+    set_switcher(&mut live, switcher);
     let mut pin_slots = Vec::new();
     if panels
         .iter()
@@ -391,6 +397,7 @@ fn run() -> Result<()> {
         tray_grid: None,
         tray_behind: 0,
         tray_press: None,
+        workspace_segments: String::new(),
         tooltip: None,
         tooltip_timer: None,
         shift: false,
@@ -902,6 +909,20 @@ impl Shell {
                 .collect();
             eprintln!("edel-shell-ui: panel places {}", list.join(", "));
         }
+        // The button look's underline, logged once per change where the
+        // switcher lies, for CI (M5.2m).
+        if let Some(j) = panel.row.all().position(|w| w.name == "workspaces") {
+            let word =
+                widgets::workspaces::word_width(&mut self.text, &self.tokens, look.scale as f32);
+            // Nothing in the numbers look, so a return to the button look logs again.
+            let line = widgets::workspaces::segments_line(&look.shown[j], word).unwrap_or_default();
+            if line != self.workspace_segments {
+                if !line.is_empty() {
+                    eprintln!("edel-shell-ui: workspace segments {line}");
+                }
+                self.workspace_segments = line;
+            }
+        }
         let (w, h) = (look.width as i32, look.height as i32);
         let (buffer, canvas) = self
             .pool
@@ -1161,7 +1182,7 @@ impl Shell {
     /// as `action_at` gave them).
     fn run_action(&mut self, i: usize, x: f32, action: Action, left: f32, width: f32) {
         match action {
-            Action::Show(name) => self.workspaces.show(&name),
+            Action::Show(place) => self.workspaces.show(place),
             Action::View(first) => {
                 self.live.view = Some(first);
                 self.draw_all();
@@ -2283,6 +2304,30 @@ fn settings_texts() -> (Option<String>, Option<String>) {
         read(places::machine_settings()),
         places::person_settings().and_then(read),
     )
+}
+
+/// Takes the workspace switcher's look, count and ends into `live` (M5.2m),
+/// logging them when they differ from what it holds; says whether they
+/// did, so the panels are drawn again.
+fn set_switcher(live: &mut Live, now: widgets::workspaces::Settings) -> bool {
+    let before = (
+        live.workspaces_look,
+        live.workspaces_shown,
+        live.workspaces_ends,
+    );
+    if before == (now.look, now.shown, now.ends) {
+        return false;
+    }
+    live.workspaces_look = now.look;
+    live.workspaces_shown = now.shown;
+    live.workspaces_ends = now.ends;
+    eprintln!(
+        "edel-shell-ui: workspaces look {}, {} shown, ends {}",
+        now.look.name(),
+        now.shown,
+        now.ends.name()
+    );
+    true
 }
 
 /// `layout.tray_in_panel` as the machine's and the person's files say it

@@ -55,11 +55,10 @@ impl Workspaces {
             .collect()
     }
 
-    /// Asks the compositor to show the workspace called `name`.
-    pub fn show(&self, name: &str) {
-        let (Some(manager), Some(entry)) =
-            (&self.manager, self.list.iter().find(|e| e.name == name))
-        else {
+    /// Asks the compositor to show the workspace at `index`, its place in
+    /// [`Workspaces::names`] (M5.2m).
+    pub fn show(&self, index: usize) {
+        let (Some(manager), Some(entry)) = (&self.manager, self.list.get(index)) else {
             return;
         };
         entry.handle.activate();
