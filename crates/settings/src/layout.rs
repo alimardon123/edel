@@ -53,7 +53,9 @@ impl Control {
         let values: Vec<String> = (1..=edel::presets::MOST_WORKSPACES)
             .map(|n| n.to_string())
             .collect();
-        Control::Segments(widgets::Segments::new(&values), values)
+        let segments = widgets::Segments::new(&values);
+        segments.tight();
+        Control::Segments(segments, values)
     }
 
     fn widget(&self) -> gtk::Widget {
@@ -556,6 +558,7 @@ fn log_workspaces(page: &gtk::Widget, heading: &gtk::Box, count: &Setting) {
         count.key,
     );
     let scrolled = std::cell::Cell::new(false);
+    let last = std::cell::RefCell::new(String::new());
     heading.add_tick_callback(move |heading, _| {
         let Some(window) = heading.root().and_downcast::<gtk::Window>() else {
             return glib::ControlFlow::Continue;
@@ -579,11 +582,18 @@ fn log_workspaces(page: &gtk::Widget, heading: &gtk::Box, count: &Setting) {
             .iter()
             .map(|button| widgets::place(button.compute_bounds(&window)))
             .collect();
-        eprintln!(
+        let line = format!(
             "edel-settings: workspaces group places count {}, reset {}",
             counts.join(" "),
             widgets::place(reset.compute_bounds(&window)),
         );
+        // The view settles over a few frames, and a group near the page's
+        // end stops short of the top, so the places are logged only once
+        // two frames agree.
+        if last.replace(line.clone()) != line {
+            return glib::ControlFlow::Continue;
+        }
+        eprintln!("{line}");
         glib::ControlFlow::Break
     });
 }
