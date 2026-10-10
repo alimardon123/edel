@@ -734,7 +734,7 @@ case_shortcuts() {
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' 0 || fail "the test client keys did not open: $(value windows)"
 	guest 'close on super-x'
-	wait_for 'edel-compositor: shortcut close_window is Super\+W' ||
+	wait_for 'edel-compositor: shortcut close_window is Super\+X' ||
 		fail "the compositor did not follow shortcuts.close_window = \"Super+X\""
 	# Super+Q now reaches the window, which ignores it; Super+X closes it.
 	python3 ci/qmp.py key meta_l-q
