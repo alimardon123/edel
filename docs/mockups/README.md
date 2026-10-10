@@ -71,6 +71,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/tray.jpg](shell/tray.jpg) | The tray: one arrow, as on Windows, opening a frosted grid |
 | [shell/settings.jpg](shell/settings.jpg) | Every setting these pictures need: its choices, its default and its proposed key; Alimardon's decisions, and four defaults Claude picked by the principles (how many workspaces show, the ends of their strip, the volume pop-up on, new tray apps behind the arrow), which they can overrule |
 | [shell/standing-slider.jpg](shell/standing-slider.jpg) | How Sound is reached from a standing volume slider: six ways compared, and the one chosen, no button, a right click or a still hold |
+| [shell/player.jpg](shell/player.jpg) | The player card (M5.9i, chosen by Alimardon on 2026-10-10 as option 2A): a pill, its app's icon and name small at the top centre; with several players each is a page, switched by scrolling sideways, a swipe or a click on tiny dots under the controls, the shown dot a short accent pill |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
 
 The rules under them:
@@ -86,7 +87,10 @@ The rules under them:
   and can hold sliders, the player or any tile at any width.
 - **The player is its own card** on the side away from the edge quick
   settings hangs from: above it on a laptop with a bottom panel, below it
-  on a tablet or phone.
+  on a tablet or phone. It is a pill, its corners half its height; its
+  app's icon and name sit small at its top centre, and with several
+  players each is a page of the same card, under tiny dots that show only
+  then (Alimardon, 2026-10-10, `shell/player.jpg`).
 - **Edit, Settings and power** sit on the anchored edge: the footer on a
   bottom panel, the header's second line when the sheet hangs from the
   top. A chevron on a pill opens its details in place.
@@ -109,7 +113,7 @@ The rules under them:
 
 The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
-boards, as HTML to change, are in `docs/mockups/shell/canvas/`.
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg` (the same Playwright and Chromium, at twice the size, as JPEG).
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
