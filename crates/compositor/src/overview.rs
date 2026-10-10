@@ -129,7 +129,7 @@ pub const FRAME_DOWN: i32 = 72;
 const SHARE_ACROSS: f64 = 0.135;
 const SHARE_DOWN: f64 = 0.11;
 /// Under each frame, its number or name: the room it takes.
-pub const LABEL: i32 = 18;
+pub const LABEL: i32 = 24;
 /// Between the strip's frames, across and down.
 pub const STRIP_GAP_ACROSS: i32 = 12;
 pub const STRIP_GAP_DOWN: i32 = 10;
@@ -139,8 +139,11 @@ pub const TRAY_PAD: i32 = 12;
 pub const TRAY_EDGE: i32 = 14;
 /// The tray's corners.
 pub const TRAY_RADIUS: i32 = 18;
-/// The tray's header row, "Workspaces" in small letters at its top.
-pub const CAPTION: i32 = 20;
+/// The tray's header row, "Workspaces" in small letters at its top: the
+/// room it takes, enough that the shown frame's ring below never meets
+/// the words, and the words' own line.
+pub const CAPTION: i32 = 26;
+pub const CAPTION_LINE: i32 = 16;
 /// The room kept between the tray and the spread windows, and round the
 /// spread windows, and between them.
 pub const ROOM: i32 = 16;
@@ -344,8 +347,8 @@ pub fn plan(
         stage,
         search,
         caption: Rectangle::new(
-            (tray.loc.x + TRAY_PAD, tray.loc.y + TRAY_PAD / 2).into(),
-            (tray.size.w - 2 * TRAY_PAD, CAPTION).into(),
+            (tray.loc.x + TRAY_PAD, tray.loc.y + TRAY_PAD - 2).into(),
+            (tray.size.w - 2 * TRAY_PAD, CAPTION_LINE).into(),
         ),
         first,
         shows,
@@ -494,16 +497,19 @@ mod tests {
         assert_eq!(p.frames.len(), 4);
         assert_eq!(p.tray.loc.x, TRAY_EDGE);
         assert_eq!(p.tray.size.w, 141 + 2 * TRAY_PAD);
-        // Five items (four and the add frame) of 88 + 18, 10 apart, padded,
+        // Five items (four and the add frame) of 88 + 24, 10 apart, padded,
         // under the caption's row.
-        assert_eq!(p.tray.size.h, CAPTION + 5 * 106 + 4 * 10 + 2 * TRAY_PAD);
+        assert_eq!(p.tray.size.h, CAPTION + 5 * 112 + 4 * 10 + 2 * TRAY_PAD);
         assert_eq!(p.frames[0].loc.y, p.tray.loc.y + CAPTION + TRAY_PAD);
-        assert!(p.caption.loc.y < p.frames[0].loc.y && p.caption.size.h == CAPTION);
+        // The caption's line ends well above the shown frame's ring (3.5 px
+        // out from the frame, 6 with its width).
+        assert_eq!(p.caption.size.h, CAPTION_LINE);
+        assert!(p.caption.loc.y + CAPTION_LINE + 6 <= p.frames[0].loc.y - 6);
         // Centred down the free area.
         assert_eq!(p.tray.loc.y, (752 - p.tray.size.h) / 2);
-        assert_eq!(p.frames[1].loc.y, p.frames[0].loc.y + 106 + 10);
+        assert_eq!(p.frames[1].loc.y, p.frames[0].loc.y + 112 + 10);
         let add = p.add.unwrap();
-        assert_eq!(add.loc.y, p.frames[3].loc.y + 106 + 10);
+        assert_eq!(add.loc.y, p.frames[3].loc.y + 112 + 10);
         // The stage starts ROOM right of the tray and stays in the area; the
         // search field never comes nearer the tray than ROOM.
         assert_eq!(p.stage.loc.x, p.tray.loc.x + p.tray.size.w + ROOM);
@@ -563,12 +569,12 @@ mod tests {
         let area = rect(0, 0, 1280, 400);
         let p = plan(screen, area, 9, true, Side::Left, 0);
         assert!(p.scrolls());
-        // (372 - 24 - 48 + 10) / (106 + 10) = 2 shown, between two arrows.
+        // (346 - 24 - 48 + 10) / (112 + 10) = 2 shown, between two arrows.
         assert_eq!((p.first, p.shows), (0, 2));
         assert!(p.before.is_none() && p.after.is_some());
         assert_eq!(
             p.tray.size.h,
-            CAPTION + 2 * 106 + 10 + 2 * TRAY_PAD + 2 * ARROW
+            CAPTION + 2 * 112 + 10 + 2 * TRAY_PAD + 2 * ARROW
         );
         assert!(p.tray.loc.y >= TRAY_EDGE && p.tray.loc.y + p.tray.size.h <= 400 - TRAY_EDGE);
         let shown: Vec<_> = p.frames.iter().filter(|f| !f.is_empty()).collect();

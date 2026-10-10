@@ -383,17 +383,20 @@ pub fn tray(
         let words = text.fit(caption, cw);
         let baseline = (cy + ch / 2.0 + (text.ascent() + text.descent()) / 2.0).round();
         let quiet = Colour {
-            a: 0.7,
+            a: 0.62,
             ..tokens.backdrop_text
         };
-        text.draw_on(&mut pixmap, &words, (cx + 2.0 * s).round(), baseline, quiet);
+        // Lined up with the frames' left edge.
+        text.draw_on(&mut pixmap, &words, cx.round(), baseline, quiet);
         let ink = Colour {
             a: 0.92,
             ..tokens.backdrop_text
         };
         let mut put = |r: Rectangle<i32, Logical>, words: &str, text: &mut Text| {
             let (x, y, fw, fh) = local(r);
-            let centre_y = y + fh + LABEL as f32 * s / 2.0 + 1.0 * s;
+            // Under the frame's ring, never touching it.
+            let ring = (RING_GAP + RING) * s;
+            let centre_y = y + fh + ring + (LABEL as f32 * s - ring) / 2.0;
             centred(
                 &mut pixmap,
                 text,
