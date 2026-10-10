@@ -42,6 +42,9 @@ pub struct Layout {
     pub workspace_names: Vec<String>,
     /// Apps and the workspace each always opens on (`workspaces.apps`).
     pub app_workspaces: BTreeMap<String, i64>,
+    /// The side the overview's strip of workspaces lies on
+    /// (`workspaces.overview_strip`).
+    pub overview_strip: String,
     /// Light, dark or automatic (`appearance.mode`, M5.2q).
     pub mode: String,
 }
@@ -88,6 +91,7 @@ impl Layout {
             "appearance.switcher_ends" => Some(self.workspaces_ends.clone()),
             "workspaces.names" => Some(list_text(&self.workspace_names)),
             "workspaces.apps" => Some(apps_text(&self.app_workspaces)),
+            "workspaces.overview_strip" => Some(self.overview_strip.clone()),
             "appearance.mode" => Some(self.mode.clone()),
             _ => None,
         }
@@ -113,6 +117,7 @@ fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
         "workspaces.per_screen" => flag(spaces.per_screen),
         "workspaces.names" => spaces.names.as_deref().map(list_text),
         "workspaces.apps" => spaces.apps.as_ref().map(apps_text),
+        "workspaces.overview_strip" => spaces.overview_strip.clone(),
         "appearance.mode" => look.mode.clone(),
         "appearance.switcher_look" => look.switcher_look.clone(),
         "appearance.switcher_shown" => look.switcher_shown.map(|n| n.to_string()),
@@ -234,6 +239,15 @@ impl Files {
                 .unwrap_or(settings::SWITCHER_SHOWN_DEFAULT),
             workspaces_ends: known("appearance.switcher_ends", ends)
                 .unwrap_or_else(|| settings::SWITCHER_ENDS_DEFAULT.to_string()),
+            // Absent, the strip lies on the left (M5.2j-b).
+            overview_strip: known(
+                "workspaces.overview_strip",
+                person_spaces
+                    .overview_strip
+                    .as_ref()
+                    .or(machine_spaces.overview_strip.as_ref()),
+            )
+            .unwrap_or_else(|| settings::OVERVIEW_STRIP_DEFAULT.to_string()),
             // The person's list or table is the whole one, not merged with
             // the machine's (M5.2n).
             workspace_names: person_spaces
@@ -307,6 +321,7 @@ impl Files {
             "appearance.switcher_ends" => person.appearance.switcher_ends.take().is_some(),
             "workspaces.names" => person.workspaces.names.take().is_some(),
             "workspaces.apps" => person.workspaces.apps.take().is_some(),
+            "workspaces.overview_strip" => person.workspaces.overview_strip.take().is_some(),
             "appearance.mode" => person.appearance.mode.take().is_some(),
             _ => return Err(format!("{key} is not a key these pages choose")),
         };
@@ -798,6 +813,11 @@ mod tests {
         assert_eq!(
             files.layout().value("appearance.switcher_ends").as_deref(),
             Some("arrows")
+        );
+        // The overview's strip lies on the left until a file says otherwise.
+        assert_eq!(
+            files.layout().value("workspaces.overview_strip").as_deref(),
+            Some("left")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

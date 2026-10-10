@@ -429,6 +429,16 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
                 (tr("Each screen shows its own workspace"), None, false),
                 Control::Switch(gtk::Switch::new()),
             ));
+            settings.push(setting(
+                &spaces,
+                "workspaces.overview_strip",
+                (
+                    tr("Which side of the screen the overview shows the workspaces on"),
+                    None,
+                    false,
+                ),
+                Control::choice("workspaces.overview_strip"),
+            ));
             names = Some(workspaces::card(&spaces, &problem));
         }
         _ => {

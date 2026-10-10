@@ -85,6 +85,10 @@ pub const ROWS: &[Row] = &[
         key: "workspaces.apps",
         title: n_("Apps on their workspace"),
     },
+    Row {
+        key: "workspaces.overview_strip",
+        title: n_("Workspace strip in the overview"),
+    },
     // The Appearance page (M5.2q): light or dark, then the workspace
     // switcher's look, shown count and ends.
     Row {
@@ -175,6 +179,8 @@ pub fn label(value: &str) -> String {
         "floating-only" => n_("Floating only"),
         "left" => n_("Left"),
         "right" => n_("Right"),
+        "top" => n_("Top"),
+        "bottom" => n_("Bottom"),
         "numbers" => n_("Numbers"),
         "button" => n_("Button"),
         "fade" => n_("Fade"),
@@ -298,7 +304,12 @@ mod tests {
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
         assert_eq!(titles.len(), 8);
         assert_eq!(on_page("panels").count(), 3);
-        assert_eq!(on_page("workspaces").count(), 5);
+        assert_eq!(on_page("workspaces").count(), 6);
+        assert_eq!(
+            values("workspaces.overview_strip"),
+            ["left", "right", "top", "bottom"]
+        );
+        assert_eq!(label("top"), "Top");
         assert_eq!(on_page("appearance").count(), 4);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
