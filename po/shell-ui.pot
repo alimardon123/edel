@@ -119,6 +119,9 @@ msgstr ""
 msgid "Password"
 msgstr ""
 
+msgid "Caps Lock is on"
+msgstr ""
+
 msgid "Checking"
 msgstr ""
 
@@ -132,6 +135,12 @@ msgid "Wrong user name or password"
 msgstr ""
 
 msgid "Could not log in, try again"
+msgstr ""
+
+msgid "1 notification"
+msgstr ""
+
+msgid "{count} notifications"
 msgstr ""
 
 msgid "Who is logging in?"

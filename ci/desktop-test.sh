@@ -3237,7 +3237,8 @@ case_lock() {
 	# compositor shows nothing of the session but each screen's lock
 	# surface, whose bottom is the tokens' backdrop_deep where the panel
 	# was, and a click where a window was reaches no window. A wrong
-	# password is said, and ci's own unlocks. Kept as lock.png.
+	# password is said, and ci's own, typed without Return and sent by a
+	# click on the go button, unlocks. Kept as lock.png and lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3259,14 +3260,23 @@ case_lock() {
 	python3 ci/qmp.py type 'not-it\n'
 	wait_more 'edel-shell-ui: lock: wrong password$' "$wrong" || fail "a wrong password was not said to be wrong"
 	shot lock-wrong 640 790 "$deep" >/dev/null || fail "a wrong password unlocked the screen"
-	# The wrong one's wait ends before the right one is typed.
+	# The wrong one's wait ends before the right one is typed. The right
+	# password is typed without Return: the go button is clicked at the
+	# middle of the place shell-ui logs, after its middle is checked to be
+	# the tokens' accent (8 px left of the middle, clear of the arrow).
 	sleep 3
-	python3 ci/qmp.py type 'edel-desktop-test\n'
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies"
+	set -- $go
+	shot lock-go $(($1 + $3 / 2 - 8)) $(($2 + $4 / 2)) "$(token accent)" >/dev/null ||
+		fail "the lock's go button at $(($1 + $3 / 2 - 8)),$(($2 + $4 / 2)) is not the accent #$(token accent)"
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
 	wait_for 'edel-shell-ui: lock: checking a password of 17 letters$' ||
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, a click reached no window, a wrong password was refused and ci's own unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
 }
 
 case_scheme() {
