@@ -11,8 +11,9 @@ use std::path::PathBuf;
 use edel::presets::{self, Panel, Policy};
 use edel::{panel_edit, places, settings};
 
-/// What the Layout page shows: each key's value as the desktop applies
-/// it, from the person's file, the machine's, the preset or the release.
+/// What the Layout, Panels, Workspaces and Appearance pages show: each
+/// key's value as the desktop applies it, from the person's file, the
+/// machine's, the preset or the release.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Layout {
     pub preset: String,
@@ -25,29 +26,24 @@ pub struct Layout {
     pub close_button: bool,
     pub minimize_button: bool,
     pub maximize_button: bool,
-    /// How many workspaces (M5.2n, `layout.workspaces`).
+    /// How many workspaces (`workspaces.count`).
     pub workspaces: u32,
-    /// Whether an empty workspace always waits at the end (M5.2n,
-    /// `layout.dynamic_workspaces`).
+    /// Whether an empty workspace always waits at the end (`workspaces.dynamic`).
     pub dynamic_workspaces: bool,
-    /// Whether each screen shows its own workspace (M5.2n,
-    /// `layout.workspaces_per_screen`).
+    /// Whether each screen shows its own workspace (`workspaces.per_screen`).
     pub workspaces_per_screen: bool,
-    /// The switcher's look, `numbers` or `button` (M5.2n,
-    /// `layout.workspaces_look`).
+    /// The switcher's look, `numbers` or `button` (`appearance.switcher_look`).
     pub workspaces_look: String,
-    /// How many workspaces the switcher shows at once (M5.2n,
-    /// `layout.workspaces_shown`).
+    /// How many workspaces the switcher shows at once (`appearance.switcher_shown`).
     pub workspaces_shown: u32,
-    /// What the switcher shows where more workspaces lie (M5.2n,
-    /// `layout.workspaces_ends`).
+    /// What the switcher shows where more workspaces lie (`appearance.switcher_ends`).
     pub workspaces_ends: String,
-    /// The workspaces' names, the first workspace's first (M5.2n,
-    /// `layout.workspace_names`).
+    /// The workspaces' names, the first workspace's first (`workspaces.names`).
     pub workspace_names: Vec<String>,
-    /// Apps and the workspace each always opens on (M5.2n,
-    /// `layout.app_workspaces`).
+    /// Apps and the workspace each always opens on (`workspaces.apps`).
     pub app_workspaces: BTreeMap<String, i64>,
+    /// Light, dark or automatic (`appearance.mode`, M5.2q).
+    pub mode: String,
 }
 
 /// A list of texts as the TOML array `edel settings set` takes, such as
@@ -84,14 +80,15 @@ impl Layout {
             "layout.close_button" => Some(self.close_button.to_string()),
             "layout.minimize_button" => Some(self.minimize_button.to_string()),
             "layout.maximize_button" => Some(self.maximize_button.to_string()),
-            "layout.workspaces" => Some(self.workspaces.to_string()),
-            "layout.dynamic_workspaces" => Some(self.dynamic_workspaces.to_string()),
-            "layout.workspaces_per_screen" => Some(self.workspaces_per_screen.to_string()),
-            "layout.workspaces_look" => Some(self.workspaces_look.clone()),
-            "layout.workspaces_shown" => Some(self.workspaces_shown.to_string()),
-            "layout.workspaces_ends" => Some(self.workspaces_ends.clone()),
-            "layout.workspace_names" => Some(list_text(&self.workspace_names)),
-            "layout.app_workspaces" => Some(apps_text(&self.app_workspaces)),
+            "workspaces.count" => Some(self.workspaces.to_string()),
+            "workspaces.dynamic" => Some(self.dynamic_workspaces.to_string()),
+            "workspaces.per_screen" => Some(self.workspaces_per_screen.to_string()),
+            "appearance.switcher_look" => Some(self.workspaces_look.clone()),
+            "appearance.switcher_shown" => Some(self.workspaces_shown.to_string()),
+            "appearance.switcher_ends" => Some(self.workspaces_ends.clone()),
+            "workspaces.names" => Some(list_text(&self.workspace_names)),
+            "workspaces.apps" => Some(apps_text(&self.app_workspaces)),
+            "appearance.mode" => Some(self.mode.clone()),
             _ => None,
         }
     }
@@ -99,8 +96,9 @@ impl Layout {
 
 /// `key`'s value in one file's `[layout]`, as `edel settings set` writes
 /// it; none when the file has none.
-fn own(layout: &settings::Layout, key: &str) -> Option<String> {
+fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
     let flag = |v: Option<bool>| v.map(|b| b.to_string());
+    let (layout, spaces, look) = (&file.layout, &file.workspaces, &file.appearance);
     match key {
         "layout.preset" => layout.preset.clone(),
         "layout.tiling" => flag(layout.tiling),
@@ -110,14 +108,15 @@ fn own(layout: &settings::Layout, key: &str) -> Option<String> {
         "layout.close_button" => flag(layout.close_button),
         "layout.minimize_button" => flag(layout.minimize_button),
         "layout.maximize_button" => flag(layout.maximize_button),
-        "layout.workspaces" => layout.workspaces.map(|n| n.to_string()),
-        "layout.dynamic_workspaces" => flag(layout.dynamic_workspaces),
-        "layout.workspaces_per_screen" => flag(layout.workspaces_per_screen),
-        "layout.workspaces_look" => layout.workspaces_look.clone(),
-        "layout.workspaces_shown" => layout.workspaces_shown.map(|n| n.to_string()),
-        "layout.workspaces_ends" => layout.workspaces_ends.clone(),
-        "layout.workspace_names" => layout.workspace_names.as_deref().map(list_text),
-        "layout.app_workspaces" => layout.app_workspaces.as_ref().map(apps_text),
+        "workspaces.count" => spaces.count.map(|n| n.to_string()),
+        "workspaces.dynamic" => flag(spaces.dynamic),
+        "workspaces.per_screen" => flag(spaces.per_screen),
+        "workspaces.names" => spaces.names.as_deref().map(list_text),
+        "workspaces.apps" => spaces.apps.as_ref().map(apps_text),
+        "appearance.mode" => look.mode.clone(),
+        "appearance.switcher_look" => look.switcher_look.clone(),
+        "appearance.switcher_shown" => look.switcher_shown.map(|n| n.to_string()),
+        "appearance.switcher_ends" => look.switcher_ends.clone(),
         _ => None,
     }
 }
@@ -144,14 +143,20 @@ impl Files {
             .map(|read| read.file)
     }
 
-    /// One file's `[layout]`, empty when there is no file.
-    fn layout_of(path: Option<&PathBuf>) -> settings::Layout {
-        Self::read(path).map(|f| f.layout).unwrap_or_default()
+    /// One file as the desktop reads it, empty when there is no file.
+    fn file_of(path: Option<&PathBuf>) -> settings::SettingsFile {
+        Self::read(path).unwrap_or_default()
     }
 
     /// The layout from the machine's keys with `person`'s laid over them,
     /// the preset and the release under both.
-    fn layout_from(machine: &settings::Layout, person: &settings::Layout) -> Layout {
+    fn layout_from(
+        machine_file: &settings::SettingsFile,
+        person_file: &settings::SettingsFile,
+    ) -> Layout {
+        let (machine, person) = (&machine_file.layout, &person_file.layout);
+        let (machine_spaces, person_spaces) = (&machine_file.workspaces, &person_file.workspaces);
+        let (machine_look, person_look) = (&machine_file.appearance, &person_file.appearance);
         let chosen = person.preset.clone().or(machine.preset.clone());
         let (preset, _) = presets::named(chosen.as_deref());
         let name = chosen
@@ -171,14 +176,14 @@ impl Files {
             .tiling_style
             .as_ref()
             .or(machine.tiling_style.as_ref());
-        let look = person
-            .workspaces_look
+        let look = person_look
+            .switcher_look
             .as_ref()
-            .or(machine.workspaces_look.as_ref());
-        let ends = person
-            .workspaces_ends
+            .or(machine_look.switcher_look.as_ref());
+        let ends = person_look
+            .switcher_ends
             .as_ref()
-            .or(machine.workspaces_ends.as_ref());
+            .or(machine_look.switcher_ends.as_ref());
         let most = presets::MOST_WORKSPACES as u32;
         let in_range = |n: u32| (1..=most).contains(&n);
         Layout {
@@ -207,53 +212,59 @@ impl Files {
                 .unwrap_or(true),
             // Absent, the preset's count of workspaces (M5.2n); a number
             // out of range is the same as none.
-            workspaces: person
-                .workspaces
-                .or(machine.workspaces)
+            workspaces: person_spaces
+                .count
+                .or(machine_spaces.count)
                 .filter(|n| in_range(*n))
                 .unwrap_or(preset.workspaces.count as u32),
-            dynamic_workspaces: person
-                .dynamic_workspaces
-                .or(machine.dynamic_workspaces)
+            dynamic_workspaces: person_spaces
+                .dynamic
+                .or(machine_spaces.dynamic)
                 .unwrap_or(false),
-            workspaces_per_screen: person
-                .workspaces_per_screen
-                .or(machine.workspaces_per_screen)
+            workspaces_per_screen: person_spaces
+                .per_screen
+                .or(machine_spaces.per_screen)
                 .unwrap_or(false),
-            workspaces_look: known("layout.workspaces_look", look)
-                .unwrap_or_else(|| settings::WORKSPACES_LOOK_DEFAULT.to_string()),
-            workspaces_shown: person
-                .workspaces_shown
-                .or(machine.workspaces_shown)
+            workspaces_look: known("appearance.switcher_look", look)
+                .unwrap_or_else(|| settings::SWITCHER_LOOK_DEFAULT.to_string()),
+            workspaces_shown: person_look
+                .switcher_shown
+                .or(machine_look.switcher_shown)
                 .filter(|n| in_range(*n))
-                .unwrap_or(settings::WORKSPACES_SHOWN_DEFAULT),
-            workspaces_ends: known("layout.workspaces_ends", ends)
-                .unwrap_or_else(|| settings::WORKSPACES_ENDS_DEFAULT.to_string()),
+                .unwrap_or(settings::SWITCHER_SHOWN_DEFAULT),
+            workspaces_ends: known("appearance.switcher_ends", ends)
+                .unwrap_or_else(|| settings::SWITCHER_ENDS_DEFAULT.to_string()),
             // The person's list or table is the whole one, not merged with
             // the machine's (M5.2n).
-            workspace_names: person
-                .workspace_names
+            workspace_names: person_spaces
+                .names
                 .clone()
-                .or_else(|| machine.workspace_names.clone())
+                .or_else(|| machine_spaces.names.clone())
                 .unwrap_or_default(),
-            app_workspaces: person
-                .app_workspaces
+            app_workspaces: person_spaces
+                .apps
                 .clone()
-                .or_else(|| machine.app_workspaces.clone())
+                .or_else(|| machine_spaces.apps.clone())
                 .unwrap_or_default(),
+            // Absent, the release's choice (docs/settings.md).
+            mode: known(
+                "appearance.mode",
+                person_look.mode.as_ref().or(machine_look.mode.as_ref()),
+            )
+            .unwrap_or_else(|| "auto".to_string()),
         }
     }
 
     /// The layout the desktop shows: the person's keys over the
     /// machine's, then the preset, Classic when none is chosen.
     pub fn layout(&self) -> Layout {
-        let machine = Self::layout_of(Some(&self.machine));
-        let person = Self::layout_of(self.person.as_ref());
+        let machine = Self::file_of(Some(&self.machine));
+        let person = Self::file_of(self.person.as_ref());
         Self::layout_from(&machine, &person)
     }
 
     /// The panels that apply, as shell-ui draws them (M5.31d): the person's
-    /// `layout.panels` over the machine's, else the preset's.
+    /// `panels.list` over the machine's, else the preset's.
     pub fn panels(&self) -> Vec<Panel> {
         let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
         panel_edit::applying(
@@ -263,7 +274,7 @@ impl Files {
     }
 
     /// The apps the apps widget pins that apply (M5.31d): the person's
-    /// `apps.pinned` over the machine's, else the preset's.
+    /// `panels.pinned` over the machine's, else the preset's.
     pub fn pins(&self) -> Vec<String> {
         let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
         panel_edit::pins_applying(
@@ -272,30 +283,32 @@ impl Files {
         )
     }
 
-    /// Chooses `value` for the layout key `key`: written to the person's
+    /// Chooses `value` for the key `key` of the Layout, Workspaces or
+    /// Appearance page: written to the person's
     /// file, or taken out of it when it is what would apply without it,
     /// as writers never write a default (ADR-008).
     pub fn choose(&self, key: &str, value: &str) -> Result<(), String> {
-        let machine = Self::layout_of(Some(&self.machine));
-        let mut person = Self::layout_of(self.person.as_ref());
+        let machine = Self::file_of(Some(&self.machine));
+        let mut person = Self::file_of(self.person.as_ref());
         let had = match key {
-            "layout.preset" => person.preset.take().is_some(),
-            "layout.tiling" => person.tiling.take().is_some(),
-            "layout.title_bars" => person.title_bars.take().is_some(),
-            "layout.window_buttons" => person.window_buttons.take().is_some(),
-            "layout.tiling_style" => person.tiling_style.take().is_some(),
-            "layout.close_button" => person.close_button.take().is_some(),
-            "layout.minimize_button" => person.minimize_button.take().is_some(),
-            "layout.maximize_button" => person.maximize_button.take().is_some(),
-            "layout.workspaces" => person.workspaces.take().is_some(),
-            "layout.dynamic_workspaces" => person.dynamic_workspaces.take().is_some(),
-            "layout.workspaces_per_screen" => person.workspaces_per_screen.take().is_some(),
-            "layout.workspaces_look" => person.workspaces_look.take().is_some(),
-            "layout.workspaces_shown" => person.workspaces_shown.take().is_some(),
-            "layout.workspaces_ends" => person.workspaces_ends.take().is_some(),
-            "layout.workspace_names" => person.workspace_names.take().is_some(),
-            "layout.app_workspaces" => person.app_workspaces.take().is_some(),
-            _ => return Err(format!("{key} is not on the Layout page")),
+            "layout.preset" => person.layout.preset.take().is_some(),
+            "layout.tiling" => person.layout.tiling.take().is_some(),
+            "layout.title_bars" => person.layout.title_bars.take().is_some(),
+            "layout.window_buttons" => person.layout.window_buttons.take().is_some(),
+            "layout.tiling_style" => person.layout.tiling_style.take().is_some(),
+            "layout.close_button" => person.layout.close_button.take().is_some(),
+            "layout.minimize_button" => person.layout.minimize_button.take().is_some(),
+            "layout.maximize_button" => person.layout.maximize_button.take().is_some(),
+            "workspaces.count" => person.workspaces.count.take().is_some(),
+            "workspaces.dynamic" => person.workspaces.dynamic.take().is_some(),
+            "workspaces.per_screen" => person.workspaces.per_screen.take().is_some(),
+            "appearance.switcher_look" => person.appearance.switcher_look.take().is_some(),
+            "appearance.switcher_shown" => person.appearance.switcher_shown.take().is_some(),
+            "appearance.switcher_ends" => person.appearance.switcher_ends.take().is_some(),
+            "workspaces.names" => person.workspaces.names.take().is_some(),
+            "workspaces.apps" => person.workspaces.apps.take().is_some(),
+            "appearance.mode" => person.appearance.mode.take().is_some(),
+            _ => return Err(format!("{key} is not a key these pages choose")),
         };
         let without = Self::layout_from(&machine, &person);
         match (without.value(key).as_deref() != Some(value), had) {
@@ -380,22 +393,29 @@ impl Files {
         )
     }
 
-    /// The person's own value of each of the Layout page's keys, as
+    /// The person's own value of each key of the page for `section`, as
     /// `edel settings set` writes it, none where their file has none: what
     /// Undo puts back (M5.6a).
-    pub fn own_layout(&self) -> Vec<(&'static str, Option<String>)> {
-        let person = Self::layout_of(self.person.as_ref());
-        crate::rows::on_page("layout")
+    pub fn own_keys(&self, section: &str) -> Vec<(&'static str, Option<String>)> {
+        let person = Self::file_of(self.person.as_ref());
+        crate::rows::on_page(section)
             .map(|row| (row.key, own(&person, row.key)))
             .collect()
     }
 
-    /// Puts each of the Layout page's keys back as `before` held them
+    /// Puts each of a page's keys back as `before` held them
     /// (Undo), with the functions `edel settings set` and `reset` use, so
     /// the person's other keys, a change made elsewhere to them and the
     /// file's comments all stay.
     pub fn restore(&self, before: &[(&'static str, Option<String>)]) -> Result<(), String> {
-        let now = self.own_layout();
+        let sections: Vec<&str> = before
+            .iter()
+            .filter_map(|(key, _)| key.split_once('.').map(|(s, _)| s))
+            .collect();
+        let now: Vec<(&'static str, Option<String>)> = sections
+            .iter()
+            .flat_map(|section| self.own_keys(section))
+            .collect();
         for (key, was) in before {
             let is = now
                 .iter()
@@ -562,18 +582,18 @@ mod tests {
             person: Some(person.clone()),
         };
         // Nothing chosen at first: Undo takes a choice out again.
-        let before = files.own_layout();
+        let before = files.own_keys("layout");
         assert!(before.iter().all(|(_, v)| v.is_none()));
         files.choose("layout.preset", "hive").unwrap();
         files.choose("layout.minimize_button", "false").unwrap();
-        assert_ne!(files.own_layout(), before);
+        assert_ne!(files.own_keys("layout"), before);
         files.restore(&before).unwrap();
-        assert_eq!(files.own_layout(), before);
+        assert_eq!(files.own_keys("layout"), before);
         assert_eq!(files.layout().preset, "classic");
         // A choice made before is brought back, and a key another page or
         // `edel settings set` changed meanwhile stays as it is now.
         files.choose("layout.preset", "mac-like").unwrap();
-        let before = files.own_layout();
+        let before = files.own_keys("layout");
         files.choose("layout.preset", "hive").unwrap();
         files.set("appearance.mode", Some("dark")).unwrap();
         files.restore(&before).unwrap();
@@ -685,19 +705,19 @@ mod tests {
         };
         let read = || std::fs::read_to_string(&person).unwrap_or_default();
         // Classic has four workspaces: four writes nothing.
-        files.choose("layout.workspaces", "4").unwrap();
+        files.choose("workspaces.count", "4").unwrap();
         assert!(!person.exists(), "{}", read());
         assert_eq!(files.layout().workspaces, 4);
         // Six is written exactly as `edel settings set` writes it.
-        files.choose("layout.workspaces", "6").unwrap();
+        files.choose("workspaces.count", "6").unwrap();
         let by_command = settings::set(
             &format!("format = {}\n", settings::FORMAT),
-            "layout.workspaces",
+            "workspaces.count",
             "6",
         )
         .unwrap();
         assert_eq!(read(), by_command);
-        assert!(read().contains("workspaces = 6"), "{}", read());
+        assert!(read().contains("[workspaces]\ncount = 6"), "{}", read());
         assert_eq!(files.layout().workspaces, 6);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -711,11 +731,11 @@ mod tests {
             person: Some(person.clone()),
         };
         files
-            .choose("layout.workspace_names", &list_text(&["Mail".into()]))
+            .choose("workspaces.names", &list_text(&["Mail".into()]))
             .unwrap();
         let by_command = settings::set(
             &format!("format = {}\n", settings::FORMAT),
-            "layout.workspace_names",
+            "workspaces.names",
             r#"["Mail"]"#,
         )
         .unwrap();
@@ -741,16 +761,16 @@ mod tests {
         let text = apps_text(&apps);
         assert_eq!(text, r#"{ "org.mozilla.firefox" = 2 }"#);
         assert_eq!(apps_text(&BTreeMap::new()), "{}");
-        assert!(settings::set("format = 1\n", "layout.app_workspaces", &text).is_ok());
-        files.choose("layout.app_workspaces", &text).unwrap();
+        assert!(settings::set("format = 1\n", "workspaces.apps", &text).is_ok());
+        files.choose("workspaces.apps", &text).unwrap();
         assert_eq!(files.layout().app_workspaces, apps);
         // An empty table or list is what a person writes over a machine's
         // own, so `edel settings set` must take them too.
-        assert!(settings::set("format = 1\n", "layout.app_workspaces", "{}").is_ok());
-        assert!(settings::set("format = 1\n", "layout.workspace_names", "[]").is_ok());
+        assert!(settings::set("format = 1\n", "workspaces.apps", "{}").is_ok());
+        assert!(settings::set("format = 1\n", "workspaces.names", "[]").is_ok());
         assert!(read_back(&person).contains("org.mozilla.firefox"));
         // Nothing in the table is what applies without it: it is taken out.
-        files.choose("layout.app_workspaces", "{}").unwrap();
+        files.choose("workspaces.apps", "{}").unwrap();
         assert!(!read_back(&person).contains("firefox"));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -768,15 +788,15 @@ mod tests {
             person: None,
         };
         assert_eq!(
-            files.layout().value("layout.workspaces_shown").as_deref(),
+            files.layout().value("appearance.switcher_shown").as_deref(),
             Some("3")
         );
         assert_eq!(
-            files.layout().value("layout.workspaces_look").as_deref(),
+            files.layout().value("appearance.switcher_look").as_deref(),
             Some("numbers")
         );
         assert_eq!(
-            files.layout().value("layout.workspaces_ends").as_deref(),
+            files.layout().value("appearance.switcher_ends").as_deref(),
             Some("arrows")
         );
         let _ = std::fs::remove_dir_all(&dir);

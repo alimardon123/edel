@@ -909,9 +909,16 @@ pub fn set(assignments: &[String]) -> Result<()> {
 /// the apps widget pins (M5.31d); `edel settings apply` applies the rest.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
-        || ["layout.", "displays.", "appearance.", "shortcuts."]
-            .iter()
-            .any(|section| key.starts_with(section))
+        || [
+            "layout.",
+            "panels.",
+            "workspaces.",
+            "displays.",
+            "appearance.",
+            "shortcuts.",
+        ]
+        .iter()
+        .any(|section| key.starts_with(section))
 }
 
 /// `edel settings reset KEY...`: removes each key, so the release decides
@@ -1560,16 +1567,16 @@ mod tests {
         assert!(desktop_follows("displays.eDP-1.scale"));
         assert!(!desktop_follows("network.hostname"));
         // The pins are followed at once, the rest of [apps] is not.
-        assert!(desktop_follows("apps.pinned"));
+        assert!(desktop_follows("panels.pinned"));
         assert!(!desktop_follows("apps.installed"));
     }
 
     #[test]
     fn apply_does_nothing_for_the_pinned_apps() {
-        // The pins need nothing applied, as layout.tray_in_panel needs
+        // The pins need nothing applied, as panels.tray needs
         // nothing (M5.31d): the desktop reads them from the file itself.
-        let file =
-            settings::read("format = 1\n[apps]\npinned = [\"settings\", \"terminal\"]\n").unwrap();
+        let file = settings::read("format = 1\n[panels]\npinned = [\"settings\", \"terminal\"]\n")
+            .unwrap();
         let (changes, notes) = plan(&file.file, &Machine::default());
         assert!(changes.is_empty(), "{changes:?}");
         assert!(notes.is_empty(), "{notes:?}");

@@ -33,7 +33,7 @@
 #               file, and the second turned off by
 #               edel settings set displays.Virtual-2.enabled=false; a
 #               window opens on the screen the mouse took the pointer to
-#               (M5.2g); with layout.workspaces_per_screen on, Super+2 shows
+#               (M5.2g); with workspaces.per_screen on, Super+2 shows
 #               workspace 2 on Virtual-2 alone, and off, both screens switch
 #               together (M5.2k)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
@@ -72,14 +72,14 @@
 #               the label (AT-SPI: Workspaces: Mail shown, 1 of 4), and the
 #               button look's third underline segment shows the third
 #               (M5.2m)
-#   workspaces-dynamic  layout.dynamic_workspaces = true leaves one workspace
+#   workspaces-dynamic  workspaces.dynamic = true leaves one workspace
 #               with no window, a window adds an empty one after it,
 #               Super+Ctrl+Right and Left show the next and the first,
 #               Super+Ctrl+Shift+Right moves the window to the next and
-#               follows it, closing it leaves one again, layout.workspace_names
+#               follows it, closing it leaves one again, workspaces.names
 #               = ["Mail"] keeps Mail with one empty after it, and the keys'
 #               reset brings Classic's four back (M5.2i)
-#   app-workspaces  layout.app_workspaces = { "edel-placed" = 3 } opens a
+#   app-workspaces  workspaces.apps = { "edel-placed" = 3 } opens a
 #               window of that app on workspace 3 while the person stays on
 #               workspace 1: the state file's window reads 3, the top level
 #               one 1; closing it logs unmapped, and the rule's reset ends
@@ -1122,11 +1122,11 @@ case_power() {
 case_settings_panels() {
 	# Settings' Panels group (M5.31d): ci's file holds one panel with only
 	# the clock, which shell-ui draws at once (`panels now bottom (1
-	# widgets)`). Settings opens on the Layout page asked for by name, its
+	# widgets)`). Settings opens on the Panels page asked for by name, its
 	# log says where Edit panels and Reset lie in the window, and Edit panels
 	# asks shell-ui over the bus for its editor, which opens (`panel editor
 	# asked for over the bus`, `panel editor shown`); Escape closes it without
-	# writing (`panel editor hidden`). Reset takes layout.panels out of ci's
+	# writing (`panel editor hidden`). Reset takes panels.list out of ci's
 	# file and the bar is Classic's again (`panels now bottom (10 widgets)`).
 	one=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'settings panels line'
@@ -1134,7 +1134,7 @@ case_settings_panels() {
 		fail "shell-ui did not draw the one panel ci's file asks for: $(value layers)"
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings panels'
-	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Panels page: $(value windows)"
 	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
 	set -- $place
 	x=$1 y=$2
@@ -1173,24 +1173,24 @@ case_settings_panels() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'panels = ' &&
-		fail "Reset left layout.panels in ci's settings file: $(value settings_file)"
+	value settings_file | grep -q 'list = ' &&
+		fail "Reset left panels.list in ci's settings file: $(value settings_file)"
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: ci's layout.panels drew one bottom panel at once, Settings opened on its Layout page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
+	echo "PASS: ci's panels.list drew one bottom panel at once, Settings opened on its Panels page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
 }
 
 case_settings_workspaces() {
-	# Settings' Workspaces group (M5.2n): Settings opens on the Layout page
-	# asked for by layout.workspaces, scrolls the group to the top and logs
+	# Settings' Workspaces group (M5.2n): Settings opens on the Workspaces page
+	# asked for by name, scrolls the group to the top and logs
 	# where the Number of workspaces row's nine buttons lie in the window.
-	# A click on 6 writes layout.workspaces = 6 to ci's file and the
+	# A click on 6 writes workspaces.count = 6 to ci's file and the
 	# compositor follows (`6 workspaces`); the line taken out, Classic's
 	# four come back.
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings workspaces'
-	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Workspaces page: $(value windows)"
 	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
 	set -- $place
 	x=$1 y=$2
@@ -1222,17 +1222,67 @@ case_settings_workspaces() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q '\[layout\];workspaces = 6' ||
-		fail "ci's settings file is not what edel settings set layout.workspaces=6 writes: $(value settings_file)"
+	value settings_file | grep -q '\[workspaces\];count = 6' ||
+		fail "ci's settings file is not what edel settings set workspaces.count=6 writes: $(value settings_file)"
 	python3 ci/qmp.py screendump "$dir/settings-workspaces.png"
 	# The line taken out again, so the cases after find Classic's four.
 	four=$(count 'edel-compositor: 4 workspaces$')
 	guest 'settings workspaces reset'
-	wait_more 'edel-compositor: 4 workspaces$' "$four" || fail "taking layout.workspaces out did not bring Classic's four back"
+	wait_more 'edel-compositor: 4 workspaces$' "$four" || fail "taking workspaces.count out did not bring Classic's four back"
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: Settings opened on its Layout page at the Workspaces group, a click on the count's 6 at $cx,$cy wrote layout.workspaces = 6 to ci's file and the compositor made six workspaces (settings-workspaces.png), and taking the line out brought four back"
+	echo "PASS: Settings opened on its Workspaces page at the count, a click on the count's 6 at $cx,$cy wrote workspaces.count = 6 to ci's file and the compositor made six workspaces (settings-workspaces.png), and taking the line out brought four back"
+}
+
+case_settings_appearance() {
+	# Settings' Appearance page (M5.2q): opened by the name of its Style
+	# row, it logs where Light, Dark and Automatic lie in the window. A
+	# click on Dark writes appearance.mode = "dark" to ci's file and the
+	# compositor takes the dark scheme (`colour scheme dark`); the line
+	# taken out again, it is light, the release's default.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings appearance'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Appearance page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	dark=none
+	i=0
+	while [ "$dark" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where its Style row lies: $(value settings_appearance_log)"
+		guest 'settings appearance log'
+		text=$(value settings_appearance_log)
+		dark=$(echo "$text" | sed -n 's/.*appearance group places style \([^,]*\),.*/\1/p' | cut -d' ' -f2 | sed 's/[+x]/ /g')
+		[ -n "$dark" ] || dark=none
+		[ "$dark" = none ] && sleep 1
+	done
+	set -- $dark
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	sleep 2
+	said=$(count 'edel-compositor: colour scheme dark')
+	python3 ci/qmp.py click "$cx" "$cy"
+	if ! wait_more 'edel-compositor: colour scheme dark' "$said"; then
+		python3 ci/qmp.py screendump "$dir/settings-appearance-miss.png"
+		guest 'settings file'
+		sleep 2
+		fail "a click on Dark at $cx,$cy did not give the dark scheme (settings-appearance-miss.png); ci's file: $(value settings_file)"
+	fi
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[appearance\];mode = "dark"' ||
+		fail "ci's settings file is not what edel settings set appearance.mode=dark writes: $(value settings_file)"
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/settings-appearance.png"
+	said=$(count 'edel-compositor: colour scheme light')
+	guest 'scheme mine default'
+	wait_more 'edel-compositor: colour scheme light' "$said" || fail "taking appearance.mode out did not bring the light scheme back"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened on its Appearance page, a click on Dark at $cx,$cy wrote appearance.mode = \"dark\" to ci's file and the compositor took the dark scheme (settings-appearance.png), and taking the line out brought light back"
 }
 
 case_display() {
@@ -1527,14 +1577,14 @@ case_workspaces() {
 	back=$(count "DESKTOP-TEST: windows $first\$")
 	python3 ci/qmp.py key meta_l-1
 	wait_more "DESKTOP-TEST: windows $first\$" "$back" || fail "Super+1 did not bring workspace 1 back after the switcher: $(value windows)"
-	# The switcher's look and names (M5.2m). With layout.workspace_names
+	# The switcher's look and names (M5.2m). With workspaces.names
 	# = ["Mail"] the label of the shown workspace reads Mail, as AT-SPI
-	# holds it (workspace 1 is shown here). Then layout.workspaces_look
+	# holds it (workspace 1 is shown here). Then appearance.switcher_look
 	# = button draws the word over an underline split per workspace, and
 	# a click at the middle of its third segment shows workspace 3. Both
 	# keys are reset last, so the numbers look is back for what follows.
 	guest 'switcher names'
-	wait_for 'DESKTOP-TEST: ran switcher names: 0' || fail "layout.workspace_names did not run in the VM"
+	wait_for 'DESKTOP-TEST: ran switcher names: 0' || fail "workspaces.names did not run in the VM"
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: a11y_done')
@@ -1549,7 +1599,7 @@ case_workspaces() {
 	done
 	looks=$(count 'edel-shell-ui: workspaces look button')
 	guest 'switcher button'
-	wait_for 'DESKTOP-TEST: ran switcher button: 0' || fail "layout.workspaces_look did not run in the VM"
+	wait_for 'DESKTOP-TEST: ran switcher button: 0' || fail "appearance.switcher_look did not run in the VM"
 	wait_more 'edel-shell-ui: workspaces look button' "$looks" || fail "shell-ui did not read the button look"
 	wait_for 'edel-shell-ui: workspace segments ' || fail "shell-ui did not log the button look's underline"
 	placed=$(count 'DESKTOP-TEST: places ')
@@ -1611,7 +1661,7 @@ case_workspaces() {
 	guest 'away off'
 	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
 	wait_for "DESKTOP-TEST: windows $first\$" || fail "the first workspace is not back as it was: $(value windows)"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with layout.workspace_names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", layout.workspaces_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back; dragging workspace 3's button onto the first moved it first with away, and dragging it back put them as they were"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with workspaces.names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", appearance.switcher_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back; dragging workspace 3's button onto the first moved it first with away, and dragging it back put them as they were"
 }
 
 # state_is WANT: asks the test service for the workspaces the state file holds
@@ -1634,7 +1684,7 @@ state_is() {
 }
 
 case_workspaces_dynamic() {
-	# Dynamic workspaces (M5.2i): with no window and layout.dynamic_workspaces
+	# Dynamic workspaces (M5.2i): with no window and workspaces.dynamic
 	# on, one workspace is left. A window adds an empty one after it, and
 	# Super+Ctrl+Right and Left show the second and the first, stopping at
 	# the ends. Super+Ctrl+Shift+Right moves the window to the second and
@@ -1648,7 +1698,7 @@ case_workspaces_dynamic() {
 	[ "$(value windows)" = 0 ] || wait_more 'DESKTOP-TEST: windows 0$' "$cleared" || fail "the test windows did not close: $(value windows)"
 	left=$(count 'edel-compositor: workspaces now 1 \(dynamic\)')
 	guest 'dynamic on'
-	wait_more 'edel-compositor: workspaces now 1 \(dynamic\)' "$left" || fail "layout.dynamic_workspaces did not leave one workspace"
+	wait_more 'edel-compositor: workspaces now 1 \(dynamic\)' "$left" || fail "workspaces.dynamic did not leave one workspace"
 	state_is 'shown 1 count 1 names [""]' || fail "the state file does not hold one workspace: $(value workspace_state)"
 	# A window adds an empty second workspace after the first.
 	added=$(count 'edel-compositor: workspaces now 2 \(dynamic\)')
@@ -1704,20 +1754,20 @@ case_workspaces_dynamic() {
 		python3 ci/qmp.py key meta_l-t
 		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+T did not float the first workspace again"
 	fi
-	echo "PASS: with layout.dynamic_workspaces on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; layout.workspace_names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
+	echo "PASS: with workspaces.dynamic on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; workspaces.names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
 }
 
 case_app_workspaces() {
-	# Apps on their workspace (M5.2l): layout.app_workspaces names the test
+	# Apps on their workspace (M5.2l): workspaces.apps names the test
 	# client's app id, edel-placed, for workspace 3. Its window opens there
 	# while the person stays on workspace 1, so the state file's window
 	# reads workspace 3 and the top level one 1. Closing it logs unmapped,
 	# as a window closed while hidden does, and the rule's reset ends it.
 	guest 'apps on 3'
-	wait_for 'DESKTOP-TEST: ran apps on 3: 0' || fail "layout.app_workspaces did not run in the VM"
-	opened=$(count 'edel-compositor: window placed opened on workspace 3 \(layout.app_workspaces\)')
+	wait_for 'DESKTOP-TEST: ran apps on 3: 0' || fail "workspaces.apps did not run in the VM"
+	opened=$(count 'edel-compositor: window placed opened on workspace 3 \(workspaces.apps\)')
 	guest 'placed window'
-	wait_more 'edel-compositor: window placed opened on workspace 3 \(layout.app_workspaces\)' "$opened" || fail "placed did not open on workspace 3 under its rule: $(value windows)"
+	wait_more 'edel-compositor: window placed opened on workspace 3 \(workspaces.apps\)' "$opened" || fail "placed did not open on workspace 3 under its rule: $(value windows)"
 	# The state file may lag the log by a moment, so it is read up to 5 times.
 	i=0
 	while :; do
@@ -1737,8 +1787,8 @@ case_app_workspaces() {
 	guest 'placed off'
 	wait_more 'edel-compositor: unmapped window placed$' "$closed" || fail "placed did not close from workspace 3"
 	guest 'apps off'
-	wait_for 'DESKTOP-TEST: ran apps off: 0' || fail "the layout.app_workspaces reset did not run in the VM"
-	echo "PASS: layout.app_workspaces = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
+	wait_for 'DESKTOP-TEST: ran apps off: 0' || fail "the workspaces.apps reset did not run in the VM"
+	echo "PASS: workspaces.apps = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
@@ -2335,7 +2385,7 @@ case_dock() {
 
 case_pins() {
 	# The apps widget's pins (M5.31d): ci's file holds one dock along the
-	# bottom with the apps widget and apps.pinned = ["terminal", "settings"],
+	# bottom with the apps widget and panels.pinned = ["terminal", "settings"],
 	# which shell-ui follows at once: "pinned apps terminal, settings", and
 	# the dock's places line apps 8+W, whose two first cells are foot and
 	# Settings, 52 px each (the dock's height less 8) and 4 px in from the
@@ -2343,15 +2393,15 @@ case_pins() {
 	# dock's left edge in the state file's edel-dock layer. The dock's middle
 	# row is Y + H / 2. Dragging Settings' middle onto foot's left quarter
 	# pins it first: "pinned settings at 0", "pinned apps settings, terminal",
-	# and ci's file holds apps.pinned = ["settings", "terminal"]. Dragged 150
+	# and ci's file holds panels.pinned = ["settings", "terminal"]. Dragged 150
 	# px up, off the dock, Settings is unpinned: "unpinned settings", "pinned
-	# apps terminal", and the file holds apps.pinned = ["terminal"]. Then the
+	# apps terminal", and the file holds panels.pinned = ["terminal"]. Then the
 	# case's two lines come out of the file, and Classic's panel is back.
 	docks=$(count 'edel-shell-ui: panel places apps 8\+')
 	pins=$(count 'edel-shell-ui: pinned apps terminal, settings$')
 	guest 'pins line'
 	wait_more 'edel-shell-ui: pinned apps terminal, settings$' "$pins" ||
-		fail "apps.pinned = [\"terminal\", \"settings\"] did not reach shell-ui"
+		fail "panels.pinned = [\"terminal\", \"settings\"] did not reach shell-ui"
 	wait_more 'edel-shell-ui: panel places apps 8\+' "$docks" || fail "the dock did not hold the apps widget"
 	i=0
 	until value layers | grep -qE 'edel-dock@[0-9]+,[0-9]+,[0-9]+x[0-9]+'; do
@@ -2372,8 +2422,8 @@ case_pins() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'pinned = \["settings", "terminal"\]' ||
-		fail "ci's settings file does not hold apps.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
+	value settings_file | grep -q '\[panels\];pinned = \["settings", "terminal"\]' ||
+		fail "ci's settings file does not hold panels.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
 	# Off the dock by 150 px: the first cell is Settings now.
 	unpinned=$(count 'edel-shell-ui: unpinned settings$')
 	back=$(count 'edel-shell-ui: pinned apps terminal$')
@@ -2384,8 +2434,8 @@ case_pins() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'pinned = \["terminal"\]' ||
-		fail "ci's settings file does not hold apps.pinned = [\"terminal\"]: $(value settings_file)"
+	value settings_file | grep -q '\[panels\];pinned = \["terminal"\]' ||
+		fail "ci's settings file does not hold panels.pinned = [\"terminal\"]: $(value settings_file)"
 	# Back as the case found it: both lines out, and Classic's panel again.
 	classic=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'pins reset'
@@ -2394,14 +2444,14 @@ case_pins() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -qE 'pinned|panels' &&
+	value settings_file | grep -qE 'pinned =|list =' &&
 		fail "ci's settings file still holds the pins or the dock: $(value settings_file)"
-	echo "PASS: apps.pinned = [\"terminal\", \"settings\"] put two pins on the dock's apps widget at once (\"pinned apps terminal, settings\"); dragging Settings' cell onto foot's left quarter pinned it first and wrote apps.pinned = [\"settings\", \"terminal\"]; dragging it 150 px up unpinned it and wrote apps.pinned = [\"terminal\"]; taking the case's lines out brought Classic's panel back"
+	echo "PASS: panels.pinned = [\"terminal\", \"settings\"] put two pins on the dock's apps widget at once (\"pinned apps terminal, settings\"); dragging Settings' cell onto foot's left quarter pinned it first and wrote panels.pinned = [\"settings\", \"terminal\"]; dragging it 150 px up unpinned it and wrote panels.pinned = [\"terminal\"]; taking the case's lines out brought Classic's panel back"
 }
 
 case_panels() {
 	# The panels as a setting (M5.4e, followed without a restart by
-	# M5.31b): layout.panels with one panel along the bottom holding only
+	# M5.31b): panels.list with one panel along the bottom holding only
 	# the clock is followed by shell-ui at once, "panels now bottom (1
 	# widgets)", so 20,776, inside the menu button's first square, is the
 	# panel's colour; unsetting it brings Classic's panel back, of 10
@@ -2413,7 +2463,7 @@ case_panels() {
 	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'panels clock'
 	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$clock" ||
-		fail "edel settings set layout.panels did not reach shell-ui's panel"
+		fail "edel settings set panels.list did not reach shell-ui's panel"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
 	floats=$(count 'edel-shell-ui: panels now bottom \(2 widgets\)')
@@ -2437,11 +2487,11 @@ case_panels() {
 	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
 	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic_panel" ||
-		fail "edel settings reset layout.panels did not bring Classic's panel back"
-	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting layout.panels did not bring Classic's menu button back"
+		fail "edel settings reset panels.list did not bring Classic's panel back"
+	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting panels.list did not bring Classic's menu button back"
 	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
-		fail "layout.panels restarted shell-ui, which it no longer does"
-	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting layout.panels brought Classic's panel back"
+		fail "panels.list restarted shell-ui, which it no longer does"
+	echo "PASS: panels.list with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting panels.list brought Classic's panel back"
 }
 
 # last_places: the text of the newest panel places line, after its prefix.
@@ -2526,7 +2576,7 @@ case_panel_edit() {
 	# a drag of the clock from its middle to 4 px right of the menu's left
 	# edge moves it to the start of the panel (`panel editor moved clock`,
 	# then `panel places clock 0+`, kept as panel-edit.png); Done writes
-	# layout.panels with start = ["clock", "menu", ...] into ci's settings
+	# panels.list with start = ["clock", "menu", ...] into ci's settings
 	# file and shows the Undo bar, which holds the clock's pixels at the
 	# start (kept as panel-edit-done.png); Undo writes the panels back as
 	# they were, taking the line out again when there was none (the
@@ -2553,7 +2603,7 @@ case_panel_edit() {
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
 	had=no
-	value settings_file | grep -q 'panels = ' && had=yes
+	value settings_file | grep -q 'list = ' && had=yes
 	open_editor_from_menu
 	places=$(last_places)
 	# A leading ", " so the first entry matches as the others do.
@@ -2591,13 +2641,13 @@ case_panel_edit() {
 	[ -n "$dh" ] || fail "the drawer's places line is not what CI reads: $drawer"
 	mx=$((sx + (sw - cw) / 2 + dx + dw / 2))
 	my=$((sy + (sh - ch) / 2 + dy + dh / 2))
-	done=$(count 'edel-shell-ui: panel editor done, layout.panels written')
+	done=$(count 'edel-shell-ui: panel editor done, panels.list written')
 	hidden=$(count 'edel-shell-ui: panel editor hidden')
 	bar=$(count 'edel-shell-ui: panels undo bar shown')
 	places_before=$(count 'edel-shell-ui: panel places')
 	python3 ci/qmp.py click "$mx" "$my"
-	wait_more 'edel-shell-ui: panel editor done, layout.panels written' "$done" ||
-		fail "Done at $mx,$my did not write layout.panels: $(tr -d '\r' <"$log" | grep -a 'panel editor done' | tail -n 1)"
+	wait_more 'edel-shell-ui: panel editor done, panels.list written' "$done" ||
+		fail "Done at $mx,$my did not write panels.list: $(tr -d '\r' <"$log" | grep -a 'panel editor done' | tail -n 1)"
 	wait_more 'edel-shell-ui: panel editor hidden' "$hidden" || fail "the drawer stayed open after Done"
 	wait_more 'edel-shell-ui: panels undo bar shown' "$bar" || fail "Done did not show the Undo bar"
 	i=0
@@ -2624,8 +2674,8 @@ case_panel_edit() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'panels = .*start = \["clock", "menu"' ||
-		fail "ci's settings file does not hold layout.panels with start = [\"clock\", \"menu\": $(value settings_file)"
+	value settings_file | grep -q 'list = .*start = \["clock", "menu"' ||
+		fail "ci's settings file does not hold panels.list with start = [\"clock\", \"menu\": $(value settings_file)"
 	wait_more 'edel-shell-ui: panel places' "$places_before" || fail "the panel did not draw again after Done"
 
 	# The clock's pixels at the start, with the editor shut: its place is the
@@ -2640,7 +2690,7 @@ case_panel_edit() {
 		fail "the clock's box at $kx,765 is the panel's colour alone: shell-ui did not draw the clock at the start"
 
 	# Undo: the line goes back as it was, and the panel shows the clock last.
-	if [ "$had" = yes ]; then what='layout.panels written'; else what='layout.panels taken out'; fi
+	if [ "$had" = yes ]; then what='panels.list written'; else what='panels.list taken out'; fi
 	undone=$(count "edel-shell-ui: panels undone, $what")
 	gone=$(count 'edel-shell-ui: panels undo bar hidden')
 	places_before=$(count 'edel-shell-ui: panel places')
@@ -2664,9 +2714,9 @@ case_panel_edit() {
 	# clicked at its middle, writes the dock and shows it as edel-dock.
 	open_panel_menu_at_space
 	menu_middle 'style dock'
-	changed=$(count 'edel-shell-ui: panel menu changed style dock, layout.panels written')
+	changed=$(count 'edel-shell-ui: panel menu changed style dock, panels.list written')
 	python3 ci/qmp.py click "$mx" "$my"
-	wait_more 'edel-shell-ui: panel menu changed style dock, layout.panels written' "$changed" ||
+	wait_more 'edel-shell-ui: panel menu changed style dock, panels.list written' "$changed" ||
 		fail "the panel menu's Dock segment at $mx,$my did not write the dock: $(tr -d '\r' <"$log" | grep -a 'panel menu' | tail -n 1)"
 	i=0
 	until value layers | grep -q 'edel-dock@'; do
@@ -2722,11 +2772,11 @@ case_panel_edit() {
 	value settings_file | grep -q 'style = "dock"' &&
 		fail "ci's settings file still holds the dock after Undo: $(value settings_file)"
 
-	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote layout.panels with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\"); the panel menu's Dock segment made the panel a dock (edel-dock, style = \"dock\" in ci's file), and its Undo bar took it back to a bar"
+	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote panels.list with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\"); the panel menu's Dock segment made the panel a dock (edel-dock, style = \"dock\" in ci's file), and its Undo bar took it back to a bar"
 }
 
 case_dockhide() {
-	# A dock that hides while covered (M5.4f): layout.panels with one dock
+	# A dock that hides while covered (M5.4f): panels.list with one dock
 	# along the bottom, hide = "covered", holding the apps. Uncovered, it
 	# shows; a 1200x740 window over it hides it, so its left end shows
 	# the window's colour; the pointer at the screen's bottom edge brings
@@ -2736,7 +2786,7 @@ case_dockhide() {
 	dock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'dock hiding'
 	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$dock" ||
-		fail "setting a hiding dock in layout.panels did not reach shell-ui"
+		fail "setting a hiding dock in panels.list did not reach shell-ui"
 	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps"
 	sleep 1
 	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 8+\([0-9]*\)$/\1/p' | tail -n 1)
@@ -2757,7 +2807,7 @@ case_dockhide() {
 	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
 	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic_panel" ||
-		fail "unsetting layout.panels did not bring Classic's panel back"
+		fail "unsetting panels.list did not bring Classic's panel back"
 	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
 }
 
@@ -3452,7 +3502,7 @@ case_outputs() {
 	# so both show 2, and Super+1 from Virtual-1 brings both back to 1.
 	guest 'screens apart on'
 	wait_for 'DESKTOP-TEST: ran screens apart on: 0' ||
-		fail "layout.workspaces_per_screen = true did not run in the VM"
+		fail "workspaces.per_screen = true did not run in the VM"
 	wait_for 'edel-compositor: workspaces per screen on' ||
 		fail "the compositor did not log that workspaces per screen are on"
 	shows=$(count 'edel-compositor: workspace 2 on Virtual-2$')
@@ -3467,7 +3517,7 @@ case_outputs() {
 	# past it. A click there shows 3 on Virtual-2 alone.
 	placed=$(count 'edel-shell-ui: panel places workspaces ')
 	guest 'screens panel'
-	wait_for 'DESKTOP-TEST: ran screens panel: 0' || fail "layout.panels with a panel on every screen did not run in the VM"
+	wait_for 'DESKTOP-TEST: ran screens panel: 0' || fail "panels.list with a panel on every screen did not run in the VM"
 	i=0
 	until [ "$(count 'edel-shell-ui: panel places workspaces ')" -ge $((placed + 2)) ]; do
 		sleep 0.2
@@ -3481,10 +3531,10 @@ case_outputs() {
 		fail "a click on Virtual-2's switcher's 3, at $((1280 + x2 + 97)),748, did not show workspace 3 there"
 	outputs_show 1 3 || fail "Virtual-2's switcher should have shown 3 there alone: $outputs_now"
 	guest 'screens panel off'
-	wait_for 'DESKTOP-TEST: ran screens panel off: 0' || fail "the layout.panels reset did not run in the VM"
+	wait_for 'DESKTOP-TEST: ran screens panel off: 0' || fail "the panels.list reset did not run in the VM"
 	guest 'screens apart off'
 	wait_for 'DESKTOP-TEST: ran screens apart off: 0' ||
-		fail "layout.workspaces_per_screen reset did not run in the VM"
+		fail "workspaces.per_screen reset did not run in the VM"
 	wait_for 'edel-compositor: workspaces per screen off' ||
 		fail "the compositor did not log that workspaces per screen are off"
 	outputs_show 3 3 || fail "with workspaces per screen off, both screens should show workspace 3, Virtual-2's: $outputs_now"
@@ -3498,7 +3548,7 @@ case_outputs() {
 		fail "edel settings set displays.Virtual-2.enabled=false did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-2 off' ||
 		fail "the compositor did not turn Virtual-2 off"
-	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off, with layout.workspaces_per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off, with workspaces.per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
 }
 
 case_tray() {
@@ -3511,7 +3561,7 @@ case_tray() {
 	# (two 2 px margins and the arrow's 30 px cell). A click on the arrow opens
 	# the grid above the panel, where the icon lies at the middle of its cell
 	# (kept as traygrid.png); dragging it onto the panel keeps it there and
-	# writes layout.tray_in_panel into ci's settings file, and the icon lies
+	# writes panels.tray into ci's settings file, and the icon lies
 	# at the arrow's place in a 34 px tray with no arrow. The icon is at the
 	# middle of its cell in the panel, and a screen reader reads it as a
 	# button named by the item's title, a click asks the item to Activate and
@@ -3595,8 +3645,8 @@ case_tray() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'tray_in_panel = \["edel-testclient"\]' ||
-		fail "ci's settings file does not hold layout.tray_in_panel = [\"edel-testclient\"]: $(value settings_file)"
+	value settings_file | grep -q '\[panels\];tray = \["edel-testclient"\]' ||
+		fail "ci's settings file does not hold panels.tray = [\"edel-testclient\"]: $(value settings_file)"
 	# The kept icon takes the arrow's cell: the tray is still 34 px wide, at x.
 	shot tray $((x + 17)) 780 33aa66 >/dev/null ||
 		fail "the kept icon is not #33aa66 at its middle, $((x + 17)),780"
@@ -3621,7 +3671,7 @@ case_tray() {
 		i=$((i + 1))
 		[ "$i" -lt 5 ] || fail "the test item was not asked to Activate and then for its ContextMenu: $(value sni)"
 	done
-	# Settings' Tray card (M5.9h): opened on the Layout page, it lists the
+	# Settings' Tray card (M5.9h): opened on the Panels page, it lists the
 	# app in the panel, the choice the drag made. Resetting the key puts it
 	# behind the arrow, and the panel and the card follow at once. Super+Q
 	# closes Settings again.
@@ -3639,7 +3689,7 @@ case_tray() {
 	behind=$(count 'edel-shell-ui: tray: 1 behind the arrow')
 	guest 'tray reset'
 	wait_more 'edel-shell-ui: tray: 1 behind the arrow' "$behind" ||
-		fail "resetting layout.tray_in_panel did not put the app behind the arrow in the panel"
+		fail "resetting panels.tray did not put the app behind the arrow in the panel"
 	i=0
 	while :; do
 		guest 'settings log'
@@ -3661,13 +3711,13 @@ case_tray() {
 	# The key taken out again, as ci's file had none before the test.
 	ran='DESKTOP-TEST: ran tray reset: 0'
 	guest 'tray reset'
-	wait_for "$ran" || fail "the service did not take layout.tray_in_panel out of ci's file"
+	wait_for "$ran" || fail "the service did not take panels.tray out of ci's file"
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q 'tray_in_panel' &&
-		fail "ci's settings file still holds layout.tray_in_panel after tray reset: $(value settings_file)"
-	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
+	value settings_file | grep -q 'tray = ' &&
+		fail "ci's settings file still holds panels.tray after tray reset: $(value settings_file)"
+	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote panels.tray = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {
@@ -3689,7 +3739,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

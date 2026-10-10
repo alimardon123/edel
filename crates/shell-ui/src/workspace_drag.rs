@@ -5,7 +5,7 @@
 //! switcher, the workspace moves to the place its button lies over
 //! (`widgets::workspaces::landing`), with its windows, name and policy
 //! (`link.move_workspace`), and the names in the person's settings file
-//! follow the new order (`layout.workspace_names`, written as Settings
+//! follow the new order (`workspaces.names`, written as Settings
 //! writes a key, ADR-008). Dragged over the switcher, the panel's caret
 //! shows where the button would land. Let go anywhere else, nothing
 //! happens, and the pointer leaving the panel cancels the press.
@@ -41,7 +41,7 @@ pub fn moved_along(from: (f32, f32), to: (f32, f32)) -> bool {
     (to.0 - from.0).hypot(to.1 - from.1) >= DRAG_START
 }
 
-/// The names to write for the person's `layout.workspace_names` after a
+/// The names to write for the person's `workspaces.names` after a
 /// move, as a TOML array (M5.2p): none when `list` is what the machine's
 /// file gives without the person's (ADR-008: writers never write a
 /// default), so the person's line is reset; an empty list over a machine's
@@ -204,7 +204,7 @@ impl Shell {
         self.move_names(from, to, count);
     }
 
-    /// Writes the person's `layout.workspace_names` in their new order after
+    /// Writes the person's `workspaces.names` in their new order after
     /// a move from place `from` to `to` among `count` workspaces (M5.2p).
     /// Nothing is written when there are no names at all; a failure says
     /// what stays as it was.

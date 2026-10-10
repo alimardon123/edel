@@ -47,10 +47,9 @@ pub const RADIUS: f32 = 50.0;
 pub const MOST_OUTPUTS: usize = 6;
 /// A step of the volume on the keyboard, percent.
 pub const STEP: u32 = 5;
-/// The Settings page the Dark style tile's arrow opens: Appearance has no
-/// page in Settings yet (M5.12), so Layout, which has the colour scheme's
-/// neighbours; one name to change when it does.
-pub const DARK_PAGE: &str = "layout";
+/// The Settings page the Dark style tile's arrow opens: Appearance, where
+/// the colour scheme (`appearance.mode`) is set (M5.2q).
+pub const DARK_PAGE: &str = "appearance";
 /// The Settings page the list's last row opens.
 pub const SOUND_PAGE: &str = "sound";
 /// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
@@ -1820,9 +1819,8 @@ mod tests {
 
     #[test]
     fn dark_styles_arrow_opens_a_page_the_settings_app_builds() {
-        // The Settings app has no Appearance page yet (M5.12): its pages
-        // are the arms of its page table. When it has, DARK_PAGE becomes
-        // "appearance" and this test says so.
+        // The Settings app's pages are the arms of its page table; the
+        // Dark style arrow opens its Appearance page (M5.2q).
         let main = include_str!("../../settings/src/main.rs");
         assert!(
             main.contains(&format!("\"{DARK_PAGE}\" => Some(Page {{"))

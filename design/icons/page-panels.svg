@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round">
+  <!-- Settings' Panels page (M5.2q): a panel with its widgets. -->
+  <rect x="1.75" y="5.25" width="12.5" height="5.5" rx="2.75"/>
+  <path d="M4.75 8H5.25M7.75 8H8.25M10.75 8H11.25"/>
+</svg>

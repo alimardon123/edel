@@ -1,8 +1,9 @@
-# Every key the system file has had, one per line, in the order it was added.
-# Append only: a line is deleted only with a format bump (ADR-008), and
-# CI fails a pull request that deletes one without it. Rewritten once with
-# the Settings app's names (M5.25b), the one exception ADR-008's same names
-# decision allows, while nobody had Edel OS installed.
+# Every key the settings file has, one per line, in the order it was added.
+# Once Edel OS is released, append only: a line is deleted only with a
+# format bump (ADR-008), and CI fails a pull request that deletes one
+# without it. Until the first release nobody runs Edel OS, so keys are
+# renamed or dropped freely, with no old names kept (Alimardon, 2026-10-10;
+# M5.25b and M5.2q renamed keys so).
 system.variant
 system.developer_mode
 system.profiles
@@ -18,7 +19,6 @@ layout.tiling
 layout.title_bars
 layout.device_type
 layout.window_buttons
-layout.panels
 displays.*.position
 displays.*.scale
 displays.*.resolution
@@ -57,16 +57,6 @@ layout.maximize_button
 layout.tiling_style
 region.time_servers
 notifications.do_not_disturb
-layout.tray_in_panel
-apps.pinned
-layout.workspaces
-layout.dynamic_workspaces
-layout.workspace_names
-layout.workspaces_per_screen
-layout.app_workspaces
-layout.workspaces_look
-layout.workspaces_shown
-layout.workspaces_ends
 panels.list
 panels.tray
 panels.pinned

@@ -87,7 +87,7 @@ pub const DEFAULT_TILES: &[&str] = &[
 /// Quick settings (M5.9a): the tiles a preset shows, in two columns, in
 /// this order. A tile whose feature or hardware this machine lacks is left
 /// out by shell-ui, not here. A person's own list, a key beside
-/// `layout.panels`, comes with M5.31's editor.
+/// `panels.list`, comes with M5.31's editor.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Quick {
@@ -426,7 +426,7 @@ pub fn check_quick(quick: &Quick) -> Result<()> {
     Ok(())
 }
 
-/// What a preset's panels, or `[[layout.panels]]` in a settings file
+/// What a preset's panels, or `[[panels.list]]` in a settings file
 /// (M5.4e), must be: at most one along each edge, holding widget names
 /// that could be names.
 pub fn check_panels(panels: &[Panel]) -> Result<()> {

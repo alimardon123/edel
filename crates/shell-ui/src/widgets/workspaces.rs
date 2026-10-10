@@ -1,10 +1,10 @@
-//! The workspace switcher (M5.2c, M5.2m), in the look `layout.workspaces_look`
+//! The workspace switcher (M5.2c, M5.2m), in the look `appearance.switcher_look`
 //! names. `numbers` (the default) draws round buttons numbered as Super+1 to
 //! Super+9 are, the shown workspace a wider pill in the accent colour, at
-//! most `layout.workspaces_shown` (3 by default) at once, the shown
+//! most `appearance.switcher_shown` (3 by default) at once, the shown
 //! workspace and its neighbours, so the panel keeps its width whatever the
 //! count. Where more lie, the next button peeks in at that side, and
-//! `layout.workspaces_ends` says how: faded (`fade`), with a small arrow
+//! `appearance.switcher_ends` says how: faded (`fade`), with a small arrow
 //! over the fade (`arrows`, the default) or with how many lie beyond it
 //! (`counts`). A workspace with a name shows its name in its pill, and every
 //! button is as wide as the widest label, so the width does not change as the
@@ -22,7 +22,7 @@
 use accesskit::Role;
 use edel::i18n::{n_, tr, trf};
 use edel::presets::MOST_WORKSPACES;
-use edel::settings::{WORKSPACES_ENDS, WORKSPACES_LOOK, WORKSPACES_SHOWN};
+use edel::settings::{SWITCHER_ENDS, SWITCHER_LOOK, SWITCHER_SHOWN};
 use edel::tokens::{Colour, Tokens};
 use tiny_skia::{FillRule, LineCap, LineJoin, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
 
@@ -43,7 +43,7 @@ pub const WIDGET: Widget = Widget {
 };
 
 /// How many buttons show at once when the person says none.
-pub const DEFAULT_SHOWN: usize = edel::settings::WORKSPACES_SHOWN_DEFAULT as usize;
+pub const DEFAULT_SHOWN: usize = edel::settings::SWITCHER_SHOWN_DEFAULT as usize;
 /// A button's height, and the least width of a label's button.
 const BUTTON: f32 = 20.0;
 /// The shown workspace's pill is this much wider than a button.
@@ -76,7 +76,7 @@ const SEGMENT_GAP: f32 = 2.0;
 const FIELD: &str = "\u{1e}";
 const NAME: &str = "\u{1f}";
 
-/// How the switcher looks (`layout.workspaces_look`).
+/// How the switcher looks (`appearance.switcher_look`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Look {
     /// Round buttons, numbered or named (the default).
@@ -106,12 +106,12 @@ impl Look {
 /// The default is `edel::settings`' (M5.2m), which Settings shows too.
 impl Default for Look {
     fn default() -> Look {
-        Look::of(edel::settings::WORKSPACES_LOOK_DEFAULT).unwrap_or(Look::Numbers)
+        Look::of(edel::settings::SWITCHER_LOOK_DEFAULT).unwrap_or(Look::Numbers)
     }
 }
 
 /// What the numbers look shows where more workspaces lie than show
-/// (`layout.workspaces_ends`).
+/// (`appearance.switcher_ends`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ends {
     /// The next button, faded.
@@ -145,7 +145,7 @@ impl Ends {
 /// The default is `edel::settings`' (M5.2m), which Settings shows too.
 impl Default for Ends {
     fn default() -> Ends {
-        Ends::of(edel::settings::WORKSPACES_ENDS_DEFAULT).unwrap_or(Ends::Arrows)
+        Ends::of(edel::settings::SWITCHER_ENDS_DEFAULT).unwrap_or(Ends::Arrows)
     }
 }
 
@@ -162,14 +162,14 @@ impl Settings {
     pub fn read(machine: Option<&str>, person: Option<&str>) -> Settings {
         let chosen = |key: &str| edel::settings::chosen(key, machine, person);
         Settings {
-            look: chosen(WORKSPACES_LOOK)
+            look: chosen(SWITCHER_LOOK)
                 .and_then(|v| Look::of(&v))
                 .unwrap_or_default(),
-            shown: chosen(WORKSPACES_SHOWN)
+            shown: chosen(SWITCHER_SHOWN)
                 .and_then(|v| v.parse::<usize>().ok())
                 .filter(|n| (1..=MOST_WORKSPACES).contains(n))
                 .unwrap_or(DEFAULT_SHOWN),
-            ends: chosen(WORKSPACES_ENDS)
+            ends: chosen(SWITCHER_ENDS)
                 .and_then(|v| Ends::of(&v))
                 .unwrap_or_default(),
         }
@@ -399,7 +399,7 @@ pub fn landing(shown: &str, slot: f32, x: f32) -> Option<usize> {
 }
 
 /// The names of the workspaces after the one at place `from` moves to place
-/// `to` (M5.2p), as `layout.workspace_names` lists them: padded with empty
+/// `to` (M5.2p), as `workspaces.names` lists them: padded with empty
 /// names to `count` (or to as many names as there are), the moved name's
 /// place as the compositor's `Desks::reorder` moves it, then the empty names
 /// at the end taken off. A place past the list is left as it is.
@@ -1124,7 +1124,7 @@ mod tests {
                 ends: Ends::Arrows,
             }
         );
-        let person = "format = 1\n[layout]\nworkspaces_look = \"button\"\nworkspaces_shown = 5\nworkspaces_ends = \"counts\"\n";
+        let person = "format = 1\n[appearance]\nswitcher_look = \"button\"\nswitcher_shown = 5\nswitcher_ends = \"counts\"\n";
         assert_eq!(
             Settings::read(None, Some(person)),
             Settings {
@@ -1133,8 +1133,8 @@ mod tests {
                 ends: Ends::Counts,
             }
         );
-        let machine = "format = 1\n[layout]\nworkspaces_shown = 7\nworkspaces_ends = \"fade\"\n";
-        let person = "format = 1\n[layout]\nworkspaces_shown = 4\n";
+        let machine = "format = 1\n[appearance]\nswitcher_shown = 7\nswitcher_ends = \"fade\"\n";
+        let person = "format = 1\n[appearance]\nswitcher_shown = 4\n";
         assert_eq!(
             Settings::read(Some(machine), Some(person)),
             Settings {
@@ -1143,7 +1143,7 @@ mod tests {
                 ends: Ends::Fade,
             }
         );
-        let unknown = "format = 1\n[layout]\nworkspaces_look = \"dots\"\nworkspaces_shown = 12\nworkspaces_ends = 2\n";
+        let unknown = "format = 1\n[appearance]\nswitcher_look = \"dots\"\nswitcher_shown = 12\nswitcher_ends = 2\n";
         assert_eq!(
             Settings::read(None, Some(unknown)),
             Settings {

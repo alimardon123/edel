@@ -401,8 +401,5 @@ msgstr ""
 msgid "Windows: {titles}"
 msgstr ""
 
-msgid "Workspaces"
-msgstr ""
-
 msgid "Workspaces: {name} shown, {n} of {count}"
 msgstr ""

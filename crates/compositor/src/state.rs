@@ -955,7 +955,7 @@ impl CompositorHandler for Edel {
             data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
             let insets = self.insets(&window);
             let size = insets.frame_size(window.geometry().size);
-            // An app with a rule (`layout.app_workspaces`, M5.2l) opens on
+            // An app with a rule (`workspaces.apps`, M5.2l) opens on
             // its workspace; that workspace not shown, the window waits there,
             // unmapped, and the person stays where they are.
             let ruled = self
@@ -970,7 +970,7 @@ impl CompositorHandler for Edel {
             let frame = match ruled {
                 Some((desk, (_, false))) => {
                     eprintln!(
-                        "edel-compositor: window {} opened on workspace {} (layout.app_workspaces)",
+                        "edel-compositor: window {} opened on workspace {} (workspaces.apps)",
                         title(&window),
                         desk + 1
                     );

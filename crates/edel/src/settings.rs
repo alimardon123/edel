@@ -20,9 +20,11 @@ use toml_edit::DocumentMut;
 
 use crate::i18n::{n_, tr, trf};
 
-/// The settings file format this release reads and writes. A key is never
-/// removed or renamed within a format: `tests/keys.txt` lists every key a
-/// format has had, and a cargo test holds the structs to it.
+/// The settings file format this release reads and writes. Once Edel OS is
+/// released, a key is never removed or renamed within a format:
+/// `tests/keys.txt` lists every key a format has had, and a cargo test
+/// holds the structs to it. Until the first release, keys are renamed
+/// freely, as nobody runs Edel OS yet (Alimardon, 2026-10-10).
 pub const FORMAT: i64 = 1;
 
 /// One page of the Settings app and the section of the settings file it
@@ -380,74 +382,6 @@ pub const KEYS: &[Key] = &[
     now("notifications.do_not_disturb", Kind::Flag),
 ];
 
-/// Keys renamed within format 1, each old name and its new one (M5.2q,
-/// when Settings gave panels and workspaces pages of their own, before
-/// the first public release). A file with an old name keeps working:
-/// every reader takes it as the new name when the new one is absent,
-/// `set` and `reset` take either name and leave only the new one, and
-/// `tests/keys.txt` keeps the old lines, so no key is removed.
-pub const RENAMED: &[(&str, &str)] = &[
-    ("layout.panels", "panels.list"),
-    ("layout.tray_in_panel", "panels.tray"),
-    ("apps.pinned", "panels.pinned"),
-    ("layout.workspaces", "workspaces.count"),
-    ("layout.dynamic_workspaces", "workspaces.dynamic"),
-    ("layout.workspaces_per_screen", "workspaces.per_screen"),
-    ("layout.workspace_names", "workspaces.names"),
-    ("layout.app_workspaces", "workspaces.apps"),
-    ("layout.workspaces_look", "appearance.switcher_look"),
-    ("layout.workspaces_shown", "appearance.switcher_shown"),
-    ("layout.workspaces_ends", "appearance.switcher_ends"),
-];
-
-/// The name `key` has now: its new name when it was renamed, else itself.
-pub fn current_name(key: &str) -> &str {
-    RENAMED
-        .iter()
-        .find(|(old, _)| *old == key)
-        .map_or(key, |(_, new)| new)
-}
-
-/// `table` with every old name of [`RENAMED`] taken as its new one: the
-/// old value moves to the new name when the file has none there, and is
-/// dropped when it has. Gives the old names found.
-fn with_current_names(table: &Table) -> (Table, Vec<&'static str>) {
-    let mut table = table.clone();
-    let mut found = Vec::new();
-    for (old, new) in RENAMED {
-        let Some(value) = take_path(&mut table, old) else {
-            continue;
-        };
-        found.push(*old);
-        let (section, name) = new.split_once('.').unwrap_or((new, ""));
-        let inner = table
-            .entry(section.to_string())
-            .or_insert_with(|| Value::Table(Table::new()));
-        if let Value::Table(inner) = inner {
-            inner.entry(name.to_string()).or_insert(value);
-        }
-    }
-    (table, found)
-}
-
-/// Takes the value at a dotted `path` out of `table`, leaving out a table
-/// it empties.
-fn take_path(table: &mut Table, path: &str) -> Option<Value> {
-    match path.split_once('.') {
-        None => table.remove(path),
-        Some((first, rest)) => {
-            let Value::Table(inner) = table.get_mut(first)? else {
-                return None;
-            };
-            let value = take_path(inner, rest);
-            if value.is_some() && inner.is_empty() {
-                table.remove(first);
-            }
-            value
-        }
-    }
-}
-
 /// A whole machine. Every key is optional: an absent key means the release
 /// decides (ADR-008, section 3), so nothing here has a default of its own.
 /// Each section is a page of the Settings app ([`PAGES`]).
@@ -803,9 +737,6 @@ pub struct Read {
     pub problems: Vec<Problem>,
     /// Keys that were read but that no part of this release acts on yet
     pub later: Vec<String>,
-    /// Keys the file names by an old name, each with its name now
-    /// ([`RENAMED`]); read as the new name, and not a problem.
-    pub renamed: Vec<(String, String)>,
 }
 
 /// Reads a settings file leniently: unknown keys and values of the wrong
@@ -924,10 +855,9 @@ pub enum Source {
 /// and the person's files' text; a file that is missing or not TOML sets
 /// nothing.
 pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source {
-    let key = current_name(key);
     let find = |text: Option<&str>| -> Option<Value> {
         let table: Table = toml::from_str(text?).ok()?;
-        let mut value = Value::Table(with_current_names(&table).0);
+        let mut value = Value::Table(table);
         for part in key.split('.') {
             value = value.as_table()?.get(part)?.clone();
         }
@@ -1077,8 +1007,6 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
 /// byte for byte. VALUE is TOML when it reads as TOML (`true`, `2`,
 /// `["a"]`, `"x"`) and plain text otherwise, so `hostname=lab-1` works.
 pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
-    let key = current_name(key);
-    let text = &without_old_names(text, key)?;
     let path: Vec<&str> = key.split('.').collect();
     let entry = known_key(key, &path)?;
     let value = normalize(entry.kind, &value_from_arg(value)).map_err(|m| anyhow!("{key}: {m}"))?;
@@ -1138,10 +1066,6 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
 /// user's table stays when its last key goes, so apply still looks after
 /// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
-    let key = current_name(key);
-    let had_old = without_old_names(text, key)?;
-    let had_old = (had_old != text).then_some(had_old);
-    let text = had_old.as_deref().unwrap_or(text);
     let path: Vec<&str> = key.split('.').collect();
     let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
     let removed = match path.as_slice() {
@@ -1151,7 +1075,7 @@ pub fn unset(text: &str, key: &str) -> Result<String> {
             .and_then(|user| user.as_table_like_mut())
             .is_some_and(|user| user.remove(last).is_some()),
         _ => remove_path(doc.as_table_mut(), &path)?,
-    } || had_old.is_some();
+    };
     if !removed {
         bail!(
             "{}",
@@ -1162,30 +1086,6 @@ pub fn unset(text: &str, key: &str) -> Result<String> {
         );
     }
     Ok(doc.to_string())
-}
-
-/// `text` without the lines of `key`'s old names ([`RENAMED`]), so a
-/// write leaves the key under its name now only (M5.2q).
-fn without_old_names(text: &str, key: &str) -> Result<String> {
-    let olds: Vec<&str> = RENAMED
-        .iter()
-        .filter(|(_, new)| *new == key)
-        .map(|(old, _)| *old)
-        .collect();
-    if olds.is_empty() {
-        return Ok(text.to_string());
-    }
-    let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
-    let mut removed = false;
-    for old in olds {
-        let path: Vec<&str> = old.split('.').collect();
-        removed |= remove_path(doc.as_table_mut(), &path)?;
-    }
-    Ok(if removed {
-        doc.to_string()
-    } else {
-        text.to_string()
-    })
 }
 
 fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
@@ -1302,7 +1202,7 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
     let mut table = Table::new();
     table.insert("v".into(), value.clone());
     let doc: DocumentMut = toml::to_string(&table)?.parse()?;
-    // A list of tables, such as layout.panels, comes back as [[v]]
+    // A list of tables, such as panels.list, comes back as [[v]]
     // tables; it is written inline, on the key's one line.
     doc.get("v")
         .cloned()
@@ -1350,8 +1250,7 @@ fn format_of(table: &Table) -> Result<i64> {
 fn read_table(table: &Table) -> Result<Read> {
     let mut problems = Vec::new();
     let mut later = Vec::new();
-    let (table, renamed) = with_current_names(table);
-    let kept = clean(&table, &[], &mut problems, &mut later);
+    let kept = clean(table, &[], &mut problems, &mut later);
     let mut ignored = Vec::new();
     let file: SettingsFile =
         serde_ignored::deserialize(Value::Table(kept), |path| ignored.push(path.to_string()))
@@ -1366,10 +1265,6 @@ fn read_table(table: &Table) -> Result<Read> {
         file,
         problems,
         later,
-        renamed: renamed
-            .into_iter()
-            .map(|old| (old.to_string(), current_name(old).to_string()))
-            .collect(),
     })
 }
 
@@ -1710,10 +1605,7 @@ mod tests {
             source("layout.tiling", Some(machine), Some(person)),
             Source::Person(Value::Boolean(false))
         );
-        assert_eq!(
-            source("layout.panels", Some(machine), None),
-            Source::Release
-        );
+        assert_eq!(source("panels.list", Some(machine), None), Source::Release);
         assert_eq!(
             source("layout.preset", Some("not toml ["), None),
             Source::Release
@@ -1863,15 +1755,15 @@ font_size = 11
     fn panels_are_checked_as_a_presets_and_read_as_tables_or_inline() {
         let set_one = set(
             "format = 1\n",
-            "layout.panels",
+            "panels.list",
             r#"[{ edge = "bottom", end = ["clock"] }]"#,
         )
         .unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
+            "format = 1\n\n[panels]\nlist = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
         );
-        let tables = "format = 1\n[[layout.panels]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[layout.panels]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
+        let tables = "format = 1\n[[panels.list]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[panels.list]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
         assert!(check(tables).unwrap().is_empty());
         let panels = read(tables).unwrap().file.panels.list.unwrap();
         assert_eq!(panels.len(), 2);
@@ -1902,12 +1794,12 @@ font_size = 11
                 "a dock floats already; take floating out of the bottom panel",
             ),
         ] {
-            let error = set("format = 1\n", "layout.panels", bad).unwrap_err();
+            let error = set("format = 1\n", "panels.list", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");
-            let file = format!("format = 1\n[layout]\npanels = {bad}\n");
+            let file = format!("format = 1\n[panels]\nlist = {bad}\n");
             let read = read(&file).unwrap();
             assert_eq!(read.file.panels.list, None, "{bad}");
-            assert_eq!(read.problems[0].key, "layout.panels");
+            assert_eq!(read.problems[0].key, "panels.list");
         }
     }
 
@@ -2207,14 +2099,6 @@ font_size = 11
     #[test]
     fn the_structs_have_every_key_in_keys_txt() {
         for line in keys_txt() {
-            // A renamed key is read as its new name (M5.2q).
-            if let Some((_, new)) = RENAMED.iter().find(|(old, _)| *old == line) {
-                assert!(
-                    KEYS.iter().any(|k| k.path == *new),
-                    "{line} was renamed to {new}, which is not in KEYS"
-                );
-                continue;
-            }
             assert!(
                 KEYS.iter().any(|k| k.path == line),
                 "{line} is in tests/keys.txt but not in KEYS; a key is never removed within a format"
@@ -2272,13 +2156,13 @@ font_size = 11
     fn the_list_is_written_as_toml_that_reads_back_as_it_was() {
         let list = vec!["plain".to_string(), "say \"hi\" \\ there".to_string()];
         let value = tray_value(&list, None).expect("a list the machine does not give is written");
-        let text = format!("format = 1\n[layout]\ntray_in_panel = {value}\n");
+        let text = format!("format = 1\n[panels]\ntray = {value}\n");
         assert_eq!(texts(TRAY_IN_PANEL, Some(text.as_str()), None), Some(list));
     }
 
     #[test]
     fn a_list_the_machine_already_gives_is_not_written() {
-        let machine = "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\"]\n";
+        let machine = "format = 1\n[panels]\ntray = [\"nm-applet\"]\n";
         let same = vec!["nm-applet".to_string()];
         assert_eq!(tray_value(&same, Some(machine)), None);
         // Taking the machine's app out is a choice, written as an empty list.
@@ -2289,10 +2173,9 @@ font_size = 11
 
     #[test]
     fn the_tray_lists_are_read_from_the_person_over_the_machine() {
-        let machine =
-            "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\", \"edel-testclient\"]\n";
-        let person = "format = 1\n[layout]\ntray_in_panel = [\"blueman\"]\n";
-        let none = "format = 1\n[layout]\ntray_in_panel = []\n";
+        let machine = "format = 1\n[panels]\ntray = [\"nm-applet\", \"edel-testclient\"]\n";
+        let person = "format = 1\n[panels]\ntray = [\"blueman\"]\n";
+        let none = "format = 1\n[panels]\ntray = []\n";
         let kept = |a: &str, b: &str| Some(vec![a.to_string(), b.to_string()]);
         // A machine list, and the person's over it.
         assert_eq!(
@@ -2312,15 +2195,15 @@ font_size = 11
         assert_eq!(texts(TRAY_IN_PANEL, None, None), None);
         assert_eq!(texts(TRAY_IN_PANEL, Some("format = 1\n"), None), None);
         // Not a list of texts is no list.
-        let text = "format = 1\n[layout]\ntray_in_panel = \"nm-applet\"\n";
+        let text = "format = 1\n[panels]\ntray = \"nm-applet\"\n";
         assert_eq!(texts(TRAY_IN_PANEL, Some(text), None), None);
-        let numbers = "format = 1\n[layout]\ntray_in_panel = [1, 2]\n";
+        let numbers = "format = 1\n[panels]\ntray = [1, 2]\n";
         assert_eq!(texts(TRAY_IN_PANEL, Some(numbers), None), None);
         // A bare name is refused with what to write.
         let refused = set("format = 1\n", TRAY_IN_PANEL, "nm-applet").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.tray_in_panel: expected a list of texts in quotes, not \"nm-applet\""
+            "panels.tray: expected a list of texts in quotes, not \"nm-applet\""
         );
     }
 
@@ -2405,72 +2288,34 @@ font_size = 11
     }
 
     #[test]
-    fn an_old_name_is_read_as_its_new_one_and_a_write_moves_its_line() {
-        // A file from before M5.2q keeps working: read, checked and found
-        // by every reader under the new name.
-        let old = "format = 1\n[layout]\npreset = \"classic\"\nworkspaces = 6\n\n[apps]\npinned = [\"terminal\"]\n";
-        let read_old = read(old).unwrap();
-        assert_eq!(read_old.problems, []);
-        assert_eq!(read_old.file.workspaces.count, Some(6));
-        assert_eq!(read_old.file.panels.pinned, Some(vec!["terminal".to_string()]));
-        assert_eq!(read_old.file.layout.preset.as_deref(), Some("classic"));
-        assert_eq!(
-            read_old.renamed,
-            [
-                ("apps.pinned".to_string(), "panels.pinned".to_string()),
-                ("layout.workspaces".to_string(), "workspaces.count".to_string()),
-            ]
-        );
-        assert!(check(old).unwrap().is_empty());
-        assert_eq!(chosen("workspaces.count", None, Some(old)).as_deref(), Some("6"));
-        assert_eq!(chosen("layout.workspaces", Some(old), None).as_deref(), Some("6"));
-        // A new name over an old one wins.
-        let both = "format = 1\n[layout]\nworkspaces = 6\n[workspaces]\ncount = 2\n";
-        assert_eq!(read(both).unwrap().file.workspaces.count, Some(2));
-        // Setting either name writes the new one and takes the old line out.
-        let moved = set(old, "workspaces.count", "4").unwrap();
-        assert_eq!(
-            moved,
-            "format = 1\n[layout]\npreset = \"classic\"\n\n[apps]\npinned = [\"terminal\"]\n\n[workspaces]\ncount = 4\n"
-        );
-        assert_eq!(set(old, "layout.workspaces", "4").unwrap(), moved);
-        // Resetting either name takes the old line out too.
-        let reset = unset(old, "workspaces.count").unwrap();
-        assert!(!reset.contains("workspaces"), "{reset}");
-        assert!(unset(reset.as_str(), "workspaces.count").is_err());
-        assert_eq!(current_name("layout.panels"), "panels.list");
-        assert_eq!(current_name("layout.preset"), "layout.preset");
-    }
-
-    #[test]
     fn the_workspace_switcher_keys_are_checked_and_written() {
         let base = "format = 1\n";
         assert_eq!(
             set(base, SWITCHER_LOOK, "button").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_look = \"button\"\n"
+            "format = 1\n\n[appearance]\nswitcher_look = \"button\"\n"
         );
         assert_eq!(
             set(base, SWITCHER_SHOWN, "5").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_shown = 5\n"
+            "format = 1\n\n[appearance]\nswitcher_shown = 5\n"
         );
         assert_eq!(
             set(base, SWITCHER_ENDS, "counts").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_ends = \"counts\"\n"
+            "format = 1\n\n[appearance]\nswitcher_ends = \"counts\"\n"
         );
         let refused = set(base, SWITCHER_ENDS, "dots").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces_ends: unknown value \"dots\"; use fade, arrows or counts"
+            "appearance.switcher_ends: unknown value \"dots\"; use fade, arrows or counts"
         );
         let refused = set(base, SWITCHER_LOOK, "dots").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces_look: unknown value \"dots\"; use numbers or button"
+            "appearance.switcher_look: unknown value \"dots\"; use numbers or button"
         );
         let refused = set(base, SWITCHER_SHOWN, "10").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces_shown: expected a whole number from 1 to 9, not 10"
+            "appearance.switcher_shown: expected a whole number from 1 to 9, not 10"
         );
         let written = set(base, SWITCHER_SHOWN, "5").unwrap();
         assert_eq!(
@@ -2482,16 +2327,16 @@ font_size = 11
 
     #[test]
     fn an_app_opens_on_its_workspace_checked_and_written_one_way() {
-        let line = |value: &str| format!("format = 1\n[layout]\napp_workspaces = {value}\n");
+        let line = |value: &str| format!("format = 1\n[workspaces]\napps = {value}\n");
         let written = set(
             "format = 1\n",
-            "layout.app_workspaces",
+            "workspaces.apps",
             "{ \"org.mozilla.firefox\" = 2 }",
         )
         .unwrap();
         assert_eq!(
             written,
-            "format = 1\n\n[layout]\napp_workspaces = { \"org.mozilla.firefox\" = 2 }\n"
+            "format = 1\n\n[workspaces]\napps = { \"org.mozilla.firefox\" = 2 }\n"
         );
         assert!(check(&written).unwrap().is_empty());
         let apps = read(&written).unwrap().file.workspaces.apps.unwrap();
@@ -2501,29 +2346,29 @@ font_size = 11
                 "{:#}",
                 set(
                     "format = 1\n",
-                    "layout.app_workspaces",
+                    "workspaces.apps",
                     "{ \"org.mozilla.firefox\" = 10 }"
                 )
                 .unwrap_err()
             ),
-            "layout.app_workspaces: \"org.mozilla.firefox\" has workspace 10; use a whole number from 1 to 9"
+            "workspaces.apps: \"org.mozilla.firefox\" has workspace 10; use a whole number from 1 to 9"
         );
         assert_eq!(
             check(&line("{ \"org.mozilla.firefox\" = \"x\" }")).unwrap(),
             [
-                "layout.app_workspaces: \"org.mozilla.firefox\" has workspace \"x\"; use a whole number from 1 to 9"
+                "workspaces.apps: \"org.mozilla.firefox\" has workspace \"x\"; use a whole number from 1 to 9"
             ]
         );
         assert_eq!(
             check(&line("{ \"org firefox\" = 2 }")).unwrap(),
             [
-                "layout.app_workspaces: \"org firefox\" is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
+                "workspaces.apps: \"org firefox\" is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
             ]
         );
         assert_eq!(
             check(&line("\"org.mozilla.firefox\"")).unwrap(),
             [
-                "layout.app_workspaces: expected apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }, not \"org.mozilla.firefox\""
+                "workspaces.apps: expected apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }, not \"org.mozilla.firefox\""
             ]
         );
         assert!(is_app_id("org.gnome.Nautilus"));

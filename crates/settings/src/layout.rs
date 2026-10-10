@@ -25,6 +25,23 @@ use crate::style::Theme;
 use crate::widgets;
 use crate::{icon, panels, preview, rows, tray, workspaces};
 
+const PANELS_INTRO: &str = n_(
+    "The panels and docks along the screen's edges and what they hold. Each \
+     choice here is also a line of your settings file and an edel settings \
+     set command.",
+);
+
+const WORKSPACES_INTRO: &str = n_(
+    "Workspaces keep windows apart, each a desktop of its own. Each choice \
+     here is also a line of your settings file and an edel settings set \
+     command.",
+);
+
+const APPEARANCE_INTRO: &str = n_(
+    "How the desktop looks. Each choice here is also a line of your \
+     settings file and an edel settings set command.",
+);
+
 const INTRO: &str = n_(
     "One preset sets up the whole desktop: its panels, where windows open \
                      and how they tile. Each choice here is also a line of your settings \
@@ -36,7 +53,7 @@ const INTRO: &str = n_(
 enum Control {
     Switch(gtk::Switch),
     Choice(Rc<widgets::Choice>, &'static [&'static str]),
-    /// The values as written, `"1"` to `"9"`.
+    /// The values as written, such as `"1"` to `"9"` or `"dark"`.
     Segments(Rc<widgets::Segments>, Vec<String>),
 }
 
@@ -46,6 +63,14 @@ impl Control {
         let values = rows::values(key);
         let labels: Vec<String> = values.iter().map(|v| rows::label(v)).collect();
         Control::Choice(widgets::Choice::new(labels), values)
+    }
+
+    /// `key`'s values from the key table as buttons all in view, each
+    /// labelled as a row shows it (light or dark, M5.2q).
+    fn segments(key: &str) -> Control {
+        let values: Vec<String> = rows::values(key).iter().map(|v| v.to_string()).collect();
+        let labels: Vec<String> = values.iter().map(|v| rows::label(v)).collect();
+        Control::Segments(widgets::Segments::new(&labels), values)
     }
 
     /// The workspaces' numbers, 1 to the most there may be (M5.2n).
@@ -122,11 +147,13 @@ struct Setting {
 
 /// The page's widgets, so every change shows everywhere on it.
 struct Ui {
+    /// The settings file's section the page shows (M5.2q).
+    section: &'static str,
     presets: Vec<(&'static str, gtk::ToggleButton, gtk::Box)>,
-    preset_source: widgets::Source,
+    preset_source: Option<widgets::Source>,
     settings: Vec<Setting>,
     /// A title bar as the compositor draws it with these choices.
-    bar: widgets::BarPreview,
+    bar: Option<widgets::BarPreview>,
     problem: gtk::Label,
     /// Undo and Keep, shown while the person's own values of the page's
     /// keys differ from `before`, as they were when the page opened or
@@ -137,12 +164,12 @@ struct Ui {
     quiet: Cell<bool>,
     /// Kept so the page follows the files while it is open.
     monitors: Vec<gio::FileMonitor>,
-    /// The Tray card, which follows the files too (M5.9h).
-    tray: Rc<tray::Card>,
-    /// The Panels group, which follows them too (M5.31d).
-    panels: Rc<panels::Card>,
-    /// The Workspaces group's names and apps (M5.2n).
-    names: Rc<workspaces::Card>,
+    /// The Panels page's cards, which follow the files too: the panels
+    /// that apply (M5.31d) and the tray's apps (M5.9h).
+    panels: Option<Rc<panels::Card>>,
+    tray: Option<Rc<tray::Card>>,
+    /// The Workspaces page's names and apps (M5.2n).
+    names: Option<Rc<workspaces::Card>>,
 }
 
 impl Ui {
@@ -161,36 +188,42 @@ impl Ui {
         }
         self.quiet.set(false);
         self.changes
-            .show(files.own_layout() != *self.before.borrow());
-        self.tray.show();
-        self.panels.show(&files, &now.preset);
-        self.bar.show(
-            now.window_buttons == "left",
-            [now.minimize_button, now.maximize_button, now.close_button],
-        );
-        let preset = files.source("layout.preset");
-        let title = edel::presets::title(&now.preset);
-        self.preset_source
-            .label
-            .set_label(&rows::describe(&preset, &title));
-        self.preset_source
-            .reset
-            .set_visible(rows::resettable(&preset));
-        self.names.show(&files, &now);
+            .show(files.own_keys(self.section) != *self.before.borrow());
+        if let Some(tray) = &self.tray {
+            tray.show();
+        }
+        if let Some(panels) = &self.panels {
+            panels.show(&files, &now.preset);
+        }
+        if let Some(bar) = &self.bar {
+            bar.show(
+                now.window_buttons == "left",
+                [now.minimize_button, now.maximize_button, now.close_button],
+            );
+        }
+        if let Some(source) = &self.preset_source {
+            let preset = files.source("layout.preset");
+            let title = edel::presets::title(&now.preset);
+            source.label.set_label(&rows::describe(&preset, &title));
+            source.reset.set_visible(rows::resettable(&preset));
+        }
+        if let Some(names) = &self.names {
+            names.show(&files, &now);
+        }
         let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
             // The count is no choice while workspaces come and go by
             // themselves, and the switcher's numbers and ends only show
             // with the numbers look (M5.2n).
             let inert = match setting.key {
-                "layout.workspaces" => dynamic,
-                "layout.workspaces_shown" | "layout.workspaces_ends" => {
-                    now.workspaces_look != "numbers"
+                "workspaces.count" => dynamic,
+                "appearance.switcher_shown" | "appearance.switcher_ends" => {
+                    now.workspaces_look != edel::settings::SWITCHER_LOOK_DEFAULT
                 }
                 _ => false,
             };
             setting.widget.set_sensitive(!inert);
-            let what = if setting.key == "layout.workspaces" && dynamic {
+            let what = if setting.key == "workspaces.count" && dynamic {
                 tr("Dynamic workspaces decide how many")
             } else {
                 setting.what.as_str()
@@ -222,165 +255,224 @@ impl Ui {
     }
 }
 
+/// The Layout page (M5.6a): the presets, tiling and title bars.
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
+    build("layout", theme)
+}
+
+/// The Panels page (M5.2q): the panels that apply with their editor, and
+/// the tray's apps.
+pub fn panels_page(theme: &Rc<Theme>) -> gtk::Widget {
+    build("panels", theme)
+}
+
+/// The Workspaces page (M5.2q): how many, whether they come and go, each
+/// screen's own, their names and the apps that open on their own.
+pub fn workspaces_page(theme: &Rc<Theme>) -> gtk::Widget {
+    build("workspaces", theme)
+}
+
+/// The Appearance page's first rows (M5.2q): light or dark, and the
+/// workspace switcher's look.
+pub fn appearance_page(theme: &Rc<Theme>) -> gtk::Widget {
+    build("appearance", theme)
+}
+
+/// The page for `section` of the settings file: its rows, with the
+/// machinery every one of these pages shares (each row's line, Reset, Copy
+/// as command, Undo and Keep, and following the files).
+fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let files = Files::here();
-    let (page, content, problem) = widgets::page(tr("Layout"), tr(INTRO));
-
-    let preset_source = widgets::section(&content, rows::title("layout.preset"));
-    let cards = gtk::FlowBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .homogeneous(true)
-        .min_children_per_line(1)
-        .max_children_per_line(3)
-        .column_spacing(12)
-        .row_spacing(12)
-        .build();
+    let (title, intro) = match section {
+        "panels" => (tr("Panels"), tr(PANELS_INTRO)),
+        "workspaces" => (tr("Workspaces"), tr(WORKSPACES_INTRO)),
+        "appearance" => (tr("Appearance"), tr(APPEARANCE_INTRO)),
+        _ => (tr("Layout"), tr(INTRO)),
+    };
+    let (page, content, problem) = widgets::page(title, intro);
     let mut presets = Vec::new();
-    let mut first: Option<gtk::ToggleButton> = None;
-    for name in edel::presets::NAMES {
-        let (card, badge) = card(name, theme);
-        match &first {
-            Some(first) => card.set_group(Some(first)),
-            None => first = Some(card.clone()),
-        }
-        cards.append(&card);
-        // The card takes the focus, not the box the flow wraps it in.
-        if let Some(child) = card.parent() {
-            child.set_focusable(false);
-        }
-        presets.push((*name, card, badge));
-    }
-    content.append(&cards);
+    let mut preset_source = None;
+    let mut settings = Vec::new();
+    let mut bar = None;
+    let (mut panels, mut tray, mut names) = (None, None, None);
+    match section {
+        "layout" => {
+            let source = widgets::section(&content, rows::title("layout.preset"));
+            let cards = gtk::FlowBox::builder()
+                .selection_mode(gtk::SelectionMode::None)
+                .homogeneous(true)
+                .min_children_per_line(1)
+                .max_children_per_line(3)
+                .column_spacing(12)
+                .row_spacing(12)
+                .build();
+            let mut first: Option<gtk::ToggleButton> = None;
+            for name in edel::presets::NAMES {
+                let (card, badge) = card(name, theme);
+                match &first {
+                    Some(first) => card.set_group(Some(first)),
+                    None => first = Some(card.clone()),
+                }
+                cards.append(&card);
+                // The card takes the focus, not the box the flow wraps it in.
+                if let Some(child) = card.parent() {
+                    child.set_focusable(false);
+                }
+                presets.push((*name, card, badge));
+            }
+            content.append(&cards);
 
-    let group = widgets::group(&content);
-    group.set_margin_top(20);
-    let mut settings = vec![setting(
-        &group,
-        "layout.tiling",
-        (tr("Or the panel's toggle"), Some("toggle_tiling"), true),
-        Control::Switch(gtk::Switch::new()),
-    )];
-    // How tiling lays windows out (M5.16a): the same key as the panel's
-    // layout button's menu and `edel settings set`.
-    settings.push(setting(
-        &group,
-        "layout.tiling_style",
-        (
-            tr("Stack keeps one main window, Split halves the focused one, Scroll lines them up"),
-            None,
-            false,
-        ),
-        Control::choice("layout.tiling_style"),
-    ));
-
-    // The panels that apply, and the editor that changes them (M5.31d).
-    let panels = panels::card(&content, theme, &problem);
-
-    // Everything about title bars in one group, each row named as its key
-    // is (ADR-008's same names decision): a bar drawn as the compositor
-    // draws it, so every choice shows at once, then where bars show, the
-    // side their buttons sit on, and a switch per button, each row saying
-    // how to do the same without the button (M5.18a).
-    widgets::heading(&content, tr("Title bars"));
-    let bars = widgets::group(&content);
-    let bar = widgets::BarPreview::new(&bars, tr("Settings"));
-    settings.push(setting(
-        &bars,
-        "layout.title_bars",
-        (tr("On every window, or only on floating ones"), None, false),
-        Control::choice("layout.title_bars"),
-    ));
-    settings.push(setting(
-        &bars,
-        "layout.window_buttons",
-        (tr("The side they sit on"), None, true),
-        Control::choice("layout.window_buttons"),
-    ));
-    for (key, what, action) in [
-        (
-            "layout.minimize_button",
-            tr("The panel's window list brings a window back"),
-            Some("minimize_window"),
-        ),
-        (
-            "layout.maximize_button",
-            tr("Or double-click a title bar"),
-            Some("toggle_maximize"),
-        ),
-        (
-            "layout.close_button",
-            tr("Closes a window even with its button hidden"),
-            Some("close_window"),
-        ),
-    ] {
-        settings.push(setting(
-            &bars,
-            key,
-            (what, action, false),
-            Control::Switch(gtk::Switch::new()),
+            let group = widgets::group(&content);
+            group.set_margin_top(20);
+            settings.push(setting(
+                &group,
+                "layout.tiling",
+                (tr("Or the panel's toggle"), Some("toggle_tiling"), true),
+                Control::Switch(gtk::Switch::new()),
+            ));
+            // How tiling lays windows out (M5.16a): the same key as the panel's
+            // layout button's menu and `edel settings set`.
+            settings.push(setting(
+            &group,
+            "layout.tiling_style",
+            (
+                tr("Stack keeps one main window, Split halves the focused one, Scroll lines them up"),
+                None,
+                false,
+            ),
+            Control::choice("layout.tiling_style"),
         ));
+
+            // Everything about title bars in one group, each row named as its key
+            // is (ADR-008's same names decision): a bar drawn as the compositor
+            // draws it, so every choice shows at once, then where bars show, the
+            // side their buttons sit on, and a switch per button, each row saying
+            // how to do the same without the button (M5.18a).
+            widgets::heading(&content, tr("Title bars"));
+            let bars = widgets::group(&content);
+            bar = Some(widgets::BarPreview::new(&bars, tr("Settings")));
+            settings.push(setting(
+                &bars,
+                "layout.title_bars",
+                (tr("On every window, or only on floating ones"), None, false),
+                Control::choice("layout.title_bars"),
+            ));
+            settings.push(setting(
+                &bars,
+                "layout.window_buttons",
+                (tr("The side they sit on"), None, true),
+                Control::choice("layout.window_buttons"),
+            ));
+            for (key, what, action) in [
+                (
+                    "layout.minimize_button",
+                    tr("The panel's window list brings a window back"),
+                    Some("minimize_window"),
+                ),
+                (
+                    "layout.maximize_button",
+                    tr("Or double-click a title bar"),
+                    Some("toggle_maximize"),
+                ),
+                (
+                    "layout.close_button",
+                    tr("Closes a window even with its button hidden"),
+                    Some("close_window"),
+                ),
+            ] {
+                settings.push(setting(
+                    &bars,
+                    key,
+                    (what, action, false),
+                    Control::Switch(gtk::Switch::new()),
+                ));
+            }
+
+            preset_source = Some(source);
+        }
+        "panels" => {
+            // The panels that apply, and the editor that changes them
+            // (M5.31d), then the tray's apps, kept in the panel or behind
+            // its arrow as the panel's drag keeps them (M5.9h).
+            panels = Some(panels::card(&content, theme, &problem));
+            tray = Some(tray::card(&content, &problem));
+        }
+        "workspaces" => {
+            // How many, whether they come and go, each screen's own, then
+            // the names and the apps that open on their own (M5.2n).
+            let spaces = widgets::group(&content);
+            let count = setting(
+                &spaces,
+                "workspaces.count",
+                (
+                    tr("How many there are; Super+1 to Super+9 show them"),
+                    None,
+                    true,
+                ),
+                Control::numbers(),
+            );
+            log_places(&page, &spaces, &count, ("workspaces", "count"));
+            settings.push(count);
+            settings.push(setting(
+                &spaces,
+                "workspaces.dynamic",
+                (
+                    tr("An empty one always waits at the end, and other empty ones close"),
+                    None,
+                    false,
+                ),
+                Control::Switch(gtk::Switch::new()),
+            ));
+            settings.push(setting(
+                &spaces,
+                "workspaces.per_screen",
+                (tr("Each screen shows its own workspace"), None, false),
+                Control::Switch(gtk::Switch::new()),
+            ));
+            names = Some(workspaces::card(&spaces, &problem));
+        }
+        _ => {
+            // Light, dark or the release's choice (M5.5c), then the
+            // workspace switcher's look, shown count and ends (M5.2m).
+            let look = widgets::group(&content);
+            let style = setting(
+                &look,
+                "appearance.mode",
+                (
+                    tr("The colours of the panels, title bars and apps"),
+                    None,
+                    false,
+                ),
+                Control::segments("appearance.mode"),
+            );
+            log_places(&page, &look, &style, ("appearance", "style"));
+            settings.push(style);
+            widgets::heading(&content, tr("Workspace switcher"));
+            let switcher = widgets::group(&content);
+            settings.push(setting(
+                &switcher,
+                "appearance.switcher_look",
+                (tr("How the panel's switcher shows them"), None, false),
+                Control::choice("appearance.switcher_look"),
+            ));
+            settings.push(setting(
+                &switcher,
+                "appearance.switcher_shown",
+                (
+                    tr("How many numbers the switcher shows at once"),
+                    None,
+                    false,
+                ),
+                Control::numbers(),
+            ));
+            settings.push(setting(
+                &switcher,
+                "appearance.switcher_ends",
+                (tr("What shows where more workspaces lie"), None, false),
+                Control::choice("appearance.switcher_ends"),
+            ));
+        }
     }
-
-    // The tray's apps (M5.9h): kept in the panel or behind its arrow, as the
-    // panel's drag keeps them, read from the bus when the page opens.
-    let tray = tray::card(&content, &problem);
-
-    // The workspaces (M5.2n): how many, whether they come and go, the
-    // names, the apps that open on their own, then the switcher's look,
-    // shown count and ends. The names and apps are a card of their own.
-    let heading = widgets::heading(&content, tr("Workspaces"));
-    let spaces = widgets::group(&content);
-    let count = setting(
-        &spaces,
-        "layout.workspaces",
-        (
-            tr("How many there are; Super+1 to Super+9 show them"),
-            None,
-            true,
-        ),
-        Control::numbers(),
-    );
-    log_workspaces(&page, &heading, &count);
-    settings.push(count);
-    settings.push(setting(
-        &spaces,
-        "layout.dynamic_workspaces",
-        (
-            tr("An empty one always waits at the end, and other empty ones close"),
-            None,
-            false,
-        ),
-        Control::Switch(gtk::Switch::new()),
-    ));
-    settings.push(setting(
-        &spaces,
-        "layout.workspaces_per_screen",
-        (tr("Each screen shows its own workspace"), None, false),
-        Control::Switch(gtk::Switch::new()),
-    ));
-    settings.push(setting(
-        &spaces,
-        "layout.workspaces_look",
-        (tr("How the panel's switcher shows them"), None, false),
-        Control::choice("layout.workspaces_look"),
-    ));
-    settings.push(setting(
-        &spaces,
-        "layout.workspaces_shown",
-        (
-            tr("How many numbers the switcher shows at once"),
-            None,
-            false,
-        ),
-        Control::numbers(),
-    ));
-    settings.push(setting(
-        &spaces,
-        "layout.workspaces_ends",
-        (tr("What shows where more workspaces lie"), None, false),
-        Control::choice("layout.workspaces_ends"),
-    ));
-    let names = workspaces::card(&spaces, &problem);
 
     let mut monitors = Vec::new();
     for path in std::iter::once(&files.machine).chain(files.person.as_ref()) {
@@ -392,21 +484,24 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         }
     }
     let ui = Rc::new(Ui {
+        section,
         presets,
         preset_source,
         settings,
         bar,
         problem,
         changes: widgets::ChangeBar::new(&page),
-        before: std::cell::RefCell::new(files.own_layout()),
+        before: std::cell::RefCell::new(files.own_keys(section)),
         quiet: Cell::new(false),
         monitors,
         tray: tray.clone(),
         panels: panels.clone(),
-        names: names.clone(),
+        names,
     });
     ui.update();
-    tray.refresh();
+    if let Some(tray) = &tray {
+        tray.refresh();
+    }
     for monitor in &ui.monitors {
         let weak = Rc::downgrade(&ui);
         monitor.connect_changed(move |_, _, _, _| {
@@ -427,12 +522,9 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             }
         });
     }
-    wire(
-        &ui,
-        &ui.preset_source.reset,
-        &ui.preset_source.copy,
-        vec!["layout.preset"],
-    );
+    if let Some(source) = &ui.preset_source {
+        wire(&ui, &source.reset, &source.copy, vec!["layout.preset"]);
+    }
     for (i, setting) in ui.settings.iter().enumerate() {
         let weak = Rc::downgrade(&ui);
         setting.control.on_change(move || {
@@ -453,15 +545,17 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     // Asked for the Panels group by name, the keyboard goes to its Edit
     // panels button once the page shows (M5.31d); the page's own rule is
     // `widgets::take_asked`.
-    let edit = panels.edit();
-    page.connect_map(move |page| {
-        let (page, edit) = (page.clone(), edit.clone());
-        gtk::glib::idle_add_local_once(move || {
-            if widgets::asked_row() == Some(edel::panel_edit::PANELS) {
-                widgets::take_asked(&page, &edit);
-            }
+    if let Some(panels) = &panels {
+        let edit = panels.edit();
+        page.connect_map(move |page| {
+            let (page, edit) = (page.clone(), edit.clone());
+            gtk::glib::idle_add_local_once(move || {
+                if widgets::asked_row() == Some(edel::panel_edit::PANELS) {
+                    widgets::take_asked(&page, &edit);
+                }
+            });
         });
-    });
+    }
     let weak = Rc::downgrade(&ui);
     ui.changes.undo.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {
@@ -473,7 +567,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let weak = Rc::downgrade(&ui);
     ui.changes.keep.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {
-            *ui.before.borrow_mut() = Files::here().own_layout();
+            *ui.before.borrow_mut() = Files::here().own_keys(ui.section);
             ui.update();
         }
     });
@@ -543,11 +637,18 @@ fn setting(
     }
 }
 
-/// Logs where the count's buttons and its Reset lie in the window, once the
-/// Workspaces group is laid out, for CI to click (logical pixels). Asked for
-/// by name, the page first scrolls the heading to the top of its view and
-/// gives the keyboard to the chosen number, as the Panels group does.
-fn log_workspaces(page: &gtk::Widget, heading: &gtk::Box, count: &Setting) {
+/// Logs where a row of buttons (the workspaces' count, light or dark) and
+/// its Reset lie in the window, once `heading`'s group is laid out, for CI
+/// to click (logical pixels), as `edel-settings: GROUP group places WHAT
+/// P1 P2 ..., reset R`. Asked for by the row's key, the page first scrolls
+/// the group to the top of its view and gives the keyboard to the chosen
+/// button, as the Panels group does.
+fn log_places(
+    page: &gtk::Widget,
+    heading: &gtk::Box,
+    count: &Setting,
+    (group, what): (&'static str, &'static str),
+) {
     let Control::Segments(segments, _) = &count.control else {
         return;
     };
@@ -583,7 +684,7 @@ fn log_workspaces(page: &gtk::Widget, heading: &gtk::Box, count: &Setting) {
             .map(|button| widgets::place(button.compute_bounds(&window)))
             .collect();
         let line = format!(
-            "edel-settings: workspaces group places count {}, reset {}",
+            "edel-settings: {group} group places {what} {}, reset {}",
             counts.join(" "),
             widgets::place(reset.compute_bounds(&window)),
         );

@@ -1,6 +1,6 @@
 //! The tray (M5.2e): one icon for each app that registered a
 //! StatusNotifierItem, in a row beside the clock. The apps the person
-//! kept in the panel (`layout.tray_in_panel`, M5.9g) show their icons in
+//! kept in the panel (`panels.tray`, M5.9g) show their icons in
 //! that order; every other app waits behind the row's first cell, an
 //! arrow that opens a grid of them (`trayview.rs`, `tray_card.rs`). The
 //! arrow shows a dot while one of them has news. It shows a line per

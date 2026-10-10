@@ -48,7 +48,7 @@ pub struct Item {
     pub name: String,
     /// Its icon pixmap as [`encode`] writes it; empty when it has none.
     pub pixels: String,
-    /// The `Id` it gives, which `layout.tray_in_panel` names it by; its
+    /// The `Id` it gives, which `panels.tray` names it by; its
     /// title when it gives none (M5.9g).
     pub app: String,
     /// Whether its `Status` is `NeedsAttention`: it has news (M5.9g).

@@ -1,7 +1,7 @@
 //! The Layout page's Tray card (M5.9h, the fifth round's
 //! `docs/mockups/shell/tray.jpg`): each app the tray knows, in the panel or
 //! behind the arrow, the same choice dragging makes on the panel, written to
-//! `layout.tray_in_panel` with the rule `edel::settings` holds
+//! `panels.tray` with the rule `edel::settings` holds
 //! (`tray_list_with`, `tray_value`). The apps are the names in the key and
 //! the items with an icon now, read from the session bus with GIO on a
 //! thread of GIO's, so the page never waits for them; no bus or no watcher

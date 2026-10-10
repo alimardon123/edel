@@ -2,7 +2,7 @@
 //! `trayview.rs` lays it out and draws it. The grid is a surface of its
 //! own, hung on the arrow, with the keyboard. An icon dragged from it onto
 //! the panel is kept there, and an icon dragged off the panel goes behind
-//! the arrow again; both write `layout.tray_in_panel` with
+//! the arrow again; both write `panels.tray` with
 //! `edel::settings::write`, as do-not-disturb does, and the list's rule is
 //! `edel::settings::tray_list_with` and `tray_value`, which Settings' Tray
 //! card follows too (M5.9h).
@@ -460,7 +460,7 @@ impl Shell {
     }
 
     /// Keeps `app` in the panel (`keep`) or takes it out, behind the arrow:
-    /// the person's `layout.tray_in_panel` is written as Settings writes a
+    /// the person's `panels.tray` is written as Settings writes a
     /// key, and what applies without the person's file is left out, as
     /// writers never write a default (ADR-008).
     pub fn keep_in_panel(&mut self, app: &str, keep: bool) {
@@ -499,7 +499,7 @@ impl Shell {
             self.tray_split_changed();
             self.draw_all();
         }
-        // layout.panels (M5.31b): the panels follow the files at once; a
+        // panels.list (M5.31b): the panels follow the files at once; a
         // change of preset restarts shell-ui instead, as the compositor
         // says.
         let (machine, person) = crate::settings_texts();
@@ -507,7 +507,7 @@ impl Shell {
         if wanted != self.panel_specs {
             self.panels_changed(wanted);
         }
-        // apps.pinned (M5.31d): the apps widget follows the files at once.
+        // panels.pinned (M5.31d): the apps widget follows the files at once.
         let pins = edel::panel_edit::pins_applying(machine.as_deref(), person.as_deref());
         self.set_pins(pins);
         // The workspace switcher's look, count and ends (M5.2m): drawn

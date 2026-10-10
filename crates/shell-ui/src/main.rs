@@ -164,7 +164,7 @@ struct Shell {
     /// `panels_changed` compares with them.
     panel_specs: Vec<presets::Panel>,
     /// The apps the apps widget pins, as the list names them (M5.4c, M5.31d:
-    /// `apps.pinned` over the preset's), and each shown pin's index in it,
+    /// `panels.pinned` over the preset's), and each shown pin's index in it,
     /// kept so panels made later can read the apps they show (`read_apps`).
     pins: Vec<String>,
     pin_slots: Vec<usize>,
@@ -337,7 +337,7 @@ fn run() -> Result<()> {
             &[],
         ));
     }
-    // The apps a panel's apps widget pins (M5.31d: `apps.pinned`, else the
+    // The apps a panel's apps widget pins (M5.31d: `panels.pinned`, else the
     // preset's), logged as the list names them.
     let (machine, person) = settings_texts();
     let pins = edel::panel_edit::pins_applying(machine.as_deref(), person.as_deref());
@@ -675,7 +675,7 @@ fn from_system_files() -> (presets::Preset, Scheme) {
             Ok(read) => {
                 let layout = read.file.layout;
                 name = layout.preset.or(name);
-                panels = layout.panels.or(panels);
+                panels = read.file.panels.list.or(panels);
                 scheme = read.file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
@@ -688,7 +688,7 @@ fn from_system_files() -> (presets::Preset, Scheme) {
     if let Some(note) = note {
         eprintln!("edel-shell-ui: {note}");
     }
-    // layout.panels, when set, in place of the preset's (M5.4e).
+    // panels.list, when set, in place of the preset's (M5.4e).
     if let Some(panels) = panels {
         preset.panels = panels;
     }
@@ -1015,7 +1015,7 @@ impl Shell {
         }
     }
 
-    /// The panels `layout.panels` asks for now (M5.31b). When they keep
+    /// The panels `panels.list` asks for now (M5.31b). When they keep
     /// each panel's edge, style, size, floating, screens and hiding, each
     /// panel takes its new widgets and is drawn again, its surface kept;
     /// otherwise the open popups close, the panels' surfaces go and every
@@ -2370,7 +2370,7 @@ fn set_switcher(live: &mut Live, now: widgets::workspaces::Settings) -> bool {
     true
 }
 
-/// `layout.tray_in_panel` as the machine's and the person's files say it
+/// `panels.tray` as the machine's and the person's files say it
 /// now: the apps kept in the panel (M5.9g).
 fn tray_in_panel() -> Vec<String> {
     let (machine, person) = settings_texts();

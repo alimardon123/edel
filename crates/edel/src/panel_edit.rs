@@ -1,8 +1,8 @@
 //! The panel editor's model (M5.31a): the changes a person makes to the
 //! panels by hand (moving, adding and removing a widget, moving a panel to
 //! the other edge, adding and removing a panel), each checked as
-//! `edel settings set layout.panels` checks a value, and the
-//! `layout.panels` line they come to. shell-ui's editor (M5.31b) and
+//! `edel settings set panels.list` checks a value, and the
+//! `panels.list` line they come to. shell-ui's editor (M5.31b) and
 //! Settings (M5.31d) call it, so both write the same lines. No widget gains
 //! options here: what a widget shows stays a setting of its page.
 
@@ -320,8 +320,8 @@ pub fn applying(machine: Option<&str>, person: Option<&str>) -> Vec<Panel> {
     presets::named(name.as_deref()).0.panels
 }
 
-/// The `layout.panels` value of `panels` as one TOML line: an inline array
-/// of inline tables, exactly the line `edel settings set layout.panels=VALUE`
+/// The `panels.list` value of `panels` as one TOML line: an inline array
+/// of inline tables, exactly the line `edel settings set panels.list=VALUE`
 /// writes. `set` writes each table's keys alphabetically whatever order it
 /// is given, so this does too (the empty and default fields are left out by
 /// `Panel`'s serde attributes).
@@ -334,9 +334,9 @@ pub fn value(panels: &[Panel]) -> Result<String> {
     Ok(toml::Value::Array(items).to_string())
 }
 
-/// The `layout.panels` line to write for `panels`, or `None` when they are
-/// what applies without the person's own `layout.panels`: a default is
-/// never written (ADR-008). The person's file has its `layout.panels` taken
+/// The `panels.list` line to write for `panels`, or `None` when they are
+/// what applies without the person's own `panels.list`: a default is
+/// never written (ADR-008). The person's file has its `panels.list` taken
 /// out for the comparison, and keeps its preset.
 pub fn to_write(
     panels: &[Panel],
@@ -363,7 +363,12 @@ pub fn pins_applying(machine: Option<&str>, person: Option<&str>) -> Vec<String>
             .unwrap_or_default()
     };
     let (machine, person) = (read(machine), read(person));
-    if let Some(pins) = person.panels.pinned.clone().or(machine.panels.pinned.clone()) {
+    if let Some(pins) = person
+        .panels
+        .pinned
+        .clone()
+        .or(machine.panels.pinned.clone())
+    {
         return pins;
     }
     let name = person.layout.preset.or(machine.layout.preset);
@@ -384,7 +389,7 @@ pub fn unpin(list: &[String], app: &str) -> Vec<String> {
     list.iter().filter(|a| a.as_str() != app).cloned().collect()
 }
 
-/// `list` as the TOML array `edel settings set apps.pinned=VALUE` takes
+/// `list` as the TOML array `edel settings set panels.pinned=VALUE` takes
 /// and writes, such as `["settings", "terminal"]`.
 pub fn pins_value(list: &[String]) -> String {
     let items = list
@@ -394,9 +399,9 @@ pub fn pins_value(list: &[String]) -> String {
     toml::Value::Array(items).to_string()
 }
 
-/// The `apps.pinned` value to write for `list`, or `None` when `list` is
+/// The `panels.pinned` value to write for `list`, or `None` when `list` is
 /// what applies without the person's own line: a default is never written
-/// (ADR-008). The person's `apps.pinned` is taken out for the comparison.
+/// (ADR-008). The person's `panels.pinned` is taken out for the comparison.
 pub fn pins_to_write(
     list: &[String],
     machine: Option<&str>,
@@ -446,7 +451,7 @@ mod tests {
         // The line is what `edel settings set` takes and writes, and it
         // writes the same line from the struct's own field order too.
         let file = settings::set("format = 1\n", PANELS, &line).unwrap();
-        assert_eq!(file, format!("format = 1\n\n[layout]\npanels = {line}\n"));
+        assert_eq!(file, format!("format = 1\n\n[panels]\nlist = {line}\n"));
         let in_struct_order = r#"[{ edge = "bottom", start = ["clock", "menu", "separator", "windows"], end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"] }]"#;
         assert_eq!(
             settings::set("format = 1\n", PANELS, in_struct_order).unwrap(),
@@ -581,7 +586,7 @@ mod tests {
         let here = add_widget(&panels, "Clock!", to).unwrap_err().to_string();
         let file = settings::set(
             "format = 1\n",
-            "layout.panels",
+            "panels.list",
             r#"[{ edge = "top", end = ["Clock!"] }]"#,
         )
         .unwrap_err()
@@ -643,12 +648,12 @@ mod tests {
 
     #[test]
     fn to_write_is_none_when_the_machine_file_already_says_these_panels() {
-        let machine = "format = 1\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
+        let machine = "format = 1\n[panels]\nlist = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
         let panels = applying(Some(machine), None);
         assert_eq!(to_write(&panels, Some(machine), None).unwrap(), None);
-        // The person's own layout.panels is taken out of the comparison,
+        // The person's own panels.list is taken out of the comparison,
         // so a file that sets the same panels itself still writes none.
-        let person = "format = 1\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
+        let person = "format = 1\n[panels]\nlist = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
         assert_eq!(
             to_write(&panels, Some(machine), Some(person)).unwrap(),
             None
@@ -679,8 +684,8 @@ mod tests {
 
     #[test]
     fn applying_takes_the_persons_panels_over_the_machines() {
-        let machine = "format = 1\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
-        let person = "format = 1\n[layout]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n";
+        let machine = "format = 1\n[panels]\nlist = [{ edge = \"bottom\", end = [\"clock\"] }]\n";
+        let person = "format = 1\n[panels]\nlist = [{ edge = \"top\", end = [\"clock\"] }]\n";
         let panels = applying(Some(machine), Some(person));
         assert_eq!(panels.len(), 1);
         assert_eq!(panels[0].edge, Edge::Top);
@@ -776,15 +781,15 @@ mod tests {
             pins_applying(None, Some("format = 1\n[layout]\npreset = \"mac-like\"\n")),
             mac
         );
-        let machine = "format = 1\n[apps]\npinned = [\"foot\"]\n";
+        let machine = "format = 1\n[panels]\npinned = [\"foot\"]\n";
         assert_eq!(pins_applying(Some(machine), None), ["foot"]);
-        let person = "format = 1\n[apps]\npinned = [\"mail\", \"terminal\"]\n";
+        let person = "format = 1\n[panels]\npinned = [\"mail\", \"terminal\"]\n";
         assert_eq!(
             pins_applying(Some(machine), Some(person)),
             ["mail", "terminal"]
         );
         // The person's empty list pins none, over the machine's.
-        let none = "format = 1\n[apps]\npinned = []\n";
+        let none = "format = 1\n[panels]\npinned = []\n";
         assert!(pins_applying(Some(machine), Some(none)).is_empty());
         // The machine's preset, when neither file sets the list.
         let hive = "format = 1\n[layout]\npreset = \"hive\"\n";
@@ -830,7 +835,7 @@ mod tests {
         let file = settings::set("format = 1\n", PINNED, &value).unwrap();
         assert_eq!(
             file,
-            "format = 1\n\n[apps]\npinned = [\"settings\", \"terminal\"]\n"
+            "format = 1\n\n[panels]\npinned = [\"settings\", \"terminal\"]\n"
         );
         assert_eq!(pins_value(&[]), "[]");
     }
@@ -843,11 +848,11 @@ mod tests {
             Some(r#"["settings", "terminal"]"#.to_string())
         );
         // What applies without the person's line is written as no line.
-        let machine = "format = 1\n[apps]\npinned = [\"settings\", \"terminal\"]\n";
+        let machine = "format = 1\n[panels]\npinned = [\"settings\", \"terminal\"]\n";
         assert_eq!(pins_to_write(&list, Some(machine), None), None);
         // A person's line equal to the preset's is taken out, not kept.
         let mac = presets::named(Some("mac-like")).0.apps.pinned;
-        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[apps]\npinned = [\"files\", \"browser\", \"mail\", \"music\", \"editor\", \"terminal\", \"settings\"]\n";
+        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[panels]\npinned = [\"files\", \"browser\", \"mail\", \"music\", \"editor\", \"terminal\", \"settings\"]\n";
         assert_eq!(mac.len(), 7);
         assert_eq!(pins_to_write(&mac, None, Some(person)), None);
         // An empty list is a choice, written.
