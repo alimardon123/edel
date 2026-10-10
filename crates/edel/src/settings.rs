@@ -878,6 +878,10 @@ pub const WORKSPACES_LOOK: &str = "layout.workspaces_look";
 pub const WORKSPACES_SHOWN: &str = "layout.workspaces_shown";
 pub const WORKSPACES_ENDS: &str = "layout.workspaces_ends";
 
+/// The key the workspaces' names are kept under, one per place (M5.2p): the
+/// names the switcher shows, which a drag of a switcher button reorders.
+pub const WORKSPACE_NAMES: &str = "layout.workspace_names";
+
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An
 /// empty list is a list: `[]` over a machine's list says none.

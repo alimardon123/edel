@@ -1516,7 +1516,48 @@ case_workspaces() {
 	guest 'switcher default'
 	wait_for 'DESKTOP-TEST: ran switcher default: 0' || fail "the switcher's keys did not reset in the VM"
 	wait_more 'edel-shell-ui: workspaces look numbers' "$looks" || fail "shell-ui did not go back to the numbers look"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with layout.workspace_names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", layout.workspaces_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back"
+	# Reordering by drag (M5.2p): away waits on workspace 3, and with the
+	# first shown the switcher's buttons lie at x + 25 (1, the 32 px pill),
+	# x + 62 (2) and x + 87 (3), each 20 px wide (room 6, the end 14, gaps
+	# 5). Dragging 3's button onto 1's moves workspace 3 first, with away;
+	# the first, shown, becomes the second. Dragging the first button onto
+	# the third's place puts them back as they were, for the cases after.
+	opened=$(count 'edel-compositor: mapped window away')
+	guest 'away window'
+	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open again"
+	sent=$(count 'edel-compositor: window away to workspace 3')
+	python3 ci/qmp.py key meta_l-shift-3
+	wait_more 'edel-compositor: window away to workspace 3' "$sent" || fail "Super+Shift+3 did not send away to workspace 3"
+	placed=$(count 'DESKTOP-TEST: places ')
+	guest 'panel places'
+	wait_more 'DESKTOP-TEST: places ' "$placed" || fail "shell-ui did not say where its widgets lie"
+	x=$(value places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	moved=$(count 'edel-compositor: workspace 3 moved to 1$')
+	python3 ci/qmp.py drag $((x + 97)) 780 $((x + 41)) 780
+	wait_more 'edel-compositor: workspace 3 moved to 1$' "$moved" || fail "dragging workspace 3's button, at $((x + 97)),780, onto workspace 1's did not move it first"
+	wait_for 'edel-shell-ui: moved workspace 3 to 1$' || fail "shell-ui did not log the move"
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/order.now" <<-'EOF' && break
+			import sys, tomllib
+			state = tomllib.load(open(sys.argv[1], "rb"))
+			away = [w.get("workspace") for w in state.get("windows", []) if w.get("title") == "away"]
+			print(f"away is on workspace {away}, the shown one is {state.get('workspace')}")
+			sys.exit(0 if away == [1] and state.get("workspace") == 2 else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "after the move away should be on workspace 1 and the second shown: $(cat "$dir/order.now")"
+		sleep 1
+	done
+	moved=$(count 'edel-compositor: workspace 1 moved to 3$')
+	python3 ci/qmp.py drag $((x + 35)) 780 $((x + 97)) 780
+	wait_more 'edel-compositor: workspace 1 moved to 3$' "$moved" || fail "dragging the first button onto the third's place did not put the workspaces back"
+	closed=$(count 'edel-compositor: unmapped window away')
+	guest 'away off'
+	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
+	wait_for "DESKTOP-TEST: windows $first\$" || fail "the first workspace is not back as it was: $(value windows)"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with layout.workspace_names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", layout.workspaces_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back; dragging workspace 3's button onto the first moved it first with away, and dragging it back put them as they were"
 }
 
 # state_is WANT: asks the test service for the workspaces the state file holds

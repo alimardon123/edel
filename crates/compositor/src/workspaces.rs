@@ -177,6 +177,22 @@ impl Edel {
         }
     }
 
+    /// A drag of a switcher button (M5.2p, `edel-shell-v1`'s
+    /// `move_workspace`): workspace `from` moves to place `to` with its
+    /// windows, name and policy; the clients and the state file hear it.
+    pub fn move_workspace(&mut self, from: usize, to: usize) {
+        if !self.desks.reorder(from, to) {
+            return;
+        }
+        eprintln!(
+            "edel-compositor: workspace {} moved to {}",
+            from + 1,
+            to + 1
+        );
+        self.announce_workspaces();
+        self.state_changed();
+    }
+
     /// Super+Ctrl+Right and Left: shows the workspace after the shown one,
     /// or before it, where there is one (M5.2i).
     pub fn switch_neighbour(&mut self, forward: bool) {

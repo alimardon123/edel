@@ -347,6 +347,63 @@ pub fn buttons(view: &View, slot: f32) -> Vec<Button> {
     out
 }
 
+/// The place of the shown button under `x` logical pixels from the widget's
+/// left, in the numbers look, as a click finds it (M5.2p): none over the
+/// room, a peek, a gap, or in the button look. `slot` is the buttons' width
+/// as [`slot`] gives it for the names.
+pub fn button_at(shown: &str, slot: f32, x: f32) -> Option<usize> {
+    let view = read(shown);
+    if view.look != Look::Numbers {
+        return None;
+    }
+    buttons(&view, slot)
+        .iter()
+        .find(|b| (b.left..b.left + b.width).contains(&x))
+        .map(|b| b.place)
+}
+
+/// The place a dragged button lands on when it is let go at `x` logical
+/// pixels from the widget's left, in the numbers look (M5.2p): the shown
+/// button under `x`; left of the first or right of the last, the first or
+/// the last shown; in a gap, the nearer button. None in the button look.
+pub fn landing(shown: &str, slot: f32, x: f32) -> Option<usize> {
+    let view = read(shown);
+    if view.look != Look::Numbers {
+        return None;
+    }
+    let distance = |b: &Button| {
+        if x < b.left {
+            b.left - x
+        } else if x > b.left + b.width {
+            x - b.left - b.width
+        } else {
+            0.0
+        }
+    };
+    buttons(&view, slot)
+        .iter()
+        .min_by(|a, b| distance(a).total_cmp(&distance(b)))
+        .map(|b| b.place)
+}
+
+/// The names of the workspaces after the one at place `from` moves to place
+/// `to` (M5.2p), as `layout.workspace_names` lists them: padded with empty
+/// names to `count` (or to as many names as there are), the moved name's
+/// place as the compositor's `Desks::reorder` moves it, then the empty names
+/// at the end taken off. A place past the list is left as it is.
+pub fn reordered_names(names: &[String], count: usize, from: usize, to: usize) -> Vec<String> {
+    let mut list = names.to_vec();
+    list.resize(count.max(names.len()), String::new());
+    if from < list.len() && to < list.len() {
+        let name = list.remove(from);
+        list.insert(to, name);
+    }
+    while list.last().is_some_and(String::is_empty) {
+        list.pop();
+    }
+    list
+}
+
 /// The next workspace where more lie, at one end of the strip: its place
 /// and label, its strip's left edge and width, its button's width (all in
 /// logical pixels), whether it lies on the left, and how many lie beyond
@@ -1096,6 +1153,57 @@ mod tests {
         strip.fill(tiny_skia::Color::WHITE);
         fade(&mut strip, true);
         assert!(alpha(&strip, 0) < 20 && alpha(&strip, 9) > 230);
+    }
+
+    #[test]
+    fn a_press_finds_the_button_under_it_and_none_over_the_room_or_a_gap() {
+        // Four workspaces, the second shown first: the buttons 2 at 25 to 45,
+        // the pill 3 at 50 to 82, 4 at 87 to 107 (BUTTON is the slot).
+        let text = shows(&live(4, 2, None));
+        assert_eq!(button_at(&text, BUTTON, 35.0), Some(1));
+        assert_eq!(button_at(&text, BUTTON, 66.0), Some(2), "the pill");
+        assert_eq!(button_at(&text, BUTTON, 97.0), Some(3));
+        assert_eq!(button_at(&text, BUTTON, 10.0), None, "the peek");
+        assert_eq!(button_at(&text, BUTTON, 47.0), None, "the gap");
+        assert_eq!(button_at(&text, BUTTON, 300.0), None);
+        assert_eq!(button_at(&shows(&button_live(4, 2)), BUTTON, 66.0), None);
+        assert_eq!(button_at("", BUTTON, 66.0), None);
+    }
+
+    #[test]
+    fn a_drop_lands_on_the_button_under_it_or_the_nearer_end() {
+        let text = shows(&live(4, 2, None));
+        assert_eq!(landing(&text, BUTTON, 35.0), Some(1));
+        assert_eq!(landing(&text, BUTTON, 97.0), Some(3));
+        assert_eq!(landing(&text, BUTTON, 0.0), Some(1), "left of the first");
+        assert_eq!(landing(&text, BUTTON, 500.0), Some(3), "right of the last");
+        assert_eq!(landing(&text, BUTTON, 47.0), Some(1), "the nearer in a gap");
+        assert_eq!(landing(&text, BUTTON, 48.0), Some(2), "the nearer in a gap");
+        assert_eq!(landing(&shows(&button_live(4, 2)), BUTTON, 35.0), None);
+    }
+
+    #[test]
+    fn a_moved_name_takes_its_place_and_the_empty_ends_go() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            reordered_names(&names(&["Mail"]), 4, 0, 2),
+            names(&["", "", "Mail"])
+        );
+        assert!(reordered_names(&[], 4, 2, 0).is_empty());
+        assert_eq!(
+            reordered_names(&names(&["A", "B"]), 3, 1, 0),
+            names(&["B", "A"])
+        );
+        assert_eq!(
+            reordered_names(&names(&["A", "B", "C"]), 3, 0, 2),
+            names(&["B", "C", "A"]),
+            "the ones between shift by one"
+        );
+        assert_eq!(
+            reordered_names(&names(&["A"]), 2, 0, 9),
+            names(&["A"]),
+            "a place past the list changes nothing"
+        );
     }
 
     #[test]

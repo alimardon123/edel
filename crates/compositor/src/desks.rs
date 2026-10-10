@@ -235,6 +235,35 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         true
     }
 
+    /// Moves workspace `from` to place `to` (M5.2p), with its windows,
+    /// name and policies; those between shift by one, and every screen
+    /// keeps showing the workspace it showed. False, and nothing changes,
+    /// for a place there is no workspace at or no move.
+    pub fn reorder(&mut self, from: usize, to: usize) -> bool {
+        let count = self.desks.len();
+        if from == to || from >= count || to >= count {
+            return false;
+        }
+        let desk = self.desks.remove(from);
+        self.desks.insert(to, desk);
+        let moved = |i: usize| {
+            if i == from {
+                to
+            } else if from < to && (from + 1..=to).contains(&i) {
+                i - 1
+            } else if to < from && (to..from).contains(&i) {
+                i + 1
+            } else {
+                i
+            }
+        };
+        self.active = moved(self.active);
+        for (_, desk) in &mut self.screens {
+            *desk = moved(*desk);
+        }
+        true
+    }
+
     /// Whether each screen shows its own workspace (M5.2k).
     pub fn per_screen(&self) -> bool {
         self.per_screen
@@ -1104,6 +1133,35 @@ mod tests {
         assert_eq!(desks.layout_of(&1).screen_of(&1), Some("one"));
         assert_eq!(desks.shown(), [0]);
         assert_eq!(desks.arrange(&areas()).len(), 2);
+    }
+
+    #[test]
+    fn a_workspace_moves_with_its_windows_name_and_policy() {
+        let mut desks: Desks<u32> = Desks::new(4, 8);
+        desks.set_names(&["Mail".to_string()]);
+        desks.layout_mut().switch("tiling");
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        desks.send(1, 2, (300, 200).into(), &areas());
+        // The third, holding window 1, goes first: Mail and the second
+        // shift right, and the shown one, Mail, stays shown.
+        assert!(desks.reorder(2, 0));
+        assert_eq!(desks.hidden_on(&1), Some(0));
+        assert_eq!(desks.labels(), ["1", "Mail", "3", "4"]);
+        assert_eq!(desks.active(), 1);
+        assert_eq!(desks.layout().name(), "tiling", "Mail kept its policy");
+        // Back to the end: the others shift left.
+        assert!(desks.reorder(0, 3));
+        assert_eq!(desks.hidden_on(&1), Some(3));
+        assert_eq!(desks.active(), 0);
+        assert!(!desks.reorder(1, 1), "no move");
+        assert!(!desks.reorder(0, 4), "no fifth");
+        // Each screen keeps its workspace.
+        desks.set_per_screen(true);
+        desks.settle_screens(&[], &two());
+        desks.use_screen("two");
+        desks.switch_on(3, "two", Vec::new());
+        assert!(desks.reorder(3, 1));
+        assert_eq!((desks.shown_on("one"), desks.shown_on("two")), (0, 1));
     }
 
     #[test]

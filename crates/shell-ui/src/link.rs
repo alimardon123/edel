@@ -59,6 +59,14 @@ impl Link {
             link.next_keyboard_layout();
         }
     }
+
+    /// Asks for workspace `from` to move to place `to`, as a drag of its
+    /// switcher button does (M5.2p).
+    pub fn move_workspace(&self, from: usize, to: usize) {
+        if let Some(link) = &self.0 {
+            link.move_workspace(from as u32, to as u32);
+        }
+    }
 }
 
 /// The link's user data: its events change what the panel shows.
