@@ -260,6 +260,9 @@ struct Panel {
     /// The screen it is on when it is on every screen (M5.31c); `None` is
     /// the compositor's choice of the main screen.
     output: Option<WlOutput>,
+    /// The screen the compositor put it on, as its surface entered it
+    /// (M5.2o), for a panel on the main screen.
+    entered: Option<WlOutput>,
     surface: LayerSurface,
     row: Row,
     /// Its logical width, once the compositor has said it.
@@ -629,6 +632,7 @@ fn make_panel(
         size: spec.size,
         floating: spec.floating,
         output: output.cloned(),
+        entered: None,
         surface,
         row,
         width: 0,
@@ -791,7 +795,15 @@ impl Shell {
             return;
         }
         let strip = paint::strip(panel.style, panel.floating, &self.tokens);
-        let shown = panel.row.shows(&self.live);
+        // The switcher shows the workspaces of the panel's own screen
+        // (M5.2o): the same list unless each screen has its own.
+        let on = self
+            .workspaces
+            .names(panel.output.as_ref().or(panel.entered.as_ref()));
+        let every = std::mem::replace(&mut self.live.workspaces, on);
+        let shown = self.panels[i].row.shows(&self.live);
+        self.live.workspaces = every;
+        let panel = &self.panels[i];
         if panel.style == Style::Dock {
             // A dock is as wide as what it holds: when that changes it
             // asks for the new width and draws once the compositor
@@ -975,7 +987,7 @@ impl Shell {
     /// The compositor said the workspaces anew: the switcher's view
     /// follows the shown workspace once that changes.
     fn workspaces_changed(&mut self) {
-        let now = self.workspaces.names();
+        let now = self.workspaces.names(None);
         let shown = |list: &[(String, bool)]| list.iter().position(|(_, on)| *on);
         if shown(&now) != shown(&self.live.workspaces) {
             self.live.view = None;
@@ -1182,7 +1194,11 @@ impl Shell {
     /// as `action_at` gave them).
     fn run_action(&mut self, i: usize, x: f32, action: Action, left: f32, width: f32) {
         match action {
-            Action::Show(place) => self.workspaces.show(place),
+            Action::Show(place) => {
+                let panel = &self.panels[i];
+                let output = panel.output.as_ref().or(panel.entered.as_ref());
+                self.workspaces.show(output, place);
+            }
             Action::View(first) => {
                 self.live.view = Some(first);
                 self.draw_all();
@@ -1918,13 +1934,23 @@ impl CompositorHandler for Shell {
         self.draw(i);
     }
 
+    /// A panel learns the screen it is on (M5.2o), so its switcher shows
+    /// that screen's workspaces.
     fn surface_enter(
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_surface::WlSurface,
-        _: &wl_output::WlOutput,
+        surface: &wl_surface::WlSurface,
+        output: &wl_output::WlOutput,
     ) {
+        if let Some(i) = self
+            .panels
+            .iter()
+            .position(|p| p.surface.wl_surface() == surface)
+        {
+            self.panels[i].entered = Some(output.clone());
+            self.draw(i);
+        }
     }
 
     fn surface_leave(
