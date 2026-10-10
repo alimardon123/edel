@@ -89,7 +89,7 @@ pub struct Widget {
 pub struct Live {
     /// The tray's items, as their apps last said them (M5.2e).
     pub tray: Vec<crate::tray::Item>,
-    /// `layout.tray_in_panel`: the apps kept in the panel, by their item's
+    /// `panels.tray`: the apps kept in the panel, by their item's
     /// `Id`, in the panel's order; read when the tray changes and when
     /// shell-ui writes it (M5.9g).
     pub tray_in_panel: Vec<String>,
@@ -98,8 +98,8 @@ pub struct Live {
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     /// The switcher's look, how many numbers show at once and its ends, as
-    /// `layout.workspaces_look`, `layout.workspaces_shown` and
-    /// `layout.workspaces_ends` say them; read at start and when the files
+    /// `appearance.switcher_look`, `appearance.switcher_shown` and
+    /// `appearance.switcher_ends` say them; read at start and when the files
     /// change (M5.2m).
     pub workspaces_look: workspaces::Look,
     pub workspaces_shown: usize,

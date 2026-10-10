@@ -75,7 +75,7 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
 pub const ASKED: &str = "edel-asked";
 
 thread_local! {
-    /// The row `--page` named by its key or title (`--page layout.panels`),
+    /// The row `--page` named by its key or title (`--page panels.list`),
     /// if it named one: its control takes the keyboard, as [`ASKED`] says.
     static ASKED_ROW: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
 }

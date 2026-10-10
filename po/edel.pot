@@ -494,13 +494,25 @@ msgstr ""
 msgid "Layout"
 msgstr ""
 
-msgid "the preset, tiling, title bars and panels"
+msgid "the preset, tiling and title bars"
+msgstr ""
+
+msgid "Panels"
+msgstr ""
+
+msgid "the panels and docks, the tray and the pinned apps"
+msgstr ""
+
+msgid "Workspaces"
+msgstr ""
+
+msgid "how many, their names and the apps that open on each"
 msgstr ""
 
 msgid "Appearance"
 msgstr ""
 
-msgid "light or dark, the accent, fonts and animations"
+msgid "light or dark, the accent, fonts, animations and the workspace switcher"
 msgstr ""
 
 msgid "Displays"

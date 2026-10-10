@@ -8,7 +8,7 @@
 //! Dynamic workspaces (M5.2i): [`dynamic_plan`] says which empty workspaces
 //! close and whether one more waits at the end, from the windows each one
 //! holds; a named workspace stays when it empties.
-//! Workspaces on each screen (M5.2k): with `layout.workspaces_per_screen`
+//! Workspaces on each screen (M5.2k): with `workspaces.per_screen`
 //! each screen shows a workspace of its own, a workspace's windows on a
 //! screen show where that screen shows it, and a window put on another
 //! screen joins the workspace shown there; else every screen shows the

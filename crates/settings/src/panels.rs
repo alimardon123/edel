@@ -1,7 +1,7 @@
 //! The Layout page's Panels group (M5.31d): a picture of the panels that
 //! apply, a row whose button opens shell-ui's panel editor (the same editor
 //! as a panel's right-click menu), and the section's Reset and Copy as
-//! command, which follow `layout.panels` in the person's file (ADR-008). The
+//! command, which follow `panels.list` in the person's file (ADR-008). The
 //! editor writes the file itself, as it always has; this page only asks for
 //! it, over the session bus (`edel::panel_edit::SHELL_BUS`), on a thread of
 //! GIO's, so it never waits for the desktop.
@@ -31,11 +31,11 @@ pub struct Card {
     /// The panels that apply, as the picture draws them.
     shown: Rc<RefCell<Vec<Panel>>>,
     picture: gtk::DrawingArea,
-    /// Where `layout.panels` comes from, with Reset and Copy as command.
+    /// Where `panels.list` comes from, with Reset and Copy as command.
     source: widgets::Source,
     edit: gtk::Button,
     /// The apps the apps widget pins, by name, and their row: where
-    /// `apps.pinned` comes from, with Reset and Copy as command (M5.31d).
+    /// `panels.pinned` comes from, with Reset and Copy as command (M5.31d).
     pins: gtk::Label,
     pins_row: widgets::Row,
     problem: gtk::Label,
@@ -97,12 +97,12 @@ pub fn card(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<C
 
 impl Card {
     /// The button that opens the panel editor, which the page gives the
-    /// keyboard to when it was asked for by name (`--page layout.panels`).
+    /// keyboard to when it was asked for by name (`--page panels.list`).
     pub fn edit(&self) -> gtk::Button {
         self.edit.clone()
     }
 
-    /// Shows the panels that apply and where `layout.panels` comes from.
+    /// Shows the panels that apply and where `panels.list` comes from.
     /// `preset` is the preset the desktop uses, which the panels come from
     /// when the person has none of their own.
     pub fn show(&self, files: &Files, preset: &str) {
@@ -117,7 +117,7 @@ impl Card {
         self.show_pins(files);
     }
 
-    /// Shows the apps pinned, by name, and where `apps.pinned` comes from;
+    /// Shows the apps pinned, by name, and where `panels.pinned` comes from;
     /// the row's line says what the drag does, then the source (M5.31d).
     fn show_pins(&self, files: &Files) {
         let names = names_of(&files.pins(), &apps::read_all(&apps::dirs()));
@@ -251,7 +251,7 @@ pub fn names_of(pins: &[String], installed: &[apps::App]) -> Vec<String> {
 }
 
 /// The command Copy as command gives for the pinned apps: `edel settings
-/// reset apps.pinned` when the person has a list of their own, else the
+/// reset panels.pinned` when the person has a list of their own, else the
 /// `set` line for the list that applies now (ADR-008).
 fn copy_pins_command() -> String {
     let files = Files::here();

@@ -4,7 +4,7 @@
 //! window comes forward or goes down. Dragged over the same widget, the app
 //! is pinned where it is let go, and the panel's caret shows where while it
 //! is dragged; dragged off the panel, a pinned app is unpinned. The list is
-//! `apps.pinned` in the person's settings file, written as Settings writes a
+//! `panels.pinned` in the person's settings file, written as Settings writes a
 //! key (ADR-008), and the widget shows it at once, without waiting for the
 //! file's news.
 
@@ -210,7 +210,7 @@ impl Shell {
         self.save_pins(list);
     }
 
-    /// Writes `list` as the person's `apps.pinned`, with what applies without
+    /// Writes `list` as the person's `panels.pinned`, with what applies without
     /// it taken out, as writers never write a default (ADR-008), then makes it
     /// what the widget shows at once.
     fn save_pins(&mut self, list: Vec<String>) {

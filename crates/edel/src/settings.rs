@@ -20,9 +20,11 @@ use toml_edit::DocumentMut;
 
 use crate::i18n::{n_, tr, trf};
 
-/// The settings file format this release reads and writes. A key is never
-/// removed or renamed within a format: `tests/keys.txt` lists every key a
-/// format has had, and a cargo test holds the structs to it.
+/// The settings file format this release reads and writes. Once Edel OS is
+/// released, a key is never removed or renamed within a format:
+/// `tests/keys.txt` lists every key a format has had, and a cargo test
+/// holds the structs to it. Until the first release, keys are renamed
+/// freely, as nobody runs Edel OS yet (Alimardon, 2026-10-10).
 pub const FORMAT: i64 = 1;
 
 /// One page of the Settings app and the section of the settings file it
@@ -45,12 +47,22 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "layout",
         title: n_("Layout"),
-        about: n_("the preset, tiling, title bars and panels"),
+        about: n_("the preset, tiling and title bars"),
+    },
+    Page {
+        section: "panels",
+        title: n_("Panels"),
+        about: n_("the panels and docks, the tray and the pinned apps"),
+    },
+    Page {
+        section: "workspaces",
+        title: n_("Workspaces"),
+        about: n_("how many, their names and the apps that open on each"),
     },
     Page {
         section: "appearance",
         title: n_("Appearance"),
-        about: n_("light or dark, the accent, fonts and animations"),
+        about: n_("light or dark, the accent, fonts, animations and the workspace switcher"),
     },
     Page {
         section: "displays",
@@ -279,40 +291,30 @@ pub const KEYS: &[Key] = &[
     now("layout.close_button", Kind::Flag),
     now("layout.minimize_button", Kind::Flag),
     now("layout.maximize_button", Kind::Flag),
-    now("layout.panels", Kind::Panels),
     // How tiling lays windows out (M5.16a, scroll M5.16c).
     now(
         "layout.tiling_style",
         Kind::OneOf(&["stack", "split", "scroll"]),
     ),
-    // The tray's apps kept in the panel, by their item's Id; the rest wait
-    // behind its arrow (M5.9g).
-    now("layout.tray_in_panel", Kind::Texts),
-    // The workspaces (M5.2i): their count, whether empty ones come and go
-    // as needed, and their names, the first workspace's first.
+    // The Panels page (M5.2q): the panels in place of the preset's
+    // (M5.4e), the tray's apps kept in the panel by their item's Id, the
+    // rest behind its arrow (M5.9g), and the apps the apps widget pins, in
+    // order, by id or role (M5.31d).
+    now("panels.list", Kind::Panels),
+    now("panels.tray", Kind::Texts),
+    now("panels.pinned", Kind::Texts),
+    // The Workspaces page (M5.2q): their count, whether empty ones come
+    // and go (M5.2i), whether each screen shows its own (M5.2k), their
+    // names, the first workspace's first, and the apps that always open on
+    // their own (M5.2l).
     now(
-        "layout.workspaces",
+        "workspaces.count",
         Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
     ),
-    now("layout.dynamic_workspaces", Kind::Flag),
-    now("layout.workspaces_per_screen", Kind::Flag),
-    // Apps that always open on their own workspace, by app id (M5.2l).
-    now("layout.app_workspaces", Kind::AppWorkspaces),
-    // The switcher's look, how many numbers show at once and what the
-    // strip's ends look like where more workspaces lie (M5.2m).
-    now(
-        "layout.workspaces_look",
-        Kind::OneOf(&["numbers", "button"]),
-    ),
-    now(
-        "layout.workspaces_shown",
-        Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
-    ),
-    now(
-        "layout.workspaces_ends",
-        Kind::OneOf(&["fade", "arrows", "counts"]),
-    ),
-    now("layout.workspace_names", Kind::Texts),
+    now("workspaces.dynamic", Kind::Flag),
+    now("workspaces.per_screen", Kind::Flag),
+    now("workspaces.names", Kind::Texts),
+    now("workspaces.apps", Kind::AppWorkspaces),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),
@@ -320,6 +322,21 @@ pub const KEYS: &[Key] = &[
     now("displays.*.enabled", Kind::Flag),
     later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
     later("appearance.wallpaper", Kind::Text),
+    // The panel's workspace switcher: its look, how many numbers show at
+    // once and what the strip's ends show where more lie (M5.2m, on the
+    // Appearance page since M5.2q).
+    now(
+        "appearance.switcher_look",
+        Kind::OneOf(&["numbers", "button"]),
+    ),
+    now(
+        "appearance.switcher_shown",
+        Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
+    ),
+    now(
+        "appearance.switcher_ends",
+        Kind::OneOf(&["fade", "arrows", "counts"]),
+    ),
     now("appearance.mode", Kind::OneOf(&["light", "dark", "auto"])),
     later("appearance.accent", Kind::Text),
     later("appearance.font", Kind::Text),
@@ -360,8 +377,6 @@ pub const KEYS: &[Key] = &[
     ),
     later("updates.restart_window", Kind::Text),
     later("apps.installed", Kind::Texts),
-    // The apps the apps widget pins, in order, by id or role (M5.31d).
-    now("apps.pinned", Kind::Texts),
     later("addons.installed", Kind::Texts),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
@@ -375,6 +390,10 @@ pub struct SettingsFile {
     pub format: i64,
     #[serde(default, skip_serializing_if = "is_default")]
     pub layout: Layout,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub panels: Panels,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub workspaces: Workspaces,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub displays: BTreeMap<String, Display>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -415,6 +434,8 @@ impl Default for SettingsFile {
         SettingsFile {
             format: FORMAT,
             layout: Layout::default(),
+            panels: Panels::default(),
+            workspaces: Workspaces::default(),
             displays: BTreeMap::new(),
             appearance: Appearance::default(),
             shortcuts: BTreeMap::new(),
@@ -505,52 +526,54 @@ pub struct Layout {
     pub minimize_button: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub maximize_button: Option<bool>,
-    /// The panels in place of the preset's (M5.4e); absent is the
-    /// preset's.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub panels: Option<Vec<crate::presets::Panel>>,
     /// How tiling lays windows out (M5.16a); absent is `stack`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiling_style: Option<String>,
+}
+
+/// The Panels page (M5.2q).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Panels {
+    /// The panels in place of the preset's (M5.4e); absent is the
+    /// preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list: Option<Vec<crate::presets::Panel>>,
     /// The tray's apps kept in the panel, by their item's `Id`, in the
     /// panel's order; absent keeps none in the panel, so every app waits
     /// behind the tray's arrow (M5.9g).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tray_in_panel: Option<Vec<String>>,
+    pub tray: Option<Vec<String>>,
+    /// The apps the apps widget pins, in order, each an app's id or a role
+    /// such as `terminal` (M5.31d); absent is the layout preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<Vec<String>>,
+}
+
+/// The Workspaces page (M5.2q).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Workspaces {
     /// How many workspaces, 1 to the preset's most (M5.2i); absent is the
     /// preset's count. Dynamic workspaces ignore it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspaces: Option<u32>,
+    pub count: Option<u32>,
     /// Whether an empty workspace always waits at the end and other empty
     /// ones close (M5.2i); absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dynamic_workspaces: Option<bool>,
+    pub dynamic: Option<bool>,
     /// Whether each screen shows its own workspace, so Super+1 to Super+9
     /// switch only the screen the pointer is on, instead of every screen
     /// switching together (M5.2k); absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspaces_per_screen: Option<bool>,
+    pub per_screen: Option<bool>,
+    /// The workspaces' names, the first workspace's first, an empty text
+    /// meaning no name (M5.2i).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub names: Option<Vec<String>>,
     /// Apps that always open on their own workspace, each app's id and
     /// the workspace's number from 1 (M5.2l); absent opens every app on
     /// the workspace in use.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub app_workspaces: Option<BTreeMap<String, i64>>,
-    /// The switcher's look, `numbers` or `button` (M5.2m); absent is
-    /// `numbers`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspaces_look: Option<String>,
-    /// How many workspaces the switcher shows at once, 1 to the preset's
-    /// most (M5.2m); absent is 3.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspaces_shown: Option<u32>,
-    /// What the switcher's strip shows where more workspaces lie: `fade`,
-    /// `arrows` or `counts` (M5.2m); absent is `arrows`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspaces_ends: Option<String>,
-    /// The workspaces' names, the first workspace's first, an empty text
-    /// meaning no name (M5.2i).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_names: Option<Vec<String>>,
+    pub apps: Option<BTreeMap<String, i64>>,
 }
 
 /// One screen on the Displays page, by its connector's name.
@@ -605,6 +628,18 @@ pub struct Appearance {
     /// Full, reduced or off
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<String>,
+    /// The workspace switcher's look, `numbers` or `button` (M5.2m); absent
+    /// is [`SWITCHER_LOOK_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switcher_look: Option<String>,
+    /// How many workspaces the switcher shows at once, 1 to the preset's
+    /// most (M5.2m); absent is [`SWITCHER_SHOWN_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switcher_shown: Option<u32>,
+    /// What the switcher's strip shows where more workspaces lie: `fade`,
+    /// `arrows` or `counts` (M5.2m); absent is [`SWITCHER_ENDS_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub switcher_ends: Option<String>,
 }
 
 /// The Default apps page.
@@ -670,10 +705,6 @@ pub struct Updates {
 pub struct Apps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed: Option<Vec<String>>,
-    /// The apps the apps widget pins, in order, each an app's id or a role
-    /// such as `terminal` (M5.31d); absent is the layout preset's.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pinned: Option<Vec<String>>,
 }
 
 /// The Add-ons page.
@@ -870,23 +901,24 @@ pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
 
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.
-pub const TRAY_IN_PANEL: &str = "layout.tray_in_panel";
+pub const TRAY_IN_PANEL: &str = "panels.tray";
 
 /// The keys the workspace switcher's look, shown count and ends are kept
-/// under (M5.2m), the one names shell-ui and `edel settings` share.
-pub const WORKSPACES_LOOK: &str = "layout.workspaces_look";
-pub const WORKSPACES_SHOWN: &str = "layout.workspaces_shown";
-pub const WORKSPACES_ENDS: &str = "layout.workspaces_ends";
+/// under (M5.2m, on the Appearance page since M5.2q), the one names
+/// shell-ui, Settings and `edel settings` share.
+pub const SWITCHER_LOOK: &str = "appearance.switcher_look";
+pub const SWITCHER_SHOWN: &str = "appearance.switcher_shown";
+pub const SWITCHER_ENDS: &str = "appearance.switcher_ends";
 /// What the switcher shows when neither file sets its keys (M5.2m): the
 /// numbers, three at once, an arrow where more lie. shell-ui draws these
 /// and Settings shows them.
-pub const WORKSPACES_LOOK_DEFAULT: &str = "numbers";
-pub const WORKSPACES_SHOWN_DEFAULT: u32 = 3;
-pub const WORKSPACES_ENDS_DEFAULT: &str = "arrows";
+pub const SWITCHER_LOOK_DEFAULT: &str = "numbers";
+pub const SWITCHER_SHOWN_DEFAULT: u32 = 3;
+pub const SWITCHER_ENDS_DEFAULT: &str = "arrows";
 
 /// The key the workspaces' names are kept under, one per place (M5.2p): the
 /// names the switcher shows, which a drag of a switcher button reorders.
-pub const WORKSPACE_NAMES: &str = "layout.workspace_names";
+pub const WORKSPACE_NAMES: &str = "workspaces.names";
 
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An
@@ -1170,7 +1202,7 @@ fn toml_edit_value(value: &Value) -> Result<toml_edit::Value> {
     let mut table = Table::new();
     table.insert("v".into(), value.clone());
     let doc: DocumentMut = toml::to_string(&table)?.parse()?;
-    // A list of tables, such as layout.panels, comes back as [[v]]
+    // A list of tables, such as panels.list, comes back as [[v]]
     // tables; it is written inline, on the key's one line.
     doc.get("v")
         .cloned()
@@ -1573,10 +1605,7 @@ mod tests {
             source("layout.tiling", Some(machine), Some(person)),
             Source::Person(Value::Boolean(false))
         );
-        assert_eq!(
-            source("layout.panels", Some(machine), None),
-            Source::Release
-        );
+        assert_eq!(source("panels.list", Some(machine), None), Source::Release);
         assert_eq!(
             source("layout.preset", Some("not toml ["), None),
             Source::Release
@@ -1726,17 +1755,17 @@ font_size = 11
     fn panels_are_checked_as_a_presets_and_read_as_tables_or_inline() {
         let set_one = set(
             "format = 1\n",
-            "layout.panels",
+            "panels.list",
             r#"[{ edge = "bottom", end = ["clock"] }]"#,
         )
         .unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[layout]\npanels = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
+            "format = 1\n\n[panels]\nlist = [{ edge = \"bottom\", end = [\"clock\"] }]\n"
         );
-        let tables = "format = 1\n[[layout.panels]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[layout.panels]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
+        let tables = "format = 1\n[[panels.list]]\nedge = \"top\"\nstart = [\"menu\"]\n\n[[panels.list]]\nedge = \"bottom\"\nstyle = \"dock\"\ncentre = [\"apps\"]\n";
         assert!(check(tables).unwrap().is_empty());
-        let panels = read(tables).unwrap().file.layout.panels.unwrap();
+        let panels = read(tables).unwrap().file.panels.list.unwrap();
         assert_eq!(panels.len(), 2);
         assert_eq!(panels[1].style, crate::presets::Style::Dock);
         // Two along one edge, a name no widget could have, a key a panel
@@ -1765,12 +1794,12 @@ font_size = 11
                 "a dock floats already; take floating out of the bottom panel",
             ),
         ] {
-            let error = set("format = 1\n", "layout.panels", bad).unwrap_err();
+            let error = set("format = 1\n", "panels.list", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");
-            let file = format!("format = 1\n[layout]\npanels = {bad}\n");
+            let file = format!("format = 1\n[panels]\nlist = {bad}\n");
             let read = read(&file).unwrap();
-            assert_eq!(read.file.layout.panels, None, "{bad}");
-            assert_eq!(read.problems[0].key, "layout.panels");
+            assert_eq!(read.file.panels.list, None, "{bad}");
+            assert_eq!(read.problems[0].key, "panels.list");
         }
     }
 
@@ -2127,13 +2156,13 @@ font_size = 11
     fn the_list_is_written_as_toml_that_reads_back_as_it_was() {
         let list = vec!["plain".to_string(), "say \"hi\" \\ there".to_string()];
         let value = tray_value(&list, None).expect("a list the machine does not give is written");
-        let text = format!("format = 1\n[layout]\ntray_in_panel = {value}\n");
+        let text = format!("format = 1\n[panels]\ntray = {value}\n");
         assert_eq!(texts(TRAY_IN_PANEL, Some(text.as_str()), None), Some(list));
     }
 
     #[test]
     fn a_list_the_machine_already_gives_is_not_written() {
-        let machine = "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\"]\n";
+        let machine = "format = 1\n[panels]\ntray = [\"nm-applet\"]\n";
         let same = vec!["nm-applet".to_string()];
         assert_eq!(tray_value(&same, Some(machine)), None);
         // Taking the machine's app out is a choice, written as an empty list.
@@ -2144,10 +2173,9 @@ font_size = 11
 
     #[test]
     fn the_tray_lists_are_read_from_the_person_over_the_machine() {
-        let machine =
-            "format = 1\n[layout]\ntray_in_panel = [\"nm-applet\", \"edel-testclient\"]\n";
-        let person = "format = 1\n[layout]\ntray_in_panel = [\"blueman\"]\n";
-        let none = "format = 1\n[layout]\ntray_in_panel = []\n";
+        let machine = "format = 1\n[panels]\ntray = [\"nm-applet\", \"edel-testclient\"]\n";
+        let person = "format = 1\n[panels]\ntray = [\"blueman\"]\n";
+        let none = "format = 1\n[panels]\ntray = []\n";
         let kept = |a: &str, b: &str| Some(vec![a.to_string(), b.to_string()]);
         // A machine list, and the person's over it.
         assert_eq!(
@@ -2167,15 +2195,15 @@ font_size = 11
         assert_eq!(texts(TRAY_IN_PANEL, None, None), None);
         assert_eq!(texts(TRAY_IN_PANEL, Some("format = 1\n"), None), None);
         // Not a list of texts is no list.
-        let text = "format = 1\n[layout]\ntray_in_panel = \"nm-applet\"\n";
+        let text = "format = 1\n[panels]\ntray = \"nm-applet\"\n";
         assert_eq!(texts(TRAY_IN_PANEL, Some(text), None), None);
-        let numbers = "format = 1\n[layout]\ntray_in_panel = [1, 2]\n";
+        let numbers = "format = 1\n[panels]\ntray = [1, 2]\n";
         assert_eq!(texts(TRAY_IN_PANEL, Some(numbers), None), None);
         // A bare name is refused with what to write.
         let refused = set("format = 1\n", TRAY_IN_PANEL, "nm-applet").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.tray_in_panel: expected a list of texts in quotes, not \"nm-applet\""
+            "panels.tray: expected a list of texts in quotes, not \"nm-applet\""
         );
     }
 
@@ -2220,44 +2248,40 @@ font_size = 11
 
     #[test]
     fn the_workspace_keys_are_checked_and_written_one_way() {
-        let text = |line: &str| format!("format = 1\n[layout]\n{line}\n");
-        assert!(check(&text("workspaces = 9")).unwrap().is_empty());
+        let text = |line: &str| format!("format = 1\n[workspaces]\n{line}\n");
+        assert!(check(&text("count = 9")).unwrap().is_empty());
         assert_eq!(
-            read(&text("workspaces = 3"))
-                .unwrap()
-                .file
-                .layout
-                .workspaces,
+            read(&text("count = 3")).unwrap().file.workspaces.count,
             Some(3)
         );
         assert_eq!(
-            check(&text("workspaces = 10")).unwrap(),
-            ["layout.workspaces: expected a whole number from 1 to 9, not 10"]
+            check(&text("count = 10")).unwrap(),
+            ["workspaces.count: expected a whole number from 1 to 9, not 10"]
         );
         assert_eq!(
-            check(&text("workspaces = 0")).unwrap(),
-            ["layout.workspaces: expected a whole number from 1 to 9, not 0"]
+            check(&text("count = 0")).unwrap(),
+            ["workspaces.count: expected a whole number from 1 to 9, not 0"]
         );
-        let refused = set("format = 1\n", "layout.workspaces", "10").unwrap_err();
+        let refused = set("format = 1\n", "workspaces.count", "10").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces: expected a whole number from 1 to 9, not 10"
+            "workspaces.count: expected a whole number from 1 to 9, not 10"
         );
         assert_eq!(
-            set("format = 1\n", "layout.workspaces", "4").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces = 4\n"
+            set("format = 1\n", "workspaces.count", "4").unwrap(),
+            "format = 1\n\n[workspaces]\ncount = 4\n"
         );
         assert_eq!(
-            set("format = 1\n", "layout.dynamic_workspaces", "true").unwrap(),
-            "format = 1\n\n[layout]\ndynamic_workspaces = true\n"
+            set("format = 1\n", "workspaces.dynamic", "true").unwrap(),
+            "format = 1\n\n[workspaces]\ndynamic = true\n"
         );
         assert_eq!(
-            set("format = 1\n", "layout.workspaces_per_screen", "true").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_per_screen = true\n"
+            set("format = 1\n", "workspaces.per_screen", "true").unwrap(),
+            "format = 1\n\n[workspaces]\nper_screen = true\n"
         );
-        let names = set("format = 1\n", "layout.workspace_names", r#"["Mail", ""]"#).unwrap();
+        let names = set("format = 1\n", "workspaces.names", r#"["Mail", ""]"#).unwrap();
         assert_eq!(
-            texts("layout.workspace_names", None, Some(&names)),
+            texts("workspaces.names", None, Some(&names)),
             Some(vec!["Mail".to_string(), String::new()])
         );
         assert!(check(&names).unwrap().is_empty());
@@ -2267,35 +2291,35 @@ font_size = 11
     fn the_workspace_switcher_keys_are_checked_and_written() {
         let base = "format = 1\n";
         assert_eq!(
-            set(base, WORKSPACES_LOOK, "button").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_look = \"button\"\n"
+            set(base, SWITCHER_LOOK, "button").unwrap(),
+            "format = 1\n\n[appearance]\nswitcher_look = \"button\"\n"
         );
         assert_eq!(
-            set(base, WORKSPACES_SHOWN, "5").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_shown = 5\n"
+            set(base, SWITCHER_SHOWN, "5").unwrap(),
+            "format = 1\n\n[appearance]\nswitcher_shown = 5\n"
         );
         assert_eq!(
-            set(base, WORKSPACES_ENDS, "counts").unwrap(),
-            "format = 1\n\n[layout]\nworkspaces_ends = \"counts\"\n"
+            set(base, SWITCHER_ENDS, "counts").unwrap(),
+            "format = 1\n\n[appearance]\nswitcher_ends = \"counts\"\n"
         );
-        let refused = set(base, WORKSPACES_ENDS, "dots").unwrap_err();
-        assert_eq!(
-            format!("{refused:#}"),
-            "layout.workspaces_ends: unknown value \"dots\"; use fade, arrows or counts"
-        );
-        let refused = set(base, WORKSPACES_LOOK, "dots").unwrap_err();
+        let refused = set(base, SWITCHER_ENDS, "dots").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces_look: unknown value \"dots\"; use numbers or button"
+            "appearance.switcher_ends: unknown value \"dots\"; use fade, arrows or counts"
         );
-        let refused = set(base, WORKSPACES_SHOWN, "10").unwrap_err();
+        let refused = set(base, SWITCHER_LOOK, "dots").unwrap_err();
         assert_eq!(
             format!("{refused:#}"),
-            "layout.workspaces_shown: expected a whole number from 1 to 9, not 10"
+            "appearance.switcher_look: unknown value \"dots\"; use numbers or button"
         );
-        let written = set(base, WORKSPACES_SHOWN, "5").unwrap();
+        let refused = set(base, SWITCHER_SHOWN, "10").unwrap_err();
         assert_eq!(
-            read(&written).unwrap().file.layout.workspaces_shown,
+            format!("{refused:#}"),
+            "appearance.switcher_shown: expected a whole number from 1 to 9, not 10"
+        );
+        let written = set(base, SWITCHER_SHOWN, "5").unwrap();
+        assert_eq!(
+            read(&written).unwrap().file.appearance.switcher_shown,
             Some(5)
         );
         assert!(check(&written).unwrap().is_empty());
@@ -2303,48 +2327,48 @@ font_size = 11
 
     #[test]
     fn an_app_opens_on_its_workspace_checked_and_written_one_way() {
-        let line = |value: &str| format!("format = 1\n[layout]\napp_workspaces = {value}\n");
+        let line = |value: &str| format!("format = 1\n[workspaces]\napps = {value}\n");
         let written = set(
             "format = 1\n",
-            "layout.app_workspaces",
+            "workspaces.apps",
             "{ \"org.mozilla.firefox\" = 2 }",
         )
         .unwrap();
         assert_eq!(
             written,
-            "format = 1\n\n[layout]\napp_workspaces = { \"org.mozilla.firefox\" = 2 }\n"
+            "format = 1\n\n[workspaces]\napps = { \"org.mozilla.firefox\" = 2 }\n"
         );
         assert!(check(&written).unwrap().is_empty());
-        let apps = read(&written).unwrap().file.layout.app_workspaces.unwrap();
+        let apps = read(&written).unwrap().file.workspaces.apps.unwrap();
         assert_eq!(apps.get("org.mozilla.firefox"), Some(&2));
         assert_eq!(
             format!(
                 "{:#}",
                 set(
                     "format = 1\n",
-                    "layout.app_workspaces",
+                    "workspaces.apps",
                     "{ \"org.mozilla.firefox\" = 10 }"
                 )
                 .unwrap_err()
             ),
-            "layout.app_workspaces: \"org.mozilla.firefox\" has workspace 10; use a whole number from 1 to 9"
+            "workspaces.apps: \"org.mozilla.firefox\" has workspace 10; use a whole number from 1 to 9"
         );
         assert_eq!(
             check(&line("{ \"org.mozilla.firefox\" = \"x\" }")).unwrap(),
             [
-                "layout.app_workspaces: \"org.mozilla.firefox\" has workspace \"x\"; use a whole number from 1 to 9"
+                "workspaces.apps: \"org.mozilla.firefox\" has workspace \"x\"; use a whole number from 1 to 9"
             ]
         );
         assert_eq!(
             check(&line("{ \"org firefox\" = 2 }")).unwrap(),
             [
-                "layout.app_workspaces: \"org firefox\" is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
+                "workspaces.apps: \"org firefox\" is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
             ]
         );
         assert_eq!(
             check(&line("\"org.mozilla.firefox\"")).unwrap(),
             [
-                "layout.app_workspaces: expected apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }, not \"org.mozilla.firefox\""
+                "workspaces.apps: expected apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }, not \"org.mozilla.firefox\""
             ]
         );
         assert!(is_app_id("org.gnome.Nautilus"));

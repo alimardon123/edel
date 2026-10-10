@@ -251,6 +251,15 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
+msgid "The panels and docks along the screen's edges and what they hold. Each choice here is also a line of your settings file and an edel settings set command."
+msgstr ""
+
+msgid "Workspaces keep windows apart, each a desktop of its own. Each choice here is also a line of your settings file and an edel settings set command."
+msgstr ""
+
+msgid "How the desktop looks. Each choice here is also a line of your settings file and an edel settings set command."
+msgstr ""
+
 msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
 msgstr ""
 
@@ -284,9 +293,6 @@ msgstr ""
 msgid "Closes a window even with its button hidden"
 msgstr ""
 
-msgid "Workspaces"
-msgstr ""
-
 msgid "How many there are; Super+1 to Super+9 show them"
 msgstr ""
 
@@ -294,6 +300,12 @@ msgid "An empty one always waits at the end, and other empty ones close"
 msgstr ""
 
 msgid "Each screen shows its own workspace"
+msgstr ""
+
+msgid "The colours of the panels, title bars and apps"
+msgstr ""
+
+msgid "Workspace switcher"
 msgstr ""
 
 msgid "How the panel's switcher shows them"
@@ -587,9 +599,6 @@ msgstr ""
 msgid "Tiling style"
 msgstr ""
 
-msgid "Panels"
-msgstr ""
-
 msgid "Pinned apps"
 msgstr ""
 
@@ -621,6 +630,9 @@ msgid "Workspace names"
 msgstr ""
 
 msgid "Apps on their workspace"
+msgstr ""
+
+msgid "Style"
 msgstr ""
 
 msgid "Switcher look"
@@ -678,6 +690,12 @@ msgid "Arrows"
 msgstr ""
 
 msgid "Counts"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
+msgid "Dark"
 msgstr ""
 
 msgid "Stack"

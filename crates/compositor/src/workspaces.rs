@@ -9,7 +9,7 @@
 //! come in from the other, as the workspaces lie in a row; on Lite, whose
 //! slides take no time, the switch is instant. Minimizing (M5.2h) hides a
 //! window the same way, on its own workspace, until the window list
-//! brings it back. With `layout.workspaces_per_screen` (M5.2k) each
+//! brings it back. With `workspaces.per_screen` (M5.2k) each
 //! screen shows its own workspace: Super+1 to Super+9 switch the screen
 //! the pointer is on, and a window put on another screen joins the
 //! workspace shown there.
@@ -136,7 +136,7 @@ impl Edel {
         }
     }
 
-    /// `layout.workspaces_per_screen` changed to `on`. Turned off, every
+    /// `workspaces.per_screen` changed to `on`. Turned off, every
     /// screen shows the workspace in use first.
     pub fn set_per_screen(&mut self, on: bool) {
         if on == self.desks.per_screen() {
@@ -304,7 +304,7 @@ impl Edel {
     /// workspaces as they are, closing the empty ones it names and adding
     /// the empty one that waits at the end, then tells the clients and the
     /// state file. The count is logged when it changes. Nothing happens
-    /// unless `layout.dynamic_workspaces` is on.
+    /// unless `workspaces.dynamic` is on.
     pub fn settle_dynamic(&mut self) {
         if !self.settings.dynamic() {
             return;

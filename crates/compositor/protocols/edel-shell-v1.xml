@@ -70,7 +70,7 @@
     <event name="settings">
       <description summary="the settings files changed">
         The settings files changed (M5.9h): shell-ui reads again what it
-        reads from them while running, such as `layout.tray_in_panel`.
+        reads from them while running, such as `panels.tray`.
         Sent at every change, whoever made it.
       </description>
     </event>

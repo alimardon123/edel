@@ -35,8 +35,8 @@ use crate::widgets;
 use crate::{DOCK_MARGIN, EDITOR, MARGIN, Panel, Shell, UNDO, fillets, settings_texts};
 
 /// What `save_panels` did, as the log lines say it.
-const WRITTEN: &str = "layout.panels written";
-const TAKEN: &str = "layout.panels taken out";
+const WRITTEN: &str = "panels.list written";
+const TAKEN: &str = "panels.list taken out";
 pub(crate) const NOTHING: &str = "nothing to write";
 
 /// The open drawer: its surface and what it shows, the keyboard, what a
@@ -395,7 +395,7 @@ impl Shell {
     }
 
     /// Writes the panels `now` to the person's settings file as
-    /// `layout.panels`, or takes the person's own line out when what
+    /// `panels.list`, or takes the person's own line out when what
     /// applies without it is what they are now (writers never write a
     /// default, ADR-008). Returns what it did, `WRITTEN`, `TAKEN` or
     /// `NOTHING`, or `None` after saying why it could not.

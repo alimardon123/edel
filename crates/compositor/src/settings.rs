@@ -40,7 +40,7 @@ pub struct Settings {
     /// `layout.close_button`, `minimize_button` and `maximize_button`
     /// (M5.18a): absent shows each.
     pub buttons: Shown,
-    /// `layout.panels` (M5.4e): absent means the preset's; shell-ui reads
+    /// `panels.list` (M5.4e): absent means the preset's; shell-ui reads
     /// them, and the compositor only restarts it when they change.
     pub panels: Option<Vec<edel::presets::Panel>>,
     /// `[displays.NAME]`, by output name.
@@ -61,17 +61,17 @@ pub struct Settings {
     pub language: Option<String>,
     /// `layout.tiling_style` (M5.16a): absent means stack.
     pub tiling_style: Style,
-    /// `layout.workspaces` (M5.2i): absent means the preset's count.
+    /// `workspaces.count` (M5.2i): absent means the preset's count.
     pub workspace_count: Option<usize>,
-    /// `layout.dynamic_workspaces` (M5.2i): absent means off.
+    /// `workspaces.dynamic` (M5.2i): absent means off.
     pub dynamic_workspaces: bool,
-    /// `layout.workspaces_per_screen` (M5.2k): absent means off, every
+    /// `workspaces.per_screen` (M5.2k): absent means off, every
     /// screen switching together.
     pub workspaces_per_screen: bool,
-    /// `layout.workspace_names` (M5.2i), the first workspace's first; an
+    /// `workspaces.names` (M5.2i), the first workspace's first; an
     /// empty text is no name.
     pub workspace_names: Vec<String>,
-    /// `layout.app_workspaces` (M5.2l): each app id and the workspace it
+    /// `workspaces.apps` (M5.2l): each app id and the workspace it
     /// opens on, from 0, in the file's order; absent opens every app on
     /// the workspace in use.
     pub app_workspaces: Vec<(String, usize)>,
@@ -119,25 +119,25 @@ impl Settings {
                     *shown = value;
                 }
             }
-            if file.layout.panels.is_some() {
-                settings.panels.clone_from(&file.layout.panels);
+            if file.panels.list.is_some() {
+                settings.panels.clone_from(&file.panels.list);
             }
             if let Some(style) = file.layout.tiling_style.as_deref().and_then(Style::parse) {
                 settings.tiling_style = style;
             }
-            if let Some(count) = file.layout.workspaces {
+            if let Some(count) = file.workspaces.count {
                 settings.workspace_count = usize::try_from(count).ok();
             }
-            if let Some(dynamic) = file.layout.dynamic_workspaces {
+            if let Some(dynamic) = file.workspaces.dynamic {
                 settings.dynamic_workspaces = dynamic;
             }
-            if let Some(per_screen) = file.layout.workspaces_per_screen {
+            if let Some(per_screen) = file.workspaces.per_screen {
                 settings.workspaces_per_screen = per_screen;
             }
-            if let Some(names) = &file.layout.workspace_names {
+            if let Some(names) = &file.workspaces.names {
                 settings.workspace_names.clone_from(names);
             }
-            if let Some(apps) = &file.layout.app_workspaces {
+            if let Some(apps) = &file.workspaces.apps {
                 // The person's table replaces the machine's whole, as the
                 // other keys do; a number out of range is left out.
                 settings.app_workspaces = apps
@@ -212,7 +212,7 @@ impl Settings {
         presets::named(self.preset.as_deref()).0.session.start
     }
 
-    /// How many workspaces there are (M5.2a): `layout.workspaces` if set,
+    /// How many workspaces there are (M5.2a): `workspaces.count` if set,
     /// else the preset's count. Dynamic workspaces ignore it (M5.2i).
     pub fn workspaces(&self) -> usize {
         self.workspace_count
@@ -236,7 +236,7 @@ impl Settings {
     }
 
     /// The workspace, from 0, that `app_id`'s windows open on
-    /// (`layout.app_workspaces`, M5.2l); `None` when the app has none.
+    /// (`workspaces.apps`, M5.2l); `None` when the app has none.
     pub fn app_workspace(&self, app_id: &str) -> Option<usize> {
         self.app_workspaces
             .iter()
@@ -252,7 +252,7 @@ impl Settings {
     }
 
     /// Whether a dock hides while a window covers it (M5.4f): from
-    /// `layout.panels` if set, else the preset's panels.
+    /// `panels.list` if set, else the preset's panels.
     pub fn dock_hides(&self) -> bool {
         match &self.panels {
             Some(panels) => presets::dock_hides(panels),
@@ -432,8 +432,8 @@ mod tests {
     #[test]
     fn the_persons_panels_win() {
         let machine =
-            file("format = 1\n[layout]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n");
-        let person = file("format = 1\n[[layout.panels]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
+            file("format = 1\n[panels]\nlist = [{ edge = \"top\", end = [\"clock\"] }]\n");
+        let person = file("format = 1\n[[panels.list]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         let panels = both.panels.clone().unwrap();
         assert_eq!(panels[0].edge, edel::presets::Edge::Bottom);
@@ -537,9 +537,9 @@ mod tests {
         assert_eq!(Settings::default().workspaces(), 4, "Classic has four");
         assert!(!Settings::default().dynamic());
         let machine = file(
-            "format = 1\n[layout]\nworkspaces = 2\ndynamic_workspaces = true\nworkspaces_per_screen = true\nworkspace_names = [\"Mail\"]\n",
+            "format = 1\n[workspaces]\ncount = 2\ndynamic = true\nper_screen = true\nnames = [\"Mail\"]\n",
         );
-        let person = file("format = 1\n[layout]\nworkspaces = 6\n");
+        let person = file("format = 1\n[workspaces]\ncount = 6\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         assert_eq!(both.workspaces(), 6, "the person's count wins");
         assert!(both.dynamic());
@@ -555,7 +555,7 @@ mod tests {
         assert_eq!(Settings::from_files(Some(&machine), None).workspaces(), 2);
         // Apps with a workspace of their own (M5.2l).
         let machine = file(
-            "format = 1\n[layout]\napp_workspaces = { \"org.mozilla.firefox\" = 2, \"org.gnome.Nautilus\" = 4 }\n",
+            "format = 1\n[workspaces]\napps = { \"org.mozilla.firefox\" = 2, \"org.gnome.Nautilus\" = 4 }\n",
         );
         let settings = Settings::from_files(Some(&machine), None);
         assert_eq!(settings.app_workspace("org.mozilla.firefox"), Some(1));
@@ -567,7 +567,7 @@ mod tests {
         );
         // The person's table replaces the machine's whole, so Nautilus
         // no longer has a rule.
-        let person = file("format = 1\n[layout]\napp_workspaces = { \"foot\" = 9 }\n");
+        let person = file("format = 1\n[workspaces]\napps = { \"foot\" = 9 }\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         assert_eq!(both.app_workspace("org.gnome.Nautilus"), None);
         assert_eq!(both.app_workspace("foot"), Some(8));
