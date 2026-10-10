@@ -291,16 +291,12 @@ impl Password {
             return self.clear();
         };
         let keep = text.char_indices().last().map_or(0, |(i, _)| i);
-        for b in &mut self.0[keep..] {
-            *b = 0;
-        }
+        self.0[keep..].fill(0);
         self.0.truncate(keep);
     }
 
     pub fn clear(&mut self) {
-        for b in &mut self.0 {
-            *b = 0;
-        }
+        self.0.fill(0);
         self.0.clear();
     }
 
