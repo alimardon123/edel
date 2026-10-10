@@ -145,12 +145,16 @@ impl Edel {
         point: Point<f64, Logical>,
     ) -> Option<(String, Window, Rectangle<i32, Logical>)> {
         self.overview_screens().into_iter().find_map(|screen| {
-            screen.windows.iter().rev().find_map(|(desk, window, frame)| {
-                let at = shrink(screen.frames[*desk], screen.area, *frame);
-                at.to_f64()
-                    .contains(point)
-                    .then(|| (screen.name.clone(), window.clone(), at))
-            })
+            screen
+                .windows
+                .iter()
+                .rev()
+                .find_map(|(desk, window, frame)| {
+                    let at = shrink(screen.frames[*desk], screen.area, *frame);
+                    at.to_f64()
+                        .contains(point)
+                        .then(|| (screen.name.clone(), window.clone(), at))
+                })
         })
     }
 
@@ -280,7 +284,14 @@ impl Edel {
                 (tokens.edge, 1)
             };
             for (j, line) in edges(*frame, width).into_iter().enumerate() {
-                front.push(solid(&mut overview, format!("edge {i} {j}"), line, edge, area, scale));
+                front.push(solid(
+                    &mut overview,
+                    format!("edge {i} {j}"),
+                    line,
+                    edge,
+                    area,
+                    scale,
+                ));
             }
             let windows = screen
                 .windows
@@ -299,9 +310,23 @@ impl Edel {
                     scale,
                 ));
             }
-            back.push(solid(&mut overview, format!("frame {i}"), *frame, tokens.background, area, scale));
+            back.push(solid(
+                &mut overview,
+                format!("frame {i}"),
+                *frame,
+                tokens.background,
+                area,
+                scale,
+            ));
         }
-        back.push(solid(&mut overview, "screen".into(), area, tokens.panel, area, scale));
+        back.push(solid(
+            &mut overview,
+            "screen".into(),
+            area,
+            tokens.panel,
+            area,
+            scale,
+        ));
         self.overview = Some(overview);
         front.extend(back);
         front
@@ -385,7 +410,13 @@ impl Edel {
             let card = shrink(frame, screen.area, place);
             let card = Rectangle::new(card.loc + by.to_i32_round(), card.size);
             let buffer = overview.cards.entry(window.clone()).or_default();
-            parts.push(flat(buffer, card, self.tokens.title_bar, screen.area, scale_out));
+            parts.push(flat(
+                buffer,
+                card,
+                self.tokens.title_bar,
+                screen.area,
+                scale_out,
+            ));
         }
         parts
     }
@@ -411,7 +442,13 @@ fn solid(
     area: Rectangle<i32, Logical>,
     scale: f64,
 ) -> Drawn {
-    flat(overview.solids.entry(key).or_default(), place, colour, area, scale)
+    flat(
+        overview.solids.entry(key).or_default(),
+        place,
+        colour,
+        area,
+        scale,
+    )
 }
 
 /// `buffer` filled with `colour` over `place` on the screen at `area`.
@@ -423,7 +460,10 @@ fn flat(
     scale: f64,
 ) -> Drawn {
     buffer.update(place.size, colour.rgba());
-    let at = (place.loc - area.loc).to_f64().to_physical(scale).to_i32_round();
+    let at = (place.loc - area.loc)
+        .to_f64()
+        .to_physical(scale)
+        .to_i32_round();
     Drawn::Plain(Element::Border(SolidColorRenderElement::from_buffer(
         buffer,
         at,

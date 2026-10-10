@@ -275,10 +275,7 @@ impl Edel {
             return false;
         };
         // A maximized window keeps the size it goes back to.
-        let size = data(window)
-            .borrow()
-            .restore
-            .map_or(frame.size, |r| r.size);
+        let size = data(window).borrow().restore.map_or(frame.size, |r| r.size);
         let areas = self.window_areas();
         let Some((place, shows)) = self.desks.carry(window.clone(), to, size, &areas) else {
             return false;

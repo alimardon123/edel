@@ -41,7 +41,10 @@ pub fn frames(screen: Rectangle<i32, Logical>, count: usize) -> Vec<Rectangle<i3
             let wide = in_row * size.w + (in_row - 1) * GAP;
             let left = screen.loc.x + (screen.size.w - wide) / 2;
             Rectangle::new(
-                Point::from((left + col as i32 * (size.w + GAP), top + row as i32 * (size.h + GAP))),
+                Point::from((
+                    left + col as i32 * (size.w + GAP),
+                    top + row as i32 * (size.h + GAP),
+                )),
                 size,
             )
         })
@@ -124,7 +127,10 @@ mod tests {
         let frame = rect(1312, 100, 320, 200);
         assert_eq!(scale(frame, screen), 0.25);
         let window = rect(1280 + 400, 200, 400, 300);
-        assert_eq!(shrink(frame, screen, window), rect(1312 + 100, 150, 100, 75));
+        assert_eq!(
+            shrink(frame, screen, window),
+            rect(1312 + 100, 150, 100, 75)
+        );
         let at = into(frame, screen, Point::from((1280.0 + 640.0, 400.0)));
         assert_eq!(at, Point::from((1312.0 + 160.0, 200.0)));
     }

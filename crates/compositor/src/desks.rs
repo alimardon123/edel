@@ -822,10 +822,19 @@ mod tests {
         assert!(shows);
         assert_eq!((desks.hidden_on(&1), desks.desk_of(&1)), (None, Some(0)));
         assert!(desks.hidden().next().is_none(), "the third forgot it");
-        assert!(desks.carry(1, 0, (300, 200).into(), &areas()).is_none(), "already there");
-        assert!(desks.carry(1, 3, (300, 200).into(), &areas()).is_none(), "no fourth");
+        assert!(
+            desks.carry(1, 0, (300, 200).into(), &areas()).is_none(),
+            "already there"
+        );
+        assert!(
+            desks.carry(1, 3, (300, 200).into(), &areas()).is_none(),
+            "no fourth"
+        );
         desks.minimize(1, at(40));
-        assert!(desks.carry(1, 1, (300, 200).into(), &areas()).is_none(), "minimized");
+        assert!(
+            desks.carry(1, 1, (300, 200).into(), &areas()).is_none(),
+            "minimized"
+        );
     }
 
     #[test]
