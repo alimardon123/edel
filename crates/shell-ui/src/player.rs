@@ -55,16 +55,21 @@ const WIDE_EDGE: f32 = 12.0;
 /// The room between the wide pill's cover and its words (M5.10c).
 const WIDE_GAP: f32 = 16.0;
 /// The wide pill's words box, from the card's top (M5.10c).
-const WIDE_WORDS_TOP: f32 = 26.0;
 const WIDE_WORDS_HIGH: f32 = 40.0;
-/// The wide pill's progress bar, from the card's top, its height and its
-/// length (M5.10c). On a Compact screen the bar stops where the words stop.
-const WIDE_BAR_TOP: f32 = 72.0;
+/// The wide pill's progress bar, its height and its length (M5.10c). On a
+/// Compact screen the bar stops where the words stop.
 const WIDE_BAR_HIGH: f32 = 4.0;
 const WIDE_BAR: f32 = 136.0;
-/// The track's times, from the card's top, their height and their width
-/// (M5.10c): the played time at the bar's left end, the length at its right.
-const WIDE_TIME_TOP: f32 = 78.0;
+/// The wide pill's left column, top to bottom (M5.10c4): the app's row,
+/// `WIDE_ROW_GAP`, the title over the artist, `WIDE_BAR_GAP` (the mockup's
+/// room over the bar), the bar, 2 px, the times; one block centred on the
+/// card, and kept `WIDE_ROW_GAP` above the dots when there are dots.
+const WIDE_ROW_GAP: f32 = 4.0;
+const WIDE_BAR_GAP: f32 = 8.0;
+const WIDE_COLUMN: f32 =
+    APP_HIGH + WIDE_ROW_GAP + WIDE_WORDS_HIGH + WIDE_BAR_GAP + WIDE_BAR_HIGH + 2.0 + WIDE_TIME_HIGH;
+/// The track's times, their height and their width (M5.10c): the played
+/// time at the bar's left end, the length at its right.
 const WIDE_TIME_HIGH: f32 = 14.0;
 const WIDE_TIME_WIDE: f32 = 40.0;
 /// The times' text, logical pixels (M5.10c).
@@ -272,28 +277,30 @@ pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts
         WIDE_COVER,
     );
     let left = cover.right() + WIDE_GAP;
+    let dots_top = card.y + card.h - DOT_FOOT - DOT;
+    let mut top = card.y + (card.h - WIDE_COLUMN) / 2.0;
+    if pages > 1 {
+        top = top.min(dots_top - WIDE_ROW_GAP - WIDE_COLUMN);
+    }
+    let app = Rect::new(left, top, (previous.x - SPACE - left).max(0.0), APP_HIGH);
     let words = Rect::new(
         left,
-        card.y + WIDE_WORDS_TOP,
-        (previous.x - SPACE - left).max(0.0),
+        app.y + APP_HIGH + WIDE_ROW_GAP,
+        app.w,
         WIDE_WORDS_HIGH,
     );
     let bar = Rect::new(
         words.x,
-        card.y + WIDE_BAR_TOP,
+        words.y + WIDE_WORDS_HIGH + WIDE_BAR_GAP,
         WIDE_BAR.min(words.w),
         WIDE_BAR_HIGH,
     );
+    let time_top = bar.y + WIDE_BAR_HIGH + 2.0;
     let times = (
-        Rect::new(
-            bar.x,
-            card.y + WIDE_TIME_TOP,
-            WIDE_TIME_WIDE,
-            WIDE_TIME_HIGH,
-        ),
+        Rect::new(bar.x, time_top, WIDE_TIME_WIDE, WIDE_TIME_HIGH),
         Rect::new(
             bar.right() - WIDE_TIME_WIDE,
-            card.y + WIDE_TIME_TOP,
+            time_top,
             WIDE_TIME_WIDE,
             WIDE_TIME_HIGH,
         ),
@@ -306,10 +313,10 @@ pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts
         previous,
         play,
         next,
-        app: Rect::new(words.x, card.y + APP_TOP, words.w, APP_HIGH),
+        app,
         // Centred across the card at its foot, in the row `wide_size`
         // adds under the track, as quick settings' are.
-        dots: dot_rects(pages, page, card, card.y + card.h - DOT_FOOT - DOT),
+        dots: dot_rects(pages, page, card, dots_top),
         progress: Some(bar),
         times: Some(times),
     }
@@ -863,6 +870,10 @@ mod tests {
                 );
             }
             assert_eq!(dot.y + dot.h, card.y + card.h - DOT_FOOT);
+        }
+        // The app's row, the words and the bar each lie under the one before.
+        for (one, next) in [(parts.app, parts.words), (parts.words, bar), (bar, played)] {
+            assert!(one.y + one.h <= next.y, "{one:?} meets {next:?}");
         }
         // The cover and the buttons stay centred on the taller card.
         let middle = card.y + card.h / 2.0;
