@@ -2834,7 +2834,7 @@ case_tray() {
 	# behind the arrow, and the panel and the card follow at once. Super+Q
 	# closes Settings again.
 	opened=$(count 'edel-compositor: mapped window Settings')
-	guest 'settings window'
+	guest 'settings on the bus'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
 		fail "Settings did not open for the tray card: $(value windows)"
 	i=0
