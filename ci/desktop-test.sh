@@ -1568,7 +1568,9 @@ case_workspaces() {
 	accent=$(token accent)
 	# Each pill is checked 4 px in from its left end, clear of its digit.
 	shot switcher $((x + 29)) 780 "$accent" >/dev/null || fail "the switcher's 1, at $((x + 29)),780, is not the accent pill"
-	shot switcher $((x + 115)) 780 "!$(token panel)" >/dev/null || fail "the fourth workspace does not peek in at $((x + 115)),780"
+	# The arrow towards the fourth workspace: its tip, 1.5 px past its
+	# middle at x + 115, on the panel's middle row.
+	shot switcher $((x + 116)) 780 "!$(token panel)" >/dev/null || fail "the arrow towards the fourth workspace is not drawn at $((x + 116)),780"
 	shows=$(count 'edel-compositor: workspace 3')
 	python3 ci/qmp.py click $((x + 97)) 780
 	wait_more 'edel-compositor: workspace 3' "$shows" || fail "a click on the switcher's 3 did not show workspace 3"

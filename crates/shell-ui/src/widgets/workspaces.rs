@@ -3,10 +3,11 @@
 //! Super+9 are, the shown workspace a wider pill in the accent colour, at
 //! most `appearance.switcher_shown` (3 by default) at once, the shown
 //! workspace and its neighbours, so the panel keeps its width whatever the
-//! count. Where more lie, the next button peeks in at that side, and
-//! `appearance.switcher_ends` says how: faded (`fade`), with a small arrow
-//! over the fade (`arrows`, the default) or with how many lie beyond it
-//! (`counts`). A workspace with a name shows its name in its pill, and every
+//! count. Where more lie than show, each end says so as
+//! `appearance.switcher_ends` asks: an arrow (`arrows`, the default, as
+//! Alimardon drew it on 2026-10-10), dark where more lie that way and
+//! faint where none do; the next button peeking in, faded (`fade`); or
+//! how many lie beyond (`counts`). A workspace with a name shows its name in its pill, and every
 //! button is as wide as the widest label, so the width does not change as the
 //! shown workspace does. `button` draws the word Workspaces over an underline
 //! split into one segment per workspace, the shown one in the accent colour.
@@ -54,15 +55,18 @@ const LABEL_ROOM: f32 = 12.0;
 /// ellipsis.
 const LABEL_MOST: usize = 10;
 const GAP: f32 = 5.0;
-/// How much of the next button peeks in where more workspaces lie, fading
-/// out towards the widget's end (`fade` and `arrows`).
+/// How wide each end's strip is where more workspaces lie: the next
+/// button peeks in that far, fading out (`fade`), or an arrow sits in it
+/// (`arrows`).
 const PEEK: f32 = 14.0;
 /// The same for `counts`, which needs room for its "+N".
 const COUNTS: f32 = 20.0;
 /// Space on each side, between it and its neighbours.
 const ROOM: f32 = 6.0;
-/// The arrow over a peek (`arrows`): 6 px tall, 3 px deep, a 1.5 px stroke.
-const ARROW_HALF: f32 = 3.0;
+/// The arrow at an end (`arrows`): 7 px tall, 3 px deep, a 1.5 px stroke,
+/// its middle this far from the buttons' side of its strip.
+const ARROW_HALF: f32 = 3.5;
+const ARROW_INSET: f32 = 3.0;
 const ARROW_DEPTH: f32 = 3.0;
 const ARROW_STROKE: f32 = 1.5;
 /// The button look: the word's line top rises this far above the middle,
@@ -116,7 +120,7 @@ impl Default for Look {
 pub enum Ends {
     /// The next button, faded.
     Fade,
-    /// The next button, faded, with a small arrow over the fade (the default).
+    /// An arrow at each end, dark where more lie that way (the default).
     Arrows,
     /// The next button, faded, with how many lie beyond it over the fade.
     Counts,
@@ -568,7 +572,7 @@ fn button(
     }
 }
 
-/// The arrow over a peek (`arrows`): a chevron pointing out of the widget
+/// The arrow at an end (`arrows`): a chevron pointing out of the widget
 /// (to the left when `left`), centred at `x`, `y` in pixels, `s` pixels per
 /// logical pixel.
 fn chevron(pixmap: &mut Pixmap, x: f32, y: f32, left: bool, s: f32, ink: Colour) {
@@ -663,17 +667,40 @@ fn draw_numbers(canvas: &mut Canvas, view: &View, x: f32) {
             size,
         );
     }
-    // The next button at each side where more lie: drawn whole into a
-    // strip as wide as the end, the part beyond it cut off, then faded
-    // towards the widget's end, and an arrow over it; `counts` shows only
-    // how many lie there, as a faded button under it would blur the
-    // figure.
     let strip = (end_width(view.ends) * s).round();
     let muted = mix(tokens.panel_text, tokens.panel, 0.3);
+    // `arrows`: a bare arrow at each end, near the buttons, in the text's
+    // colour where more lie that way and faint where none do, so the strip
+    // keeps its width and shape as the view moves.
+    if let (Ends::Arrows, true) = (view.ends, more(view)) {
+        let cy = y + height / 2.0;
+        let after = view.first + view.shown < view.names.len();
+        let right = logical_width(view, slot) - ROOM - PEEK;
+        for (on_left, left, beyond) in [(true, ROOM, view.first > 0), (false, right, after)] {
+            let px = (x + left * s).round();
+            let cx = if on_left {
+                px + strip - ARROW_INSET * s
+            } else {
+                px + ARROW_INSET * s
+            };
+            let ink = if beyond {
+                tokens.panel_text
+            } else {
+                Colour {
+                    a: 0.3,
+                    ..tokens.panel_text
+                }
+            };
+            chevron(canvas.pixmap, cx, cy, on_left, s, ink);
+        }
+        return;
+    }
+    // The next button at each side where more lie: drawn whole into a
+    // strip as wide as the end, the part beyond it cut off, then faded
+    // towards the widget's end; `counts` shows only how many lie there,
+    // as a faded button under it would blur the figure.
     for p in peeks(view, slot) {
         let (px, py) = ((x + p.left * s).round(), y);
-        let cx = px + strip * if p.on_left { 0.25 } else { 0.75 };
-        let cy = y + height / 2.0;
         if let Ends::Counts = view.ends {
             if let Some(text) = canvas.text.as_deref_mut() {
                 let mut line = text.line_in(&beyond_text(p.beyond), size, Face::SEMIBOLD.tabular());
@@ -705,10 +732,6 @@ fn draw_numbers(canvas: &mut Canvas, view: &View, x: f32) {
             Transform::identity(),
             None,
         );
-        // At the middle of the strip's outer half.
-        if let Ends::Arrows = view.ends {
-            chevron(canvas.pixmap, cx, cy, p.on_left, s, muted);
-        }
     }
 }
 
