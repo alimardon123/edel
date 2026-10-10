@@ -62,6 +62,13 @@ impl QuickCard {
         self.state.dnd = on;
     }
 
+    /// The sliders show the machine's levels again, not what a person or a
+    /// key set last (M5.9c: a volume or brightness key changed them).
+    pub fn show_machine_levels(&mut self) {
+        self.state.volume = None;
+        self.state.brightness = None;
+    }
+
     /// The card's surface, for the handlers of the compositor's events.
     pub fn popup_mut(&mut self) -> &mut Popup<quick::View> {
         &mut self.popup
@@ -86,7 +93,7 @@ impl Shell {
     }
 
     /// A thread that runs `ran` if there is one, then reads the status.
-    fn run_and_read(&mut self, ran: Option<Cmd>, bluetooth: bool) {
+    pub(crate) fn run_and_read(&mut self, ran: Option<Cmd>, bluetooth: bool) {
         self.status_busy += 1;
         let tx = self.status_tx.clone();
         let features = edel::places::found_shared(edel::features::DIR);
@@ -249,6 +256,8 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_centre();
+        // The pop-up's level would show over the card, so it goes.
+        self.hide_osd();
         let Some(panel) = self
             .panels
             .iter()

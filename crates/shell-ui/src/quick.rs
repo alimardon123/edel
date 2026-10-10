@@ -765,7 +765,7 @@ pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
 
 /// The percent at `x` along a slider's `track`, 0 to 100: the bar fills
 /// from its left end to the pointer.
-fn percent_at(track: Option<Rect>, x: f32) -> u32 {
+pub(crate) fn percent_at(track: Option<Rect>, x: f32) -> u32 {
     let Some(track) = track else {
         return 0;
     };
@@ -1199,18 +1199,18 @@ fn pill_tile(
 
 /// What a slider shows: its level, whether it is muted, the icon at its
 /// left and whether the keyboard is on it.
-struct Bar<'a> {
-    percent: u32,
-    muted: bool,
-    icon: &'a str,
-    focused: bool,
+pub(crate) struct Bar<'a> {
+    pub(crate) percent: u32,
+    pub(crate) muted: bool,
+    pub(crate) icon: &'a str,
+    pub(crate) focused: bool,
 }
 
 /// A slider's bar, drawn for the volume and the brightness alike (M5.9c):
 /// the track, the fill to the level at least a bar wide, the icon 13 px
 /// from the track's left end, the number 14 px in from its right end and
 /// the keyboard's ring. A muted bar's fill is dimmed.
-fn slider(
+pub(crate) fn slider(
     pixmap: &mut Pixmap,
     track: Rect,
     bar: Bar,
@@ -1260,6 +1260,20 @@ fn slider(
     }
 }
 
+/// The speaker by the volume: the muted one when muted or silent, else
+/// low, medium or high (M5.9c: the volume pop-up shows the same one).
+pub(crate) fn volume_icon(percent: u32, muted: bool) -> &'static str {
+    if muted || percent == 0 {
+        "volume-muted"
+    } else if percent <= 33 {
+        "volume-low"
+    } else if percent <= 66 {
+        "volume-medium"
+    } else {
+        "volume-high"
+    }
+}
+
 /// The shelf: the hairline above it, the brightness slider where the machine
 /// has a backlight (M5.9c), the volume slider with the volume in it, the
 /// chevron that opens the outputs, and the list of outputs when it is open.
@@ -1295,20 +1309,10 @@ fn shelf(
     let (Some(v), Some(track), Some(sound)) = (&view.volume, l.track, l.sound) else {
         return;
     };
-    // The speaker by the level, the muted one when muted or silent.
-    let icon = if v.muted || v.percent == 0 {
-        "volume-muted"
-    } else if v.percent <= 33 {
-        "volume-low"
-    } else if v.percent <= 66 {
-        "volume-medium"
-    } else {
-        "volume-high"
-    };
     let bar = Bar {
         percent: v.percent,
         muted: v.muted,
-        icon,
+        icon: volume_icon(v.percent, v.muted),
         focused: view.focus == Some(Focus::Slider),
     };
     slider(pixmap, track, bar, text.as_deref_mut(), tokens, s);

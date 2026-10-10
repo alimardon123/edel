@@ -222,7 +222,7 @@ impl Shell {
 
     /// The edge and scale of the panel holding widget `name`, else the
     /// first panel, else a panel along the bottom.
-    fn panel_for(&self, name: &str) -> (Edge, u32) {
+    pub(crate) fn panel_for(&self, name: &str) -> (Edge, u32) {
         self.panels
             .iter()
             .find(|p| p.row.all().any(|w| w.name == name))
