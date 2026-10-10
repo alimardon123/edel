@@ -1800,6 +1800,14 @@ case_app_workspaces() {
 	echo "PASS: workspaces.apps = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
 }
 
+# overview_fail WHY: fails the overview case with WHY, the compositor's
+# last overview lines and whether it is still running.
+overview_fail() {
+	guest 'compositor state'
+	wait_for 'DESKTOP-TEST: compositor_state ' || true
+	fail "$1; the compositor's last overview lines: $(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview' | tail -n 3 | tr '\n' '|'); $(value compositor_state)"
+}
+
 case_overview() {
 	# The overview (M5.2j-a, laid out anew in M5.2j-b): Super+W, or a click
 	# on the panel switcher's lit workspace, shows every workspace small in
@@ -1826,7 +1834,7 @@ case_overview() {
 	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
 	sleep 1
 	[ "$(value windows)" = "$before" ] || fail "the overview moved windows on a tiled workspace: $before, then $(value windows)"
 	python3 ci/qmp.py key meta_l-t
@@ -1931,14 +1939,14 @@ case_overview() {
 	wait_more 'edel-compositor: overview shown$' "$shown" || fail "the compositor did not show the overview the switcher asked for"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
 	# Typing in the overview searches (M5.2j-b3): foot and Return start
 	# foot and leave; Super+Q closes it again.
 	sleep 1
 	shown=$(count 'edel-compositor: overview shown$')
 	python3 ci/qmp.py key meta_l-w
 	wait_more 'edel-compositor: overview shown$' "$shown" ||
-		fail "Super+W did not show the overview for the search; the compositor's last overview lines: $(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview' | tail -n 3 | tr '\n' '|')"
+		overview_fail "Super+W did not show the overview for the search"
 	started=$(count 'edel-compositor: overview started foot$')
 	mapped=$(count 'edel-compositor: mapped window foot')
 	python3 ci/qmp.py type 'foot'
@@ -1955,7 +1963,7 @@ case_overview() {
 		# Which window had the keyboard: the toplevels list stars it.
 		guest 'toplevels'
 		wait_for 'DESKTOP-TEST: toplevels ' || true
-		fail "Super+Q did not close the foot the search started: windows $(value windows); toplevels, the focused starred: $(value toplevels)"
+		overview_fail "Super+Q did not close the foot the search started: windows $(value windows); toplevels, the focused starred: $(value toplevels)"
 	fi
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
