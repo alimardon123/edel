@@ -281,6 +281,11 @@ commands() {
 			bus=$(session_bus)
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --mpris" </dev/null >/tmp/mpris.log 2>&1 &
 			;;
+		# A second player, Radio, paused, for the card's pages (M5.9i).
+		'mpris second')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --mpris Radio" </dev/null >/dev/null 2>&1 &
+			;;
 		'mpris log') say "mpris $(tr '\n' ';' </tmp/mpris.log)" ;;
 		'mpris off') pkill -f '[e]del-testclient --mpris' ;;
 		# appearance.mode (M5.5c), light and back to the default.

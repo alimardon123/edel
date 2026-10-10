@@ -2217,7 +2217,10 @@ case_player() {
 	# Lumen on ci's session bus; quick settings, opened from the status
 	# area, reads it and shows its card, and a click on the card's play or
 	# pause button reaches the player, which prints it (`mpris log`).
-	# Kept as player.png.
+	# Kept as player.png. Then (M5.9i) a second player, Radio, paused, makes
+	# two pages: the card shows a dot each, Edel test player's page first
+	# as it plays, and a click on the second dot shows Radio's Morning
+	# Walk. Kept as player-pages.png.
 	guest mpris
 	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
 		sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
@@ -2251,11 +2254,32 @@ case_player() {
 		[ "$i" -lt 10 ] || fail "a click on the card's play button at $((cx + $1 + $3 / 2)),$((cy + $2 + $4 / 2)) did not reach the player: $(value mpris)"
 		sleep 1
 	done
+	# The second player: two pages, a dot each.
+	pages=$(count 'edel-shell-ui: players: 2 (')
+	guest 'mpris second'
+	wait_more 'edel-shell-ui: players: 2 (' "$pages" ||
+		fail "quick settings did not find the second player: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: player' | tail -n 3)"
+	i=0
+	until tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1 | grep -q ' dot2 '; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "the player card shows no dots for two players: $(tr -d '\r' <"$log" | grep -a 'quick places' | tail -n 1)"
+		sleep 0.2
+	done
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.* dot2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "the second dot has no place: $line"
+	dot_x=$((cx + $1 + $3 / 2)) dot_y=$((cy + $2 + $4 / 2))
+	walked=$(count 'edel-shell-ui: player: Morning Walk by Radio (Radio), paused, page 2 of 2')
+	python3 ci/qmp.py click "$dot_x" "$dot_y"
+	wait_more 'edel-shell-ui: player: Morning Walk by Radio (Radio), paused, page 2 of 2' "$walked" ||
+		fail "a click on the second dot at $dot_x,$dot_y did not show Radio's player: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: player' | tail -n 3)"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/player-pages.png"
 	hidden=$(count 'edel-shell-ui: quick settings hidden')
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "Escape did not close quick settings"
 	guest 'mpris off'
-	echo "PASS: quick settings read the test player over MPRIS and showed Night Drive by Lumen on its card, and a click on its play button reached the player (mpris $(value mpris))"
+	echo "PASS: quick settings read the test player over MPRIS and showed Night Drive by Lumen on its card, and a click on its play button reached the player (mpris $(value mpris)); a second player, Radio, gave the card two dots, and a click on the second at $dot_x,$dot_y showed Morning Walk by Radio, page 2 of 2"
 }
 
 case_fallback() {

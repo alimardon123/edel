@@ -56,12 +56,30 @@ pub const SOUND_PAGE: &str = "sound";
 pub const DISPLAYS_PAGE: &str = "displays";
 /// The player's card's height and the room between it and quick settings'
 /// card, logical pixels (M5.9d): above the card on a bottom panel, below
-/// it on a top one.
-pub const PLAYER_HEIGHT: f32 = 100.0;
+/// it on a top one. It is a pill, its corners half its height, with its
+/// app's name at its top and room for the pages' dots at its foot (M5.9i,
+/// `docs/mockups/shell/player.jpg`).
+pub const PLAYER_HEIGHT: f32 = 120.0;
 pub const PLAYER_GAP: f32 = 8.0;
 /// The cover's side, and the room between the player's parts.
 const COVER: f32 = 64.0;
 const PLAYER_SPACE: f32 = 10.0;
+/// The room between the pill's ends and its cover or Next button (M5.9i).
+const PLAYER_SIDE: f32 = 28.0;
+/// The app's row (its icon and name), its top and height, from the card's
+/// top; the icon's side; and the middle of the cover's row (M5.9i).
+const APP_TOP: f32 = 12.0;
+const APP_HIGH: f32 = 16.0;
+pub const APP_ICON: f32 = 14.0;
+const ROW_MIDDLE: f32 = 64.0;
+/// The pages' dots: a dot's side, the shown one's width, the room between
+/// them and from the card's foot to theirs (M5.9i).
+const DOT: f32 = 5.0;
+const DOT_ON: f32 = 12.0;
+const DOT_GAP: f32 = 5.0;
+const DOT_FOOT: f32 = 9.0;
+/// How far round a dot a click still finds it.
+const DOT_REACH: f32 = 6.0;
 /// The title and artist's box, its height.
 const WORDS: f32 = 36.0;
 
@@ -199,6 +217,9 @@ pub struct PlayerView {
     pub can_previous: bool,
     pub can_next: bool,
     pub cover: Option<Pixmap>,
+    /// Its app's icon, `APP_ICON` logical pixels across at the card's scale,
+    /// when the icon themes have one (M5.9i).
+    pub app_icon: Option<Pixmap>,
 }
 
 /// Where a pointer or the keyboard is on the card.
@@ -223,6 +244,8 @@ pub enum Focus {
     Previous,
     PlayPause,
     Next,
+    /// The dot of page `i`, with several players (M5.9i)
+    Dot(usize),
 }
 
 /// Everything the card shows at one moment, so it is drawn again only when
@@ -249,6 +272,10 @@ pub struct View {
     /// from a panel along the top, so the player goes below it.
     pub player: Option<PlayerView>,
     pub player_below: bool,
+    /// Every player's app name, one page each, in the card's order, and
+    /// the page shown; the dots show only with two or more (M5.9i).
+    pub pages: Vec<String>,
+    pub page: usize,
 }
 
 /// What a person's click or key asks for.
@@ -273,6 +300,8 @@ pub enum Act {
     /// Ask the player to do this MPRIS method: `PlayPause`, `Previous` or
     /// `Next` (M5.9d). The card stays open.
     Player(&'static str),
+    /// Show the player of page `i` (M5.9i).
+    PlayerPage(usize),
     Close,
 }
 
@@ -456,6 +485,8 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
         hover: state.hover,
         player: None,
         player_below: false,
+        pages: Vec::new(),
+        page: 0,
     }
 }
 
@@ -597,6 +628,10 @@ pub struct Layout {
     pub previous: Option<Rect>,
     pub play: Option<Rect>,
     pub next: Option<Rect>,
+    /// The app's row across the player's card, its icon and name centred
+    /// in it, and the pages' dots, the shown one wider (M5.9i).
+    pub app: Option<Rect>,
+    pub dots: Vec<Rect>,
     /// The brightness slider's track, full width, above the volume's when
     /// the machine has a backlight (M5.9c).
     pub light: Option<Rect>,
@@ -757,6 +792,7 @@ pub fn layout(view: &View) -> Layout {
     // three buttons are 44 px on a Compact screen, where a finger lands.
     let (mut player, mut cover, mut words, mut previous, mut play, mut next) =
         (None, None, None, None, None, None);
+    let (mut app, mut dots) = (None, Vec::new());
     let mut height = end;
     if view.player.is_some() {
         let p = if above {
@@ -765,8 +801,8 @@ pub fn layout(view: &View) -> Layout {
             height = end + PLAYER_GAP + PLAYER_HEIGHT;
             Rect::new(0.0, end + PLAYER_GAP, w, PLAYER_HEIGHT)
         };
-        let middle = |side: f32| p.y + (PLAYER_HEIGHT - side) / 2.0;
-        let pad = m.side;
+        let middle = |side: f32| p.y + ROW_MIDDLE - side / 2.0;
+        let pad = PLAYER_SIDE;
         let small = if view.compact { 44.0 } else { 28.0 };
         let large = if view.compact { 44.0 } else { 32.0 };
         let c = Rect::new(pad, middle(COVER), COVER, COVER);
@@ -776,10 +812,17 @@ pub fn layout(view: &View) -> Layout {
         let left = c.right() + PLAYER_SPACE;
         words = Some(Rect::new(
             left,
-            p.y + (PLAYER_HEIGHT - WORDS) / 2.0,
+            middle(WORDS),
             (pr.x - PLAYER_SPACE - left).max(0.0),
             WORDS,
         ));
+        app = Some(Rect::new(p.x, p.y + APP_TOP, w, APP_HIGH));
+        dots = dot_rects(
+            view.pages.len(),
+            view.page,
+            w,
+            p.y + PLAYER_HEIGHT - DOT_FOOT - DOT,
+        );
         cover = Some(c);
         previous = Some(pr);
         play = Some(pl);
@@ -797,6 +840,8 @@ pub fn layout(view: &View) -> Layout {
         previous,
         play,
         next,
+        app,
+        dots,
         light,
         track,
         sound,
@@ -806,6 +851,27 @@ pub fn layout(view: &View) -> Layout {
         battery,
         settings,
     }
+}
+
+/// The pages' dots in a row centred across a card `w` wide, their tops at
+/// `top`: none for fewer than two pages; the shown one `DOT_ON` wide (M5.9i).
+fn dot_rects(pages: usize, page: usize, w: f32, top: f32) -> Vec<Rect> {
+    if pages < 2 {
+        return Vec::new();
+    }
+    let widths: Vec<f32> = (0..pages)
+        .map(|i| if i == page { DOT_ON } else { DOT })
+        .collect();
+    let all = widths.iter().sum::<f32>() + (pages - 1) as f32 * DOT_GAP;
+    let mut x = (w - all) / 2.0;
+    widths
+        .into_iter()
+        .map(|dw| {
+            let r = Rect::new(x, top, dw, DOT);
+            x += dw + DOT_GAP;
+            r
+        })
+        .collect()
 }
 
 /// Where the card's parts lie, as one log line CI reads to click them:
@@ -826,6 +892,9 @@ pub fn places(view: &View, layout: &Layout) -> String {
             if let Some(rect) = rect {
                 parts.push(format!("{name} {}", at(rect)));
             }
+        }
+        for (i, dot) in layout.dots.iter().enumerate() {
+            parts.push(format!("dot{} {}", i + 1, at(*dot)));
         }
     }
     for (t, b) in view.tiles.iter().zip(&layout.tiles) {
@@ -858,6 +927,25 @@ pub fn hit(view: &View, layout: &Layout, x: f32, y: f32) -> Option<Focus> {
         }
         if player.can_next && at(layout.next) {
             return Some(Focus::Next);
+        }
+        // A dot, or the room round it, finds that page; between two dots,
+        // the nearer.
+        let near = layout
+            .dots
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| {
+                y >= d.y - DOT_REACH
+                    && y <= d.y + d.h + DOT_REACH
+                    && x >= d.x - DOT_REACH
+                    && x <= d.right() + DOT_REACH
+            })
+            .min_by(|a, b| {
+                let off = |d: &Rect| (x - (d.x + d.w / 2.0)).abs();
+                off(a.1).total_cmp(&off(b.1))
+            });
+        if let Some((i, _)) = near {
+            return Some(Focus::Dot(i));
         }
     }
     for (i, t) in layout.tiles.iter().enumerate() {
@@ -924,6 +1012,9 @@ pub fn ring(view: &View) -> Vec<Focus> {
         if player.can_next {
             ring.push(Focus::Next);
         }
+        if view.pages.len() > 1 {
+            ring.extend((0..view.pages.len()).map(Focus::Dot));
+        }
     }
     for (i, t) in view.tiles.iter().enumerate() {
         ring.push(Focus::Toggle(i));
@@ -985,6 +1076,7 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
         (Key::Activate, Focus::Previous) => (focus, Some(Act::Player("Previous"))),
         (Key::Activate, Focus::PlayPause) => (focus, Some(Act::Player("PlayPause"))),
         (Key::Activate, Focus::Next) => (focus, Some(Act::Player("Next"))),
+        (Key::Activate, Focus::Dot(i)) => (focus, Some(Act::PlayerPage(i))),
         (Key::Left, Focus::Light) => (
             focus,
             Some(Act::Brightness(brightness.saturating_sub(STEP))),
@@ -1083,6 +1175,18 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                 tr("Next").to_string(),
                 layout.next.unwrap_or(zero),
             ),
+            Focus::Dot(i) => item(
+                Role::Button,
+                trf(
+                    "Player {n} of {count}, {app}",
+                    &[
+                        ("n", &(i + 1).to_string()),
+                        ("count", &view.pages.len().to_string()),
+                        ("app", view.pages.get(i).map_or("", String::as_str)),
+                    ],
+                ),
+                layout.dots.get(i).copied().unwrap_or(zero),
+            ),
             Focus::Toggle(i) => {
                 let (t, b) = (&view.tiles[i], &layout.tiles[i]);
                 Item {
@@ -1166,9 +1270,10 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 pub fn cards(l: &Layout) -> Vec<Card> {
     let mut out = Vec::new();
     if let Some(player) = l.player {
+        // A pill, its corners half its height (M5.9i).
         out.push(Card {
             rect: player,
-            radius: RADIUS,
+            radius: player.h / 2.0,
         });
     }
     out.push(Card {
@@ -1253,7 +1358,7 @@ fn player(
     }
     // The words: the title over the artist, from the box's left, beside
     // the cover, as the mockups set them.
-    if let Some(text) = text {
+    if let Some(text) = text.as_deref_mut() {
         let room = words.w * s;
         let (wx, wy, _, wh) = words.device(s);
         let mut title = text.fit_in(&p.title, 12.5 * s, room, Face::SEMIBOLD);
@@ -1325,6 +1430,66 @@ fn player(
             focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
         }
     }
+    player_app(pixmap, p, l, tokens, text, s);
+    for (i, dot) in l.dots.iter().enumerate() {
+        let (x, y, w, h) = dot.device(s);
+        let colour = if i == view.page {
+            tokens.accent
+        } else {
+            Colour {
+                a: if view.hover == Some(Focus::Dot(i)) {
+                    0.45
+                } else {
+                    0.25
+                },
+                ..tokens.panel_text
+            }
+        };
+        fill(pixmap, x, y, w, h, h / 2.0, colour);
+        if view.focus == Some(Focus::Dot(i)) {
+            focus_ring(pixmap, *dot, dot.h / 2.0, s, tokens);
+        }
+    }
+}
+
+/// The app's row at the player's top (M5.9i): its icon, when there is
+/// one, then its name, small and muted, centred together across the card.
+fn player_app(
+    pixmap: &mut Pixmap,
+    p: &PlayerView,
+    l: &Layout,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let (Some(row), Some(text)) = (l.app, text) else {
+        return;
+    };
+    let (rx, ry, rw, rh) = row.device(s);
+    let size = 11.0 * s;
+    let icon = p.app_icon.as_ref();
+    let side = (APP_ICON * s).round();
+    let space = 5.0 * s;
+    let lead = icon.map_or(0.0, |_| side + space);
+    let mut name = text.fit(
+        &p.identity,
+        size,
+        (rw - 2.0 * PLAYER_SIDE * s - lead).max(0.0),
+    );
+    let left = (rx + (rw - lead - name.width) / 2.0).round();
+    if let Some(icon) = icon {
+        let top = (ry + (rh - side) / 2.0).round();
+        pixmap.draw_pixmap(
+            left as i32,
+            top as i32,
+            icon.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            tiny_skia::Transform::identity(),
+            None,
+        );
+    }
+    let top = ry + (rh - size * 1.25) / 2.0;
+    text.draw(pixmap, &mut name, left + lead, top, dim(tokens));
 }
 
 /// A round toggle: its circle with the icon, its title under it, and the
@@ -2319,6 +2484,7 @@ mod tests {
             can_previous: can,
             can_next: can,
             cover: None,
+            app_icon: None,
         }
     }
 
@@ -2328,15 +2494,15 @@ mod tests {
         let mut with = plain.clone();
         with.player = Some(playing(true));
         let (a, b) = (layout(&plain), layout(&with));
-        // The player's card at the top, 352 by 100, and the card 108 lower.
-        assert_eq!(b.player, Some(Rect::new(0.0, 0.0, 352.0, 100.0)));
-        assert_eq!(b.quick, Rect::new(0.0, 108.0, 352.0, a.size.1 as f32));
-        assert_eq!(b.size.1, a.size.1 + 108);
+        // The player's card at the top, 352 by 120, and the card 128 lower.
+        assert_eq!(b.player, Some(Rect::new(0.0, 0.0, 352.0, 120.0)));
+        assert_eq!(b.quick, Rect::new(0.0, 128.0, 352.0, a.size.1 as f32));
+        assert_eq!(b.size.1, a.size.1 + 128);
         for (x, y) in a.tiles.iter().zip(&b.tiles) {
-            assert_eq!(y.whole.y, x.whole.y + 108.0);
+            assert_eq!(y.whole.y, x.whole.y + 128.0);
         }
-        assert_eq!(b.track.unwrap().y, a.track.unwrap().y + 108.0);
-        assert_eq!(b.settings.unwrap().y, a.settings.unwrap().y + 108.0);
+        assert_eq!(b.track.unwrap().y, a.track.unwrap().y + 128.0);
+        assert_eq!(b.settings.unwrap().y, a.settings.unwrap().y + 128.0);
     }
 
     #[test]
@@ -2349,8 +2515,8 @@ mod tests {
         // The card stays where it is, the player hangs 8 px below it.
         assert_eq!(l.quick, Rect::new(0.0, 0.0, 352.0, plain.size.1 as f32));
         assert_eq!(l.player.unwrap().y, (l.quick.y + l.quick.h) + 8.0);
-        assert_eq!(l.player.unwrap().h, 100.0);
-        assert_eq!(l.size.1, plain.size.1 + 108);
+        assert_eq!(l.player.unwrap().h, 120.0);
+        assert_eq!(l.size.1, plain.size.1 + 128);
     }
 
     #[test]
@@ -2380,6 +2546,66 @@ mod tests {
         assert!(keys.contains(&Focus::Next));
     }
 
+    /// The pages' view: `n` players named A, B, C..., page `page` shown.
+    fn paged(n: usize, page: usize) -> View {
+        let mut view = view_of(&laptop(), false, 1280);
+        view.player = Some(playing(true));
+        view.pages = (0..n)
+            .map(|i| ((b'A' + i as u8) as char).to_string())
+            .collect();
+        view.page = page;
+        view
+    }
+
+    #[test]
+    fn one_player_has_its_app_row_and_no_dots() {
+        let view = paged(1, 0);
+        let l = layout(&view);
+        assert_eq!(l.app, Some(Rect::new(0.0, 12.0, 352.0, 16.0)));
+        assert!(l.dots.is_empty());
+        assert!(!ring(&view).iter().any(|f| matches!(f, Focus::Dot(_))));
+        // The cover's row sits under the app's, centred at 64.
+        assert_eq!(l.cover.unwrap().middle(), 64.0);
+        // A pill: its corners half its height.
+        assert_eq!(cards(&l)[0].radius, 60.0);
+    }
+
+    #[test]
+    fn several_players_have_a_dot_each_the_shown_one_wider() {
+        let view = paged(3, 1);
+        let l = layout(&view);
+        let widths: Vec<f32> = l.dots.iter().map(|d| d.w).collect();
+        assert_eq!(widths, [5.0, 12.0, 5.0]);
+        // Centred across the card, 5 apart, their tops 9 px over the foot.
+        let all = l.dots[2].right() - l.dots[0].x;
+        assert_eq!(all, 32.0);
+        assert_eq!(l.dots[0].x, (352.0 - 32.0) / 2.0);
+        assert_eq!(l.dots[1].x, l.dots[0].right() + 5.0);
+        assert_eq!(l.dots[0].y, 120.0 - 9.0 - 5.0);
+        // A click on or near a dot finds its page, and acts.
+        let d = l.dots[2];
+        assert_eq!(hit(&view, &l, d.x + 2.0, d.y - 4.0), Some(Focus::Dot(2)));
+        assert_eq!(
+            key(&view, Some(Focus::Dot(2)), Key::Activate).1,
+            Some(Act::PlayerPage(2))
+        );
+        // The dots follow the buttons in Tab's order.
+        let keys = ring(&view);
+        let next = keys.iter().position(|f| *f == Focus::Next).unwrap();
+        assert_eq!(
+            &keys[next + 1..next + 4],
+            &[Focus::Dot(0), Focus::Dot(1), Focus::Dot(2)]
+        );
+        // A screen reader hears each one's player.
+        let (items, _) = items(&view, &l, (0.0, 0.0));
+        assert!(
+            items.iter().any(|i| i.label == "Player 2 of 3, B"),
+            "{items:?}"
+        );
+        let line = places(&view, &l);
+        assert!(line.contains(", dot3 "), "{line}");
+    }
+
     #[test]
     fn places_name_the_player_and_its_buttons() {
         let mut view = view_of(&laptop(), false, 1280);
@@ -2387,7 +2613,7 @@ mod tests {
         let l = layout(&view);
         let line = places(&view, &l);
         assert!(
-            line.starts_with(&format!("card 352x{}, player 0+0+352x100, ", l.size.1)),
+            line.starts_with(&format!("card 352x{}, player 0+0+352x120, ", l.size.1)),
             "{line}"
         );
         assert!(line.contains(", previous "), "{line}");
@@ -2498,6 +2724,7 @@ mod tests {
                 (1280, "desktop", false),
                 (1280, "desktop-list", true),
                 (1280, "desktop-player", false),
+                (1280, "desktop-players", false),
                 (360, "compact", false),
             ] {
                 let card = if width < COMPACT_BELOW { width } else { WIDTH };
@@ -2511,6 +2738,13 @@ mod tests {
                 }
                 if name == "desktop-player" {
                     view.player = Some(playing(true));
+                    view.pages = vec!["Lumen".into()];
+                }
+                // Three players, the second shown (M5.9i).
+                if name == "desktop-players" {
+                    view.player = Some(playing(true));
+                    view.pages = vec!["Music".into(), "Lumen".into(), "Videos".into()];
+                    view.page = 1;
                 }
                 let l = layout(&view);
                 let mut pixmap = Pixmap::new(card * 2, l.size.1 * 2).unwrap();
