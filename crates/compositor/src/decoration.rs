@@ -202,6 +202,15 @@ impl AppIcons {
         self.by_app_id.get(app_id).cloned().flatten()
     }
 
+    /// The app's own name for windows with `app_id`, as its launcher
+    /// file gives it, if it has one.
+    pub fn app_name(&mut self, app_id: &str) -> Option<String> {
+        let apps = self
+            .apps
+            .get_or_insert_with(|| edel::apps::read_all(&edel::apps::dirs()));
+        edel::apps::of_window(apps, app_id).map(|a| a.name.clone())
+    }
+
     /// The icon `name` drawn `px` pixels square.
     pub fn picture(&mut self, name: &str, px: u32) -> Option<&edel::app_icons::Picture> {
         self.drawn.get(name, px)

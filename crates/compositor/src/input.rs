@@ -15,9 +15,10 @@
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
-    InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, ProximityState, TabletToolButtonEvent, TabletToolEvent,
-    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
+    GestureBeginEvent, GestureEndEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
+    KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+    ProximityState, TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent,
+    TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::desktop::{LayerSurface, Window, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, xkb};
@@ -294,6 +295,26 @@ impl Edel {
             InputEvent::PointerAxis { event } => {
                 self.tap = None;
                 self.scroll::<B>(event)
+            }
+            // Four fingers up on a touchpad open the overview, down leave
+            // it (M5.2j-b4); other swipes are not used yet.
+            InputEvent::GestureSwipeBegin { event } => {
+                self.tap = None;
+                self.swipe = Some((event.fingers(), 0.0));
+            }
+            InputEvent::GestureSwipeUpdate { event } => {
+                if let Some((_, dy)) = self.swipe.as_mut() {
+                    *dy += event.delta_y();
+                }
+            }
+            InputEvent::GestureSwipeEnd { event } => {
+                if let Some((fingers, dy)) = self.swipe.take() {
+                    let open = self.overview.is_some();
+                    if !event.cancelled() && edel_compositor::overview::swiped(fingers, dy, open) {
+                        eprintln!("edel-compositor: overview swipe");
+                        self.toggle_overview();
+                    }
+                }
             }
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {

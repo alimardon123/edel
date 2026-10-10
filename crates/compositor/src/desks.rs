@@ -631,25 +631,30 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     }
 
     /// Moves `window`, shown or on a hidden workspace but not minimized,
-    /// to workspace `to` on its own screen, as a drag in the overview does
-    /// (M5.2j): on top of `to`'s windows there, placed by its policy at
-    /// `size` in that screen's area in `areas`. Returns its frame there
-    /// and whether it shows now, that is, whether its screen shows `to`.
-    /// None when `to` is its workspace or does not exist, when it is
-    /// minimized, or there is no screen.
+    /// to workspace `to` on screen `onto`, else its own, as a drag in the
+    /// overview does (M5.2j, M5.2j-b4): on top of `to`'s windows there,
+    /// placed by its policy at `size` in that screen's area in `areas`.
+    /// Returns its frame there and whether it shows now, that is, whether
+    /// that screen shows `to`. None when it is already on `to` on that
+    /// screen, when `to` does not exist, when it is minimized, or there is
+    /// no screen.
     pub fn carry(
         &mut self,
         window: W,
         to: usize,
+        onto: Option<&str>,
         size: Size<i32, Logical>,
         areas: &Areas,
     ) -> Option<(Rectangle<i32, Logical>, bool)> {
         let desk = self.desk_of(&window)?;
-        if to == desk || to >= self.desks.len() || self.minimized(&window).is_some() {
+        if to >= self.desks.len() || self.minimized(&window).is_some() {
             return None;
         }
         let from = self.desks[desk].layout.screen_of(&window);
-        let (screen, area) = screen_in(areas, from)?;
+        let (screen, area) = screen_in(areas, onto.or(from))?;
+        if to == desk && from.is_none_or(|f| f == screen) {
+            return None;
+        }
         self.desks[desk].layout.close(&window);
         self.desks[desk].hidden.retain(|(w, _)| *w != window);
         self.open_on(to, window, size, screen, area)
@@ -848,27 +853,65 @@ mod tests {
         let mut desks: Desks<u32> = Desks::new(3, 8);
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         // Shown to the third: it waits there, hidden.
-        let (_, shows) = desks.carry(1, 2, (300, 200).into(), &areas()).unwrap();
+        let (_, shows) = desks
+            .carry(1, 2, None, (300, 200).into(), &areas())
+            .unwrap();
         assert!(!shows);
         assert_eq!(desks.hidden_on(&1), Some(2));
         // Hidden on the third back to the first, which is shown: it shows.
-        let (_, shows) = desks.carry(1, 0, (300, 200).into(), &areas()).unwrap();
+        let (_, shows) = desks
+            .carry(1, 0, None, (300, 200).into(), &areas())
+            .unwrap();
         assert!(shows);
         assert_eq!((desks.hidden_on(&1), desks.desk_of(&1)), (None, Some(0)));
         assert!(desks.hidden().next().is_none(), "the third forgot it");
         assert!(
-            desks.carry(1, 0, (300, 200).into(), &areas()).is_none(),
+            desks
+                .carry(1, 0, None, (300, 200).into(), &areas())
+                .is_none(),
             "already there"
         );
         assert!(
-            desks.carry(1, 3, (300, 200).into(), &areas()).is_none(),
+            desks
+                .carry(1, 3, None, (300, 200).into(), &areas())
+                .is_none(),
             "no fourth"
         );
         desks.minimize(1, at(40));
         assert!(
-            desks.carry(1, 1, (300, 200).into(), &areas()).is_none(),
+            desks
+                .carry(1, 1, None, (300, 200).into(), &areas())
+                .is_none(),
             "minimized"
         );
+    }
+
+    #[test]
+    fn a_window_carried_onto_another_screen_moves_there() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let two = Rectangle::new((1280, 0).into(), (1280, 800).into());
+        let areas = vec![("one".into(), area()), ("two".into(), two)];
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        // The same workspace on the other screen: it shows there.
+        let (place, shows) = desks
+            .carry(1, 0, Some("two"), (300, 200).into(), &areas)
+            .unwrap();
+        assert!(shows);
+        assert!(two.contains(place.loc));
+        assert_eq!(desks.layout_of(&1).screen_of(&1), Some("two"));
+        assert!(
+            desks
+                .carry(1, 0, Some("two"), (300, 200).into(), &areas)
+                .is_none(),
+            "already there"
+        );
+        // Another workspace on the first screen.
+        let (place, shows) = desks
+            .carry(1, 1, Some("one"), (300, 200).into(), &areas)
+            .unwrap();
+        assert!(!shows);
+        assert!(area().contains(place.loc));
+        assert_eq!(desks.hidden_on(&1), Some(1));
     }
 
     #[test]

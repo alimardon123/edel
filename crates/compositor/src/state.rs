@@ -116,6 +116,9 @@ pub struct Edel {
     /// The modifier pressed alone while nothing else was, until another
     /// key or a button comes (M5.3b).
     pub tap: Option<smithay::input::keyboard::Keysym>,
+    /// A touchpad swipe under way: its fingers and how far it slid down
+    /// (M5.2j-b4).
+    pub swipe: Option<(u32, f64)>,
     /// `EDEL_LOG_KEYS=1`: each key's code, press or release and the
     /// modifiers held are logged, for CI's desktop test alone; a session
     /// never sets it, as a log of keys holds what people type.
@@ -274,6 +277,7 @@ impl Edel {
             pressed: None,
             last_title_click: None,
             tap: None,
+            swipe: None,
             log_keys: std::env::var_os("EDEL_LOG_KEYS").is_some_and(|v| v == "1"),
             keyboard_layer: None,
             switcher: None,

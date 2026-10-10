@@ -265,10 +265,12 @@ impl Edel {
     }
 
     /// Moves `window`, shown or on a hidden workspace, to workspace `to`
-    /// on its screen, as a drag in the overview does (M5.2j): it shows
-    /// there on top if its screen shows `to`, else it waits on top of
-    /// `to`'s windows. False when nothing moved.
-    pub fn carry_window(&mut self, window: &Window, to: usize) -> bool {
+    /// on screen `onto`, else its own, as a drag in the overview does
+    /// (M5.2j, M5.2j-b4): it shows there on top if that screen shows `to`,
+    /// else it waits on top of `to`'s windows. Logs `window T to workspace
+    /// N`, with `on SCREEN` when it changed screens. False when nothing
+    /// moved.
+    pub fn carry_window(&mut self, window: &Window, to: usize, onto: Option<&str>) -> bool {
         let shown = self.space.elements().any(|w| w == window);
         let frame = if shown {
             self.frame_of(window)
@@ -284,14 +286,26 @@ impl Edel {
         // A maximized window keeps the size it goes back to.
         let size = data(window).borrow().restore.map_or(frame.size, |r| r.size);
         let areas = self.window_areas();
-        let Some((place, shows)) = self.desks.carry(window.clone(), to, size, &areas) else {
+        let before = self
+            .desks
+            .layout_of(window)
+            .screen_of(window)
+            .map(str::to_string);
+        let Some((place, shows)) = self.desks.carry(window.clone(), to, onto, size, &areas) else {
             return false;
         };
-        eprintln!(
-            "edel-compositor: window {} to workspace {}",
-            title(window),
-            to + 1
-        );
+        match onto.filter(|o| before.as_deref() != Some(*o)) {
+            Some(screen) => eprintln!(
+                "edel-compositor: window {} to workspace {} on {screen}",
+                title(window),
+                to + 1
+            ),
+            None => eprintln!(
+                "edel-compositor: window {} to workspace {}",
+                title(window),
+                to + 1
+            ),
+        }
         if shown {
             self.hide(window);
         }

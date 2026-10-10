@@ -371,10 +371,13 @@ commands() {
 			;;
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
 		# Overview (M5.2j): a window to send to another workspace and see in
-		# the overview, and closed while there.
+		# the overview, and closed while there; it turns 33aa66 once
+		# /tmp/lap-recolour exists (`lap recolour`, M5.2j-b4).
 		'lap window')
-			as_ci edel-testclient --size 200x150 --colour e0a030 --title lap </dev/null >/dev/null 2>&1 &
+			rm -f /tmp/lap-recolour
+			as_ci edel-testclient --size 200x150 --colour e0a030 --recolour 33aa66@/tmp/lap-recolour --title lap </dev/null >/dev/null 2>&1 &
 			;;
+		'lap recolour') touch /tmp/lap-recolour ;;
 		'lap off') pkill -f '[e]del-testclient --size 200x150 --colour e0a030' ;;
 		# Whether the compositor runs, sleeps or hangs, and where (the
 		# overview case's failures, M5.2j-b3): its state, CPU time and the
