@@ -687,3 +687,217 @@ pub fn close(scale: f64, tokens: &Tokens) -> Option<Pixmap> {
     }
     Some(pixmap)
 }
+
+/// Paints `mask`, an icon from `edel::icons`, in `colour` at `x`, `y`.
+fn tinted(pixmap: &mut Pixmap, mask: &Pixmap, x: i32, y: i32, colour: Colour) {
+    let [r, g, b, _] = colour.bytes();
+    let (w, h) = (pixmap.width() as i32, pixmap.height() as i32);
+    let side = mask.width() as i32;
+    let data = pixmap.data_mut();
+    for (i, p) in mask.data().chunks_exact(4).enumerate() {
+        let a = f32::from(p[3]) / 255.0 * colour.a;
+        if a <= 0.0 {
+            continue;
+        }
+        let (px, py) = (x + i as i32 % side, y + i as i32 / side);
+        if px < 0 || py < 0 || px >= w || py >= h {
+            continue;
+        }
+        let j = ((py * w + px) * 4) as usize;
+        for (k, c) in [r, g, b].into_iter().enumerate() {
+            let under = f32::from(data[j + k]);
+            data[j + k] = (f32::from(c) * a + under * (1.0 - a)).round() as u8;
+        }
+        let under = f32::from(data[j + 3]);
+        data[j + 3] = (255.0 * a + under * (1.0 - a)).round() as u8;
+    }
+}
+
+/// The overview's search field (M5.2j-b3), `w` by `h` logical pixels at
+/// `scale`: a pill in the panel's colours with the search icon, and what
+/// was typed with a caret after it, or `placeholder` dimmed when nothing
+/// was.
+pub fn search(
+    w: i32,
+    h: i32,
+    query: &str,
+    placeholder: &str,
+    scale: f64,
+    tokens: &Tokens,
+    text: &mut Text,
+) -> Option<Pixmap> {
+    let s = scale as f32;
+    let (pw, ph) = ((w as f32 * s).ceil(), (h as f32 * s).ceil());
+    let mut pixmap = Pixmap::new(pw as u32, ph as u32)?;
+    let pill = rounded(0.5, 0.5, pw - 1.0, ph - 1.0, ph / 2.0)?;
+    pixmap.fill_path(
+        &pill,
+        &paint_of(Colour {
+            a: 0.94,
+            ..tokens.panel
+        }),
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
+    let hairline = Stroke {
+        width: s.max(1.0),
+        ..Stroke::default()
+    };
+    pixmap.stroke_path(
+        &pill,
+        &paint_of(Colour {
+            a: 0.10,
+            ..tokens.panel_text
+        }),
+        &hairline,
+        Transform::identity(),
+        None,
+    );
+    let icon = (16.0 * s).round() as u32;
+    let pad = 14.0 * s;
+    if let Some(mask) = edel::icons::mask("search", icon) {
+        let y = ((ph - icon as f32) / 2.0).round() as i32;
+        tinted(
+            &mut pixmap,
+            &mask,
+            pad.round() as i32,
+            y,
+            tokens.title_text_unfocused,
+        );
+    }
+    text.set_size(NAME * s);
+    let x = (pad + icon as f32 + 8.0 * s).round();
+    let room = (pw - x - pad).max(0.0);
+    let baseline = (ph / 2.0 + (text.ascent() + text.descent()) / 2.0).round();
+    if query.is_empty() {
+        let words = text.fit(placeholder, room);
+        text.draw_on(
+            &mut pixmap,
+            &words,
+            x,
+            baseline,
+            tokens.title_text_unfocused,
+        );
+    } else {
+        // The end of a long query shows, as it is where the caret is.
+        let mut shown: String = query.to_string();
+        while text.width(&shown) > room - 4.0 * s && !shown.is_empty() {
+            shown.remove(0);
+        }
+        text.draw_on(&mut pixmap, &shown, x, baseline, tokens.panel_text);
+        let caret_x = x + text.width(&shown) + 2.0 * s;
+        if let Some(caret) = Rect::from_xywh(caret_x, ph * 0.28, (1.5 * s).max(1.0), ph * 0.44) {
+            pixmap.fill_rect(caret, &paint_of(tokens.accent), Transform::identity(), None);
+        }
+    }
+    Some(pixmap)
+}
+
+/// One row of the search's card: its icon, its name and what it is
+/// ("Window" or "App").
+pub struct Row<'a> {
+    pub icon: Option<&'a Pixmap>,
+    pub name: &'a str,
+    pub kind: &'a str,
+}
+
+/// The card of results under the search field, `w` logical pixels wide at
+/// `scale`: a rounded card in the panel's colours, `CARD_PAD` above and
+/// below, each row `ROW` high with its icon, name and kind, the chosen one
+/// in the accent.
+pub fn results(
+    rows: &[Row],
+    chosen: usize,
+    w: i32,
+    scale: f64,
+    tokens: &Tokens,
+    text: &mut Text,
+) -> Option<Pixmap> {
+    let (row, pad) = (crate::glance_search::ROW, crate::glance_search::CARD_PAD);
+    let s = scale as f32;
+    let pw = (w as f32 * s).ceil();
+    let ph = ((rows.len() as i32 * row + 2 * pad) as f32 * s).ceil();
+    let mut pixmap = Pixmap::new(pw as u32, ph as u32)?;
+    let card = rounded(0.5, 0.5, pw - 1.0, ph - 1.0, 14.0 * s)?;
+    pixmap.fill_path(
+        &card,
+        &paint_of(Colour {
+            a: 0.97,
+            ..tokens.panel
+        }),
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
+    let hairline = Stroke {
+        width: s.max(1.0),
+        ..Stroke::default()
+    };
+    pixmap.stroke_path(
+        &card,
+        &paint_of(Colour {
+            a: 0.10,
+            ..tokens.panel_text
+        }),
+        &hairline,
+        Transform::identity(),
+        None,
+    );
+    let (rh, inset) = (row as f32 * s, 6.0 * s);
+    for (i, r) in rows.iter().enumerate() {
+        let y = (pad as f32 * s) + i as f32 * rh;
+        let lit = i == chosen;
+        if lit {
+            if let Some(back) = rounded(inset, y + 2.0 * s, pw - 2.0 * inset, rh - 4.0 * s, 9.0 * s)
+            {
+                pixmap.fill_path(
+                    &back,
+                    &paint_of(tokens.accent),
+                    FillRule::Winding,
+                    Transform::identity(),
+                    None,
+                );
+            }
+        }
+        let (ink, dim) = if lit {
+            (
+                tokens.accent_text,
+                Colour {
+                    a: 0.8,
+                    ..tokens.accent_text
+                },
+            )
+        } else {
+            (tokens.panel_text, tokens.title_text_unfocused)
+        };
+        let mut x = inset + 10.0 * s;
+        let side = (20.0 * s).round() as u32;
+        if let Some(icon) = r.icon {
+            let iy = (y + (rh - icon.height() as f32) / 2.0).round() as i32;
+            pixmap.draw_pixmap(
+                x.round() as i32,
+                iy,
+                icon.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        } else if let Some(mask) = edel::icons::mask("app-generic", side) {
+            // No icon of its own: the shell's generic one, in the row's ink.
+            let iy = (y + (rh - side as f32) / 2.0).round() as i32;
+            tinted(&mut pixmap, &mask, x.round() as i32, iy, dim);
+        }
+        x += 20.0 * s + 10.0 * s;
+        text.set_size(SMALL * s);
+        let kind_w = text.width(r.kind);
+        let kind_x = pw - inset - 12.0 * s - kind_w;
+        let baseline = (y + rh / 2.0 + (text.ascent() + text.descent()) / 2.0).round();
+        text.draw_on(&mut pixmap, r.kind, kind_x.round(), baseline, dim);
+        text.set_size(NAME * s);
+        let words = text.fit(r.name, (kind_x - x - 10.0 * s).max(0.0));
+        let baseline = (y + rh / 2.0 + (text.ascent() + text.descent()) / 2.0).round();
+        text.draw_on(&mut pixmap, &words, x.round(), baseline, ink);
+    }
+    Some(pixmap)
+}

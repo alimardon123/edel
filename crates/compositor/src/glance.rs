@@ -37,6 +37,7 @@ use edel_compositor::overview::{Plan, Side, frame_at, in_view, plan, spread};
 
 use crate::decoration::{app_id, data, title};
 use crate::glance_look::{self, CLOSE, Mark, NAME_ICON, PILL};
+use crate::glance_search::{self, Search};
 use crate::render::{Drawn, Element};
 use crate::state::Edel;
 
@@ -51,6 +52,11 @@ const PILL_GAP: i32 = 6;
 pub struct Overview {
     /// The window or workspace held by the pointer, if any.
     drag: Option<Drag>,
+    /// What was typed and what matches it (M5.2j-b3).
+    pub search: Search,
+    /// The search field and its card, as last painted.
+    field: Option<Painted>,
+    card: Option<Painted>,
     /// Where each screen's strip is scrolled to, once scrolled, and the
     /// wheel's part of an item not yet scrolled.
     first: HashMap<String, usize>,
@@ -128,6 +134,9 @@ enum Hit {
     Window(String, Window, Rectangle<i32, Logical>),
     Frame(String, usize),
     Arrow(String, bool),
+    /// The search field, and a row of its card.
+    Search,
+    Result(usize),
     Add,
     Tray,
     Nothing,
@@ -269,6 +278,16 @@ impl Edel {
         let Some(screen) = screens.iter().find(|s| s.area.to_f64().contains(point)) else {
             return Hit::Nothing;
         };
+        let rows = self.overview.as_ref().map_or(0, |o| o.search.found.len());
+        if rows > 0 {
+            let card = glance_search::card(screen.plan.search, rows);
+            if card.to_f64().contains(point) {
+                return glance_search::row_at(card, rows, point.y).map_or(Hit::Search, Hit::Result);
+            }
+        }
+        if screen.plan.search.to_f64().contains(point) {
+            return Hit::Search;
+        }
         let over = screen
             .spread
             .iter()
@@ -366,6 +385,12 @@ impl Edel {
     /// The pointer moved while the overview is open: a held window
     /// follows, and the close button follows the window under it.
     pub fn overview_motion(&mut self, point: Point<f64, Logical>) {
+        // The row under the pointer is the chosen one, as Up and Down choose.
+        if let Hit::Result(i) = self.overview_hit(point) {
+            if let Some(overview) = self.overview.as_mut() {
+                overview.search.chosen = i;
+            }
+        }
         if let Some(drag) = self.overview.as_mut().and_then(|o| o.drag.as_mut()) {
             let moved = point - drag.from;
             if moved.x.hypot(moved.y) >= DRAG_FROM {
@@ -428,6 +453,8 @@ impl Edel {
                 self.dirty = true;
             }
             Hit::Add => self.add_workspace(),
+            Hit::Result(i) => self.overview_go(i),
+            Hit::Search => {}
             Hit::Arrow(name, forward) => {
                 if let Some(screen) = self.overview_screens().into_iter().find(|s| s.name == name) {
                     let step = screen.plan.shows.saturating_sub(1).max(1);
@@ -530,6 +557,7 @@ impl Edel {
                 }
             }
         }
+        front.extend(self.overview_search(renderer, &mut overview, &screen, area, scale));
         // The workspace held, at the pointer, with its windows small.
         if let Some((i, grip)) = held_frame {
             if let Some(frame) = screen.plan.frames.get(i) {
@@ -708,9 +736,98 @@ impl Edel {
         front
     }
 
+    /// The search field over the stage and, while something matches, the
+    /// card of results under it, each painted again only when what it
+    /// shows changes.
+    fn overview_search(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        overview: &mut Overview,
+        screen: &Screen,
+        area: Rectangle<i32, Logical>,
+        scale: f64,
+    ) -> Vec<Drawn> {
+        let field = screen.plan.search;
+        if field.is_empty() {
+            return Vec::new();
+        }
+        let mut drawn = Vec::new();
+        let rows = overview.search.found.len();
+        if rows > 0 {
+            let names: Vec<(String, String, bool)> = overview
+                .search
+                .found
+                .iter()
+                .map(|f| (f.name(), f.app(), f.is_window()))
+                .collect();
+            let (window_word, app_word) = (tr("Window"), tr("App"));
+            let shows = format!(
+                "{names:?} {} {} {scale} {:?} {:?}",
+                overview.search.chosen, field.size.w, self.tokens.panel, self.tokens.accent
+            );
+            if overview.card.as_ref().is_none_or(|p| p.shows != shows) {
+                let px = (20.0 * scale).round() as u32;
+                let icons: Vec<Option<tiny_skia::Pixmap>> = names
+                    .iter()
+                    .map(|(_, app, _)| {
+                        let name = self.app_icons.name(app)?;
+                        self.app_icons.picture(&name, px).cloned()
+                    })
+                    .collect();
+                let rows: Vec<glance_look::Row> = names
+                    .iter()
+                    .zip(&icons)
+                    .map(|((name, _, window), icon)| glance_look::Row {
+                        icon: icon.as_ref(),
+                        name,
+                        kind: if *window { window_word } else { app_word },
+                    })
+                    .collect();
+                if let Some(text) = self.text.as_mut() {
+                    overview.card = glance_look::results(
+                        &rows,
+                        overview.search.chosen,
+                        field.size.w,
+                        scale,
+                        &self.tokens,
+                        text,
+                    )
+                    .map(|pixmap| painted(shows, &pixmap));
+                }
+            }
+            if let Some(card) = &overview.card {
+                let place = glance_search::card(field, rows);
+                drawn.extend(placed(renderer, card, place, area, scale));
+            }
+        }
+        let placeholder = tr("Type to search");
+        let shows = format!(
+            "{} {placeholder} {:?} {scale} {:?}",
+            overview.search.query, field.size, self.tokens.panel
+        );
+        if overview.field.as_ref().is_none_or(|p| p.shows != shows) {
+            if let Some(text) = self.text.as_mut() {
+                overview.field = glance_look::search(
+                    field.size.w,
+                    field.size.h,
+                    &overview.search.query,
+                    placeholder,
+                    scale,
+                    &self.tokens,
+                    text,
+                )
+                .map(|pixmap| painted(shows, &pixmap));
+            }
+        }
+        if let Some(painted) = &overview.field {
+            drawn.extend(placed(renderer, painted, field, area, scale));
+        }
+        drawn
+    }
+
     /// Logs where the overview's parts lie on `screen` when that changes,
     /// for CI to click them: `overview places NAME SIDE, tray X+Y+WxH,
-    /// frame1 X+Y+WxH, ..., add X+Y+WxH, before X+Y+WxH, after X+Y+WxH,
+    /// frame1 X+Y+WxH, ..., add X+Y+WxH, search X+Y+WxH, before X+Y+WxH, after X+Y+WxH,
     /// window TITLE X+Y+WxH, ...`, the frames out of view and the arrows
     /// not there left out.
     fn log_places(&self, overview: &mut Overview, screen: &Screen) {
@@ -729,6 +846,9 @@ impl Edel {
         }
         if let Some(add) = screen.plan.add {
             parts.push(format!("add {}", at(add)));
+        }
+        if !screen.plan.search.is_empty() {
+            parts.push(format!("search {}", at(screen.plan.search)));
         }
         for (word, arrow) in [("before", screen.plan.before), ("after", screen.plan.after)] {
             if let Some(arrow) = arrow {

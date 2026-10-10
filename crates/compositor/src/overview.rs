@@ -145,6 +145,9 @@ pub const ROOM: i32 = 16;
 pub const SPREAD_GAP: i32 = 32;
 /// Under each spread window, its app and title: the room it takes.
 pub const NAME_ROOM: i32 = 28;
+/// The search field over the stage (M5.2j-b3): its widest and its height.
+pub const SEARCH_WIDE: i32 = 360;
+pub const SEARCH_HIGH: i32 = 36;
 
 /// Where the overview lays one screen out: the tray, the workspaces'
 /// frames in it (in order), the frame that adds a workspace (when one
@@ -162,6 +165,9 @@ pub struct Plan {
     pub frames: Vec<Rectangle<i32, Logical>>,
     pub add: Option<Rectangle<i32, Logical>>,
     pub stage: Rectangle<i32, Logical>,
+    /// The search field, centred along the stage's top, `ROOM` from the
+    /// tray and from the windows under it.
+    pub search: Rectangle<i32, Logical>,
     pub first: usize,
     pub shows: usize,
     pub before: Option<Rectangle<i32, Logical>>,
@@ -292,7 +298,7 @@ pub fn plan(
     let before = (ends > 0 && first > 0).then(|| arrow(true));
     let after = (ends > 0 && first + shows < items).then(|| arrow(false));
     let edge = TRAY_EDGE + short + ROOM;
-    let stage = match side {
+    let stage: Rectangle<i32, Logical> = match side {
         Side::Left => Rectangle::new(
             (a.x + edge, a.y + ROOM).into(),
             (area.size.w - edge - ROOM, area.size.h - 2 * ROOM).into(),
@@ -310,11 +316,22 @@ pub fn plan(
             (area.size.w - 2 * ROOM, area.size.h - edge - ROOM).into(),
         ),
     };
+    // The search field takes the stage's top; the windows take the rest.
+    let wide = SEARCH_WIDE.min(stage.size.w).max(0);
+    let search = Rectangle::new(
+        (stage.loc.x + (stage.size.w - wide) / 2, stage.loc.y).into(),
+        (wide, SEARCH_HIGH).into(),
+    );
+    let stage = Rectangle::new(
+        (stage.loc.x, stage.loc.y + SEARCH_HIGH + ROOM).into(),
+        (stage.size.w, (stage.size.h - SEARCH_HIGH - ROOM).max(0)).into(),
+    );
     Plan {
         tray,
         frames,
         add,
         stage,
+        search,
         first,
         shows,
         before,
@@ -469,8 +486,10 @@ mod tests {
         assert_eq!(p.frames[1].loc.y, p.frames[0].loc.y + 106 + 10);
         let add = p.add.unwrap();
         assert_eq!(add.loc.y, p.frames[3].loc.y + 106 + 10);
-        // The stage starts ROOM right of the tray and stays in the area.
+        // The stage starts ROOM right of the tray and stays in the area; the
+        // search field never comes nearer the tray than ROOM.
         assert_eq!(p.stage.loc.x, p.tray.loc.x + p.tray.size.w + ROOM);
+        assert!(p.search.loc.x >= p.tray.loc.x + p.tray.size.w + ROOM);
         assert!(p.stage.loc.y + p.stage.size.h <= 752 - ROOM);
         // Nine do not fit down a 752 px side: the strip scrolls, inside it.
         let nine = plan(screen, area, 9, false, Side::Left, 0);
@@ -498,14 +517,25 @@ mod tests {
         assert!(seen.all(|f| f.size == Size::from((173, 108))));
         assert_eq!(p.tray.loc.y + p.tray.size.h, 752 - TRAY_EDGE);
         assert!(p.tray.loc.x >= 0 && p.tray.loc.x + p.tray.size.w <= 1280);
-        assert_eq!(p.stage.loc.y, ROOM);
+        // The search field at the top, ROOM above the windows.
+        assert_eq!(p.search.loc.y, ROOM);
+        assert_eq!(p.stage.loc.y, p.search.loc.y + SEARCH_HIGH + ROOM);
         assert_eq!(p.stage.loc.y + p.stage.size.h, p.tray.loc.y - ROOM);
         let right = plan(screen, area, 4, false, Side::Right, 0);
         assert_eq!(right.tray.loc.x + right.tray.size.w, 1280 - TRAY_EDGE);
         assert_eq!(right.stage.loc.x, ROOM);
         let top = plan(screen, area, 4, false, Side::Top, 0);
         assert_eq!(top.tray.loc.y, TRAY_EDGE);
-        assert_eq!(top.stage.loc.y, top.tray.loc.y + top.tray.size.h + ROOM);
+        // Along the top, the search field lies between the strip and the
+        // windows, ROOM from each.
+        assert_eq!(top.search.loc.y, top.tray.loc.y + top.tray.size.h + ROOM);
+        assert_eq!(top.stage.loc.y, top.search.loc.y + SEARCH_HIGH + ROOM);
+        assert_eq!(top.search.size, Size::from((SEARCH_WIDE, SEARCH_HIGH)));
+        assert_eq!(
+            top.search.loc.x + SEARCH_WIDE / 2,
+            top.stage.loc.x + top.stage.size.w / 2,
+            "centred over the windows"
+        );
     }
 
     #[test]
