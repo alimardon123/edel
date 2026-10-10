@@ -5,7 +5,8 @@
 //! (`lock::paint`), first asking for the user name, then for the password
 //! with the person's initial and name over it. Return logs in through
 //! greetd (`greetd::log_in`) on a thread; once greetd starts the session
-//! (`COMMAND`, run with `/bin/sh -c`) the greeter ends, and so does its
+//! (`COMMAND` as one word, which greetd runs through the shell itself,
+//! so its quoting holds) the greeter ends, and so does its
 //! compositor, as greetd expects. A refusal says "Wrong user name or
 //! password" and asks for the user name again. Escape goes back a step.
 //! Logs `greeter shown, N screens`, `greeter: logging USER in`,
@@ -313,7 +314,7 @@ impl Greeter {
                 let login = match greetd::Greetd::connect() {
                     Ok(mut greetd) => {
                         let words = password.text().unwrap_or_default();
-                        greetd::log_in(&mut greetd, &user, words, &["/bin/sh", "-c", &cmd])
+                        greetd::log_in(&mut greetd, &user, words, &[&cmd])
                     }
                     Err(e) => Login::Failed(format!("{e:#}")),
                 };
