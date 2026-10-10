@@ -194,6 +194,24 @@ msgstr ""
 msgid "Scroll"
 msgstr ""
 
+msgid "The last update did not start"
+msgstr ""
+
+msgid "Edel OS went back to the version before it, so everything works as it did and nothing was lost."
+msgstr ""
+
+msgid "Edel OS {version} is ready"
+msgstr ""
+
+msgid "Open Updates to install it; your apps and files stay as they are."
+msgstr ""
+
+msgid "Open Updates"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
 msgid "{name} (focused)"
 msgstr ""
 

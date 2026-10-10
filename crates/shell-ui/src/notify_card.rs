@@ -36,7 +36,10 @@ use crate::notice::Hit;
 use crate::notify::{self, Msg, Notification, Reason};
 use crate::paint::{self, Face};
 use crate::popup::Popup;
-use crate::{BANNER, CENTRE, MARGIN, Shell, a11y, banner, calendar, centre, messages, notice};
+use crate::{
+    BANNER, CENTRE, MARGIN, SETTINGS, Shell, a11y, banner, calendar, centre, messages, notice,
+    telling,
+};
 use crate::{quick, settings_texts, widgets};
 
 /// How long a banner the pointer left stays, milliseconds, before it
@@ -145,12 +148,81 @@ impl Shell {
     }
 
     /// A person pressed `key` of notification `id`: its app is told, then
-    /// the notification is dismissed.
+    /// the notification is dismissed. shell-ui's own notices tell no app:
+    /// Open Updates, and the body (`default`), open Settings' Updates page.
     pub fn invoke(&mut self, id: u32, key: &str) {
-        if let Some(connection) = &self._portal {
+        if telling::is_ours(id) {
+            if matches!(key, "updates" | notify::DEFAULT_ACTION) {
+                self.open_updates();
+            }
+        } else if let Some(connection) = &self._portal {
             notify::invoked(connection, id, key);
         }
         self.dismiss(id, Reason::Dismissed);
+    }
+
+    /// Settings opens on its Updates page, as quick settings starts it.
+    fn open_updates(&mut self) {
+        let argv = [
+            SETTINGS.to_string(),
+            "--page".to_string(),
+            "updates".to_string(),
+        ];
+        self.launcher.spawn(&argv, "Settings");
+    }
+
+    // ---- shell-ui's own notices (M5.9e) ----
+
+    /// At start: a fallback record `edel::places::LAST_FALLBACK` holds is
+    /// shown once for each person, as the list's notice; the stamp keeps
+    /// the record's date, so a later start that finds the same record says
+    /// it was seen.
+    pub fn tell_fallback(&mut self) {
+        let Ok(record) = std::fs::read_to_string(places::LAST_FALLBACK) else {
+            return;
+        };
+        let Some(n) = telling::fallback(&record) else {
+            return;
+        };
+        let key = telling::seen_key(&record);
+        if telling::read_stamp(telling::FALLBACK_SEEN).as_deref() == Some(key.as_str()) {
+            eprintln!("edel-shell-ui: fallback notice already seen");
+            return;
+        }
+        self.notified(n);
+        eprintln!("edel-shell-ui: fallback notice shown");
+        if let Err(e) = telling::write_stamp(telling::FALLBACK_SEEN, &key) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::stamp_not_kept(telling::FALLBACK_SEEN, e)
+            );
+        }
+    }
+
+    /// The update check's answer (`main.rs` runs `edel update --check` on
+    /// a timer): a newer release is announced once for each version.
+    pub fn update_checked(&mut self, answer: Result<String, String>) {
+        let out = match answer {
+            Ok(out) => out,
+            Err(why) => {
+                eprintln!("edel-shell-ui: {}", messages::update_check_failed(why));
+                return;
+            }
+        };
+        let Some((version, n)) = telling::update(&out) else {
+            return;
+        };
+        if telling::read_stamp(telling::UPDATE_SEEN).as_deref() == Some(version.as_str()) {
+            return;
+        }
+        self.notified(n);
+        eprintln!("edel-shell-ui: update {version} announced");
+        if let Err(e) = telling::write_stamp(telling::UPDATE_SEEN, &version) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::stamp_not_kept(telling::UPDATE_SEEN, e)
+            );
+        }
     }
 
     /// Every notification leaves the list.
@@ -169,6 +241,10 @@ impl Shell {
     }
 
     fn say_closed(&self, id: u32, reason: Reason) {
+        // No app is listening for shell-ui's own notices.
+        if telling::is_ours(id) {
+            return;
+        }
         if let Some(connection) = &self._portal {
             notify::closed(connection, id, reason);
         }

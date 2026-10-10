@@ -1775,6 +1775,39 @@ case_player() {
 	echo "PASS: quick settings read the test player over MPRIS and showed Night Drive by Lumen on its card, and a click on its play button reached the player (mpris $(value mpris))"
 }
 
+case_fallback() {
+	# The fallback notice (M5.9e): a record that the last update went back
+	# (`fallback record`, written as root in the data partition, as
+	# edel's update code writes it) is shown by shell-ui when it starts,
+	# as a banner and in its list, and its stamp keeps the record's date.
+	# After shell-ui starts again it says the notice was already seen and
+	# shows no second banner. Kept as fallback.png.
+	guest 'fallback record'
+	shown=$(count 'edel-shell-ui: fallback notice shown')
+	banners=$(count 'edel-shell-ui: banner shown')
+	started=$(count 'edel-compositor: started edel-shell-ui')
+	guest 'kill panel'
+	wait_more 'edel-compositor: started edel-shell-ui' "$started" ||
+		fail "the compositor did not start edel-shell-ui again after kill -9"
+	wait_more 'edel-shell-ui: fallback notice shown' "$shown" ||
+		fail "shell-ui did not show the fallback notice from the record: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	wait_more 'edel-shell-ui: banner shown' "$banners" ||
+		fail "shell-ui showed no banner for the fallback notice"
+	python3 ci/qmp.py screendump "$dir/fallback.png"
+	already=$(count 'edel-shell-ui: fallback notice already seen')
+	banners=$(count 'edel-shell-ui: banner shown')
+	started=$(count 'edel-compositor: started edel-shell-ui')
+	guest 'kill panel'
+	wait_more 'edel-compositor: started edel-shell-ui' "$started" ||
+		fail "the compositor did not start edel-shell-ui again after the second kill -9"
+	wait_more 'edel-shell-ui: fallback notice already seen' "$already" ||
+		fail "shell-ui did not say the fallback notice was already seen: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	sleep 2
+	[ "$(count 'edel-shell-ui: banner shown')" = "$banners" ] || fail "a second banner showed for the same fallback record"
+	guest 'fallback clear'
+	echo "PASS: shell-ui showed the fallback notice as a banner when it started, and after it started again it said the notice was already seen and showed no second banner"
+}
+
 case_switcher() {
 	# The window switcher (M5.3c): with away opened over one, Alt held
 	# and Tab chooses one, the window used before away; shell-ui draws

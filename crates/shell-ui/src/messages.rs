@@ -93,6 +93,18 @@ pub fn notification_not_said(signal: &str, why: impl Display) -> String {
     )
 }
 
+/// The update check could not run or its answer was not read.
+pub fn update_check_failed(why: impl Display) -> String {
+    format!("could not check for a newer release: {why}; the check runs again in six hours")
+}
+
+/// A notice's stamp cannot be written down in the person's state folder.
+pub fn stamp_not_kept(name: &str, why: impl Display) -> String {
+    format!(
+        "could not keep {name} in the person's state folder: {why}; the notice may show again at the next start"
+    )
+}
+
 /// Do not disturb cannot be written down.
 pub fn dnd_not_kept(why: impl Display) -> String {
     format!("could not keep do not disturb: {why}; it stays as it was")
@@ -284,6 +296,8 @@ mod tests {
             notifications_not_served("x"),
             notification_not_said("a", "x"),
             dnd_not_kept("x"),
+            update_check_failed("x"),
+            stamp_not_kept("a", "x"),
             DND_NO_HOME.to_string(),
             status_no_news("x"),
             quick_not_done("a", "x"),
