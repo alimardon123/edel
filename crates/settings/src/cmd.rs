@@ -43,12 +43,12 @@ pub fn edel(args: &[&str]) -> Outcome {
     run("edel", args)
 }
 
-/// Restarts the machine, which is `reboot` (there is no `edel` command for
-/// it); the same call on a page's Restart now and a person's own hand.
-/// Like the commands that change the machine, it needs root until `doas`
-/// (M6.5), and its refusal is shown as it is.
-pub fn reboot() -> Outcome {
-    run("reboot", &[])
+/// Restarts the machine: `edel restart` (M5.10c), the same command the lock
+/// screen's power menu runs. The same call on a page's Restart now and a
+/// person's own hand. It goes through doas when the person is not root (M6.5),
+/// and its refusal is shown as it is.
+pub fn restart() -> Outcome {
+    edel(&["restart"])
 }
 
 /// Whether Settings runs as root, which only a test or an appliance does:

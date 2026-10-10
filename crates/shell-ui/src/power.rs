@@ -1,9 +1,10 @@
 //! What the lock screen's power menu does (M5.10c): each choice, its
-//! icon and name, the command it runs through doas and whether an update
-//! waits for a restart. No drawing. The command runs on a thread of its
-//! own (`lock_card.rs`), never the drawing one. The login feature ships
-//! the doas rule that lets the seat group run exactly these commands with
-//! `-n`, so nothing asks for a password.
+//! icon and name, the `edel` command it runs (`edel restart|shutdown|
+//! suspend`, which run the system's program through doas) and whether an
+//! update waits for a restart. No drawing. The command runs on a thread of
+//! its own (`lock_card.rs`), never the drawing one. The login feature ships
+//! the doas rule that lets the seat group run exactly the three programs
+//! with `-n`, so nothing asks for a password.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -51,13 +52,14 @@ impl Choice {
         }
     }
 
-    /// The command, run with doas and `-n`, so it never asks for a
-    /// password (M5.10c).
-    pub fn command(self) -> [&'static str; 3] {
+    /// The `edel` command the choice runs; `edel` runs the system's
+    /// program, through doas when the seat is not root, so nothing asks
+    /// for a password (M5.10c).
+    pub fn command(self) -> [&'static str; 2] {
         match self {
-            Choice::Suspend => ["doas", "-n", "/usr/libexec/edel-suspend"],
-            Choice::Restart => ["doas", "-n", "/sbin/reboot"],
-            Choice::ShutDown => ["doas", "-n", "/sbin/poweroff"],
+            Choice::Suspend => ["edel", "suspend"],
+            Choice::Restart => ["edel", "restart"],
+            Choice::ShutDown => ["edel", "shutdown"],
         }
     }
 }
@@ -119,17 +121,14 @@ mod tests {
     }
 
     #[test]
-    fn each_command_runs_through_doas_without_asking() {
-        assert_eq!(
-            Choice::Suspend.command(),
-            ["doas", "-n", "/usr/libexec/edel-suspend"]
-        );
-        assert_eq!(Choice::Restart.command(), ["doas", "-n", "/sbin/reboot"]);
-        assert_eq!(Choice::ShutDown.command(), ["doas", "-n", "/sbin/poweroff"]);
+    fn each_command_is_the_edel_command_of_its_name() {
         for choice in CHOICES {
             let command = choice.command();
-            assert_eq!(command[0], "doas");
-            assert_eq!(command[1], "-n");
+            assert_eq!(command[0], "edel");
+            assert_eq!(command[1], choice.name());
         }
+        assert_eq!(Choice::Restart.command(), ["edel", "restart"]);
+        assert_eq!(Choice::ShutDown.command(), ["edel", "shutdown"]);
+        assert_eq!(Choice::Suspend.command(), ["edel", "suspend"]);
     }
 }
