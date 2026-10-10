@@ -1,0 +1,53 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Now playing card</title><style>
+/* M5.9i, chosen by Alimardon on 2026-10-10 (option 2A): the player card
+   names its app at its top centre and pages through every player with
+   tiny dots. Real size; colours are design/tokens.toml's. */
+body{margin:0;background:#dfe3ea;font-family:Inter,"DejaVu Sans",sans-serif;color:#1c1e22;padding:32px;width:820px}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:14px;margin:24px 0 10px;color:#555}
+.row{display:flex;gap:32px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:8px}
+.cap{font-size:12px;color:#555;width:360px;line-height:1.4}
+.card{width:360px;height:120px;background:#f6f7f9;border-radius:60px;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.10);box-sizing:border-box;position:relative}
+.dark .card{background:#1a1c22;color:#eceef1}
+.head{position:absolute;top:12px;left:0;right:0;height:16px;display:flex;justify-content:center;align-items:center;gap:5px;font-size:11px;color:#7a7f88}
+.icon{width:14px;height:14px;border-radius:4px}
+.main{position:absolute;top:32px;left:28px;right:28px;height:64px;display:flex;align-items:center;gap:10px}
+.cover{width:64px;height:64px;border-radius:50%;flex:none}
+.words{flex:1;min-width:0}
+.t{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a{font-size:12px;color:#7a7f88;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none}
+.play{width:32px;height:32px;background:#2d6ae3;color:#fff}
+.dark .play{background:#5b8ef5;color:#0b1220}
+.dots{position:absolute;bottom:9px;left:0;right:0;height:6px;display:flex;justify-content:center;align-items:center;gap:5px}
+.dot{width:5px;height:5px;border-radius:3px;background:rgba(28,30,34,.25)}
+.dark .dot{background:rgba(236,238,241,.28)}
+.dot.on{width:12px;background:#2d6ae3}
+.dark .dot.on{background:#5b8ef5}
+</style></head><body>
+<h1>Now playing: the app on top, every player a page</h1>
+<div class="cap" style="width:auto">M5.9i, option 2A, chosen by Alimardon on 2026-10-10. A pill 120 px high, its corners half its height, as wide as quick settings.</div>
+<h2>One player: its app's icon and name at the top centre, no dots</h2>
+<div class="row"><div class="col"><div class="card" id="one"></div><div class="cap">Light. The cover and title stay first; the app is 11 px and muted.</div></div>
+<div class="col dark"><div class="card" id="oned"></div><div class="cap">Dark.</div></div></div>
+<h2>Several players: scroll sideways, swipe or click a dot</h2>
+<div class="row"><div class="col"><div class="card" id="a1"></div><div class="cap">Page 1 of 3: what plays comes first. The shown dot is a short accent pill, like the workspace switcher's.</div></div>
+<div class="col"><div class="card" id="a2"></div><div class="cap">Page 2: Firefox, paused. The card keeps its size; only its inside slides.</div></div></div>
+<div class="row" style="margin-top:24px"><div class="col dark"><div class="card" id="a3"></div><div class="cap">Dark, page 3: Videos, with no artist.</div></div></div>
+<script>
+const P='<svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 2v10M12 2 5 7l7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+const N='<svg width="14" height="14" viewBox="0 0 14 14"><path d="M11 2v10M2 2l7 5-7 5z" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+const PAUSE='<svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="7.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>';
+const PLAY='<svg width="12" height="14" viewBox="0 0 12 14"><path d="M2 1.5v11l9-5.5z" fill="currentColor" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+function make(id,app,col,title,artist,cov,playing,n,i){
+ let d='';for(let k=0;k<n&&n>1;k++)d+=`<span class="dot${k==i?' on':''}"></span>`;
+ document.getElementById(id).innerHTML=`<div class="head"><span class="icon" style="background:${col}"></span>${app}</div>
+ <div class="main"><div class="cover" style="background:${cov}"></div><div class="words"><div class="t">${title}</div>${artist?`<div class="a">${artist}</div>`:''}</div>
+ <div class="btn">${P}</div><div class="btn play">${playing?PAUSE:PLAY}</div><div class="btn">${N}</div></div><div class="dots">${d}</div>`;}
+const sp='linear-gradient(135deg,#f6a14b,#c2416b)',ff='linear-gradient(135deg,#ff7139,#9059ff)',vd='linear-gradient(135deg,#3b82f6,#14b8a6)';
+make('one','Spotify','#1ed760','Night Drive','Lumen',sp,true,1,0);
+make('oned','Spotify','#1ed760','Night Drive','Lumen',sp,true,1,0);
+make('a1','Spotify','#1ed760','Night Drive','Lumen',sp,true,3,0);
+make('a2','Firefox','#ff7139','How a GPU draws a frame','YouTube',ff,false,3,1);
+make('a3','Videos','#3b82f6','Holiday 2025.mp4','',vd,false,3,2);
+</script></body></html>
