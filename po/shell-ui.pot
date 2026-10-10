@@ -128,6 +128,18 @@ msgstr ""
 msgid "This system cannot check passwords"
 msgstr ""
 
+msgid "Wrong user name or password"
+msgstr ""
+
+msgid "Could not log in, try again"
+msgstr ""
+
+msgid "Who is logging in?"
+msgstr ""
+
+msgid "User name"
+msgstr ""
+
 msgid "Close notification"
 msgstr ""
 

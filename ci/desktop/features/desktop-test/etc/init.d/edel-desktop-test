@@ -737,12 +737,21 @@ respawned() {
 	say "greeter_tier $(grep 'edel-compositor: tier=' /tmp/greeter.log | head -n 1)"
 	say "ready_owner $(stat -c %U "$ready_file")"
 	say "respawn_seconds $(awk -v a="$1" -v b="$now" 'BEGIN { printf "%.2f", b - a }')"
+	# The greeter itself, shell-ui's --greeter (M5.10b), once it has
+	# drawn on every screen.
+	i=0
+	while ! grep -q 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null && [ "$i" -lt 150 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	say "greeter_shown $(grep -a 'edel-shell-ui: greeter shown' /tmp/greeter.log | head -n 1)"
 	i=0
 	while [ "$(stat -c %U "$ready_file")" != ci ] && [ "$i" -lt 600 ]; do
 		sleep 0.1
 		i=$((i + 1))
 	done
 	say "login_ready $(stat -c %U "$ready_file") $(cat "$ready_file")"
+	say "greeter_said $(grep -a 'edel-shell-ui: greeter: ' /tmp/greeter.log | tr '\n' '|')"
 	# The session's log (M5.28a): the killed session's is moved aside
 	# without its last line, the new session says so, edel status points
 	# to it, and edel report holds the last lines of both.
