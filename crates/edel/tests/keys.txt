@@ -67,3 +67,14 @@ layout.app_workspaces
 layout.workspaces_look
 layout.workspaces_shown
 layout.workspaces_ends
+panels.list
+panels.tray
+panels.pinned
+workspaces.count
+workspaces.dynamic
+workspaces.per_screen
+workspaces.names
+workspaces.apps
+appearance.switcher_look
+appearance.switcher_shown
+appearance.switcher_ends

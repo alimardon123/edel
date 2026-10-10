@@ -13,11 +13,11 @@ use crate::presets::{self, Edge, Hide, Panel, Screens, Size, Style};
 use crate::settings;
 
 /// The settings key the panels are written to (M5.31b).
-pub const PANELS: &str = "layout.panels";
+pub const PANELS: &str = "panels.list";
 
 /// The settings key the apps the apps widget pins are written to, in
 /// order (M5.31d): the dock's drag of an app's icon writes it.
-pub const PINNED: &str = "apps.pinned";
+pub const PINNED: &str = "panels.pinned";
 
 /// The session-bus name shell-ui serves its panel editor on (M5.31d).
 pub const SHELL_BUS: &str = "org.edel.Shell";
@@ -302,21 +302,21 @@ pub fn set_screens(panels: &[Panel], panel: usize, screens: Screens) -> Result<V
 }
 
 /// The panels that apply, the rule shell-ui's `from_system_files` follows:
-/// `layout.panels`, the person's file over the machine's, else the preset
+/// `panels.list`, the person's file over the machine's, else the preset
 /// `layout.preset` names (the person's over the machine's). A file that
 /// does not read, or is not in this release's format, counts as absent.
 pub fn applying(machine: Option<&str>, person: Option<&str>) -> Vec<Panel> {
-    let layout = |text: Option<&str>| {
+    let file = |text: Option<&str>| {
         text.and_then(|t| settings::read(t).ok())
-            .map(|read| read.file.layout)
+            .map(|read| read.file)
             .unwrap_or_default()
     };
-    let (machine, person) = (layout(machine), layout(person));
-    let panels = person.panels.or(machine.panels);
+    let (machine, person) = (file(machine), file(person));
+    let panels = person.panels.list.or(machine.panels.list);
     if let Some(panels) = panels {
         return panels;
     }
-    let name = person.preset.or(machine.preset);
+    let name = person.layout.preset.or(machine.layout.preset);
     presets::named(name.as_deref()).0.panels
 }
 
@@ -352,7 +352,7 @@ pub fn to_write(
 }
 
 /// The apps pinned to the apps widget that apply (M5.31d): the person's
-/// `apps.pinned` over the machine's, else the list the preset named by
+/// `panels.pinned` over the machine's, else the list the preset named by
 /// `layout.preset` pins (the person's over the machine's, as `applying`
 /// finds it). A file that does not read, or is not in this release's
 /// format, counts as absent.
@@ -363,7 +363,7 @@ pub fn pins_applying(machine: Option<&str>, person: Option<&str>) -> Vec<String>
             .unwrap_or_default()
     };
     let (machine, person) = (read(machine), read(person));
-    if let Some(pins) = person.apps.pinned.clone().or(machine.apps.pinned.clone()) {
+    if let Some(pins) = person.panels.pinned.clone().or(machine.panels.pinned.clone()) {
         return pins;
     }
     let name = person.layout.preset.or(machine.layout.preset);
@@ -445,11 +445,11 @@ mod tests {
         );
         // The line is what `edel settings set` takes and writes, and it
         // writes the same line from the struct's own field order too.
-        let file = settings::set("format = 1\n", "layout.panels", &line).unwrap();
+        let file = settings::set("format = 1\n", PANELS, &line).unwrap();
         assert_eq!(file, format!("format = 1\n\n[layout]\npanels = {line}\n"));
         let in_struct_order = r#"[{ edge = "bottom", start = ["clock", "menu", "separator", "windows"], end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"] }]"#;
         assert_eq!(
-            settings::set("format = 1\n", "layout.panels", in_struct_order).unwrap(),
+            settings::set("format = 1\n", PANELS, in_struct_order).unwrap(),
             file
         );
     }
@@ -666,9 +666,9 @@ mod tests {
             line,
             r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status", "clock"], floating = true, screens = "every", size = "large", start = ["menu", "separator", "windows"] }]"#
         );
-        let file = settings::set("format = 1\n", "layout.panels", &line).unwrap();
+        let file = settings::set("format = 1\n", PANELS, &line).unwrap();
         let read = settings::read(&file).unwrap();
-        assert_eq!(read.file.layout.panels.unwrap(), panels);
+        assert_eq!(read.file.panels.list.unwrap(), panels);
         // The defaults are left out, as they are in a preset's file.
         let plain = value(&classic()).unwrap();
         assert!(
@@ -697,9 +697,9 @@ mod tests {
         assert_eq!(docked[0].style, Style::Dock);
         let line = value(&docked).unwrap();
         assert!(line.contains(r#"style = "dock""#), "{line}");
-        let file = settings::set("format = 1\n", "layout.panels", &line).unwrap();
+        let file = settings::set("format = 1\n", PANELS, &line).unwrap();
         assert_eq!(
-            settings::read(&file).unwrap().file.layout.panels.unwrap(),
+            settings::read(&file).unwrap().file.panels.list.unwrap(),
             docked
         );
     }
