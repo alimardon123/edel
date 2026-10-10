@@ -315,6 +315,12 @@ pub const KEYS: &[Key] = &[
     now("workspaces.per_screen", Kind::Flag),
     now("workspaces.names", Kind::Texts),
     now("workspaces.apps", Kind::AppWorkspaces),
+    // The side of the screen the overview's strip of workspaces lies on
+    // (M5.2j-b); the windows take the rest.
+    now(
+        "workspaces.overview_strip",
+        Kind::OneOf(&["left", "right", "top", "bottom"]),
+    ),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
     now("displays.*.resolution", Kind::Resolution),
@@ -574,6 +580,11 @@ pub struct Workspaces {
     /// the workspace in use.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub apps: Option<BTreeMap<String, i64>>,
+    /// The side of the screen the overview's strip of workspaces lies on,
+    /// `left`, `right`, `top` or `bottom` (M5.2j-b); absent is
+    /// [`OVERVIEW_STRIP_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overview_strip: Option<String>,
 }
 
 /// One screen on the Displays page, by its connector's name.
@@ -915,6 +926,12 @@ pub const SWITCHER_ENDS: &str = "appearance.switcher_ends";
 pub const SWITCHER_LOOK_DEFAULT: &str = "numbers";
 pub const SWITCHER_SHOWN_DEFAULT: u32 = 3;
 pub const SWITCHER_ENDS_DEFAULT: &str = "arrows";
+
+/// The key the overview's strip of workspaces is kept under (M5.2j-b), the
+/// one name shell-ui, Settings and `edel settings` share, and what it shows
+/// when no file sets it: the strip on the left.
+pub const OVERVIEW_STRIP: &str = "workspaces.overview_strip";
+pub const OVERVIEW_STRIP_DEFAULT: &str = "left";
 
 /// The key the workspaces' names are kept under, one per place (M5.2p): the
 /// names the switcher shows, which a drag of a switcher button reorders.
@@ -2278,6 +2295,15 @@ font_size = 11
         assert_eq!(
             set("format = 1\n", "workspaces.per_screen", "true").unwrap(),
             "format = 1\n\n[workspaces]\nper_screen = true\n"
+        );
+        assert_eq!(
+            set("format = 1\n", OVERVIEW_STRIP, "top").unwrap(),
+            "format = 1\n\n[workspaces]\noverview_strip = \"top\"\n"
+        );
+        let refused = set("format = 1\n", OVERVIEW_STRIP, "diagonal").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "workspaces.overview_strip: unknown value \"diagonal\"; use left, right, top or bottom"
         );
         let names = set("format = 1\n", "workspaces.names", r#"["Mail", ""]"#).unwrap();
         assert_eq!(

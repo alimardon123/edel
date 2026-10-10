@@ -1215,6 +1215,10 @@ impl Shell {
             }
             Action::Minimize(window) => self.toplevels.minimize(window),
             Action::TogglePolicy => self.link.toggle_policy(),
+            Action::Overview => {
+                eprintln!("edel-shell-ui: overview asked for");
+                self.link.toggle_overview();
+            }
             Action::NextKeyboardLayout => self.link.next_keyboard_layout(),
             Action::Launcher => self.toggle_launcher(),
             Action::Styles => self.toggle_styles(i, left + width / 2.0),

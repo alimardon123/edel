@@ -65,6 +65,7 @@ workspaces.dynamic
 workspaces.per_screen
 workspaces.names
 workspaces.apps
+workspaces.overview_strip
 appearance.switcher_look
 appearance.switcher_shown
 appearance.switcher_ends

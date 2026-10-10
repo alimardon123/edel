@@ -40,6 +40,13 @@
       </description>
     </request>
 
+    <request name="toggle_overview">
+      <description summary="show the overview, or leave it">
+        The overview, as Super+W shows it (M5.2j-b), or leaving it if it
+        is open: a click on the switcher's lit workspace asks for it.
+      </description>
+    </request>
+
     <request name="move_workspace">
       <description summary="move a workspace to another place">
         The workspace at place `from` moves to place `to`, both from 0,

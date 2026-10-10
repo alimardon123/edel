@@ -54,6 +54,13 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// The overview's plus could not add a workspace (M5.2j-b).
+pub fn workspace_not_added(why: impl Display) -> String {
+    format!(
+        "could not add a workspace: {why}; set the count on Settings' Workspaces page or with edel settings set workspaces.count"
+    )
+}
+
 /// shell-ui cannot start.
 pub fn shell_ui_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}")

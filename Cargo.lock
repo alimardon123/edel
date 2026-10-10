@@ -991,6 +991,7 @@ dependencies = [
  "inotify",
  "rustix 1.1.5",
  "smithay",
+ "tiny-skia",
  "toml",
  "wayland-scanner",
  "xcursor",

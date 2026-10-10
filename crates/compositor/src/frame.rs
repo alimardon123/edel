@@ -604,6 +604,56 @@ impl Text {
         format!("{}\u{2026}", kept.trim_end())
     }
 
+    /// Above the baseline, in pixels, at the size set.
+    pub fn ascent(&self) -> f32 {
+        self.ascent
+    }
+
+    /// Below the baseline (negative), in pixels, at the size set.
+    pub fn descent(&self) -> f32 {
+        self.descent
+    }
+
+    /// Draws `text` from `x` on `baseline` over `pixmap` (premultiplied
+    /// RGBA, as tiny-skia keeps it), for the overview's labels (M5.2j-b).
+    pub fn draw_on(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        text: &str,
+        x: f32,
+        baseline: f32,
+        colour: Colour,
+    ) {
+        let (width, height) = (pixmap.width() as i64, pixmap.height() as i64);
+        let [r, g, b, _] = colour.bytes();
+        let (starts, _) = self.advances(text);
+        let data = pixmap.data_mut();
+        for (c, start) in text.chars().zip(starts) {
+            let (metrics, coverage) = self.glyph(c).clone();
+            let left = (x + start).round() as i64 + i64::from(metrics.xmin);
+            let top = baseline as i64 - i64::from(metrics.ymin) - metrics.height as i64;
+            for row in 0..metrics.height {
+                for col in 0..metrics.width {
+                    let (px, py) = (left + col as i64, top + row as i64);
+                    if px < 0 || py < 0 || px >= width || py >= height {
+                        continue;
+                    }
+                    let a = f32::from(coverage[row * metrics.width + col]) / 255.0 * colour.a;
+                    if a <= 0.0 {
+                        continue;
+                    }
+                    let i = ((py * width + px) * 4) as usize;
+                    for (k, c) in [r, g, b].into_iter().enumerate() {
+                        let under = f32::from(data[i + k]);
+                        data[i + k] = (f32::from(c) * a + under * (1.0 - a)).round() as u8;
+                    }
+                    let under = f32::from(data[i + 3]);
+                    data[i + 3] = (255.0 * a + under * (1.0 - a)).round() as u8;
+                }
+            }
+        }
+    }
+
     /// Draws `text` from `x` on `baseline`, nothing right of `limit`.
     fn draw(
         &mut self,

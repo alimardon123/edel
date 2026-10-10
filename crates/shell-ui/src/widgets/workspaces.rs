@@ -805,13 +805,23 @@ fn click_numbers(view: &View, slot: f32, at: f32) -> Option<Action> {
     buttons(view, slot)
         .iter()
         .find(|b| within(b.left, b.width))
-        .map(|b| Action::Show(b.place))
+        .map(|b| shown_or_overview(view, b.place))
+}
+
+/// A click on workspace `place`: shows it, or, on the lit one, opens the
+/// overview (M5.2j-b).
+fn shown_or_overview(view: &View, place: usize) -> Action {
+    if place == view.active {
+        Action::Overview
+    } else {
+        Action::Show(place)
+    }
 }
 
 /// What a click at `at` does in the button look: the nearest segment's
 /// workspace.
 fn click_button(view: &View, word: f32, at: f32) -> Option<Action> {
-    nearest(&segments(view.names.len(), word), at).map(Action::Show)
+    nearest(&segments(view.names.len(), word), at).map(|place| shown_or_overview(view, place))
 }
 
 /// A scroll: the numbers look moves its view a step, keeping `shown` in
@@ -1075,6 +1085,11 @@ mod tests {
             click_numbers(&view, slot, 0.0),
             None,
             "the room is no button"
+        );
+        // The lit one, Mail, opens the overview (M5.2j-b).
+        assert_eq!(
+            click_numbers(&view, slot, middle(&found[0])),
+            Some(Action::Overview)
         );
     }
 

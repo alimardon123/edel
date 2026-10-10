@@ -75,6 +75,9 @@ pub struct Settings {
     /// opens on, from 0, in the file's order; absent opens every app on
     /// the workspace in use.
     pub app_workspaces: Vec<(String, usize)>,
+    /// `workspaces.overview_strip` (M5.2j-b), as the file writes it; see
+    /// [`Settings::overview_strip`] for what applies.
+    pub overview_strip: Option<String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -136,6 +139,11 @@ impl Settings {
             }
             if let Some(names) = &file.workspaces.names {
                 settings.workspace_names.clone_from(names);
+            }
+            if file.workspaces.overview_strip.is_some() {
+                settings
+                    .overview_strip
+                    .clone_from(&file.workspaces.overview_strip);
             }
             if let Some(apps) = &file.workspaces.apps {
                 // The person's table replaces the machine's whole, as the
@@ -233,6 +241,18 @@ impl Settings {
     /// The workspaces' names, the first workspace's first (M5.2i).
     pub fn names(&self) -> &[String] {
         &self.workspace_names
+    }
+
+    /// The side the overview's strip of workspaces lies on
+    /// (`workspaces.overview_strip`, M5.2j-b): `left`, `right`, `top` or
+    /// `bottom`, else [`edel::settings::OVERVIEW_STRIP_DEFAULT`] when the
+    /// file says none of them.
+    pub fn overview_strip(&self) -> &str {
+        let allowed = edel::settings::choices(edel::settings::OVERVIEW_STRIP);
+        self.overview_strip
+            .as_deref()
+            .and_then(|side| allowed.iter().copied().find(|a| *a == side))
+            .unwrap_or(edel::settings::OVERVIEW_STRIP_DEFAULT)
     }
 
     /// The workspace, from 0, that `app_id`'s windows open on
@@ -552,6 +572,25 @@ mod tests {
             "absent is every screen together"
         );
         assert_eq!(both.names(), ["Mail"]);
+        // The overview's strip lies on the left until a file says otherwise,
+        // the person's side wins over the machine's, and a side the key
+        // table lacks is the default.
+        assert_eq!(Settings::default().overview_strip(), "left");
+        let strip_machine = file("format = 1\n[workspaces]\noverview_strip = \"right\"\n");
+        let strip_person = file("format = 1\n[workspaces]\noverview_strip = \"top\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&strip_machine), Some(&strip_person)).overview_strip(),
+            "top"
+        );
+        assert_eq!(
+            Settings::from_files(Some(&strip_machine), None).overview_strip(),
+            "right"
+        );
+        let strip_other = file("format = 1\n[workspaces]\noverview_strip = \"diagonal\"\n");
+        assert_eq!(
+            Settings::from_files(None, Some(&strip_other)).overview_strip(),
+            "left"
+        );
         assert_eq!(Settings::from_files(Some(&machine), None).workspaces(), 2);
         // Apps with a workspace of their own (M5.2l).
         let machine = file(
