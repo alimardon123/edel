@@ -27,12 +27,14 @@ use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRen
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::utils::{CommitCounter, import_surface_tree};
 use smithay::desktop::Window;
 use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 use edel::i18n::tr;
 use edel::tokens::Colour;
+use edel_compositor::effects::Tier;
 use edel_compositor::overview::{Plan, Side, frame_at, in_view, plan, spread};
 
 use crate::decoration::{app_id, data, title};
@@ -64,8 +66,10 @@ pub struct Overview {
     /// The flat colours drawn, each kept by what it is, so a frame drawn
     /// again unchanged is not redrawn.
     solids: HashMap<String, SolidColorBuffer>,
-    /// The ids of the windows' pictures, by window, place and surface.
-    ids: HashMap<(Window, bool, usize), Id>,
+    /// The ids of the windows' pictures, by window, place and surface,
+    /// each with the commit it showed: a live picture that changes gets a
+    /// new id, so the screen draws it again (M5.2j-b4).
+    ids: HashMap<(Window, bool, usize), (Id, CommitCounter)>,
     /// The plain cards of windows never drawn yet.
     cards: HashMap<(Window, bool), SolidColorBuffer>,
     /// The painted parts, each kept with what it shows: each screen's
@@ -82,7 +86,25 @@ pub struct Overview {
     ring: Option<(Painted, i32)>,
     /// The last places line logged for each screen.
     logged: HashMap<String, String>,
+    /// The frame the pointer rests on, and its tooltip once shown.
+    tip: Option<Tip>,
 }
+
+/// A strip frame's tooltip (M5.2j-b4): the workspace's whole name and the
+/// apps open on it, shown when the pointer has rested on the frame a
+/// moment.
+struct Tip {
+    screen: String,
+    frame: usize,
+    /// What it says, once shown, and its picture.
+    words: Option<String>,
+    painted: Option<Painted>,
+}
+
+/// How long the pointer rests on a frame before its tooltip shows.
+const TIP_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
+/// The most a tooltip may be wide, in logical pixels.
+const TIP_MOST: i32 = 420;
 
 /// What the overview keeps between its openings: each screen's backdrop,
 /// painted at a quarter of the screen's size (a smooth gradient the GPU
@@ -354,6 +376,7 @@ impl Edel {
         let Some(overview) = &mut self.overview else {
             return;
         };
+        overview.tip = None;
         overview.drag = held.map(|(screen, held, at)| Drag {
             held,
             screen,
@@ -416,7 +439,102 @@ impl Edel {
                 drag.moving = true;
             }
         }
+        self.overview_rest(point);
         self.dirty = true;
+    }
+
+    /// The pointer at `point`: resting on a strip frame, with nothing
+    /// held, it starts that frame's tooltip's wait; anywhere else the
+    /// tooltip goes.
+    fn overview_rest(&mut self, point: Point<f64, Logical>) {
+        let hit = self.overview_hit(point);
+        let Some(overview) = self.overview.as_mut() else {
+            return;
+        };
+        let on = match hit {
+            Hit::Frame(screen, frame) if overview.drag.is_none() => Some((screen, frame)),
+            _ => None,
+        };
+        let same = |t: &Tip| {
+            on.as_ref()
+                .is_some_and(|(s, f)| t.screen == *s && t.frame == *f)
+        };
+        if overview.tip.as_ref().is_some_and(same) {
+            return;
+        }
+        overview.tip = None;
+        let Some((screen, frame)) = on else {
+            return;
+        };
+        overview.tip = Some(Tip {
+            screen: screen.clone(),
+            frame,
+            words: None,
+            painted: None,
+        });
+        let Some(handle) = &self.handle else {
+            return;
+        };
+        let _ = handle.insert_source(
+            smithay::reexports::calloop::timer::Timer::from_duration(TIP_AFTER),
+            move |_, _, state: &mut Edel| {
+                state.overview_tip_due(&screen, frame);
+                smithay::reexports::calloop::timer::TimeoutAction::Drop
+            },
+        );
+    }
+
+    /// The pointer has rested on frame `frame` of `screen`: if it still
+    /// does, its tooltip shows, logged `overview tooltip WORDS`.
+    fn overview_tip_due(&mut self, screen: &str, frame: usize) {
+        let words = self.tip_words(frame);
+        let Some(tip) = self.overview.as_mut().and_then(|o| o.tip.as_mut()) else {
+            return;
+        };
+        if tip.screen != screen || tip.frame != frame || tip.words.is_some() {
+            return;
+        }
+        eprintln!("edel-compositor: overview tooltip {words}");
+        tip.words = Some(words);
+        self.dirty = true;
+    }
+
+    /// What workspace `desk`'s tooltip says: its whole name, else its
+    /// number, then the apps open on it, each once, by the name its
+    /// launcher file gives, else the window's title.
+    fn tip_words(&mut self, desk: usize) -> String {
+        let label = self
+            .desks
+            .labels()
+            .get(desk)
+            .cloned()
+            .unwrap_or_else(|| (desk + 1).to_string());
+        let mut windows: Vec<Window> = self
+            .space
+            .elements()
+            .filter(|w| self.desks.desk_of(w) == Some(desk))
+            .cloned()
+            .collect();
+        windows.extend(
+            self.desks
+                .hidden()
+                .filter(|(d, _, _)| *d == desk)
+                .map(|(_, w, _)| w.clone()),
+        );
+        let mut apps: Vec<String> = Vec::new();
+        for window in &windows {
+            let app = self
+                .app_icons
+                .app_name(&app_id(window))
+                .unwrap_or_else(|| title(window));
+            if !app.is_empty() && !apps.contains(&app) {
+                apps.push(app);
+            }
+        }
+        if apps.is_empty() {
+            return format!("{label}: {}", tr("no windows"));
+        }
+        format!("{label}: {}", apps.join(", "))
     }
 
     /// The button came up while the overview is open. A window dragged
@@ -434,13 +552,13 @@ impl Edel {
         let hit = self.overview_hit(point);
         if let Some(drag) = drag.as_ref().filter(|d| d.moving) {
             if let Hit::Frame(name, to) = hit {
-                if name == drag.screen {
-                    match &drag.held {
-                        Held::Window(window) => {
-                            self.carry_window(window, to);
-                        }
-                        Held::Frame(from) => self.move_workspace(*from, to),
+                match &drag.held {
+                    // Onto any screen's frame: there, on that workspace.
+                    Held::Window(window) => {
+                        self.carry_window(window, to, Some(&name));
                     }
+                    Held::Frame(from) if name == drag.screen => self.move_workspace(*from, to),
+                    Held::Frame(_) => {}
                 }
             }
             self.dirty = true;
@@ -525,6 +643,23 @@ impl Edel {
         };
         let name = output.name();
         let screens = self.overview_screens();
+        // The held window's frame and spread place, from whichever screen
+        // it is spread on, as it may be carried to another (M5.2j-b4).
+        let spread_at = |window: &Window| {
+            screens
+                .iter()
+                .flat_map(|s| &s.spread)
+                .find(|(w, _, _)| w == window)
+                .map(|(_, place, at)| (*place, *at))
+        };
+        let held_at = self
+            .overview
+            .as_ref()
+            .and_then(|o| o.drag.as_ref())
+            .and_then(|d| match &d.held {
+                Held::Window(window) => spread_at(window),
+                Held::Frame(_) => None,
+            });
         let Some(screen) = screens.into_iter().find(|s| s.name == name) else {
             return Vec::new();
         };
@@ -534,6 +669,7 @@ impl Edel {
             .map(|p| p.current_location())
             .unwrap_or_default();
         let tokens = self.tokens.clone();
+        self.overview_live(renderer);
         let Some(mut overview) = self.overview.take() else {
             return Vec::new();
         };
@@ -558,16 +694,17 @@ impl Edel {
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e)))
                 .collect();
+        front.extend(self.overview_tip(renderer, &mut overview, &screen, area, scale));
         // The window held, at the pointer, over everything else.
         if let Some((window, grip)) = &held {
-            if let Some((_, place, at)) = screen.spread.iter().find(|(w, _, _)| w == window) {
+            if let Some((place, at)) = held_at {
                 let moved = Rectangle::new((pointer - *grip).to_i32_round(), at.size);
                 if area.overlaps(moved) {
                     front.extend(self.overview_window(
                         renderer,
                         &mut overview,
                         window,
-                        *place,
+                        place,
                         moved,
                         area,
                         false,
@@ -748,6 +885,47 @@ impl Edel {
         }
         self.overview = Some(overview);
         front
+    }
+
+    /// The tooltip of the frame the pointer rests on, if it shows on this
+    /// screen, painted as a name pill is and again only when its words
+    /// change.
+    fn overview_tip(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        overview: &mut Overview,
+        screen: &Screen,
+        area: Rectangle<i32, Logical>,
+        scale: f64,
+    ) -> Vec<Drawn> {
+        let Some(tip) = overview.tip.as_mut().filter(|t| t.screen == screen.name) else {
+            return Vec::new();
+        };
+        let (Some(words), Some(frame)) = (&tip.words, screen.plan.frames.get(tip.frame)) else {
+            return Vec::new();
+        };
+        if frame.is_empty() {
+            return Vec::new();
+        }
+        let shows = format!("{words} {scale} {:?}", self.tokens.backdrop_deep);
+        if tip.painted.as_ref().is_none_or(|p| p.shows != shows) {
+            let Some(text) = self.text.as_mut() else {
+                return Vec::new();
+            };
+            tip.painted = glance_look::name(words, None, TIP_MOST, scale, &self.tokens, text)
+                .map(|pixmap| painted(shows, &pixmap));
+        }
+        let Some(painted) = &tip.painted else {
+            return Vec::new();
+        };
+        let size = Size::<f64, Logical>::from((
+            f64::from(painted.pixels.0) / scale,
+            f64::from(painted.pixels.1) / scale,
+        ))
+        .to_i32_ceil();
+        let side = Side::named(self.settings.overview_strip());
+        let at = edel_compositor::overview::tip(side, screen.plan.tray, *frame, size, screen.area);
+        placed(renderer, painted, at, area, scale)
     }
 
     /// The search field over the stage and, while something matches, the
@@ -1010,6 +1188,30 @@ impl Edel {
         placed(renderer, painted, place, area, scale)
     }
 
+    /// Whether the overview's pictures follow their windows as they draw:
+    /// on Full and Balanced, while Lite keeps the pictures each window last
+    /// showed and lets the apps rest (M5.2j-b4).
+    pub fn overview_is_live(&self) -> bool {
+        self.overview.is_some() && self.deadline.tier() != Tier::Lite
+    }
+
+    /// Takes the shown windows' newest pictures, when the overview is live:
+    /// the windows on screen keep drawing (the backends still send them
+    /// frames), and only their pictures are shown.
+    fn overview_live(&self, renderer: &mut GlesRenderer) {
+        if !self.overview_is_live() {
+            return;
+        }
+        for window in self.space.elements() {
+            let Some(toplevel) = window.toplevel() else {
+                continue;
+            };
+            if import_surface_tree(renderer, toplevel.wl_surface()).is_ok() {
+                self.remember_picture(window);
+            }
+        }
+    }
+
     /// `window`, whose frame on the screen is `place`, drawn into `to` (a
     /// rect of `place`'s shape) on the screen at `area`; `small` for the
     /// strip's frames, whose pictures are kept apart from the stage's.
@@ -1076,11 +1278,14 @@ impl Edel {
         }
         let frame_data = data(window).borrow();
         for (n, part) in frame_data.picture.iter().enumerate().rev() {
-            let id = overview
+            let kept = overview
                 .ids
                 .entry((window.clone(), small, n))
-                .or_insert_with(Id::new)
-                .clone();
+                .or_insert_with(|| (Id::new(), part.commit));
+            if kept.1 != part.commit {
+                *kept = (Id::new(), part.commit);
+            }
+            let id = kept.0.clone();
             let size = part.size.to_f64().upscale(k).to_i32_round();
             parts.push(Drawn::Plain(Element::Picture(
                 TextureRenderElement::from_static_texture(

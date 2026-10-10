@@ -191,6 +191,44 @@ impl Plan {
     }
 }
 
+/// How far, in the touchpad's logical pixels, four fingers slide up or
+/// down before the overview opens or leaves (M5.2j-b4).
+pub const SWIPE: f64 = 60.0;
+
+/// Whether a swipe of `fingers` that slid `dy` (up is negative) opens the
+/// overview when it is closed, or leaves it when it is `open`: four
+/// fingers up open it, four down leave it, as the swipe up and down on
+/// macOS and GNOME.
+pub fn swiped(fingers: u32, dy: f64, open: bool) -> bool {
+    fingers == 4 && if open { dy >= SWIPE } else { dy <= -SWIPE }
+}
+
+/// The gap between the tray and a frame's tooltip.
+pub const TIP_GAP: i32 = 8;
+
+/// Where a frame's tooltip of `size` stands (M5.2j-b4): beside the tray on
+/// the stage's side, level with `frame`'s middle, kept on the screen
+/// `area`.
+pub fn tip(
+    side: Side,
+    tray: Rectangle<i32, Logical>,
+    frame: Rectangle<i32, Logical>,
+    size: Size<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+) -> Rectangle<i32, Logical> {
+    let middle = frame.loc + Point::from((frame.size.w / 2, frame.size.h / 2));
+    let (x, y) = match side {
+        Side::Left => (tray.loc.x + tray.size.w + TIP_GAP, middle.y - size.h / 2),
+        Side::Right => (tray.loc.x - TIP_GAP - size.w, middle.y - size.h / 2),
+        Side::Top => (middle.x - size.w / 2, tray.loc.y + tray.size.h + TIP_GAP),
+        Side::Bottom => (middle.x - size.w / 2, tray.loc.y - TIP_GAP - size.h),
+    };
+    let most = area.loc + Point::from((area.size.w - size.w, area.size.h - size.h));
+    let x = x.min(most.x).max(area.loc.x);
+    let y = y.min(most.y).max(area.loc.y);
+    Rectangle::new((x, y).into(), size)
+}
+
 /// The first item a strip of `items` showing `shows` at once starts at so
 /// that item `keep` is in view, moving as little as it can from `first`.
 pub fn in_view(items: usize, shows: usize, first: usize, keep: usize) -> usize {
@@ -436,6 +474,34 @@ pub fn spread(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn four_fingers_up_open_the_overview_and_down_leave_it() {
+        assert!(swiped(4, -SWIPE, false));
+        assert!(!swiped(4, -SWIPE + 1.0, false), "not far enough");
+        assert!(!swiped(3, -200.0, false), "three fingers are the app's");
+        assert!(!swiped(4, 200.0, false), "down does not open it");
+        assert!(swiped(4, SWIPE, true));
+        assert!(!swiped(4, -200.0, true), "up does not leave it");
+    }
+
+    #[test]
+    fn a_tip_stands_beside_the_tray_level_with_its_frame_and_on_the_screen() {
+        let area = Rectangle::new((0, 0).into(), (1280, 800).into());
+        let tray = Rectangle::new((14, 200).into(), (160, 400).into());
+        let frame = Rectangle::new((26, 240).into(), (136, 85).into());
+        let size = Size::from((200, 28));
+        let at = tip(Side::Left, tray, frame, size, area);
+        assert_eq!(at.loc, (14 + 160 + TIP_GAP, 240 + 42 - 14).into());
+        let at = tip(Side::Right, tray, frame, size, area);
+        assert_eq!(at.loc.x, 0, "kept on the screen");
+        let tray = Rectangle::new((300, 14).into(), (600, 120).into());
+        let frame = Rectangle::new((1200, 26).into(), (136, 85).into());
+        let at = tip(Side::Top, tray, frame, size, area);
+        assert_eq!(at.loc, (1280 - 200, 14 + 120 + TIP_GAP).into());
+        let at = tip(Side::Bottom, tray, frame, size, area);
+        assert_eq!(at.loc.y, 0);
+    }
 
     fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
         Rectangle::new(Point::from((x, y)), Size::from((w, h)))

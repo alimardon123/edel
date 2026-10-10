@@ -16,7 +16,7 @@ use smithay::backend::renderer::element::Id;
 use smithay::backend::renderer::element::memory::MemoryRenderBuffer;
 use smithay::backend::renderer::element::solid::SolidColorBuffer;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
 use smithay::backend::renderer::{ContextId, Renderer};
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
@@ -79,6 +79,9 @@ pub struct Part {
     pub size: Size<i32, Logical>,
     pub scale: i32,
     pub transform: Transform,
+    /// The surface's commit it shows, so a live picture in the overview
+    /// is drawn anew when the window draws (M5.2j-b4).
+    pub commit: CommitCounter,
 }
 
 /// How a window is drawn this frame: its alpha, its size as a share of its
@@ -263,6 +266,7 @@ impl Edel {
                     size: view.dst,
                     scale: data.buffer_scale(),
                     transform: data.buffer_transform(),
+                    commit: data.current_commit(),
                 });
             },
             |_, _, _| true,
