@@ -456,7 +456,7 @@ commands() {
 		'settings workspaces')
 			as_ci edel-settings --page workspaces.count </dev/null >/tmp/settings-workspaces.log 2>&1 &
 			;;
-		'settings workspaces reset') as_ci 'edel settings reset workspaces.count' ;;
+		'settings workspaces reset') as_ci "sed -i '/^count *= *6$/d' /home/ci/.config/edel/$settings_name" ;;
 		# Settings' Appearance page (M5.2q): opened by the name of its Style
 		# row, its log says where Light, Dark and Automatic lie.
 		'settings appearance')
