@@ -254,6 +254,9 @@ msgstr ""
 msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
 msgstr ""
 
+msgid "Dynamic workspaces decide how many"
+msgstr ""
+
 msgid "Or the panel's toggle"
 msgstr ""
 
@@ -279,6 +282,27 @@ msgid "Or double-click a title bar"
 msgstr ""
 
 msgid "Closes a window even with its button hidden"
+msgstr ""
+
+msgid "Workspaces"
+msgstr ""
+
+msgid "How many there are; Super+1 to Super+9 show them"
+msgstr ""
+
+msgid "An empty one always waits at the end, and other empty ones close"
+msgstr ""
+
+msgid "Each screen shows its own workspace"
+msgstr ""
+
+msgid "How the panel's switcher shows them"
+msgstr ""
+
+msgid "How many numbers the switcher shows at once"
+msgstr ""
+
+msgid "What shows where more workspaces lie"
 msgstr ""
 
 msgid "--page needs the name of a page, such as --page displays"
@@ -584,6 +608,30 @@ msgstr ""
 msgid "Tray"
 msgstr ""
 
+msgid "Number of workspaces"
+msgstr ""
+
+msgid "Dynamic workspaces"
+msgstr ""
+
+msgid "Workspaces on each screen"
+msgstr ""
+
+msgid "Workspace names"
+msgstr ""
+
+msgid "Apps on their workspace"
+msgstr ""
+
+msgid "Switcher look"
+msgstr ""
+
+msgid "Numbers shown"
+msgstr ""
+
+msgid "Switcher ends"
+msgstr ""
+
 msgid "Resolution"
 msgstr ""
 
@@ -615,6 +663,21 @@ msgid "Left"
 msgstr ""
 
 msgid "Right"
+msgstr ""
+
+msgid "Numbers"
+msgstr ""
+
+msgid "Button"
+msgstr ""
+
+msgid "Fade"
+msgstr ""
+
+msgid "Arrows"
+msgstr ""
+
+msgid "Counts"
 msgstr ""
 
 msgid "Stack"
@@ -993,4 +1056,28 @@ msgid "Shortcut {keys}"
 msgstr ""
 
 msgid "Shortcut: {keys}"
+msgstr ""
+
+msgid "App id, such as org.mozilla.firefox"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "Add an app"
+msgstr ""
+
+msgid "Workspace"
+msgstr ""
+
+msgid "A name shows in the panel's switcher instead of the number"
+msgstr ""
+
+msgid "No name"
+msgstr ""
+
+msgid "Workspace {n}"
+msgstr ""
+
+msgid "These apps always open on their workspace"
 msgstr ""

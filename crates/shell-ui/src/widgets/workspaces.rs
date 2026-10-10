@@ -43,7 +43,7 @@ pub const WIDGET: Widget = Widget {
 };
 
 /// How many buttons show at once when the person says none.
-pub const DEFAULT_SHOWN: usize = 3;
+pub const DEFAULT_SHOWN: usize = edel::settings::WORKSPACES_SHOWN_DEFAULT as usize;
 /// A button's height, and the least width of a label's button.
 const BUTTON: f32 = 20.0;
 /// The shown workspace's pill is this much wider than a button.
@@ -77,10 +77,9 @@ const FIELD: &str = "\u{1e}";
 const NAME: &str = "\u{1f}";
 
 /// How the switcher looks (`layout.workspaces_look`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Look {
     /// Round buttons, numbered or named (the default).
-    #[default]
     Numbers,
     /// The word Workspaces over an underline, one segment per workspace.
     Button,
@@ -104,14 +103,20 @@ impl Look {
     }
 }
 
+/// The default is `edel::settings`' (M5.2m), which Settings shows too.
+impl Default for Look {
+    fn default() -> Look {
+        Look::of(edel::settings::WORKSPACES_LOOK_DEFAULT).unwrap_or(Look::Numbers)
+    }
+}
+
 /// What the numbers look shows where more workspaces lie than show
 /// (`layout.workspaces_ends`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ends {
     /// The next button, faded.
     Fade,
     /// The next button, faded, with a small arrow over the fade (the default).
-    #[default]
     Arrows,
     /// The next button, faded, with how many lie beyond it over the fade.
     Counts,
@@ -134,6 +139,13 @@ impl Ends {
             "counts" => Some(Ends::Counts),
             _ => None,
         }
+    }
+}
+
+/// The default is `edel::settings`' (M5.2m), which Settings shows too.
+impl Default for Ends {
+    fn default() -> Ends {
+        Ends::of(edel::settings::WORKSPACES_ENDS_DEFAULT).unwrap_or(Ends::Arrows)
     }
 }
 

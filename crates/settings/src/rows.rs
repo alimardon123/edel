@@ -62,6 +62,41 @@ pub const ROWS: &[Row] = &[
         key: "layout.tray_in_panel",
         title: n_("Tray"),
     },
+    // The workspaces (M5.2n): the count, dynamic and per-screen ones, the
+    // names and the apps that open on their own workspace, and the
+    // switcher's look, shown count and ends.
+    Row {
+        key: "layout.workspaces",
+        title: n_("Number of workspaces"),
+    },
+    Row {
+        key: "layout.dynamic_workspaces",
+        title: n_("Dynamic workspaces"),
+    },
+    Row {
+        key: "layout.workspaces_per_screen",
+        title: n_("Workspaces on each screen"),
+    },
+    Row {
+        key: "layout.workspace_names",
+        title: n_("Workspace names"),
+    },
+    Row {
+        key: "layout.app_workspaces",
+        title: n_("Apps on their workspace"),
+    },
+    Row {
+        key: "layout.workspaces_look",
+        title: n_("Switcher look"),
+    },
+    Row {
+        key: "layout.workspaces_shown",
+        title: n_("Numbers shown"),
+    },
+    Row {
+        key: "layout.workspaces_ends",
+        title: n_("Switcher ends"),
+    },
     // The Displays page (M5.7a); the `*` is a screen's name.
     Row {
         key: "displays.*.resolution",
@@ -134,6 +169,11 @@ pub fn label(value: &str) -> String {
         "floating-only" => n_("Floating only"),
         "left" => n_("Left"),
         "right" => n_("Right"),
+        "numbers" => n_("Numbers"),
+        "button" => n_("Button"),
+        "fade" => n_("Fade"),
+        "arrows" => n_("Arrows"),
+        "counts" => n_("Counts"),
         "stack" => n_("Stack"),
         "split" => n_("Split"),
         "scroll" => n_("Scroll"),
@@ -247,7 +287,7 @@ mod tests {
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
-        assert_eq!(titles.len(), 10);
+        assert_eq!(titles.len(), 18);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

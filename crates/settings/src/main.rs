@@ -33,6 +33,7 @@ mod tray;
 mod updates;
 mod users;
 mod widgets;
+mod workspaces;
 
 use std::cell::RefCell;
 use std::rc::Rc;

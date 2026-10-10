@@ -9,8 +9,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk::glib::prelude::StaticType;
-use gtk::graphene;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
@@ -26,8 +24,6 @@ use crate::{preview, rows, widgets};
 
 /// How long the bus may take to answer the call, in milliseconds.
 const WAIT_MS: i32 = 2000;
-/// The space left above a group the page scrolls to, in logical pixels.
-const SCROLL_MARGIN: f64 = 24.0;
 
 /// The Panels group: its picture, its Edit panels button and the section's
 /// Reset and Copy as command.
@@ -207,35 +203,18 @@ impl Card {
             }
             if !scrolled.replace(true) {
                 if widgets::asked_row() == Some(PANELS) {
-                    scroll_to_top(reset.upcast_ref());
+                    widgets::scroll_to_top(reset.upcast_ref());
                 }
                 return glib::ControlFlow::Continue;
             }
             eprintln!(
                 "edel-settings: panels group places edit {}, reset {}",
-                place(edit.compute_bounds(&window)),
-                place(reset.compute_bounds(&window)),
+                widgets::place(edit.compute_bounds(&window)),
+                widgets::place(reset.compute_bounds(&window)),
             );
             glib::ControlFlow::Break
         });
     }
-}
-
-/// Scrolls the page so `widget` lies near the top of its view (M5.31d): a
-/// group asked for by name is shown whole, its heading first, even on a
-/// window too small for the page.
-fn scroll_to_top(widget: &gtk::Widget) {
-    let Some(scroll) = widget
-        .ancestor(gtk::ScrolledWindow::static_type())
-        .and_downcast::<gtk::ScrolledWindow>()
-    else {
-        return;
-    };
-    let Some(at) = widget.compute_bounds(&scroll) else {
-        return;
-    };
-    let adjustment = scroll.vadjustment();
-    adjustment.set_value(adjustment.value() + f64::from(at.y()) - SCROLL_MARGIN);
 }
 
 /// Shows why a change was not written, or takes an old message away.
@@ -303,21 +282,6 @@ fn ask_editor() -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-/// A widget's place in the window as CI reads it, `X+Y+WxH` in logical
-/// pixels from the window's top left corner, or `none` when it has none.
-fn place(bounds: Option<graphene::Rect>) -> String {
-    match bounds {
-        Some(r) => format!(
-            "{:.0}+{:.0}+{:.0}x{:.0}",
-            r.x(),
-            r.y(),
-            r.width(),
-            r.height()
-        ),
-        None => "none".to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,12 +295,5 @@ mod tests {
         let pins = ["terminal".to_string(), "gone".to_string()];
         assert_eq!(names_of(&pins, &installed), ["Foot", "gone"]);
         assert!(names_of(&[], &installed).is_empty());
-    }
-
-    #[test]
-    fn a_place_reads_as_ci_reads_it() {
-        let at = graphene::Rect::new(12.4, 300.0, 88.0, 30.2);
-        assert_eq!(place(Some(at)), "12+300+88x30");
-        assert_eq!(place(None), "none");
     }
 }

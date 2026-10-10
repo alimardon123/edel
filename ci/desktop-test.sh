@@ -1181,6 +1181,52 @@ case_settings_panels() {
 	echo "PASS: ci's layout.panels drew one bottom panel at once, Settings opened on its Layout page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
 }
 
+case_settings_workspaces() {
+	# Settings' Workspaces group (M5.2n): Settings opens on the Layout page
+	# asked for by layout.workspaces, scrolls the group to the top and logs
+	# where the Number of workspaces row's nine buttons lie in the window.
+	# A click on 6 writes layout.workspaces = 6 to ci's file and the
+	# compositor follows (`6 workspaces`); the line taken out, Classic's
+	# four come back.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings workspaces'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	six=none
+	i=0
+	while [ "$six" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where its Workspaces group lies: $(value settings_workspaces_log)"
+		guest 'settings workspaces log'
+		text=$(value settings_workspaces_log)
+		six=$(echo "$text" | sed -n 's/.*workspaces group places count \([^,]*\),.*/\1/p' | cut -d' ' -f6 | sed 's/[+x]/ /g')
+		[ -n "$six" ] || six=none
+		[ "$six" = none ] && sleep 1
+	done
+	set -- $six
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	six=$(count 'edel-compositor: 6 workspaces$')
+	python3 ci/qmp.py click "$cx" "$cy"
+	wait_more 'edel-compositor: 6 workspaces$' "$six" ||
+		fail "a click on the count's 6 at $cx,$cy did not give six workspaces: $(value settings_workspaces_log)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[layout\];workspaces = 6' ||
+		fail "ci's settings file is not what edel settings set layout.workspaces=6 writes: $(value settings_file)"
+	python3 ci/qmp.py screendump "$dir/settings-workspaces.png"
+	# The line taken out again, so the cases after find Classic's four.
+	four=$(count 'edel-compositor: 4 workspaces$')
+	guest 'settings workspaces reset'
+	wait_more 'edel-compositor: 4 workspaces$' "$four" || fail "taking layout.workspaces out did not bring Classic's four back"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened on its Layout page at the Workspaces group, a click on the count's 6 at $cx,$cy wrote layout.workspaces = 6 to ci's file and the compositor made six workspaces (settings-workspaces.png), and taking the line out brought four back"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
@@ -3635,7 +3681,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

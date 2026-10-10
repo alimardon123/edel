@@ -15,15 +15,15 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use gtk::gio;
 use gtk::prelude::*;
+use gtk::{gio, glib};
 
 use edel::i18n::{n_, tr};
 
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{icon, panels, preview, rows, tray};
+use crate::{icon, panels, preview, rows, tray, workspaces};
 
 const INTRO: &str = n_(
     "One preset sets up the whole desktop: its panels, where windows open \
@@ -31,10 +31,13 @@ const INTRO: &str = n_(
                      file and an edel settings set command.",
 );
 
-/// A row's control: a switch for a flag, a list for one of a few values.
+/// A row's control: a switch for a flag, a list for one of a few values, or
+/// buttons in a row for a few values all in view (the workspaces' numbers).
 enum Control {
     Switch(gtk::Switch),
     Choice(Rc<widgets::Choice>, &'static [&'static str]),
+    /// The values as written, `"1"` to `"9"`.
+    Segments(Rc<widgets::Segments>, Vec<String>),
 }
 
 impl Control {
@@ -45,10 +48,19 @@ impl Control {
         Control::Choice(widgets::Choice::new(labels), values)
     }
 
+    /// The workspaces' numbers, 1 to the most there may be (M5.2n).
+    fn numbers() -> Control {
+        let values: Vec<String> = (1..=edel::presets::MOST_WORKSPACES)
+            .map(|n| n.to_string())
+            .collect();
+        Control::Segments(widgets::Segments::new(&values), values)
+    }
+
     fn widget(&self) -> gtk::Widget {
         match self {
             Control::Switch(switch) => switch.clone().upcast(),
             Control::Choice(list, _) => list.widget(),
+            Control::Segments(segments, _) => segments.widget(),
         }
     }
 
@@ -61,6 +73,10 @@ impl Control {
                 let at = values.iter().position(|v| *v == value(key)).unwrap_or(0);
                 list.set_selected(at);
             }
+            Control::Segments(segments, values) => {
+                let at = values.iter().position(|v| *v == value(key)).unwrap_or(0);
+                segments.set_selected(at);
+            }
         }
     }
 
@@ -71,6 +87,9 @@ impl Control {
             Control::Choice(list, values) => values
                 .get(list.selected())
                 .map_or_else(String::new, |v| v.to_string()),
+            Control::Segments(segments, values) => {
+                values.get(segments.selected()).cloned().unwrap_or_default()
+            }
         }
     }
 
@@ -80,6 +99,7 @@ impl Control {
                 switch.connect_active_notify(move |_| f());
             }
             Control::Choice(list, _) => list.connect_changed(f),
+            Control::Segments(segments, _) => segments.connect_changed(f),
         }
     }
 }
@@ -93,6 +113,8 @@ struct Setting {
     action: Option<&'static str>,
     from_preset: bool,
     control: Control,
+    /// The control's widget, which the page greys out while it does nothing.
+    widget: gtk::Widget,
     row: widgets::Row,
 }
 
@@ -117,6 +139,8 @@ struct Ui {
     tray: Rc<tray::Card>,
     /// The Panels group, which follows them too (M5.31d).
     panels: Rc<panels::Card>,
+    /// The Workspaces group's names and apps (M5.2n).
+    names: Rc<workspaces::Card>,
 }
 
 impl Ui {
@@ -150,12 +174,30 @@ impl Ui {
         self.preset_source
             .reset
             .set_visible(rows::resettable(&preset));
+        self.names.show(&files, &now);
+        let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
+            // The count is no choice while workspaces come and go by
+            // themselves, and the switcher's numbers and ends only show
+            // with the numbers look (M5.2n).
+            let inert = match setting.key {
+                "layout.workspaces" => dynamic,
+                "layout.workspaces_shown" | "layout.workspaces_ends" => {
+                    now.workspaces_look != "numbers"
+                }
+                _ => false,
+            };
+            setting.widget.set_sensitive(!inert);
+            let what = if setting.key == "layout.workspaces" && dynamic {
+                tr("Dynamic workspaces decide how many")
+            } else {
+                setting.what.as_str()
+            };
             let keys = setting.action.and_then(|a| files.shortcut(a));
             widgets::show_keys(&setting.row.keys, keys.as_deref());
             let source = files.source(setting.key);
             let note = rows::note(&source, setting.from_preset);
-            let line = match (setting.what.as_str(), note) {
+            let line = match (what, note) {
                 (what, Some(note)) if !what.is_empty() => format!("{what} · {note}"),
                 ("", Some(note)) => note.to_string(),
                 (what, _) => what.to_string(),
@@ -281,6 +323,63 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     // panel's drag keeps them, read from the bus when the page opens.
     let tray = tray::card(&content, &problem);
 
+    // The workspaces (M5.2n): how many, whether they come and go, the
+    // names, the apps that open on their own, then the switcher's look,
+    // shown count and ends. The names and apps are a card of their own.
+    let heading = widgets::heading(&content, tr("Workspaces"));
+    let spaces = widgets::group(&content);
+    let count = setting(
+        &spaces,
+        "layout.workspaces",
+        (
+            tr("How many there are; Super+1 to Super+9 show them"),
+            None,
+            true,
+        ),
+        Control::numbers(),
+    );
+    log_workspaces(&page, &heading, &count);
+    settings.push(count);
+    settings.push(setting(
+        &spaces,
+        "layout.dynamic_workspaces",
+        (
+            tr("An empty one always waits at the end, and other empty ones close"),
+            None,
+            false,
+        ),
+        Control::Switch(gtk::Switch::new()),
+    ));
+    settings.push(setting(
+        &spaces,
+        "layout.workspaces_per_screen",
+        (tr("Each screen shows its own workspace"), None, false),
+        Control::Switch(gtk::Switch::new()),
+    ));
+    settings.push(setting(
+        &spaces,
+        "layout.workspaces_look",
+        (tr("How the panel's switcher shows them"), None, false),
+        Control::choice("layout.workspaces_look"),
+    ));
+    settings.push(setting(
+        &spaces,
+        "layout.workspaces_shown",
+        (
+            tr("How many numbers the switcher shows at once"),
+            None,
+            false,
+        ),
+        Control::numbers(),
+    ));
+    settings.push(setting(
+        &spaces,
+        "layout.workspaces_ends",
+        (tr("What shows where more workspaces lie"), None, false),
+        Control::choice("layout.workspaces_ends"),
+    ));
+    let names = workspaces::card(&spaces, &problem);
+
     let mut monitors = Vec::new();
     for path in std::iter::once(&files.machine).chain(files.person.as_ref()) {
         let file = gio::File::for_path(path);
@@ -302,6 +401,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         monitors,
         tray: tray.clone(),
         panels: panels.clone(),
+        names: names.clone(),
     });
     ui.update();
     tray.refresh();
@@ -428,15 +528,64 @@ fn setting(
     (what, action, from_preset): (&str, Option<&'static str>, bool),
     control: Control,
 ) -> Setting {
-    let row = widgets::row(group, rows::title(key), &control.widget());
+    let widget = control.widget();
+    let row = widgets::row(group, rows::title(key), &widget);
     Setting {
         key,
         what: what.to_string(),
         action,
         from_preset,
         control,
+        widget,
         row,
     }
+}
+
+/// Logs where the count's buttons and its Reset lie in the window, once the
+/// Workspaces group is laid out, for CI to click (logical pixels). Asked for
+/// by name, the page first scrolls the heading to the top of its view and
+/// gives the keyboard to the chosen number, as the Panels group does.
+fn log_workspaces(page: &gtk::Widget, heading: &gtk::Box, count: &Setting) {
+    let Control::Segments(segments, _) = &count.control else {
+        return;
+    };
+    let (page, segments, reset, key) = (
+        page.clone(),
+        segments.clone(),
+        count.row.reset.clone(),
+        count.key,
+    );
+    let scrolled = std::cell::Cell::new(false);
+    heading.add_tick_callback(move |heading, _| {
+        let Some(window) = heading.root().and_downcast::<gtk::Window>() else {
+            return glib::ControlFlow::Continue;
+        };
+        if !heading.is_mapped() || heading.width() == 0 {
+            return glib::ControlFlow::Continue;
+        }
+        if !scrolled.replace(true) {
+            if widgets::asked_row() != Some(key) {
+                return glib::ControlFlow::Break;
+            }
+            widgets::scroll_to_top(heading.upcast_ref());
+            let chosen = segments.buttons().get(segments.selected()).cloned();
+            if let Some(chosen) = chosen {
+                widgets::take_asked(&page, &chosen);
+            }
+            return glib::ControlFlow::Continue;
+        }
+        let counts: Vec<String> = segments
+            .buttons()
+            .iter()
+            .map(|button| widgets::place(button.compute_bounds(&window)))
+            .collect();
+        eprintln!(
+            "edel-settings: workspaces group places count {}, reset {}",
+            counts.join(" "),
+            widgets::place(reset.compute_bounds(&window)),
+        );
+        glib::ControlFlow::Break
+    });
 }
 
 /// `reset` takes `keys` out of the person's file; `copy` copies the one
