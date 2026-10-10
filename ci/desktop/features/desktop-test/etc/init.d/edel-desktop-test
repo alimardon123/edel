@@ -269,7 +269,9 @@ commands() {
 		'sni off') pkill -f '[e]del-testclient --sni' ;;
 		# The tray's key taken out of ci's settings file again (M5.9g), as
 		# the tray case's drag wrote it.
-		'tray reset') as_ci "edel settings reset layout.tray_in_panel" ;;
+		# The tray's key out of ci's own file (M5.9g): edel settings
+		# reset edits the machine's file, which is root's.
+		'tray reset') as_ci "sed -i '/^tray_in_panel *=/d' /home/ci/.config/edel/$settings_name" ;;
 		# Now playing (M5.9d): a test MPRIS player on ci's session bus,
 		# printing what quick settings asks of it into a file, read back
 		# with `mpris log`; `mpris off` ends it.
