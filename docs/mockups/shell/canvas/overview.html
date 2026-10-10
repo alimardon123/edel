@@ -52,12 +52,12 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 10px;color:#444
 .hand{position:absolute;font-size:18px}
 </style></head><body>
 <h1>Overview (Super+W), M5.2j-b</h1>
-<div class="cap">Approved by Alimardon on 2026-10-10, with three additions: a frosted tray behind the strip, so it reads as one place apart from the windows; drag a workspace along the strip to reorder them, and put the strip on any side (Settings, Workspaces page: "Workspace strip in the overview", <code>workspaces.overview_strip</code>); by default it lies beside the panel holding the workspace switcher, the bottom in Classic. A click on the switcher's lit workspace opens the overview too. The windows take the rest of the screen, so they move away from the strip.</div>
-<h2>Top (beside a top bar, as in Mac-like), and reordering: workspace 4 dragged between 1 and 2</h2>
+<div class="cap">Approved by Alimardon on 2026-10-10, with three additions: a frosted tray behind the strip, so it reads as one place apart from the windows; drag a workspace along the strip to reorder them, and put the strip on any side (Settings, Workspaces page: "Workspace strip in the overview", <code>workspaces.overview_strip</code>); the left by default, for now. A click on the switcher's lit workspace opens the overview too. The windows take the rest of the screen, so they move away from the strip.</div>
+<h2>Top, and reordering: workspace 4 dragged between 1 and 2</h2>
 <div class="row"><div><div class="screen" id="top"></div><div class="cap">The dragged workspace lifts and follows the pointer; an accent line shows where it lands. Its windows, name and pins go with it.</div></div>
-<div class="dark"><div class="screen" id="bottom"></div><div class="cap">Bottom, the default in Classic, dark: the strip sits just above the panel and its switcher, where the click that opened it was; search above the windows.</div></div></div>
-<h2>Left and right</h2>
-<div class="row"><div><div class="screen" id="left"></div><div class="cap">Left: the strip stands down the left edge, the windows move right.</div></div>
+<div class="dark"><div class="screen" id="bottom"></div><div class="cap">Bottom, dark: the strip sits just above the panel and its switcher; search above the windows.</div></div></div>
+<h2>Left (the default) and right</h2>
+<div class="row"><div><div class="screen" id="left"></div><div class="cap">Left, the default: the strip stands down the left edge, the windows move right.</div></div>
 <div><div class="screen" id="right"></div><div class="cap">Right: the mirror of left.</div></div></div>
 <script>
 function ws(on,wins,label,extra=''){let w=wins.map(([x,y,a,b])=>`<div class="w" style="left:${x}px;top:${y}px;width:${a}px;height:${b}px"></div>`).join('');
