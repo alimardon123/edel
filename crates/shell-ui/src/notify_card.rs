@@ -486,12 +486,15 @@ impl Shell {
 
     // ---- The notification centre ----
 
-    /// A click on the clock: the centre opens, or closes if open.
-    pub fn toggle_centre(&mut self) {
+    /// A click on the clock on panel `i`, whose middle lies `at` logical
+    /// pixels along it: the centre opens hung on the clock, or closes if
+    /// open.
+    pub fn toggle_centre(&mut self, i: usize, at: f32) {
         if self.centre.is_some() {
             self.close_centre();
         } else {
             self.open_centre(true);
+            self.hang_centre(i, at);
         }
     }
 
@@ -509,7 +512,8 @@ impl Shell {
 
     /// The open list hung on the point `at` along panel `i`: centred on it
     /// and kept inside the panel, as the tray's grid hangs on its arrow,
-    /// so a button at either end or in the middle opens it beside itself.
+    /// so the clock or the bell at either end or in the middle opens it
+    /// beside itself.
     /// A Compact sheet stays across the screen.
     fn hang_centre(&mut self, i: usize, at: f32) {
         let Some(panel_width) = self.panels.get(i).map(|p| p.width) else {
