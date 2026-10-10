@@ -53,8 +53,16 @@ backdrop_text = "#f4f6fa"
 # lock.jpg): the password field, the notifications' count and the
 # corner's buttons are this tint over the backdrop, edged with the
 # second; the same in both schemes, as the backdrop is dark in both.
-lock_glass = "#ffffff1c"
-lock_glass_edge = "#ffffff2e"
+lock_glass = "#ffffff1f"
+lock_glass_edge = "#ffffff30"
+# What lies behind the lock and login screens while there is no
+# wallpaper (M5.10c): a deep navy from the first at the top to the second
+# at the bottom, lit by two soft glows, one at the upper left and one at
+# the right, as the mockup draws it; the same in both schemes.
+lock_backdrop = "#2f3c5e"
+lock_backdrop_deep = "#1a2039"
+lock_glow = "#56688f"
+lock_glow_second = "#454079"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -78,8 +86,12 @@ edge = "#14182024"
 backdrop = "#8d9aba"
 backdrop_deep = "#3c4868"
 backdrop_text = "#f7f8fb"
-lock_glass = "#ffffff1c"
-lock_glass_edge = "#ffffff2e"
+lock_glass = "#ffffff1f"
+lock_glass_edge = "#ffffff30"
+lock_backdrop = "#2f3c5e"
+lock_backdrop_deep = "#1a2039"
+lock_glow = "#56688f"
+lock_glow_second = "#454079"
 
 [size]
 # In logical pixels.
@@ -121,7 +133,7 @@ shadow_blur = 24
 shadow_offset = 6
 # The lock and login screens' clock, large and light (M5.10c); a Compact
 # screen draws it smaller to fit.
-lock_clock = 136
+lock_clock = 150
 
 [font]
 # The interface font's family, for title bars and everything shell-ui
@@ -130,5 +142,5 @@ lock_clock = 136
 # (M5.30b).
 interface = "Inter Variable"
 # The lock and login screens' clock's weight, 100 (thin) to 900 (black):
-# light, as the mockups draw it (M5.10c).
-lock_clock_weight = 300
+# thin and light, as the mockups draw it (M5.10c).
+lock_clock_weight = 250

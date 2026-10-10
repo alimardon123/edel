@@ -179,6 +179,13 @@ pub struct Tokens {
     /// round them.
     pub lock_glass: Colour,
     pub lock_glass_edge: Colour,
+    /// What lies behind the lock and login screens without a wallpaper:
+    /// a gradient from `lock_backdrop` to `lock_backdrop_deep`, lit by two
+    /// soft glows (M5.10c).
+    pub lock_backdrop: Colour,
+    pub lock_backdrop_deep: Colour,
+    pub lock_glow: Colour,
+    pub lock_glow_second: Colour,
     /// The lock and login screens' clock: its size, logical pixels, and
     /// its weight, 100 (thin) to 900 (black).
     pub lock_clock: u32,
@@ -388,6 +395,10 @@ impl Tokens {
                 "backdrop_text" => &mut self.backdrop_text,
                 "lock_glass" => &mut self.lock_glass,
                 "lock_glass_edge" => &mut self.lock_glass_edge,
+                "lock_backdrop" => &mut self.lock_backdrop,
+                "lock_backdrop_deep" => &mut self.lock_backdrop_deep,
+                "lock_glow" => &mut self.lock_glow,
+                "lock_glow_second" => &mut self.lock_glow_second,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -495,6 +506,10 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "backdrop_text",
                 "lock_glass",
                 "lock_glass_edge",
+                "lock_backdrop",
+                "lock_backdrop_deep",
+                "lock_glow",
+                "lock_glow_second",
             ][..],
         ),
         (
@@ -587,6 +602,10 @@ pub fn check(text: &str) -> Result<Tokens> {
         backdrop_text: BLACK,
         lock_glass: BLACK,
         lock_glass_edge: BLACK,
+        lock_backdrop: BLACK,
+        lock_backdrop_deep: BLACK,
+        lock_glow: BLACK,
+        lock_glow_second: BLACK,
         lock_clock: 0,
         lock_clock_weight: 0,
         shadow_blur: 0,

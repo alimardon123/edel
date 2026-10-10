@@ -123,7 +123,7 @@ const FIELD_WIDE: f32 = 300.0;
 const FIELD_HIGH: f32 = 44.0;
 const GO_INSET: f32 = 4.0;
 const AVATAR: f32 = 44.0;
-const DATE: f32 = 19.0;
+const DATE: f32 = 20.0;
 const NAME: f32 = 18.0;
 const NOTE: f32 = 13.0;
 /// The notifications' count: its height, its apps' tiles, how much each
@@ -132,6 +132,8 @@ const COUNT_HIGH: f32 = 36.0;
 const COUNT_TILE: f32 = 24.0;
 const COUNT_OVERLAP: f32 = 8.0;
 const COUNT_TEXT: f32 = 13.0;
+/// An app's tile in the count: a rounded square, as apps' icons are.
+const TILE_RADIUS: f32 = 7.0;
 pub const MOST_APPS: usize = 3;
 
 /// The one function that places everything on a screen `w` by `h`, the
@@ -216,45 +218,60 @@ pub fn on_go(at: &Layout, x: f32, y: f32) -> bool {
 }
 
 /// What lies behind everything: the backdrop's gradient, settling on
-/// `backdrop_deep` at 85 percent of the height (which the compositor's
+/// `lock_backdrop_deep` at 85 percent of the height (which the compositor's
 /// cover also shows before this is drawn), lit by two soft glows above,
-/// one of the backdrop and one of the accent, as the mockups draw it. The
-/// one function a wallpaper or a cover would replace.
+/// `lock_glow` at the upper left and `lock_glow_second` at the right, as
+/// the mockups draw it. The one function a wallpaper or a cover would
+/// replace.
 pub fn backdrop(pixmap: &mut Pixmap, tokens: &Tokens) {
     let (pw, ph) = (pixmap.width() as f32, pixmap.height() as f32);
-    let top = mix(tokens.backdrop, tokens.backdrop_deep, 0.45);
-    let settled = (ph * 0.85).round();
-    fill_vertical(
-        pixmap,
-        (0.0, 0.0, pw, settled),
-        0.0,
-        top,
-        tokens.backdrop_deep,
-    );
-    fill(
-        pixmap,
-        0.0,
-        settled,
-        pw,
-        ph - settled,
-        0.0,
-        tokens.backdrop_deep,
-    );
-    let glows = [
-        (0.2, 0.15, 0.45, tokens.backdrop, 0.55),
-        (
-            0.86,
-            0.3,
-            0.32,
-            mix(tokens.backdrop, tokens.accent, 0.35),
-            0.35,
+    let (sky, ground) = (tokens.lock_backdrop, tokens.lock_backdrop_deep);
+    // A blurred scene: the sky holds its colour down to a third of the
+    // height, a hazy horizon falls off below it, and the ground settles
+    // on the deep colour by `SETTLED` of the height.
+    let c = |colour: Colour| tiny_skia::Color::from_rgba(colour.r, colour.g, colour.b, 1.0);
+    let stops = [
+        (0.0, sky),
+        (0.3, mix(sky, ground, 0.08)),
+        (0.42, mix(sky, ground, 0.45)),
+        (0.55, mix(sky, ground, 0.85)),
+        (SETTLED, ground),
+    ];
+    let stops: Vec<GradientStop> = stops
+        .iter()
+        .filter_map(|&(at, colour)| c(colour).map(|col| GradientStop::new(at, col)))
+        .collect();
+    if let (Some(shader), Some(rect)) = (
+        tiny_skia::LinearGradient::new(
+            Point::from_xy(0.0, 0.0),
+            Point::from_xy(0.0, ph),
+            stops,
+            SpreadMode::Pad,
+            Transform::identity(),
         ),
+        tiny_skia::Rect::from_xywh(0.0, 0.0, pw, ph),
+    ) {
+        let paint = Paint {
+            shader,
+            ..Paint::default()
+        };
+        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+    }
+    let settled = (ph * SETTLED).round();
+    // Two soft lights in the sky, kept above the ground.
+    let glows = [
+        (0.2, 0.14, 0.4, tokens.lock_glow, 0.9),
+        (0.84, 0.27, 0.32, tokens.lock_glow_second, 0.6),
     ];
     let reach = pw.max(ph);
     for (x, y, r, colour, a) in glows {
         glow(pixmap, (x * pw, y * ph), r * reach, colour, a, settled);
     }
 }
+
+/// Where the backdrop has settled on the deep colour, a share of the
+/// height, which the compositor's cover also shows before this is drawn.
+const SETTLED: f32 = 0.85;
 
 /// A soft round light of `colour` at `centre`, `radius` across, fading to
 /// nothing, kept above `floor` so the bottom stays the deep colour.
@@ -319,7 +336,8 @@ pub fn paint(
     let (w, h) = (pw / s, ph / s);
     backdrop(pixmap, tokens);
     let ink = tokens.backdrop_text;
-    let quiet = mix(ink, tokens.backdrop_deep, 0.3);
+    let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
+    let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
     let at = layout(w, h, tokens, view.notices > 0 && !view.asking_name);
     centred(
         pixmap,
@@ -328,9 +346,9 @@ pub fn paint(
         w,
         &view.date,
         DATE,
-        Face::MEDIUM,
+        Face::REGULAR,
         (w / 2.0, at.date),
-        quiet,
+        date_ink,
     );
     let weight = tokens.lock_clock_weight.clamp(100, 900) as u16;
     centred(
@@ -371,7 +389,19 @@ pub fn paint(
     let dx = view.shake as f32;
     let f = Rect::new(at.field.x + dx, at.field.y, at.field.w, at.field.h);
     let go = Rect::new(at.go.x + dx, at.go.y, at.go.w, at.go.h);
+    lift(pixmap, f, f.h / 2.0, s, tokens);
     let (fx, fy, fw, fh) = f.device(s);
+    // The backdrop's own colour under the glass first, so the shadow does
+    // not darken it from behind.
+    fill(
+        pixmap,
+        fx,
+        fy,
+        fw,
+        fh,
+        fh / 2.0,
+        mix(tokens.lock_backdrop, tokens.lock_backdrop_deep, 0.55),
+    );
     glass(pixmap, (fx, fy, fw, fh), fh / 2.0, s, tokens);
     if view.field == Field::Wrong {
         outline(
@@ -450,11 +480,24 @@ pub fn paint(
     }
 }
 
-/// The person: their initial on a disc of the accent going deeper, ringed
-/// with the glass's edge.
+/// The person: their initial in white on a disc of the accent, lighter
+/// at its top as if lit from above, ringed with the glass's edge and
+/// lifted by a soft shadow.
 fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s: f32, at: Layout) {
     let (cx, cy, r) = at.avatar;
     let ring = 3.0;
+    lift(
+        pixmap,
+        Rect::new(
+            cx - r - ring,
+            cy - r - ring,
+            2.0 * (r + ring),
+            2.0 * (r + ring),
+        ),
+        r + ring,
+        s,
+        tokens,
+    );
     fill(
         pixmap,
         (cx - r - ring) * s,
@@ -462,15 +505,14 @@ fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s:
         2.0 * (r + ring) * s,
         2.0 * (r + ring) * s,
         (r + ring) * s,
-        tokens.lock_glass_edge,
+        mix(tokens.lock_backdrop, tokens.backdrop_text, 0.16),
     );
-    let deep = mix(tokens.accent, tokens.backdrop_deep, 0.25);
     fill_vertical(
         pixmap,
         ((cx - r) * s, (cy - r) * s, 2.0 * r * s, 2.0 * r * s),
         r * s,
-        mix(tokens.accent, tokens.backdrop_text, 0.15),
-        deep,
+        mix(tokens.accent, tokens.backdrop_text, 0.22),
+        mix(tokens.accent, tokens.lock_backdrop_deep, 0.12),
     );
     let initial: String = view
         .name
@@ -478,7 +520,7 @@ fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s:
         .take(1)
         .flat_map(char::to_uppercase)
         .collect();
-    let size = 34.0;
+    let size = 36.0;
     let mut line = text.line_in(&initial, size * s, Face::SEMIBOLD);
     let x = cx * s - line.width / 2.0;
     text.draw(
@@ -486,7 +528,30 @@ fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s:
         &mut line,
         x,
         (cy - size * 0.62) * s,
-        tokens.accent_text,
+        tokens.backdrop_text,
+    );
+}
+
+/// A soft shadow under a part `r` (logical pixels) with corners `radius`,
+/// so it seems to float over the backdrop: the tokens' shadow, half as
+/// deep, as the lock screen's parts sit on a dark backdrop already.
+fn lift(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
+    let room = paint::shadow_room(tokens, false);
+    let (w, h) = ((r.w * s).round() as u32, (r.h * s).round() as u32);
+    let Some(shadow) = paint::shadow(w, h, room, radius * s, tokens, s) else {
+        return;
+    };
+    let paint = tiny_skia::PixmapPaint {
+        opacity: 0.6,
+        ..tiny_skia::PixmapPaint::default()
+    };
+    pixmap.draw_pixmap(
+        (r.x * s).round() as i32 - room as i32,
+        (r.y * s).round() as i32 - room as i32,
+        shadow.as_ref(),
+        &paint,
+        Transform::identity(),
+        None,
     );
 }
 
@@ -512,7 +577,7 @@ fn go_button(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, s: f32, go: Rect
         side * s,
         x + (w - side * s) / 2.0,
         y + (h - side * s) / 2.0,
-        tokens.accent_text,
+        tokens.backdrop_text,
     );
 }
 
@@ -565,8 +630,8 @@ fn count(
             (ty - 1.5) * s,
             (COUNT_TILE + 3.0) * s,
             (COUNT_TILE + 3.0) * s,
-            (COUNT_TILE + 3.0) / 2.0 * s,
-            mix(tokens.backdrop_deep, tokens.backdrop, 0.4),
+            (TILE_RADIUS + 1.5) * s,
+            mix(tokens.lock_backdrop_deep, tokens.lock_backdrop, 0.4),
         );
         let found = icons.as_deref_mut().and_then(|icons| {
             [icon.clone(), app.to_lowercase().replace(' ', "-")]
@@ -575,7 +640,12 @@ fn count(
                 .find_map(|n| icons.get(&n, side as u32).cloned())
         });
         match found {
-            Some(picture) => paint::circle_picture(pixmap, &picture, (tx * s, ty * s, side, side)),
+            Some(picture) => paint::rounded_picture(
+                pixmap,
+                &picture,
+                (tx * s, ty * s, side, side),
+                TILE_RADIUS * s,
+            ),
             None => {
                 fill(
                     pixmap,
@@ -594,7 +664,7 @@ fn count(
                     &mut l,
                     lx,
                     ty * s + (side - 11.0 * s * 1.25) / 2.0,
-                    tokens.accent_text,
+                    tokens.backdrop_text,
                 );
             }
         }
@@ -622,7 +692,7 @@ fn paint_name_field(
     at: Layout,
 ) {
     let ink = tokens.backdrop_text;
-    let quiet = mix(ink, tokens.backdrop_deep, 0.3);
+    let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
     // Where the person's name stands once known, the question.
     centred(
         pixmap,
@@ -958,8 +1028,8 @@ mod tests {
         let px = |x: f32, y: f32| pixmap.pixel(x as u32, y as u32).unwrap();
         for x in [4.0, 640.0, 1276.0] {
             let deep = px(x, 796.0);
-            assert!((deep.red() as f32 / 255.0 - tokens.backdrop_deep.r).abs() < 0.02);
-            assert!((deep.blue() as f32 / 255.0 - tokens.backdrop_deep.b).abs() < 0.02);
+            assert!((deep.red() as f32 / 255.0 - tokens.lock_backdrop_deep.r).abs() < 0.02);
+            assert!((deep.blue() as f32 / 255.0 - tokens.lock_backdrop_deep.b).abs() < 0.02);
         }
         let go = px(at.go.x + 3.0, at.go.y + at.go.h / 2.0);
         assert!(

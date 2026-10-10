@@ -489,9 +489,20 @@ pub fn fill_vertical(
 }
 
 /// Draws `picture` (a square) into the rectangle `(x, y, w, h)` of device
-/// pixels, cut to a circle that fills it (M5.9d: a cover). The picture is
-/// scaled on its own layer, which is masked to the circle and then drawn.
+/// pixels, cut to a circle that fills it (M5.9d: a cover).
 pub fn circle_picture(pixmap: &mut Pixmap, picture: &Pixmap, (x, y, w, h): (f32, f32, f32, f32)) {
+    rounded_picture(pixmap, picture, (x, y, w, h), w.min(h) / 2.0);
+}
+
+/// Draws `picture` into the rectangle `(x, y, w, h)` of device pixels, its
+/// corners cut to radius `r` (M5.10c: an app's tile). The picture is scaled
+/// on its own layer, which is masked to the shape and then drawn.
+pub fn rounded_picture(
+    pixmap: &mut Pixmap,
+    picture: &Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+) {
     let (side_w, side_h) = (w.round() as u32, h.round() as u32);
     let Some(mut layer) = Pixmap::new(side_w, side_h) else {
         return;
@@ -505,7 +516,7 @@ pub fn circle_picture(pixmap: &mut Pixmap, picture: &Pixmap, (x, y, w, h): (f32,
         ..PixmapPaint::default()
     };
     layer.draw_pixmap(0, 0, picture.as_ref(), &smooth, scale, None);
-    let Some(circle) = rounded(0.0, 0.0, w, h, w.min(h) / 2.0) else {
+    let Some(circle) = rounded(0.0, 0.0, w, h, r) else {
         return;
     };
     let Some(mut mask) = Mask::new(side_w, side_h) else {

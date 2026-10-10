@@ -518,11 +518,11 @@ case_respawn() {
 	"edel-shell-ui: greeter shown, "*) ;;
 	*) fail "shell-ui's greeter did not show: \"$(value greeter_shown)\"" ;;
 	esac
-	shot greeter 640 790 "$(token backdrop_deep)" >/dev/null ||
-		fail "the greeter at 640,790 is not the lock's #$(token backdrop_deep)"
+	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
+		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
 	python3 ci/qmp.py type 'ci\n'
 	sleep 1
-	shot greeter-name 640 790 "$(token backdrop_deep)" >/dev/null || true
+	shot greeter-name 640 790 "$(token lock_backdrop_deep)" >/dev/null || true
 	python3 ci/qmp.py type 'not-it\n'
 	# greetd answers a wrong password after PAM's own wait; the greeter
 	# keeps the user name, and Return takes it to the password again.
@@ -3235,7 +3235,7 @@ case_portal() {
 case_lock() {
 	# The lock screen (M5.10): Super+L asks shell-ui to lock, the
 	# compositor shows nothing of the session but each screen's lock
-	# surface, whose bottom is the tokens' backdrop_deep where the panel
+	# surface, whose bottom is the tokens' lock_backdrop_deep where the panel
 	# was, and a click where a window was reaches no window. A wrong
 	# password is said, and ci's own, typed without Return and sent by a
 	# click on the go button, unlocks. Kept as lock.png and lock-go.png.
@@ -3247,7 +3247,7 @@ case_lock() {
 	wait_for 'edel-compositor: screen locked$' || fail "Super+L did not lock the screen"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up its lock screen"
-	deep=$(token backdrop_deep)
+	deep=$(token lock_backdrop_deep)
 	shot lock 640 790 "$deep" >/dev/null ||
 		fail "the locked screen at 640,790 is not the lock's #$deep but $(python3 ci/qmp.py pixel "$dir/lock.png" 640 790)"
 	# A click where a window lies reaches no window: nothing moves and
