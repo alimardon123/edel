@@ -161,10 +161,49 @@ impl Build<'_> {
             }
         }
         self.runner.run(apk.arg("add").args(&self.def.packages))?;
+        // Before the initramfs is made, so it holds only what stays.
+        self.keep_files(root)?;
         if let Some(vm) = &self.def.vm {
             self.make_initramfs(root, &vm.kernel)?;
         }
         self.record_packages(root)
+    }
+
+    /// Takes out what the features' `[[keep]]` lists do not keep (M5.30):
+    /// under each folder, every file and link no listed pattern keeps,
+    /// and every version of a versioned file but the newest its driver
+    /// loads. Prints what stayed and what went, in MiB.
+    fn keep_files(&self, root: &Path) -> Result<()> {
+        for keep in &self.def.keep {
+            let under = keep.under.trim_matches('/');
+            self.runner.step(&format!(
+                "keep under /{under} only the files the features list"
+            ));
+            if self.runner.dry_run {
+                continue;
+            }
+            let dir = root.join(under);
+            let entries = keep_entries(&dir)
+                .with_context(|| format!("listing /{under} to keep its listed files"))?;
+            let declared = match &keep.newest_by {
+                Some(module) => declared_firmware(root, module)?,
+                None => Vec::new(),
+            };
+            let plan = edel::keep::plan(&entries, keep, &declared)?;
+            for path in &plan.removed {
+                let at = dir.join(path);
+                fs::remove_file(&at).with_context(|| format!("removing {}", at.display()))?;
+            }
+            remove_empty_dirs(&dir)?;
+            println!(
+                "kept {} files under /{under} ({:.1} MiB), took out {} ({:.1} MiB)",
+                plan.kept.len(),
+                mib(plan.kept_bytes),
+                plan.removed.len(),
+                mib(plan.removed_bytes)
+            );
+        }
+        Ok(())
     }
 
     /// Rebuilds the initramfs with the mkinitfs features the image's
@@ -883,6 +922,106 @@ pub fn partuuid_init(alpine: &str) -> Result<String> {
     Ok(format!("{}{PARTUUID_ROOT}{}", &alpine[..at], &alpine[at..]))
 }
 
+/// Every file and link below `dir`, with its path from `dir`, where a
+/// link points and a file's size.
+fn keep_entries(dir: &Path) -> Result<Vec<edel::keep::Entry>> {
+    let mut entries = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in fs::read_dir(&at)? {
+            let entry = entry?;
+            let path = entry.path();
+            let meta = fs::symlink_metadata(&path)?;
+            let rel = path
+                .strip_prefix(dir)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
+            if meta.is_dir() {
+                stack.push(path);
+            } else if meta.file_type().is_symlink() {
+                let to = fs::read_link(&path)?.to_string_lossy().into_owned();
+                entries.push(edel::keep::Entry {
+                    path: rel,
+                    link: Some(to),
+                    size: 0,
+                });
+            } else {
+                entries.push(edel::keep::Entry {
+                    path: rel,
+                    link: None,
+                    size: meta.len(),
+                });
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    Ok(entries)
+}
+
+/// The firmware names kernel module `module` declares (`firmware=` in its
+/// `.modinfo`), read from the root's kernel; the module may be gzipped, as
+/// Alpine ships them.
+fn declared_firmware(root: &Path, module: &str) -> Result<Vec<String>> {
+    let wanted = [format!("{module}.ko"), format!("{module}.ko.gz")];
+    let mut stack = vec![root.join("lib/modules")];
+    while let Some(at) = stack.pop() {
+        let Ok(dir) = fs::read_dir(&at) else { continue };
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !wanted.contains(&name) {
+                continue;
+            }
+            let raw = fs::read(&path)?;
+            let mut bytes = Vec::new();
+            if name.ends_with(".gz") {
+                flate2::read::GzDecoder::new(raw.as_slice())
+                    .read_to_end(&mut bytes)
+                    .with_context(|| format!("unpacking {}", path.display()))?;
+            } else {
+                bytes = raw;
+            }
+            return Ok(firmware_names(&bytes));
+        }
+    }
+    bail!(
+        "no kernel module {module} in the root's /lib/modules: keep.newest_by names the driver that loads the versioned files, so the kernel's own limit can be read"
+    )
+}
+
+/// The `firmware=NAME` strings of a module's `.modinfo` section.
+fn firmware_names(bytes: &[u8]) -> Vec<String> {
+    bytes
+        .split(|&b| b == 0)
+        .filter_map(|s| s.strip_prefix(b"firmware="))
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect()
+}
+
+/// Removes the folders below `dir` that hold nothing any more.
+fn remove_empty_dirs(dir: &Path) -> Result<()> {
+    for entry in fs::read_dir(dir)?.flatten() {
+        let path = entry.path();
+        if fs::symlink_metadata(&path)?.is_dir() {
+            remove_empty_dirs(&path)?;
+            if fs::read_dir(&path)?.next().is_none() {
+                fs::remove_dir(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Bytes as MiB.
+fn mib(bytes: u64) -> f64 {
+    bytes as f64 / 1_048_576.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -998,6 +1137,15 @@ mod tests {
         assert_eq!(
             crate::release::compare_versions("2026.09.99", "2026.10.1"),
             Ordering::Less
+        );
+    }
+
+    #[test]
+    fn a_modules_firmware_names_are_read_from_its_modinfo() {
+        let bytes = b"license=GPL\0firmware=iwlwifi-so-a0-gf-a0-89.ucode\0firmware=iwlwifi-cc-a0-77.ucode\0name=iwlwifi\0";
+        assert_eq!(
+            firmware_names(bytes),
+            ["iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-cc-a0-77.ucode"]
         );
     }
 }
