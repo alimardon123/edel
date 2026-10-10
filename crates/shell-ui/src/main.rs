@@ -368,6 +368,7 @@ fn run() -> Result<()> {
     // The workspace switcher's look, count and ends (M5.2m).
     let switcher = widgets::workspaces::Settings::read(machine.as_deref(), person.as_deref());
     set_switcher(&mut live, switcher);
+    live.badge = notification_badge(machine.as_deref(), person.as_deref());
     let mut pin_slots = Vec::new();
     if panels
         .iter()
@@ -1248,6 +1249,7 @@ impl Shell {
             Action::Styles => self.toggle_styles(i, left + width / 2.0),
             Action::Quick => self.toggle_quick(),
             Action::Centre => self.toggle_centre(),
+            Action::Notifications => self.toggle_notifications(),
             Action::TrayOpen => self.toggle_tray_grid(i, left + widgets::tray::arrow_middle()),
             Action::App(id) => self.open_app(&id),
             Action::Tray(id, menu) => self.tray_call(&id, menu, x),
@@ -2402,6 +2404,16 @@ fn set_switcher(live: &mut Live, now: widgets::workspaces::Settings) -> bool {
         now.ends.name()
     );
     true
+}
+
+/// `notifications.badge` as the machine's and the person's files say it
+/// (M5.9k): one of the key's values, `dot` without one or for a value
+/// this release lacks.
+pub fn notification_badge(machine: Option<&str>, person: Option<&str>) -> String {
+    let key = edel::settings::NOTIFICATION_BADGE;
+    edel::settings::chosen(key, machine, person)
+        .filter(|v| edel::settings::choices(key).contains(&v.as_str()))
+        .unwrap_or_else(|| "dot".into())
 }
 
 /// `panels.tray` as the machine's and the person's files say it

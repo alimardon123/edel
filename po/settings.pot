@@ -494,6 +494,9 @@ msgstr ""
 msgid "Automatic puts them by the status area; a banner keeps clear of panels"
 msgstr ""
 
+msgid "What the notifications button shows while some are unread"
+msgstr ""
+
 msgid "The panels as they apply now"
 msgstr ""
 
@@ -671,6 +674,9 @@ msgstr ""
 msgid "Where notifications appear"
 msgstr ""
 
+msgid "Unread badge"
+msgstr ""
+
 msgid "Channel"
 msgstr ""
 
@@ -723,6 +729,12 @@ msgid "Split"
 msgstr ""
 
 msgid "Scroll"
+msgstr ""
+
+msgid "Dot"
+msgstr ""
+
+msgid "Count"
 msgstr ""
 
 msgid "Your choice"

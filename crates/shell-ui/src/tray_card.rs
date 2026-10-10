@@ -517,6 +517,13 @@ impl Shell {
         if crate::set_switcher(&mut self.live, switcher) {
             self.draw_all();
         }
+        // What the notifications button shows while some are unread (M5.9k).
+        let badge = crate::notification_badge(machine.as_deref(), person.as_deref());
+        if badge != self.live.badge {
+            eprintln!("edel-shell-ui: notifications badge {badge}");
+            self.live.badge = badge;
+            self.draw_all();
+        }
     }
 
     /// The tray's split changed: the number behind the arrow is logged when
