@@ -387,7 +387,8 @@ commands() {
 			one=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
 			sleep 1
 			two=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
-			say "compositor_state pid $pid: $one then $two, waiting in $(cat "/proc/$pid/wchan" 2>/dev/null)"
+			say "compositor_state pid $pid: $one then $two, waiting in $(cat "/proc/$pid/wchan" 2>/dev/null); threads $(for t in /proc/$pid/task/*; do echo "$(cat $t/comm 2>/dev/null) $(cut -d' ' -f3,14,15 $t/stat 2>/dev/null) $(cat $t/wchan 2>/dev/null)"; done | tr '\n' ';')"
+			say "compositor_stack $(for t in /proc/$pid/task/*; do echo "$(cat $t/comm 2>/dev/null): $(head -n 6 $t/stack 2>/dev/null | awk '{ print $2 }' | tr '\n' ' ')"; done | tr '\n' ';')"
 			;;
 		# Dynamic workspaces (M5.2i): every test window and foot closed, so
 		# the case starts with none; the layout keys it sets and resets; and
@@ -635,6 +636,12 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# What the greeter, its compositor and greetd said (M5.10b), for
+		# a login that does not finish.
+		'greeter log')
+			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
+			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
+			;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd
 			before=$(cut -d' ' -f1 /proc/uptime)
@@ -740,12 +747,21 @@ respawned() {
 	say "greeter_tier $(grep 'edel-compositor: tier=' /tmp/greeter.log | head -n 1)"
 	say "ready_owner $(stat -c %U "$ready_file")"
 	say "respawn_seconds $(awk -v a="$1" -v b="$now" 'BEGIN { printf "%.2f", b - a }')"
+	# The greeter itself, shell-ui's --greeter (M5.10b), once it has
+	# drawn on every screen.
+	i=0
+	while ! grep -q 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null && [ "$i" -lt 150 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	say "greeter_shown $(grep -a 'edel-shell-ui: greeter shown' /tmp/greeter.log | head -n 1)"
 	i=0
 	while [ "$(stat -c %U "$ready_file")" != ci ] && [ "$i" -lt 600 ]; do
 		sleep 0.1
 		i=$((i + 1))
 	done
 	say "login_ready $(stat -c %U "$ready_file") $(cat "$ready_file")"
+	say "greeter_said $(grep -a 'edel-shell-ui: greeter: ' /tmp/greeter.log | tr '\n' '|')"
 	# The session's log (M5.28a): the killed session's is moved aside
 	# without its last line, the new session says so, edel status points
 	# to it, and edel report holds the last lines of both.

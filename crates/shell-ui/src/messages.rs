@@ -38,6 +38,12 @@ pub fn password_not_checked(why: impl Display) -> String {
     format!("could not check the password: {why}; the screen stays locked, try again")
 }
 
+/// The greeter could not log a person in for a reason other than a wrong
+/// user name or password (M5.10b).
+pub fn login_failed(why: impl Display) -> String {
+    format!("could not log in: {why}; the greeter asks again, and Ctrl+Alt+F2 gives a text login")
+}
+
 /// shell-ui stops with an error.
 pub fn stopped(why: impl Display) -> String {
     format!("could not run: {why}; the compositor starts it again unless it keeps failing")

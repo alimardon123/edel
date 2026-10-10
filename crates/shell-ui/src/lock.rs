@@ -33,6 +33,11 @@ pub enum Field {
     Wrong,
     /// The system has no password helper: nothing can unlock.
     NoChecker,
+    /// The greeter's login was refused: the user name or the password
+    /// was wrong (M5.10b).
+    Refused,
+    /// The greeter could not log in for another reason.
+    Failed,
 }
 
 /// What a screen shows.
@@ -45,6 +50,9 @@ pub struct View {
     /// How many letters are typed.
     pub dots: usize,
     pub field: Field,
+    /// The greeter's first step (M5.10b): the field takes the user name,
+    /// shown as typed, and `name` is what is typed so far.
+    pub asking_name: bool,
 }
 
 /// Where a screen's parts lie, logical pixels from its top left corner.
@@ -144,6 +152,9 @@ pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text,
         at.clock,
         ink,
     );
+    if view.asking_name {
+        return paint_name_field(pixmap, view, tokens, text, s, w, at);
+    }
     // The person: their initial on an accent disc, their name under it.
     let (cx, cy, r) = at.avatar;
     fill(
@@ -239,6 +250,8 @@ pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text,
         Field::Checking => Some((tr("Checking"), quiet)),
         Field::Wrong => Some((tr("Wrong password, try again"), warn)),
         Field::NoChecker => Some((tr("This system cannot check passwords"), warn)),
+        Field::Refused => Some((tr("Wrong user name or password"), warn)),
+        Field::Failed => Some((tr("Could not log in, try again"), warn)),
     };
     if let Some((words, colour)) = note {
         centred(
@@ -251,6 +264,94 @@ pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text,
             Face::MEDIUM,
             (w / 2.0, at.note),
             colour,
+        );
+    }
+}
+
+/// The greeter's first step: the field shows the user name as typed, with
+/// a caret in the accent, or "User name" when empty, and the note under
+/// it says why the last try failed.
+fn paint_name_field(
+    pixmap: &mut Pixmap,
+    view: &View,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+    w: f32,
+    at: Layout,
+) {
+    let ink = tokens.backdrop_text;
+    let quiet = mix(ink, tokens.backdrop_deep, 0.35);
+    // Where the person's name stands once known, the question.
+    centred(
+        pixmap,
+        text,
+        s,
+        w,
+        tr("Who is logging in?"),
+        NAME,
+        Face::SEMIBOLD,
+        (w / 2.0, at.name),
+        ink,
+    );
+    let (fx, fy, fw, fh) = at.field;
+    fill(
+        pixmap,
+        fx * s,
+        fy * s,
+        fw * s,
+        fh * s,
+        fh / 2.0 * s,
+        mix(tokens.backdrop_deep, ink, 0.14),
+    );
+    outline(
+        pixmap,
+        (fx * s, fy * s, fw * s, fh * s),
+        fh / 2.0 * s,
+        s,
+        tokens.accent,
+    );
+    let top = (fy + (fh - 15.0 * 1.25) / 2.0) * s;
+    let x = (fx + 20.0) * s;
+    if view.name.is_empty() {
+        let mut line = text.fit(tr("User name"), 15.0 * s, (fw - 40.0) * s);
+        text.draw(pixmap, &mut line, x, top, quiet);
+    }
+    let mut line = text.fit(&view.name, 15.0 * s, (fw - 44.0) * s);
+    let end = x + line.width;
+    text.draw(pixmap, &mut line, x, top, ink);
+    // The caret, where the next letter goes.
+    let caret = if view.name.is_empty() {
+        x - 2.0 * s
+    } else {
+        end + 2.0 * s
+    };
+    fill(
+        pixmap,
+        caret,
+        (fy + 12.0) * s,
+        2.0 * s,
+        (fh - 24.0) * s,
+        0.0,
+        tokens.accent,
+    );
+    let warn = mix(tokens.title_close_hover, ink, 0.3);
+    let note = match view.field {
+        Field::Refused => Some(tr("Wrong user name or password")),
+        Field::Failed => Some(tr("Could not log in, try again")),
+        _ => None,
+    };
+    if let Some(words) = note {
+        centred(
+            pixmap,
+            text,
+            s,
+            w,
+            words,
+            NOTE,
+            Face::MEDIUM,
+            (w / 2.0, at.note),
+            warn,
         );
     }
 }
@@ -304,6 +405,11 @@ impl Password {
     /// How many letters it holds.
     pub fn letters(&self) -> usize {
         std::str::from_utf8(&self.0).map_or(0, |t| t.chars().count())
+    }
+
+    /// The password as text, for greetd's message (M5.10b).
+    pub fn text(&self) -> Option<&str> {
+        std::str::from_utf8(&self.0).ok()
     }
 
     /// Takes the bytes out, leaving it empty.
@@ -467,6 +573,7 @@ mod tests {
             name: "ci".into(),
             dots: 5,
             field: Field::Wrong,
+            asking_name: false,
         };
         let mut pixmap = Pixmap::new(1280, 800).unwrap();
         paint(&mut pixmap, &view, &tokens, &mut text, 1.0);

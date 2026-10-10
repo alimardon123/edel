@@ -130,6 +130,7 @@ impl Shell {
             name: card.user.clone(),
             dots,
             field,
+            asking_name: false,
         })
     }
 

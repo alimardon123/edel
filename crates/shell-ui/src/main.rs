@@ -22,6 +22,8 @@ mod calendar;
 mod centre;
 mod editor;
 mod editor_card;
+mod greetd;
+mod greeter;
 mod launcher;
 mod link;
 mod lock;
@@ -307,6 +309,17 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    // The greeter (M5.10b): greetd's login screen, a small client of its
+    // own on the greeter's compositor, with none of the panels.
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    if let [greeter, cmd_flag, cmd] = &words[..] {
+        if greeter == "--greeter" && cmd_flag == "--cmd" {
+            return greeter::run(cmd.clone());
+        }
+    }
+    if words.first().is_some_and(|w| w == "--greeter") {
+        anyhow::bail!("--greeter takes --cmd COMMAND, the session to start");
+    }
     // Huge pages stay off for this small process, before any thread starts:
     // with them on, a thread stack that happens to cover a 2 MiB boundary is
     // backed by one 2 MiB page at its first touch, which CI read as 2 MiB
