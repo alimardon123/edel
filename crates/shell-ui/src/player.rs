@@ -255,7 +255,7 @@ pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts
     let centred = |cx: f32, side: f32| {
         Rect::new(
             card.x + cx - side / 2.0,
-            card.y + WIDE.1 / 2.0 - side / 2.0,
+            card.y + card.h / 2.0 - side / 2.0,
             side,
             side,
         )
@@ -267,7 +267,7 @@ pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts
     let next = centred(WIDE_NEXT_X, small);
     let cover = Rect::new(
         card.x + WIDE_EDGE,
-        card.y + (WIDE.1 - WIDE_COVER) / 2.0,
+        card.y + (card.h - WIDE_COVER) / 2.0,
         WIDE_COVER,
         WIDE_COVER,
     );
@@ -863,6 +863,11 @@ mod tests {
                 );
             }
             assert_eq!(dot.y + dot.h, card.y + card.h - DOT_FOOT);
+        }
+        // The cover and the buttons stay centred on the taller card.
+        let middle = card.y + card.h / 2.0;
+        for part in [parts.cover, parts.previous, parts.play, parts.next] {
+            assert_eq!(part.y + part.h / 2.0, middle, "{part:?}");
         }
     }
 
