@@ -1207,10 +1207,18 @@ case_settings_workspaces() {
 	done
 	set -- $six
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	# As the display case, a moment for the page to settle, and its picture
+	# before the click, so a miss shows where the buttons were.
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/settings-workspaces-before.png"
 	six=$(count 'edel-compositor: 6 workspaces$')
 	python3 ci/qmp.py click "$cx" "$cy"
-	wait_more 'edel-compositor: 6 workspaces$' "$six" ||
-		fail "a click on the count's 6 at $cx,$cy did not give six workspaces: $(value settings_workspaces_log)"
+	if ! wait_more 'edel-compositor: 6 workspaces$' "$six"; then
+		guest 'settings workspaces log'
+		guest 'settings file'
+		sleep 2
+		fail "a click on the count's 6 at $cx,$cy did not give six workspaces (settings-workspaces-before.png); ci's file: $(value settings_file); Settings said: $(value settings_workspaces_log)"
+	fi
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
