@@ -2422,7 +2422,7 @@ case_pins() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q '\[panels\];pinned = \["settings", "terminal"\]' ||
+	value settings_file | grep -q ';pinned = \["settings", "terminal"\]' ||
 		fail "ci's settings file does not hold panels.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
 	# Off the dock by 150 px: the first cell is Settings now.
 	unpinned=$(count 'edel-shell-ui: unpinned settings$')
@@ -2434,7 +2434,7 @@ case_pins() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q '\[panels\];pinned = \["terminal"\]' ||
+	value settings_file | grep -q ';pinned = \["terminal"\]' ||
 		fail "ci's settings file does not hold panels.pinned = [\"terminal\"]: $(value settings_file)"
 	# Back as the case found it: both lines out, and Classic's panel again.
 	classic=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
@@ -3645,7 +3645,7 @@ case_tray() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q '\[panels\];tray = \["edel-testclient"\]' ||
+	value settings_file | grep -q ';tray = \["edel-testclient"\]' ||
 		fail "ci's settings file does not hold panels.tray = [\"edel-testclient\"]: $(value settings_file)"
 	# The kept icon takes the arrow's cell: the tray is still 34 px wide, at x.
 	shot tray $((x + 17)) 780 33aa66 >/dev/null ||
