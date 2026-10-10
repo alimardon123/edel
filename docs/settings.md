@@ -61,7 +61,7 @@ The desktop follows these keys at once (M4.5): it reads the machine's file and t
 | `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown | M5.18a |
 | `layout.minimize_button` | `true` or `false`: whether every title bar shows its minimize button; missing shows it | M5.18a |
 | `layout.maximize_button` | `true` or `false`: whether every title bar shows its maximize button; missing shows it. A hidden button's room goes to the title | M5.18a |
-| `layout.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[layout.panels]]` tables, or on the command line `edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]'`; missing is the preset's. A change restarts the panel at once | M5.4e |
+| `layout.panels` | panels in place of the preset's, each as a preset writes one: `edge` (`top` or `bottom`), `style` (`bar`, the default, or `dock`), for a dock `hide` (`never`, the default, or `covered`: it then keeps no space and hides while a window covers it, M5.4f), `size` (`small`, `medium`, the default, or `large`: the tokens' `size.panel_small`, `size.panel` and `size.panel_large`, M5.31c), `floating` (`false`, the default, or `true`: a bar with a gap, `size.gap`, from its edge and both sides and rounded corners, as a dock has; a dock cannot float, M5.31c), `screens` (`main`, the default, or `every`: one panel on each screen, M5.31c) and the widgets by name in `start`, `centre` and `end`, at most one panel along each edge; as `[[layout.panels]]` tables, or on the command line `edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]'`; missing is the preset's. A change restarts the panel at once | M5.4e, M5.31c |
 
 ## Displays: `[displays.NAME]`
 
@@ -155,6 +155,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |
 | `apps.installed` | list of Flathub app ids, installed per admin user | M6.1 |
+| `apps.pinned` | the apps the apps widget pins, in order, each an app's id or a role (`files`, `browser`, `mail`, `editor`, `terminal`, `music` or `settings`), those not installed left out; absent is the layout preset's. Dragging an app's icon on the panel pins it, moves it along or takes it off (dragged off the panel); Settings' Layout page lists the apps under Panels, and `edel settings set apps.pinned='["settings", "terminal"]'` sets the same list | M5.31d |
 | `addons.installed` | list of add-on names (ADR-007) | M7.2b |
 
 ## System: `[system]`

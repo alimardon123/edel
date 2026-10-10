@@ -168,12 +168,30 @@ fn dri_seen(path: &Path) -> String {
         Ok(_) => "there".to_string(),
         Err(e) => e.kind().to_string(),
     };
-    let dir = match std::fs::read_dir("/dev/dri") {
+    let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
+    // What the kernel has registered beside what /dev shows, and what /dev
+    // is: a card in sysfs with no file under a devtmpfs /dev was taken out
+    // by a program, not by the kernel (the stick's `live` session,
+    // 2026-10-10).
+    format!(
+        "{}: {file}; /dev/dri: {}; /sys/class/drm: {}; /dev is {}",
+        path.display(),
+        listing(Path::new("/dev/dri")),
+        listing(Path::new("/sys/class/drm")),
+        dev_mount(&mounts)
+    )
+}
+
+/// The names in `dir`, sorted and joined by spaces, `empty` for none, or
+/// why it could not be read.
+fn listing(dir: &Path) -> String {
+    match std::fs::read_dir(dir) {
         Ok(entries) => {
-            let names: Vec<String> = entries
+            let mut names: Vec<String> = entries
                 .flatten()
                 .map(|e| e.file_name().to_string_lossy().into_owned())
                 .collect();
+            names.sort();
             if names.is_empty() {
                 "empty".to_string()
             } else {
@@ -181,8 +199,21 @@ fn dri_seen(path: &Path) -> String {
             }
         }
         Err(e) => e.kind().to_string(),
-    };
-    format!("{}: {file}; /dev/dri: {dir}", path.display())
+    }
+}
+
+/// The file system mounted on /dev, from the text of /proc/mounts: the
+/// last mount there wins, as it is the one seen.
+fn dev_mount(mounts: &str) -> String {
+    mounts
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let (_, at, kind) = (fields.next()?, fields.next()?, fields.next()?);
+            (at == "/dev").then(|| kind.to_string())
+        })
+        .next_back()
+        .unwrap_or_else(|| "not mounted".to_string())
 }
 
 /// The card files under /dev/dri, `card0` first.
@@ -1027,5 +1058,25 @@ mod tests {
             Some(p("/dev/dri/card0"))
         );
         assert_eq!(pick_gpu(None, vec![], &[], only(&[])), None);
+    }
+
+    #[test]
+    fn the_file_system_on_dev_is_the_last_mounted_there() {
+        let mounts =
+            "proc /proc proc rw 0 0\ndevtmpfs /dev devtmpfs rw 0 0\ntmpfs /dev tmpfs rw 0 0\n";
+        assert_eq!(dev_mount(mounts), "tmpfs");
+        assert_eq!(dev_mount("proc /proc proc rw 0 0\n"), "not mounted");
+    }
+
+    #[test]
+    fn a_listing_is_sorted_and_says_empty_or_why() {
+        let dir = std::env::temp_dir().join(format!("edel-listing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(listing(&dir), "empty");
+        std::fs::write(dir.join("renderD128"), "").unwrap();
+        std::fs::write(dir.join("card0"), "").unwrap();
+        assert_eq!(listing(&dir), "card0 renderD128");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(listing(&dir), "entity not found");
     }
 }

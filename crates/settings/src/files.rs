@@ -8,8 +8,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use edel::presets::{self, Policy};
-use edel::{places, settings};
+use edel::presets::{self, Panel, Policy};
+use edel::{panel_edit, places, settings};
 
 /// What the Layout page shows: each key's value as the desktop applies
 /// it, from the person's file, the machine's, the preset or the release.
@@ -143,6 +143,26 @@ impl Files {
         let machine = Self::layout_of(Some(&self.machine));
         let person = Self::layout_of(self.person.as_ref());
         Self::layout_from(&machine, &person)
+    }
+
+    /// The panels that apply, as shell-ui draws them (M5.31d): the person's
+    /// `layout.panels` over the machine's, else the preset's.
+    pub fn panels(&self) -> Vec<Panel> {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        panel_edit::applying(
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
+    }
+
+    /// The apps the apps widget pins that apply (M5.31d): the person's
+    /// `apps.pinned` over the machine's, else the preset's.
+    pub fn pins(&self) -> Vec<String> {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        panel_edit::pins_applying(
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
     }
 
     /// Chooses `value` for the layout key `key`: written to the person's

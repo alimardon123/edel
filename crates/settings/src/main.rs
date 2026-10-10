@@ -20,6 +20,7 @@ mod icon;
 mod layout;
 mod network;
 mod notifications;
+mod panels;
 mod power;
 mod preview;
 mod rows;
@@ -85,8 +86,13 @@ fn main() -> gtk::glib::ExitCode {
     };
     let app = adw::Application::builder().application_id(APP_ID).build();
     // Any argument is --page (others were refused above), and a page
-    // opened by name gives the keyboard to its main control.
+    // opened by name gives the keyboard to its main control; a row named
+    // (`--page layout.panels`) gives it to that row's control (M5.31d).
     let asked = std::env::args().len() > 1;
+    let row = std::env::args()
+        .skip(1)
+        .find_map(|arg| rows::row_named(arg.rsplit_once('=').map_or(&arg, |(_, v)| v)));
+    widgets::set_asked_row(row);
     app.connect_activate(move |app| window(app, start, asked));
     // GTK would refuse `--page`, which is read above.
     app.run_with_args(&[APP_ID])
@@ -139,7 +145,14 @@ fn page_named(pages: &[Page], name: &str) -> Option<usize> {
             page.title.to_lowercase(),
         ]
     };
-    let exact = pages.iter().position(|p| names(p).contains(&name));
+    // A row's key or title names the page it is on (M5.31d).
+    let exact = pages
+        .iter()
+        .position(|p| names(p).contains(&name))
+        .or_else(|| {
+            let (section, _) = rows::row_named(&name)?.split_once('.')?;
+            pages.iter().position(|p| p.section == Some(section))
+        });
     let mut starts = pages.iter().enumerate().filter(|(_, p)| {
         names(p)
             .iter()
@@ -594,6 +607,19 @@ mod tests {
         assert_eq!(at("abo"), Some(10));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
+    }
+
+    #[test]
+    fn a_row_names_its_page_and_asks_for_its_control() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let pages = all_pages();
+        assert_eq!(page_named(&pages, "layout.panels"), Some(0));
+        assert_eq!(page_named(&pages, "Panels"), Some(0));
+        assert_eq!(page_named(&pages, "scale"), Some(1), "a row of Displays");
+        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(0));
+        assert_eq!(start_page(args(&["--page=layout.panels"]), &pages), Ok(0));
+        assert_eq!(rows::row_named("layout.panels"), Some("layout.panels"));
+        assert_eq!(rows::row_named("--page"), None);
     }
 
     #[test]

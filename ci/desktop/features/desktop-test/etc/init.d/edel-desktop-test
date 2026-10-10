@@ -187,6 +187,8 @@ commands() {
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		# A floating large bar (M5.31c): 48 px high, 8 px from the sides.
+		'panels floating') edel settings set 'layout.panels=[{ edge = "bottom", size = "large", floating = true, start = ["menu"], end = ["clock"] }]' ;;
 		'panels default') edel settings reset layout.panels ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
 		'dock hiding') edel settings set 'layout.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
@@ -402,6 +404,21 @@ commands() {
 			as_ci edel-settings --page displays </dev/null >/tmp/settings-display.log 2>&1 &
 			;;
 		'settings file') say "settings_file $(tr '\n' ';' <"/home/ci/.config/edel/$settings_name" 2>/dev/null)" ;;
+		# Settings' Panels group (M5.31d): ci's own file, not the machine's, holds
+		# one panel with only the clock; Settings opens on the Layout page with
+		# the keyboard on Edit panels, and its log says where that button lies.
+		'settings panels line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", end = [\"clock\"] }]' >/home/ci/.config/edel/$settings_name" ;;
+		'settings panels')
+			# On the session's bus, which its Edit panels button calls.
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page layout.panels" </dev/null >/tmp/settings-panels.log 2>&1 &
+			;;
+		'settings panels log') say "settings_panels_log $(tr '\n' ';' </tmp/settings-panels.log 2>/dev/null)" ;;
+		# The apps widget's pins (M5.31d): ci's own file with one dock along
+		# the bottom holding the apps widget, and two pins, terminal and
+		# settings; `pins reset` takes both lines out again.
+		'pins line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", style = \"dock\", centre = [\"apps\"] }]' '[apps]' 'pinned = [\"terminal\", \"settings\"]' >/home/ci/.config/edel/$settings_name" ;;
+		'pins reset') as_ci "sed -i '/^pinned *=/d; /^panels *=/d' /home/ci/.config/edel/$settings_name" ;;
 		# What Settings holds of its own while open (M5.6a), read as
 		# shell-ui's is: the least of three reads a second apart, the
 		# budgeted number, and VmRSS, reported.

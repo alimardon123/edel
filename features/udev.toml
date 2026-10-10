@@ -2,8 +2,8 @@
 # and display devices through udev's database, which mdev does not keep.
 format = 1
 summary = "Devices with udev, which input and graphics need"
-why = "libinput and the compositor find keyboards, mice, touchpads and GPUs through udev; udev-trigger loads the drivers for the hardware found, as hwdrivers does with mdev. Its rule 90-edel-backlight lets group seat, the people at the machine, write the screen's brightness, which the panel's keys and quick settings set (M5.9c)."
+why = "libinput and the compositor find keyboards, mice, touchpads and GPUs through udev; udev-trigger loads the drivers for the hardware found, as hwdrivers does with mdev. Its rule 90-edel-backlight lets group seat, the people at the machine, write the screen's brightness, which the panel's keys and quick settings set (M5.9c). edel-dri makes again a graphics card's file the kernel lists but /dev lacks, which the initramfs's mdev can delete when the firmware's framebuffer hands the screen to the real driver; it runs once at boot, reads sysfs and exits."
 packages = ["eudev", "udev-init-scripts", "udev-init-scripts-openrc"]
 
 [services]
-sysinit = ["udev", "udev-trigger", "udev-settle"]
+sysinit = ["udev", "udev-trigger", "udev-settle", "edel-dri"]

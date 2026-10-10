@@ -146,6 +146,54 @@ msgstr ""
 msgid "Volume and brightness"
 msgstr ""
 
+msgid "Style"
+msgstr ""
+
+msgid "Size"
+msgstr ""
+
+msgid "Floating"
+msgstr ""
+
+msgid "Hide when a window covers it"
+msgstr ""
+
+msgid "On every screen"
+msgstr ""
+
+msgid "Move to the top"
+msgstr ""
+
+msgid "Move to the bottom"
+msgstr ""
+
+msgid "Add a panel at the top"
+msgstr ""
+
+msgid "Add a panel at the bottom"
+msgstr ""
+
+msgid "Remove this panel"
+msgstr ""
+
+msgid "Bar"
+msgstr ""
+
+msgid "Dock"
+msgstr ""
+
+msgid "Small"
+msgstr ""
+
+msgid "Medium"
+msgstr ""
+
+msgid "Large"
+msgstr ""
+
+msgid "Panel menu"
+msgstr ""
+
 msgid "Wi-Fi"
 msgstr ""
 
