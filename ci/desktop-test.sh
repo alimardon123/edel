@@ -2817,7 +2817,7 @@ case_tray() {
 	# The key taken out again, as ci's file had none before the test.
 	ran='DESKTOP-TEST: ran tray reset: 0'
 	guest 'tray reset'
-	wait_for "$ran" || fail "edel settings reset layout.tray_in_panel did not run as ci in the VM"
+	wait_for "$ran" || fail "the service did not take layout.tray_in_panel out of ci's file"
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
