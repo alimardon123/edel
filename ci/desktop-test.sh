@@ -1951,8 +1951,12 @@ case_overview() {
 	sleep 2
 	unmapped=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
-	wait_more 'edel-compositor: unmapped window foot' "$unmapped" ||
-		fail "Super+Q did not close the foot the search started: $(value windows)"
+	if ! wait_more 'edel-compositor: unmapped window foot' "$unmapped"; then
+		# Which window had the keyboard: the toplevels list stars it.
+		guest 'toplevels'
+		wait_for 'DESKTOP-TEST: toplevels ' || true
+		fail "Super+Q did not close the foot the search started: windows $(value windows); toplevels, the focused starred: $(value toplevels)"
+	fi
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
 	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
