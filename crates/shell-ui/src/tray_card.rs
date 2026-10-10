@@ -82,7 +82,14 @@ impl Shell {
         let Some(panel) = self.panels.get(i) else {
             return;
         };
-        let (edge, scale, style, panel_width) = (panel.edge, panel.scale, panel.style, panel.width);
+        let (edge, scale, style, bar, floating, panel_width) = (
+            panel.edge,
+            panel.scale,
+            panel.style,
+            panel.size,
+            panel.floating,
+            panel.width,
+        );
         let screen = self.screen_width();
         let compact = screen > 0 && screen < quick::COMPACT_BELOW;
         let view = trayview::View {
@@ -126,7 +133,9 @@ impl Shell {
         });
         // The panel's height and the margin it hangs with, and the room
         // round the card: where the card's edge lies from the screen's edge.
-        let gap = paint::height(style, &self.tokens) as i32 + m + room as i32;
+        // A floating bar hangs its gap from the edge too (M5.31c).
+        let lift = if floating { self.tokens.gap as i32 } else { 0 };
+        let gap = paint::height(style, bar, &self.tokens) as i32 + lift + m + room as i32;
         self.tray_grid = Some(TrayCard {
             popup,
             view,
@@ -439,7 +448,7 @@ impl Shell {
         let Some(panel) = self.panels.get(i) else {
             return;
         };
-        let height = paint::height(panel.style, &self.tokens) as f32;
+        let height = paint::height(panel.style, panel.size, &self.tokens) as f32;
         let off = match panel.edge {
             Edge::Bottom => y < -height,
             Edge::Top => y > 2.0 * height,

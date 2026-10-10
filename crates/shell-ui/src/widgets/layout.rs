@@ -126,6 +126,8 @@ mod tests {
             scale: 1,
             edge: Edge::Bottom,
             style: edel::presets::Style::Bar,
+            size: edel::presets::Size::Medium,
+            floating: false,
             fillets: false,
             shown: row.shows(&live),
             editing: false,

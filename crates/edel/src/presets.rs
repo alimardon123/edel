@@ -243,6 +243,17 @@ pub struct Panel {
     /// Whether a dock hides while a window covers it (M5.4f).
     #[serde(default, skip_serializing_if = "Hide::is_never")]
     pub hide: Hide,
+    /// How tall the panel is (M5.31c): small, medium or large, from the
+    /// tokens `size.panel_small`, `size.panel` and `size.panel_large`.
+    #[serde(default, skip_serializing_if = "Size::is_medium")]
+    pub size: Size,
+    /// A bar that floats: a gap (`size.gap`) round it and rounded corners,
+    /// as a dock has (M5.31c).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub floating: bool,
+    /// The panel on the main screen only, or on every screen (M5.31c).
+    #[serde(default, skip_serializing_if = "Screens::is_main")]
+    pub screens: Screens,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub start: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -312,6 +323,47 @@ impl Hide {
     pub fn is_never(&self) -> bool {
         *self == Hide::Never
     }
+}
+
+/// How tall a panel is (M5.31c), from the tokens: `size.panel_small` (34),
+/// `size.panel` (40, the default) or `size.panel_large` (48). A dock adds
+/// its own room to any of them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Size {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl Size {
+    /// Whether it is the default, which a written panel leaves out.
+    pub fn is_medium(&self) -> bool {
+        *self == Size::Medium
+    }
+}
+
+/// Which screens a panel is on (M5.31c): the main one, the compositor's
+/// choice (the default), or every screen, one panel on each.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Screens {
+    #[default]
+    Main,
+    Every,
+}
+
+impl Screens {
+    /// Whether it is the default, which a written panel leaves out.
+    pub fn is_main(&self) -> bool {
+        *self == Screens::Main
+    }
+}
+
+/// Whether a flag is off, which a written panel leaves out (M5.31c).
+fn is_false(flag: &bool) -> bool {
+    !*flag
 }
 
 /// Reads a preset strictly: the format this release knows, every key
@@ -402,6 +454,15 @@ pub fn check_panels(panels: &[Panel]) -> Result<()> {
                 "{}",
                 trf(
                     "only a dock hides; the {edge} panel is a bar",
+                    &[("edge", panel.edge.name())]
+                )
+            );
+        }
+        if panel.floating && panel.style == Style::Dock {
+            bail!(
+                "{}",
+                trf(
+                    "a dock floats already; take floating out of the {edge} panel",
                     &[("edge", panel.edge.name())]
                 )
             );
@@ -623,6 +684,73 @@ mod tests {
         let (preset, note) = named(Some("cinnamon"));
         assert_eq!(preset, named(None).0);
         assert!(note.unwrap().contains("no preset \"cinnamon\""));
+    }
+
+    #[test]
+    fn a_panel_reads_its_size_floating_and_screens_and_writes_them_only_when_set() {
+        let classic = BUILT_IN[0].1;
+        let set = classic.replace(
+            "edge = \"bottom\"",
+            "edge = \"bottom\"\nsize = \"large\"\nfloating = true\nscreens = \"every\"",
+        );
+        let panel = &check(&set).unwrap().panels[0];
+        assert_eq!(panel.size, Size::Large);
+        assert!(panel.floating);
+        assert_eq!(panel.screens, Screens::Every);
+        let written = toml::to_string(panel).unwrap();
+        assert!(written.contains("size = \"large\""), "{written}");
+        assert!(written.contains("floating = true"), "{written}");
+        assert!(written.contains("screens = \"every\""), "{written}");
+        // The defaults are left out, so a preset's own file stays short.
+        let plain = &check(classic).unwrap().panels[0];
+        assert_eq!(
+            (plain.size, plain.floating, plain.screens),
+            (Size::Medium, false, Screens::Main)
+        );
+        let written = toml::to_string(plain).unwrap();
+        assert!(
+            !written.contains("size") && !written.contains("floating"),
+            "{written}"
+        );
+        assert!(!written.contains("screens"), "{written}");
+        // Each size is one word, and no other.
+        for (word, size) in [
+            ("small", Size::Small),
+            ("medium", Size::Medium),
+            ("large", Size::Large),
+        ] {
+            let text = classic.replace(
+                "edge = \"bottom\"",
+                &format!("edge = \"bottom\"\nsize = \"{word}\""),
+            );
+            assert_eq!(check(&text).unwrap().panels[0].size, size);
+        }
+        let huge = classic.replace("edge = \"bottom\"", "edge = \"bottom\"\nsize = \"huge\"");
+        let e = format!("{:#}", check(&huge).unwrap_err());
+        assert!(
+            e.contains("unknown variant `huge`, expected one of `small`, `medium`, `large`"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_dock_that_floats_is_refused_as_a_dock_already_floats() {
+        let classic = BUILT_IN[0].1;
+        let dock = classic.replace(
+            "edge = \"bottom\"",
+            "edge = \"bottom\"\nstyle = \"dock\"\nfloating = true",
+        );
+        let e = format!("{:#}", check(&dock).unwrap_err());
+        assert!(
+            e.contains("a dock floats already; take floating out of the bottom panel"),
+            "{e}"
+        );
+        // A floating bar is fine, and so is a dock that does not float.
+        let bar = classic.replace("edge = \"bottom\"", "edge = \"bottom\"\nfloating = true");
+        assert!(check(&bar).unwrap().panels[0].floating);
+        let plain_dock =
+            classic.replace("edge = \"bottom\"", "edge = \"bottom\"\nstyle = \"dock\"");
+        assert!(check(&plain_dock).is_ok());
     }
 
     #[test]

@@ -84,10 +84,11 @@ use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use std::path::Path;
 use std::time::Duration;
 
+use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use tiny_skia::Pixmap;
 
 use edel::places;
-use edel::presets::{self, Edge, Hide, Style};
+use edel::presets::{self, Edge, Hide, Screens, Size, Style};
 use edel::settings;
 use edel::tokens::{self, Scheme, Tokens};
 use edel::{app_icons as icons, apps};
@@ -244,6 +245,12 @@ struct StylesMenu {
 struct Panel {
     edge: Edge,
     style: Style,
+    /// How tall it is, and whether a bar floats (M5.31c).
+    size: Size,
+    floating: bool,
+    /// The screen it is on when it is on every screen (M5.31c); `None` is
+    /// the compositor's choice of the main screen.
+    output: Option<WlOutput>,
     surface: LayerSurface,
     row: Row,
     /// Its logical width, once the compositor has said it.
@@ -302,13 +309,17 @@ fn run() -> Result<()> {
     let features = &edel::places::found_shared(edel::features::DIR);
     let mut panels = Vec::new();
     for spec in &preset.panels {
-        panels.push(make_panel(
+        // No output is known yet, so a panel on every screen is one
+        // surface for now; `outputs_changed` makes them afresh as the
+        // screens come in (M5.31c).
+        panels.extend(make_panels(
             &compositor,
             &layers,
             &qh,
             &tokens,
             features,
             spec,
+            &[],
         ));
     }
     // The apps a panel's apps widget shows, and whose icons the window
@@ -494,9 +505,32 @@ fn row_of(spec: &presets::Panel, features: &Path) -> Row {
     }
 }
 
-/// Makes one of the preset's panels as a layer surface of its own, with
-/// the widgets it holds (M5.1b, M5.4d, M5.4f, M5.31b: `panels_changed`
-/// makes them again too).
+/// Makes the surfaces of one of the preset's panels: one, or for
+/// `screens = "every"` one on each of `outputs` (M5.31c). With no output
+/// known, a panel on every screen is one surface the compositor places.
+fn make_panels(
+    compositor: &CompositorState,
+    layers: &LayerShell,
+    qh: &QueueHandle<Shell>,
+    tokens: &Tokens,
+    features: &Path,
+    spec: &presets::Panel,
+    outputs: &[WlOutput],
+) -> Vec<Panel> {
+    match (spec.screens, outputs) {
+        (Screens::Every, [_, ..]) => outputs
+            .iter()
+            .map(|output| make_panel(compositor, layers, qh, tokens, features, spec, Some(output)))
+            .collect(),
+        _ => vec![make_panel(
+            compositor, layers, qh, tokens, features, spec, None,
+        )],
+    }
+}
+
+/// Makes one of the preset's panels as a layer surface of its own, on
+/// `output` when it is given, with the widgets it holds (M5.1b, M5.4d,
+/// M5.4f, M5.31b, M5.31c: `panels_changed` makes them again too).
 fn make_panel(
     compositor: &CompositorState,
     layers: &LayerShell,
@@ -504,40 +538,55 @@ fn make_panel(
     tokens: &Tokens,
     features: &Path,
     spec: &presets::Panel,
+    output: Option<&WlOutput>,
 ) -> Panel {
-    let strip = paint::fillet_height(tokens);
     let row = row_of(spec, features);
-    // Along the edge of the first screen; the strip on its inner side
-    // for the fillets is drawn but takes no space and no clicks. A
-    // dock is centred along its edge, a little away from it, and
-    // keeps that much free of windows too; its width follows what it
-    // holds once drawn, square until then.
+    // Along the edge of the first screen (or the given one); the strip on
+    // its inner side for the fillets is drawn but takes no space and no
+    // clicks. A dock is centred along its edge, a little away from it,
+    // and keeps that much free of windows too; its width follows what it
+    // holds once drawn, square until then. A floating bar keeps a gap
+    // from its edge and both sides, and keeps that much free as well.
     let dock = spec.style == Style::Dock;
     let namespace = if dock { DOCK } else { NAMESPACE };
+    let height = paint::height(spec.style, spec.size, tokens);
+    let strip = paint::strip(spec.style, spec.floating, tokens);
+    let gap = tokens.gap as i32;
     let surface = compositor.create_surface(qh);
-    let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), None);
+    let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), output);
     let edge = match spec.edge {
         Edge::Top => Anchor::TOP,
         Edge::Bottom => Anchor::BOTTOM,
     };
     if dock {
         surface.set_anchor(edge);
-        surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
+        surface.set_size(height, height);
         let (top, bottom) = match spec.edge {
             Edge::Top => (DOCK_MARGIN, 0),
             Edge::Bottom => (0, DOCK_MARGIN),
         };
         surface.set_margin(top, 0, bottom, 0);
+    } else if spec.floating {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, height);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (gap, 0),
+            Edge::Bottom => (0, gap),
+        };
+        surface.set_margin(top, gap, bottom, gap);
     } else {
         surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, tokens.panel_height + strip);
+        surface.set_size(0, height + strip);
     }
     // A dock that hides while a window covers it (M5.4f) keeps
-    // nothing free; the compositor hides it.
+    // nothing free; the compositor hides it. A floating bar keeps its
+    // gap free as well as its height.
     let zone = if dock && spec.hide == Hide::Covered {
         0
+    } else if spec.floating {
+        (height + tokens.gap) as i32
     } else {
-        paint::height(spec.style, tokens) as i32
+        height as i32
     };
     surface.set_exclusive_zone(zone);
     surface.set_keyboard_interactivity(KeyboardInteractivity::None);
@@ -549,6 +598,9 @@ fn make_panel(
     Panel {
         edge: spec.edge,
         style: spec.style,
+        size: spec.size,
+        floating: spec.floating,
+        output: output.cloned(),
         surface,
         row,
         width: 0,
@@ -710,7 +762,7 @@ impl Shell {
         if panel.width == 0 || panel.waiting {
             return;
         }
-        let strip = paint::strip(panel.style, &self.tokens);
+        let strip = paint::strip(panel.style, panel.floating, &self.tokens);
         let shown = panel.row.shows(&self.live);
         if panel.style == Style::Dock {
             // A dock is as wide as what it holds: when that changes it
@@ -722,14 +774,15 @@ impl Shell {
                 Some(&mut self.icons),
                 &panel.row,
                 &shown,
-                panel.scale,
+                (panel.size, panel.scale),
                 self.editor.is_some(),
             );
             if natural != panel.width {
                 let panel = &mut self.panels[i];
                 if natural != panel.asked {
                     panel.asked = natural;
-                    panel.surface.set_size(natural, paint::DOCK_HEIGHT);
+                    let dock = paint::height(Style::Dock, panel.size, &self.tokens);
+                    panel.surface.set_size(natural, dock);
                     panel.surface.commit();
                 }
                 return;
@@ -739,10 +792,12 @@ impl Shell {
         let panel = &self.panels[i];
         let look = Look {
             width: panel.width * panel.scale,
-            height: (paint::height(panel.style, &self.tokens) + strip) * panel.scale,
+            height: (paint::height(panel.style, panel.size, &self.tokens) + strip) * panel.scale,
             scale: panel.scale,
             edge: panel.edge,
             style: panel.style,
+            size: panel.size,
+            floating: panel.floating,
             fillets: self.fillets,
             shown,
             editing: self.editor.is_some(),
@@ -761,8 +816,13 @@ impl Shell {
         }
         // Screen readers get what was drawn, in logical pixels.
         let panel = &mut self.panels[i];
-        let top = f64::from(paint::panel_top(panel.edge, panel.style, &self.tokens));
-        let bottom = top + f64::from(paint::height(panel.style, &self.tokens));
+        let top = f64::from(paint::panel_top(
+            panel.edge,
+            panel.style,
+            panel.floating,
+            &self.tokens,
+        ));
+        let bottom = top + f64::from(paint::height(panel.style, panel.size, &self.tokens));
         let items = panel
             .row
             .all()
@@ -796,7 +856,7 @@ impl Shell {
             .collect();
         let size = (
             f64::from(panel.width),
-            f64::from(paint::height(panel.style, &self.tokens) + strip),
+            f64::from(paint::height(panel.style, panel.size, &self.tokens) + strip),
         );
         panel.reader.update(size, items);
         panel.drawn = Some(look);
@@ -829,13 +889,14 @@ impl Shell {
         paint::to_argb(&pixmap, canvas);
         let surface = panel.surface.wl_surface();
         // Only the panel itself is opaque and takes clicks; the fillets'
-        // strip beside it lets both through. A dock's rounded corners
-        // are not opaque.
-        let top = paint::panel_top(panel.edge, panel.style, &self.tokens) as i32;
-        let panel_h = paint::height(panel.style, &self.tokens) as i32;
+        // strip beside it lets both through. A dock's and a floating
+        // bar's rounded corners are not opaque.
+        let top = paint::panel_top(panel.edge, panel.style, panel.floating, &self.tokens) as i32;
+        let panel_h = paint::height(panel.style, panel.size, &self.tokens) as i32;
         if let Ok(region) = Region::new(&self.compositor) {
             region.add(0, top, panel.width as i32, panel_h);
-            if panel.style == Style::Bar {
+            // A floating bar's corners are round, as a dock's are.
+            if panel.style == Style::Bar && !panel.floating {
                 surface.set_opaque_region(Some(region.wl_region()));
             }
             surface.set_input_region(Some(region.wl_region()));
@@ -897,53 +958,102 @@ impl Shell {
     }
 
     /// The panels `layout.panels` asks for now (M5.31b). When they keep
-    /// each panel's edge, style and hiding, each panel takes its new
-    /// widgets and is drawn again, its surface kept; otherwise the open
-    /// popups close, the panels' surfaces go and every wanted panel is
-    /// made anew. Logs `panels now EDGE (N widgets), ...` either way.
+    /// each panel's edge, style, size, floating, screens and hiding, each
+    /// panel takes its new widgets and is drawn again, its surface kept;
+    /// otherwise the open popups close, the panels' surfaces go and every
+    /// wanted panel is made anew. Logs `panels now EDGE (N widgets), ...`
+    /// either way.
     pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
         let features = edel::places::found_shared(edel::features::DIR);
         let same_shape = wanted.len() == self.panel_specs.len()
             && self.panel_specs.iter().zip(&wanted).all(|(old, new)| {
-                old.edge == new.edge && old.style == new.style && old.hide == new.hide
+                old.edge == new.edge
+                    && old.style == new.style
+                    && old.hide == new.hide
+                    && old.size == new.size
+                    && old.floating == new.floating
+                    && old.screens == new.screens
             });
         if same_shape {
-            for (panel, spec) in self.panels.iter_mut().zip(&wanted) {
-                panel.row = row_of(spec, &features);
+            // Each surface takes its spec's widgets by its edge: a panel
+            // on every screen has a surface for each screen, all alike.
+            for panel in &mut self.panels {
+                if let Some(spec) = wanted.iter().find(|spec| spec.edge == panel.edge) {
+                    panel.row = row_of(spec, &features);
+                }
                 panel.drawn = None;
             }
             self.draw_all();
         } else {
-            self.close_popups();
-            self.tray_press = None;
-            for panel in std::mem::take(&mut self.panels) {
-                // The layer surface's role goes first, then its surface.
-                let surface = panel.surface.wl_surface().clone();
-                drop(panel);
-                surface.destroy();
-            }
-            self.panels = wanted
-                .iter()
-                .map(|spec| {
-                    make_panel(
-                        &self.compositor,
-                        &self.layers,
-                        &self.qh,
-                        &self.tokens,
-                        &features,
-                        spec,
-                    )
-                })
-                .collect();
+            let outputs = self.outputs.outputs().collect();
+            self.remake_panels(&wanted, outputs);
         }
+        self.panel_specs = wanted;
+        self.log_panels();
+        self.read_apps();
+    }
+
+    /// Makes the surfaces of `specs` afresh on `outputs`: the open popups
+    /// close, the panels' surfaces go and each spec's are made (M5.31b,
+    /// M5.31c).
+    fn remake_panels(&mut self, specs: &[presets::Panel], outputs: Vec<WlOutput>) {
+        let features = edel::places::found_shared(edel::features::DIR);
+        self.close_popups();
+        self.tray_press = None;
+        for panel in std::mem::take(&mut self.panels) {
+            // The layer surface's role goes first, then its surface.
+            let surface = panel.surface.wl_surface().clone();
+            drop(panel);
+            surface.destroy();
+        }
+        self.panels = specs
+            .iter()
+            .flat_map(|spec| {
+                make_panels(
+                    &self.compositor,
+                    &self.layers,
+                    &self.qh,
+                    &self.tokens,
+                    &features,
+                    spec,
+                    &outputs,
+                )
+            })
+            .collect();
+    }
+
+    /// Logs the panels that are up, as `panels now EDGE (N widgets), ...`.
+    fn log_panels(&self) {
         let list: Vec<String> = self
             .panels
             .iter()
             .map(|p| format!("{} ({} widgets)", p.edge.name(), p.row.all().count()))
             .collect();
         eprintln!("edel-shell-ui: panels now {}", list.join(", "));
-        self.panel_specs = wanted;
-        self.read_apps();
+    }
+
+    /// An output came or went (M5.31c): when a panel is on every screen,
+    /// the panels are made afresh for the screens there are now, `gone`
+    /// (the output that went, if any) left out. A screen that went with no
+    /// panel of ours on it changes nothing, and a panel the compositor
+    /// closes ends shell-ui as it always did.
+    fn outputs_changed(&mut self, gone: Option<&WlOutput>) {
+        if !self.panel_specs.iter().any(|s| s.screens == Screens::Every) {
+            return;
+        }
+        if let Some(gone) = gone {
+            if !self.panels.iter().any(|p| p.output.as_ref() == Some(gone)) {
+                return;
+            }
+        }
+        let outputs: Vec<WlOutput> = self
+            .outputs
+            .outputs()
+            .filter(|output| gone != Some(output))
+            .collect();
+        let specs = self.panel_specs.clone();
+        self.remake_panels(&specs, outputs);
+        self.log_panels();
     }
 
     /// The apps the apps widget and the window list show, read once, when
@@ -1793,11 +1903,20 @@ impl OutputHandler for Shell {
         &mut self.outputs
     }
 
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
+        self.outputs_changed(None);
+    }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
 
-    fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
+    fn output_destroyed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        output: wl_output::WlOutput,
+    ) {
+        self.outputs_changed(Some(&output));
+    }
 }
 
 impl ShmHandler for Shell {

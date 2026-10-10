@@ -133,8 +133,11 @@ pub struct Tokens {
     /// The one accent: what is chosen or shown, such as the shown
     /// workspace's button (M5.2c).
     pub accent: Colour,
-    /// The panel's height, logical pixels.
+    /// The panel's height, logical pixels: the medium size, the bar's.
     pub panel_height: u32,
+    /// The small and large heights a panel's size may be (M5.31c).
+    pub panel_small_height: u32,
+    pub panel_large_height: u32,
     /// The panel's text, logical pixels per em.
     pub panel_text_size: u32,
     /// The panel's smaller text, such as the clock's date, logical
@@ -387,6 +390,8 @@ impl Tokens {
                 "title_text" => (&mut self.title_text_size, 100),
                 "gap" => (&mut self.gap, 100),
                 "panel" => (&mut self.panel_height, 200),
+                "panel_small" => (&mut self.panel_small_height, 200),
+                "panel_large" => (&mut self.panel_large_height, 200),
                 "panel_text" => (&mut self.panel_text_size, 100),
                 "panel_text_small" => (&mut self.panel_text_small_size, 100),
                 "panel_control" => (&mut self.panel_control, 200),
@@ -465,6 +470,8 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "title_text",
                 "gap",
                 "panel",
+                "panel_small",
+                "panel_large",
                 "panel_text",
                 "panel_text_small",
                 "panel_control",
@@ -522,6 +529,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         panel_text: BLACK,
         accent: BLACK,
         panel_height: 0,
+        panel_small_height: 0,
+        panel_large_height: 0,
         panel_text_size: 0,
         panel_text_small_size: 0,
         panel_control: 0,
@@ -662,6 +671,30 @@ mod tests {
         assert_eq!(Scheme::parse("auto"), Some(Scheme::Light));
         assert_eq!(Scheme::default(), Scheme::Light);
         assert_eq!(Scheme::parse("sepia"), None);
+    }
+
+    #[test]
+    fn the_panel_sizes_come_from_the_tokens_small_medium_and_large() {
+        let tokens = Tokens::built_in();
+        assert_eq!(
+            (
+                tokens.panel_small_height,
+                tokens.panel_height,
+                tokens.panel_large_height
+            ),
+            (34, 40, 48)
+        );
+        let (read, notes) = Tokens::read(&BUILT_IN.replace("panel_large = 48", "panel_large = 52"));
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(read.panel_large_height, 52);
+        let (_, notes) = Tokens::read(&BUILT_IN.replace("panel_small = 34", "panel_small = -1"));
+        assert!(notes[0].contains("size.panel_small"), "{notes:?}");
+        let without = BUILT_IN.replace("panel_small = 34", "# panel_small = 34");
+        let err = check(&without).unwrap_err();
+        assert!(
+            err.to_string().contains("size.panel_small is missing"),
+            "{err}"
+        );
     }
 
     #[test]

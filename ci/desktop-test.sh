@@ -1996,6 +1996,8 @@ case_panels() {
 	# widgets)", so 20,776, inside the menu button's first square, is the
 	# panel's colour; unsetting it brings Classic's panel back, of 10
 	# widgets, and no restart of shell-ui happens. Kept as panels-clock.png.
+	# Then a floating large bar (M5.31c) holds the menu and the clock, 48 px
+	# high, 8 px in from each side and 8 px above the bottom.
 	panel=$(token panel)
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
@@ -2004,6 +2006,23 @@ case_panels() {
 		fail "edel settings set layout.panels did not reach shell-ui's panel"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
+	floats=$(count 'edel-shell-ui: panels now bottom \(2 widgets\)')
+	guest 'panels floating'
+	wait_more 'edel-shell-ui: panels now bottom \(2 widgets\)' "$floats" ||
+		fail "edel settings set a floating large bar did not reach shell-ui's panel"
+	# The screen is 1280x800 (Virtual-1, as case_outputs reads it): a bar of
+	# 48 px at 8,Y, 16 px narrower than the screen, ends 8 px above its bottom.
+	screen_w=1280 screen_h=800
+	i=0
+	until value layers | grep -qE "edel-panel@8,[0-9]+,$((screen_w - 16))x48"; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the floating bar is not 48 px high and $((screen_w - 16)) px wide at 8 px in: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panel@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panel@//; s/[,x]/ /g')
+	fx=$1 fy=$2 fw=$3 fh=$4
+	[ "$fx" = 8 ] && [ "$fh" = 48 ] && [ $((fy + fh)) = $((screen_h - 8)) ] ||
+		fail "the floating bar is at $fx,$fy, $fw x $fh: it should be 8 px in, 48 px high and end 8 px above the bottom"
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
 	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
@@ -2012,7 +2031,7 @@ case_panels() {
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting layout.panels did not bring Classic's menu button back"
 	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
 		fail "layout.panels restarted shell-ui, which it no longer does"
-	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart, and unsetting it brought Classic's panel back"
+	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting layout.panels brought Classic's panel back"
 }
 
 # last_places: the text of the newest panel places line, after its prefix.

@@ -187,6 +187,8 @@ commands() {
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		# A floating large bar (M5.31c): 48 px high, 8 px from the sides.
+		'panels floating') edel settings set 'layout.panels=[{ edge = "bottom", size = "large", floating = true, start = ["menu"], end = ["clock"] }]' ;;
 		'panels default') edel settings reset layout.panels ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
 		'dock hiding') edel settings set 'layout.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;

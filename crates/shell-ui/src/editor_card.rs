@@ -201,9 +201,15 @@ impl Shell {
         else {
             return;
         };
-        let (edge, style, scale) = {
+        let (edge, style, size, floating, scale) = {
             let panel = &self.panels[i];
-            (panel.edge, panel.style, panel.scale)
+            (
+                panel.edge,
+                panel.style,
+                panel.size,
+                panel.floating,
+                panel.scale,
+            )
         };
         // Every widget the release has that this machine can show.
         let features = places::found_shared(edel::features::DIR);
@@ -238,10 +244,15 @@ impl Shell {
             return;
         };
         popup.set_cards(editor::cards(&layout, &self.tokens), &self.compositor);
-        // The panel's height, and the dock's gap above it, with the margin
-        // every popup keeps; the drawer is centred by the compositor.
-        let above = paint::height(style, &self.tokens) as i32
-            + if style == Style::Dock { DOCK_MARGIN } else { 0 }
+        // The panel's height, and the dock's or a floating bar's gap above
+        // it, with the margin every popup keeps; the drawer is centred by
+        // the compositor.
+        let above = paint::height(style, size, &self.tokens) as i32
+            + match (style, floating) {
+                (Style::Dock, _) => DOCK_MARGIN,
+                (Style::Bar, true) => self.tokens.gap as i32,
+                (Style::Bar, false) => 0,
+            }
             + MARGIN
             - room as i32;
         anchor_above(&popup.surface, edge, above);
@@ -515,27 +526,36 @@ impl Shell {
 
     /// Panel `i`'s place on the screen: a bar spans the screen's width
     /// along its edge, a dock its width centred, `DOCK_MARGIN` from the
-    /// edge; each is its surface, the fillets' strip included.
+    /// edge, and a floating bar `size.gap` from its edge and both sides
+    /// (M5.31c); each is its surface, the fillets' strip included, at its
+    /// size. This is the main screen's: a panel on another screen is
+    /// placed by that screen (`screens = "every"`).
     pub fn panel_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let (sw, sh) = self.screen_size();
         let Some(panel) = self.panels.get(i) else {
             return (0.0, 0.0, 0.0, 0.0);
         };
         let bottom = panel.edge == Edge::Bottom;
-        let h = (paint::height(panel.style, &self.tokens) + paint::strip(panel.style, &self.tokens))
-            as f32;
-        let (x, w) = match panel.style {
-            Style::Bar => (0.0, sw),
-            Style::Dock => {
+        let gap = if panel.floating {
+            self.tokens.gap as f32
+        } else {
+            0.0
+        };
+        let h = (paint::height(panel.style, panel.size, &self.tokens)
+            + paint::strip(panel.style, panel.floating, &self.tokens)) as f32;
+        let (x, w) = match (panel.style, panel.floating) {
+            (Style::Dock, _) => {
                 let w = panel.width as f32;
                 (((sw - w) / 2.0).round(), w)
             }
+            (Style::Bar, true) => (gap, sw - 2.0 * gap),
+            (Style::Bar, false) => (0.0, sw),
         };
         let y = match (panel.style, bottom) {
             (Style::Dock, true) => sh - h - DOCK_MARGIN as f32,
             (Style::Dock, false) => DOCK_MARGIN as f32,
-            (Style::Bar, true) => sh - h,
-            (Style::Bar, false) => 0.0,
+            (Style::Bar, true) => sh - h - gap,
+            (Style::Bar, false) => gap,
         };
         (x, y, w, h)
     }

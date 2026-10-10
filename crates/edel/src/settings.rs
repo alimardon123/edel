@@ -1626,6 +1626,15 @@ font_size = 11
                 "expected panels as a preset writes them",
             ),
             (r#""clock""#, "expected a list of panels"),
+            // A size this release lacks names the sizes it has (M5.31c).
+            (
+                r#"[{ edge = "bottom", size = "huge" }]"#,
+                "unknown variant `huge`, expected one of `small`, `medium`, `large`",
+            ),
+            (
+                r#"[{ edge = "bottom", style = "dock", floating = true }]"#,
+                "a dock floats already; take floating out of the bottom panel",
+            ),
         ] {
             let error = set("format = 1\n", "layout.panels", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");

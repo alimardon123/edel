@@ -9,7 +9,7 @@
 use anyhow::{Context, Result, bail};
 
 use crate::i18n::{tr, trf};
-use crate::presets::{self, Edge, Hide, Panel, Style};
+use crate::presets::{self, Edge, Hide, Panel, Screens, Size, Style};
 use crate::settings;
 
 /// The settings key the panels are written to (M5.31b).
@@ -192,6 +192,9 @@ pub fn add_panel(panels: &[Panel], edge: Edge) -> Result<Vec<Panel>> {
         edge,
         style: Style::Bar,
         hide: Hide::Never,
+        size: Size::Medium,
+        floating: false,
+        screens: Screens::Main,
         start: Vec::new(),
         centre: Vec::new(),
         end: Vec::new(),
@@ -518,6 +521,28 @@ mod tests {
         assert_eq!(
             to_write(&panels, Some(machine), Some(person)).unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn value_writes_the_size_floating_and_screens_in_alphabetical_order() {
+        let mut panels = classic();
+        panels[0].size = Size::Large;
+        panels[0].floating = true;
+        panels[0].screens = Screens::Every;
+        let line = value(&panels).unwrap();
+        assert_eq!(
+            line,
+            r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status", "clock"], floating = true, screens = "every", size = "large", start = ["menu", "separator", "windows"] }]"#
+        );
+        let file = settings::set("format = 1\n", "layout.panels", &line).unwrap();
+        let read = settings::read(&file).unwrap();
+        assert_eq!(read.file.layout.panels.unwrap(), panels);
+        // The defaults are left out, as they are in a preset's file.
+        let plain = value(&classic()).unwrap();
+        assert!(
+            !plain.contains("size") && !plain.contains("floating"),
+            "{plain}"
         );
     }
 
