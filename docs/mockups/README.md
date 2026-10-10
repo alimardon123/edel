@@ -79,6 +79,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/overview.jpg](shell/overview.jpg) | The overview, Super+W (M5.2j-b, approved by Alimardon on 2026-10-10): every workspace small in a strip on a frosted tray, a frame to add one, search, and the shown workspace's windows large and labelled; a workspace dragged along the strip reorders them; the strip down the left by default, or on any side with `workspaces.overview_strip`; a click on the switcher's lit workspace opens it too |
 | [shell/lock.jpg](shell/lock.jpg) | The lock screen (M5.10c, proposed 2026-10-10): the wallpaper blurred and dimmed, the date over a large light clock, how many notifications came and from which apps, never their words, the person and a frosted password field with a Caps Lock warning; in the bottom right corner the keyboard layout, accessibility and power, its menu open: Suspend, Restart (an update waits) and Shut down |
 | [shell/lock-media.jpg](shell/lock-media.jpg) | The lock screen while music plays (M5.10c): the player as a frosted card in the bottom left corner, across from the buttons, with the cover, the time played and the controls |
+| [shell/lock-media-options.jpg](shell/lock-media-options.jpg) | Five places for the lock screen's player, to choose the default from (2026-10-10); every place stays a choice in Settings |
 | [shell/greeter.jpg](shell/greeter.jpg) | The login screen (M5.10c): the same design, the people of the machine to pick and Other to type a name |
 | [shell/lock-phone.jpg](shell/lock-phone.jpg) | A phone's lock screen (M9): the player under the clock, then the notifications as frosted cards saying only what arrived, the torch and camera; then the passcode on round frosted keys |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
@@ -124,7 +125,7 @@ The rules under them:
 
 The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
-boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg` and `lock-phone.jpg` (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).

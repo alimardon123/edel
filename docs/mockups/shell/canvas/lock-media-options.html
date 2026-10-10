@@ -1,0 +1,246 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Lock screen</title><style>
+/* M5.10c, proposed on 2026-10-10 after Alimardon asked for a lock screen
+   "much more premium, elegant, and really beautiful", with power buttons
+   in a corner. Draws shell/lock.jpg (the lock screen), shell/greeter.jpg
+   (the login screen) and shell/lock-phone.jpg (a phone's lock screen and
+   its passcode), in the fifth round's look: one square grid, frosted
+   cards with hairlines, round buttons, Inter with tabular figures, the
+   accent of design/tokens.toml. Render: node render.js lock.html. */
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,"Inter Variable",sans-serif;font-feature-settings:"tnum" 1,"cv11" 1;-webkit-font-smoothing:antialiased}
+.screen{width:1280px;height:800px;position:relative;overflow:hidden;color:#fff}
+/* The person's wallpaper (classic.jpg's dunes), blurred once at lock and
+   dimmed so white text reads on any picture; the tokens' backdrop when
+   there is no wallpaper. */
+.wall{position:absolute;inset:-40px;background:
+  radial-gradient(55% 45% at 22% 18%,rgba(150,176,226,.55),transparent 70%),
+  radial-gradient(60% 50% at 82% 30%,rgba(128,112,190,.38),transparent 70%),
+  radial-gradient(90% 60% at 50% 105%,rgba(70,96,150,.85),transparent 70%),
+  linear-gradient(180deg,#3a4a6e 0%,#26314d 55%,#1a2238 100%);filter:saturate(1.1)}
+.wall::after{content:"";position:absolute;inset:0;background:radial-gradient(70% 60% at 50% 40%,rgba(10,14,26,.05),rgba(10,14,26,.45))}
+.glass{background:rgba(255,255,255,.12);backdrop-filter:blur(24px) saturate(1.4);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 10px 30px rgba(6,10,22,.25)}
+.status{position:absolute;top:18px;right:24px;display:flex;gap:10px;align-items:center;font-size:13px;font-weight:500;opacity:.92}
+.date{position:absolute;left:0;right:0;text-align:center;font-size:20px;font-weight:500;letter-spacing:.2px;opacity:.86}
+.clock{position:absolute;left:0;right:0;text-align:center;font-weight:250;letter-spacing:-4px;line-height:1;text-shadow:0 2px 24px rgba(6,10,22,.25)}
+.summary{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;height:36px;padding:0 16px 0 8px;border-radius:18px;font-size:13px;font-weight:500}
+.stack{display:flex}.stack span{width:22px;height:22px;border-radius:7px;margin-right:-6px;box-shadow:0 0 0 2px rgba(40,52,82,.9)}
+.who{position:absolute;left:0;right:0;display:flex;flex-direction:column;align-items:center}
+.avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;background:linear-gradient(160deg,#7aa2ff,#2d6ae3);box-shadow:0 0 0 3px rgba(255,255,255,.22),0 10px 30px rgba(6,10,22,.35)}
+.name{font-size:17px;font-weight:600;margin-top:14px;letter-spacing:.1px}
+.field{margin-top:16px;width:280px;height:42px;border-radius:21px;display:flex;align-items:center;padding:0 5px 0 18px;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:#fff}
+.go{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#2d6ae3;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(45,106,227,.5)}
+.caps{margin-left:auto;display:flex;align-items:center;opacity:.8}
+.note{margin-top:12px;font-size:12px;font-weight:500;opacity:.7;display:flex;gap:6px;align-items:center}
+.corner{position:absolute;right:24px;bottom:24px;display:flex;gap:10px}
+.btn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.btn.on{background:rgba(255,255,255,.3)}
+.menu{position:absolute;right:24px;bottom:76px;width:216px;border-radius:20px;padding:6px;background:rgba(32,38,56,.62);backdrop-filter:blur(28px) saturate(1.4);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 16px 40px rgba(6,10,22,.45)}
+.row{height:40px;border-radius:14px;display:flex;align-items:center;gap:12px;padding:0 12px;font-size:14px;font-weight:500}
+.row.lit{background:rgba(255,255,255,.14)}
+.row .k{margin-left:auto;font-size:11px;opacity:.5;font-weight:500}
+.sep{height:1px;background:rgba(255,255,255,.12);margin:4px 10px}
+.users{display:flex;gap:40px;align-items:flex-end;justify-content:center}
+.user{display:flex;flex-direction:column;align-items:center;gap:10px;font-size:14px;font-weight:500}
+.user.dim{opacity:.62}
+.other{border:1.5px dashed rgba(255,255,255,.55);background:rgba(255,255,255,.06);box-shadow:none}
+.cap{position:absolute;left:24px;bottom:24px;font-size:12px;opacity:.55;font-weight:500}
+.mplayer{position:absolute;left:50%;top:286px;transform:translateX(-50%);width:460px;height:116px;border-radius:58px;display:flex;align-items:center;gap:18px;padding:0 26px 0 16px}
+.cover{width:84px;height:84px;border-radius:50%;flex:none;background:linear-gradient(180deg,#2a2b6c,#8a55b8 55%,#f48a6c);box-shadow:0 6px 18px rgba(6,10,22,.35)}
+.meta{flex:1;min-width:0}.app{display:flex;align-items:center;gap:6px;font-size:11px;opacity:.65;font-weight:500}
+.appic{width:12px;height:12px;border-radius:4px;background:linear-gradient(160deg,#ff6f8f,#e0335a)}
+.title{font-size:17px;font-weight:600;margin-top:3px}.artist{font-size:13px;opacity:.72;margin-top:1px}
+.bar{height:4px;border-radius:2px;background:rgba(255,255,255,.22);margin-top:10px;overflow:hidden}.bar span{display:block;height:100%;background:#fff;border-radius:2px}
+.times{display:flex;justify-content:space-between;font-size:10px;opacity:.6;margin-top:4px}
+.ctl{display:flex;align-items:center;gap:16px}.pp{width:48px;height:48px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center}
+.mcorner{position:absolute;left:24px;bottom:24px;width:400px;height:100px;border-radius:50px;display:flex;align-items:center;gap:16px;padding:0 24px 0 12px}
+.mcorner .cover{width:76px;height:76px}
+.mside{position:absolute;left:72px;top:50%;transform:translateY(-50%);width:300px;border-radius:30px;padding:24px}
+.art{width:252px;height:252px;border-radius:20px;background:linear-gradient(180deg,#2a2b6c,#8a55b8 55%,#f48a6c);box-shadow:0 14px 34px rgba(6,10,22,.45)}
+/* phones */
+.desk{width:1280px;height:800px;position:relative;background:#dfe3ea;color:#fff;overflow:hidden}
+.phone{position:absolute;top:20px;width:350px;height:760px;border-radius:52px;background:#14161b;padding:10px;box-shadow:0 20px 50px rgba(20,24,36,.28)}
+.ps{position:relative;width:330px;height:740px;border-radius:43px;overflow:hidden}
+.ps .status{top:16px;right:26px;font-size:12px}
+.ps .time{position:absolute;top:15px;left:28px;font-size:13px;font-weight:600}
+.card{position:absolute;left:14px;right:14px;border-radius:22px;padding:12px 14px;display:flex;gap:12px;align-items:center}
+.ic{width:34px;height:34px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center}
+.t1{font-size:13px;font-weight:600}.t2{font-size:12px;opacity:.75;margin-top:2px}
+.when{margin-left:auto;font-size:11px;opacity:.6;align-self:flex-start}
+.round{position:absolute;bottom:52px;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.hint{position:absolute;bottom:26px;left:0;right:0;text-align:center;font-size:12px;opacity:.6;font-weight:500}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:120px;height:5px;border-radius:3px;background:rgba(255,255,255,.85)}
+.pad{position:absolute;left:0;right:0;top:250px;display:grid;grid-template-columns:repeat(3,72px);gap:18px 26px;justify-content:center}
+.key{width:72px;height:72px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:28px;font-weight:400}
+.key small{font-size:9px;letter-spacing:1.6px;font-weight:600;opacity:.7;margin-top:-2px}
+.player{position:absolute;left:14px;right:14px;height:96px;border-radius:48px;display:flex;align-items:center;gap:14px;padding:0 22px 0 14px}
+.label{position:absolute;bottom:22px;font-size:13px;color:#444a56;font-weight:500;width:350px;text-align:center}
+</style></head><style>
+.mcorner{position:absolute;left:24px;bottom:24px;width:400px;height:100px;border-radius:50px;display:flex;align-items:center;gap:16px;padding:0 24px 0 12px}
+.mcorner .cover{width:76px;height:76px}
+.mside{position:absolute;left:72px;top:50%;transform:translateY(-50%);width:300px;border-radius:30px;padding:24px}
+.art{width:252px;height:252px;border-radius:20px;background:linear-gradient(180deg,#2a2b6c,#8a55b8 55%,#f48a6c);box-shadow:0 14px 34px rgba(6,10,22,.45)}
+.srow{position:absolute;top:326px;left:0;right:0;display:flex;gap:10px;justify-content:center;align-items:center}
+.slim{height:44px;border-radius:22px;display:flex;align-items:center;gap:10px;padding:0 8px 0 5px;font-size:13px}
+.slim .t{font-weight:600}.slim .a{opacity:.65;margin-right:6px}.slim .ctl{gap:8px}
+</style><body>
+<!-- The lock screen: the clock high, the person low, power in the corner. -->
+<div class="screen" id="o1">
+  <div class="wall"></div>
+  <div class="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+    <span style="display:flex;align-items:center;gap:6px">82%<svg width="24" height="13" viewBox="0 0 24 13"><rect x=".75" y=".75" width="20" height="11.5" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><rect x="2.6" y="2.6" width="13.6" height="7.8" rx="1.6" fill="#fff"/><rect x="22" y="4.2" width="1.6" height="4.6" rx=".8" fill="#fff" fill-opacity=".6"/></svg></span>
+  </div>
+  <div class="date" style="top:118px">Saturday 3 October</div>
+  <div class="clock" style="top:146px;font-size:150px">14:06</div>
+  <div class="summary glass" style="top:330px">
+    <div class="stack"><span style="background:linear-gradient(160deg,#3ecf8e,#14915a)"></span><span style="background:linear-gradient(160deg,#5b8ef5,#2d58c8)"></span></div>
+    <span style="margin-left:4px">3 notifications</span>
+  </div>
+  <div class="who" style="top:478px">
+    <div class="avatar" style="width:84px;height:84px;font-size:34px">A</div>
+    <div class="name">Ali</div>
+    <div class="field glass">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="caps" title="Caps Lock" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/><path d="M8.5 20h7"/></svg></span>
+      <span class="go" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="note" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/></svg>Caps Lock is on</div>
+  </div>
+<div class="mcorner glass" style="left:24px;top:24px;bottom:auto"><div class="cover"></div><div class="meta"><div class="app"><span class="appic"></span>Music</div><div class="title">Night Drive</div><div class="artist">Lumen</div><div class="bar"><span style="width:38%"></span></div><div class="times"><span>1:24</span><span>3:41</span></div></div><div class="ctl"><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M14 2.5 6 8l8 5.5z"/><rect x="2.3" y="2.5" width="2.2" height="11" rx="1"/></svg><div class="pp" style="width:48px;height:48px"><svg width="16" height="16" viewBox="0 0 14 14" fill="#14161b"><rect x="2.5" y="1.5" width="3" height="11" rx="1"/><rect x="8.5" y="1.5" width="3" height="11" rx="1"/></svg></div><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M2 2.5l8 5.5-8 5.5z"/><rect x="11.5" y="2.5" width="2.2" height="11" rx="1"/></svg></div></div>
+  <div class="corner">
+    <div class="btn glass">EN</div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.8" fill="#fff" stroke="none"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3.5 6M12 14.5l3.5 6"/></svg></div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></div>
+  </div>
+</div>
+
+
+<!-- The lock screen: the clock high, the person low, power in the corner. -->
+<div class="screen" id="o2">
+  <div class="wall"></div>
+  <div class="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+    <span style="display:flex;align-items:center;gap:6px">82%<svg width="24" height="13" viewBox="0 0 24 13"><rect x=".75" y=".75" width="20" height="11.5" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><rect x="2.6" y="2.6" width="13.6" height="7.8" rx="1.6" fill="#fff"/><rect x="22" y="4.2" width="1.6" height="4.6" rx=".8" fill="#fff" fill-opacity=".6"/></svg></span>
+  </div>
+  <div class="date" style="top:118px">Saturday 3 October</div>
+  <div class="clock" style="top:146px;font-size:150px">14:06</div>
+  <div class="summary glass" style="top:330px">
+    <div class="stack"><span style="background:linear-gradient(160deg,#3ecf8e,#14915a)"></span><span style="background:linear-gradient(160deg,#5b8ef5,#2d58c8)"></span></div>
+    <span style="margin-left:4px">3 notifications</span>
+  </div>
+  <div class="who" style="top:478px">
+    <div class="avatar" style="width:84px;height:84px;font-size:34px">A</div>
+    <div class="name">Ali</div>
+    <div class="field glass">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="caps" title="Caps Lock" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/><path d="M8.5 20h7"/></svg></span>
+      <span class="go" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="note" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/></svg>Caps Lock is on</div>
+  </div>
+<div class="mcorner glass" style=""><div class="cover"></div><div class="meta"><div class="app"><span class="appic"></span>Music</div><div class="title">Night Drive</div><div class="artist">Lumen</div><div class="bar"><span style="width:38%"></span></div><div class="times"><span>1:24</span><span>3:41</span></div></div><div class="ctl"><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M14 2.5 6 8l8 5.5z"/><rect x="2.3" y="2.5" width="2.2" height="11" rx="1"/></svg><div class="pp" style="width:48px;height:48px"><svg width="16" height="16" viewBox="0 0 14 14" fill="#14161b"><rect x="2.5" y="1.5" width="3" height="11" rx="1"/><rect x="8.5" y="1.5" width="3" height="11" rx="1"/></svg></div><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M2 2.5l8 5.5-8 5.5z"/><rect x="11.5" y="2.5" width="2.2" height="11" rx="1"/></svg></div></div>
+  <div class="corner">
+    <div class="btn glass">EN</div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.8" fill="#fff" stroke="none"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3.5 6M12 14.5l3.5 6"/></svg></div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></div>
+  </div>
+</div>
+
+
+<!-- The lock screen: the clock high, the person low, power in the corner. -->
+<div class="screen" id="o3">
+  <div class="wall"></div>
+  <div class="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+    <span style="display:flex;align-items:center;gap:6px">82%<svg width="24" height="13" viewBox="0 0 24 13"><rect x=".75" y=".75" width="20" height="11.5" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><rect x="2.6" y="2.6" width="13.6" height="7.8" rx="1.6" fill="#fff"/><rect x="22" y="4.2" width="1.6" height="4.6" rx=".8" fill="#fff" fill-opacity=".6"/></svg></span>
+  </div>
+  <div class="date" style="top:118px">Saturday 3 October</div>
+  <div class="clock" style="top:146px;font-size:150px">14:06</div>
+  <div class="srow"><div class="slim glass"><div class="cover" style="width:34px;height:34px"></div><span class="t">Night Drive</span><span class="a">Lumen</span><div class="ctl"><svg width="16" height="16" viewBox="0 0 16 16" fill="#fff"><path d="M14 2.5 6 8l8 5.5z"/><rect x="2.3" y="2.5" width="2.2" height="11" rx="1"/></svg><div class="pp" style="width:32px;height:32px"><svg width="10" height="10" viewBox="0 0 14 14" fill="#14161b"><rect x="2.5" y="1.5" width="3" height="11" rx="1"/><rect x="8.5" y="1.5" width="3" height="11" rx="1"/></svg></div><svg width="16" height="16" viewBox="0 0 16 16" fill="#fff"><path d="M2 2.5l8 5.5-8 5.5z"/><rect x="11.5" y="2.5" width="2.2" height="11" rx="1"/></svg></div></div><div class="summary glass" style="position:static;transform:none">
+    <div class="stack"><span style="background:linear-gradient(160deg,#3ecf8e,#14915a)"></span><span style="background:linear-gradient(160deg,#5b8ef5,#2d58c8)"></span></div>
+    <span style="margin-left:4px">3 notifications</span>
+  </div>
+  </div>
+  <div class="who" style="top:478px">
+    <div class="avatar" style="width:84px;height:84px;font-size:34px">A</div>
+    <div class="name">Ali</div>
+    <div class="field glass">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="caps" title="Caps Lock" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/><path d="M8.5 20h7"/></svg></span>
+      <span class="go" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="note" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/></svg>Caps Lock is on</div>
+  </div>
+  <div class="corner">
+    <div class="btn glass">EN</div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.8" fill="#fff" stroke="none"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3.5 6M12 14.5l3.5 6"/></svg></div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></div>
+  </div>
+</div>
+
+
+<!-- The lock screen: the clock high, the person low, power in the corner. -->
+<div class="screen" id="o4">
+  <div class="wall"></div>
+  <div class="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+    <span style="display:flex;align-items:center;gap:6px">82%<svg width="24" height="13" viewBox="0 0 24 13"><rect x=".75" y=".75" width="20" height="11.5" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><rect x="2.6" y="2.6" width="13.6" height="7.8" rx="1.6" fill="#fff"/><rect x="22" y="4.2" width="1.6" height="4.6" rx=".8" fill="#fff" fill-opacity=".6"/></svg></span>
+  </div>
+  <div class="date" style="top:118px">Saturday 3 October</div>
+  <div class="clock" style="top:146px;font-size:150px">14:06</div>
+  <div class="summary glass" style="top:330px">
+    <div class="stack"><span style="background:linear-gradient(160deg,#3ecf8e,#14915a)"></span><span style="background:linear-gradient(160deg,#5b8ef5,#2d58c8)"></span></div>
+    <span style="margin-left:4px">3 notifications</span>
+  </div>
+  <div class="who" style="top:478px">
+    <div class="avatar" style="width:84px;height:84px;font-size:34px">A</div>
+    <div class="name">Ali</div>
+    <div class="field glass">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="caps" title="Caps Lock" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/><path d="M8.5 20h7"/></svg></span>
+      <span class="go" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="note" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/></svg>Caps Lock is on</div>
+  </div>
+<div class="mside glass"><div class="art"></div><div class="app" style="margin-top:16px"><span class="appic"></span>Music</div><div class="title" style="font-size:20px">Night Drive</div><div class="artist">Lumen</div><div class="bar"><span style="width:38%"></span></div><div class="times"><span>1:24</span><span>3:41</span></div><div class="ctl" style="justify-content:center;gap:28px;margin-top:10px"><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M14 2.5 6 8l8 5.5z"/><rect x="2.3" y="2.5" width="2.2" height="11" rx="1"/></svg><div class="pp" style="width:48px;height:48px"><svg width="16" height="16" viewBox="0 0 14 14" fill="#14161b"><rect x="2.5" y="1.5" width="3" height="11" rx="1"/><rect x="8.5" y="1.5" width="3" height="11" rx="1"/></svg></div><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M2 2.5l8 5.5-8 5.5z"/><rect x="11.5" y="2.5" width="2.2" height="11" rx="1"/></svg></div></div>
+  <div class="corner">
+    <div class="btn glass">EN</div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.8" fill="#fff" stroke="none"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3.5 6M12 14.5l3.5 6"/></svg></div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></div>
+  </div>
+</div>
+
+
+<!-- The lock screen: the clock high, the person low, power in the corner. -->
+<div class="screen" id="o5">
+  <div class="wall"></div>
+  <div class="status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+    <span style="display:flex;align-items:center;gap:6px">82%<svg width="24" height="13" viewBox="0 0 24 13"><rect x=".75" y=".75" width="20" height="11.5" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="1.5"/><rect x="2.6" y="2.6" width="13.6" height="7.8" rx="1.6" fill="#fff"/><rect x="22" y="4.2" width="1.6" height="4.6" rx=".8" fill="#fff" fill-opacity=".6"/></svg></span>
+  </div>
+  <div class="date" style="top:150px;left:96px;right:auto;text-align:left">Saturday 3 October</div>
+  <div class="clock" style="top:178px;left:88px;right:auto;text-align:left;font-size:150px">14:06</div>
+  <div class="summary glass" style="top:242px;left:900px">
+    <div class="stack"><span style="background:linear-gradient(160deg,#3ecf8e,#14915a)"></span><span style="background:linear-gradient(160deg,#5b8ef5,#2d58c8)"></span></div>
+    <span style="margin-left:4px">3 notifications</span>
+  </div>
+  <div class="who" style="top:318px;left:620px">
+    <div class="avatar" style="width:84px;height:84px;font-size:34px">A</div>
+    <div class="name">Ali</div>
+    <div class="field glass">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      <span class="caps" title="Caps Lock" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/><path d="M8.5 20h7"/></svg></span>
+      <span class="go" style="margin-left:auto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+    </div>
+    <div class="note" style="display:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 4 4 12h4.5v4h7v-4H20z"/></svg>Caps Lock is on</div>
+  </div>
+<div class="mcorner glass" style="left:96px;top:390px;bottom:auto;width:440px"><div class="cover"></div><div class="meta"><div class="app"><span class="appic"></span>Music</div><div class="title">Night Drive</div><div class="artist">Lumen</div><div class="bar"><span style="width:38%"></span></div><div class="times"><span>1:24</span><span>3:41</span></div></div><div class="ctl"><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M14 2.5 6 8l8 5.5z"/><rect x="2.3" y="2.5" width="2.2" height="11" rx="1"/></svg><div class="pp" style="width:48px;height:48px"><svg width="16" height="16" viewBox="0 0 14 14" fill="#14161b"><rect x="2.5" y="1.5" width="3" height="11" rx="1"/><rect x="8.5" y="1.5" width="3" height="11" rx="1"/></svg></div><svg width="20" height="20" viewBox="0 0 16 16" fill="#fff"><path d="M2 2.5l8 5.5-8 5.5z"/><rect x="11.5" y="2.5" width="2.2" height="11" rx="1"/></svg></div></div>
+  <div class="corner">
+    <div class="btn glass">EN</div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.5" r="1.8" fill="#fff" stroke="none"/><path d="M5 8.5l7 1.5 7-1.5M12 10v4.5l-3.5 6M12 14.5l3.5 6"/></svg></div>
+    <div class="btn glass"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg></div>
+  </div>
+</div>
+
+</body></html>
