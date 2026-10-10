@@ -72,6 +72,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
                 shell.show_switcher(crate::switcher::View::from_event(&titles, chosen));
             }
             edel_shell_v1::Event::SwitcherHide => shell.hide_switcher(),
+            edel_shell_v1::Event::MediaKey { key } => shell.media_key(&key),
         }
     }
 }

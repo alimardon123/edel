@@ -80,6 +80,17 @@ impl Edel {
         }
     }
 
+    /// A volume or brightness key (M5.9c): shell-ui changes the level and
+    /// shows it.
+    pub fn media_key(&self, name: &str) {
+        eprintln!("edel-compositor: media key {name}");
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.media_key(name.to_string());
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");

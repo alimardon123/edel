@@ -819,6 +819,11 @@ impl Shell {
     }
 
     /// Super or the menu button: the launcher opens, or closes if open.
+    /// A volume or brightness key the compositor kept from apps (M5.9c).
+    fn media_key(&mut self, key: &str) {
+        eprintln!("edel-shell-ui: media key {key}");
+    }
+
     fn toggle_launcher(&mut self) {
         if self.menu.is_some() {
             self.close_launcher();
