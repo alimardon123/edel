@@ -2,7 +2,7 @@
 # and display devices through udev's database, which mdev does not keep.
 format = 1
 summary = "Devices with udev, which input and graphics need"
-why = "libinput and the compositor find keyboards, mice, touchpads and GPUs through udev; udev-trigger loads the drivers for the hardware found, as hwdrivers does with mdev."
+why = "libinput and the compositor find keyboards, mice, touchpads and GPUs through udev; udev-trigger loads the drivers for the hardware found, as hwdrivers does with mdev. Its rule 90-edel-backlight lets group seat, the people at the machine, write the screen's brightness, which the panel's keys and quick settings set (M5.9c)."
 packages = ["eudev", "udev-init-scripts", "udev-init-scripts-openrc"]
 
 [services]

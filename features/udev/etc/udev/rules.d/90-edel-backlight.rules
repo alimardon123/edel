@@ -1,0 +1,3 @@
+# The people at the machine, group seat, may set the screen's brightness
+# (M5.9c): shell-ui's keys and slider write it with no daemon of their own.
+SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chgrp seat %S%p/brightness", RUN+="/bin/chmod g+w %S%p/brightness"
