@@ -14,8 +14,9 @@
   <interface name="edel_shell_v1" version="1">
     <description summary="the shell's link to the compositor">
       Bound once by shell-ui. The compositor sends the shown workspace's
-      policy when bound and whenever it changes, and the launcher event
-      when the launcher's key is pressed.
+      policy when bound and whenever it changes, the launcher event
+      when the launcher's key is pressed, and the volume and brightness
+      keys (M5.9c).
     </description>
 
     <request name="destroy" type="destructor">
@@ -53,6 +54,16 @@
         The switcher's keys were let go, or Escape pressed: the
         compositor has switched, or not, and shell-ui hides the list.
       </description>
+    </event>
+
+    <event name="media_key">
+      <description summary="a volume or brightness key was pressed">
+        The keyboard's volume, mute or brightness key (M5.9c): shell-ui
+        changes the level and shows it. The compositor keeps these keys
+        from apps.
+      </description>
+      <arg name="key" type="string"
+           summary="volume_up, volume_down, mute, brightness_up or brightness_down"/>
     </event>
 
     <event name="policy">

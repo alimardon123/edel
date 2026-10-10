@@ -175,6 +175,22 @@ pub fn holds_switcher(bindings: &[Binding], modifiers: &ModifiersState) -> bool 
         })
 }
 
+/// The name shell-ui hears for a volume, mute or brightness key
+/// (`edel-shell-v1`'s `media_key`, M5.9c), none for any other key. These
+/// keys mean one thing on every keyboard, so they are no shortcuts to
+/// rebind.
+pub fn media_key(sym: u32) -> Option<&'static str> {
+    use xkb::keysyms as k;
+    Some(match sym {
+        k::KEY_XF86AudioRaiseVolume => "volume_up",
+        k::KEY_XF86AudioLowerVolume => "volume_down",
+        k::KEY_XF86AudioMute => "mute",
+        k::KEY_XF86MonBrightnessUp => "brightness_up",
+        k::KEY_XF86MonBrightnessDown => "brightness_down",
+        _ => return None,
+    })
+}
+
 /// Whether `sym` is a modifier that can be tapped alone.
 pub fn is_tap_key(sym: xkb::Keysym) -> bool {
     use xkb::keysyms as k;
@@ -237,6 +253,20 @@ pub fn changes(old: &[Binding], new: &[Binding]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_volume_and_brightness_keys_have_names_and_other_keys_none() {
+        use xkb::keysyms as k;
+        assert_eq!(media_key(k::KEY_XF86AudioRaiseVolume), Some("volume_up"));
+        assert_eq!(media_key(k::KEY_XF86AudioLowerVolume), Some("volume_down"));
+        assert_eq!(media_key(k::KEY_XF86AudioMute), Some("mute"));
+        assert_eq!(media_key(k::KEY_XF86MonBrightnessUp), Some("brightness_up"));
+        assert_eq!(
+            media_key(k::KEY_XF86MonBrightnessDown),
+            Some("brightness_down")
+        );
+        assert_eq!(media_key(k::KEY_a), None);
+    }
 
     fn held(logo: bool, ctrl: bool, alt: bool, shift: bool) -> ModifiersState {
         ModifiersState {

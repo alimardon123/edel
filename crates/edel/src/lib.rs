@@ -13,6 +13,7 @@
 #[cfg(feature = "icons")]
 pub mod app_icons;
 pub mod apps;
+pub mod backlight;
 pub mod bluetooth;
 pub mod features;
 pub mod i18n;

@@ -17,7 +17,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use edel::{bluetooth, network, power, sound};
+use edel::{backlight, bluetooth, network, power, sound};
 
 /// How the machine is connected, the first part of the status area.
 #[derive(Debug, Clone, PartialEq)]
@@ -81,6 +81,8 @@ pub struct Status {
     pub battery: Option<Battery>,
     /// Whether the Bluetooth adapter is on, none without an adapter.
     pub bluetooth: Option<bool>,
+    /// The screen's backlight in percent, none without one (M5.9c).
+    pub brightness: Option<u32>,
 }
 
 impl Status {
@@ -207,6 +209,8 @@ pub fn read(features: &Path, bluetooth: bool) -> Status {
     if bluetooth && has("bluetooth") {
         status.bluetooth = bluetooth::adapter().ok().flatten().map(|a| a.powered);
     }
+    // The hardware's own state, so no feature file gates it (M5.9c).
+    status.brightness = backlight::find().map(|b| b.percent());
     status
 }
 
@@ -224,6 +228,8 @@ pub enum Cmd {
     Volume(u32),
     Mute(bool),
     Output(u32),
+    /// The screen's brightness, percent (M5.9c).
+    Brightness(u32),
 }
 
 impl Cmd {
@@ -240,6 +246,7 @@ impl Cmd {
             Cmd::Volume(p) => format!("set the volume to {p} percent"),
             Cmd::Mute(on) => format!("{} the sound", if *on { "mute" } else { "unmute" }),
             Cmd::Output(_) => "choose the output".to_string(),
+            Cmd::Brightness(p) => format!("set the brightness to {p} percent"),
         }
     }
 
@@ -279,6 +286,9 @@ impl Cmd {
             }
             Cmd::Mute(on) => sound::set_mute(sink, *on),
             Cmd::Output(id) => sound::set_default(*id),
+            Cmd::Brightness(percent) => backlight::find()
+                .ok_or_else(|| anyhow::anyhow!("this machine has no backlight to set"))?
+                .set_percent(*percent),
         }
     }
 }
@@ -450,5 +460,9 @@ mod tests {
         );
         assert_eq!(Cmd::Volume(40).what(), "set the volume to 40 percent");
         assert_eq!(Cmd::Mute(true).what(), "mute the sound");
+        assert_eq!(
+            Cmd::Brightness(70).what(),
+            "set the brightness to 70 percent"
+        );
     }
 }

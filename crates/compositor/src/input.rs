@@ -51,6 +51,8 @@ enum Action {
     Shortcut(crate::shortcuts::Act),
     /// The switcher closes, switching or not (M5.3c).
     SwitcherDone(bool),
+    /// A volume or brightness key, for shell-ui (M5.9c).
+    Media(&'static str),
 }
 
 /// What is under the pointer.
@@ -136,6 +138,8 @@ impl Edel {
                             FilterResult::Intercept(Action::Vt(
                                 (sym - xkb::keysyms::KEY_XF86Switch_VT_1 + 1) as i32,
                             ))
+                        } else if let Some(name) = crate::shortcuts::media_key(sym) {
+                            FilterResult::Intercept(Action::Media(name))
                         } else if let Some(act) =
                             crate::shortcuts::find(&state.bindings, modifiers, latin)
                         {
@@ -157,6 +161,7 @@ impl Edel {
                     Action::Vt(vt) => return Some(vt),
                     Action::Shortcut(act) => self.shortcut(act),
                     Action::SwitcherDone(take) => self.switcher_done(take),
+                    Action::Media(name) => self.media_key(name),
                 }
             }
             InputEvent::PointerMotion { event } => {

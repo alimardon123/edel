@@ -25,6 +25,8 @@ mod messages;
 mod notice;
 mod notify;
 mod notify_card;
+mod osd;
+mod osd_card;
 mod paint;
 mod popup;
 mod portal;
@@ -78,6 +80,7 @@ use edel::tokens::{self, Scheme, Tokens};
 use edel::{app_icons as icons, apps};
 
 use crate::notify_card::{BannerCard, CentreCard};
+use crate::osd_card::OsdCard;
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
 use crate::quick_card::QuickCard;
@@ -99,6 +102,8 @@ const QUICK: &str = "edel-quick";
 /// clock opens (M5.9b).
 const BANNER: &str = "edel-notification";
 const CENTRE: &str = "edel-centre";
+/// The volume and brightness pop-up a media key shows (M5.9c).
+const OSD: &str = "edel-osd";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
 /// The feature that brings it.
@@ -144,6 +149,8 @@ struct Shell {
     notifications: notify::List,
     banner: Option<BannerCard>,
     centre: Option<CentreCard>,
+    /// The volume and brightness pop-up while it shows (M5.9c).
+    osd: Option<OsdCard>,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -359,6 +366,7 @@ fn run() -> Result<()> {
         notifications: notify::List::default(),
         banner: None,
         centre: None,
+        osd: None,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -1180,6 +1188,8 @@ impl LayerShellHandler for Shell {
             self.close_quick();
         } else if self.is_banner(surface.wl_surface()) {
             self.hide_banner();
+        } else if self.is_osd(surface.wl_surface()) {
+            self.hide_osd();
         } else if self.is_centre(surface.wl_surface()) {
             self.close_centre();
         } else if self.is_switcher(surface.wl_surface()) {
@@ -1220,6 +1230,12 @@ impl LayerShellHandler for Shell {
                 card.popup_mut().configured();
             }
             return self.draw_banner();
+        }
+        if self.is_osd(surface.wl_surface()) {
+            if let Some(card) = &mut self.osd {
+                card.popup.configured();
+            }
+            return self.draw_osd();
         }
         if self.is_centre(surface.wl_surface()) {
             if let Some(card) = &mut self.centre {
@@ -1276,6 +1292,12 @@ impl CompositorHandler for Shell {
                 card.popup_mut().set_scale(factor);
             }
             return self.draw_banner();
+        }
+        if self.is_osd(surface) {
+            if let Some(card) = &mut self.osd {
+                card.popup.set_scale(factor);
+            }
+            return self.draw_osd();
         }
         if self.is_centre(surface) {
             if let Some(card) = &mut self.centre {
@@ -1337,6 +1359,12 @@ impl CompositorHandler for Shell {
                 card.popup_mut().framed();
             }
             return self.draw_banner();
+        }
+        if self.is_osd(surface) {
+            if let Some(card) = &mut self.osd {
+                card.popup.framed();
+            }
+            return self.draw_osd();
         }
         if self.is_centre(surface) {
             if let Some(card) = &mut self.centre {
@@ -1507,6 +1535,10 @@ impl PointerHandler for Shell {
             }
             if self.is_banner(&event.surface) {
                 self.banner_pointer(event);
+                continue;
+            }
+            if self.is_osd(&event.surface) {
+                self.osd_pointer(event);
                 continue;
             }
             if self.is_centre(&event.surface) {

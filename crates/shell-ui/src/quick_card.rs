@@ -26,6 +26,15 @@ use crate::popup::{Card, Popup, Rect};
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
 
+/// Which slider a drag is moving, if one is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Drag {
+    Idle,
+    Volume,
+    /// The brightness slider (M5.9c)
+    Light,
+}
+
 /// The open card: its surface, the keyboard, what a screen reader reads,
 /// and what it keeps besides what the machine says.
 pub struct QuickCard {
@@ -33,12 +42,15 @@ pub struct QuickCard {
     keyboard: Option<wl_keyboard::WlKeyboard>,
     reader: a11y::Reader,
     state: quick::State,
-    /// A drag on the slider is going on.
-    dragging: bool,
+    /// Which slider a drag is moving.
+    drag: Drag,
     /// The last percent sent to the sound system, and whether a command
     /// setting the volume runs.
     sent: Option<u32>,
     setting_volume: bool,
+    /// The same for the screen's brightness (M5.9c).
+    sent_light: Option<u32>,
+    setting_light: bool,
     /// Where the card's parts were last logged, so a line says it only
     /// when it changed.
     logged: String,
@@ -48,6 +60,13 @@ impl QuickCard {
     /// Do not disturb is `on` now: its tile shows it.
     pub fn set_dnd(&mut self, on: bool) {
         self.state.dnd = on;
+    }
+
+    /// The sliders show the machine's levels again, not what a person or a
+    /// key set last (M5.9c: a volume or brightness key changed them).
+    pub fn show_machine_levels(&mut self) {
+        self.state.volume = None;
+        self.state.brightness = None;
     }
 
     /// The card's surface, for the handlers of the compositor's events.
@@ -74,7 +93,7 @@ impl Shell {
     }
 
     /// A thread that runs `ran` if there is one, then reads the status.
-    fn run_and_read(&mut self, ran: Option<Cmd>, bluetooth: bool) {
+    pub(crate) fn run_and_read(&mut self, ran: Option<Cmd>, bluetooth: bool) {
         self.status_busy += 1;
         let tx = self.status_tx.clone();
         let features = edel::places::found_shared(edel::features::DIR);
@@ -127,8 +146,11 @@ impl Shell {
         if let Some(card) = &mut self.quick {
             // What a person chose has been confirmed or refused by now: the
             // machine's word shows again, unless a drag is still going.
-            if !card.dragging && !card.setting_volume {
+            if card.drag != Drag::Volume && !card.setting_volume {
                 card.state.volume = None;
+            }
+            if card.drag != Drag::Light && !card.setting_light {
+                card.state.brightness = None;
             }
         }
         if changed {
@@ -157,6 +179,10 @@ impl Shell {
                 card.setting_volume = false;
                 self.send_volume();
             }
+            Cmd::Brightness(_) => {
+                card.setting_light = false;
+                self.send_brightness();
+            }
             Cmd::Output(_) => {}
         }
     }
@@ -176,6 +202,27 @@ impl Shell {
         card.sent = Some(percent);
         card.setting_volume = true;
         self.run_and_read(Some(Cmd::Volume(percent)), false);
+    }
+
+    /// Sends the brightness the slider is at, one at a time, as the volume
+    /// is sent: the end of a command sends the latest.
+    fn send_brightness(&mut self) {
+        let Some(card) = &mut self.quick else {
+            return;
+        };
+        if card.setting_light {
+            return;
+        }
+        let Some(percent) = card
+            .state
+            .brightness
+            .filter(|p| card.sent_light != Some(*p))
+        else {
+            return;
+        };
+        card.sent_light = Some(percent);
+        card.setting_light = true;
+        self.run_and_read(Some(Cmd::Brightness(percent)), false);
     }
 
     // ---- The card ----
@@ -209,6 +256,8 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_centre();
+        // The pop-up's level would show over the card, so it goes.
+        self.hide_osd();
         let Some(panel) = self
             .panels
             .iter()
@@ -275,9 +324,11 @@ impl Shell {
             keyboard,
             reader: a11y::Reader::new(tr("Quick settings")),
             state,
-            dragging: false,
+            drag: Drag::Idle,
             sent: None,
             setting_volume: false,
+            sent_light: None,
+            setting_light: false,
             logged: String::new(),
         });
         // The pill lights while the card is open.
@@ -423,24 +474,28 @@ impl Shell {
         match &event.kind {
             PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. } => {
                 card.state.hover = over;
-                if card.dragging {
-                    let percent = quick::volume_at(&layout, x);
-                    self.quick_volume(percent);
-                } else {
-                    self.draw_quick();
+                match card.drag {
+                    Drag::Volume => self.quick_volume(quick::volume_at(&layout, x)),
+                    Drag::Light => self.quick_brightness(quick::brightness_at(&layout, x)),
+                    Drag::Idle => self.draw_quick(),
                 }
             }
             PointerEventKind::Leave { .. } => {
                 card.state.hover = None;
-                if !card.dragging {
+                if card.drag == Drag::Idle {
                     self.draw_quick();
                 }
             }
             PointerEventKind::Press { button, .. } if *button == BTN_LEFT => match over {
                 Some(quick::Focus::Slider) => {
-                    card.dragging = true;
+                    card.drag = Drag::Volume;
                     let percent = quick::volume_at(&layout, x);
                     self.quick_volume(percent);
+                }
+                Some(quick::Focus::Light) => {
+                    card.drag = Drag::Light;
+                    let percent = quick::brightness_at(&layout, x);
+                    self.quick_brightness(percent);
                 }
                 Some(part) => {
                     card.state.focus = None;
@@ -451,21 +506,26 @@ impl Shell {
                         quick::Focus::Choose(i) => quick::Act::Choose(i),
                         quick::Focus::SoundPage => quick::Act::SoundPage,
                         quick::Focus::Settings => quick::Act::Settings,
-                        quick::Focus::Slider => return,
+                        quick::Focus::Slider | quick::Focus::Light => return,
                     };
                     self.quick_act(act);
                 }
                 None => {}
             },
             PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
-                card.dragging = false;
-                self.send_volume();
+                let drag = std::mem::replace(&mut card.drag, Drag::Idle);
+                match drag {
+                    Drag::Volume => self.send_volume(),
+                    Drag::Light => self.send_brightness(),
+                    Drag::Idle => {}
+                }
             }
             // A right click opens the page: the slider's Sound settings, a
             // round toggle's Settings page (the mockups' rule).
             PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
                 let act = match over {
                     Some(quick::Focus::Slider) => Some(quick::Act::SoundPage),
+                    Some(quick::Focus::Light) => Some(quick::Act::DisplaysPage),
                     Some(quick::Focus::Toggle(i)) => view
                         .tiles
                         .get(i)
@@ -490,6 +550,18 @@ impl Shell {
         if card.state.volume != Some(percent) {
             card.state.volume = Some(percent);
             self.send_volume();
+        }
+        self.draw_quick();
+    }
+
+    /// The brightness slider is at `percent`: shown at once, and sent (M5.9c).
+    fn quick_brightness(&mut self, percent: u32) {
+        let Some(card) = &mut self.quick else {
+            return;
+        };
+        if card.state.brightness != Some(percent) {
+            card.state.brightness = Some(percent);
+            self.send_brightness();
         }
         self.draw_quick();
     }
@@ -531,6 +603,7 @@ impl Shell {
                 self.draw_quick();
             }
             Act::Volume(percent) => self.quick_volume(percent),
+            Act::Brightness(percent) => self.quick_brightness(percent),
             Act::Toggle(i) => {
                 let Some(tile) = view.tiles.get(i) else {
                     return;
@@ -551,6 +624,15 @@ impl Shell {
                     SETTINGS.to_string(),
                     "--page".to_string(),
                     quick::SOUND_PAGE.to_string(),
+                ];
+                self.launcher.spawn(&argv, "Settings");
+                self.close_quick();
+            }
+            Act::DisplaysPage => {
+                let argv = [
+                    SETTINGS.to_string(),
+                    "--page".to_string(),
+                    quick::DISPLAYS_PAGE.to_string(),
                 ];
                 self.launcher.spawn(&argv, "Settings");
                 self.close_quick();

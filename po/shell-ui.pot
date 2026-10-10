@@ -107,6 +107,21 @@ msgstr ""
 msgid "Notification from {app}: {text}"
 msgstr ""
 
+msgid "Volume"
+msgstr ""
+
+msgid "Sound settings"
+msgstr ""
+
+msgid "Brightness"
+msgstr ""
+
+msgid "Display settings"
+msgstr ""
+
+msgid "Volume and brightness"
+msgstr ""
+
 msgid "Wi-Fi"
 msgstr ""
 
@@ -138,12 +153,6 @@ msgid "{title} settings"
 msgstr ""
 
 msgid "Sound: outputs"
-msgstr ""
-
-msgid "Sound settings"
-msgstr ""
-
-msgid "Volume"
 msgstr ""
 
 msgid "Settings"

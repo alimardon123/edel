@@ -8,8 +8,10 @@
 //!   left and, behind it, its page (name, state and an arrow) that opens
 //!   the tile's Settings page; a right click on a round toggle with a page
 //!   opens it too;
-//! - the **shelf**: a hairline, the volume slider with its number in it, and
-//!   a chevron that opens the list of outputs (with "Sound settings" last);
+//! - the **shelf**: a hairline, the brightness slider (M5.9c, where the
+//!   machine has a backlight, full width, no chevron), the volume slider
+//!   with its number in it, and a chevron that opens the list of outputs
+//!   (with "Sound settings" last);
 //! - a **footer**: the battery's pill with its charge and time, and the
 //!   Settings button at the right.
 //!
@@ -51,6 +53,8 @@ pub const STEP: u32 = 5;
 pub const DARK_PAGE: &str = "layout";
 /// The Settings page the list's last row opens.
 pub const SOUND_PAGE: &str = "sound";
+/// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
+pub const DISPLAYS_PAGE: &str = "displays";
 
 /// A tile of the card: the names are what `[quick] tiles` lists
 /// (`edel::presets::TILES`).
@@ -181,6 +185,8 @@ pub enum Focus {
     Toggle(usize),
     /// A pill's page part of tile `i`
     Page(usize),
+    /// The brightness slider, above the volume's (M5.9c)
+    Light,
     /// The slider
     Slider,
     /// The chevron that opens the list of outputs
@@ -201,6 +207,8 @@ pub struct View {
     pub width: u32,
     pub compact: bool,
     pub tiles: Vec<TileView>,
+    /// The screen's brightness in percent, none without a backlight (M5.9c).
+    pub brightness: Option<u32>,
     pub volume: Option<VolumeView>,
     pub battery: Option<BatteryView>,
     /// Whether the Settings button is there.
@@ -224,8 +232,12 @@ pub enum Act {
     Mute,
     /// The volume to this percent.
     Volume(u32),
+    /// The brightness to this percent (M5.9c).
+    Brightness(u32),
     /// Open the Sound page of Settings.
     SoundPage,
+    /// Open the Displays page of Settings (M5.9c).
+    DisplaysPage,
     Settings,
     Close,
 }
@@ -376,6 +388,8 @@ pub struct State {
     pub pending: Vec<(Tile, bool)>,
     pub volume: Option<u32>,
     pub muted: Option<bool>,
+    /// The brightness a drag has reached, as `volume` is (M5.9c).
+    pub brightness: Option<u32>,
 }
 
 /// The card showing `status` and `state`, with the tiles `names` lists
@@ -394,6 +408,8 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
             },
             &state.pending,
         ),
+        // What a drag has reached shows over what the screen says, as the volume does.
+        brightness: status.brightness.map(|now| state.brightness.unwrap_or(now)),
         volume: volume(status, state.volume, state.muted),
         battery: status.battery.as_ref().map(|b| BatteryView {
             percent: b.percent,
@@ -512,6 +528,8 @@ const TRACK_GAP: f32 = 10.0;
 const SETTINGS_INSET: f32 = 14.0;
 /// The text of a list row starts this far from its left edge.
 const ROW_TEXT: f32 = 14.0;
+/// Between the brightness slider and the volume's, as the mockups have it.
+const SLIDER_GAP: f32 = 10.0;
 
 /// One tile's parts. A round toggle's `toggle` is its whole cell; a pill's
 /// `toggle` is its left part with the icon circle, and its `page` the rest.
@@ -528,6 +546,9 @@ pub struct Layout {
     pub size: (u32, u32),
     pub metrics: Metrics,
     pub tiles: Vec<TileBox>,
+    /// The brightness slider's track, full width, above the volume's when
+    /// the machine has a backlight (M5.9c).
+    pub light: Option<Rect>,
     /// The slider's track, and the chevron button beside it.
     pub track: Option<Rect>,
     pub sound: Option<Rect>,
@@ -620,30 +641,39 @@ pub fn layout(view: &View) -> Layout {
         tiles.push(b);
     }
     let mut started = !view.tiles.is_empty();
-    let (mut rule, mut track, mut sound, mut sound_page) = (None, None, None, None);
+    let (mut rule, mut light, mut track, mut sound, mut sound_page) =
+        (None, None, None, None, None);
     let mut list = Vec::new();
-    if let Some(volume) = &view.volume {
+    if view.volume.is_some() || view.brightness.is_some() {
         if started {
             y += GRID_BELOW;
         }
         section(&mut y, &mut started, &m);
         rule = Some(y);
         y += 1.0 + RULE_ROOM;
-        track = Some(Rect::new(m.side, y, inner - m.bar - TRACK_GAP, m.bar));
-        sound = Some(Rect::new(m.side + inner - m.bar, y, m.bar, m.bar));
-        y += m.bar;
-        if view.list {
-            section(&mut y, &mut started, &m);
-            for i in 0..volume.outputs.len() + 1 {
-                let r = Rect::new(m.side, y, inner, m.bar);
-                if i < volume.outputs.len() {
-                    list.push(r);
-                } else {
-                    sound_page = Some(r);
+        // The brightness slider lies above the volume's, full width, with no
+        // chevron beside it, as the mockups have it (M5.9c).
+        if view.brightness.is_some() {
+            light = Some(Rect::new(m.side, y, inner, m.bar));
+            y += m.bar + SLIDER_GAP;
+        }
+        if let Some(volume) = &view.volume {
+            track = Some(Rect::new(m.side, y, inner - m.bar - TRACK_GAP, m.bar));
+            sound = Some(Rect::new(m.side + inner - m.bar, y, m.bar, m.bar));
+            y += m.bar;
+            if view.list {
+                section(&mut y, &mut started, &m);
+                for i in 0..volume.outputs.len() + 1 {
+                    let r = Rect::new(m.side, y, inner, m.bar);
+                    if i < volume.outputs.len() {
+                        list.push(r);
+                    } else {
+                        sound_page = Some(r);
+                    }
+                    y += m.bar + LIST_GAP;
                 }
-                y += m.bar + LIST_GAP;
+                y -= LIST_GAP;
             }
-            y -= LIST_GAP;
         }
     }
     let (mut battery, mut settings) = (None, None);
@@ -667,6 +697,7 @@ pub fn layout(view: &View) -> Layout {
         size: (view.width, y.ceil() as u32),
         metrics: m,
         tiles,
+        light,
         track,
         sound,
         list,
@@ -680,8 +711,8 @@ pub fn layout(view: &View) -> Layout {
 /// Where the card's parts lie, as one log line CI reads to click them:
 /// `card WxH, NAME X+Y+WxH, ..., track X+Y+WxH, sound ..., settings ...`,
 /// logical pixels from the card's corner; each tile by its name and its
-/// whole box, then the slider's track, the chevron (`sound`) and the
-/// `settings` button.
+/// whole box, then the brightness slider (`light`), the volume's track,
+/// the chevron (`sound`) and the `settings` button.
 pub fn places(view: &View, layout: &Layout) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut parts = vec![format!("card {}x{}", layout.size.0, layout.size.1)];
@@ -689,6 +720,7 @@ pub fn places(view: &View, layout: &Layout) -> String {
         parts.push(format!("{} {}", t.tile.name(), at(b.whole)));
     }
     for (name, rect) in [
+        ("light", layout.light),
         ("track", layout.track),
         ("sound", layout.sound),
         ("settings", layout.settings),
@@ -719,6 +751,9 @@ pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
     if layout.sound_page.is_some_and(|r| r.contains(x, y)) {
         return Some(Focus::SoundPage);
     }
+    if layout.light.is_some_and(|r| r.contains(x, y)) {
+        return Some(Focus::Light);
+    }
     if layout.track.is_some_and(|r| r.contains(x, y)) {
         return Some(Focus::Slider);
     }
@@ -728,14 +763,24 @@ pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
     None
 }
 
-/// The volume at `x` along the slider, percent, 0 to 100: the bar fills
+/// The percent at `x` along a slider's `track`, 0 to 100: the bar fills
 /// from its left end to the pointer.
-pub fn volume_at(layout: &Layout, x: f32) -> u32 {
-    let Some(track) = layout.track else {
+pub(crate) fn percent_at(track: Option<Rect>, x: f32) -> u32 {
+    let Some(track) = track else {
         return 0;
     };
     let share = ((x - track.x) / track.w.max(1.0)).clamp(0.0, 1.0);
     (share * 100.0).round() as u32
+}
+
+/// The volume at `x` along the slider, percent, 0 to 100.
+pub fn volume_at(layout: &Layout, x: f32) -> u32 {
+    percent_at(layout.track, x)
+}
+
+/// The brightness at `x` along its slider, percent, 0 to 100 (M5.9c).
+pub fn brightness_at(layout: &Layout, x: f32) -> u32 {
+    percent_at(layout.light, x)
 }
 
 // ---- Keys ----
@@ -750,6 +795,9 @@ pub fn ring(view: &View) -> Vec<Focus> {
         if has_page(t.tile) {
             ring.push(Focus::Page(i));
         }
+    }
+    if view.brightness.is_some() {
+        ring.push(Focus::Light);
     }
     if view.volume.is_some() {
         ring.push(Focus::Slider);
@@ -789,6 +837,7 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
             .copied()
     };
     let volume = view.volume.as_ref().map_or(0, |v| v.percent);
+    let brightness = view.brightness.unwrap_or(0);
     let cols = columns(view.width);
     match (key, now) {
         (Key::Activate, Focus::Toggle(i)) => (focus, Some(Act::Toggle(i))),
@@ -798,6 +847,13 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
         (Key::Activate, Focus::SoundPage) => (focus, Some(Act::SoundPage)),
         (Key::Activate, Focus::Slider) => (focus, Some(Act::Mute)),
         (Key::Activate, Focus::Settings) => (focus, Some(Act::Settings)),
+        (Key::Left, Focus::Light) => (
+            focus,
+            Some(Act::Brightness(brightness.saturating_sub(STEP))),
+        ),
+        (Key::Right, Focus::Light) => (focus, Some(Act::Brightness((brightness + STEP).min(100)))),
+        (Key::Home, Focus::Light) => (focus, Some(Act::Brightness(0))),
+        (Key::End, Focus::Light) => (focus, Some(Act::Brightness(100))),
         (Key::Left, Focus::Slider) => (focus, Some(Act::Volume(volume.saturating_sub(STEP)))),
         (Key::Right, Focus::Slider) => (focus, Some(Act::Volume((volume + STEP).min(100)))),
         (Key::Home, Focus::Slider) => (focus, Some(Act::Volume(0))),
@@ -901,6 +957,17 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                 tr("Sound settings").to_string(),
                 layout.sound_page.unwrap_or(zero),
             ),
+            Focus::Light => {
+                let percent = view.brightness.unwrap_or(0);
+                Item {
+                    value: Some((f64::from(percent), 0.0, 100.0)),
+                    ..item(
+                        Role::Slider,
+                        tr("Brightness").to_string(),
+                        layout.light.unwrap_or(zero),
+                    )
+                }
+            }
             Focus::Slider => {
                 let percent = view.volume.as_ref().map_or(0, |v| v.percent);
                 Item {
@@ -1130,7 +1197,85 @@ fn pill_tile(
     }
 }
 
-/// The shelf: the hairline above it, the slider with the volume in it, the
+/// What a slider shows: its level, whether it is muted, the icon at its
+/// left and whether the keyboard is on it.
+pub(crate) struct Bar<'a> {
+    pub(crate) percent: u32,
+    pub(crate) muted: bool,
+    pub(crate) icon: &'a str,
+    pub(crate) focused: bool,
+}
+
+/// A slider's bar, drawn for the volume and the brightness alike (M5.9c):
+/// the track, the fill to the level at least a bar wide, the icon 13 px
+/// from the track's left end, the number 14 px in from its right end and
+/// the keyboard's ring. A muted bar's fill is dimmed.
+pub(crate) fn slider(
+    pixmap: &mut Pixmap,
+    track: Rect,
+    bar: Bar,
+    text: Option<&mut Text>,
+    tokens: &Tokens,
+    s: f32,
+) {
+    let (tx, ty, tw, th) = track.device(s);
+    let round = th / 2.0;
+    fill(pixmap, tx, ty, tw, th, round, veil(tokens, 0.07));
+    let share = bar.percent.min(100) as f32 / 100.0;
+    let filled = if bar.percent > 0 {
+        (share * track.w).max(track.h).min(track.w)
+    } else {
+        0.0
+    };
+    let knob_colour = knob(tokens);
+    if filled > 0.0 {
+        let c = if bar.muted {
+            mix(knob_colour, tokens.panel, 0.5)
+        } else {
+            knob_colour
+        };
+        fill(pixmap, tx, ty, filled * s, th, round, c);
+    }
+    // The icon, 16 px across; its ink is the card's text where the fill covers it.
+    let icon = Rect::new(track.x + 13.0, track.y, 16.0, track.h);
+    let covered = filled >= 29.0;
+    let ink = if !covered {
+        dim(tokens)
+    } else if knob_colour == tokens.window {
+        tokens.panel_text
+    } else {
+        tokens.panel
+    };
+    icon_in(pixmap, bar.icon, 16.0, icon, s, ink);
+    if let Some(text) = text {
+        let size = 11.5 * s;
+        let mut number = text.line_in(&bar.percent.to_string(), size, Face::SEMIBOLD.tabular());
+        let right = (track.right() - 14.0) * s;
+        let top = ty + (th - size * 1.25) / 2.0;
+        let left = right - number.width;
+        text.draw(pixmap, &mut number, left, top, dim(tokens));
+    }
+    if bar.focused {
+        focus_ring(pixmap, track, track.h / 2.0, s, tokens);
+    }
+}
+
+/// The speaker by the volume: the muted one when muted or silent, else
+/// low, medium or high (M5.9c: the volume pop-up shows the same one).
+pub(crate) fn volume_icon(percent: u32, muted: bool) -> &'static str {
+    if muted || percent == 0 {
+        "volume-muted"
+    } else if percent <= 33 {
+        "volume-low"
+    } else if percent <= 66 {
+        "volume-medium"
+    } else {
+        "volume-high"
+    }
+}
+
+/// The shelf: the hairline above it, the brightness slider where the machine
+/// has a backlight (M5.9c), the volume slider with the volume in it, the
 /// chevron that opens the outputs, and the list of outputs when it is open.
 fn shelf(
     pixmap: &mut Pixmap,
@@ -1140,9 +1285,6 @@ fn shelf(
     mut text: Option<&mut Text>,
     s: f32,
 ) {
-    let (Some(v), Some(track), Some(sound)) = (&view.volume, l.track, l.sound) else {
-        return;
-    };
     let m = l.metrics;
     let hair = (0.5 * s).max(1.0);
     if let Some(rule) = l.rule {
@@ -1155,58 +1297,25 @@ fn shelf(
         .device(s);
         fill(pixmap, x, y, w, hair, 0.0, tokens.line);
     }
-    // The track: a rounded bar, the fill to the volume at least a bar wide.
-    let (tx, ty, tw, th) = track.device(s);
-    let round = th / 2.0;
-    fill(pixmap, tx, ty, tw, th, round, veil(tokens, 0.07));
-    let share = v.percent.min(100) as f32 / 100.0;
-    let filled = if v.percent > 0 {
-        (share * track.w).max(m.bar).min(track.w)
-    } else {
-        0.0
-    };
-    let knob_colour = knob(tokens);
-    if filled > 0.0 {
-        let c = if v.muted {
-            mix(knob_colour, tokens.panel, 0.5)
-        } else {
-            knob_colour
+    if let (Some(light), Some(percent)) = (l.light, view.brightness) {
+        let bar = Bar {
+            percent,
+            muted: false,
+            icon: "brightness",
+            focused: view.focus == Some(Focus::Light),
         };
-        fill(pixmap, tx, ty, filled * s, th, round, c);
+        slider(pixmap, light, bar, text.as_deref_mut(), tokens, s);
     }
-    // The speaker, 13 px from the track's left end and 16 px across; its
-    // ink is the card's text where the fill covers it.
-    let icon = if v.muted || v.percent == 0 {
-        "volume-muted"
-    } else if v.percent <= 33 {
-        "volume-low"
-    } else if v.percent <= 66 {
-        "volume-medium"
-    } else {
-        "volume-high"
+    let (Some(v), Some(track), Some(sound)) = (&view.volume, l.track, l.sound) else {
+        return;
     };
-    let speaker = Rect::new(track.x + 13.0, track.y, 16.0, track.h);
-    let covered = filled >= 29.0;
-    let ink = if !covered {
-        dim(tokens)
-    } else if knob_colour == tokens.window {
-        tokens.panel_text
-    } else {
-        tokens.panel
+    let bar = Bar {
+        percent: v.percent,
+        muted: v.muted,
+        icon: volume_icon(v.percent, v.muted),
+        focused: view.focus == Some(Focus::Slider),
     };
-    icon_in(pixmap, icon, 16.0, speaker, s, ink);
-    if let Some(text) = text.as_deref_mut() {
-        // The number, 14 px in from the track's right end.
-        let size = 11.5 * s;
-        let mut number = text.line_in(&v.percent.to_string(), size, Face::SEMIBOLD.tabular());
-        let right = (track.right() - 14.0) * s;
-        let top = ty + (th - size * 1.25) / 2.0;
-        let left = right - number.width;
-        text.draw(pixmap, &mut number, left, top, dim(tokens));
-    }
-    if view.focus == Some(Focus::Slider) {
-        focus_ring(pixmap, track, track.h / 2.0, s, tokens);
-    }
+    slider(pixmap, track, bar, text.as_deref_mut(), tokens, s);
     // The chevron button: raised, edged, its arrow turning down while open.
     let (sx, sy, sw, sh) = sound.device(s);
     fill(pixmap, sx, sy, sw, sh, sw / 2.0, raised(tokens));
@@ -1371,6 +1480,7 @@ mod tests {
                 time: Some("4 h 10 min".into()),
             }),
             bluetooth: Some(false),
+            brightness: None,
         }
     }
 
@@ -1720,6 +1830,58 @@ mod tests {
     }
 
     #[test]
+    fn the_brightness_slider_lies_above_the_volume_when_there_is_a_backlight() {
+        let mut status = laptop();
+        status.brightness = Some(70);
+        let view = view_of(&status, false, 1280);
+        let l = layout(&view);
+        let light = l.light.expect("a backlight has a slider");
+        let track = l.track.expect("the volume has its slider");
+        assert!(light.y < track.y, "the brightness lies above the volume");
+        assert_eq!(
+            light.w,
+            l.size.0 as f32 - 2.0 * l.metrics.side,
+            "full width"
+        );
+        assert_eq!(
+            l.sound.map(|r| r.y),
+            Some(track.y),
+            "the chevron is beside the volume only"
+        );
+        assert_eq!(hit(&l, light.x + 40.0, light.middle()), Some(Focus::Light));
+        assert!(
+            places(&view, &l).contains("light "),
+            "CI reads where it lies"
+        );
+        assert_eq!(brightness_at(&l, light.x + light.w / 2.0), 50);
+        assert_eq!(brightness_at(&l, light.x + light.w + 40.0), 100);
+        // Without a backlight there is no such slider, and the volume's row is where it was.
+        let without = layout(&view_of(&laptop(), false, 1280));
+        assert_eq!(without.light, None);
+        assert_eq!(
+            without.track.map(|r| r.y),
+            l.track.map(|r| r.y - light.h - SLIDER_GAP)
+        );
+    }
+
+    #[test]
+    fn keys_move_the_brightness_and_it_never_goes_dark_from_the_keyboard() {
+        let mut status = laptop();
+        status.brightness = Some(70);
+        let view = view_of(&status, false, 1280);
+        let light = Some(Focus::Light);
+        assert_eq!(key(&view, light, Key::Right).1, Some(Act::Brightness(75)));
+        assert_eq!(key(&view, light, Key::Left).1, Some(Act::Brightness(65)));
+        assert_eq!(key(&view, light, Key::Home).1, Some(Act::Brightness(0)));
+        assert_eq!(key(&view, light, Key::End).1, Some(Act::Brightness(100)));
+        assert_eq!(key(&view, light, Key::Activate).1, None);
+        // The ring holds the brightness just above the volume.
+        let ring = ring(&view);
+        let at = ring.iter().position(|f| *f == Focus::Light).unwrap();
+        assert_eq!(ring[at + 1], Focus::Slider);
+    }
+
+    #[test]
     fn a_pointer_finds_the_halves_of_a_tile_and_the_shelf() {
         let view = view_of(&laptop(), false, 1280);
         let l = layout(&view);
@@ -1937,7 +2099,10 @@ mod tests {
                 (360, "compact", false),
             ] {
                 let card = if width < COMPACT_BELOW { width } else { WIDTH };
-                let mut view = view_of(&laptop(), dark, width);
+                // A backlight too, so the card shows both sliders.
+                let mut status = laptop();
+                status.brightness = Some(70);
+                let mut view = view_of(&status, dark, width);
                 view.list = list;
                 if name == "desktop" {
                     view.hover = Some(Focus::Toggle(1));

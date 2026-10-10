@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 49] = [
+pub const BUILT_IN: [(&str, &str); 50] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -152,6 +152,10 @@ pub const BUILT_IN: [(&str, &str); 49] = [
     (
         "volume-high",
         include_str!("../../../design/icons/volume-high.svg"),
+    ),
+    (
+        "brightness",
+        include_str!("../../../design/icons/brightness.svg"),
     ),
     ("battery", include_str!("../../../design/icons/battery.svg")),
     (
