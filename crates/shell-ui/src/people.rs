@@ -1,7 +1,7 @@
 //! The login screen's row of people (M5.10c, `docs/mockups/shell/greeter.jpg`):
 //! the machine's people side by side, the chosen one large in the middle
 //! with its name under it in white, the others smaller at its sides with
-//! quieter names, and "Other" at the end, a disc with a plus, for typing a
+//! quieter names, and "Other" at the end, a frosted disc with a person's outline, for typing a
 //! name. Plain data, layout and drawing, tested without a display; the
 //! greeter (`greeter.rs`) chooses with the arrows and clicks. Only the chosen one and at most
 //! `MOST_EACH_SIDE` neighbours on each side are drawn, so a long list
@@ -13,7 +13,7 @@ use edel::tokens::Tokens;
 use tiny_skia::Pixmap;
 
 use crate::lock;
-use crate::paint::{Face, Text, fill, mix};
+use crate::paint::{Face, Text, mix};
 
 /// A person of the row: their login name, and the name shown (their full
 /// name, else the login).
@@ -54,9 +54,8 @@ const SLOP: f32 = 6.0;
 /// How much higher the others sit than the chosen one, as the mockup has
 /// them (M5.10c).
 const RAISE: f32 = 8.0;
-/// The plus on "Other": each arm's length and thickness.
-const PLUS_LONG: f32 = 18.0;
-const PLUS_THICK: f32 = 2.0;
+/// Other's person outline, as a share of its disc's radius.
+const OTHER_GLYPH: f32 = 1.0;
 /// The names' sizes; the others' names are fitted in a step less 12 px.
 const CHOSEN_NAME: f32 = 18.0;
 const SMALL_NAME: f32 = 13.0;
@@ -154,7 +153,7 @@ pub fn places(spots: &[Spot], row: &Row) -> String {
 }
 
 /// Draws the row `spots` lay out, on a pixmap drawn at scale `s`: a disc
-/// per person (the others quieter), Other's glass disc with its plus, and
+/// per person (the others quieter), Other's glass disc with a person's outline, and
 /// each name under its disc.
 pub fn paint(
     pixmap: &mut Pixmap,
@@ -197,25 +196,15 @@ pub fn paint(
                     s,
                     tokens,
                 );
-                let ink = tokens.backdrop_text;
-                let (long, thick) = (PLUS_LONG * s, PLUS_THICK * s);
-                fill(
+                // A person's outline, as Other is someone not listed.
+                let side = (r * OTHER_GLYPH * s).round();
+                crate::paint::icon(
                     pixmap,
-                    (cx * s) - long / 2.0,
-                    (cy * s) - thick / 2.0,
-                    long,
-                    thick,
-                    0.0,
-                    ink,
-                );
-                fill(
-                    pixmap,
-                    (cx * s) - thick / 2.0,
-                    (cy * s) - long / 2.0,
-                    thick,
-                    long,
-                    0.0,
-                    ink,
+                    "person",
+                    side,
+                    cx * s - side / 2.0,
+                    cy * s - side / 2.0,
+                    tokens.backdrop_text,
                 );
             }
         }
