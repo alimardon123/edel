@@ -73,6 +73,8 @@ pub struct Overview {
     shadows: HashMap<Window, (Painted, i32)>,
     backdrops: HashMap<String, Painted>,
     held: Option<(Painted, i32)>,
+    /// The accent ring round the window under the pointer.
+    ring: Option<(Painted, i32)>,
     /// The last places line logged for each screen.
     logged: HashMap<String, String>,
 }
@@ -580,15 +582,18 @@ impl Edel {
                 area,
                 scale,
             ));
-            for (j, line) in edges(at.to_f64().to_i32_round(), 3).into_iter().enumerate() {
-                front.push(solid(
-                    &mut overview,
-                    format!("over {j}"),
-                    line,
-                    tokens.accent,
-                    area,
-                    scale,
-                ));
+            let shows = format!("{:?} {scale} {:?}", at.size, tokens.accent);
+            if overview.ring.as_ref().is_none_or(|(p, _)| p.shows != shows) {
+                overview.ring = glance_look::ring(at.size.w, at.size.h, scale, &tokens)
+                    .map(|(pixmap, margin)| (painted(shows, &pixmap), margin));
+            }
+            if let Some((painted, margin)) = &overview.ring {
+                let out = f64::from(*margin) / scale;
+                let place = Rectangle::new(
+                    (at.loc.to_f64() - Point::from((out, out))).to_i32_round(),
+                    (at.size.to_f64() + Size::from((2.0 * out, 2.0 * out))).to_i32_round(),
+                );
+                front.extend(placed(renderer, painted, place, area, scale));
             }
         }
         // Each spread window's name under it, then the windows.
@@ -1012,17 +1017,6 @@ fn placed(
             Vec::new()
         }
     }
-}
-
-/// The four edges of `frame`, `width` wide, inside it.
-fn edges(frame: Rectangle<i32, Logical>, width: i32) -> [Rectangle<i32, Logical>; 4] {
-    let (x, y, w, h) = (frame.loc.x, frame.loc.y, frame.size.w, frame.size.h);
-    [
-        Rectangle::new((x, y).into(), (w, width).into()),
-        Rectangle::new((x, y + h - width).into(), (w, width).into()),
-        Rectangle::new((x, y).into(), (width, h).into()),
-        Rectangle::new((x + w - width, y).into(), (width, h).into()),
-    ]
 }
 
 /// A flat `colour` over `place` on the screen at `area`, kept as `key`.

@@ -86,6 +86,22 @@ pub fn backdrop(w: u32, h: u32, tokens: &Tokens) -> Option<Pixmap> {
     ) {
         pixmap.fill_rect(rect, &shaded(fall), Transform::identity(), None);
     }
+    // Darker toward the edges, so the overview reads as a place of its own.
+    let middle = Point::from_xy(fw / 2.0, fh * 0.45);
+    if let Some(vignette) = RadialGradient::new(
+        middle,
+        0.0,
+        middle,
+        (fw * fw + fh * fh).sqrt() * 0.6,
+        vec![
+            GradientStop::new(0.55, colour_of(tokens.backdrop_deep, 0.0)),
+            GradientStop::new(1.0, colour_of(tokens.backdrop_deep, 0.55)),
+        ],
+        SpreadMode::Pad,
+        Transform::identity(),
+    ) {
+        pixmap.fill_rect(rect, &shaded(vignette), Transform::identity(), None);
+    }
     let light = Point::from_xy(fw * 0.3, fh * 0.15);
     if let Some(glow) = RadialGradient::new(
         light,
@@ -390,14 +406,50 @@ pub fn tray(
     Some(pixmap)
 }
 
+/// The accent ring round the window under the pointer, `w` by `h` logical
+/// pixels at `scale`, a small gap out from its edge with round corners,
+/// as the mockup draws it: a picture that lies `margin` pixels out from
+/// the window's corner on every side.
+pub fn ring(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)> {
+    let s = scale as f32;
+    let margin = ((RING_GAP + RING + 1.0) * s).ceil();
+    let (pw, ph) = (w as f32 * s, h as f32 * s);
+    let mut pixmap = Pixmap::new(
+        (pw + 2.0 * margin).ceil() as u32,
+        (ph + 2.0 * margin).ceil() as u32,
+    )?;
+    let g = RING_GAP * s + RING * s / 2.0;
+    let path = rounded(
+        margin - g,
+        margin - g,
+        pw + 2.0 * g,
+        ph + 2.0 * g,
+        6.0 * s + g,
+    )?;
+    let stroke = Stroke {
+        width: (RING + 0.5) * s,
+        ..Stroke::default()
+    };
+    pixmap.stroke_path(
+        &path,
+        &paint_of(tokens.accent),
+        &stroke,
+        Transform::identity(),
+        None,
+    );
+    Some((pixmap, margin as i32))
+}
+
 /// The soft shadow under a spread window `w` by `h` logical pixels at
 /// `scale`, cast by the one light above (`shadow`, `shadow_blur`,
 /// `shadow_offset`): a picture that lies `margin` pixels out from the
 /// window's corner on every side.
 pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)> {
     let s = scale as f32;
-    let blur = (tokens.shadow_blur.max(8) as f32 * s).ceil();
-    let drop = tokens.shadow_offset as f32 * s;
+    // A light lift, as the mockup has it: three quarters of the menus'
+    // blur, half their drop, about half their depth.
+    let blur = (tokens.shadow_blur.max(8) as f32 * 0.75 * s).ceil();
+    let drop = tokens.shadow_offset as f32 * 0.5 * s;
     let margin = (blur + drop).ceil();
     let (pw, ph) = (w as f32 * s, h as f32 * s);
     let mut pixmap = Pixmap::new(
@@ -408,7 +460,7 @@ pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i3
     let steps = 12;
     for k in 0..steps {
         let grow = blur * (k as f32 + 0.5) / steps as f32;
-        let a = tokens.shadow.a / steps as f32;
+        let a = tokens.shadow.a * 0.55 / steps as f32;
         if let Some(path) = rounded(
             margin - grow,
             margin - grow + drop,
