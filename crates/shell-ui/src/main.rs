@@ -76,6 +76,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::path::Path;
 use std::time::Duration;
 
 use tiny_skia::Pixmap;
@@ -145,6 +146,12 @@ struct Shell {
     /// lets go of them so their pages can be given back (free_spent).
     spent: Vec<Buffer>,
     panels: Vec<Panel>,
+    /// The panels the settings files ask for as last applied (M5.31b):
+    /// `panels_changed` compares with them.
+    panel_specs: Vec<presets::Panel>,
+    /// The preset's pinned apps (M5.4c), kept so panels made later can
+    /// read the apps they show (`read_apps`).
+    pins: Vec<String>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
@@ -276,71 +283,14 @@ fn run() -> Result<()> {
     let features = &edel::places::found_shared(edel::features::DIR);
     let mut panels = Vec::new();
     for spec in &preset.panels {
-        let pick = |names: &[String]| {
-            let (found, notes) = widgets::usable(names, features);
-            for note in notes {
-                eprintln!("edel-shell-ui: {note}");
-            }
-            found
-        };
-        let row = Row {
-            start: pick(&spec.start),
-            centre: pick(&spec.centre),
-            end: pick(&spec.end),
-        };
-        // Along the edge of the first screen; the strip on its inner side
-        // for the fillets is drawn but takes no space and no clicks. A
-        // dock is centred along its edge, a little away from it, and
-        // keeps that much free of windows too; its width follows what it
-        // holds once drawn, square until then.
-        let dock = spec.style == Style::Dock;
-        let namespace = if dock { DOCK } else { NAMESPACE };
-        let surface = compositor.create_surface(&qh);
-        let surface = layers.create_layer_surface(&qh, surface, Layer::Top, Some(namespace), None);
-        let edge = match spec.edge {
-            Edge::Top => Anchor::TOP,
-            Edge::Bottom => Anchor::BOTTOM,
-        };
-        if dock {
-            surface.set_anchor(edge);
-            surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
-            let (top, bottom) = match spec.edge {
-                Edge::Top => (DOCK_MARGIN, 0),
-                Edge::Bottom => (0, DOCK_MARGIN),
-            };
-            surface.set_margin(top, 0, bottom, 0);
-        } else {
-            surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-            surface.set_size(0, tokens.panel_height + strip);
-        }
-        // A dock that hides while a window covers it (M5.4f) keeps
-        // nothing free; the compositor hides it.
-        let zone = if dock && spec.hide == Hide::Covered {
-            0
-        } else {
-            paint::height(spec.style, &tokens) as i32
-        };
-        surface.set_exclusive_zone(zone);
-        surface.set_keyboard_interactivity(KeyboardInteractivity::None);
-        surface.commit();
-        eprintln!(
-            "edel-shell-ui: panel {namespace} along the {}",
-            spec.edge.name()
-        );
-        panels.push(Panel {
-            edge: spec.edge,
-            style: spec.style,
-            surface,
-            row,
-            width: 0,
-            asked: 0,
-            scale: 1,
-            drawn: None,
-            waiting: false,
-            places: Vec::new(),
-            shown: None,
-            reader: a11y::Reader::panel(),
-        });
+        panels.push(make_panel(
+            &compositor,
+            &layers,
+            &qh,
+            &tokens,
+            features,
+            spec,
+        ));
     }
     // The apps a panel's apps widget shows, and whose icons the window
     // list shows, read once (M5.4c); none read when no panel holds either.
@@ -382,6 +332,8 @@ fn run() -> Result<()> {
         pool,
         spent: Vec::new(),
         panels,
+        panel_specs: preset.panels.clone(),
+        pins: preset.apps.pinned.clone(),
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
@@ -501,6 +453,91 @@ fn run() -> Result<()> {
         shell.free_spent();
     }
     Ok(())
+}
+
+/// The widgets a panel holds, from its lines, as this machine can show
+/// them; anything skipped is noted on the standard error.
+fn row_of(spec: &presets::Panel, features: &Path) -> Row {
+    let pick = |names: &[String]| {
+        let (found, notes) = widgets::usable(names, features);
+        for note in notes {
+            eprintln!("edel-shell-ui: {note}");
+        }
+        found
+    };
+    Row {
+        start: pick(&spec.start),
+        centre: pick(&spec.centre),
+        end: pick(&spec.end),
+    }
+}
+
+/// Makes one of the preset's panels as a layer surface of its own, with
+/// the widgets it holds (M5.1b, M5.4d, M5.4f, M5.31b: `panels_changed`
+/// makes them again too).
+fn make_panel(
+    compositor: &CompositorState,
+    layers: &LayerShell,
+    qh: &QueueHandle<Shell>,
+    tokens: &Tokens,
+    features: &Path,
+    spec: &presets::Panel,
+) -> Panel {
+    let strip = paint::fillet_height(tokens);
+    let row = row_of(spec, features);
+    // Along the edge of the first screen; the strip on its inner side
+    // for the fillets is drawn but takes no space and no clicks. A
+    // dock is centred along its edge, a little away from it, and
+    // keeps that much free of windows too; its width follows what it
+    // holds once drawn, square until then.
+    let dock = spec.style == Style::Dock;
+    let namespace = if dock { DOCK } else { NAMESPACE };
+    let surface = compositor.create_surface(qh);
+    let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), None);
+    let edge = match spec.edge {
+        Edge::Top => Anchor::TOP,
+        Edge::Bottom => Anchor::BOTTOM,
+    };
+    if dock {
+        surface.set_anchor(edge);
+        surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (DOCK_MARGIN, 0),
+            Edge::Bottom => (0, DOCK_MARGIN),
+        };
+        surface.set_margin(top, 0, bottom, 0);
+    } else {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, tokens.panel_height + strip);
+    }
+    // A dock that hides while a window covers it (M5.4f) keeps
+    // nothing free; the compositor hides it.
+    let zone = if dock && spec.hide == Hide::Covered {
+        0
+    } else {
+        paint::height(spec.style, tokens) as i32
+    };
+    surface.set_exclusive_zone(zone);
+    surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+    surface.commit();
+    eprintln!(
+        "edel-shell-ui: panel {namespace} along the {}",
+        spec.edge.name()
+    );
+    Panel {
+        edge: spec.edge,
+        style: spec.style,
+        surface,
+        row,
+        width: 0,
+        asked: 0,
+        scale: 1,
+        drawn: None,
+        waiting: false,
+        places: Vec::new(),
+        shown: None,
+        reader: a11y::Reader::panel(),
+    }
 }
 
 /// The image's tokens in `scheme` if it has them, else the built-in ones;
@@ -828,6 +865,91 @@ impl Shell {
         for i in 0..self.panels.len() {
             self.draw(i);
         }
+    }
+
+    /// The panels `layout.panels` asks for now (M5.31b). When they keep
+    /// each panel's edge, style and hiding, each panel takes its new
+    /// widgets and is drawn again, its surface kept; otherwise the open
+    /// popups close, the panels' surfaces go and every wanted panel is
+    /// made anew. Logs `panels now EDGE (N widgets), ...` either way.
+    pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
+        let features = edel::places::found_shared(edel::features::DIR);
+        let same_shape = wanted.len() == self.panel_specs.len()
+            && self.panel_specs.iter().zip(&wanted).all(|(old, new)| {
+                old.edge == new.edge && old.style == new.style && old.hide == new.hide
+            });
+        if same_shape {
+            for (panel, spec) in self.panels.iter_mut().zip(&wanted) {
+                panel.row = row_of(spec, &features);
+                panel.drawn = None;
+            }
+            self.draw_all();
+        } else {
+            self.close_popups();
+            self.tray_press = None;
+            for panel in std::mem::take(&mut self.panels) {
+                // The layer surface's role goes first, then its surface.
+                let surface = panel.surface.wl_surface().clone();
+                drop(panel);
+                surface.destroy();
+            }
+            self.panels = wanted
+                .iter()
+                .map(|spec| {
+                    make_panel(
+                        &self.compositor,
+                        &self.layers,
+                        &self.qh,
+                        &self.tokens,
+                        &features,
+                        spec,
+                    )
+                })
+                .collect();
+        }
+        let list: Vec<String> = self
+            .panels
+            .iter()
+            .map(|p| format!("{} ({} widgets)", p.edge.name(), p.row.all().count()))
+            .collect();
+        eprintln!("edel-shell-ui: panels now {}", list.join(", "));
+        self.panel_specs = wanted;
+        self.read_apps();
+    }
+
+    /// The apps the apps widget and the window list show, read once, when
+    /// a panel first holds either (at start, or when the panels change).
+    fn read_apps(&mut self) {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "apps" || w.name == "windows"));
+        if !wanted || !self.live.installed.is_empty() {
+            return;
+        }
+        let installed = apps::read_all(&apps::dirs());
+        self.live.pinned = self
+            .pins
+            .iter()
+            .filter_map(|pin| apps::pinned(&installed, pin))
+            .map(widgets::Pin::from)
+            .collect();
+        self.live.installed = installed.iter().map(widgets::Pin::from).collect();
+        self.draw_all();
+    }
+
+    /// Closes every popup that hangs on a panel or shows over the desktop,
+    /// each its own way, so none is left pointing at a panel that goes.
+    fn close_popups(&mut self) {
+        self.close_launcher();
+        self.close_styles();
+        self.close_quick();
+        self.hide_banner();
+        self.hide_osd();
+        self.close_centre();
+        self.close_tray_grid();
+        self.hide_tooltip();
+        self.hide_switcher();
     }
 
     /// `input` at `x` logical pixels along panel `i`: the widget there,

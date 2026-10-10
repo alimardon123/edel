@@ -498,6 +498,14 @@ impl Shell {
             self.tray_split_changed();
             self.draw_all();
         }
+        // layout.panels (M5.31b): the panels follow the files at once; a
+        // change of preset restarts shell-ui instead, as the compositor
+        // says.
+        let (machine, person) = crate::settings_texts();
+        let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
+        if wanted != self.panel_specs {
+            self.panels_changed(wanted);
+        }
     }
 
     /// The tray's split changed: the number behind the arrow is logged when

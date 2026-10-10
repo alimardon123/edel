@@ -1990,25 +1990,29 @@ case_dock() {
 }
 
 case_panels() {
-	# The panels as a setting (M5.4e): layout.panels with one panel along
-	# the bottom holding only the clock restarts shell-ui with it in place
-	# of Classic's, so 20,776, inside the menu button's first square, is
-	# the panel's colour; unsetting it brings Classic's panel back. Kept
-	# as panels-clock.png.
+	# The panels as a setting (M5.4e, followed without a restart by
+	# M5.31b): layout.panels with one panel along the bottom holding only
+	# the clock is followed by shell-ui at once, "panels now bottom (1
+	# widgets)", so 20,776, inside the menu button's first square, is the
+	# panel's colour; unsetting it brings Classic's panel back, of 10
+	# widgets, and no restart of shell-ui happens. Kept as panels-clock.png.
 	panel=$(token panel)
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'panels clock'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "edel settings set layout.panels did not restart shell-ui"
+	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$clock" ||
+		fail "edel settings set layout.panels did not reach shell-ui's panel"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
+	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "edel settings reset layout.panels did not restart shell-ui"
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic_panel" ||
+		fail "edel settings reset layout.panels did not bring Classic's panel back"
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting layout.panels did not bring Classic's menu button back"
-	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, and unsetting it brought Classic's panel back"
+	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
+		fail "layout.panels restarted shell-ui, which it no longer does"
+	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart, and unsetting it brought Classic's panel back"
 }
 
 case_dockhide() {
@@ -2019,10 +2023,10 @@ case_dockhide() {
 	# it back, and away from it the dock hides again. Kept as
 	# dock-shown.png, dock-hidden.png and dock-back.png.
 	panel=$(token panel)
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	dock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'dock hiding'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "setting a hiding dock in layout.panels did not restart shell-ui"
+	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$dock" ||
+		fail "setting a hiding dock in layout.panels did not reach shell-ui"
 	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps"
 	sleep 1
 	w=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: panel places apps 8+\([0-9]*\)$/\1/p' | tail -n 1)
@@ -2040,10 +2044,10 @@ case_dockhide() {
 	closed=$(count 'edel-compositor: unmapped window big')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window big' "$closed" || fail "Super+Q did not close big"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the panels changed' "$restarts" ||
-		fail "unsetting layout.panels did not restart shell-ui"
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic_panel" ||
+		fail "unsetting layout.panels did not bring Classic's panel back"
 	echo "PASS: a dock with hide = \"covered\" showed while uncovered, hid under big, came back with the pointer at the bottom edge and hid again when it left"
 }
 
