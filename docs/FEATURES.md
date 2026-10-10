@@ -16,11 +16,11 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, desktop |
 | `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; the desktop ships it off |
 | `vm` | The small kernel for virtual machines, and the network by DHCP on eth0 with busybox's `networking` (`etc/network/interfaces`); the desktop has NetworkManager instead, so one thing manages eth0 | `linux-virt` | networking | vm |
-| `laptop` | The long-term kernel, firmware for graphics and Wi-Fi, CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | desktop |
+| `laptop` | The long-term kernel, firmware for the graphics, wired, Wi-Fi and Bluetooth chips of the last ten years' laptops and desktops (its `[[keep]]` list, M5.30), CPU microcode, eMMC in the initramfs, the hardware report on the stick | `linux-lts`, 12 `linux-firmware-*`, `amd-ucode`, `intel-ucode` | edel-report | desktop |
 | `graphics` | Mesa for every common GPU (llvmpipe where none loads; svga for VirtualBox's VMSVGA), DRM, libinput, keyboard layouts; modules `virtio_gpu` and `vmwgfx` | `mesa-dri-gallium`, `mesa-egl`, `mesa-gbm`, `mesa-vulkan-intel`, `mesa-vulkan-ati`, `mesa-va-gallium`, `libdrm`, `libinput`, `xkeyboard-config` | none | desktop |
 | `seat` | The screen and input for the person at the machine; `/run/edel/session` for the files the session leaves for root | `seatd`, `seatd-openrc` | edel-rundir; seatd | desktop |
 | `login` | greetd, whose greeter is our compositor running its text greeter in foot (M4.7b) and which starts the person's session, `/usr/libexec/edel-session`, after login; `/run/user/UID` from pam_rundir; on a USB stick, or with nobody set up yet, `edel-live` logs the person called `live` in by itself (M3.6); needs `terminal` and `compositor` | `greetd`, `greetd-openrc`, `greetd-agreety`, `pam-rundir` | edel-live; greetd | desktop |
-| `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font | `font-inter`, `font-noto` | none | desktop |
+| `fonts` | Inter for the interface; Noto Sans, Serif and Sans Mono, the terminal's font, kept to Inter's variable files and Noto's sans, mono and serif (its `[[keep]]`, M5.30b) | `font-inter`, `font-noto` | none | desktop |
 | `completion` | Tab completion: bash, bash-completion and new people's login shell bash, which completes `edel`'s commands, keys and values (M5.26) | `bash`, `bash-completion` | none | desktop |
 | `terminal` | foot | `foot` | none | desktop |
 | `compositor` | Our compositor, program `edel-compositor` (M4.2b), with the libraries it links and dbus for each session's bus; health `compositor` (M4.8): the slot is good once a compositor, the greeter's included, shows a frame or waits for a screen | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | desktop |
@@ -50,6 +50,12 @@ programs = []       # our own programs it ships in /usr/bin (edel-compositor)
 
 [services]
 default = ["sshd"]  # also sysinit, boot, shutdown
+
+[[keep]]            # what the image keeps of its packages' files (M5.30)
+under = "lib/firmware"
+files = ["i915/*", "intel/iwlwifi/*"]   # patterns below `under`; the rest goes
+newest = ["intel/iwlwifi/*"]            # of these, the newest version only
+newest_by = "iwlwifi"                   # no newer than this module asks for
 ```
 
 | Field | Rule |
@@ -61,6 +67,7 @@ default = ["sshd"]  # also sysinit, boot, shutdown
 | `modules`, `initramfs` | Only a-z, 0-9, `_` and `-`. Images without a kernel ignore them |
 | `programs` | Programs of this repository's workspace the feature ships in `/usr/bin`, such as `edel-compositor`; `edel image build` copies each from beside itself, where `cargo build --release --workspace` leaves it, so list the libraries it links in `packages`, which apk cannot see. A program needs a `why` |
 | `flatpak`, `flatpak_dropped` | Only in the `apps` feature (M6.2) |
+| `[[keep]]` | What the image keeps under a folder of the root (M5.30, `edel::keep`): `under` (such as `lib/firmware`), `files`, patterns below it where `*` and `?` stay inside one folder, and optionally `newest` (some of `files`) with `newest_by`, a kernel module: of each family of versioned files (`iwlwifi-so-a0-gf-a0-89.ucode`), only the newest version no higher than the module declares stays, and a family it does not declare keeps every version. A link stays when it is listed and what it points at stays. Every other file under the folder is taken out before the initramfs is made. A pattern that matches nothing fails the build, and two features may not list the same folder. The laptop feature's list is the stick's firmware, by device |
 | `[alpine]` | `branch`, `mirror`, `repositories` and `image_digest`: only in the `base` feature, the one owner of the Alpine branch every image is built from and of CI's build container, which follows the branch and is pinned to the digest (M5.27, M3.9) |
 
 No dependencies, versions, scripts or alternatives between features: apk resolves packages. A package one image needs alone goes into a feature named after that image (`vm`, `container`).
@@ -90,6 +97,7 @@ Besides these, a definition has only `[image] health_timeout` and `[release] pub
 - **Merges** the listed features in order: packages, services, modules, health files, programs and mkinitfs features as sets, so several features may list `dbus`; modules keep the order they are first named in (`modules=` loads them in that order), and the mkinitfs features are sorted.
 - **Refuses** a health name that nothing writes: `default-runlevel` and `compositor` are edel's own, and any other name (a-z, 0-9 and '-', such as a server's `network`) is a feature's own check, its file `$health_dir/NAME` (`/run/edel/health/NAME`, from `places.sh`), which a file one of the image's features ships must write, as its service does once the check passes (M1.11). A check finishes well inside `health_timeout`, or every update falls back.
 - **Refuses** an unknown feature, one listed twice, a missing `why`, one service in two runlevels, a file path shipped by two features, an `off` entry that is not listed or not switchable, a VM image without health, modules, mkinitfs features or its kernel package, and a container image with health.
+- **Keeps** under each `[[keep]]` folder only what the list keeps, right after the packages are installed and before the initramfs is made, and prints `kept N files under /FOLDER (X MiB), took out M (Y MiB)`; a pattern that matches nothing stops the build.
 - **Ships** each listed feature's file as `/usr/share/edel/features/NAME.toml`, writes the union of health as `EDEL_HEALTH` and the `off` list as `EDEL_SERVICES_OFF` in os-release, installs the packages of every listed feature, copies their programs to `/usr/bin`, and enables the services of those not in `off`.
 
 On a machine, feature files are read leniently: `edel report` lists the features in `/usr/share/edel/features/` and notes any field it skipped (`edel::features::read`), so an older release can read a newer feature file. `edel image check` and the build use the strict `edel::features::check`.

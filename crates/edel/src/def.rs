@@ -86,6 +86,9 @@ pub struct ImageDef {
     pub health: Vec<String>,
     /// Our own programs to copy to `/usr/bin`, each once, in order.
     pub programs: Vec<String>,
+    /// What to keep of the packages' files under a folder (M5.30), one
+    /// `[[keep]]` per folder.
+    pub keep: Vec<edel::keep::Keep>,
 }
 
 /// `[release]`: public key files (relative to the definition) that may sign
@@ -311,6 +314,7 @@ impl ImageDef {
         let mut initramfs = Vec::new();
         let mut health = Vec::new();
         let mut programs = Vec::new();
+        let mut keep: Vec<(edel::keep::Keep, String)> = Vec::new();
         let mut shipped: BTreeMap<PathBuf, &str> = BTreeMap::new();
         for l in &listed {
             let f = &l.feature;
@@ -333,6 +337,19 @@ impl ImageDef {
             add_new(&mut initramfs, &f.initramfs);
             add_new(&mut health, &f.health);
             add_new(&mut programs, &f.programs);
+            for k in &f.keep {
+                let under = k.under.trim_matches('/');
+                if let Some((_, other)) = keep
+                    .iter()
+                    .find(|(o, _)| o.under.trim_matches('/') == under)
+                {
+                    bail!(
+                        "both {other} and {} say what to keep under /{under}; one feature owns a folder's list",
+                        l.name
+                    );
+                }
+                keep.push((k.clone(), l.name.clone()));
+            }
             if let Some(dir) = &l.files {
                 for path in files_below(dir)? {
                     if let Some(other) = shipped.insert(path.clone(), &l.name) {
@@ -380,6 +397,7 @@ impl ImageDef {
             initramfs,
             health,
             programs,
+            keep: keep.into_iter().map(|(k, _)| k).collect(),
         };
         def.validate()?;
         Ok(def)
