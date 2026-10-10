@@ -219,7 +219,7 @@ pub const ACTIONS: &[Action] = &[
         "show_workspaces",
         "Super+W",
         false,
-        "Show every workspace side by side with its windows, or leave the overview (M5.2j)",
+        "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it (M5.2j)",
     ),
     action(
         "next_workspace",

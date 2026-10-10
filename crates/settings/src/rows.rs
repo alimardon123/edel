@@ -87,7 +87,7 @@ pub const ROWS: &[Row] = &[
     },
     Row {
         key: "workspaces.overview_strip",
-        title: n_("Workspace strip in the overview"),
+        title: n_("Side of the strip in the workspace overview"),
     },
     // The Appearance page (M5.2q): light or dark, then the workspace
     // switcher's look, shown count and ends.

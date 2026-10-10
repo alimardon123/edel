@@ -302,7 +302,7 @@ msgstr ""
 msgid "Each screen shows its own workspace"
 msgstr ""
 
-msgid "Which side of the screen the overview shows the workspaces on"
+msgid "Which side of the screen the workspace overview shows its strip of workspaces on"
 msgstr ""
 
 msgid "The colours of the panels, title bars and apps"
@@ -635,7 +635,7 @@ msgstr ""
 msgid "Apps on their workspace"
 msgstr ""
 
-msgid "Workspace strip in the overview"
+msgid "Side of the strip in the workspace overview"
 msgstr ""
 
 msgid "Style"

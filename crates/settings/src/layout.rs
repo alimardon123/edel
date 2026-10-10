@@ -433,7 +433,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
                 &spaces,
                 "workspaces.overview_strip",
                 (
-                    tr("Which side of the screen the overview shows the workspaces on"),
+                    tr("Which side of the screen the workspace overview shows its strip of workspaces on"),
                     None,
                     false,
                 ),

@@ -74,16 +74,27 @@ pub struct Overview {
     names: HashMap<Window, Painted>,
     close: Option<Painted>,
     /// Each window's title bar, large and small; each window's shadow;
-    /// each screen's backdrop; the held workspace's frame.
+    /// the held workspace's frame.
     bars: HashMap<(Window, bool), Painted>,
     shadows: HashMap<Window, (Painted, i32)>,
-    backdrops: HashMap<String, Painted>,
     held: Option<(Painted, i32)>,
     /// The accent ring round the window under the pointer.
     ring: Option<(Painted, i32)>,
     /// The last places line logged for each screen.
     logged: HashMap<String, String>,
 }
+
+/// What the overview keeps between its openings: each screen's backdrop,
+/// painted at a quarter of the screen's size (a smooth gradient the GPU
+/// scales up without a seam), so every opening after the first draws at
+/// once and a 4K screen's backdrop keeps about 2 MB.
+#[derive(Default)]
+pub struct Kept {
+    backdrops: HashMap<String, Painted>,
+}
+
+/// How much smaller than the screen the backdrop is painted.
+const BACKDROP_SHRINK: f64 = 4.0;
 
 /// A painted picture, what it shows (to paint it again only when that
 /// changes) and its size in pixels.
@@ -719,25 +730,20 @@ impl Edel {
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );
         let pixels = (
-            (f64::from(area.size.w) * scale).ceil() as u32,
-            (f64::from(area.size.h) * scale).ceil() as u32,
+            (f64::from(area.size.w) * scale / BACKDROP_SHRINK).ceil() as u32,
+            (f64::from(area.size.h) * scale / BACKDROP_SHRINK).ceil() as u32,
         );
         let shows = format!(
-            "{pixels:?} {:?} {:?}",
-            tokens.backdrop, tokens.backdrop_deep
+            "{pixels:?} {:?} {:?} {:?}",
+            tokens.backdrop, tokens.backdrop_deep, tokens.backdrop_text
         );
-        if overview
-            .backdrops
-            .get(&name)
-            .is_none_or(|p| p.shows != shows)
-        {
+        let kept = &mut self.overview_kept.backdrops;
+        if kept.get(&name).is_none_or(|p| p.shows != shows) {
             if let Some(pixmap) = glance_look::backdrop(pixels.0, pixels.1, &tokens) {
-                overview
-                    .backdrops
-                    .insert(name.clone(), painted(shows, &pixmap));
+                kept.insert(name.clone(), painted(shows, &pixmap));
             }
         }
-        if let Some(backdrop) = overview.backdrops.get(&name) {
+        if let Some(backdrop) = self.overview_kept.backdrops.get(&name) {
             front.extend(placed(renderer, backdrop, area, area, scale));
         }
         self.overview = Some(overview);
@@ -808,7 +814,7 @@ impl Edel {
                 drawn.extend(placed(renderer, card, place, area, scale));
             }
         }
-        let placeholder = tr("Type to search");
+        let placeholder = tr("Search windows and apps");
         let shows = format!(
             "{} {placeholder} {:?} {scale} {:?}",
             overview.search.query, field.size, self.tokens.panel
@@ -891,9 +897,10 @@ impl Edel {
             })
             .collect();
         let new = tr("New");
+        let caption = tr("Workspaces");
         let bar = frame_bar(&screen.plan, screen.area, &self.tokens);
         let shows = format!(
-            "{:?} {labels:?} {marks:?} {bar} {new} {scale} {:?} {:?} {}",
+            "{:?} {labels:?} {marks:?} {bar} {new} {caption} {scale} {:?} {:?} {}",
             screen.plan,
             self.tokens.panel,
             self.tokens.backdrop,
@@ -910,7 +917,7 @@ impl Edel {
                 &screen.plan,
                 &frames,
                 bar,
-                new,
+                (new, caption),
                 scale,
                 &self.tokens,
                 self.text.as_mut(),
