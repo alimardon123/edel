@@ -36,7 +36,7 @@ use edel::tokens::Colour;
 use edel_compositor::overview::{Plan, Side, frame_at, in_view, plan, spread};
 
 use crate::decoration::{app_id, data, title};
-use crate::glance_look::{self, CLOSE, NAME_ICON, PILL};
+use crate::glance_look::{self, CLOSE, Mark, NAME_ICON, PILL};
 use crate::render::{Drawn, Element};
 use crate::state::Edel;
 
@@ -67,6 +67,12 @@ pub struct Overview {
     trays: HashMap<String, Painted>,
     names: HashMap<Window, Painted>,
     close: Option<Painted>,
+    /// Each window's title bar, large and small; each window's shadow;
+    /// each screen's backdrop; the held workspace's frame.
+    bars: HashMap<(Window, bool), Painted>,
+    shadows: HashMap<Window, (Painted, i32)>,
+    backdrops: HashMap<String, Painted>,
+    held: Option<(Painted, i32)>,
     /// The last places line logged for each screen.
     logged: HashMap<String, String>,
 }
@@ -526,16 +532,6 @@ impl Edel {
         if let Some((i, grip)) = held_frame {
             if let Some(frame) = screen.plan.frames.get(i) {
                 let moved = Rectangle::new((pointer - grip).to_i32_round(), frame.size);
-                for (j, line) in edges(moved, 2).into_iter().enumerate() {
-                    front.push(solid(
-                        &mut overview,
-                        format!("held edge {j}"),
-                        line,
-                        tokens.accent,
-                        area,
-                        scale,
-                    ));
-                }
                 for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| *d == i) {
                     let to = edel_compositor::overview::shrink(moved, screen.area, *place);
                     front.extend(self.overview_window(
@@ -549,18 +545,21 @@ impl Edel {
                         scale,
                     ));
                 }
-                // A little see-through, so the frame it would land on shows.
-                front.push(solid(
-                    &mut overview,
-                    "held frame".into(),
-                    moved,
-                    Colour {
-                        a: 0.8,
-                        ..tokens.background
-                    },
-                    area,
-                    scale,
-                ));
+                let bar = frame_bar(&screen.plan, screen.area, &tokens);
+                let shows = format!("{:?} {bar} {scale} {:?}", frame.size, tokens.backdrop);
+                if overview.held.as_ref().is_none_or(|(p, _)| p.shows != shows) {
+                    overview.held =
+                        glance_look::frame(frame.size.w, frame.size.h, bar, scale, &tokens)
+                            .map(|(pixmap, margin)| (painted(shows, &pixmap), margin));
+                }
+                if let Some((painted, margin)) = &overview.held {
+                    let out = (f64::from(*margin) / scale).ceil() as i32;
+                    let place = Rectangle::new(
+                        moved.loc - Point::from((out, out)),
+                        (moved.size.w + 2 * out, moved.size.h + 2 * out).into(),
+                    );
+                    front.extend(placed(renderer, painted, place, area, scale));
+                }
             }
         }
         // The window under the pointer: its close button and its edge.
@@ -581,7 +580,7 @@ impl Edel {
                 area,
                 scale,
             ));
-            for (j, line) in edges(*at, 2).into_iter().enumerate() {
+            for (j, line) in edges(at.to_f64().to_i32_round(), 3).into_iter().enumerate() {
                 front.push(solid(
                     &mut overview,
                     format!("over {j}"),
@@ -613,34 +612,38 @@ impl Edel {
                 false,
                 scale,
             ));
+            front.extend(overview_shadow(
+                renderer,
+                &mut overview,
+                window,
+                *at,
+                area,
+                scale,
+                &tokens,
+            ));
         }
         // The strip: each workspace's frame, its windows small, its edge.
         let shrink = |frame: Rectangle<i32, Logical>, place: Rectangle<i32, Logical>| {
             edel_compositor::overview::shrink(frame, screen.area, place)
         };
+        let marks: Vec<Mark> = (0..screen.plan.frames.len())
+            .map(|i| {
+                if held_frame.is_some_and(|(h, _)| h == i) {
+                    Mark::Away
+                } else if i == screen.shown || target == Some(i) {
+                    Mark::Lit
+                } else {
+                    Mark::Plain
+                }
+            })
+            .collect();
         for (i, frame) in screen.plan.frames.iter().enumerate() {
-            // Scrolled out of view.
-            if frame.is_empty() {
+            // Scrolled out of view, or held by the pointer.
+            if frame.is_empty() || marks[i] == Mark::Away {
                 continue;
             }
-            let (edge, width) = if i == screen.shown || target == Some(i) {
-                (tokens.accent, 2)
-            } else {
-                (tokens.edge, 1)
-            };
-            for (j, line) in edges(*frame, width).into_iter().enumerate() {
-                front.push(solid(
-                    &mut overview,
-                    format!("edge {i} {j}"),
-                    line,
-                    edge,
-                    area,
-                    scale,
-                ));
-            }
-            // A held workspace's windows go with it; its place stays empty.
-            let mine = |d: usize| d == i && held_frame.is_none_or(|(h, _)| h != i);
-            for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| mine(*d)) {
+            // The panel's strip at the frame's bottom stays clear.
+            for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| *d == i) {
                 front.extend(self.overview_window(
                     renderer,
                     &mut overview,
@@ -652,17 +655,9 @@ impl Edel {
                     scale,
                 ));
             }
-            front.push(solid(
-                &mut overview,
-                format!("frame {i}"),
-                *frame,
-                tokens.background,
-                area,
-                scale,
-            ));
         }
-        front.extend(self.overview_tray(renderer, &mut overview, &screen, scale));
-        // The wallpaper under it all, dimmed; the background colour where
+        front.extend(self.overview_tray(renderer, &mut overview, &screen, &marks, scale));
+        // The wallpaper under it all, dimmed a little; the backdrop where
         // there is none.
         front.push(solid(
             &mut overview,
@@ -672,7 +667,7 @@ impl Edel {
                 r: 0.04,
                 g: 0.05,
                 b: 0.08,
-                a: 0.32,
+                a: 0.12,
             },
             area,
             scale,
@@ -682,14 +677,28 @@ impl Edel {
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );
-        front.push(solid(
-            &mut overview,
-            "screen".into(),
-            area,
-            tokens.background,
-            area,
-            scale,
-        ));
+        let pixels = (
+            (f64::from(area.size.w) * scale).ceil() as u32,
+            (f64::from(area.size.h) * scale).ceil() as u32,
+        );
+        let shows = format!(
+            "{pixels:?} {:?} {:?}",
+            tokens.backdrop, tokens.backdrop_deep
+        );
+        if overview
+            .backdrops
+            .get(&name)
+            .is_none_or(|p| p.shows != shows)
+        {
+            if let Some(pixmap) = glance_look::backdrop(pixels.0, pixels.1, &tokens) {
+                overview
+                    .backdrops
+                    .insert(name.clone(), painted(shows, &pixmap));
+            }
+        }
+        if let Some(backdrop) = overview.backdrops.get(&name) {
+            front.extend(placed(renderer, backdrop, area, area, scale));
+        }
         self.overview = Some(overview);
         front
     }
@@ -738,6 +747,7 @@ impl Edel {
         renderer: &mut GlesRenderer,
         overview: &mut Overview,
         screen: &Screen,
+        marks: &[Mark],
         scale: f64,
     ) -> Vec<Drawn> {
         let names = self.desks.names();
@@ -748,10 +758,12 @@ impl Edel {
             })
             .collect();
         let new = tr("New");
+        let bar = frame_bar(&screen.plan, screen.area, &self.tokens);
         let shows = format!(
-            "{:?} {labels:?} {new} {scale} {:?} {}",
+            "{:?} {labels:?} {marks:?} {bar} {new} {scale} {:?} {:?} {}",
             screen.plan,
             self.tokens.panel,
+            self.tokens.backdrop,
             self.text.is_some()
         );
         let stale = overview
@@ -759,9 +771,12 @@ impl Edel {
             .get(&screen.name)
             .is_none_or(|p| p.shows != shows);
         if stale {
+            let frames: Vec<(String, Mark)> =
+                labels.into_iter().zip(marks.iter().copied()).collect();
             let Some(pixmap) = glance_look::tray(
                 &screen.plan,
-                &labels,
+                &frames,
+                bar,
                 new,
                 scale,
                 &self.tokens,
@@ -879,27 +894,47 @@ impl Edel {
         let inner = insets.window(place);
         let origin = (inner.loc - window.geometry().loc).to_f64();
         let context = renderer.context_id();
-        let frame_data = data(window).borrow();
         let mut parts: Vec<Drawn> = Vec::new();
-        if let Some((buffer, pixels)) = (insets.top > 0).then(|| frame_data.last_bar()).flatten() {
+        // Every window's title bar alike, painted here, so a window
+        // without the keyboard looks no different from the one with it.
+        if insets.top > 0 {
             let size = Size::<f64, Logical>::from((f64::from(place.size.w), f64::from(insets.top)))
                 .upscale(k)
                 .to_i32_round();
-            match MemoryRenderBufferRenderElement::from_buffer(
-                renderer,
-                at(place.loc.to_f64()),
-                &buffer,
-                None,
-                Some(Rectangle::from_size(
-                    (f64::from(pixels.0), f64::from(pixels.1)).into(),
-                )),
-                Some(size),
-                Kind::Unspecified,
-            ) {
-                Ok(element) => parts.push(Drawn::Plain(Element::Bar(element))),
-                Err(e) => eprintln!("edel-compositor: drawing a title bar failed: {e}"),
+            let pixels = (
+                (f64::from(size.w) * scale_out).ceil() as u32,
+                (f64::from(size.h) * scale_out).ceil() as u32,
+            );
+            let words = title(window);
+            let title_size = self.tokens.title_text_size as f32 * (k * scale_out) as f32;
+            let shows = format!(
+                "{words} {pixels:?} {title_size} {:?}",
+                self.tokens.title_bar_focused
+            );
+            let key = (window.clone(), small);
+            if overview.bars.get(&key).is_none_or(|p| p.shows != shows) {
+                if let Some(pixmap) = glance_look::bar(
+                    pixels.0,
+                    pixels.1,
+                    &words,
+                    title_size,
+                    &self.tokens,
+                    self.text.as_mut(),
+                ) {
+                    overview.bars.insert(key.clone(), painted(shows, &pixmap));
+                }
+            }
+            if let Some(bar) = overview.bars.get(&key) {
+                parts.extend(placed(
+                    renderer,
+                    bar,
+                    Rectangle::new(to.loc, size),
+                    area,
+                    scale_out,
+                ));
             }
         }
+        let frame_data = data(window).borrow();
         for (n, part) in frame_data.picture.iter().enumerate().rev() {
             let id = overview
                 .ids
@@ -1028,4 +1063,48 @@ fn flat(
         1.0,
         Kind::Unspecified,
     )))
+}
+
+/// The height of the panel along a frame's bottom, logical pixels: the
+/// panel's share of the screen, as small as the frame.
+fn frame_bar(plan: &Plan, screen: Rectangle<i32, Logical>, tokens: &edel::tokens::Tokens) -> f32 {
+    let frame_h = plan.frames.iter().map(|f| f.size.h).max().unwrap_or(0);
+    (frame_h as f32 * tokens.panel_height as f32 / screen.size.h.max(1) as f32).max(2.0)
+}
+
+/// The soft shadow under `window` spread at `at`, painted again only
+/// when its size changes.
+fn overview_shadow(
+    renderer: &mut GlesRenderer,
+    overview: &mut Overview,
+    window: &Window,
+    at: Rectangle<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+    scale: f64,
+    tokens: &edel::tokens::Tokens,
+) -> Vec<Drawn> {
+    let shows = format!("{:?} {scale} {:?}", at.size, tokens.shadow);
+    if overview
+        .shadows
+        .get(window)
+        .is_none_or(|(p, _)| p.shows != shows)
+    {
+        match glance_look::shadow(at.size.w, at.size.h, scale, tokens) {
+            Some((pixmap, margin)) => {
+                overview
+                    .shadows
+                    .insert(window.clone(), (painted(shows, &pixmap), margin));
+            }
+            None => return Vec::new(),
+        }
+    }
+    let Some((painted, margin)) = overview.shadows.get(window) else {
+        return Vec::new();
+    };
+    let out = f64::from(*margin) / scale;
+    let place = Rectangle::new(
+        (at.loc.to_f64() - Point::from((out, out))).to_i32_round(),
+        (at.size.to_f64() + Size::from((2.0 * out, 2.0 * out))).to_i32_round(),
+    );
+    placed(renderer, painted, place, area, scale)
 }
