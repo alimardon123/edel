@@ -25,8 +25,9 @@ pub fn gpu_open(path: &Path) -> String {
 
 /// The context when the card udev names never shows its file.
 /// `seen` says what this user found: why the card's file could not be
-/// read and what /dev/dri held, so a log tells a missing file from one
-/// this user may not see.
+/// read, what /dev/dri held, what the kernel lists in /sys/class/drm and
+/// what is mounted on /dev, so a log tells a missing file from one this
+/// user may not see, and a file taken out from a card never made.
 pub fn gpu_missing(path: &Path, seen: &str) -> String {
     format!(
         "the graphics card {} that udev names did not appear under /dev/dri within 10 s, and no other card did ({seen}); the desktop starts again in a moment and tries once more",
