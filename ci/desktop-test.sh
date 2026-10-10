@@ -2724,7 +2724,9 @@ case_tray() {
 	# middle of its cell in the panel, and a screen reader reads it as a
 	# button named by the item's title, a click asks the item to Activate and
 	# a right click for its ContextMenu; when the item's app ends, the icon
-	# goes. The key is taken out again at the end (`tray reset`).
+	# goes. Pointing at the arrow shows its tooltip, Super+B opens the grid
+	# with the keyboard and Escape closes it (M5.9h). The key is taken out
+	# again at the end (`tray reset`).
 	panel=$(token panel)
 	python3 ci/qmp.py move 640 300
 	items=$(count 'edel-shell-ui: tray: 1 items')
@@ -2740,6 +2742,24 @@ case_tray() {
 		$place
 	EOF
 	[ "$w" = 34 ] || fail "the tray is $w px wide in the last places line, not 34"
+	# Pointing at the arrow says how many wait behind it (M5.9h): after a
+	# rest of 600 ms a tooltip shows the same words. Super+B opens the grid
+	# with the keyboard, which takes the tooltip away, and Escape closes it.
+	tip=$(count 'edel-shell-ui: tooltip shown, Hidden icons \(1\)')
+	python3 ci/qmp.py move $((x + 17)) 780
+	wait_more 'edel-shell-ui: tooltip shown, Hidden icons \(1\)' "$tip" ||
+		fail "pointing at the arrow did not show the tooltip Hidden icons (1)"
+	opened=$(count 'edel-shell-ui: tray grid opened from the keyboard')
+	hidden=$(count 'edel-shell-ui: tooltip hidden')
+	python3 ci/qmp.py key meta_l-b
+	wait_more 'edel-shell-ui: tray grid opened from the keyboard' "$opened" ||
+		fail "Super+B did not open the tray's grid from the keyboard"
+	wait_more 'edel-shell-ui: tooltip hidden' "$hidden" ||
+		fail "the tooltip stayed up when the tray's grid opened"
+	closed=$(count 'edel-shell-ui: tray grid hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: tray grid hidden' "$closed" ||
+		fail "Escape did not close the tray's grid"
 	# The arrow, 17 px along the tray in the panel's row, opens the grid.
 	shown=$(count 'edel-shell-ui: tray grid shown, 1 icons')
 	python3 ci/qmp.py click $((x + 17)) 780
@@ -2770,10 +2790,11 @@ case_tray() {
 		fail "the test item's icon is not #33aa66 at its middle in the grid, $mx,$my"
 	# Dragged from the grid onto the panel's arrow place: kept in the panel,
 	# the grid closes (no icon is left behind the arrow) and the key is written.
+	closed=$(count 'edel-shell-ui: tray grid hidden')
 	python3 ci/qmp.py drag $mx $my $((x + 17)) 780
 	wait_for 'edel-shell-ui: tray: edel-testclient kept in the panel' ||
 		fail "dragging the icon from $mx,$my onto the panel at $((x + 17)),780 did not keep it there"
-	wait_for 'edel-shell-ui: tray grid hidden' || fail "the grid did not close once its icon was kept"
+	wait_more 'edel-shell-ui: tray grid hidden' "$closed" || fail "the grid did not close once its icon was kept"
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
@@ -2820,7 +2841,7 @@ case_tray() {
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
 	value settings_file | grep -q 'tray_in_panel' &&
 		fail "ci's settings file still holds layout.tray_in_panel after tray reset: $(value settings_file)"
-	echo "PASS: the test item first waited behind the arrow, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, the icon went when its app ended, and tray reset took the key out again"
+	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {

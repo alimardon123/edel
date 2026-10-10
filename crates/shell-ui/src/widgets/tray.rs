@@ -129,6 +129,20 @@ fn shows(live: &Live) -> String {
     lines.join("\n")
 }
 
+/// The words of the arrow for a reader and its tooltip: how many items lie
+/// behind it (M5.9h).
+pub fn hidden_label(count: usize) -> String {
+    trf("Hidden icons ({count})", &[("count", &count.to_string())])
+}
+
+/// How many items lie behind the arrow, when `at` logical pixels along the
+/// widget is on the arrow's cell, None when it is not on it or no arrow
+/// shows (M5.9h, the tooltip).
+pub fn behind_arrow(shown: &str, at: f32) -> Option<usize> {
+    let (hidden, ..) = arrow(shown)?;
+    (EDGE..EDGE + CELL).contains(&at).then_some(hidden)
+}
+
 /// `shows`' arrow line read back: how many items lie behind the arrow,
 /// whether its grid is open and whether one of them has news. None when
 /// the widget shows no arrow.
@@ -195,7 +209,7 @@ fn parts(shown: &str) -> Vec<Part> {
     let mut x = EDGE;
     if let Some((hidden, ..)) = arrow(shown) {
         out.push(Part {
-            label: trf("Hidden icons ({count})", &[("count", &hidden.to_string())]),
+            label: hidden_label(hidden),
             x,
             width: CELL,
         });

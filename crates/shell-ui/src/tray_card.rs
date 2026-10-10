@@ -17,7 +17,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity};
 
 use crate::popup::Popup;
 use crate::trayview::{self, Act, Key, Part, Step};
-use crate::widgets::tray::split;
+use crate::widgets::tray::{WIDGET as TRAY, arrow_middle, split};
 use crate::{
     MARGIN, SETTINGS, Shell, TRAY_GRID, a11y, fillets, messages, paint, quick, settings_texts,
 };
@@ -83,6 +83,8 @@ impl Shell {
     /// it does nothing. Opening closes the other cards and pop-ups as
     /// quick settings does.
     pub fn toggle_tray_grid(&mut self, i: usize, at: f32) {
+        // A tooltip over the arrow goes as the grid comes (M5.9h).
+        self.hide_tooltip();
         if self.tray_grid.is_some() {
             return self.close_tray_grid();
         }
@@ -162,6 +164,39 @@ impl Shell {
         // The arrow lights while the grid is open.
         self.live.tray_open = true;
         self.draw_all();
+    }
+
+    /// The tray's key (Super+B unless `[shortcuts]` says otherwise, M5.9h):
+    /// the grid of the apps behind the arrow opens with the keyboard on its
+    /// first app, or closes if it is open. With nothing behind the arrow,
+    /// or no tray on the panels, nothing opens.
+    pub fn tray_key_pressed(&mut self) {
+        if self.tray_grid.is_some() {
+            return self.close_tray_grid();
+        }
+        // The first panel holding the tray, and the tray's left edge there.
+        let tray = self.panels.iter().enumerate().find_map(|(i, panel)| {
+            let j = (0..panel.places.len())
+                .find(|&j| panel.row.widget(j).is_some_and(|w| w.name == TRAY.name))?;
+            Some((i, panel.places[j].0))
+        });
+        let behind = !split(&self.live).1.is_empty();
+        match tray {
+            Some((i, left)) if behind => {
+                self.toggle_tray_grid(i, left + arrow_middle());
+            }
+            _ => {
+                eprintln!("edel-shell-ui: tray key, but no app waits behind the arrow");
+                return;
+            }
+        }
+        // The keyboard starts on the first app.
+        let Some(card) = &mut self.tray_grid else {
+            return;
+        };
+        card.view.focus = Some(Part::Icon(0));
+        self.draw_tray_grid();
+        eprintln!("edel-shell-ui: tray grid opened from the keyboard");
     }
 
     /// Closes the grid and lets go of its keyboard and buffers.

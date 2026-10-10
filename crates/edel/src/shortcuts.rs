@@ -209,6 +209,12 @@ pub const ACTIONS: &[Action] = &[
         false,
         "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c)",
     ),
+    action(
+        "show_tray",
+        "Super+B",
+        false,
+        "Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h)",
+    ),
 ];
 
 /// The action called `name`.
