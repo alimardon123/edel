@@ -4,7 +4,9 @@
 //! "Lumen" (identity "Edel test player"). Each command quick settings sends
 //! prints its name into the output (`play pause` for `PlayPause`, which also
 //! switches between playing and paused and tells the bus so), and then it
-//! waits until it is killed.
+//! waits until it is killed. `--mpris NAME` (M5.9i) is a second player for
+//! the card's pages: `org.mpris.MediaPlayer2.edeltest.NAME`, identity and
+//! desktop entry NAME, "Morning Walk" by NAME, paused.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -23,13 +25,21 @@ fn say(line: &str) {
 }
 
 /// The root interface: what the app is called and what it can do.
-struct Root;
+struct Root {
+    identity: String,
+    desktop: String,
+}
 
 #[zbus::interface(name = "org.mpris.MediaPlayer2")]
 impl Root {
     #[zbus(property)]
     fn identity(&self) -> String {
-        "Edel test player".into()
+        self.identity.clone()
+    }
+
+    #[zbus(property)]
+    fn desktop_entry(&self) -> String {
+        self.desktop.clone()
     }
 
     #[zbus(property)]
@@ -65,6 +75,8 @@ impl Root {
 /// The player interface: whether it plays, and the track.
 struct Player {
     playing: bool,
+    title: String,
+    artist: String,
 }
 
 /// A value for the metadata: a string, a list of strings or an object path.
@@ -88,11 +100,11 @@ impl Player {
             ("mpris:trackid".to_string(), owned(Value::from(track))),
             (
                 "xesam:title".to_string(),
-                owned(Value::from("Night Drive".to_string())),
+                owned(Value::from(self.title.clone())),
             ),
             (
                 "xesam:artist".to_string(),
-                owned(Value::from(vec!["Lumen".to_string()])),
+                owned(Value::from(vec![self.artist.clone()])),
             ),
         ])
     }
@@ -191,15 +203,42 @@ impl Player {
     }
 }
 
-/// Serves the two interfaces until the process is killed.
-pub fn run() -> Result<()> {
+/// Serves the two interfaces until the process is killed: the first
+/// player, or with `second` the paused one of that name.
+pub fn run(second: Option<&str>) -> Result<()> {
+    let (bus, root, player) = match second {
+        None => (
+            NAME.to_string(),
+            Root {
+                identity: "Edel test player".into(),
+                desktop: String::new(),
+            },
+            Player {
+                playing: true,
+                title: "Night Drive".into(),
+                artist: "Lumen".into(),
+            },
+        ),
+        Some(name) => (
+            format!("{NAME}.{name}"),
+            Root {
+                identity: name.into(),
+                desktop: name.into(),
+            },
+            Player {
+                playing: false,
+                title: "Morning Walk".into(),
+                artist: name.into(),
+            },
+        ),
+    };
     let _connection = zbus::blocking::connection::Builder::session()
         .context("connecting to the session's bus")?
-        .name(NAME)
+        .name(bus)
         .context("taking the player's bus name")?
-        .serve_at(PATH, Root)
+        .serve_at(PATH, root)
         .context("serving the root interface")?
-        .serve_at(PATH, Player { playing: true })
+        .serve_at(PATH, player)
         .context("serving the player interface")?
         .build()
         .context("starting the test player")?;

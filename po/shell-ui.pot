@@ -236,6 +236,9 @@ msgstr ""
 msgid "Next"
 msgstr ""
 
+msgid "Player {n} of {count}, {app}"
+msgstr ""
+
 msgid "{title}, {state}"
 msgstr ""
 

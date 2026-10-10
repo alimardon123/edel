@@ -27,6 +27,7 @@
 //!     edel-testclient --security-context
 //!     edel-testclient --sni
 //!     edel-testclient --mpris
+//!     edel-testclient --mpris NAME
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -181,7 +182,8 @@ fn main() -> Result<()> {
         ["--workspace", name] => return workspaces::run(name),
         ["--toplevels"] => return toplevels::run(None),
         ["--sni"] => return sni::run(),
-        ["--mpris"] => return mpris::run(),
+        ["--mpris"] => return mpris::run(None),
+        ["--mpris", name] => return mpris::run(Some(name)),
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),
         ["--toplevels", title] => return toplevels::run(Some(title)),

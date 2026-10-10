@@ -2,14 +2,13 @@
 //! `org.mpris.MediaPlayer2` interfaces) on the session's bus. It runs on the
 //! connection and zbus thread the portal has (`portal.rs`), with no thread
 //! or connection of its own, and is read only while quick settings is open:
-//! when it opens, [`follow`] finds the players and the one to show, then
-//! follows that one's changes until the card closes, when the [`Follow`] it
-//! holds is dropped and its task cancelled. What it learns goes to the event
-//! loop as an [`Event`]. The card draws it (its own step); the buttons ask
-//! the player through [`call`].
+//! when it opens, [`follow`] finds every player and follows their changes
+//! until the card closes, when the [`Follow`] it holds is dropped and its
+//! task cancelled. What it learns goes to the event loop as an [`Event`],
+//! the players in the order the card pages through them ([`order`], M5.9i);
+//! the buttons ask a player through [`call`].
 
 use std::collections::HashMap;
-use std::future::pending;
 
 use futures_lite::StreamExt;
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
@@ -31,6 +30,9 @@ pub struct Player {
     pub bus: String,
     /// The app's name as it gives it, else its bus name's own part.
     pub identity: String,
+    /// Its desktop file's id as it gives it (`DesktopEntry`), for its icon
+    /// (M5.9i); empty when it gives none.
+    pub desktop: String,
     /// The track's title; empty when the app says none.
     pub title: String,
     /// The track's artists, joined with ", "; empty when none.
@@ -44,11 +46,11 @@ pub struct Player {
     pub can_next: bool,
 }
 
-/// What the tasks tell the event loop: the player to show now, or None when
-/// nothing plays or pauses any more.
+/// What the tasks tell the event loop: every player that plays or pauses
+/// now, in [`order`]; empty when none does any more.
 #[derive(Debug)]
 pub enum Event {
-    Player(Option<Player>),
+    Players(Vec<Player>),
 }
 
 /// The task that follows the players. Dropping it cancels the task, so the
@@ -58,13 +60,13 @@ pub struct Follow {
     _task: zbus::Task<()>,
 }
 
-/// The player to show: the first that plays, else the first paused one. The
-/// list keeps the bus's order, so a playing one always wins.
-pub fn choose(players: &[Player]) -> Option<&Player> {
+/// The players in the card's order (M5.9i): those that play first, then the
+/// paused ones, each by its bus name, so the first page is what plays and
+/// the pages do not move about from one read to the next (the bus lists
+/// names in no promised order).
+pub fn order(mut players: Vec<Player>) -> Vec<Player> {
+    players.sort_by(|a, b| (!a.playing, &a.bus).cmp(&(!b.playing, &b.bus)));
     players
-        .iter()
-        .find(|p| p.playing)
-        .or_else(|| players.first())
 }
 
 /// The artists in `xesam:artist`, joined with ", ". Apps that give one name
@@ -154,9 +156,14 @@ async fn read(connection: &zbus::Connection, bus: &str) -> Option<Player> {
         .get_property::<String>("Identity")
         .await
         .unwrap_or_else(|_| bus.strip_prefix(PREFIX).unwrap_or(bus).to_string());
+    let desktop = root
+        .get_property::<String>("DesktopEntry")
+        .await
+        .unwrap_or_default();
     Some(Player {
         bus: bus.to_string(),
         identity,
+        desktop,
         title,
         artist,
         playing,
@@ -186,39 +193,37 @@ async fn read_all(connection: &zbus::Connection, bus: &zbus::fdo::DBusProxy<'_>)
     found
 }
 
-/// Finds the players and follows the one to show, sending each change to
-/// `events`, until the events' receiver goes or the task is dropped.
+/// Finds the players and follows them all, sending the list to `events`
+/// whenever it changes, until the events' receiver goes or the task is
+/// dropped.
 async fn watch(connection: zbus::Connection, events: Sender<Event>) {
     let Ok(bus) = zbus::fdo::DBusProxy::new(&connection).await else {
         return;
     };
-    // Listening to the names' owners before the first read, so a player that
-    // comes or goes in between is not missed.
+    // Listening before the first read, so a player that comes, goes or
+    // changes in between is not missed: the names' owners, and every
+    // player's `PropertiesChanged` at the MPRIS path, whoever sends it.
     let Ok(mut owners) = bus.receive_name_owner_changed().await else {
         return;
     };
-    let mut watched: Option<String> = None;
-    let mut last: Option<Player> = None;
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .interface(PROPERTIES)
+        .and_then(|r| r.member("PropertiesChanged"))
+        .and_then(|r| r.path(PATH))
+        .map(|r| r.build());
+    let Ok(rule) = rule else {
+        return;
+    };
+    let Ok(mut changes) = zbus::MessageStream::for_match_rule(rule, &connection, None).await else {
+        return;
+    };
+    let mut last: Option<Vec<Player>> = None;
     loop {
-        // The chosen player's changes are listened to before it is read.
-        let player = match &watched {
-            Some(name) => proxy(&connection, name, PROPERTIES).await.ok(),
-            None => None,
-        };
-        let changes = match &player {
-            Some(p) => p.receive_signal("PropertiesChanged").await.ok(),
-            None => None,
-        };
-        let found = read_all(&connection, &bus).await;
-        let pick = choose(&found).cloned();
-        if pick.as_ref().map(|p| p.bus.as_str()) != watched.as_deref() {
-            // Another player to follow: listen to it, then read again.
-            watched = pick.as_ref().map(|p| p.bus.clone());
-            continue;
-        }
-        if pick != last {
-            last = pick.clone();
-            if events.send(Event::Player(pick)).is_err() {
+        let found = order(read_all(&connection, &bus).await);
+        if last.as_ref() != Some(&found) {
+            last = Some(found.clone());
+            if events.send(Event::Players(found)).is_err() {
                 return;
             }
         }
@@ -237,12 +242,7 @@ async fn watch(connection: zbus::Connection, events: Sender<Event>) {
                 }
             }
         };
-        let player_changed = async {
-            match changes {
-                Some(mut signals) => signals.next().await.map(|_| ()),
-                None => pending().await,
-            }
-        };
+        let player_changed = async { changes.next().await.map(|_| ()) };
         if futures_lite::future::or(names_changed, player_changed)
             .await
             .is_none()
@@ -294,6 +294,7 @@ mod tests {
         Player {
             bus: bus.into(),
             identity: "test".into(),
+            desktop: String::new(),
             title: "Song".into(),
             artist: String::new(),
             playing,
@@ -304,15 +305,22 @@ mod tests {
     }
 
     #[test]
-    fn a_playing_player_is_chosen_before_a_paused_one() {
-        let paused = player("org.mpris.MediaPlayer2.a", false);
-        let playing = player("org.mpris.MediaPlayer2.b", true);
-        assert_eq!(choose(&[paused.clone(), playing.clone()]), Some(&playing));
-        assert_eq!(choose(&[playing.clone(), paused.clone()]), Some(&playing));
-        // Only paused ones: the first of them.
-        let other = player("org.mpris.MediaPlayer2.c", false);
-        assert_eq!(choose(&[paused.clone(), other]), Some(&paused));
-        assert_eq!(choose(&[]), None);
+    fn the_playing_players_come_first_each_by_its_bus_name() {
+        let a = player("org.mpris.MediaPlayer2.a", false);
+        let b = player("org.mpris.MediaPlayer2.b", true);
+        let c = player("org.mpris.MediaPlayer2.c", false);
+        let d = player("org.mpris.MediaPlayer2.d", true);
+        let buses = |list: Vec<Player>| list.into_iter().map(|p| p.bus).collect::<Vec<_>>();
+        assert_eq!(
+            buses(order(vec![c.clone(), d.clone(), a.clone(), b.clone()])),
+            [
+                b.bus.as_str(),
+                d.bus.as_str(),
+                a.bus.as_str(),
+                c.bus.as_str()
+            ]
+        );
+        assert!(order(Vec::new()).is_empty());
     }
 
     #[test]
@@ -398,8 +406,8 @@ mod tests {
         events
             .handle()
             .insert_source(channel, |event, _, seen| {
-                if let calloop::channel::Event::Msg(Event::Player(player)) = event {
-                    seen.push(match player {
+                if let calloop::channel::Event::Msg(Event::Players(players)) = event {
+                    seen.push(match players.first() {
                         Some(p) => format!("{}|{}|{}", p.identity, p.title, p.playing),
                         None => "none".to_string(),
                     });

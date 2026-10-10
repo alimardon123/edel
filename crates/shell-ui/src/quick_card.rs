@@ -25,7 +25,7 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 use crate::popup::Popup;
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
-use crate::{mpris, paint};
+use crate::{mpris, paint, widgets};
 
 /// The side of a cover's picture, pixels (M5.9d).
 const COVER_PX: u32 = 128;
@@ -65,6 +65,13 @@ pub struct QuickCard {
     /// Follows the players while the card is open (M5.9d). Held only for its
     /// drop: the players are followed while the card lives.
     _follow: Option<mpris::Follow>,
+    /// The page shown, by its player's bus name, so it stays on that player
+    /// as others come and go; none for the first (M5.9i).
+    page: Option<String>,
+    /// A scroll or swipe on the player's card, added up into pages.
+    scrolled: widgets::Scrolled,
+    /// The last player line logged, so it says only what changed.
+    player_logged: String,
 }
 
 impl QuickCard {
@@ -343,6 +350,9 @@ impl Shell {
             setting_light: false,
             logged: String::new(),
             cover: None,
+            page: None,
+            scrolled: widgets::Scrolled::default(),
+            player_logged: String::new(),
             _follow: follow,
         });
         // The pill lights while the card is open.
@@ -361,32 +371,111 @@ impl Shell {
         }
         drop(card);
         self.live.quick = false;
-        self.live.player = None;
+        self.live.players.clear();
         self.draw_all();
         eprintln!("edel-shell-ui: quick settings hidden");
     }
 
     /// What plays changed while quick settings is open (M5.9d). A change
     /// that comes after the card closed is dropped: nothing is kept then.
+    /// The page shown stays on its player while it is there (M5.9i).
     pub fn player_changed(&mut self, event: mpris::Event) {
         if self.quick.is_none() {
             return;
         }
-        let mpris::Event::Player(player) = event;
-        if player != self.live.player {
-            match &player {
-                Some(p) => eprintln!(
-                    "edel-shell-ui: player: {} by {} ({}), {}",
-                    p.title,
-                    p.artist,
-                    p.identity,
-                    if p.playing { "playing" } else { "paused" }
-                ),
-                None => eprintln!("edel-shell-ui: player: none"),
-            }
+        let mpris::Event::Players(players) = event;
+        if players != self.live.players && players.len() > 1 {
+            let names: Vec<&str> = players.iter().map(|p| p.identity.as_str()).collect();
+            eprintln!(
+                "edel-shell-ui: players: {} ({})",
+                players.len(),
+                names.join(", ")
+            );
         }
-        self.live.player = player;
+        self.live.players = players;
+        self.show_player_page(None);
+    }
+
+    /// The page of the player shown now: the one the card keeps (by its bus
+    /// name) while it is there, else the first (M5.9i).
+    fn player_page(&self) -> usize {
+        let held = self.quick.as_ref().and_then(|c| c.page.as_deref());
+        held.and_then(|bus| self.live.players.iter().position(|p| p.bus == bus))
+            .unwrap_or(0)
+    }
+
+    /// Shows page `to` (or keeps the one shown when none), logs the player
+    /// shown when it changes, and draws.
+    fn show_player_page(&mut self, to: Option<usize>) {
+        let page = to
+            .filter(|i| *i < self.live.players.len())
+            .unwrap_or_else(|| self.player_page());
+        let shown = self.live.players.get(page).cloned();
+        let Some(card) = &mut self.quick else {
+            return;
+        };
+        let line = match &shown {
+            Some(p) => format!(
+                "player: {} by {} ({}), {}{}",
+                p.title,
+                p.artist,
+                p.identity,
+                if p.playing { "playing" } else { "paused" },
+                if self.live.players.len() > 1 {
+                    format!(", page {} of {}", page + 1, self.live.players.len())
+                } else {
+                    String::new()
+                }
+            ),
+            None => "player: none".to_string(),
+        };
+        if card.player_logged != line {
+            eprintln!("edel-shell-ui: {line}");
+            card.player_logged = line;
+        }
+        card.page = shown.map(|p| p.bus);
         self.draw_quick();
+    }
+
+    /// The player on the page shown, if any.
+    fn shown_player(&self) -> Option<&mpris::Player> {
+        self.live.players.get(self.player_page())
+    }
+
+    /// `steps` of a scroll or swipe on the player's card, right or down
+    /// towards the later pages: a page a step, the end pages stopping it
+    /// (M5.9i).
+    fn swipe_players(&mut self, steps: i32) {
+        let count = self.live.players.len() as i64;
+        let page = self.player_page() as i64;
+        if count < 2 || steps == 0 {
+            return;
+        }
+        let to = (page + i64::from(steps)).clamp(0, count - 1) as usize;
+        if to as i64 != page {
+            self.show_player_page(Some(to));
+        }
+    }
+
+    /// The shown player's app icon at `px` pixels: its desktop file's icon,
+    /// else an icon named as its desktop file or its app (M5.9i).
+    fn player_icon(&mut self, px: u32) -> Option<Pixmap> {
+        let player = self.shown_player()?;
+        let installed = self
+            .live
+            .installed
+            .iter()
+            .find(|pin| !player.desktop.is_empty() && pin.id.eq_ignore_ascii_case(&player.desktop))
+            .map(|pin| pin.icon.clone());
+        let names = [
+            installed.unwrap_or_default(),
+            player.desktop.clone(),
+            player.identity.to_lowercase().replace(' ', "-"),
+        ];
+        names
+            .iter()
+            .filter(|name| !name.is_empty())
+            .find_map(|name| self.icons.get(name, px).cloned())
     }
 
     pub fn is_quick(&self, surface: &wl_surface::WlSurface) -> bool {
@@ -403,7 +492,14 @@ impl Shell {
             &self.quick_tiles,
             self.quick_settings,
         );
-        view.player = self.live.player.as_ref().map(|p| quick::PlayerView {
+        view.pages = self
+            .live
+            .players
+            .iter()
+            .map(|p| p.identity.clone())
+            .collect();
+        view.page = self.player_page();
+        view.player = self.shown_player().map(|p| quick::PlayerView {
             title: p.title.clone(),
             artist: p.artist.clone(),
             identity: p.identity.clone(),
@@ -411,6 +507,7 @@ impl Shell {
             can_previous: p.can_previous,
             can_next: p.can_next,
             cover: None,
+            app_icon: None,
         });
         view.player_below = self
             .panels
@@ -423,7 +520,7 @@ impl Shell {
     /// while the card is open; a file that is not a PNG, or does not load,
     /// gives none (M5.9d).
     fn player_cover(&mut self) -> Option<Pixmap> {
-        let path = self.live.player.as_ref().and_then(|p| p.cover.clone());
+        let path = self.shown_player().and_then(|p| p.cover.clone());
         let card = self.quick.as_mut()?;
         let Some(path) = path else {
             card.cover = None;
@@ -439,10 +536,13 @@ impl Shell {
     /// What the card shows now and where it lies.
     fn quick_view(&mut self) -> Option<(quick::View, quick::Layout)> {
         let cover = self.player_cover();
+        let scale = self.quick.as_ref()?.popup.scale();
+        let icon = self.player_icon((quick::APP_ICON * scale).round() as u32);
         let card = self.quick.as_ref()?;
         let mut view = self.card_view(&card.state);
         if let Some(player) = &mut view.player {
             player.cover = cover;
+            player.app_icon = icon;
         }
         let layout = quick::layout(&view);
         Some((view, layout))
@@ -554,7 +654,22 @@ impl Shell {
                     Drag::Idle => self.draw_quick(),
                 }
             }
+            // A scroll or swipe over the player's card turns its pages,
+            // sideways or with a wheel (M5.9i).
+            PointerEventKind::Axis {
+                horizontal,
+                vertical,
+                ..
+            } if layout.player.is_some_and(|p| p.contains(x, y)) => {
+                let n = card.scrolled.steps(
+                    vertical.value120 + horizontal.value120,
+                    vertical.discrete + horizontal.discrete,
+                    vertical.absolute + horizontal.absolute,
+                );
+                self.swipe_players(n);
+            }
             PointerEventKind::Leave { .. } => {
+                card.scrolled.reset();
                 card.state.hover = None;
                 if card.drag == Drag::Idle {
                     self.draw_quick();
@@ -583,6 +698,7 @@ impl Shell {
                         quick::Focus::Previous => quick::Act::Player("Previous"),
                         quick::Focus::PlayPause => quick::Act::Player("PlayPause"),
                         quick::Focus::Next => quick::Act::Player("Next"),
+                        quick::Focus::Dot(i) => quick::Act::PlayerPage(i),
                         quick::Focus::Slider | quick::Focus::Light => return,
                     };
                     self.quick_act(act);
@@ -721,10 +837,11 @@ impl Shell {
             // The player's change comes back through `player_changed`, and
             // the card stays open.
             Act::Player(method) => {
-                if let (Some(player), Some(connection)) = (&self.live.player, &self._portal) {
+                if let (Some(player), Some(connection)) = (self.shown_player(), &self._portal) {
                     mpris::call(connection, &player.bus, method);
                 }
             }
+            Act::PlayerPage(i) => self.show_player_page(Some(i)),
         }
     }
 
