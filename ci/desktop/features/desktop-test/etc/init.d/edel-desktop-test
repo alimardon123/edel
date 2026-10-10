@@ -387,7 +387,7 @@ commands() {
 			one=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
 			sleep 1
 			two=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
-			say "compositor_state pid $pid: $one then $two, waiting in $(cat "/proc/$pid/wchan" 2>/dev/null)"
+			say "compositor_state pid $pid: $one then $two, waiting in $(cat "/proc/$pid/wchan" 2>/dev/null); threads $(for t in /proc/$pid/task/*; do echo "$(cat $t/comm 2>/dev/null) $(cut -d' ' -f3,14,15 $t/stat 2>/dev/null) $(cat $t/wchan 2>/dev/null)"; done | tr '\n' ';')"
 			;;
 		# Dynamic workspaces (M5.2i): every test window and foot closed, so
 		# the case starts with none; the layout keys it sets and resets; and

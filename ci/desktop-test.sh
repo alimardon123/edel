@@ -1857,7 +1857,7 @@ case_overview() {
 	before=$(value windows)
 	shown=$(count 'edel-compositor: overview shown$')
 	python3 ci/qmp.py key meta_l-w
-	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview"
+	wait_more 'edel-compositor: overview shown$' "$shown" || overview_fail "Super+W did not show the overview"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
@@ -1968,7 +1968,7 @@ case_overview() {
 		fail "at Lite the overview's picture of lap is no longer the e0a030 it last drew"
 	# A click on lap goes to it and leaves.
 	python3 ci/qmp.py click "$lap_x" "$lap_y"
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "a click on lap at $lap_x,$lap_y did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "a click on lap at $lap_x,$lap_y did not leave the overview"
 	i=0
 	until set -- $(value windows | tr ' ' '\n' | sed -n 's/^lap@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p') &&
 		[ -n "${1:-}" ] && python3 ci/qmp.py screendump "$dir/overview-left.png" &&
