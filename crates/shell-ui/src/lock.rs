@@ -1,6 +1,7 @@
 //! The lock screen's look and its password check (M5.10), plain data and
-//! drawing, tested without a display. As the phone mockup's lock screen
-//! (`docs/mockups/phone-quick.jpg`) on every screen: the date over a large
+//! drawing, tested without a display. As the fourth round's phone lock
+//! screen, on every screen (M5.10c redraws it as `docs/mockups/shell/lock.jpg`):
+//! the date over a large
 //! clock in the upper third, then the person's initial on an accent disc,
 //! their name and a password field, on the backdrop's gradient deepened
 //! towards the bottom. The field shows a dot per letter typed, never the

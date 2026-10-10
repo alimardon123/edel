@@ -443,25 +443,6 @@ screens.push(['classic-menus', '', `${wall(false)}
       <div style="margin-left:auto;display:flex;gap:6px"><div class="chip">${I.lock()}</div><div class="chip">${I.power()}</div></div>
     </div>
   </div>
-  <div class="menu" style="right:8px;bottom:48px;width:344px;padding:12px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="tile on"><div class="ic">${I.wifi(15)}</div><div><b>Wi-Fi</b><small>Home 5G</small></div></div>
-      <div class="tile"><div class="ic">${I.bt(15)}</div><div><b>Bluetooth</b><small>Off</small></div></div>
-      <div class="tile"><div class="ic">${I.dnd(15)}</div><div><b>Do not disturb</b><small>Off</small></div></div>
-      <div class="tile"><div class="ic">${I.moon(15)}</div><div><b>Dark style</b><small>Automatic</small></div></div>
-    </div>
-    <div style="margin-top:12px;padding:4px 4px 0">
-      <div class="slider">${I.vol(16)}<div class="track"><div class="fill" style="width:62%"></div><div class="knob" style="left:62%"></div></div></div>
-      <div class="slider" style="margin-top:6px">${I.sun(16)}<div class="track"><div class="fill" style="width:78%"></div><div class="knob" style="left:78%"></div></div></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px 4px 0;border-top:0.5px solid var(--line);color:var(--text-2)">${I.bat(15)}<span>82 percent, 4 h 10 min left</span><div style="margin-left:auto;display:flex;gap:6px"><div class="chip">${I.gear()}</div><div class="chip">${I.lock()}</div><div class="chip">${I.power()}</div></div></div>
-  </div>
-  <div class="menu" style="right:8px;top:8px;width:344px;padding:12px 14px;display:flex;gap:12px">
-    <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none">${I.update(16)}</div>
-    <div style="flex:1"><div style="display:flex;justify-content:space-between"><b style="font-weight:600">Update ready</b><span style="color:var(--text-3);font-size:11.5px">Now</span></div>
-    <div style="color:var(--text-2);margin-top:3px;line-height:1.45">Edel OS 2026.11 starts on the next restart. If it fails to start, your computer goes back to this version by itself.</div>
-    <div style="display:flex;gap:8px;margin-top:10px"><div class="btn primary">Restart now</div><div class="btn">Later</div></div></div>
-  </div>
   ${classicPanel([['settings', 'Settings', true], ['term', 'Terminal'], ['files', 'Files', false, false]], { menu: true, qs: true, flat: true })}`]);
 
 // 4. Mac-like: a bar on top, a dock, window buttons on the left.
@@ -588,8 +569,9 @@ screens.push(['phone', '', `<div style="position:absolute;inset:0;background:lin
   <div class="phone" style="left:150px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneSettings()}</div></div>
   <div class="phone dark" style="left:740px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneSwitcher()}</div></div>`]);
 
-// 10 to 12. The status area, quick settings, the calendar and notifications
-// (M5.9, fourth round, 2026-10-08), on the desktop and on the phone.
+// The status area (M5.9, fourth round, 2026-10-08), which the panels above
+// draw; its quick settings, calendar, notifications and the phone's lock
+// screen were replaced by the fifth round in shell/ and taken out here.
 const chv = (d, s = 12) => `<svg width="${s}" height="${s}" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
 Object.assign(I, {
   up: s => chv('M3 7.5l3-3 3 3', s), down: s => chv('M3 4.5l3 3 3-3', s), left: s => chv('M7.5 3l-3 3 3 3', s), right: s => chv('M4.5 3l3 3-3 3', s),
@@ -676,93 +658,6 @@ function overflowCard() {
   </div>
   <div class="cap" style="right:376px;bottom:${48 + 88 + 8}px">Tray overflow, opened from the arrow</div>`;
 }
-
-// 10. Quick settings, light: the status area complete, the tray overflow open.
-screens.push(['quick-settings', '', `${wall(false)}
-  ${win(290, 96, 740, 500, 'Files', 'files', files(), { focused: true })}
-  ${overflowCard()}
-  ${quickSettings()}
-  ${statusPanel([['files', 'Files', true], ['term', 'Terminal'], ['web', 'Web', false, false]], { qs: true, overflow: true })}`]);
-
-// 11. The clock's popup, dark: the calendar under the notification centre, and a volume OSD.
-function calendar() {
-  const days = [];
-  for (let d = 28; d <= 30; d++) days.push([d, 1]);
-  for (let d = 1; d <= 31; d++) days.push([d, 0]);
-  days.push([1, 1]);
-  return `<div class="menu" style="right:8px;bottom:48px;width:360px;padding:14px 16px 12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:0 -2px 8px 2px"><b style="font-size:14.5px;font-weight:650;letter-spacing:-0.012em">October 2026</b><div style="display:flex;gap:4px"><div class="chip" style="width:28px;height:28px">${I.left(12)}</div><div class="chip" style="width:28px;height:28px">${I.right(12)}</div></div></div>
-    <div class="cal">${'MTWTFSS'.split('').map(c => `<div class="wd">${c}</div>`).join('')}${days.map(([d, o]) => `<div class="${o ? 'o' : d === 3 ? 'today' : ''}"><span>${d}</span></div>`).join('')}</div>
-    <div style="display:flex;align-items:center;gap:9px;margin-top:10px;padding-top:11px;border-top:0.5px solid var(--line);color:var(--text-2)">${app('calendar', 18)}<span>No events today</span></div>
-  </div>`;
-}
-function notifCentre() {
-  return `<div class="menu" style="right:8px;bottom:${48 + 303 + 8}px;width:360px;padding:12px;display:flex;flex-direction:column;gap:8px">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px 4px"><b style="font-size:14.5px;font-weight:650;letter-spacing:-0.012em">Notifications</b><span style="font-size:12.5px;font-weight:550;color:var(--accent)">Clear all</span></div>
-    <div class="nc"><div class="ib acc">${I.update(16)}</div><div style="flex:1;min-width:0">
-      <div class="hd"><b>Update ready</b><span>Now</span></div>
-      <p>Edel OS 2026.11 starts on the next restart. If it fails to start, your computer goes back to this version by itself.</p>
-      <div style="display:flex;gap:8px;margin-top:10px"><div class="btn primary">Restart now</div><div class="btn">Later</div></div></div></div>
-    <div class="nc" style="align-items:center"><div class="ib">${I.shot(16)}</div><div style="flex:1;min-width:0">
-      <div class="hd"><b>Screenshot saved</b><span>2 min ago</span></div>
-      <p style="margin-top:2px">Saved in Pictures</p></div>
-      <div style="width:64px;height:42px;border-radius:6px;flex:none;position:relative;overflow:hidden;background:linear-gradient(170deg,#c8d6ea,#9fb2cd);box-shadow:0 0 0 0.5px var(--edge)"><div style="position:absolute;left:12px;top:8px;width:40px;height:26px;border-radius:3px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)"><div style="height:5px;background:#eceef1;border-radius:3px 3px 0 0"></div><div style="margin:5px 4px 0 14px;height:3px;border-radius:2px;background:#d3d7de"></div><div style="margin:3px 4px 0 14px;height:3px;border-radius:2px;background:#d3d7de;width:12px"></div></div></div></div>
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 4px 0;margin-top:2px;border-top:0.5px solid var(--line)">
-      <div class="chip" style="width:30px;height:30px;color:var(--text-2)">${I.dnd(16)}</div>
-      <div style="flex:1"><div style="font-weight:550">Do not disturb</div><div style="font-size:11.5px;color:var(--text-3)">Silence banners and sounds</div></div><div class="switch"></div></div>
-  </div>`;
-}
-const osd = `<div class="menu" style="left:50%;margin-left:-118px;bottom:58px;width:236px;height:52px;padding:0 16px;display:flex;align-items:center;gap:12px;color:var(--text)">${I.vol(19)}<div class="track" style="flex:1;height:6px;border-radius:3px;background:var(--fill-2);position:relative"><div class="fill" style="position:absolute;left:0;top:0;bottom:0;width:64%;border-radius:3px;background:var(--accent)"></div></div><b style="width:22px;text-align:right;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums">64</b></div>`;
-screens.push(['quick-settings-dark', 'dark', `${wall(true)}
-  ${win(190, 100, 740, 500, 'Files', 'files', files(), { focused: true })}
-  ${notifCentre()}
-  ${calendar()}
-  ${osd}
-  ${statusPanel([['files', 'Files', true], ['term', 'Terminal'], ['web', 'Web', false, false]], { clock: true })}`]);
-
-// 12. Phones: quick settings pulled down over the home screen, and the lock screen's notifications.
-function phoneQuick() {
-  const homeApps = ['files', 'web', 'mail', 'chat', 'music', 'photos', 'calendar', 'calc', 'text', 'term', 'software', 'settings'];
-  const home = `<div style="position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr);row-gap:20px;padding:70px 12px 0;align-content:start;justify-items:center;color:#fff;font-size:11px">${homeApps.map(k => `<div style="display:flex;flex-direction:column;align-items:center;gap:6px">${app(k, 52)}<span>${apps[k][0]}</span></div>`).join('')}</div>
-    <div style="position:absolute;left:14px;right:14px;bottom:20px;height:78px;border-radius:26px;background:rgba(255,255,255,.28);display:flex;align-items:center;justify-content:space-around;padding:0 10px">${['files', 'web', 'mail', 'chat'].map(k => app(k, 54)).join('')}</div>`;
-  return `${wall(false)}${home}<div style="position:absolute;inset:0;background:rgba(14,18,26,.42)"></div>
-  <div style="position:absolute;left:0;right:0;top:0;height:706px;border-radius:0 0 30px 30px;background:var(--material-strong);backdrop-filter:blur(34px) saturate(180%);box-shadow:0 18px 44px -12px rgba(20,24,32,.45),0 0 0 0.5px rgba(20,24,32,.14);overflow:hidden">
-    <div class="status"><span>14:05</span><span style="display:flex;gap:6px;align-items:center">${I.wifi(16)}${I.bat(15)}</span></div>
-    <div style="position:absolute;left:14px;right:14px;top:54px;display:flex;align-items:flex-start;justify-content:space-between">
-      <div><div style="font-size:54px;line-height:56px;font-weight:650;letter-spacing:-0.035em;font-variant-numeric:tabular-nums">14:05</div><div style="font-size:15px;color:var(--text-2);margin-top:2px;font-weight:500">Saturday 3 October</div></div>
-      <div style="display:flex;gap:8px;margin-top:4px"><div class="chip" style="width:44px;height:44px">${I.pencil(18)}</div><div class="chip" style="width:44px;height:44px">${I.gear(18)}</div><div class="chip" style="width:44px;height:44px">${I.power(18)}</div></div>
-    </div>
-    <div style="position:absolute;left:14px;right:14px;top:148px;display:grid;grid-template-columns:1fr 1fr;gap:8px">${qTiles(true, 17)}</div>
-    <div style="position:absolute;left:14px;right:14px;top:452px;display:flex;flex-direction:column;gap:8px">
-      <div class="bsl"><i style="width:78%"></i>${I.sun(18)}</div>
-      <div class="bsl"><i style="width:62%"></i>${I.vol(18)}</div>
-    </div>
-    <div class="np" style="position:absolute;left:14px;right:14px;top:564px;height:76px;padding:0 6px 0 12px;display:flex;align-items:center;gap:10px">
-      ${cover(48)}<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:650;letter-spacing:-0.012em">Night Drive</div><div style="color:var(--text-2);font-size:12px">Lumen, Music</div></div>
-      <div class="mbtn" style="width:44px;height:44px">${I.prev(18)}</div><div class="play" style="width:44px;height:44px">${I.pause(18)}</div><div class="mbtn" style="width:44px;height:44px">${I.next(18)}</div>
-    </div>
-    <div style="position:absolute;left:0;right:0;top:658px;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--text-3);font-size:12px">${I.bat(14)}82 percent, 4 h 10 min left</div>
-    <div class="handle" style="bottom:10px;background:var(--text-3)"></div>
-  </div>`;
-}
-function phoneLock() {
-  const card = (ic, title, time, body) => `<div style="border-radius:16px;padding:14px;display:flex;gap:12px;background:rgba(40,44,54,.62);backdrop-filter:blur(30px) saturate(160%);box-shadow:0 0 0 0.5px rgba(255,255,255,.12),0 10px 24px -10px rgba(0,0,0,.5);min-height:76px">${ic}<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-weight:600;font-size:14px">${title}</b><span style="font-size:12px;color:var(--text-2)">${time}</span></div><div style="color:var(--text-2);margin-top:2px;line-height:1.4;font-size:13.5px">${body}</div></div></div>`;
-  return `${wall(true)}<div style="position:absolute;inset:0;background:rgba(5,7,12,.28)"></div>
-  <div class="status"><span></span><span style="display:flex;gap:6px;align-items:center">${I.wifi(16)}${I.bat(15)}</span></div>
-  <div style="position:absolute;left:0;right:0;top:50px;display:flex;justify-content:center;color:var(--text-2)">${I.lock(16)}</div>
-  <div style="position:absolute;left:0;right:0;top:82px;text-align:center"><div style="font-size:17px;font-weight:600;color:var(--text-2)">Saturday 3 October</div><div style="font-size:92px;line-height:96px;font-weight:650;letter-spacing:-0.04em;font-variant-numeric:tabular-nums;margin-top:2px">14:06</div></div>
-  <div style="position:absolute;left:16px;right:16px;top:318px;display:flex;flex-direction:column;gap:10px">
-    ${card(app('chat', 40), 'Mira', '4 min ago', 'Are we still on for Sunday? I booked the table for 19:00.')}
-    ${card(`<div style="width:40px;height:40px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;flex:none">${I.update(20)}</div>`, 'Update ready', 'Now', 'Edel OS 2026.11 starts on the next restart.')}
-  </div>
-  <div style="position:absolute;left:34px;bottom:62px;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center">${I.torch(21)}</div>
-  <div style="position:absolute;right:34px;bottom:62px;width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.14);display:grid;place-items:center">${I.camera(21)}</div>
-  <div style="position:absolute;left:0;right:0;bottom:24px;text-align:center;font-size:12px;color:var(--text-3)">Swipe up to unlock</div>
-  <div class="handle"></div>`;
-}
-screens.push(['phone-quick', '', `<div style="position:absolute;inset:0;background:linear-gradient(170deg,#dfe3e9,#cfd4dc)"></div>
-  <div class="phone" style="left:150px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneQuick()}</div></div>
-  <div class="phone dark" style="left:740px;top:20px;transform:scale(.9);transform-origin:top center"><div class="scr">${phoneLock()}</div></div>`]);
 
 document.getElementById('host').innerHTML = screens.map(([id, cls, html]) => `<div class="screen ${cls}" id="${id}">${html}</div>`).join('');
 </script>
