@@ -24,9 +24,12 @@ pub fn gpu_open(path: &Path) -> String {
 }
 
 /// The context when the card udev names never shows its file.
-pub fn gpu_missing(path: &Path) -> String {
+/// `seen` says what this user found: why the card's file could not be
+/// read and what /dev/dri held, so a log tells a missing file from one
+/// this user may not see.
+pub fn gpu_missing(path: &Path, seen: &str) -> String {
     format!(
-        "the graphics card {} that udev names did not appear under /dev/dri within 10 s, and no other card did; the desktop starts again in a moment and tries once more",
+        "the graphics card {} that udev names did not appear under /dev/dri within 10 s, and no other card did ({seen}); the desktop starts again in a moment and tries once more",
         path.display()
     )
 }
@@ -228,8 +231,9 @@ mod tests {
             "could not open the graphics card /dev/dri/card0; this user needs to be in group video or seat"
         );
         assert!(
-            gpu_missing(Path::new("/dev/dri/card0"))
-                .starts_with("the graphics card /dev/dri/card0 that udev names did not appear")
+            gpu_missing(Path::new("/dev/dri/card0"), "/dev/dri/card0: not found").contains(
+                "no other card did (/dev/dri/card0: not found); the desktop starts again"
+            )
         );
         assert_eq!(
             screen_dark("HDMI-A-1", "no free CRTC drives it"),

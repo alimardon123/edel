@@ -140,7 +140,10 @@ fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
             Some(path) if path.exists() => return Ok(path),
             _ if Instant::now() >= until => {
                 return match found {
-                    Some(path) => Err(anyhow::anyhow!(messages::gpu_missing(&path))),
+                    Some(path) => Err(anyhow::anyhow!(messages::gpu_missing(
+                        &path,
+                        &dri_seen(&path)
+                    ))),
                     None => Err(anyhow::anyhow!(messages::NO_GPU)),
                 };
             }
@@ -155,6 +158,31 @@ fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
             }
         }
     }
+}
+
+/// What this user finds of a card's file: the error reading it, and what
+/// /dev/dri holds or the error listing it (for the log of a card that
+/// never appeared).
+fn dri_seen(path: &Path) -> String {
+    let file = match std::fs::metadata(path) {
+        Ok(_) => "there".to_string(),
+        Err(e) => e.kind().to_string(),
+    };
+    let dir = match std::fs::read_dir("/dev/dri") {
+        Ok(entries) => {
+            let names: Vec<String> = entries
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            if names.is_empty() {
+                "empty".to_string()
+            } else {
+                names.join(" ")
+            }
+        }
+        Err(e) => e.kind().to_string(),
+    };
+    format!("{}: {file}; /dev/dri: {dir}", path.display())
 }
 
 /// The card files under /dev/dri, `card0` first.
