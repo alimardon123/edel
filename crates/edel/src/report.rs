@@ -4,16 +4,18 @@
 //! when the slot was confirmed (the line `edel-boot-ok` printed), the
 //! memory in use now, every PCI device with its driver, the kernel log, and
 //! the last lines of the system log and of each desktop session's log
-//! (M5.28a), as TOML on standard output. Everything comes from `/proc`, `/sys`,
-//! `/usr/share/edel/features` and busybox's `dmesg`, so no tool is added.
+//! (M5.28a), the firmware the kernel asked for and this system lacks and the
+//! language's script whose fonts it lacks (M5.30c), as TOML on standard
+//! output. Everything comes from `/proc`, `/sys`, `/usr/share/edel/features`,
+//! `/usr/share/fonts` and busybox's `dmesg`, so no tool is added.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::Result;
 use edel::i18n::trf;
-use edel::{features, places, session_log};
+use edel::{features, places, scripts, session_log, settings};
 use serde::Serialize;
 
 use crate::release::os_release_value;
@@ -24,6 +26,10 @@ pub const STARTED: &str = edel::places::STARTED;
 
 /// The report's format, for the reader of a pasted report.
 const FORMAT: u32 = 1;
+
+/// Where the system's fonts are, which the missing script is looked for in
+/// (M5.30c).
+const FONTS: &str = "/usr/share/fonts";
 
 #[derive(Serialize)]
 struct Report {
@@ -41,6 +47,12 @@ struct Report {
     /// The system log's last lines, busybox syslogd's (M5.28a).
     system_log: String,
     pci: Vec<Pci>,
+    /// The firmware files the kernel asked for and this system does not
+    /// carry, from `dmesg` (M5.30c).
+    missing_firmware: Vec<Missing>,
+    /// The language's script whose fonts this system lacks, when one is
+    /// (M5.30c).
+    missing_script: Option<MissingScript>,
     /// The last lines of each person's desktop session logs (M5.28a): the
     /// one running it, or for root everyone's.
     sessions: Vec<Session>,
@@ -76,10 +88,72 @@ fn sessions(people: &[session_log::Person]) -> Vec<Session> {
     found
 }
 
+/// One firmware file the kernel asked for and this system does not carry
+/// (M5.30c): the device that asked and the file.
+#[derive(Debug, PartialEq, Serialize)]
+pub(crate) struct Missing {
+    pub driver: String,
+    pub device: String,
+    pub file: String,
+}
+
+/// The language whose script this system has no font for (M5.30c), as the
+/// language is set.
+#[derive(Debug, PartialEq, Serialize)]
+pub(crate) struct MissingScript {
+    pub language: String,
+    pub script: String,
+}
+
+/// The firmware the kernel asked for and could not find, from `dmesg`'s
+/// lines `DRIVER DEVICE: Direct firmware load for FILE failed with error -2`
+/// and `DRIVER DEVICE: firmware: failed to load FILE (-2)` (M5.30c). Each
+/// file once, in the order first seen; a file that exists but failed with
+/// another error is not missing, so it is left out.
+pub(crate) fn missing_firmware(dmesg: &str) -> Vec<Missing> {
+    let mut found: Vec<Missing> = Vec::new();
+    for missing in dmesg.lines().filter_map(missing_line) {
+        if !found.iter().any(|f| f.file == missing.file) {
+            found.push(missing);
+        }
+    }
+    found
+}
+
+/// The missing firmware one kernel log line names, when it is a load that
+/// failed for want of the file (error -2); a timestamp in front is skipped.
+fn missing_line(line: &str) -> Option<Missing> {
+    let line = match line.strip_prefix('[') {
+        Some(rest) => rest.split_once("] ")?.1,
+        None => line,
+    };
+    let (who, what) = line.split_once(": ")?;
+    let mut words = who.split_whitespace();
+    let (driver, device) = (words.next()?, words.next()?);
+    let file = match what.strip_prefix("Direct firmware load for ") {
+        Some(rest) => rest.strip_suffix(" failed with error -2")?,
+        None => what
+            .strip_prefix("firmware: failed to load ")?
+            .strip_suffix(" (-2)")?,
+    };
+    Some(Missing {
+        driver: driver.into(),
+        device: device.into(),
+        file: file.into(),
+    })
+}
+
 /// The `logs:` lines `edel status` prints when something went wrong: a
 /// boot that fell back (`fell_back`), each session in `badly` that ended
-/// without closing, by person and log; none when all is well.
-pub(crate) fn pointers(fell_back: bool, badly: &[(String, std::path::PathBuf)]) -> Vec<String> {
+/// without closing, by person and log; then a `firmware:` line for the
+/// firmware the kernel lacked (`firmware`) and a `fonts:` line for the
+/// language's script with no font (`script`). None when all is well.
+pub(crate) fn pointers(
+    fell_back: bool,
+    badly: &[(String, PathBuf)],
+    firmware: &[Missing],
+    script: Option<&MissingScript>,
+) -> Vec<String> {
     let mut lines = Vec::new();
     if fell_back {
         lines.push(format!(
@@ -99,6 +173,28 @@ pub(crate) fn pointers(fell_back: bool, badly: &[(String, std::path::PathBuf)]) 
             )
         ));
     }
+    if let Some(first) = firmware.first() {
+        lines.push(format!(
+            "firmware: {}",
+            trf(
+                "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a later release brings the hardware packs that hold them",
+                &[
+                    ("file", &first.file),
+                    ("driver", &first.driver),
+                    ("count", &firmware.len().to_string()),
+                ]
+            )
+        ));
+    }
+    if let Some(script) = script {
+        lines.push(format!(
+            "fonts: {}",
+            trf(
+                "the language {language} needs {script} fonts, which this system does not carry; text in it shows as boxes until a later release brings them",
+                &[("language", &script.language), ("script", &script.script)]
+            )
+        ));
+    }
     lines
 }
 
@@ -115,7 +211,70 @@ pub(crate) fn pointers_now() -> Vec<String> {
             ))
         })
         .collect();
-    pointers(Path::new(places::LAST_FALLBACK).exists(), &badly)
+    pointers(
+        Path::new(places::LAST_FALLBACK).exists(),
+        &badly,
+        &missing_firmware(&dmesg_now()),
+        missing_script_now().as_ref(),
+    )
+}
+
+/// The kernel log from busybox's `dmesg`; empty when it fails, as it does
+/// when the kernel keeps the log from a person (M5.30c).
+fn dmesg_now() -> String {
+    Command::new("dmesg")
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+/// The names of the files under `dir`, recursively and bare; symbolic links
+/// are not followed into folders (M5.30c).
+fn font_files(dir: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            names.extend(font_files(&entry.path()));
+        } else {
+            names.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    names
+}
+
+/// The language `region.language` names for this report: the person's over
+/// the machine's, but only the machine's as root, whose home is not the
+/// person's (M5.30c).
+fn language_now() -> Option<String> {
+    let read = |path: PathBuf| fs::read_to_string(places::found(&path)).ok();
+    let machine = read(places::machine_settings());
+    let person = if as_root() {
+        None
+    } else {
+        places::person_settings().and_then(read)
+    };
+    settings::chosen("region.language", machine.as_deref(), person.as_deref())
+}
+
+/// The script `language` needs when `font_files` (bare names) hold no Noto
+/// font of it; none when it needs no script beyond the three, or has one
+/// (M5.30c).
+fn missing_script(language: Option<&str>, font_files: &[String]) -> Option<MissingScript> {
+    let language = language?;
+    let script = scripts::script_of(language)?;
+    (!scripts::has_script(script, font_files)).then(|| MissingScript {
+        language: language.to_string(),
+        script: script.to_string(),
+    })
+}
+
+/// [`missing_script`] for this machine now: the person's language, and the
+/// fonts under `/usr/share/fonts`.
+fn missing_script_now() -> Option<MissingScript> {
+    missing_script(language_now().as_deref(), &font_files(Path::new(FONTS)))
 }
 
 /// Whether this process runs as root, as `/proc/self`'s owner says.
@@ -233,10 +392,8 @@ fn render(report: &Report) -> Result<String> {
 /// EFI system partition, where the desktop stick leaves it at every boot.
 pub fn report(esp: bool) -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let dmesg = Command::new("dmesg")
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
-        .unwrap_or_default();
+    let dmesg = dmesg_now();
+    let missing = missing_firmware(&dmesg);
     let (names, notes) = installed_features(Path::new(features::DIR));
     let report = Report {
         format: FORMAT,
@@ -255,6 +412,8 @@ pub fn report(esp: bool) -> Result<()> {
             session_log::LAST_LINES,
         ),
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
+        missing_firmware: missing,
+        missing_script: missing_script_now(),
         sessions: sessions(&session_log::people(Path::new(places::HOMES), as_root())),
     };
     let text = render(&report)?;
@@ -386,6 +545,15 @@ mod tests {
                 class: "0x030000".into(),
                 driver: "i915".into(),
             }],
+            missing_firmware: vec![Missing {
+                driver: "iwlwifi".into(),
+                device: "0000:00:14.3".into(),
+                file: "iwlwifi-so-a0-gf-a0-90.ucode".into(),
+            }],
+            missing_script: Some(MissingScript {
+                language: "ja_JP.UTF-8".into(),
+                script: "CJK".into(),
+            }),
             system_log: "Oct  7 11:03:25 edel syslog.info syslogd started\n".into(),
             sessions: vec![Session {
                 person: "ci".into(),
@@ -402,17 +570,24 @@ mod tests {
         assert_eq!(parsed["pci"][0]["driver"].as_str(), Some("i915"));
         assert_eq!(parsed["sessions"][0]["person"].as_str(), Some("ci"));
         assert!(parsed["system_log"].as_str().unwrap().contains("syslogd"));
+        assert_eq!(
+            parsed["missing_firmware"][0]["file"].as_str(),
+            Some("iwlwifi-so-a0-gf-a0-90.ucode")
+        );
+        assert_eq!(parsed["missing_script"]["script"].as_str(), Some("CJK"));
     }
 
     #[test]
     fn status_points_to_the_logs_only_when_something_went_wrong() {
-        assert!(pointers(false, &[]).is_empty());
+        assert!(pointers(false, &[], &[], None).is_empty());
         let lines = pointers(
             true,
             &[(
                 "ci".into(),
                 "/home/ci/.local/state/edel/session.old.log".into(),
             )],
+            &[],
+            None,
         );
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains(places::SYSTEM_LOG), "{}", lines[0]);
@@ -420,6 +595,93 @@ mod tests {
             lines[1],
             "logs: ci's last desktop session ended without closing; its log is /home/ci/.local/state/edel/session.old.log, and edel report gathers it with the rest"
         );
+    }
+
+    /// `edel status` names the firmware a device lacks and the language whose
+    /// script has no font, with what brings them (M5.30c).
+    #[test]
+    fn status_names_missing_firmware_and_fonts() {
+        let firmware = vec![Missing {
+            driver: "iwlwifi".into(),
+            device: "0000:00:14.3".into(),
+            file: "iwlwifi-so-a0-gf-a0-90.ucode".into(),
+        }];
+        let script = MissingScript {
+            language: "ja".into(),
+            script: "CJK".into(),
+        };
+        assert_eq!(
+            pointers(false, &[], &firmware, Some(&script)),
+            [
+                "firmware: the kernel asked for firmware this system does not carry; the first is iwlwifi-so-a0-gf-a0-90.ucode for iwlwifi (1 missing in all); edel report lists them, and a later release brings the hardware packs that hold them",
+                "fonts: the language ja needs CJK fonts, which this system does not carry; text in it shows as boxes until a later release brings them",
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_missing_firmware_from_both_kernel_messages_once_each() {
+        let dmesg = "\
+[    0.000000] Linux version 6.18.54
+[    1.234567] i915 0000:00:02.0: Direct firmware load for i915/kbl_dmc_ver1_04.bin failed with error -2
+i915 0000:00:02.0: firmware: failed to load i915/kbl_dmc_ver1_04.bin (-2)
+[    2.000000] iwlwifi 0000:00:14.3: Direct firmware load for iwlwifi-so-a0-gf-a0-90.ucode failed with error -2
+[    2.000001] iwlwifi 0000:00:14.3: Direct firmware load for iwlwifi-so-a0-gf-a0-90.ucode failed with error -12
+[    3.000000] ath10k_pci 0000:02:00.0: Direct firmware load for ath10k/board.bin failed with error -12
+i915 0000:00:02.0: firmware: failed to load i915/tgl_dmc_ver2_12.bin (-2)
+[    4.000000] usb 1-1: new high-speed USB device
+";
+        let found = missing_firmware(dmesg);
+        assert_eq!(
+            found,
+            [
+                Missing {
+                    driver: "i915".into(),
+                    device: "0000:00:02.0".into(),
+                    file: "i915/kbl_dmc_ver1_04.bin".into(),
+                },
+                Missing {
+                    driver: "iwlwifi".into(),
+                    device: "0000:00:14.3".into(),
+                    file: "iwlwifi-so-a0-gf-a0-90.ucode".into(),
+                },
+                Missing {
+                    driver: "i915".into(),
+                    device: "0000:00:02.0".into(),
+                    file: "i915/tgl_dmc_ver2_12.bin".into(),
+                },
+            ]
+        );
+        assert!(missing_firmware("[    0.1] Linux version 6.18.54\n").is_empty());
+    }
+
+    #[test]
+    fn a_language_whose_script_has_no_font_is_named() {
+        let dejavu = vec!["DejaVuSans.ttf".to_string()];
+        assert_eq!(
+            missing_script(Some("ja_JP.UTF-8"), &dejavu),
+            Some(MissingScript {
+                language: "ja_JP.UTF-8".into(),
+                script: "CJK".into(),
+            })
+        );
+        assert_eq!(missing_script(Some("de_DE.UTF-8"), &dejavu), None);
+        assert_eq!(missing_script(None, &dejavu), None);
+        let cjk = vec!["NotoSansCJK-Regular.ttc".to_string()];
+        assert_eq!(missing_script(Some("ja"), &cjk), None);
+    }
+
+    #[test]
+    fn lists_font_file_names_under_the_folder_recursively() {
+        let dir = std::env::temp_dir().join(format!("edel-report-fonts-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("noto")).unwrap();
+        fs::write(dir.join("noto/NotoSansCJK-Regular.ttc"), "").unwrap();
+        fs::write(dir.join("Inter.ttf"), "").unwrap();
+        let mut names = font_files(&dir);
+        fs::remove_dir_all(&dir).unwrap();
+        names.sort();
+        assert_eq!(names, ["Inter.ttf", "NotoSansCJK-Regular.ttc"]);
     }
 
     #[test]
