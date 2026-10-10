@@ -108,6 +108,11 @@ pub const SESSION_LOG: &str = "session.log";
 pub const SESSION_LOG_BEFORE: &str = "session.old.log";
 /// The system log busybox's syslogd writes, on the data partition.
 pub const SYSTEM_LOG: &str = "/var/log/messages";
+/// Where the system's password helper may lie, the first that exists
+/// taken: Linux-PAM's `unix_chkpwd`, which checks a person's own password
+/// for a program they run, as the lock screen does (M5.10). Alpine puts it
+/// in `/sbin`; other systems in `/usr/sbin`, so the desktop runs there too.
+pub const PASSWORD_CHECKERS: &[&str] = &["/sbin/unix_chkpwd", "/usr/sbin/unix_chkpwd"];
 
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";

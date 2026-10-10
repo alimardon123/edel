@@ -24,6 +24,8 @@ mod editor;
 mod editor_card;
 mod launcher;
 mod link;
+mod lock;
+mod lock_card;
 mod messages;
 mod mpris;
 mod notice;
@@ -237,6 +239,11 @@ struct Shell {
     text: Text,
     icons: icons::Icons,
     fillets: bool,
+    /// ext-session-lock-v1, the lock screen while it holds, and where the
+    /// password's answer comes back (M5.10).
+    session_lock: smithay_client_toolkit::session_lock::SessionLockState,
+    lock: Option<lock_card::LockCard>,
+    lock_tx: channel::Sender<lock::Checked>,
     exit: bool,
 }
 
@@ -423,6 +430,9 @@ fn run() -> Result<()> {
         player_tx: None,
         tokens,
         fillets: fillets(),
+        session_lock: smithay_client_toolkit::session_lock::SessionLockState::new(&globals, &qh),
+        lock: None,
+        lock_tx: lock_card::answers(&event_loop.handle()),
         exit: false,
     };
     // The portal and the tray share the session's bus and zbus's thread
@@ -779,6 +789,7 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
                 shell.draw(i);
             }
             shell.launcher.reap();
+            shell.draw_lock();
             // The status area follows the machine on the minute too, for
             // a change no daemon signalled.
             shell.request_status(false);
@@ -1978,7 +1989,8 @@ impl OutputHandler for Shell {
         &mut self.outputs
     }
 
-    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {
+    fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
+        self.lock_output_new(output);
         self.outputs_changed(None);
     }
 
@@ -1990,6 +2002,7 @@ impl OutputHandler for Shell {
         _: &QueueHandle<Self>,
         output: wl_output::WlOutput,
     ) {
+        self.lock_output_gone(&output);
         self.outputs_changed(Some(&output));
     }
 }
@@ -2274,7 +2287,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.editor.is_some() {
+        if self.lock.is_some() {
+            self.lock_key(event);
+        } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
             self.panel_menu_key(event);
@@ -2299,7 +2314,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.editor.is_some() {
+        if self.lock.is_some() {
+            self.lock_key(event);
+        } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
             self.panel_menu_key(event);

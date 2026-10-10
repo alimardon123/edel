@@ -116,6 +116,18 @@ msgstr ""
 msgid "No app matches"
 msgstr ""
 
+msgid "Password"
+msgstr ""
+
+msgid "Checking"
+msgstr ""
+
+msgid "Wrong password, try again"
+msgstr ""
+
+msgid "This system cannot check passwords"
+msgstr ""
+
 msgid "Close notification"
 msgstr ""
 
