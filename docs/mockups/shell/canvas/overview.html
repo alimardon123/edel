@@ -14,9 +14,16 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 10px;color:#444
 .dark .dim{background:rgba(10,12,16,.55)}
 .strip{position:absolute;display:flex;gap:12px;align-items:center;justify-content:center}
 .strip.h{left:0;right:0}.strip.v{flex-direction:column;top:0;bottom:20px}
+/* The strip's tray (Alimardon, 2026-10-10): frosted, the panel's colour
+   over the blurred wallpaper on Full, solid on Lite, a hairline inside its
+   edge, round corners. It hugs the frames. */
+.tray{display:flex;gap:12px;align-items:center;padding:10px 12px 8px;border-radius:18px;background:rgba(246,247,249,.22);backdrop-filter:blur(14px) saturate(1.2);box-shadow:inset 0 0 0 1px rgba(255,255,255,.28),0 8px 24px rgba(10,14,24,.18)}
+.v .tray{flex-direction:column;padding:10px 10px 8px}
+.dark .tray{background:rgba(26,28,34,.45);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 8px 24px rgba(0,0,0,.3)}
 .ws{display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
 .mini{width:96px;height:60px;border-radius:6px;position:relative;overflow:hidden;background:radial-gradient(120% 90% at 20% 10%,#b8c7e6,#7f93bd 55%,#4d5f86);box-shadow:0 1px 3px rgba(0,0,0,.25)}
-.v .mini{width:80px;height:50px}
+.v .mini{width:72px;height:45px}
+.v .tray{gap:8px}
 .mini .bar{position:absolute;left:0;right:0;bottom:0;height:5px;background:rgba(246,247,249,.9)}
 .mini .w{position:absolute;background:#f6f7f9;border-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 .mini.on{outline:2px solid #2d6ae3;outline-offset:2px}
@@ -26,7 +33,7 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 10px;color:#444
 .gap{width:3px;height:60px;border-radius:2px;background:#2d6ae3}
 .lbl{font-size:9px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
 .add{width:60px;height:60px;border-radius:6px;border:1.5px dashed rgba(255,255,255,.7);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px}
-.v .add{width:50px;height:40px}
+.v .add{width:44px;height:32px;font-size:18px}
 .search{position:absolute;z-index:4;width:200px;height:24px;border-radius:12px;background:rgba(246,247,249,.92);font-size:10px;color:#7a7f88;display:flex;align-items:center;padding-left:10px;box-sizing:border-box}
 .dark .search{background:rgba(26,28,34,.9);color:#9aa0aa}
 .win{position:absolute;display:flex;flex-direction:column;align-items:center;gap:5px}
@@ -45,7 +52,7 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:22px 0 10px;color:#444
 .hand{position:absolute;font-size:18px}
 </style></head><body>
 <h1>Overview (Super+W), M5.2j-b</h1>
-<div class="cap">Approved by Alimardon on 2026-10-10, with two additions: drag a workspace along the strip to reorder them, and put the strip on any side (Settings, Workspaces page: "Workspace strip in the overview", <code>workspaces.overview_strip</code>, top by default). The windows take the rest of the screen, so they move away from the strip.</div>
+<div class="cap">Approved by Alimardon on 2026-10-10, with three additions: a frosted tray behind the strip, so it reads as one place apart from the windows; drag a workspace along the strip to reorder them, and put the strip on any side (Settings, Workspaces page: "Workspace strip in the overview", <code>workspaces.overview_strip</code>, top by default). The windows take the rest of the screen, so they move away from the strip.</div>
 <h2>Top (the default), and reordering: workspace 4 dragged between 1 and 2</h2>
 <div class="row"><div><div class="screen" id="top"></div><div class="cap">The dragged workspace lifts and follows the pointer; an accent line shows where it lands. Its windows, name and pins go with it.</div></div>
 <div class="dark"><div class="screen" id="bottom"></div><div class="cap">Bottom, dark: the strip sits just above the panel, search above the windows.</div></div></div>
@@ -58,8 +65,8 @@ function ws(on,wins,label,extra=''){let w=wins.map(([x,y,a,b])=>`<div class="w" 
 const W=[[[10,8,40,30],[46,16,42,32]],[[24,10,48,36]],[],[[8,8,80,44]]],L=['1 · Mail','2','3','4 · Code'];
 function strip(side,drag){let parts=[];for(let i=0;i<4;i++){if(drag&&i==1)parts.push('<div class="gap"></div>');if(drag&&i==3){parts.push(ws(false,W[3],L[3],' lift').replace('class="ws"','class="ws lift"'));continue;}parts.push(ws(i==0,W[i],L[i]));}
  parts.push('<div class="ws"><div class="add">+</div><div class="lbl">New</div></div>');
- const v=side=='left'||side=='right';const pos={top:'top:14px',bottom:'bottom:32px',left:'left:14px',right:'right:14px'}[side];
- return `<div class="strip ${v?'v':'h'}" style="${pos}">${parts.join('')}</div>`;}
+ const v=side=='left'||side=='right';const pos={top:'top:10px',bottom:'bottom:28px',left:'left:10px',right:'right:10px'}[side];
+ return `<div class="strip ${v?'v':'h'}" style="${pos}"><div class="tray">${parts.join('')}</div></div>`;}
 function win(x,y,w,h,app,col,hov){return `<div class="win" style="left:${x}px;top:${y}px"><div class="wrap"><div class="pic${hov?' hover':''}" style="width:${w}px;height:${h}px"><div class="tb"></div><div class="blk" style="left:10px;top:20px;width:${w*.35}px;height:${h*.45}px;background:${col};opacity:.55"></div><div class="ln" style="margin-left:${w*.42}px;margin-top:12px"></div><div class="ln" style="margin-left:${w*.42}px;width:${w*.3}px"></div></div>${hov?'<div class="close">✕</div>':''}</div><div class="name"><span class="ic" style="background:${col}"></span>${app}</div></div>`;}
 function screen(id,side,drag){
  const v=side=='left'||side=='right';
