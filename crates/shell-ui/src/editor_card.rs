@@ -12,7 +12,7 @@
 use edel::i18n::tr;
 use edel::panel_edit::{self, Group, PANELS, Spot};
 use edel::places;
-use edel::presets::{self, Edge, Style};
+use edel::presets::{self, Edge, Size, Style};
 use edel::settings;
 use smithay_client_toolkit::reexports::calloop::RegistrationToken;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -37,7 +37,7 @@ use crate::{DOCK_MARGIN, EDITOR, MARGIN, Panel, Shell, UNDO, fillets, settings_t
 /// What `save_panels` did, as the log lines say it.
 const WRITTEN: &str = "layout.panels written";
 const TAKEN: &str = "layout.panels taken out";
-const NOTHING: &str = "nothing to write";
+pub(crate) const NOTHING: &str = "nothing to write";
 
 /// The open drawer: its surface and what it shows, the keyboard, what a
 /// screen reader reads, the last places logged, and the panels it started
@@ -99,7 +99,7 @@ fn mark_placed(view: &mut View, now: &[presets::Panel]) {
 }
 
 /// The keyboard key the drawer takes for `sym`, if any.
-fn key_of(sym: Keysym) -> Option<Key> {
+pub fn key_of(sym: Keysym) -> Option<Key> {
     Some(match sym {
         Keysym::Left => Key::Left,
         Keysym::Right => Key::Right,
@@ -151,9 +151,12 @@ fn spot_at_landing(now: &[presets::Panel], panel: usize, landing: &Landing) -> O
     })
 }
 
-/// Where a panel's line starts its edge: the drawer or a panel lies above
-/// or below the screen's edge by `above` (the margin the compositor keeps).
+/// Hangs the drawer or the Undo bar `above` logical pixels from the
+/// screen's edge. It takes no notice of the panels' exclusive zones, which
+/// the compositor would otherwise add to the margin (the margin already
+/// clears the panel), so the drag's geometry can place it.
 fn anchor_above(surface: &LayerSurface, edge: Edge, above: i32) {
+    surface.set_exclusive_zone(-1);
     match edge {
         Edge::Bottom => {
             surface.set_anchor(Anchor::BOTTOM);
@@ -183,6 +186,22 @@ fn landing_row(panel: &Panel) -> Vec<(&'static str, Group, f32, f32)> {
 }
 
 impl Shell {
+    /// How far above its edge a popup on a panel of this shape starts, in
+    /// logical pixels: the panel's height, the gap a dock or a floating bar
+    /// keeps above it, and the margin every popup keeps, less the `room`
+    /// round the popup's own card. The drawer, the Undo bar and the panel
+    /// menu share it (M5.31b, M5.31c).
+    pub(crate) fn above_panel(&self, style: Style, size: Size, floating: bool, room: u32) -> i32 {
+        paint::height(style, size, &self.tokens) as i32
+            + match (style, floating) {
+                (Style::Dock, _) => DOCK_MARGIN,
+                (Style::Bar, true) => self.tokens.gap as i32,
+                (Style::Bar, false) => 0,
+            }
+            + MARGIN
+            - room as i32
+    }
+
     /// Opens Edit panels (M5.31b): the drawer centred above the bottom panel
     /// (below the top one when there is no bottom panel), the keyboard
     /// exclusive, and every panel showing its widgets as tiles. The Undo
@@ -244,17 +263,9 @@ impl Shell {
             return;
         };
         popup.set_cards(editor::cards(&layout, &self.tokens), &self.compositor);
-        // The panel's height, and the dock's or a floating bar's gap above
-        // it, with the margin every popup keeps; the drawer is centred by
-        // the compositor.
-        let above = paint::height(style, size, &self.tokens) as i32
-            + match (style, floating) {
-                (Style::Dock, _) => DOCK_MARGIN,
-                (Style::Bar, true) => self.tokens.gap as i32,
-                (Style::Bar, false) => 0,
-            }
-            + MARGIN
-            - room as i32;
+        // The drawer is centred by the compositor; its height above the
+        // panel is the panel's.
+        let above = self.above_panel(style, size, floating, room);
         anchor_above(&popup.surface, edge, above);
         popup
             .surface
@@ -388,7 +399,7 @@ impl Shell {
     /// applies without it is what they are now (writers never write a
     /// default, ADR-008). Returns what it did, `WRITTEN`, `TAKEN` or
     /// `NOTHING`, or `None` after saying why it could not.
-    fn save_panels(&self, now: &[presets::Panel]) -> Option<&'static str> {
+    pub(crate) fn save_panels(&self, now: &[presets::Panel]) -> Option<&'static str> {
         let (machine, person) = settings_texts();
         let value = match panel_edit::to_write(now, machine.as_deref(), person.as_deref()) {
             Ok(value) => value,
@@ -849,7 +860,13 @@ impl Shell {
 
     /// Opens the Undo bar where the drawer was, for `undo_bar::SECONDS`:
     /// it puts `original` back when Undo is pressed.
-    fn open_undo_bar(&mut self, edge: Edge, above: i32, scale: u32, original: Vec<presets::Panel>) {
+    pub(crate) fn open_undo_bar(
+        &mut self,
+        edge: Edge,
+        above: i32,
+        scale: u32,
+        original: Vec<presets::Panel>,
+    ) {
         let view = undo_bar::View {
             hover: false,
             width: self.screen_width(),

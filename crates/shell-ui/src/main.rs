@@ -579,12 +579,11 @@ fn make_panel(
         surface.set_size(0, height + strip);
     }
     // A dock that hides while a window covers it (M5.4f) keeps
-    // nothing free; the compositor hides it. A floating bar keeps its
-    // gap free as well as its height.
+    // nothing free; the compositor hides it. The compositor adds a
+    // surface's margin to its zone, so a floating bar's gap and a dock's
+    // margin stay free too.
     let zone = if dock && spec.hide == Hide::Covered {
         0
-    } else if spec.floating {
-        (height + tokens.gap) as i32
     } else {
         height as i32
     };

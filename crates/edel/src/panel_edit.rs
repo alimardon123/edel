@@ -229,6 +229,62 @@ pub fn remove_panel(panels: &[Panel], panel: usize) -> Result<Vec<Panel>> {
     Ok(out)
 }
 
+/// The panels with panel `panel` changed by `change`, checked by
+/// `presets::check_panels`. Refuses a panel index that does not exist.
+fn edit_panel(
+    panels: &[Panel],
+    panel: usize,
+    change: impl FnOnce(&mut Panel),
+) -> Result<Vec<Panel>> {
+    if panel >= panels.len() {
+        bail!(
+            "{}",
+            trf(
+                "there is no panel {panel}",
+                &[("panel", &panel.to_string())]
+            )
+        );
+    }
+    let mut out = panels.to_vec();
+    change(&mut out[panel]);
+    presets::check_panels(&out)?;
+    Ok(out)
+}
+
+/// The panels with panel `panel` as a bar or a dock (M5.31c). A dock floats
+/// already, so it stops floating; a bar does not hide, so it stops hiding.
+pub fn set_style(panels: &[Panel], panel: usize, style: Style) -> Result<Vec<Panel>> {
+    edit_panel(panels, panel, |p| {
+        p.style = style;
+        match style {
+            Style::Dock => p.floating = false,
+            Style::Bar => p.hide = Hide::Never,
+        }
+    })
+}
+
+/// The panels with panel `panel` at `size` (M5.31c).
+pub fn set_size(panels: &[Panel], panel: usize, size: Size) -> Result<Vec<Panel>> {
+    edit_panel(panels, panel, |p| p.size = size)
+}
+
+/// The panels with panel `panel` hiding as `hide` says. Refuses it on a bar,
+/// as the check does, since only a dock hides.
+pub fn set_hide(panels: &[Panel], panel: usize, hide: Hide) -> Result<Vec<Panel>> {
+    edit_panel(panels, panel, |p| p.hide = hide)
+}
+
+/// The panels with panel `panel` floating or not (M5.31c). Refuses it on a
+/// dock, as the check does, since a dock floats already.
+pub fn set_floating(panels: &[Panel], panel: usize, floating: bool) -> Result<Vec<Panel>> {
+    edit_panel(panels, panel, |p| p.floating = floating)
+}
+
+/// The panels with panel `panel` on the screens `screens` says (M5.31c).
+pub fn set_screens(panels: &[Panel], panel: usize, screens: Screens) -> Result<Vec<Panel>> {
+    edit_panel(panels, panel, |p| p.screens = screens)
+}
+
 /// The panels that apply, the rule shell-ui's `from_system_files` follows:
 /// `layout.panels`, the person's file over the machine's, else the preset
 /// `layout.preset` names (the person's over the machine's). A file that
@@ -558,5 +614,74 @@ mod tests {
             applying(None, Some(hive)),
             presets::named(Some("hive")).0.panels
         );
+    }
+
+    #[test]
+    fn set_style_makes_a_dock_and_the_line_says_so() {
+        let docked = set_style(&classic(), 0, Style::Dock).unwrap();
+        assert_eq!(docked[0].style, Style::Dock);
+        let line = value(&docked).unwrap();
+        assert!(line.contains(r#"style = "dock""#), "{line}");
+        let file = settings::set("format = 1\n", "layout.panels", &line).unwrap();
+        assert_eq!(
+            settings::read(&file).unwrap().file.layout.panels.unwrap(),
+            docked
+        );
+    }
+
+    #[test]
+    fn a_dock_stops_floating_and_a_bar_stops_hiding() {
+        let floated = set_floating(&classic(), 0, true).unwrap();
+        let docked = set_style(&floated, 0, Style::Dock).unwrap();
+        assert!(!docked[0].floating, "a dock floats already");
+        let hiding = set_hide(&docked, 0, Hide::Covered).unwrap();
+        let bar = set_style(&hiding, 0, Style::Bar).unwrap();
+        assert_eq!(bar[0].hide, Hide::Never, "only a dock hides");
+        assert_eq!(bar[0].style, Style::Bar);
+    }
+
+    #[test]
+    fn set_size_screens_hide_and_floating_change_their_own_field() {
+        let panels = classic();
+        assert_eq!(
+            set_size(&panels, 0, Size::Large).unwrap()[0].size,
+            Size::Large
+        );
+        assert_eq!(
+            set_screens(&panels, 0, Screens::Every).unwrap()[0].screens,
+            Screens::Every
+        );
+        assert!(set_floating(&panels, 0, true).unwrap()[0].floating);
+        let docked = set_style(&panels, 0, Style::Dock).unwrap();
+        assert_eq!(
+            set_hide(&docked, 0, Hide::Covered).unwrap()[0].hide,
+            Hide::Covered
+        );
+    }
+
+    #[test]
+    fn a_bar_refuses_hiding_and_a_dock_refuses_floating_as_the_check_says() {
+        let e = set_hide(&classic(), 0, Hide::Covered).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("only a dock hides; the bottom panel is a bar"),
+            "{e}"
+        );
+        let docked = set_style(&classic(), 0, Style::Dock).unwrap();
+        let e = set_floating(&docked, 0, true).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("a dock floats already; take floating out of the bottom panel"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_change_to_a_panel_that_does_not_exist_is_refused() {
+        let panels = classic();
+        let e = set_size(&panels, 3, Size::Large).unwrap_err();
+        assert!(e.to_string().contains("there is no panel 3"), "{e}");
+        let e = set_style(&panels, 3, Style::Dock).unwrap_err();
+        assert!(e.to_string().contains("there is no panel 3"), "{e}");
     }
 }
