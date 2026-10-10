@@ -2128,8 +2128,9 @@ case_panel_edit() {
 	value settings_file | grep -q 'panels = ' && had=yes
 	open_editor_from_menu
 	places=$(last_places)
-	clock=$(echo "$places" | sed -n 's/.*[ ,]clock \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
-	menu=$(echo "$places" | sed -n 's/.*[ ,]menu \([0-9]*\)+[0-9]*.*/\1/p')
+	# A leading ", " so the first entry matches as the others do.
+	clock=$(echo ", $places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	menu=$(echo ", $places" | sed -n 's/.*, menu \([0-9]*\)+[0-9]*.*/\1/p')
 	read -r cx cw <<-EOF
 		$clock
 	EOF
