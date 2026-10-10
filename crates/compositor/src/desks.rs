@@ -747,6 +747,40 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     }
 }
 
+/// The names of the workspaces after the one at place `from` moves to place
+/// `to` (M5.2p), as `workspaces.names` lists them: padded with empty
+/// names to `count` (or to as many names as there are), the moved name's
+/// place as [`Desks::reorder`] moves it, then the empty names
+/// at the end taken off. A place past the list is left as it is.
+pub fn reordered_names(names: &[String], count: usize, from: usize, to: usize) -> Vec<String> {
+    let mut list = names.to_vec();
+    list.resize(count.max(names.len()), String::new());
+    if from < list.len() && to < list.len() {
+        let name = list.remove(from);
+        list.insert(to, name);
+    }
+    while list.last().is_some_and(String::is_empty) {
+        list.pop();
+    }
+    list
+}
+
+/// The names to write for the person's `workspaces.names` after a
+/// move, as a TOML array (M5.2p): none when `list` is what the machine's
+/// file gives without the person's (ADR-008: writers never write a
+/// default), so the person's line is reset; an empty list over a machine's
+/// names says none.
+pub fn names_to_write(list: &[String], machine: &[String]) -> Option<String> {
+    (list != machine).then(|| {
+        toml::Value::Array(
+            list.iter()
+                .map(|name| toml::Value::String(name.clone()))
+                .collect(),
+        )
+        .to_string()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1286,5 +1320,53 @@ mod tests {
         assert!(shows);
         assert_eq!(desks.hidden_on(&2), None);
         assert!(desks.arrange(&two_areas).iter().any(|(w, _)| *w == 2));
+    }
+
+    #[test]
+    fn a_moved_name_takes_its_place_and_the_empty_ends_go() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            reordered_names(&names(&["Mail"]), 4, 0, 2),
+            names(&["", "", "Mail"])
+        );
+        assert!(reordered_names(&[], 4, 2, 0).is_empty());
+        assert_eq!(
+            reordered_names(&names(&["A", "B"]), 3, 1, 0),
+            names(&["B", "A"])
+        );
+        assert_eq!(
+            reordered_names(&names(&["A", "B", "C"]), 3, 0, 2),
+            names(&["B", "C", "A"]),
+            "the ones between shift by one"
+        );
+        assert_eq!(
+            reordered_names(&names(&["A"]), 2, 0, 9),
+            names(&["A"]),
+            "a place past the list changes nothing"
+        );
+    }
+
+    #[test]
+    fn the_names_written_are_the_list_as_toml_or_none_when_the_machine_gives_it() {
+        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            names_to_write(&names(&["", "", "Mail"]), &[]).as_deref(),
+            Some(r#"["", "", "Mail"]"#)
+        );
+        assert_eq!(
+            names_to_write(&names(&["Mail", "Code"]), &names(&["Mail", "Code"])),
+            None,
+            "what the machine gives is not written"
+        );
+        assert_eq!(
+            names_to_write(&[], &[]),
+            None,
+            "an empty result resets the line"
+        );
+        assert_eq!(
+            names_to_write(&[], &names(&["Mail"])).as_deref(),
+            Some("[]"),
+            "an empty list says none over the machine's names"
+        );
     }
 }

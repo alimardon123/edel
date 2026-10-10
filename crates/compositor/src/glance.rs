@@ -6,8 +6,10 @@
 //! rest, each with its app and title under it and a close button while the
 //! pointer is over it. The panels stay; the wallpaper is dimmed. A click on
 //! a window goes to it; a click on a small workspace shows its windows
-//! here; a window dragged onto a small workspace moves there; the frame
-//! with a plus adds a workspace; a click on nothing, Escape or Super+W
+//! here; a window dragged onto a small workspace moves there; a small
+//! workspace dragged onto another takes its place (M5.2j-b2); the frame
+//! with a plus adds a workspace; a strip too long for its side scrolls
+//! with the wheel or its arrows; a click on nothing, Escape or Super+W
 //! leaves. The pictures are those each window last showed, and no window
 //! is moved or resized: tiling or floating, every workspace is as it was
 //! when the overview closes. `edel_compositor::overview` holds the
@@ -31,7 +33,7 @@ use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 use edel::i18n::tr;
 use edel::tokens::Colour;
-use edel_compositor::overview::{Plan, Side, frame_at, plan, spread};
+use edel_compositor::overview::{Plan, Side, frame_at, in_view, plan, spread};
 
 use crate::decoration::{app_id, data, title};
 use crate::glance_look::{self, CLOSE, NAME_ICON, PILL};
@@ -47,8 +49,12 @@ const PILL_GAP: i32 = 6;
 /// The overview while it is open.
 #[derive(Default)]
 pub struct Overview {
-    /// The window held by the pointer, if any.
+    /// The window or workspace held by the pointer, if any.
     drag: Option<Drag>,
+    /// Where each screen's strip is scrolled to, once scrolled, and the
+    /// wheel's part of an item not yet scrolled.
+    first: HashMap<String, usize>,
+    wheel: f64,
     /// The flat colours drawn, each kept by what it is, so a frame drawn
     /// again unchanged is not redrawn.
     solids: HashMap<String, SolidColorBuffer>,
@@ -73,9 +79,9 @@ struct Painted {
     pixels: (i32, i32),
 }
 
-/// A window picked up in the overview.
+/// A window or a small workspace picked up in the overview.
 struct Drag {
-    window: Window,
+    held: Held,
     /// Its screen, by name.
     screen: String,
     /// Where it was pressed, and the pointer from the picture's corner.
@@ -83,6 +89,13 @@ struct Drag {
     grip: Point<f64, Logical>,
     /// Whether the pointer moved far enough for a drag.
     moving: bool,
+}
+
+/// What a drag holds.
+#[derive(Clone, PartialEq)]
+enum Held {
+    Window(Window),
+    Frame(usize),
 }
 
 /// One screen in the overview: its name and area, its plan, the workspace
@@ -106,6 +119,7 @@ enum Hit {
     Close(Window),
     Window(String, Window, Rectangle<i32, Logical>),
     Frame(String, usize),
+    Arrow(String, bool),
     Add,
     Tray,
     Nothing,
@@ -175,11 +189,20 @@ impl Edel {
                     .iter()
                     .find(|(n, _)| *n == name)
                     .map_or(area, |(_, r)| *r);
+                let shown = self.desks.shown_on(&name);
+                // Until scrolled, the strip keeps the shown workspace in view.
+                let scrolled = self.overview.as_ref().and_then(|o| o.first.get(&name));
+                let mut laid = plan(area, free, count, add, side, scrolled.copied().unwrap_or(0));
+                if scrolled.is_none() && laid.scrolls() {
+                    let items = count + usize::from(add);
+                    let first = in_view(items, laid.shows, 0, shown);
+                    laid = plan(area, free, count, add, side, first);
+                }
                 Some(Screen {
-                    shown: self.desks.shown_on(&name),
+                    shown,
                     name,
                     area,
-                    plan: plan(area, free, count, add, side),
+                    plan: laid,
                     windows: Vec::new(),
                     spread: Vec::new(),
                 })
@@ -257,29 +280,79 @@ impl Edel {
         if screen.plan.add.is_some_and(|a| a.to_f64().contains(point)) {
             return Hit::Add;
         }
+        for (arrow, forward) in [(screen.plan.before, false), (screen.plan.after, true)] {
+            if arrow.is_some_and(|a| a.to_f64().contains(point)) {
+                return Hit::Arrow(screen.name.clone(), forward);
+            }
+        }
         if screen.plan.tray.to_f64().contains(point) {
             return Hit::Tray;
         }
         Hit::Nothing
     }
 
-    /// A button went down while the overview is open: on a window it may
-    /// become a drag; see `overview_release` for what a click does.
+    /// A button went down while the overview is open: on a window or a
+    /// small workspace it may become a drag; see `overview_release` for
+    /// what a click does.
     pub fn overview_press(&mut self, point: Point<f64, Logical>) {
         let held = match self.overview_hit(point) {
-            Hit::Window(screen, window, at) => Some((screen, window, at)),
+            Hit::Window(screen, window, at) => Some((screen, Held::Window(window), at)),
+            Hit::Frame(screen, i) => self
+                .overview_screens()
+                .into_iter()
+                .find(|s| s.name == screen)
+                .and_then(|s| s.plan.frames.get(i).copied())
+                .map(|at| (screen, Held::Frame(i), at)),
             _ => None,
         };
         let Some(overview) = &mut self.overview else {
             return;
         };
-        overview.drag = held.map(|(screen, window, at)| Drag {
-            window,
+        overview.drag = held.map(|(screen, held, at)| Drag {
+            held,
             screen,
             from: point,
             grip: point - at.loc.to_f64(),
             moving: false,
         });
+    }
+
+    /// The wheel turned `steps` items' worth while the overview is open:
+    /// over a strip that scrolls, it moves along, whole items at a time.
+    pub fn overview_scroll(&mut self, point: Point<f64, Logical>, steps: f64) {
+        let Some(screen) = self
+            .overview_screens()
+            .into_iter()
+            .find(|s| s.plan.tray.to_f64().contains(point))
+        else {
+            return;
+        };
+        if !screen.plan.scrolls() {
+            return;
+        }
+        let Some(overview) = &mut self.overview else {
+            return;
+        };
+        overview.wheel += steps;
+        let whole = overview.wheel.trunc();
+        if whole == 0.0 {
+            return;
+        }
+        overview.wheel -= whole;
+        let first = screen.plan.first as i64 + whole as i64;
+        self.overview_scroll_to(&screen.name, usize::try_from(first.max(0)).unwrap_or(0));
+    }
+
+    /// Scrolls the strip of screen `name` to start at item `first`.
+    fn overview_scroll_to(&mut self, name: &str, first: usize) {
+        if let Some(overview) = &mut self.overview {
+            eprintln!(
+                "edel-compositor: overview strip of {name} scrolled to {}",
+                first + 1
+            );
+            overview.first.insert(name.to_string(), first);
+            self.dirty = true;
+        }
     }
 
     /// The pointer moved while the overview is open: a held window
@@ -298,8 +371,9 @@ impl Edel {
     /// onto a small workspace of its screen moves there and the overview
     /// stays; a click on a window goes to it and leaves; on its close
     /// button closes it; on a small workspace shows its windows here (the
-    /// shown one leaves to it); on the plus adds a workspace; on the tray
-    /// does nothing; on nothing leaves.
+    /// shown one leaves to it); a small workspace dragged onto another
+    /// takes its place; on the plus adds a workspace; on an arrow scrolls
+    /// the strip; on the tray does nothing; on nothing leaves.
     pub fn overview_release(&mut self, point: Point<f64, Logical>) {
         let Some(overview) = &mut self.overview else {
             return;
@@ -309,7 +383,12 @@ impl Edel {
         if let Some(drag) = drag.as_ref().filter(|d| d.moving) {
             if let Hit::Frame(name, to) = hit {
                 if name == drag.screen {
-                    self.carry_window(&drag.window, to);
+                    match &drag.held {
+                        Held::Window(window) => {
+                            self.carry_window(window, to);
+                        }
+                        Held::Frame(from) => self.move_workspace(*from, to),
+                    }
                 }
             }
             self.dirty = true;
@@ -341,6 +420,17 @@ impl Edel {
                 self.dirty = true;
             }
             Hit::Add => self.add_workspace(),
+            Hit::Arrow(name, forward) => {
+                if let Some(screen) = self.overview_screens().into_iter().find(|s| s.name == name) {
+                    let step = screen.plan.shows.saturating_sub(1).max(1);
+                    let first = if forward {
+                        screen.plan.first + step
+                    } else {
+                        screen.plan.first.saturating_sub(step)
+                    };
+                    self.overview_scroll_to(&name, first);
+                }
+            }
             Hit::Tray => {}
             Hit::Nothing => self.leave_overview(),
         }
@@ -394,11 +484,20 @@ impl Edel {
             return Vec::new();
         };
         self.log_places(&mut overview, &screen);
-        let held = overview
-            .drag
-            .as_ref()
-            .filter(|d| d.moving)
-            .map(|d| (d.window.clone(), d.grip));
+        let moving = overview.drag.as_ref().filter(|d| d.moving);
+        let held = moving.and_then(|d| match &d.held {
+            Held::Window(window) => Some((window.clone(), d.grip)),
+            Held::Frame(_) => None,
+        });
+        let held_frame = moving.and_then(|d| match d.held {
+            Held::Frame(i) if d.screen == screen.name => Some((i, d.grip)),
+            _ => None,
+        });
+        // Where a held window or workspace would land, lit.
+        let target = moving
+            .is_some()
+            .then(|| frame_at(&screen.plan.frames, pointer))
+            .flatten();
         let hidden = self.hidden_layers();
         let mut front: Vec<Drawn> =
             crate::layers::elements(renderer, output, self.layers_over(output), scale, &hidden)
@@ -423,9 +522,49 @@ impl Edel {
                 }
             }
         }
+        // The workspace held, at the pointer, with its windows small.
+        if let Some((i, grip)) = held_frame {
+            if let Some(frame) = screen.plan.frames.get(i) {
+                let moved = Rectangle::new((pointer - grip).to_i32_round(), frame.size);
+                for (j, line) in edges(moved, 2).into_iter().enumerate() {
+                    front.push(solid(
+                        &mut overview,
+                        format!("held edge {j}"),
+                        line,
+                        tokens.accent,
+                        area,
+                        scale,
+                    ));
+                }
+                for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| *d == i) {
+                    let to = edel_compositor::overview::shrink(moved, screen.area, *place);
+                    front.extend(self.overview_window(
+                        renderer,
+                        &mut overview,
+                        window,
+                        *place,
+                        to,
+                        area,
+                        true,
+                        scale,
+                    ));
+                }
+                // A little see-through, so the frame it would land on shows.
+                front.push(solid(
+                    &mut overview,
+                    "held frame".into(),
+                    moved,
+                    Colour {
+                        a: 0.8,
+                        ..tokens.background
+                    },
+                    area,
+                    scale,
+                ));
+            }
+        }
         // The window under the pointer: its close button and its edge.
-        let over = held
-            .is_none()
+        let over = (held.is_none() && held_frame.is_none())
             .then(|| {
                 screen
                     .spread
@@ -480,7 +619,11 @@ impl Edel {
             edel_compositor::overview::shrink(frame, screen.area, place)
         };
         for (i, frame) in screen.plan.frames.iter().enumerate() {
-            let (edge, width) = if i == screen.shown {
+            // Scrolled out of view.
+            if frame.is_empty() {
+                continue;
+            }
+            let (edge, width) = if i == screen.shown || target == Some(i) {
                 (tokens.accent, 2)
             } else {
                 (tokens.edge, 1)
@@ -495,7 +638,9 @@ impl Edel {
                     scale,
                 ));
             }
-            for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| *d == i) {
+            // A held workspace's windows go with it; its place stays empty.
+            let mine = |d: usize| d == i && held_frame.is_none_or(|(h, _)| h != i);
+            for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| mine(*d)) {
                 front.extend(self.overview_window(
                     renderer,
                     &mut overview,
@@ -551,7 +696,9 @@ impl Edel {
 
     /// Logs where the overview's parts lie on `screen` when that changes,
     /// for CI to click them: `overview places NAME SIDE, tray X+Y+WxH,
-    /// frame1 X+Y+WxH, ..., add X+Y+WxH, window TITLE X+Y+WxH, ...`.
+    /// frame1 X+Y+WxH, ..., add X+Y+WxH, before X+Y+WxH, after X+Y+WxH,
+    /// window TITLE X+Y+WxH, ...`, the frames out of view and the arrows
+    /// not there left out.
     fn log_places(&self, overview: &mut Overview, screen: &Screen) {
         let at = |r: Rectangle<i32, Logical>| {
             format!("{}+{}+{}x{}", r.loc.x, r.loc.y, r.size.w, r.size.h)
@@ -562,10 +709,17 @@ impl Edel {
             format!("tray {}", at(screen.plan.tray)),
         ];
         for (i, frame) in screen.plan.frames.iter().enumerate() {
-            parts.push(format!("frame{} {}", i + 1, at(*frame)));
+            if !frame.is_empty() {
+                parts.push(format!("frame{} {}", i + 1, at(*frame)));
+            }
         }
         if let Some(add) = screen.plan.add {
             parts.push(format!("add {}", at(add)));
+        }
+        for (word, arrow) in [("before", screen.plan.before), ("after", screen.plan.after)] {
+            if let Some(arrow) = arrow {
+                parts.push(format!("{word} {}", at(arrow)));
+            }
         }
         for (window, _, spread) in &screen.spread {
             parts.push(format!("window {} {}", title(window), at(*spread)));

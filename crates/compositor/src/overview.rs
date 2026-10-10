@@ -144,25 +144,61 @@ pub const NAME_ROOM: i32 = 28;
 /// frames in it (in order), the frame that adds a workspace (when one
 /// more may be added) and the stage where the shown workspace's windows
 /// spread.
+///
+/// When the frames do not all fit along the side (M5.2j-b2), the strip
+/// shows `shows` of its items (the frames, then the add frame) from
+/// `first` on, and an arrow at each end where more lie (`before`,
+/// `after`); a frame out of view is an empty rectangle at the tray's
+/// corner, and the add frame out of view is none.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Plan {
     pub tray: Rectangle<i32, Logical>,
     pub frames: Vec<Rectangle<i32, Logical>>,
     pub add: Option<Rectangle<i32, Logical>>,
     pub stage: Rectangle<i32, Logical>,
+    pub first: usize,
+    pub shows: usize,
+    pub before: Option<Rectangle<i32, Logical>>,
+    pub after: Option<Rectangle<i32, Logical>>,
+}
+
+/// The room an arrow takes at an end of a strip that scrolls.
+pub const ARROW: i32 = 24;
+
+impl Plan {
+    /// Whether the strip scrolls: some of its items are out of view.
+    pub fn scrolls(&self) -> bool {
+        self.before.is_some() || self.after.is_some()
+    }
+}
+
+/// The first item a strip of `items` showing `shows` at once starts at so
+/// that item `keep` is in view, moving as little as it can from `first`.
+pub fn in_view(items: usize, shows: usize, first: usize, keep: usize) -> usize {
+    let most = items.saturating_sub(shows);
+    let first = first.min(most);
+    if keep < first {
+        keep
+    } else if shows > 0 && keep >= first + shows {
+        (keep + 1 - shows).min(most)
+    } else {
+        first
+    }
 }
 
 /// The overview of a screen `screen` big whose free area (less its panels)
 /// is `area`, with `count` workspaces and, if `add`, a frame to add one,
-/// the strip along `side`. The frames keep the screen's shape; the strip
-/// is centred along its side; the stage is the rest of the free area less
-/// `ROOM`.
+/// the strip along `side`, scrolled to item `first` when it does not fit.
+/// The frames keep the screen's shape and their size however many there
+/// are; the strip is centred along its side; the stage is the rest of the
+/// free area less `ROOM`.
 pub fn plan(
     screen: Rectangle<i32, Logical>,
     area: Rectangle<i32, Logical>,
     count: usize,
     add: bool,
     side: Side,
+    first: usize,
 ) -> Plan {
     let shape = if screen.size.w > 0 {
         f64::from(screen.size.h) / f64::from(screen.size.w)
@@ -177,10 +213,20 @@ pub fn plan(
     } else {
         STRIP_GAP_DOWN
     };
-    let items = (count + usize::from(add)) as i32;
+    let items = count + usize::from(add);
     let item_long = if across { size.w } else { size.h + LABEL };
     let item_short = if across { size.h + LABEL } else { size.w };
-    let long = items * item_long + (items - 1).max(0) * gap + 2 * TRAY_PAD;
+    let length = |n: usize| n as i32 * item_long + (n as i32 - 1).max(0) * gap + 2 * TRAY_PAD;
+    let room = if across { area.size.w } else { area.size.h } - 2 * TRAY_EDGE;
+    // Every item when they fit; else as many as fit between two arrows.
+    let (shows, ends) = if length(items) <= room {
+        (items, 0)
+    } else {
+        let fit = (room - 2 * TRAY_PAD - 2 * ARROW + gap) / (item_long + gap);
+        (usize::try_from(fit).unwrap_or(0).clamp(1, items), ARROW)
+    };
+    let first = first.min(items - shows.min(items));
+    let long = length(shows) + 2 * ends;
     let short = item_short + 2 * TRAY_PAD;
     let (a, z) = (area.loc, area.loc + area.size);
     let tray: Rectangle<i32, Logical> = match side {
@@ -201,17 +247,39 @@ pub fn plan(
             (long, short).into(),
         ),
     };
+    let seen = first..first + shows;
     let place = |i: usize| -> Rectangle<i32, Logical> {
-        let step = i as i32 * (item_long + gap);
+        if !seen.contains(&i) {
+            return Rectangle::new(tray.loc, Size::default());
+        }
+        let step = ends + TRAY_PAD + (i - first) as i32 * (item_long + gap);
         let at = if across {
-            (tray.loc.x + TRAY_PAD + step, tray.loc.y + TRAY_PAD)
+            (tray.loc.x + step, tray.loc.y + TRAY_PAD)
         } else {
-            (tray.loc.x + TRAY_PAD, tray.loc.y + TRAY_PAD + step)
+            (tray.loc.x + TRAY_PAD, tray.loc.y + step)
         };
         Rectangle::new(at.into(), size)
     };
     let frames = (0..count).map(place).collect();
-    let add = add.then(|| place(count));
+    let add = (add && seen.contains(&count)).then(|| place(count));
+    // The arrows lie in the room at each end, across the tray.
+    let arrow = |start: bool| -> Rectangle<i32, Logical> {
+        let along = if start { 0 } else { long - ends - TRAY_PAD / 2 };
+        let wide = ends + TRAY_PAD / 2;
+        if across {
+            Rectangle::new(
+                (tray.loc.x + along, tray.loc.y).into(),
+                (wide, short).into(),
+            )
+        } else {
+            Rectangle::new(
+                (tray.loc.x, tray.loc.y + along).into(),
+                (short, wide).into(),
+            )
+        }
+    };
+    let before = (ends > 0 && first > 0).then(|| arrow(true));
+    let after = (ends > 0 && first + shows < items).then(|| arrow(false));
     let edge = TRAY_EDGE + short + ROOM;
     let stage = match side {
         Side::Left => Rectangle::new(
@@ -236,6 +304,10 @@ pub fn plan(
         frames,
         add,
         stage,
+        first,
+        shows,
+        before,
+        after,
     }
 }
 
@@ -372,7 +444,7 @@ mod tests {
         let area = rect(0, 0, 1280, 752);
         assert_eq!(Side::named("diagonal"), Side::Left);
         assert_eq!(Side::named("bottom"), Side::Bottom);
-        let p = plan(screen, area, 4, true, Side::Left);
+        let p = plan(screen, area, 4, true, Side::Left, 0);
         // Frames 72 by 45 (the screen's shape), each with its label under it.
         assert!(p.frames.iter().all(|f| f.size == Size::from((72, 45))));
         assert_eq!(p.frames.len(), 4);
@@ -389,7 +461,7 @@ mod tests {
         assert_eq!(p.stage.loc.x, p.tray.loc.x + p.tray.size.w + ROOM);
         assert!(p.stage.loc.y + p.stage.size.h <= 752 - ROOM);
         // Nine frames still fit down a 752 px side.
-        let nine = plan(screen, area, 9, false, Side::Left);
+        let nine = plan(screen, area, 9, false, Side::Left, 0);
         assert!(nine.tray.loc.y >= 0 && nine.tray.loc.y + nine.tray.size.h <= 752);
     }
 
@@ -397,18 +469,53 @@ mod tests {
     fn across_the_bottom_the_frames_are_larger_and_the_stage_is_above() {
         let screen = rect(0, 0, 1280, 800);
         let area = rect(0, 0, 1280, 752);
-        let p = plan(screen, area, 9, true, Side::Bottom);
+        let p = plan(screen, area, 9, true, Side::Bottom, 0);
         assert!(p.frames.iter().all(|f| f.size == Size::from((96, 60))));
         assert_eq!(p.tray.loc.y + p.tray.size.h, 752 - TRAY_EDGE);
         assert!(p.tray.loc.x >= 0 && p.tray.loc.x + p.tray.size.w <= 1280);
         assert_eq!(p.stage.loc.y, ROOM);
         assert_eq!(p.stage.loc.y + p.stage.size.h, p.tray.loc.y - ROOM);
-        let right = plan(screen, area, 4, false, Side::Right);
+        let right = plan(screen, area, 4, false, Side::Right, 0);
         assert_eq!(right.tray.loc.x + right.tray.size.w, 1280 - TRAY_EDGE);
         assert_eq!(right.stage.loc.x, ROOM);
-        let top = plan(screen, area, 4, false, Side::Top);
+        let top = plan(screen, area, 4, false, Side::Top, 0);
         assert_eq!(top.tray.loc.y, TRAY_EDGE);
         assert_eq!(top.stage.loc.y, top.tray.loc.y + top.tray.size.h + ROOM);
+    }
+
+    #[test]
+    fn a_strip_too_long_scrolls_between_arrows_and_its_frames_keep_their_size() {
+        let screen = rect(0, 0, 1280, 800);
+        // A short screen: 400 px free, so not every one of nine fits.
+        let area = rect(0, 0, 1280, 400);
+        let p = plan(screen, area, 9, true, Side::Left, 0);
+        assert!(p.scrolls());
+        // (380 - 20 - 48 + 8) / (63 + 8) = 4 shown, between two arrows.
+        assert_eq!((p.first, p.shows), (0, 4));
+        assert!(p.before.is_none() && p.after.is_some());
+        assert_eq!(p.tray.size.h, 4 * 63 + 3 * 8 + 2 * TRAY_PAD + 2 * ARROW);
+        assert!(p.tray.loc.y >= TRAY_EDGE && p.tray.loc.y + p.tray.size.h <= 400 - TRAY_EDGE);
+        let shown: Vec<_> = p.frames.iter().filter(|f| !f.is_empty()).collect();
+        assert_eq!(shown.len(), 4);
+        assert!(shown.iter().all(|f| f.size == Size::from((72, 45))));
+        assert!(
+            p.add.is_none(),
+            "the add frame is the tenth item, out of view"
+        );
+        assert!(shown.iter().all(|f| p.tray.contains_rect(**f)));
+        // Scrolled to the end: the add frame shows, the first frames do not.
+        let end = plan(screen, area, 9, true, Side::Left, 99);
+        assert_eq!(end.first, 6);
+        assert!(end.add.is_some() && end.before.is_some() && end.after.is_none());
+        assert!(end.frames[0].is_empty() && !end.frames[8].is_empty());
+        let inside = end.frames[6].loc.to_f64() + Point::from((1.0, 1.0));
+        assert_eq!(frame_at(&end.frames, inside), Some(6), "not the empty ones");
+        // Keeping a frame in view moves the strip as little as it can.
+        assert_eq!(in_view(10, 4, 0, 2), 0);
+        assert_eq!(in_view(10, 4, 0, 6), 3);
+        assert_eq!(in_view(10, 4, 5, 1), 1);
+        assert_eq!(in_view(10, 4, 99, 9), 6);
+        assert_eq!(in_view(3, 4, 2, 1), 0, "all fit");
     }
 
     #[test]

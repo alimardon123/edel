@@ -402,24 +402,6 @@ pub fn landing(shown: &str, slot: f32, x: f32) -> Option<usize> {
         .map(|b| b.place)
 }
 
-/// The names of the workspaces after the one at place `from` moves to place
-/// `to` (M5.2p), as `workspaces.names` lists them: padded with empty
-/// names to `count` (or to as many names as there are), the moved name's
-/// place as the compositor's `Desks::reorder` moves it, then the empty names
-/// at the end taken off. A place past the list is left as it is.
-pub fn reordered_names(names: &[String], count: usize, from: usize, to: usize) -> Vec<String> {
-    let mut list = names.to_vec();
-    list.resize(count.max(names.len()), String::new());
-    if from < list.len() && to < list.len() {
-        let name = list.remove(from);
-        list.insert(to, name);
-    }
-    while list.last().is_some_and(String::is_empty) {
-        list.pop();
-    }
-    list
-}
-
 /// The next workspace where more lie, at one end of the strip: its place
 /// and label, its strip's left edge and width, its button's width (all in
 /// logical pixels), whether it lies on the left, and how many lie beyond
@@ -1230,30 +1212,6 @@ mod tests {
         assert_eq!(landing(&text, BUTTON, 47.0), Some(1), "the nearer in a gap");
         assert_eq!(landing(&text, BUTTON, 48.0), Some(2), "the nearer in a gap");
         assert_eq!(landing(&shows(&button_live(4, 2)), BUTTON, 35.0), None);
-    }
-
-    #[test]
-    fn a_moved_name_takes_its_place_and_the_empty_ends_go() {
-        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(
-            reordered_names(&names(&["Mail"]), 4, 0, 2),
-            names(&["", "", "Mail"])
-        );
-        assert!(reordered_names(&[], 4, 2, 0).is_empty());
-        assert_eq!(
-            reordered_names(&names(&["A", "B"]), 3, 1, 0),
-            names(&["B", "A"])
-        );
-        assert_eq!(
-            reordered_names(&names(&["A", "B", "C"]), 3, 0, 2),
-            names(&["B", "C", "A"]),
-            "the ones between shift by one"
-        );
-        assert_eq!(
-            reordered_names(&names(&["A"]), 2, 0, 9),
-            names(&["A"]),
-            "a place past the list changes nothing"
-        );
     }
 
     #[test]

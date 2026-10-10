@@ -139,16 +139,6 @@ pub fn pins_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep the pinned apps in (M5.31d).
 pub const PINS_NO_HOME: &str = "no home folder to keep the pinned apps in; run edel settings set panels.pinned='[\"APP\"]' instead, naming the apps by their id or role";
 
-/// The workspace names cannot be written down in their new order (M5.2p).
-pub fn names_not_kept(why: impl Display) -> String {
-    format!(
-        "could not keep the workspace names in their new order: {why}; the names in the settings file stay as they were"
-    )
-}
-
-/// There is no home folder to keep the workspace names in (M5.2p).
-pub const NAMES_NO_HOME: &str = "no home folder to keep the workspace names in; run edel settings set workspaces.names='[\"Mail\", \"\", \"Code\"]' instead, one name per workspace in order, empty where none";
-
 /// The panels the editor made cannot be written down.
 pub fn panels_not_kept(why: impl Display) -> String {
     format!("could not keep the panels: {why}; they stay as they were")
@@ -336,15 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn workspace_names_that_are_not_kept_say_what_stays() {
-        assert_eq!(
-            names_not_kept("Permission denied (os error 13)"),
-            "could not keep the workspace names in their new order: Permission denied (os error 13); the names in the settings file stay as they were"
-        );
-        assert!(NAMES_NO_HOME.contains("edel settings set workspaces.names="));
-    }
-
-    #[test]
     fn a_style_that_is_not_kept_says_the_command_that_works() {
         assert_eq!(
             style_no_home("split"),
@@ -401,8 +382,6 @@ mod tests {
             DARK_STYLE_NO_HOME.to_string(),
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
-            names_not_kept("x"),
-            NAMES_NO_HOME.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");
