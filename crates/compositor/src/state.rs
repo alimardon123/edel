@@ -123,6 +123,8 @@ pub struct Edel {
     pub switcher: Option<crate::switcher::Switcher>,
     /// The overview while it is open (M5.2j).
     pub overview: Option<crate::glance::Overview>,
+    /// What the overview keeps between openings (its backdrops).
+    pub overview_kept: crate::glance::Kept,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
     /// `[displays]` changed: the backend scans and places its screens again
@@ -271,6 +273,7 @@ impl Edel {
             keyboard_layer: None,
             switcher: None,
             overview: None,
+            overview_kept: Default::default(),
             settings: Settings::default(),
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,

@@ -43,7 +43,7 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled (M5.16a) |  |
 | `cycle_column_width` | `Super+R` | Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c) |  |
 | `show_tray` | `Super+B` | Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h) |  |
-| `show_workspaces` | `Super+W` | Show every workspace side by side with its windows, or leave the overview (M5.2j) |  |
+| `show_workspaces` | `Super+W` | Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it (M5.2j) |  |
 | `next_workspace` | `Super+Ctrl+Right` | Show the workspace after the shown one; stops at the last (M5.2i) |  |
 | `previous_workspace` | `Super+Ctrl+Left` | Show the workspace before the shown one; stops at the first (M5.2i) |  |
 | `move_to_next_workspace` | `Super+Ctrl+Shift+Right` | Move the focused window to the workspace after the shown one, and follow it (M5.2i) |  |
