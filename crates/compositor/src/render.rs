@@ -160,6 +160,11 @@ impl Edel {
             .into_iter()
             .map(Drawn::Plain)
             .collect();
+        // The overview covers the screen while it is open (M5.2j).
+        if self.overview.is_some() {
+            elements.extend(self.overview_elements(renderer, output, scale));
+            return elements;
+        }
         // Panels over the windows, backgrounds under them (M5.1a); a dock
         // a window covers is not drawn (M5.4f).
         let hidden = self.hidden_layers();

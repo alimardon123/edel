@@ -28,6 +28,11 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  print the last X from X0 to X1 in row Y
                                  within 24 of RRGGBB in each channel, or
                                  none (M5.29)
+    qmp.py where FILE.png X Y W H RRGGBB
+                                 print "CX CY COUNT", the centre and number
+                                 of the pixels in the W by H box at X, Y
+                                 within 24 of RRGGBB in each channel, or
+                                 none (M5.2j)
 
 The first ten talk to the QMP socket named by $QMP. Key names are
 QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
@@ -238,7 +243,7 @@ def main(argv):
     if len(argv) < 2:
         raise SystemExit(__doc__)
     command, args = argv[1], argv[2:]
-    if command in ("pixel", "size", "uniform", "find", "findlast"):
+    if command in ("pixel", "size", "uniform", "find", "findlast", "where"):
         width, height, rows = read_png(args[0])
         if command == "size":
             print(width, height)
@@ -265,6 +270,20 @@ def main(argv):
                 None,
             )
             print("none" if found is None else found)
+        elif command == "where":
+            x0, y0, w, h = map(int, args[1:5])
+            want = tuple(int(args[5][i:i + 2], 16) for i in (0, 2, 4))
+            hits = [
+                (x, y)
+                for y in range(max(y0, 0), min(y0 + h, height))
+                for x in range(max(x0, 0), min(x0 + w, width))
+                if all(abs(a - b) <= 24 for a, b in zip(rows[y][x], want))
+            ]
+            if hits:
+                n = len(hits)
+                print(sum(x for x, _ in hits) // n, sum(y for _, y in hits) // n, n)
+            else:
+                print("none")
         else:
             x, y, w, h = map(int, args[1:5]) if len(args) >= 5 else (0, 0, width, height)
             colours = {p for row in rows[y:y + h] for p in row[x:x + w]}

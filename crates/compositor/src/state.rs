@@ -121,6 +121,8 @@ pub struct Edel {
     pub keyboard_layer: Option<WlSurface>,
     /// The window switcher while its keys are held (M5.3c).
     pub switcher: Option<crate::switcher::Switcher>,
+    /// The overview while it is open (M5.2j).
+    pub overview: Option<crate::glance::Overview>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
     /// `[displays]` changed: the backend scans and places its screens again
@@ -268,6 +270,7 @@ impl Edel {
             tap: None,
             keyboard_layer: None,
             switcher: None,
+            overview: None,
             settings: Settings::default(),
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,

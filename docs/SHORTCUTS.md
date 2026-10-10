@@ -1,6 +1,6 @@
 # Shortcuts
 
-Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+W`, or in `[shortcuts]` of the settings file; `""` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. An action whose step has not landed yet leaves its keys to the app that has the keyboard.
+Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+X`, or in `[shortcuts]` of the settings file; `""` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. An action whose step has not landed yet leaves its keys to the app that has the keyboard.
 
 | Action | Keys | What it does | Way out |
 |---|---|---|---|
@@ -43,6 +43,7 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled (M5.16a) |  |
 | `cycle_column_width` | `Super+R` | Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c) |  |
 | `show_tray` | `Super+B` | Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h) |  |
+| `show_workspaces` | `Super+W` | Show every workspace side by side with its windows, or leave the overview (M5.2j) |  |
 | `next_workspace` | `Super+Ctrl+Right` | Show the workspace after the shown one; stops at the last (M5.2i) |  |
 | `previous_workspace` | `Super+Ctrl+Left` | Show the workspace before the shown one; stops at the first (M5.2i) |  |
 | `move_to_next_workspace` | `Super+Ctrl+Shift+Right` | Move the focused window to the workspace after the shown one, and follow it (M5.2i) |  |
