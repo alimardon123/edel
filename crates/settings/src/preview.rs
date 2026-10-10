@@ -3,7 +3,8 @@
 //! colours, so a new preset shows its panels, its dock, its windows and
 //! where windows open with no picture to make, and a changed preset or
 //! token changes its card. The Displays page's picture of the screens
-//! side by side is here too (M5.7a).
+//! side by side is here too (M5.7a), and the picture of the panels that
+//! apply on the Layout page's Panels group (M5.31d).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,7 +12,7 @@ use std::rc::Rc;
 use gtk::cairo::Context;
 use gtk::prelude::*;
 
-use edel::presets::{Edge, Policy, Preset, Style};
+use edel::presets::{Edge, Panel, Policy, Preset, Style};
 use edel::tokens::{Colour, Tokens};
 
 use crate::screens::{self, Screen};
@@ -142,11 +143,58 @@ fn draw_screens(cr: &Context, w: f64, h: f64, screens: &[Screen], t: &Tokens) {
 /// The mockups' sketch, 128 by 64: drawn in these units and scaled.
 const UNITS: (f64, f64) = (128.0, 64.0);
 
+/// The panels picture's height in logical pixels (M5.31d).
+pub const PANELS_HEIGHT: i32 = 96;
+
 /// Draws `preset` as the mockups sketch it (`docs/mockups`, `settings()`
 /// in `edel-mockups.html`): a screen lit from above, a bar along each
 /// panel's edge or a dock, and its windows as soft cards: two floating
 /// ones, one with a dock or a taskbar, or tiles.
 fn draw(cr: &Context, w: f64, h: f64, preset: &Preset, t: &Tokens) {
+    screen(cr, w, h, t);
+    let shape = panels(cr, w, h, &preset.panels, t, false);
+    let windows: &[(f64, f64, f64, f64)] = match preset.windows.policy {
+        Policy::Tiling => &[
+            (4.0, 10.0, 58.0, 50.0),
+            (66.0, 10.0, 58.0, 23.0),
+            (66.0, 37.0, 58.0, 23.0),
+        ],
+        Policy::Floating if shape.dock => &[(24.0, 12.0, 70.0, 32.0)],
+        Policy::Floating if shape.taskbar => &[(14.0, 7.0, 92.0, 42.0)],
+        Policy::Floating => &[(18.0, 9.0, 62.0, 34.0), (48.0, 17.0, 62.0, 30.0)],
+    };
+    for (x, y, ww, hh) in windows {
+        window(cr, t, unit(w, h, *x, *y, *ww, *hh));
+    }
+}
+
+/// The panels that apply, as Settings' Panels group shows them (M5.31d):
+/// the screen as the preset pictures draw it, each panel a bar or a dock on
+/// its edge with its widgets as marks, and no windows.
+pub fn panels_area(theme: &Rc<Theme>, shown: Rc<RefCell<Vec<Panel>>>) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::builder()
+        .content_height(PANELS_HEIGHT)
+        .content_width(200)
+        .hexpand(true)
+        .build();
+    let drawn = theme.clone();
+    area.set_draw_func(move |_, cr, w, h| {
+        let t = drawn.tokens();
+        screen(cr, f64::from(w), f64::from(h), &t);
+        panels(cr, f64::from(w), f64::from(h), &shown.borrow(), &t, true);
+    });
+    let weak = area.downgrade();
+    theme.watch(move || {
+        if let Some(area) = weak.upgrade() {
+            area.queue_draw();
+        }
+    });
+    area
+}
+
+/// The screen a picture draws on: its corners rounded, lit from above and
+/// the background below.
+fn screen(cr: &Context, w: f64, h: f64, t: &Tokens) {
     let radius = f64::from(t.radius_small) + 1.0;
     rounded(cr, 0.0, 0.0, w, h, radius);
     cr.clip();
@@ -163,47 +211,88 @@ fn draw(cr: &Context, w: f64, h: f64, preset: &Preset, t: &Tokens) {
     sky.add_color_stop_rgba(1.0, f64::from(bg.r), f64::from(bg.g), f64::from(bg.b), 1.0);
     let _ = cr.set_source(&sky);
     let _ = cr.paint();
+}
 
+/// A rectangle in the sketch's units, mapped to a picture `w` by `h`.
+fn unit(w: f64, h: f64, x: f64, y: f64, ww: f64, hh: f64) -> Rect {
     let (sx, sy) = (w / UNITS.0, h / UNITS.1);
-    let bar = t.title_bar.with(0.9);
-    let at = |x: f64, y: f64, ww: f64, hh: f64| Rect {
+    Rect {
         x: x * sx,
         y: y * sy,
         w: ww * sx,
         h: hh * sy,
-    };
-    let mut dock = false;
-    let mut taskbar = false;
-    for panel in &preset.panels {
+    }
+}
+
+/// What a set of panels is drawn as: whether one is a dock, and whether a
+/// bar holds the apps (a taskbar), which the windows follow.
+#[derive(Default)]
+struct Shape {
+    dock: bool,
+    taskbar: bool,
+}
+
+/// Draws each of `panels` along its edge: a bar across the whole edge or a
+/// dock centred on it, in the bar colour. With `marks`, each widget is a
+/// small square on it (`widget_marks`). Returns what they are.
+fn panels(cr: &Context, w: f64, h: f64, panels: &[Panel], t: &Tokens, marks: bool) -> Shape {
+    let bar = t.title_bar.with(0.9);
+    let mut shape = Shape::default();
+    for panel in panels {
         let at_top = panel.edge == Edge::Top;
-        match panel.style {
+        let (r, radius) = match panel.style {
             Style::Bar => {
                 let thick = if at_top { 6.0 } else { 8.0 };
                 let y = if at_top { 0.0 } else { UNITS.1 - thick };
-                let r = at(0.0, y, UNITS.0, thick);
-                fill(cr, bar, r.x, r.y, r.w, r.h, 0.0);
-                taskbar |= panel.centre.iter().any(|n| n == "apps");
+                shape.taskbar |= panel.centre.iter().any(|n| n == "apps");
+                (unit(w, h, 0.0, y, UNITS.0, thick), 0.0)
             }
             Style::Dock => {
                 let y = if at_top { 4.0 } else { UNITS.1 - 13.0 };
-                let r = at(42.0, y, UNITS.0 - 84.0, 9.0);
-                fill(cr, bar, r.x, r.y, r.w, r.h, 3.0 * sy);
-                dock = true;
+                shape.dock = true;
+                (
+                    unit(w, h, 42.0, y, UNITS.0 - 84.0, 9.0),
+                    3.0 * (h / UNITS.1),
+                )
             }
+        };
+        fill(cr, bar, r.x, r.y, r.w, r.h, radius);
+        if marks {
+            widget_marks(cr, r, panel, t);
         }
     }
-    let windows: &[(f64, f64, f64, f64)] = match preset.windows.policy {
-        Policy::Tiling => &[
-            (4.0, 10.0, 58.0, 50.0),
-            (66.0, 10.0, 58.0, 23.0),
-            (66.0, 37.0, 58.0, 23.0),
-        ],
-        Policy::Floating if dock => &[(24.0, 12.0, 70.0, 32.0)],
-        Policy::Floating if taskbar => &[(14.0, 7.0, 92.0, 42.0)],
-        Policy::Floating => &[(18.0, 9.0, 62.0, 34.0), (48.0, 17.0, 62.0, 30.0)],
-    };
-    for (x, y, ww, hh) in windows {
-        window(cr, t, at(*x, *y, *ww, *hh));
+    shape
+}
+
+/// Each widget of `panel` as a small square on its bar or dock `r`: the
+/// start's from the left, the centre's in the middle and the end's up to
+/// the right, in the text colour.
+fn widget_marks(cr: &Context, r: Rect, panel: &Panel, t: &Tokens) {
+    let m = r.h * 0.5;
+    let step = m * 1.6;
+    // How far the marks of a group of `n` reach past their first one.
+    let span = |n: usize| n.saturating_sub(1) as f64 * step;
+    let colour = t.title_text.with(0.55);
+    let groups = [
+        (r.x + m, &panel.start),
+        (
+            r.x + (r.w - span(panel.centre.len()) - m) / 2.0,
+            &panel.centre,
+        ),
+        (r.x + r.w - m - span(panel.end.len()), &panel.end),
+    ];
+    for (x, widgets) in groups {
+        for i in 0..widgets.len() {
+            fill(
+                cr,
+                colour,
+                x + i as f64 * step,
+                r.y + (r.h - m) / 2.0,
+                m,
+                m,
+                m / 2.0,
+            );
+        }
     }
 }
 

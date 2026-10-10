@@ -1102,6 +1102,68 @@ case_power() {
 	echo "PASS: upower -e exits 0 with upowerd running ($(value power_list)), Settings drew its Power page (\"Plugged in\") and its Users page (\"ci\"), and at Compact width, 366 px, maximized, both fit with the sidebar folded away (upowerd, KiB: $(value power_rss_kib))"
 }
 
+case_settings_panels() {
+	# Settings' Panels group (M5.31d): ci's file holds one panel with only
+	# the clock, which shell-ui draws at once (`panels now bottom (1
+	# widgets)`). Settings opens on the Layout page asked for by name, its
+	# log says where Edit panels and Reset lie in the window, and Edit panels
+	# asks shell-ui over the bus for its editor, which opens (`panel editor
+	# asked for over the bus`, `panel editor shown`); Escape closes it without
+	# writing (`panel editor hidden`). Reset takes layout.panels out of ci's
+	# file and the bar is Classic's again (`panels now bottom (10 widgets)`).
+	one=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
+	guest 'settings panels line'
+	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$one" ||
+		fail "shell-ui did not draw the one panel ci's file asks for: $(value layers)"
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings panels'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	# The places line comes from Settings' own stderr, read by the service.
+	edit_at=none reset_at=none
+	i=0
+	while [ "$edit_at" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where its Panels group lies: $(value settings_panels_log)"
+		guest 'settings panels log'
+		text=$(value settings_panels_log)
+		edit_at=$(echo "$text" | sed -n 's/.*panels group places edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		reset_at=$(echo "$text" | sed -n 's/.*, reset \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		[ -n "$edit_at" ] || edit_at=none
+		[ "$edit_at" = none ] && sleep 1
+	done
+	[ -n "$reset_at" ] || fail "Reset is not on the Panels group, so ci's own line is not there: $text"
+	set -- $edit_at
+	ex=$1 ey=$2 ew=$3 eh=$4
+	set -- $reset_at
+	rx=$1 ry=$2 rw=$3 rh=$4
+	asked=$(count 'edel-shell-ui: panel editor asked for over the bus')
+	shown=$(count 'edel-shell-ui: panel editor shown')
+	python3 ci/qmp.py click $((x + ex + ew / 2)) $((y + ey + eh / 2))
+	wait_more 'edel-shell-ui: panel editor asked for over the bus' "$asked" ||
+		fail "Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)) did not ask shell-ui for its editor: $(value settings_panels_log)"
+	wait_more 'edel-shell-ui: panel editor shown' "$shown" || fail "shell-ui did not open its panel editor: $(value layers)"
+	hidden=$(count 'edel-shell-ui: panel editor hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: panel editor hidden' "$hidden" || fail "Escape did not close the panel editor"
+	# Reset: ci's line goes, and the desktop's panels are Classic's again.
+	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	python3 ci/qmp.py click $((x + rx + rw / 2)) $((y + ry + rh / 2))
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$ten" ||
+		fail "Reset did not bring the panels back: $(value layers)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'panels = ' &&
+		fail "Reset left layout.panels in ci's settings file: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: ci's layout.panels drew one bottom panel at once, Settings opened on its Layout page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
@@ -3201,7 +3263,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

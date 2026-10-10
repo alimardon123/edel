@@ -37,6 +37,7 @@ mod popup;
 mod portal;
 mod quick;
 mod quick_card;
+mod shell_bus;
 mod status;
 mod styles;
 mod switcher;
@@ -347,6 +348,7 @@ fn run() -> Result<()> {
     let status_wanted = panels
         .iter()
         .any(|p| p.row.all().any(|w| w.name == "status"));
+    let (edits, asks) = channel::channel::<()>();
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -396,7 +398,7 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens),
+        _portal: portal::serve(&tokens, edits),
         player_tx: None,
         tokens,
         fillets: fillets(),
@@ -439,6 +441,19 @@ fn run() -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
+    }
+    // Settings asks for the panel editor over the session bus (M5.31d); the
+    // calls reach the loop over a channel as the notifications' do.
+    if shell._portal.is_some() {
+        event_loop
+            .handle()
+            .insert_source(asks, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(()) = event {
+                    eprintln!("edel-shell-ui: panel editor asked for over the bus");
+                    shell.open_editor();
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the panel editor's bus: {e}"))?;
     }
     // shell-ui's own notices (M5.9e): a fallback record shown once for each
     // person, and the update check on a timer, from a person's session only.

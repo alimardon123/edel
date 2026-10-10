@@ -25,6 +25,11 @@ pub const ROWS: &[Row] = &[
         key: "layout.tiling_style",
         title: n_("Tiling style"),
     },
+    // The panels that apply, and the editor that changes them (M5.31d).
+    Row {
+        key: "layout.panels",
+        title: n_("Panels"),
+    },
     Row {
         key: "layout.title_bars",
         title: n_("Title bars"),
@@ -79,6 +84,18 @@ pub const ROWS: &[Row] = &[
         title: n_("Channel"),
     },
 ];
+
+/// What the Panels group says under its heading (M5.31d).
+pub const PANELS_WHAT: &str = n_("Which panels and docks show, where, and what they hold");
+
+/// The key of the row `name` means, by its key or its title, whatever the
+/// case (`layout.panels` or `Panels`), if one does.
+pub fn row_named(name: &str) -> Option<&'static str> {
+    let name = name.trim().to_lowercase();
+    ROWS.iter()
+        .find(|r| r.key.to_lowercase() == name || title(r.key).to_lowercase() == name)
+        .map(|r| r.key)
+}
 
 /// The title of `key`'s row, in the person's language.
 pub fn title(key: &str) -> &'static str {
@@ -224,7 +241,7 @@ mod tests {
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
-        assert_eq!(titles.len(), 9);
+        assert_eq!(titles.len(), 10);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
@@ -281,6 +298,16 @@ mod tests {
         let titles: Vec<&str> = on_page("displays").map(|r| r.title).collect();
         assert_eq!(titles, ["Resolution", "Scale", "Position", "On"]);
         assert_eq!(title("displays.*.scale"), "Scale");
+    }
+
+    #[test]
+    fn the_panels_row_is_found_by_its_key_or_its_title() {
+        assert_eq!(row_named("layout.panels"), Some("layout.panels"));
+        assert_eq!(row_named("Panels"), Some("layout.panels"));
+        assert_eq!(row_named("PANELS"), Some("layout.panels"));
+        assert_eq!(row_named("panel"), None, "a start is not a row");
+        assert_eq!(row_named("scale"), Some("displays.*.scale"));
+        assert_eq!(title("layout.panels"), "Panels");
     }
 
     #[test]

@@ -15,6 +15,18 @@ use crate::settings;
 /// The settings key the panels are written to (M5.31b).
 pub const PANELS: &str = "layout.panels";
 
+/// The session-bus name shell-ui serves its panel editor on (M5.31d).
+pub const SHELL_BUS: &str = "org.edel.Shell";
+/// The object path shell-ui serves it at (M5.31d).
+pub const SHELL_PATH: &str = "/org/edel/Shell";
+/// The interface, whose method `EDIT_PANELS` is (M5.31d). shell-ui serves
+/// them and Settings' Panels group calls them; the literals in shell-ui's
+/// interface attribute are tested against these.
+pub const SHELL_INTERFACE: &str = "org.edel.Shell1";
+/// The method that opens the panel editor, as the drawer's Edit panels
+/// row does (M5.31d).
+pub const EDIT_PANELS: &str = "EditPanels";
+
 /// The three groups of widgets a panel holds, from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
