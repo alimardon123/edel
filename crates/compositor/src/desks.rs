@@ -5,6 +5,9 @@
 //! A minimized window (M5.2h) leaves its workspace's policies, so tiling
 //! closes its gap, and waits on its workspace, shown or not, until the
 //! window list brings it back.
+//! Dynamic workspaces (M5.2i): [`dynamic_plan`] says which empty workspaces
+//! close and whether one more waits at the end, from the windows each one
+//! holds; a named workspace stays when it empties.
 //! Plain data, so it is tested without a display; `workspaces.rs` in the
 //! compositor maps and unmaps the windows.
 
@@ -22,6 +25,17 @@ pub const MOST: usize = edel::presets::MOST_WORKSPACES;
 /// other workspace's windows come in from the opposite side.
 pub fn slide_by(from: usize, to: usize, width: i32) -> i32 {
     if to > from { -width } else { width }
+}
+
+/// The workspace after `active` when `forward`, else the one before it,
+/// among `count`; none at either end, as Super+Ctrl+Left and Right stop
+/// rather than wrap (M5.2i).
+pub fn step(active: usize, count: usize, forward: bool) -> Option<usize> {
+    if forward {
+        (active + 1 < count).then_some(active + 1)
+    } else {
+        active.checked_sub(1)
+    }
 }
 
 /// The screen called `name` in `areas`, else the first, with its area.
@@ -44,6 +58,47 @@ pub struct Desk<W> {
     hidden: Vec<(W, Rectangle<i32, Logical>)>,
     /// Its minimized windows, each with the frame it had and its screen.
     minimized: Vec<(W, Rectangle<i32, Logical>, Option<String>)>,
+    /// Its name (M5.2i); empty when it has none, so it shows its number.
+    name: String,
+}
+
+impl<W> Desk<W> {
+    /// An empty workspace with no name, holding `layout`.
+    fn new(layout: Workspace<W>) -> Desk<W> {
+        Desk {
+            layout,
+            hidden: Vec::new(),
+            minimized: Vec::new(),
+            name: String::new(),
+        }
+    }
+}
+
+/// What dynamic workspaces do with the workspaces now (M5.2i): the empty
+/// ones that are neither shown nor named close, and one more empty
+/// workspace is added at the end unless the last one left is already an
+/// empty, unnamed one, as GNOME and COSMIC keep one free.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Plan {
+    /// The workspaces to close, by their index now, ascending.
+    pub remove: Vec<usize>,
+    /// Whether an empty workspace is added at the end.
+    pub add: bool,
+}
+
+/// The plan for workspaces holding `counts` windows each, with `active`
+/// shown and `kept(i)` true for a named workspace `i`. The shown one never
+/// closes, and at most [`MOST`] workspaces are kept.
+pub fn dynamic_plan(counts: &[usize], active: usize, kept: impl Fn(usize) -> bool) -> Plan {
+    let remove: Vec<usize> = (0..counts.len())
+        .filter(|&i| counts[i] == 0 && i != active && !kept(i))
+        .collect();
+    let remaining: Vec<usize> = (0..counts.len()).filter(|i| !remove.contains(i)).collect();
+    let waiting = remaining
+        .last()
+        .is_some_and(|&last| counts[last] == 0 && !kept(last));
+    let add = !waiting && remaining.len() < MOST;
+    Plan { remove, add }
 }
 
 /// Every workspace, and which one is shown.
@@ -60,13 +115,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     pub fn new(count: usize, gap: u32) -> Desks<W> {
         let count = count.clamp(1, MOST);
         Desks {
-            desks: (0..count)
-                .map(|_| Desk {
-                    layout: Workspace::new(gap),
-                    hidden: Vec::new(),
-                    minimized: Vec::new(),
-                })
-                .collect(),
+            desks: (0..count).map(|_| Desk::new(Workspace::new(gap))).collect(),
             active: 0,
             gap,
             style: Style::default(),
@@ -84,6 +133,85 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
 
     pub fn count(&self) -> usize {
         self.desks.len()
+    }
+
+    /// The workspace after the shown one, or before it, if there is one.
+    pub fn neighbour(&self, forward: bool) -> Option<usize> {
+        step(self.active, self.desks.len(), forward)
+    }
+
+    /// Names the workspaces, the first one's name first; a workspace with
+    /// no name in the list, or an empty one, has none (M5.2i).
+    pub fn set_names(&mut self, names: &[String]) {
+        for (i, desk) in self.desks.iter_mut().enumerate() {
+            desk.name = names.get(i).cloned().unwrap_or_default();
+        }
+    }
+
+    /// Whether workspace `index` has a name, so dynamic workspaces keep it.
+    pub fn named(&self, index: usize) -> bool {
+        self.desks.get(index).is_some_and(|d| !d.name.is_empty())
+    }
+
+    /// What each workspace is called, by its index: its name, or its number
+    /// from 1 when it has none, as the panel's switcher shows it.
+    pub fn labels(&self) -> Vec<String> {
+        self.desks
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                if d.name.is_empty() {
+                    (i + 1).to_string()
+                } else {
+                    d.name.clone()
+                }
+            })
+            .collect()
+    }
+
+    /// Each workspace's name as the file says it, empty for none.
+    pub fn names(&self) -> Vec<String> {
+        self.desks.iter().map(|d| d.name.clone()).collect()
+    }
+
+    /// How many windows each workspace holds, shown, hidden or minimized.
+    pub fn window_counts(&self) -> Vec<usize> {
+        self.desks
+            .iter()
+            .map(|d| d.layout.windows() + d.minimized.len())
+            .collect()
+    }
+
+    /// Whether workspace `index` holds no window at all; false for an index
+    /// there is no workspace for.
+    pub fn is_empty(&self, index: usize) -> bool {
+        self.desks
+            .get(index)
+            .is_some_and(|d| d.layout.is_empty() && d.hidden.is_empty() && d.minimized.is_empty())
+    }
+
+    /// Adds an empty workspace at the end, floating or tiling as `policy`
+    /// says, with the tiling style every workspace has.
+    pub fn add(&mut self, policy: &str) {
+        let mut layout = Workspace::new(self.gap);
+        layout.switch(policy);
+        layout.set_style(self.style);
+        self.desks.push(Desk::new(layout));
+    }
+
+    /// Takes out workspace `index` if it is empty and not the shown one; the
+    /// ones after it move down by one, and the shown one stays shown. False,
+    /// and nothing changes, for the shown workspace, one with windows, or
+    /// the only one.
+    pub fn remove(&mut self, index: usize) -> bool {
+        if index == self.active || self.desks.len() < 2 || !self.is_empty(index) {
+            return false;
+        }
+        self.desks.remove(index);
+        if index < self.active {
+            self.active -= 1;
+        }
+        true
     }
 
     /// The shown workspace, from 0.
@@ -244,14 +372,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
             return None;
         }
         while self.desks.len() < count {
-            let mut layout = Workspace::new(self.gap);
-            layout.switch(policy);
-            layout.set_style(self.style);
-            self.desks.push(Desk {
-                layout,
-                hidden: Vec::new(),
-                minimized: Vec::new(),
-            });
+            self.add(policy);
         }
         let gone: Vec<Desk<W>> = self.desks.drain(count..).collect();
         let last = count - 1;
@@ -486,5 +607,127 @@ mod tests {
         desks.switch(8, Vec::new());
         assert_eq!(desks.layout().name(), "tiling");
         assert_eq!(Desks::<u32>::new(0, 8).count(), 1);
+    }
+
+    #[test]
+    fn one_window_gives_two_workspaces_and_closing_it_gives_one() {
+        let none = |_: usize| false;
+        assert_eq!(
+            dynamic_plan(&[1], 0, none),
+            Plan {
+                remove: Vec::new(),
+                add: true
+            }
+        );
+        // Its window closed, the empty second one closes too, and the
+        // first, empty and shown, is the one that waits.
+        assert_eq!(
+            dynamic_plan(&[0, 0], 0, none),
+            Plan {
+                remove: vec![1],
+                add: false
+            }
+        );
+        assert_eq!(dynamic_plan(&[0], 0, none), Plan::default());
+    }
+
+    #[test]
+    fn a_named_empty_workspace_in_the_middle_stays() {
+        let named_second = |i: usize| i == 1;
+        assert_eq!(
+            dynamic_plan(&[1, 0, 1], 0, named_second),
+            Plan {
+                remove: Vec::new(),
+                add: true
+            }
+        );
+        // The unnamed empty one after it closes, and the named one is
+        // the last left, so one more waits after it.
+        assert_eq!(
+            dynamic_plan(&[1, 0, 0], 0, named_second),
+            Plan {
+                remove: vec![2],
+                add: true
+            }
+        );
+    }
+
+    #[test]
+    fn the_shown_workspace_never_closes_and_nine_full_ones_add_none() {
+        let none = |_: usize| false;
+        // Shown and empty, the second stays, the first closes.
+        assert_eq!(
+            dynamic_plan(&[0, 0, 1], 1, none),
+            Plan {
+                remove: vec![0],
+                add: true
+            }
+        );
+        assert_eq!(dynamic_plan(&[1, 0], 1, none), Plan::default());
+        assert_eq!(dynamic_plan(&[1; MOST], 0, none), Plan::default());
+    }
+
+    #[test]
+    fn an_empty_workspace_before_the_shown_one_closes_and_the_shown_one_stays_shown() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.switch(2, Vec::new());
+        assert!(!desks.remove(2), "the shown one");
+        assert!(desks.remove(0));
+        assert_eq!((desks.count(), desks.active()), (2, 1));
+        assert!(desks.remove(0));
+        assert_eq!((desks.count(), desks.active()), (1, 0));
+        assert!(!desks.remove(0), "the only one");
+    }
+
+    #[test]
+    fn a_workspace_with_windows_does_not_close() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        desks.send(1, 1, (300, 200).into(), &areas());
+        assert!(!desks.is_empty(1));
+        assert!(!desks.remove(1), "a hidden window is on it");
+        assert!(desks.is_empty(2));
+        assert!(desks.remove(2));
+        assert_eq!(desks.window_counts(), [0, 1]);
+        desks.switch(1, Vec::new());
+        desks.minimize(1, at(40));
+        desks.switch(0, Vec::new());
+        assert!(!desks.remove(1), "a minimized window is on it");
+        assert_eq!(desks.window_counts(), [0, 1]);
+    }
+
+    #[test]
+    fn names_stay_with_their_workspace_and_the_others_show_their_number() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.set_names(&["Mail".to_string()]);
+        assert_eq!(desks.labels(), ["Mail", "2", "3"]);
+        assert!(desks.named(0));
+        assert!(!desks.named(1));
+        assert_eq!(desks.names(), ["Mail", "", ""]);
+        // The second closes; the named first is untouched.
+        assert!(desks.remove(1));
+        assert_eq!(
+            desks.labels(),
+            ["Mail", "2"],
+            "a number is the position now"
+        );
+        assert!(!desks.named(9), "no workspace there");
+        // Set again by position, none for the rest.
+        desks.set_names(&[String::new(), "Code".to_string()]);
+        assert_eq!(desks.labels(), ["1", "Code"]);
+    }
+
+    #[test]
+    fn the_shortcuts_step_one_workspace_and_stop_at_the_ends() {
+        assert_eq!(step(0, 3, true), Some(1));
+        assert_eq!(step(1, 3, true), Some(2));
+        assert_eq!(step(2, 3, true), None, "the last does not wrap");
+        assert_eq!(step(1, 3, false), Some(0));
+        assert_eq!(step(0, 3, false), None, "the first does not wrap");
+        let mut desks: Desks<u32> = Desks::new(2, 8);
+        assert_eq!(desks.neighbour(true), Some(1));
+        assert_eq!(desks.neighbour(false), None);
+        desks.switch(1, Vec::new());
+        assert_eq!(desks.neighbour(true), None);
     }
 }

@@ -5,7 +5,9 @@
 //! coordinates its place in a row, and it can only be activated, since
 //! the preset makes and removes workspaces. An activate takes effect at
 //! the manager's commit, as the protocol asks, and each change ends with
-//! `done`.
+//! `done`. A workspace is called by its name when it has one, else by its
+//! number (M5.2i); a workspace closed in the middle renames the ones after
+//! it and drops the last, as the protocol has no other way to say so.
 
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols::ext::workspace::v1::server::ext_workspace_group_handle_v1::{
@@ -28,12 +30,13 @@ use crate::state::Edel;
 #[derive(Default)]
 pub struct Managers(Vec<Manager>);
 
-/// What one manager was told: its one group, the workspaces by number
-/// from 0, and the screens the group entered.
+/// What one manager was told: its one group, the workspaces in order, the
+/// name each was last told, and the screens the group entered.
 struct Manager {
     manager: ExtWorkspaceManagerV1,
     group: ExtWorkspaceGroupHandleV1,
     workspaces: Vec<ExtWorkspaceHandleV1>,
+    names: Vec<String>,
     outputs: Vec<WlOutput>,
     /// The workspace an activate asked for, shown at the commit.
     pending: Option<usize>,
@@ -46,22 +49,32 @@ pub fn create_global(display: &DisplayHandle) {
 
 impl Edel {
     /// Tells every client the workspaces as they are now: after a switch,
-    /// a change of their number, a screen change or a new `wl_output`.
+    /// a change of their number or name, a screen change or a new
+    /// `wl_output`.
     pub fn announce_workspaces(&mut self) {
         let outputs: Vec<Output> = self.space.outputs().cloned().collect();
-        let (count, shown) = (self.desks.count(), self.desks.active());
+        let labels = self.desks.labels();
+        let shown = self.desks.active();
         let display = self.display.clone();
         let managers = &mut self.ext_workspaces.0;
         managers.retain(|m| m.manager.is_alive());
         for manager in managers {
-            manager.sync(&display, &outputs, count, shown);
+            manager.sync(&display, &outputs, &labels, shown);
         }
     }
 }
 
 impl Manager {
-    /// Sends what changed since the last `done`, and `done`.
-    fn sync(&mut self, display: &DisplayHandle, outputs: &[Output], count: usize, shown: usize) {
+    /// Sends what changed since the last `done`, and `done`: one workspace
+    /// for each of `labels`, named by its label, the `shown` one active.
+    fn sync(
+        &mut self,
+        display: &DisplayHandle,
+        outputs: &[Output],
+        labels: &[String],
+        shown: usize,
+    ) {
+        let count = labels.len();
         let Some(client) = self.manager.client() else {
             return;
         };
@@ -82,17 +95,17 @@ impl Manager {
         self.outputs = now;
         while self.workspaces.len() < count {
             let number = self.workspaces.len();
-            let Ok(workspace) = client.create_resource::<ExtWorkspaceHandleV1, usize, Edel>(
+            let Ok(workspace) = client.create_resource::<ExtWorkspaceHandleV1, (), Edel>(
                 display,
                 self.manager.version(),
-                number,
+                (),
             ) else {
                 return;
             };
             self.manager.workspace(&workspace);
-            let name = (number + 1).to_string();
-            workspace.id(name.clone());
-            workspace.name(name);
+            workspace.id((number + 1).to_string());
+            workspace.name(labels[number].clone());
+            self.names.push(labels[number].clone());
             workspace.coordinates((number as u32).to_ne_bytes().to_vec());
             workspace.capabilities(WorkspaceCapabilities::Activate);
             self.group.workspace_enter(&workspace);
@@ -103,8 +116,13 @@ impl Manager {
                 self.group.workspace_leave(&workspace);
                 workspace.removed();
             }
+            self.names.pop();
         }
         for (number, workspace) in self.workspaces.iter().enumerate() {
+            if self.names[number] != labels[number] {
+                workspace.name(labels[number].clone());
+                self.names[number].clone_from(&labels[number]);
+            }
             let state = if number == shown {
                 State::Active
             } else {
@@ -144,6 +162,7 @@ impl GlobalDispatch<ExtWorkspaceManagerV1, ()> for Edel {
             manager,
             group,
             workspaces: Vec::new(),
+            names: Vec::new(),
             outputs: Vec::new(),
             pending: None,
         });
@@ -194,14 +213,16 @@ impl Dispatch<ExtWorkspaceGroupHandleV1, ()> for Edel {
     }
 }
 
-/// A workspace, by its number from 0: only `activate` does anything.
-impl Dispatch<ExtWorkspaceHandleV1, usize> for Edel {
+/// A workspace: only `activate` does anything. It asks for the workspace
+/// at the handle's place now, as a workspace closed before it moves the
+/// ones after it down (M5.2i).
+impl Dispatch<ExtWorkspaceHandleV1, ()> for Edel {
     fn request(
         state: &mut Edel,
         _: &Client,
         resource: &ExtWorkspaceHandleV1,
         request: ext_workspace_handle_v1::Request,
-        number: &usize,
+        _: &(),
         _: &DisplayHandle,
         _: &mut DataInit<'_, Edel>,
     ) {
@@ -213,7 +234,7 @@ impl Dispatch<ExtWorkspaceHandleV1, usize> for Edel {
                 .iter_mut()
                 .find(|m| m.workspaces.contains(resource))
             {
-                manager.pending = Some(*number);
+                manager.pending = manager.workspaces.iter().position(|w| w == resource);
             }
         }
     }

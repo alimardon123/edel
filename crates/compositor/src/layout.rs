@@ -138,6 +138,16 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         self.kinds[(self.active + 1) % self.kinds.len()].0
     }
 
+    /// How many windows are on this workspace, on any screen.
+    pub fn windows(&self) -> usize {
+        self.screens.iter().map(|s| s.windows.len()).sum()
+    }
+
+    /// Whether no window is on this workspace.
+    pub fn is_empty(&self) -> bool {
+        self.windows() == 0
+    }
+
     /// The screen `window` lies on, by name.
     pub fn screen_of(&self, window: &W) -> Option<&str> {
         self.screens

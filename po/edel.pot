@@ -680,6 +680,9 @@ msgstr ""
 msgid "unknown value {value}; use {allowed}"
 msgstr ""
 
+msgid "a whole number from {least} to {most}"
+msgstr ""
+
 msgid "a hostname: letters, digits and hyphens, up to 63"
 msgstr ""
 

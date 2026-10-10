@@ -59,3 +59,6 @@ region.time_servers
 notifications.do_not_disturb
 layout.tray_in_panel
 apps.pinned
+layout.workspaces
+layout.dynamic_workspaces
+layout.workspace_names

@@ -365,6 +365,16 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
 			;;
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
+		# Dynamic workspaces (M5.2i): every test window and foot closed, so
+		# the case starts with none; the layout keys it sets and resets; and
+		# the state file's shown workspace, count and names read back.
+		'dynamic clear') pkill -f '[e]del-testclient'; pkill -x foot ;;
+		'dynamic on') edel settings set layout.dynamic_workspaces=true ;;
+		'dynamic names') edel settings set 'layout.workspace_names=["Mail"]' ;;
+		'dynamic default') edel settings reset layout.dynamic_workspaces && edel settings reset layout.workspace_names ;;
+		'workspace state')
+			say "workspace_state $(awk -F' = ' '/^\[/ { exit } $1 == "workspace" { shown = $2 } $1 == "workspaces" { count = $2 } $1 == "workspace_names" { names = $2 } END { printf "shown %s count %s names %s", shown, count, names }' "$state_file")"
+			;;
 		# shell-ui's memory now, after the launcher has been open (M5.3b).
 		'shell rss')
 			pid=$(pidof edel-shell-ui)

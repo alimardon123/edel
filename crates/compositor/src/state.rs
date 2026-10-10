@@ -509,7 +509,14 @@ impl Edel {
         }
         self.restyle();
         let rescaled = self.apply_scales();
-        if self.desks.count() != new.workspaces() {
+        if old.workspace_names != new.workspace_names {
+            self.desks.set_names(new.names());
+            self.announce_workspaces();
+            self.state_changed();
+        }
+        if new.dynamic() {
+            self.settle_dynamic();
+        } else if self.desks.count() != new.workspaces() {
             self.set_workspace_count(new.workspaces());
         }
         if old.color_scheme != new.color_scheme {
@@ -594,6 +601,7 @@ impl Edel {
         if self.desks.layout().rearranges() {
             self.relayout();
         }
+        self.settle_dynamic();
         self.dirty = true;
         self.state_changed();
     }
@@ -643,7 +651,9 @@ impl Edel {
     /// Outputs and windows, bottom of the stack first, as TOML: the shown
     /// workspace's windows, then the hidden ones by workspace, each with
     /// its workspace, counted from 1 as Super+1 to Super+9 are, and
-    /// whether it is minimized (M5.2h).
+    /// whether it is minimized (M5.2h). The top level says which workspace
+    /// is shown, how many there are and each one's name, empty for none
+    /// (M5.2i).
     fn state_toml(&self) -> String {
         let mut table = Table::new();
         table.insert("format".into(), Value::Integer(statefile::FORMAT));
@@ -656,6 +666,11 @@ impl Edel {
         table.insert(
             "workspaces".into(),
             Value::Integer(self.desks.count() as i64),
+        );
+        // Each workspace's name, empty for none (M5.2i), in the same order.
+        table.insert(
+            "workspace_names".into(),
+            Value::Array(self.desks.names().into_iter().map(Value::String).collect()),
         );
         let outputs = self
             .space
@@ -943,6 +958,7 @@ impl CompositorHandler for Edel {
             if self.desks.layout().rearranges() {
                 self.relayout();
             }
+            self.settle_dynamic();
             self.state_changed();
         }
     }

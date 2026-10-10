@@ -14,7 +14,7 @@
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 
-use edel_compositor::desks::{MOST, slide_by};
+use edel_compositor::desks::{MOST, dynamic_plan, slide_by};
 
 use crate::decoration::{data, title};
 use crate::state::Edel;
@@ -49,20 +49,47 @@ impl Edel {
         self.focus_top();
         self.relayout();
         self.repoint();
+        self.settle_dynamic();
         self.announce_workspaces();
     }
 
-    /// Moves the focused window to workspace `to`, on top of its windows;
-    /// this workspace stays shown.
-    pub fn move_to_workspace(&mut self, to: usize) {
-        if self.dragging {
-            return;
+    /// Super+Ctrl+Right and Left: shows the workspace after the shown one,
+    /// or before it, where there is one (M5.2i).
+    pub fn switch_neighbour(&mut self, forward: bool) {
+        if let Some(to) = self.desks.neighbour(forward) {
+            self.switch_workspace(to);
         }
-        let Some(window) = self.focused_window() else {
+    }
+
+    /// Super+Ctrl+Shift+Right and Left: moves the focused window to the
+    /// workspace after the shown one, or before it, and shows that
+    /// workspace with the window (M5.2i). Nothing happens without one.
+    pub fn move_to_neighbour(&mut self, forward: bool) {
+        let (Some(to), Some(window)) = (self.desks.neighbour(forward), self.focused_window())
+        else {
             return;
         };
+        if self.move_to_workspace(to) {
+            // Dynamic workspaces may have closed an empty one before it
+            // while the window moved, so the window's workspace is looked
+            // up where it is now, not where it was sent.
+            if let Some(desk) = self.desks.hidden_on(&window) {
+                self.switch_workspace(desk);
+            }
+        }
+    }
+
+    /// Moves the focused window to workspace `to`, on top of its windows;
+    /// this workspace stays shown. False when nothing moved.
+    pub fn move_to_workspace(&mut self, to: usize) -> bool {
+        if self.dragging {
+            return false;
+        }
+        let Some(window) = self.focused_window() else {
+            return false;
+        };
         let Some(frame) = self.frame_of(&window) else {
-            return;
+            return false;
         };
         // A maximized window keeps the size it goes back to.
         let size = data(&window)
@@ -71,7 +98,7 @@ impl Edel {
             .map_or(frame.size, |r| r.size);
         let areas = self.window_areas();
         if self.desks.send(window.clone(), to, size, &areas).is_none() {
-            return;
+            return false;
         }
         eprintln!(
             "edel-compositor: window {} to workspace {}",
@@ -83,9 +110,44 @@ impl Edel {
         if self.desks.layout().rearranges() {
             self.relayout();
         }
+        self.settle_dynamic();
         self.dirty = true;
         self.state_changed();
         self.repoint();
+        true
+    }
+
+    /// Dynamic workspaces (M5.2i): applies `desks::dynamic_plan` to the
+    /// workspaces as they are, closing the empty ones it names and adding
+    /// the empty one that waits at the end, then tells the clients and the
+    /// state file. The count is logged when it changes. Nothing happens
+    /// unless `layout.dynamic_workspaces` is on.
+    pub fn settle_dynamic(&mut self) {
+        if !self.settings.dynamic() {
+            return;
+        }
+        let before = self.desks.count();
+        let plan = dynamic_plan(&self.desks.window_counts(), self.desks.active(), |i| {
+            self.desks.named(i)
+        });
+        if plan.remove.is_empty() && !plan.add {
+            return;
+        }
+        // Highest first, so each index in the plan is still the right one.
+        for index in plan.remove.iter().rev() {
+            self.desks.remove(*index);
+        }
+        if plan.add {
+            self.desks.add(self.settings.policy());
+        }
+        if self.desks.count() != before {
+            eprintln!(
+                "edel-compositor: workspaces now {} (dynamic)",
+                self.desks.count()
+            );
+        }
+        self.announce_workspaces();
+        self.state_changed();
     }
 
     /// The preset asks for `count` workspaces: if the shown one goes, the
@@ -171,6 +233,7 @@ impl Edel {
         drop(frame);
         self.desks.close(window);
         self.forget(window);
+        self.settle_dynamic();
         self.state_changed();
     }
 
