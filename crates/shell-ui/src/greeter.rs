@@ -2,16 +2,22 @@
 //! greetd runs on the greeter's own compositor. It is a small client of
 //! its own, with none of the panels, the tray or the session bus: on every
 //! screen a layer surface over everything, drawn as the lock screen is
-//! (`lock::paint`), first asking for the user name, then for the password
-//! with the person's initial and name over it. Return logs in through
-//! greetd (`greetd::log_in`) on a thread; once greetd starts the session
-//! (`COMMAND` as one word, which greetd runs through the shell itself,
-//! so its quoting holds) the greeter ends, and so does its
-//! compositor, as greetd expects. A refusal says "Wrong user name or
-//! password" and asks for the user name again. Escape goes back a step.
-//! Logs `greeter shown, N screens`, `greeter: logging USER in`,
-//! `greeter: wrong user name or password` and `greeter: session started
-//! for USER`.
+//! (`lock::paint`). The machine's people stand in a row (`people.rs`, M5.10c),
+//! the chosen one in the middle, with Other at the end. Left and right
+//! choose (while the field is empty), and so does a click on a person or on
+//! Other. A chosen person's password is asked at once. Other keeps two
+//! steps: the user name, then the password with the person's initial and
+//! name over it. Return logs in through greetd (`greetd::log_in`) on a
+//! thread; once greetd starts the session (`COMMAND` as one word, which
+//! greetd runs through the shell itself, so its quoting holds) the greeter
+//! ends, and so does its compositor, as greetd expects. A refusal says
+//! "Wrong user name or password" and asks again. Escape goes back a step.
+//! Power sits in the corner (`corner.rs`) and opens its menu, as the lock
+//! screen's does. Logs `greeter shown, N screens`, `greeter places ...`,
+//! `greeter: chose LOGIN` or `greeter: chose other`, `greeter: power menu
+//! shown, 3 rows`, `greeter: power menu hidden`, `greeter: power: NAME`,
+//! `greeter: logging USER in`, `greeter: wrong user name or password` and
+//! `greeter: session started for USER`.
 
 use anyhow::{Context, Result};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -22,12 +28,15 @@ use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
 use smithay_client_toolkit::reexports::client::protocol::{
-    wl_keyboard, wl_output, wl_seat, wl_shm, wl_surface,
+    wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
+};
+use smithay_client_toolkit::seat::pointer::{
+    BTN_LEFT, PointerEvent, PointerEventKind, PointerHandler,
 };
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
@@ -42,10 +51,13 @@ use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
 
+use crate::corner;
 use crate::greetd::{self, Login};
 use crate::lock::{self, Field, Password, View};
 use crate::messages;
 use crate::paint::{self, Text};
+use crate::people;
+use crate::power;
 
 /// The greeter: its screens, what is typed and where it stands.
 struct Greeter {
@@ -58,10 +70,13 @@ struct Greeter {
     qh: QueueHandle<Greeter>,
     screens: Vec<Screen>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    pointer: Option<wl_pointer::WlPointer>,
     tokens: Tokens,
     text: Text,
+    /// The row of people and the one chosen (M5.10c).
+    row: people::Row,
     /// The user name typed, the password typed, and whether the password
-    /// is asked for (the second step).
+    /// is asked for (the second step, or at once for a chosen person).
     name: String,
     password: Password,
     asking_password: bool,
@@ -70,6 +85,13 @@ struct Greeter {
     busy: Option<usize>,
     /// Whether Caps Lock is on (M5.10c).
     caps: bool,
+    /// Power's menu is open, and whether an update waits for a restart.
+    menu: bool,
+    restart_waiting: bool,
+    /// The corner's button or row under the pointer.
+    corner_hover: Option<corner::Hit>,
+    /// The last places line logged, so only a change is logged.
+    logged: String,
     /// The session's command, and where the login's answer comes back.
     cmd: String,
     tx: channel::Sender<Login>,
@@ -83,7 +105,7 @@ struct Screen {
     size: Option<(u32, u32)>,
     scale: u32,
     pool: Option<SlotPool>,
-    drawn: Option<View>,
+    drawn: Option<(View, corner::View)>,
 }
 
 /// Runs the greeter until the session starts or the compositor goes.
@@ -109,6 +131,16 @@ pub fn run(cmd: String) -> Result<()> {
             }
         })
         .map_err(|e| anyhow::anyhow!("listening for greetd's answers: {e}"))?;
+    // The first person is chosen, and their password asked at once; with no
+    // people, Other is chosen (index 0 equals the count) and the name asked.
+    let row = people::Row {
+        people: people::from_users(&edel::users::read(None)),
+        chosen: 0,
+    };
+    let (name, asking_password) = match row.people.first() {
+        Some(person) => (person.login.clone(), true),
+        None => (String::new(), false),
+    };
     let mut greeter = Greeter {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -119,14 +151,20 @@ pub fn run(cmd: String) -> Result<()> {
         qh: qh.clone(),
         screens: Vec::new(),
         keyboard: None,
+        pointer: None,
         text: Text::load(&tokens.font),
         tokens,
-        name: String::new(),
+        row,
+        name,
         password: Password::default(),
-        asking_password: false,
+        asking_password,
         field: Field::Ready,
         busy: None,
         caps: false,
+        menu: false,
+        restart_waiting: false,
+        corner_hover: None,
+        logged: String::new(),
         cmd,
         tx,
         exit: false,
@@ -199,19 +237,109 @@ impl Greeter {
             field,
             asking_name: !self.asking_password,
             caps: self.caps,
+            people: self.people_shown().then(|| self.row.clone()),
             ..View::new(time, date, self.name.clone())
         }
     }
 
+    /// What the corner shows now: Power only, with its menu when open.
+    fn corner_view(&self) -> corner::View {
+        corner::View {
+            layout: None,
+            menu: self.menu,
+            restart_waiting: self.restart_waiting,
+            hover: self.corner_hover,
+        }
+    }
+
+    /// Whether the row of people is shown: a person is chosen, or Other is
+    /// chosen and its name step shows. Other's password step shows the
+    /// person's initial and name instead.
+    fn people_shown(&self) -> bool {
+        self.row.chosen < self.row.people.len() || !self.asking_password
+    }
+
+    /// Whether nothing is typed in the field in use: no password letters,
+    /// or on Other's name step no name.
+    fn field_empty(&self) -> bool {
+        if self.asking_password {
+            self.password.letters() == 0
+        } else {
+            self.name.is_empty()
+        }
+    }
+
+    /// Chooses entry `index` of the row, when the field is empty. A person's
+    /// password is asked at once; Other asks for the user name. The caller
+    /// draws.
+    fn choose(&mut self, index: usize) {
+        if index == self.row.chosen || !self.field_empty() {
+            return;
+        }
+        self.row.chosen = index;
+        self.password.clear();
+        self.field = Field::Ready;
+        match self.row.people.get(index) {
+            Some(person) => {
+                eprintln!("edel-shell-ui: greeter: chose {}", person.login);
+                self.name = person.login.clone();
+                self.asking_password = true;
+            }
+            None => {
+                eprintln!("edel-shell-ui: greeter: chose other");
+                self.name.clear();
+                self.asking_password = false;
+            }
+        }
+    }
+
+    /// Opens or closes Power's menu, logging it, and draws again. Opening
+    /// reads whether an update waits for a restart.
+    fn set_menu(&mut self, open: bool) {
+        if open {
+            self.restart_waiting = power::restart_waiting();
+            self.menu = true;
+            eprintln!(
+                "edel-shell-ui: greeter: power menu shown, {} rows",
+                power::CHOICES.len()
+            );
+        } else {
+            self.menu = false;
+            eprintln!("edel-shell-ui: greeter: power menu hidden");
+        }
+        self.draw();
+    }
+
+    /// Closes Power's menu, then runs `choice` on a thread of its own, so
+    /// the drawing never waits for it.
+    fn run_power(&mut self, choice: power::Choice) {
+        self.menu = false;
+        eprintln!("edel-shell-ui: greeter: power: {}", choice.name());
+        let spawned = std::thread::Builder::new()
+            .name("power".into())
+            .spawn(move || {
+                if let Err(e) = power::run(choice) {
+                    eprintln!("edel-shell-ui: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::power_failed(choice.name(), e)
+            );
+        }
+        self.draw();
+    }
+
     /// Draws every configured screen whose view changed.
     fn draw(&mut self) {
-        let view = self.view();
+        let shown = (self.view(), self.corner_view());
         let mut first = false;
         for screen in &mut self.screens {
             let Some((w, h)) = screen.size else {
                 continue;
             };
-            if screen.drawn.as_ref() == Some(&view) {
+            if screen.drawn.as_ref() == Some(&shown) {
                 continue;
             }
             let s = screen.scale;
@@ -219,14 +347,39 @@ impl Greeter {
             let Some(mut pixmap) = Pixmap::new(pw, ph) else {
                 continue;
             };
+            let (fw, fh) = (w as f32, h as f32);
             lock::paint(
                 &mut pixmap,
-                &view,
+                &shown.0,
                 &self.tokens,
                 &mut self.text,
                 None,
                 s as f32,
             );
+            let corner_at = corner::layout(fw, fh, &shown.1);
+            corner::paint(
+                &mut pixmap,
+                &shown.1,
+                &corner_at,
+                &self.tokens,
+                &mut self.text,
+                s as f32,
+            );
+            let spots = people::spots(
+                &self.row,
+                fw,
+                lock::layout(fw, fh, &self.tokens, false).avatar.1,
+            );
+            let places = format!(
+                "{}, {}, {}",
+                people::places(&spots, &self.row),
+                lock::places(&lock::layout(fw, fh, &self.tokens, false)),
+                corner::places(&corner_at)
+            );
+            if places != self.logged {
+                eprintln!("edel-shell-ui: greeter places {places}");
+                self.logged = places;
+            }
             if screen.pool.is_none() {
                 screen.pool = SlotPool::new(2 * (pw * ph * 4) as usize, &self.shm)
                     .inspect_err(|e| eprintln!("edel-shell-ui: no memory for the greeter: {e}"))
@@ -252,7 +405,7 @@ impl Greeter {
             }
             screen.surface.commit();
             first |= screen.drawn.is_none();
-            screen.drawn = Some(view.clone());
+            screen.drawn = Some(shown.clone());
         }
         if first && self.screens.iter().all(|s| s.drawn.is_some()) {
             eprintln!(
@@ -263,12 +416,19 @@ impl Greeter {
     }
 
     /// A key: typed letters go to the field in use; Return moves on or
-    /// logs in; Backspace takes a letter back; Escape goes back a step.
+    /// logs in; Backspace takes a letter back; Escape closes Power's menu or
+    /// goes back a step; left and right choose a person while the field is
+    /// empty.
     fn key(&mut self, event: KeyEvent) {
         if self.busy.is_some() {
             return;
         }
         match event.keysym {
+            Keysym::Escape if self.menu => return self.set_menu(false),
+            Keysym::Left | Keysym::Right if self.field_empty() => {
+                let by = if event.keysym == Keysym::Left { -1 } else { 1 };
+                self.choose(people::step(&self.row, by));
+            }
             Keysym::Return | Keysym::KP_Enter => {
                 if !self.asking_password {
                     if !self.name.trim().is_empty() {
@@ -282,6 +442,10 @@ impl Greeter {
             Keysym::BackSpace if self.asking_password => self.password.pop(),
             Keysym::BackSpace => {
                 self.name.pop();
+            }
+            // A person's password has no step back; Other's goes to its name.
+            Keysym::Escape if self.asking_password && self.row.chosen < self.row.people.len() => {
+                self.password.clear();
             }
             Keysym::Escape if self.asking_password => {
                 self.password.clear();
@@ -358,10 +522,78 @@ impl Greeter {
                 self.field = Field::Failed;
             }
         }
-        // Asked again from the user name, which stays typed.
+        // Asked again: a chosen person's password at once, else Other's user
+        // name, which stays typed.
         self.password.clear();
-        self.asking_password = false;
+        self.asking_password = self.row.chosen < self.row.people.len();
         self.draw();
+    }
+}
+
+impl Greeter {
+    /// A pointer event on a screen `w` by `h` (logical pixels): the corner's
+    /// button or row under the pointer lights up, a left press acts.
+    fn pointer_event(&mut self, event: &PointerEvent) {
+        let Some((w, h)) = self
+            .screens
+            .iter()
+            .find(|s| s.surface.wl_surface() == &event.surface)
+            .and_then(|s| s.size)
+        else {
+            return;
+        };
+        let (x, y) = (event.position.0 as f32, event.position.1 as f32);
+        let (w, h) = (w as f32, h as f32);
+        let hit = corner::hit(&corner::layout(w, h, &self.corner_view()), x, y);
+        match event.kind {
+            PointerEventKind::Press { button, .. } if button == BTN_LEFT => self.press(x, y, w, h),
+            PointerEventKind::Leave { .. } => {
+                if self.corner_hover.take().is_some() {
+                    self.draw();
+                }
+            }
+            PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. }
+                if self.corner_hover != hit =>
+            {
+                self.corner_hover = hit;
+                self.draw();
+            }
+            _ => {}
+        }
+    }
+
+    /// A left press: the corner first (Power toggles its menu, a row runs
+    /// its choice), then with the menu open only a close, then a person
+    /// (chosen as the arrows choose), then the go button, which logs in when
+    /// the password has letters.
+    fn press(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        if self.busy.is_some() {
+            return;
+        }
+        let hit = corner::hit(&corner::layout(w, h, &self.corner_view()), x, y);
+        match hit {
+            Some(corner::Hit::Button(corner::Button::Power)) => return self.set_menu(!self.menu),
+            Some(corner::Hit::Row(i)) => {
+                if let Some(&choice) = power::CHOICES.get(i) {
+                    return self.run_power(choice);
+                }
+            }
+            _ => {}
+        }
+        if self.menu {
+            return self.set_menu(false);
+        }
+        let at = lock::layout(w, h, &self.tokens, false);
+        if self.people_shown() {
+            let spots = people::spots(&self.row, w, at.avatar.1);
+            if let Some(index) = people::hit(&spots, x, y) {
+                self.choose(index);
+                return self.draw();
+            }
+        }
+        if lock::on_go(&at, x, y) && self.password.letters() > 0 {
+            self.log_in();
+        }
     }
 }
 
@@ -487,7 +719,7 @@ impl SeatHandler for Greeter {
 
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 
-    /// The keyboard, as soon as the seat has one.
+    /// The keyboard and the pointer, as soon as the seat has them.
     fn new_capability(
         &mut self,
         _: &Connection,
@@ -495,12 +727,17 @@ impl SeatHandler for Greeter {
         seat: wl_seat::WlSeat,
         capability: Capability,
     ) {
-        if capability != Capability::Keyboard || self.keyboard.is_some() {
-            return;
+        if capability == Capability::Keyboard && self.keyboard.is_none() {
+            match self.seat.get_keyboard(qh, &seat, None) {
+                Ok(keyboard) => self.keyboard = Some(keyboard),
+                Err(e) => eprintln!("edel-shell-ui: no keyboard for the greeter: {e}"),
+            }
         }
-        match self.seat.get_keyboard(qh, &seat, None) {
-            Ok(keyboard) => self.keyboard = Some(keyboard),
-            Err(e) => eprintln!("edel-shell-ui: no keyboard for the greeter: {e}"),
+        if capability == Capability::Pointer && self.pointer.is_none() {
+            match self.seat.get_pointer(qh, &seat) {
+                Ok(pointer) => self.pointer = Some(pointer),
+                Err(e) => eprintln!("edel-shell-ui: no pointer for the greeter: {e}"),
+            }
         }
     }
 
@@ -514,6 +751,11 @@ impl SeatHandler for Greeter {
         if capability == Capability::Keyboard {
             if let Some(keyboard) = self.keyboard.take() {
                 keyboard.release();
+            }
+        }
+        if capability == Capability::Pointer {
+            if let Some(pointer) = self.pointer.take() {
+                pointer.release();
             }
         }
     }
@@ -590,6 +832,20 @@ impl KeyboardHandler for Greeter {
         if self.caps != modifiers.caps_lock {
             self.caps = modifiers.caps_lock;
             self.draw();
+        }
+    }
+}
+
+impl PointerHandler for Greeter {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
+        for event in events {
+            self.pointer_event(event);
         }
     }
 }

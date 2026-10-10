@@ -507,12 +507,13 @@ case_respawn() {
 	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
 	*) fail "the greeter's compositor did not pick tier=lite under llvmpipe: \"$(value greeter_tier)\"" ;;
 	esac
-	# The login screen itself (M5.10b): shell-ui's greeter on every
-	# screen, with the keyboard, asking for the user name, then the
-	# password. A wrong password is said and the user name asked for
-	# again; ci's own logs in, which ends the greeter's compositor, and
-	# greetd starts ci's, which takes the health file back. Kept as
-	# greeter.png.
+	# The login screen itself (M5.10b, M5.10c): shell-ui's greeter on
+	# every screen, with the people in a row. ci is picked by its place
+	# on the last `greeter places` line and its middle clicked; its
+	# password is asked at once, so no name is typed. A wrong password is
+	# said and asked for again; ci's own logs in, which ends the
+	# greeter's compositor, and greetd starts ci's, which takes the
+	# health file back. Kept as greeter.png and greeter-person.png.
 	wait_for 'DESKTOP-TEST: greeter_shown ' || fail "no word from the test service about the greeter"
 	case "$(value greeter_shown)" in
 	"edel-shell-ui: greeter shown, "*) ;;
@@ -520,15 +521,23 @@ case_respawn() {
 	esac
 	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
 		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
-	python3 ci/qmp.py type 'ci\n'
+	guest 'greeter log'
+	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
+		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	# `person0 X+Y+WxH ci,` on that line: the box of ci's disc.
+	box=$(printf '%s\n' "$places" | sed -n 's/.*person[0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) ci,.*/\1 \2 \3 \4/p')
+	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
+	read -r bx by bw bh <<-EOF
+		$box
+	EOF
+	python3 ci/qmp.py click $((bx + bw / 2)) $((by + bh / 2))
 	sleep 1
-	shot greeter-name 640 790 "$(token lock_backdrop_deep)" >/dev/null || true
+	shot greeter-person 640 790 "$(token lock_backdrop_deep)" >/dev/null || true
 	python3 ci/qmp.py type 'not-it\n'
 	# greetd answers a wrong password after PAM's own wait; the greeter
-	# keeps the user name, and Return takes it to the password again.
+	# asks for ci's password again at once, and the right one is typed.
 	sleep 5
-	python3 ci/qmp.py key ret
-	sleep 1
 	python3 ci/qmp.py type 'edel-desktop-test\n'
 	if ! wait_for 'DESKTOP-TEST: login_ready ' 90; then
 		guest 'greeter log'

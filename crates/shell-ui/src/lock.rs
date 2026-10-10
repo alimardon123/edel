@@ -14,6 +14,9 @@
 //! `edel::places::PASSWORD_CHECKERS` (Linux-PAM's `unix_chkpwd`), which a
 //! person's own program may ask about that person's password alone; a
 //! wrong one waits two seconds before the next try, so guessing is slow.
+//! With `View::people` (M5.10c) the row of people from `people.rs` takes the
+//! disc and the name's place, and the hint to choose with the arrows shows
+//! under the field while it is ready.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -74,6 +77,9 @@ pub struct View {
     pub shake: i32,
     /// Whether the pointer is over the go button.
     pub go_hover: bool,
+    /// The row of people (M5.10c) that takes the disc and the name's place
+    /// when there is one; None on the lock screen.
+    pub people: Option<crate::people::Row>,
 }
 
 impl View {
@@ -91,6 +97,7 @@ impl View {
             apps: Vec::new(),
             shake: 0,
             go_hover: false,
+            people: None,
         }
     }
 }
@@ -377,18 +384,26 @@ pub fn paint(
     if let Some(top) = at.count {
         count(pixmap, view, tokens, text, icons, s, w, top);
     }
-    avatar(pixmap, view, tokens, text, s, at);
-    centred(
-        pixmap,
-        text,
-        s,
-        w,
-        &view.name,
-        NAME,
-        Face::SEMIBOLD,
-        (w / 2.0, at.name),
-        ink,
-    );
+    match &view.people {
+        Some(row) => {
+            let spots = crate::people::spots(row, w, at.avatar.1);
+            crate::people::paint(pixmap, row, &spots, tokens, text, s);
+        }
+        None => {
+            avatar(pixmap, view, tokens, text, s, at);
+            centred(
+                pixmap,
+                text,
+                s,
+                w,
+                &view.name,
+                NAME,
+                Face::SEMIBOLD,
+                (w / 2.0, at.name),
+                ink,
+            );
+        }
+    }
     // The field: frosted glass, a dot per letter, else the placeholder,
     // the Caps Lock mark and the go button at its end; all of it moved
     // by the shake.
@@ -462,16 +477,11 @@ pub fn paint(
     // The close button's red, lifted towards the text so it reads on the
     // dark backdrop.
     let warn = mix(tokens.title_close_hover, ink, 0.3);
-    let note = match view.field {
-        Field::Ready if view.caps => Some((tr("Caps Lock is on"), quiet)),
-        Field::Ready => None,
-        Field::Checking => Some((tr("Checking"), quiet)),
-        Field::Wrong => Some((tr("Wrong password, try again"), warn)),
-        Field::NoChecker => Some((tr("This system cannot check passwords"), warn)),
-        Field::Refused => Some((tr("Wrong user name or password"), warn)),
-        Field::Failed => Some((tr("Could not log in, try again"), warn)),
+    let colour = match view.field {
+        Field::Wrong | Field::NoChecker | Field::Refused | Field::Failed => warn,
+        Field::Ready | Field::Checking => quiet,
     };
-    if let Some((words, colour)) = note {
+    if let Some(words) = note_text(view) {
         centred(
             pixmap,
             text,
@@ -486,11 +496,51 @@ pub fn paint(
     }
 }
 
+/// The words under the field, if any (M5.10c): Caps Lock's mark while it
+/// is on; with a row of people, the hint to choose with the arrows while
+/// the field is ready; else what happened to the last try.
+fn note_text(view: &View) -> Option<&'static str> {
+    match view.field {
+        Field::Ready if view.caps => Some(tr("Caps Lock is on")),
+        Field::Ready if view.people.is_some() => Some(tr("Left and right choose a person")),
+        Field::Ready => None,
+        Field::Checking => Some(tr("Checking")),
+        Field::Wrong => Some(tr("Wrong password, try again")),
+        Field::NoChecker => Some(tr("This system cannot check passwords")),
+        Field::Refused => Some(tr("Wrong user name or password")),
+        Field::Failed => Some(tr("Could not log in, try again")),
+    }
+}
+
 /// The person: their initial in white on a disc of the accent, lighter
 /// at its top as if lit from above, ringed with the glass's edge and
 /// lifted by a soft shadow.
 fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s: f32, at: Layout) {
-    let (cx, cy, r) = at.avatar;
+    let initial: String = view
+        .name
+        .chars()
+        .take(1)
+        .flat_map(char::to_uppercase)
+        .collect();
+    disc(pixmap, &initial, at.avatar, 36.0, false, tokens, text, s);
+}
+
+/// A person's disc (M5.10c): their `initial` in white, `size` high, on an
+/// accent disc at `(cx, cy)` of radius `r`, lighter at its top as if lit
+/// from above, ringed with the glass's edge and lifted by a soft shadow.
+/// `quiet` mixes its colours 30 percent towards the deep backdrop, for a
+/// person of the row who is not chosen (`people.rs`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn disc(
+    pixmap: &mut Pixmap,
+    initial: &str,
+    (cx, cy, r): (f32, f32, f32),
+    size: f32,
+    quiet: bool,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+) {
     let ring = 3.0;
     lift(
         pixmap,
@@ -513,21 +563,22 @@ fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s:
         (r + ring) * s,
         mix(tokens.lock_backdrop, tokens.backdrop_text, 0.16),
     );
+    let (mut top, mut bottom) = (
+        mix(tokens.accent, tokens.backdrop_text, 0.22),
+        mix(tokens.accent, tokens.lock_backdrop_deep, 0.12),
+    );
+    if quiet {
+        top = mix(top, tokens.lock_backdrop_deep, 0.3);
+        bottom = mix(bottom, tokens.lock_backdrop_deep, 0.3);
+    }
     fill_vertical(
         pixmap,
         ((cx - r) * s, (cy - r) * s, 2.0 * r * s, 2.0 * r * s),
         r * s,
-        mix(tokens.accent, tokens.backdrop_text, 0.22),
-        mix(tokens.accent, tokens.lock_backdrop_deep, 0.12),
+        top,
+        bottom,
     );
-    let initial: String = view
-        .name
-        .chars()
-        .take(1)
-        .flat_map(char::to_uppercase)
-        .collect();
-    let size = 36.0;
-    let mut line = text.line_in(&initial, size * s, Face::SEMIBOLD);
+    let mut line = text.line_in(initial, size * s, Face::SEMIBOLD);
     let x = cx * s - line.width / 2.0;
     text.draw(
         pixmap,
@@ -541,7 +592,7 @@ fn avatar(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s:
 /// A soft shadow under a part `r` (logical pixels) with corners `radius`,
 /// so it seems to float over the backdrop: the tokens' shadow, half as
 /// deep, as the lock screen's parts sit on a dark backdrop already.
-fn lift(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
+pub(crate) fn lift(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
     let room = paint::shadow_room(tokens, false);
     let (w, h) = ((r.w * s).round() as u32, (r.h * s).round() as u32);
     let Some(shadow) = paint::shadow(w, h, room, radius * s, tokens, s) else {
@@ -1066,6 +1117,51 @@ mod tests {
             let mut pixmap = Pixmap::new(1280, 800).unwrap();
             paint(&mut pixmap, &name, &tokens, &mut text, None, 1.0);
             pixmap.save_png(format!("{dir}/greeter-name.png")).unwrap();
+        }
+    }
+    #[test]
+    fn a_row_of_people_takes_the_disc_and_the_hint_shows_only_with_people() {
+        use crate::people::{Person, Row};
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let mut view = View::new("14:06".into(), "Saturday 3 October".into(), "ali".into());
+        let person = |login: &str, shown: &str| Person {
+            login: login.into(),
+            shown: shown.into(),
+        };
+        // The chosen name lands where the lock screen's name is, so the row
+        // and the single person line up.
+        let at = layout(1280.0, 800.0, &tokens, false);
+        assert_eq!(
+            at.name,
+            at.avatar.1 + crate::people::CHOSEN / 2.0 + crate::people::CHOSEN_NAME_GAP
+        );
+        assert_eq!(note_text(&view), None);
+        view.people = Some(Row {
+            people: vec![person("ali", "Ali"), person("mira", "Mira")],
+            chosen: 0,
+        });
+        assert_eq!(
+            note_text(&view),
+            Some("Left and right choose a person"),
+            "the hint shows with people while the field is ready"
+        );
+        view.caps = true;
+        assert_eq!(note_text(&view), Some("Caps Lock is on"));
+        view.caps = false;
+        view.field = Field::Wrong;
+        assert_eq!(note_text(&view), Some("Wrong password, try again"));
+        view.field = Field::Ready;
+        view.people = None;
+        assert_eq!(note_text(&view), None, "no hint on the lock screen");
+        view.people = Some(Row {
+            people: vec![person("ali", "Ali"), person("mira", "Mira")],
+            chosen: 2,
+        });
+        let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        paint(&mut pixmap, &view, &tokens, &mut text, None, 1.0);
+        if let Ok(dir) = std::env::var("EDEL_LOCK_PNG") {
+            pixmap.save_png(format!("{dir}/lock-people.png")).unwrap();
         }
     }
 }
