@@ -18,7 +18,9 @@
 //! on (`hold.rs`, M5.23). `--sni` draws nothing: it is a tray item on the
 //! session's bus (`sni.rs`, M5.2e). `--mpris` draws nothing either: it is
 //! a media player on the session's bus for quick settings' now playing
-//! (`mpris.rs`, M5.9d).
+//! (`mpris.rs`, M5.9d). `--recolour RRGGBB@FILE` draws the window in that
+//! colour once FILE exists, so a test can see whether a picture of it
+//! follows it live (M5.2j-b4).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -32,7 +34,9 @@
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
+use smithay_client_toolkit::reexports::client::Dispatch;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
+use smithay_client_toolkit::reexports::client::protocol::wl_callback;
 use smithay_client_toolkit::reexports::client::protocol::{wl_output, wl_shm, wl_surface};
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
@@ -48,6 +52,8 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::path::PathBuf;
+use std::time::Duration;
 
 struct Args {
     width: u32,
@@ -63,6 +69,17 @@ struct Args {
     /// A window that locks the pointer, or keeps the screen on (M5.23).
     lock_pointer: bool,
     inhibit_idle: bool,
+    /// The colour drawn once the file exists, and the file.
+    recolour: Option<([u8; 4], PathBuf)>,
+}
+
+/// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
+fn pixel_of(value: &str, flag: &str) -> Result<[u8; 4]> {
+    if value.len() != 6 {
+        bail!("{flag} is RRGGBB");
+    }
+    let rgb = u32::from_str_radix(value, 16).with_context(|| format!("{flag} is RRGGBB"))?;
+    Ok([rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8, 0xff])
 }
 
 fn args() -> Result<Args> {
@@ -73,6 +90,7 @@ fn args() -> Result<Args> {
     let mut layer = None;
     let mut fullscreen = false;
     let (mut lock_pointer, mut inhibit_idle) = (false, false);
+    let mut recolour = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -98,12 +116,10 @@ fn args() -> Result<Args> {
                     bail!("--size must be from 0x1 to 8192x8192");
                 }
             }
-            "--colour" => {
-                if value.len() != 6 {
-                    bail!("--colour is RRGGBB");
-                }
-                let rgb = u32::from_str_radix(&value, 16).context("--colour is RRGGBB")?;
-                pixel = [rgb as u8, (rgb >> 8) as u8, (rgb >> 16) as u8, 0xff];
+            "--colour" => pixel = pixel_of(&value, "--colour")?,
+            "--recolour" => {
+                let (colour, file) = value.split_once('@').context("--recolour is RRGGBB@FILE")?;
+                recolour = Some((pixel_of(colour, "--recolour")?, PathBuf::from(file)));
             }
             "--title" => title = value,
             "--app-id" => app_id = value,
@@ -115,7 +131,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni or --mpris alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni or --mpris alone"
             ),
         }
     }
@@ -132,6 +148,7 @@ fn args() -> Result<Args> {
         fullscreen,
         lock_pointer,
         inhibit_idle,
+        recolour,
     })
 }
 
@@ -167,6 +184,22 @@ struct Client {
     height: u32,
     pixel: [u8; 4],
     closed: bool,
+}
+
+/// The wake-up `--recolour`'s watch sends itself once the file exists: a
+/// `wl_display.sync`, whose answer ends the blocking dispatch.
+struct Wake;
+
+impl Dispatch<wl_callback::WlCallback, Wake> for Client {
+    fn event(
+        _: &mut Self,
+        _: &wl_callback::WlCallback,
+        _: wl_callback::Event,
+        _: &Wake,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 mod hold;
@@ -240,7 +273,30 @@ fn main() -> Result<()> {
         pixel: args.pixel,
         closed: false,
     };
+    let mut recolour = args.recolour;
+    if let Some((_, file)) = &recolour {
+        let (display, wake) = (connection.display(), qh.clone());
+        let (connection, file) = (connection.clone(), file.clone());
+        std::thread::spawn(move || {
+            while !file.exists() {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            display.sync(&wake, Wake);
+            let _ = connection.flush();
+        });
+    }
     while !client.closed {
+        if let Some((pixel, file)) = &recolour {
+            if file.exists() {
+                client.pixel = *pixel;
+                recolour = None;
+                if let Err(e) = client.draw() {
+                    eprintln!("edel-testclient: {e:#}");
+                    break;
+                }
+                println!("recoloured");
+            }
+        }
         // When the compositor goes away, so does the window: the end.
         if let Err(e) = queue.blocking_dispatch(&mut client) {
             eprintln!("edel-testclient: the compositor went away: {e}");

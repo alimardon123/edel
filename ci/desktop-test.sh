@@ -1878,6 +1878,14 @@ case_overview() {
 		[ "$i" -lt 10 ] || fail "lap's colour e0a030 is not spread on the stage ($on_stage) and small in frame 1 ($in_one): $places"
 		sleep 1
 	done
+	# The pointer resting on frame 1 shows its tooltip, the workspace's
+	# name and its apps (M5.2j-b4): lap, which has no launcher file, by
+	# its title.
+	tipped=$(count 'edel-compositor: overview tooltip 1: lap$')
+	python3 ci/qmp.py move "$one_x" "$one_y"
+	wait_more 'edel-compositor: overview tooltip 1: lap$' "$tipped" ||
+		fail "resting on frame 1 at $one_x,$one_y showed no tooltip \"1: lap\": $(tr -d '\r' <"$log" | grep -a 'overview tooltip' | tail -n 1)"
+	python3 ci/qmp.py screendump "$dir/overview-tooltip.png"
 	# lap dragged onto frame 2 moves there; the overview stays.
 	hidden=$(count 'edel-compositor: overview hidden$')
 	moved=$(count 'edel-compositor: window lap to workspace 2$')
@@ -1921,9 +1929,28 @@ case_overview() {
 	python3 ci/qmp.py screendump "$dir/overview-two.png"
 	set -- $(middle 'window lap')
 	lap_x=$1 lap_y=$2
+	# At Lite, the tier llvmpipe runs at, the overview shows the picture
+	# each window last drew and lets the apps rest (M5.2j-b4: live
+	# pictures are Full's and Balanced's): lap turning 33aa66 leaves its
+	# picture e0a030, and leaving shows the new colour.
+	guest 'lap recolour'
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/overview-still.png"
+	[ "$(python3 ci/qmp.py where "$dir/overview-still.png" $(box 'window lap') 33aa66)" = none ] ||
+		fail "at Lite the overview's picture of lap followed it to 33aa66"
+	[ "$(python3 ci/qmp.py where "$dir/overview-still.png" $(box 'window lap') e0a030)" != none ] ||
+		fail "at Lite the overview's picture of lap is no longer the e0a030 it last drew"
 	# A click on lap goes to it and leaves.
 	python3 ci/qmp.py click "$lap_x" "$lap_y"
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "a click on lap at $lap_x,$lap_y did not leave the overview"
+	i=0
+	until set -- $(value windows | tr ' ' '\n' | sed -n 's/^lap@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p') &&
+		[ -n "${1:-}" ] && python3 ci/qmp.py screendump "$dir/overview-left.png" &&
+		[ "$(python3 ci/qmp.py pixel "$dir/overview-left.png" $(($1 + $3 / 2)) $(($2 + $4 / 2)))" = 33aa66 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "after the overview, lap does not show the 33aa66 it drew: $(value windows)"
+		sleep 1
+	done
 	back=$(count 'edel-compositor: workspace 1$')
 	python3 ci/qmp.py key meta_l-1
 	wait_more 'edel-compositor: workspace 1$' "$back" || fail "Super+1 did not show workspace 1 after the overview"
@@ -1968,7 +1995,7 @@ case_overview() {
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
 	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
-	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; frame 3 dragged onto frame 1 moved there and back; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it; typing foot in the overview found it and Return started it"
+	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; frame 3 dragged onto frame 1 moved there and back; resting on frame 1 showed its tooltip; at Lite lap's picture stayed e0a030 while it drew 33aa66; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it; typing foot in the overview found it and Return started it"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
@@ -3697,6 +3724,42 @@ case_outputs() {
 	wait_more 'edel-compositor: mapped window away' "$opened" || fail "the test client away did not open"
 	wait_for 'DESKTOP-TEST: windows [0-9]+ .*away@1692,322,200x150$' ||
 		fail "away did not open centred on Virtual-2, where the pointer is: $(value windows)"
+	# In the overview a window's picture dragged onto another screen's
+	# frame moves there (M5.2j-b4): away, spread on Virtual-2, onto
+	# Virtual-1's frame 1, then back onto Virtual-2's, each logged with
+	# the screen; the pointer ends on Virtual-2, and Escape leaves.
+	shown=$(count 'edel-compositor: overview shown$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview on two screens"
+	# The middle of PART in SCREEN's last places line once it has WANT:
+	# "x y".
+	screen_middle() {
+		i=0
+		until line=$(tr -d '\r' <"$log" | grep -a "edel-compositor: overview places $1 " | tail -n 1) &&
+			echo "$line" | grep -q ", $3 "; do
+			i=$((i + 1))
+			[ "$i" -lt 25 ] || return 1
+			sleep 0.2
+		done
+		echo "$line" | sed -n "s/.*, $2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p" |
+			awk '{ print int($1 + $3 / 2), int($2 + $4 / 2) }'
+	}
+	away=$(screen_middle Virtual-2 'window away' 'window away') || fail "the overview does not say where away is spread on Virtual-2"
+	one=$(screen_middle Virtual-1 frame1 frame1) || fail "the overview does not say where Virtual-1's frame 1 is"
+	moved=$(count 'edel-compositor: window away to workspace 1 on Virtual-1$')
+	python3 ci/qmp.py drag $away $one
+	wait_more 'edel-compositor: window away to workspace 1 on Virtual-1$' "$moved" ||
+		fail "dragging away from $away on Virtual-2 onto Virtual-1's frame 1 at $one did not move it there"
+	away=$(screen_middle Virtual-1 'window away' 'window away') || fail "the overview does not show away spread on Virtual-1"
+	two=$(screen_middle Virtual-2 frame1 frame1) || fail "the overview does not say where Virtual-2's frame 1 is"
+	moved=$(count 'edel-compositor: window away to workspace 1 on Virtual-2$')
+	python3 ci/qmp.py drag $away $two
+	wait_more 'edel-compositor: window away to workspace 1 on Virtual-2$' "$moved" ||
+		fail "dragging away from $away on Virtual-1 onto Virtual-2's frame 1 at $two did not move it there"
+	python3 ci/qmp.py screendump "$dir/overview-screens.png"
+	hidden=$(count 'edel-compositor: overview hidden$')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview on two screens"
 	closed=$(count 'edel-compositor: unmapped window away')
 	guest 'away off'
 	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
@@ -3752,7 +3815,7 @@ case_outputs() {
 		fail "edel settings set displays.Virtual-2.enabled=false did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-2 off' ||
 		fail "the compositor did not turn Virtual-2 off"
-	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off, with workspaces.per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, in the overview its picture dragged onto Virtual-1's frame moved it there and back onto Virtual-2's, and displays.Virtual-2.enabled = false turned the second off, with workspaces.per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
 }
 
 case_tray() {

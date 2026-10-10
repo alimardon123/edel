@@ -756,7 +756,24 @@ impl Gpu {
                 );
                 arm_report(&self.handle, state);
             }
+            // A live overview shows pictures, not the windows' surfaces,
+            // so the windows on this screen are told to draw by where they
+            // are rather than by what the last frame showed (M5.2j-b4).
+            let live = state.overview_is_live();
             for window in state.space.elements() {
+                if live {
+                    if state
+                        .space
+                        .outputs_for_element(window)
+                        .contains(&screen.output)
+                    {
+                        let output = screen.output.clone();
+                        window.send_frame(&screen.output, now, Some(Duration::ZERO), |_, _| {
+                            Some(output.clone())
+                        });
+                    }
+                    continue;
+                }
                 window.send_frame(
                     &screen.output,
                     now,
