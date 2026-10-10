@@ -381,6 +381,9 @@ commands() {
 		# screen switching together.
 		'screens apart on') edel settings set layout.workspaces_per_screen=true ;;
 		'screens apart off') edel settings reset layout.workspaces_per_screen ;;
+		# A panel on every screen holding the switcher alone (M5.2o).
+		'screens panel') edel settings set 'layout.panels=[{ edge = "bottom", screens = "every", centre = ["workspaces"] }]' ;;
+		'screens panel off') edel settings reset layout.panels ;;
 		# Apps on their workspace (M5.2l): a rule for the test client's app id,
 		# the window it opens with that id, and the rule's reset.
 		'apps on 3') edel settings set 'layout.app_workspaces={ "edel-placed" = 3 }' ;;

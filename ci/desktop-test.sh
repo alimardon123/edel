@@ -3365,12 +3365,34 @@ case_outputs() {
 	wait_more 'edel-compositor: workspace 2 on Virtual-2$' "$shows" ||
 		fail "Super+2 on Virtual-2 did not show workspace 2 there"
 	outputs_show 1 2 || fail "with workspaces per screen on, Super+2 did not show workspace 2 on Virtual-2 alone: $outputs_now"
+	# Each screen's own switcher (M5.2o): a panel on every screen holding
+	# the switcher alone. Virtual-2's, 1024 wide, is the narrower one, so
+	# its places line gives the smaller x. Its switcher shows 1, then 2 as
+	# the wide pill, then 3: 25 + 20 + 5 + 32 + 5 is 87, and 3's middle 10
+	# past it. A click there shows 3 on Virtual-2 alone.
+	placed=$(count 'edel-shell-ui: panel places workspaces ')
+	guest 'screens panel'
+	wait_for 'DESKTOP-TEST: ran screens panel: 0' || fail "layout.panels with a panel on every screen did not run in the VM"
+	i=0
+	until [ "$(count 'edel-shell-ui: panel places workspaces ')" -ge $((placed + 2)) ]; do
+		sleep 0.2
+		i=$((i + 1))
+		[ "$i" -lt 100 ] || fail "two panels holding the switcher did not show: $(value layers)"
+	done
+	x2=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places workspaces ' | tail -n 2 | sed 's/.*workspaces \([0-9]*\)+.*/\1/' | sort -n | head -n 1)
+	shows=$(count 'edel-compositor: workspace 3 on Virtual-2$')
+	python3 ci/qmp.py click $((1280 + x2 + 97)) 748
+	wait_more 'edel-compositor: workspace 3 on Virtual-2$' "$shows" ||
+		fail "a click on Virtual-2's switcher's 3, at $((1280 + x2 + 97)),748, did not show workspace 3 there"
+	outputs_show 1 3 || fail "Virtual-2's switcher should have shown 3 there alone: $outputs_now"
+	guest 'screens panel off'
+	wait_for 'DESKTOP-TEST: ran screens panel off: 0' || fail "the layout.panels reset did not run in the VM"
 	guest 'screens apart off'
 	wait_for 'DESKTOP-TEST: ran screens apart off: 0' ||
 		fail "layout.workspaces_per_screen reset did not run in the VM"
 	wait_for 'edel-compositor: workspaces per screen off' ||
 		fail "the compositor did not log that workspaces per screen are off"
-	outputs_show 2 2 || fail "with workspaces per screen off, both screens should show workspace 2: $outputs_now"
+	outputs_show 3 3 || fail "with workspaces per screen off, both screens should show workspace 3, Virtual-2's: $outputs_now"
 	python3 ci/qmp.py move 640 400
 	shows=$(count 'edel-compositor: workspace 1$')
 	python3 ci/qmp.py key meta_l-1
