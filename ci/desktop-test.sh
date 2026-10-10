@@ -1498,7 +1498,8 @@ case_workspaces_dynamic() {
 	# brings Classic's four back.
 	cleared=$(count 'DESKTOP-TEST: windows 0$')
 	guest 'dynamic clear'
-	wait_more 'DESKTOP-TEST: windows 0$' "$cleared" || fail "the test windows did not close: $(value windows)"
+	# Run last, after respawn's new session, there may be none to close.
+	[ "$(value windows)" = 0 ] || wait_more 'DESKTOP-TEST: windows 0$' "$cleared" || fail "the test windows did not close: $(value windows)"
 	left=$(count 'edel-compositor: workspaces now 1 \(dynamic\)')
 	guest 'dynamic on'
 	wait_more 'edel-compositor: workspaces now 1 \(dynamic\)' "$left" || fail "layout.dynamic_workspaces did not leave one workspace"
