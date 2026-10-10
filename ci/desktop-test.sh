@@ -521,7 +521,7 @@ case_respawn() {
 	esac
 	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
 		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
-	guest 'greeter log'
+	guest 'greeter places'
 	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
 		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
 	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)

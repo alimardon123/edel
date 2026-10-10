@@ -3,7 +3,7 @@
 //! with its name under it in white, the others smaller at its sides with
 //! quieter names, and "Other" at the end, a disc with a plus, for typing a
 //! name. Plain data, layout and drawing, tested without a display; the
-//! greeter wires it up later. Only the chosen one and at most
+//! greeter (`greeter.rs`) chooses with the arrows and clicks. Only the chosen one and at most
 //! `MOST_EACH_SIDE` neighbours on each side are drawn, so a long list
 //! scrolls in as the choice moves. The disc and its colours are `lock`'s,
 //! one copy for the lock screen's person and for each person here.

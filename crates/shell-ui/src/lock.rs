@@ -750,18 +750,25 @@ fn paint_name_field(
 ) {
     let ink = tokens.backdrop_text;
     let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
-    // Where the person's name stands once known, the question.
-    centred(
-        pixmap,
-        text,
-        s,
-        w,
-        tr("Who is logging in?"),
-        NAME,
-        Face::SEMIBOLD,
-        (w / 2.0, at.name),
-        ink,
-    );
+    // With the machine's people in a row (M5.10c), Other stands chosen in
+    // it, named under its disc; without anyone to show, the question.
+    match view.people.as_ref().filter(|row| !row.people.is_empty()) {
+        Some(row) => {
+            let spots = crate::people::spots(row, w, at.avatar.1);
+            crate::people::paint(pixmap, row, &spots, tokens, text, s);
+        }
+        None => centred(
+            pixmap,
+            text,
+            s,
+            w,
+            tr("Who is logging in?"),
+            NAME,
+            Face::SEMIBOLD,
+            (w / 2.0, at.name),
+            ink,
+        ),
+    }
     let (fx, fy, fw, fh) = at.field.device(s);
     glass(pixmap, (fx, fy, fw, fh), fh / 2.0, s, tokens);
     outline(pixmap, (fx, fy, fw, fh), fh / 2.0, s, tokens.accent);

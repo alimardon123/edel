@@ -654,6 +654,11 @@ commands() {
 			;;
 		# What the greeter, its compositor and greetd said (M5.10b), for
 		# a login that does not finish.
+		# Where the login screen's parts lie (M5.10c): its last places line,
+		# which a long log would push out of the tail above.
+		'greeter places')
+			grep -a 'greeter places ' /tmp/greeter.log | tail -n 1 | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
+			;;
 		'greeter log')
 			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
 			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
