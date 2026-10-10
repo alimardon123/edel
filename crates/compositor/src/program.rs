@@ -98,8 +98,21 @@ fn watch(
 /// (M5.13a), with the session's Wayland socket and X11 display; a thread
 /// waits for it, so it leaves nothing behind when it exits.
 pub fn open(state: &Edel, name: &str) {
-    let mut command = Command::new(name);
-    command.env("WAYLAND_DISPLAY", &state.socket);
+    run(state, &[name.to_string()], name);
+}
+
+/// Starts `argv`, a program and its arguments, called `name` in what is
+/// logged, as [`open`] does: the overview's search starts apps this way
+/// (M5.2j-b3), in the person's home folder.
+pub fn run(state: &Edel, argv: &[String], name: &str) -> bool {
+    let Some((program, args)) = argv.split_first() else {
+        return false;
+    };
+    let mut command = Command::new(program);
+    command.args(args).env("WAYLAND_DISPLAY", &state.socket);
+    if let Some(home) = std::env::var_os("HOME") {
+        command.current_dir(home);
+    }
     match &state.x11 {
         Some(x11) => command.env("DISPLAY", format!(":{}", x11.number)),
         None => command.env_remove("DISPLAY"),
@@ -112,7 +125,11 @@ pub fn open(state: &Edel, name: &str) {
             if let Err(e) = waiter {
                 eprintln!("edel-compositor: waiting for {name} failed: {e}");
             }
+            true
         }
-        Err(e) => eprintln!("edel-compositor: {}", messages::app_not_started(name, e)),
+        Err(e) => {
+            eprintln!("edel-compositor: {}", messages::app_not_started(name, e));
+            false
+        }
     }
 }

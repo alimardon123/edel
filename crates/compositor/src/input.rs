@@ -53,8 +53,9 @@ enum Action {
     SwitcherDone(bool),
     /// A volume or brightness key, for shell-ui (M5.9c).
     Media(&'static str),
-    /// A key the overview keeps from the windows (M5.2j).
-    Nothing,
+    /// A key typed into the overview's search (M5.2j-b3): its keysym and
+    /// the character it types, if any.
+    Search(u32, Option<char>),
 }
 
 /// What is under the pointer.
@@ -142,11 +143,11 @@ impl Edel {
                             && !vts.contains(&sym)
                             && crate::shortcuts::media_key(sym).is_none()
                         {
-                            return FilterResult::Intercept(if sym == xkb::keysyms::KEY_Escape {
-                                Action::Shortcut(Act::Overview)
-                            } else {
-                                Action::Nothing
-                            });
+                            // Every other key goes to its search, Escape too,
+                            // which first empties what was typed.
+                            let typed =
+                                keysym.modified_sym().key_char().filter(|c| !c.is_control());
+                            return FilterResult::Intercept(Action::Search(sym, typed));
                         }
                         if !pressed {
                             FilterResult::Forward
@@ -178,7 +179,7 @@ impl Edel {
                     Action::Shortcut(act) => self.shortcut(act),
                     Action::SwitcherDone(take) => self.switcher_done(take),
                     Action::Media(name) => self.media_key(name),
-                    Action::Nothing => {}
+                    Action::Search(sym, typed) => self.overview_key(sym, typed),
                 }
             }
             InputEvent::PointerMotion { event } => {

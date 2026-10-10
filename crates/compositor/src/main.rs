@@ -19,6 +19,7 @@ mod extworkspace;
 mod fullscreen;
 mod glance;
 mod glance_look;
+mod glance_search;
 mod grabs;
 mod input;
 mod keyboard;

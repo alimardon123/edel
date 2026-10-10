@@ -1800,6 +1800,14 @@ case_app_workspaces() {
 	echo "PASS: workspaces.apps = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
 }
 
+# overview_fail WHY: fails the overview case with WHY, the compositor's
+# last overview lines and whether it is still running.
+overview_fail() {
+	guest 'compositor state'
+	wait_for 'DESKTOP-TEST: compositor_state ' || true
+	fail "$1; the compositor's last overview lines: $(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview' | tail -n 3 | tr '\n' '|'); $(value compositor_state)"
+}
+
 case_overview() {
 	# The overview (M5.2j-a, laid out anew in M5.2j-b): Super+W, or a click
 	# on the panel switcher's lit workspace, shows every workspace small in
@@ -1826,7 +1834,7 @@ case_overview() {
 	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
 	sleep 1
 	[ "$(value windows)" = "$before" ] || fail "the overview moved windows on a tiled workspace: $before, then $(value windows)"
 	python3 ci/qmp.py key meta_l-t
@@ -1931,11 +1939,36 @@ case_overview() {
 	wait_more 'edel-compositor: overview shown$' "$shown" || fail "the compositor did not show the overview the switcher asked for"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
+	# Typing in the overview searches (M5.2j-b3): foot and Return start
+	# foot and leave; Super+Q closes it again.
+	sleep 1
+	shown=$(count 'edel-compositor: overview shown$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" ||
+		overview_fail "Super+W did not show the overview for the search"
+	started=$(count 'edel-compositor: overview started foot$')
+	mapped=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py type 'foot'
+	wait_for 'edel-compositor: overview search foot: [0-9]+ windows, [1-9][0-9]* apps$' ||
+		fail "typing foot in the overview found no app"
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: overview started foot$' "$started" || fail "Return in the overview's search did not start foot"
+	wait_more 'edel-compositor: mapped window foot' "$mapped" || fail "foot did not open from the overview's search"
+	# As in the keyboard case, foot has its shell up before Super+Q.
+	sleep 2
+	unmapped=$(count 'edel-compositor: unmapped window foot')
+	python3 ci/qmp.py key meta_l-q
+	if ! wait_more 'edel-compositor: unmapped window foot' "$unmapped"; then
+		# Which window had the keyboard: the toplevels list stars it.
+		guest 'toplevels'
+		wait_for 'DESKTOP-TEST: toplevels ' || true
+		overview_fail "Super+Q did not close the foot the search started: windows $(value windows); toplevels, the focused starred: $(value toplevels)"
+	fi
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
 	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
-	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; frame 3 dragged onto frame 1 moved there and back; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it"
+	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; frame 3 dragged onto frame 1 moved there and back; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it; typing foot in the overview found it and Return started it"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
