@@ -2,3 +2,15 @@ format = 1
 summary = "Fonts: Inter for the interface, Noto for the rest and the terminal"
 why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks; its other scripts arrive in M5.12."
 packages = ["font-inter", "font-noto"]
+
+# What the image keeps of the fonts (M5.30b): Inter as its variable files
+# alone, which hold every weight (Inter.ttc, its static weights, is 12.6
+# MiB of the package's 14.3), and Noto's sans, mono and serif, without
+# Noto Serif Display, which nothing of ours asks for.
+[[keep]]
+under = "usr/share/fonts/inter"
+files = ["InterVariable.ttf", "InterVariable-Italic.ttf"]
+
+[[keep]]
+under = "usr/share/fonts/noto"
+files = ["NotoSans-*", "NotoSansMono-*", "NotoSerif-*"]
