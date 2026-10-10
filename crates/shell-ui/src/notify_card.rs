@@ -310,7 +310,14 @@ impl Shell {
     /// is, instead of the one showing, which stays in the list.
     fn show_banner(&mut self, n: &Notification) {
         self.hide_banner();
-        let (edge, scale) = self.panel_for("status");
+        let (status, scale) = self.panel_for("status");
+        let (machine, person) = settings_texts();
+        let position = edel::settings::chosen(
+            edel::settings::NOTIFICATION_POSITION,
+            machine.as_deref(),
+            person.as_deref(),
+        );
+        let (edge, across) = banner::place(position.as_deref(), status);
         let screen = self.screen_width();
         let (_, body, _, _) = notice::sizes(&self.tokens);
         let text = &mut self.text;
@@ -332,7 +339,13 @@ impl Shell {
             surface.set_anchor(side | Anchor::LEFT | Anchor::RIGHT);
             surface.set_margin(m, -(room as i32), m, -(room as i32));
         } else {
-            surface.set_anchor(side | Anchor::RIGHT);
+            // A banner keeps clear of every panel: the compositor places a
+            // layer with no exclusive zone of its own inside the others'.
+            surface.set_anchor(match across {
+                banner::Across::Left => side | Anchor::LEFT,
+                banner::Across::Middle => side,
+                banner::Across::Right => side | Anchor::RIGHT,
+            });
             surface.set_margin(m, m, m, m);
         }
         // A banner never takes the keyboard from what a person is typing in.

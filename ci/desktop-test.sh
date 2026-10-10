@@ -2347,7 +2347,35 @@ case_notify() {
 	wait_more 'edel-shell-ui: banner shown' "$shown" || fail "with do not disturb taken out again, the third notification showed no banner"
 	wait_more 'edel-shell-ui: banner hidden' "$hidden" 15 || fail "the banner did not go away by itself after its few seconds"
 	shot notify 1200 745 "$background" >/dev/null || fail "1200,745 is not the background after the banner went"
-	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself"
+	# Where banners appear (M5.9j): notifications.position = "top-right"
+	# puts the next banner in the screen's top right corner, "top-left" in
+	# its top left, and taking the key out brings it back by the status
+	# area, at the bottom right.
+	places=''
+	for where in top-right top-left default; do
+		guest "banners $where"
+		sleep 1
+		shown=$(count 'edel-shell-ui: banner shown')
+		hidden=$(count 'edel-shell-ui: banner hidden')
+		guest 'notify three'
+		wait_more 'edel-shell-ui: banner shown' "$shown" || fail "with notifications.position $where, a notification showed no banner"
+		i=0
+		until value layers | grep -q 'edel-notification@'; do
+			i=$((i + 1))
+			[ "$i" -lt 50 ] || fail "the state file lists no notification surface with notifications.position $where: $(value layers)"
+			sleep 0.2
+		done
+		set -- $(value layers | grep -o 'edel-notification@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-notification@//; s/[,x]/ /g')
+		right=$(($1 + $3)) bottom=$(($2 + $4))
+		case "$where" in
+		top-right) [ "$2" -le 40 ] && [ "$right" -ge 1240 ] ;;
+		top-left) [ "$2" -le 40 ] && [ "$1" -le 40 ] ;;
+		default) [ "$bottom" -ge 700 ] && [ "$right" -ge 1240 ] ;;
+		esac || fail "with notifications.position $where the banner lies at $1,$2 ${3}x$4: $(value layers)"
+		places="$places $where $1,$2"
+		wait_more 'edel-shell-ui: banner hidden' "$hidden" 15 || fail "the banner with notifications.position $where did not go away by itself"
+	done
+	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself; notifications.position put banners at$places"
 }
 
 case_osd() {

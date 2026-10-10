@@ -397,6 +397,17 @@ impl Files {
         .unwrap_or(false)
     }
 
+    /// `key`'s value as the desktop reads it, the person's file over the
+    /// machine's; none when neither sets it (`edel::settings::chosen`).
+    pub fn chosen(&self, key: &str) -> Option<String> {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        settings::chosen(
+            key,
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
+    }
+
     /// Where `key`'s value comes from: the person's file, the machine's,
     /// or neither (M5.6b).
     pub fn source(&self, key: &str) -> settings::Source {
@@ -665,6 +676,30 @@ mod tests {
             .unwrap();
         assert!(!read().contains("enabled"), "{}", read());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_banners_place_is_automatic_until_chosen_and_never_written_automatic() {
+        let dir = scratch("position");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let read = || std::fs::read_to_string(&person).unwrap_or_default();
+        let key = settings::NOTIFICATION_POSITION;
+        assert_eq!(files.chosen(key), None);
+        files.choose_over(key, "auto", Some("auto")).unwrap();
+        assert!(!read().contains("position"), "{}", read());
+        files.choose_over(key, "top-right", Some("auto")).unwrap();
+        assert!(read().contains("position = \"top-right\""), "{}", read());
+        assert_eq!(files.chosen(key).as_deref(), Some("top-right"));
+        // Back to automatic takes the line out again.
+        files.choose_over(key, "auto", Some("auto")).unwrap();
+        assert!(!read().contains("position"), "{}", read());
+        // A value the key does not take is refused as the command refuses it.
+        let e = files.set(key, Some("middle")).unwrap_err();
+        assert!(e.contains("notifications.position"), "{e}");
     }
 
     #[test]

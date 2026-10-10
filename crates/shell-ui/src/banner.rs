@@ -11,6 +11,7 @@
 //! shows, and gives it [`card`] as its one card.
 
 use edel::app_icons::Icons;
+use edel::presets::Edge;
 use edel::tokens::Tokens;
 use tiny_skia::Pixmap;
 
@@ -28,6 +29,30 @@ pub const WIDTH: u32 = 360;
 pub const COMPACT_BELOW: u32 = crate::quick::COMPACT_BELOW;
 /// The card's corner radius, logical pixels.
 pub const RADIUS: f32 = 22.0;
+
+/// Where across the screen a banner lies (M5.9j).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Across {
+    Left,
+    Middle,
+    Right,
+}
+
+/// Where a banner lies for `notifications.position`'s value `position`
+/// (absent or a value this release lacks is `auto`), the panel holding
+/// the status area along `status`: its edge, and where across it. `auto`
+/// is the status area's corner, which the built-in presets put on the
+/// right; `top` is the top edge's middle.
+pub fn place(position: Option<&str>, status: Edge) -> (Edge, Across) {
+    match position.unwrap_or("auto") {
+        "top-right" => (Edge::Top, Across::Right),
+        "top-left" => (Edge::Top, Across::Left),
+        "bottom-right" => (Edge::Bottom, Across::Right),
+        "bottom-left" => (Edge::Bottom, Across::Left),
+        "top" => (Edge::Top, Across::Middle),
+        _ => (status, Across::Right),
+    }
+}
 
 /// The card's width and whether it is a sheet, for a screen `screen`
 /// logical pixels wide (0 when not yet known: the desktop's card).
@@ -283,5 +308,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_banner_lies_where_the_key_says_and_by_the_status_area_without_it() {
+        use Across::*;
+        assert_eq!(place(None, Edge::Bottom), (Edge::Bottom, Right));
+        assert_eq!(place(Some("auto"), Edge::Top), (Edge::Top, Right));
+        assert_eq!(place(Some("top-left"), Edge::Bottom), (Edge::Top, Left));
+        assert_eq!(place(Some("top-right"), Edge::Bottom), (Edge::Top, Right));
+        assert_eq!(place(Some("bottom-left"), Edge::Top), (Edge::Bottom, Left));
+        assert_eq!(
+            place(Some("bottom-right"), Edge::Top),
+            (Edge::Bottom, Right)
+        );
+        assert_eq!(place(Some("top"), Edge::Bottom), (Edge::Top, Middle));
+        // A value this release lacks is auto.
+        assert_eq!(place(Some("middle"), Edge::Bottom), (Edge::Bottom, Right));
+        // The values placed here are the key's, no more and no fewer.
+        assert_eq!(
+            edel::settings::choices(edel::settings::NOTIFICATION_POSITION),
+            [
+                "auto",
+                "top-right",
+                "top-left",
+                "bottom-right",
+                "bottom-left",
+                "top"
+            ]
+        );
     }
 }
