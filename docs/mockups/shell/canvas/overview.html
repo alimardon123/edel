@@ -70,8 +70,8 @@ function strip(side,drag){let parts=[];for(let i=0;i<4;i++){if(drag&&i==1)parts.
 function win(x,y,w,h,app,col,hov){return `<div class="win" style="left:${x}px;top:${y}px"><div class="wrap"><div class="pic${hov?' hover':''}" style="width:${w}px;height:${h}px"><div class="tb"></div><div class="blk" style="left:10px;top:20px;width:${w*.35}px;height:${h*.45}px;background:${col};opacity:.55"></div><div class="ln" style="margin-left:${w*.42}px;margin-top:12px"></div><div class="ln" style="margin-left:${w*.42}px;width:${w*.3}px"></div></div>${hov?'<div class="close">✕</div>':''}</div><div class="name"><span class="ic" style="background:${col}"></span>${app}</div></div>`;}
 function screen(id,side,drag){
  const v=side=='left'||side=='right';
- const off={top:[0,0],bottom:[0,-70],left:[50,-50],right:[-50,-50]}[side];
- const sp={top:'top:104px;left:220px',bottom:'top:20px;left:220px',left:'top:20px;left:280px',right:'top:20px;left:160px'}[side];
+ const off={top:[0,14],bottom:[0,-70],left:[50,-50],right:[-50,-50]}[side];
+ const sp={top:'top:122px;left:220px',bottom:'top:20px;left:220px',left:'top:20px;left:280px',right:'top:20px;left:160px'}[side];
  const wins=win(70+off[0],150+off[1],230,150,'Firefox','#ff7139',0)+win(340+off[0],160+off[1],220,140,'Files','#e8a33d',!drag);
  document.getElementById(id).innerHTML=`<div class="wall"></div><div class="dim"></div>${strip(side,drag)}<div class="search" style="${sp}">⌕ Type to search</div>${wins}<div class="panel"></div>`;}
 screen('top','top',true);screen('bottom','bottom',false);screen('left','left',false);screen('right','right',false);
