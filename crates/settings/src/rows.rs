@@ -129,6 +129,11 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::DO_NOT_DISTURB,
         title: n_("Do not disturb"),
     },
+    // Where banners appear (M5.9j).
+    Row {
+        key: edel::settings::NOTIFICATION_POSITION,
+        title: n_("Where notifications appear"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",

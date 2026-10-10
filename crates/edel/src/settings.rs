@@ -386,6 +386,19 @@ pub const KEYS: &[Key] = &[
     later("addons.installed", Kind::Texts),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
+    // Where banners appear (M5.9j): by the status area, or a corner or the
+    // top's middle.
+    now(
+        "notifications.position",
+        Kind::OneOf(&[
+            "auto",
+            "top-right",
+            "top-left",
+            "bottom-right",
+            "bottom-left",
+            "top",
+        ]),
+    ),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -696,6 +709,10 @@ pub struct Notifications {
     /// lists what arrives; absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub do_not_disturb: Option<bool>,
+    /// Where banners appear: `auto` (by the status area), a corner, or
+    /// `top`; absent is `auto` (M5.9j).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<String>,
 }
 
 /// The Updates page.
@@ -909,6 +926,10 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.
 pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
+
+/// The key that says where banners appear (M5.9j), the one name shell-ui,
+/// Settings and `edel settings` share; its values are [`choices`]'.
+pub const NOTIFICATION_POSITION: &str = "notifications.position";
 
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.

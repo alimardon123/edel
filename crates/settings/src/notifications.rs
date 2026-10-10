@@ -1,11 +1,12 @@
-//! The Notifications page (roadmap M5.9b): one row, Do not disturb, the
-//! key `notifications.do_not_disturb`, which keeps banners away while the
-//! notifications still collect in the list the panel's clock opens. It is
-//! the same line of the person's settings file as quick settings' tile,
-//! the notification centre's switch and `edel settings set`, so each shows
+//! The Notifications page (roadmap M5.9b): Do not disturb, the key
+//! `notifications.do_not_disturb`, which keeps banners away while the
+//! notifications still collect in the list the panel's clock opens, and
+//! Where notifications appear, `notifications.position` (M5.9j). Each is
+//! the same line of the person's settings file as `edel settings set`
+//! (and, for the first, quick settings' tile and the centre's switch), so each shows
 //! what the others chose: the page follows the files while it is open.
-//! shell-ui reads the key at each notification, so a change applies to the
-//! next one. Nothing runs here but the file monitors.
+//! shell-ui reads the keys at each notification, so a change applies to
+//! the next one. Nothing runs here but the file monitors.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -14,21 +15,29 @@ use gtk::gio;
 use gtk::prelude::*;
 
 use edel::i18n::{n_, tr};
-use edel::settings::DO_NOT_DISTURB;
+use edel::settings::{DO_NOT_DISTURB, NOTIFICATION_POSITION};
 
 use crate::files::Files;
 use crate::{rows, widgets};
 
-const INTRO: &str = n_(
-    "Banners appear in the corner when an app has something to say, and the clock keeps them all.",
-);
+const INTRO: &str =
+    n_("Banners appear when an app has something to say, and the clock keeps them all.");
 
 /// What the row's line says under its title.
 const WHAT: &str = n_("Banners stay away; notifications still collect in the list the clock opens");
 
+/// What the place's row says under its title.
+const PLACE_WHAT: &str =
+    n_("Automatic puts them by the status area; a banner keeps clear of panels");
+
+/// The place that applies without the key.
+const AUTO: &str = "auto";
+
 struct Ui {
     switch: gtk::Switch,
     row: widgets::Row,
+    place: Rc<widgets::Choice>,
+    place_row: widgets::Row,
     problem: gtk::Label,
     /// Set while the page itself moves the switch, so that is no choice.
     quiet: Cell<bool>,
@@ -50,6 +59,22 @@ impl Ui {
         };
         self.row.subtitle.set_label(&line);
         self.row.reset.set_visible(rows::resettable(&source));
+        let values = rows::values(NOTIFICATION_POSITION);
+        let chosen = files.chosen(NOTIFICATION_POSITION);
+        let at = chosen
+            .as_deref()
+            .and_then(|v| values.iter().position(|w| *w == v))
+            .unwrap_or(0);
+        self.quiet.set(true);
+        self.place.set_selected(at);
+        self.quiet.set(false);
+        let source = files.source(NOTIFICATION_POSITION);
+        let line = match rows::note(&source, false) {
+            Some(note) => format!("{} · {note}", tr(PLACE_WHAT)),
+            None => tr(PLACE_WHAT).to_string(),
+        };
+        self.place_row.subtitle.set_label(&line);
+        self.place_row.reset.set_visible(rows::resettable(&source));
     }
 
     /// Shows why a change was not written, or takes an old message away.
@@ -73,6 +98,9 @@ pub fn page() -> gtk::Widget {
         rows::title(DO_NOT_DISTURB),
         &switch.clone().upcast::<gtk::Widget>(),
     );
+    let values = rows::values(NOTIFICATION_POSITION);
+    let place = widgets::Choice::new(values.iter().map(|v| rows::label(v)).collect());
+    let place_row = widgets::row(&group, rows::title(NOTIFICATION_POSITION), &place.widget());
     let files = Files::here();
     let monitors = std::iter::once(&files.machine)
         .chain(files.person.as_ref())
@@ -85,6 +113,8 @@ pub fn page() -> gtk::Widget {
     let ui = Rc::new(Ui {
         switch,
         row,
+        place,
+        place_row,
         problem,
         quiet: Cell::new(false),
         monitors,
@@ -122,6 +152,32 @@ pub fn page() -> gtk::Widget {
             .set_text(&rows::command(&[(DO_NOT_DISTURB, value)]));
         widgets::copied(button);
     });
+    let weak = Rc::downgrade(&ui);
+    ui.place.connect_changed(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        if !ui.quiet.get() {
+            // Automatic is what applies without the key, so it is taken out.
+            let value = rows::values(NOTIFICATION_POSITION)[ui.place.selected()];
+            ui.report(Files::here().choose_over(NOTIFICATION_POSITION, value, Some(AUTO)));
+            ui.update();
+        }
+    });
+    let weak = Rc::downgrade(&ui);
+    ui.place_row.reset.connect_clicked(move |_| {
+        if let Some(ui) = weak.upgrade() {
+            ui.report(Files::here().set(NOTIFICATION_POSITION, None));
+            ui.update();
+        }
+    });
+    ui.place_row.copy.connect_clicked(move |button| {
+        let value = Files::here()
+            .chosen(NOTIFICATION_POSITION)
+            .unwrap_or_else(|| AUTO.to_string());
+        button
+            .clipboard()
+            .set_text(&rows::command(&[(NOTIFICATION_POSITION, value)]));
+        widgets::copied(button);
+    });
     // The page's state lives as long as the page does.
     let keep = ui.clone();
     page.connect_destroy(move |_| {
@@ -141,6 +197,16 @@ mod tests {
             rows::command(&[(DO_NOT_DISTURB, "true".into())]),
             "edel settings set notifications.do_not_disturb=true"
         );
-        assert_eq!(rows::on_page("notifications").count(), 1);
+        assert_eq!(
+            rows::title(NOTIFICATION_POSITION),
+            "Where notifications appear"
+        );
+        assert_eq!(
+            rows::command(&[(NOTIFICATION_POSITION, "top-right".into())]),
+            "edel settings set notifications.position=top-right"
+        );
+        assert_eq!(rows::label("top-right"), "Top right");
+        assert_eq!(rows::label(AUTO), "Automatic");
+        assert_eq!(rows::on_page("notifications").count(), 2);
     }
 }

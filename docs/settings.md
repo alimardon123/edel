@@ -128,6 +128,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | Key | Value | From |
 |---|---|---|
 | `notifications.do_not_disturb` | `true` or `false`: whether banners stay away; missing is `false`. Notifications still arrive and are listed in the notification centre, which the clock opens, and a critical one still shows its banner. shell-ui reads the file at each notification, so a change by `edel settings set` applies to the next one. Settings' Notifications page has it as the Do not disturb row, quick settings as its tile, and the centre as its switch row. `edel settings set notifications.do_not_disturb=maybe` is refused with `expected true or false` | M5.9b |
+| `notifications.position` | Where banners appear: `auto`, by the status area wherever the panel puts it, the default; `top-right`, `top-left`, `bottom-right` or `bottom-left`, that corner; or `top`, the middle of the top edge. A banner keeps clear of every panel. shell-ui reads it at each banner, so `edel settings set notifications.position=top-right` applies to the next one. Settings' Notifications page has it as the Where notifications appear row. `edel settings set notifications.position=middle` is refused with the values it takes | M5.9j |
 
 ## Region: `[region]`
 

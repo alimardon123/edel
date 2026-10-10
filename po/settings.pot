@@ -485,10 +485,13 @@ msgstr ""
 msgid "Nothing is connected, so there are no addresses to show."
 msgstr ""
 
-msgid "Banners appear in the corner when an app has something to say, and the clock keeps them all."
+msgid "Banners appear when an app has something to say, and the clock keeps them all."
 msgstr ""
 
 msgid "Banners stay away; notifications still collect in the list the clock opens"
+msgstr ""
+
+msgid "Automatic puts them by the status area; a banner keeps clear of panels"
 msgstr ""
 
 msgid "The panels as they apply now"
@@ -663,6 +666,9 @@ msgid "On"
 msgstr ""
 
 msgid "Do not disturb"
+msgstr ""
+
+msgid "Where notifications appear"
 msgstr ""
 
 msgid "Channel"
