@@ -638,8 +638,8 @@ commands() {
 		# What the greeter, its compositor and greetd said (M5.10b), for
 		# a login that does not finish.
 		'greeter log')
-			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /'
-			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /'
+			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
+			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
 			;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd
