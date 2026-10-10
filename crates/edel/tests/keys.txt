@@ -64,3 +64,6 @@ layout.dynamic_workspaces
 layout.workspace_names
 layout.workspaces_per_screen
 layout.app_workspaces
+layout.workspaces_look
+layout.workspaces_shown
+layout.workspaces_ends

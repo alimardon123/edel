@@ -510,6 +510,13 @@ impl Shell {
         // apps.pinned (M5.31d): the apps widget follows the files at once.
         let pins = edel::panel_edit::pins_applying(machine.as_deref(), person.as_deref());
         self.set_pins(pins);
+        // The workspace switcher's look, count and ends (M5.2m): drawn
+        // again when one changes, logged by `set_switcher`.
+        let switcher =
+            crate::widgets::workspaces::Settings::read(machine.as_deref(), person.as_deref());
+        if crate::set_switcher(&mut self.live, switcher) {
+            self.draw_all();
+        }
     }
 
     /// The tray's split changed: the number behind the arrow is logged when

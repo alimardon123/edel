@@ -298,6 +298,20 @@ pub const KEYS: &[Key] = &[
     now("layout.workspaces_per_screen", Kind::Flag),
     // Apps that always open on their own workspace, by app id (M5.2l).
     now("layout.app_workspaces", Kind::AppWorkspaces),
+    // The switcher's look, how many numbers show at once and what the
+    // strip's ends look like where more workspaces lie (M5.2m).
+    now(
+        "layout.workspaces_look",
+        Kind::OneOf(&["numbers", "button"]),
+    ),
+    now(
+        "layout.workspaces_shown",
+        Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
+    ),
+    now(
+        "layout.workspaces_ends",
+        Kind::OneOf(&["fade", "arrows", "counts"]),
+    ),
     now("layout.workspace_names", Kind::Texts),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
@@ -521,6 +535,18 @@ pub struct Layout {
     /// the workspace in use.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_workspaces: Option<BTreeMap<String, i64>>,
+    /// The switcher's look, `numbers` or `button` (M5.2m); absent is
+    /// `numbers`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces_look: Option<String>,
+    /// How many workspaces the switcher shows at once, 1 to the preset's
+    /// most (M5.2m); absent is 3.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces_shown: Option<u32>,
+    /// What the switcher's strip shows where more workspaces lie: `fade`,
+    /// `arrows` or `counts` (M5.2m); absent is `arrows`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces_ends: Option<String>,
     /// The workspaces' names, the first workspace's first, an empty text
     /// meaning no name (M5.2i).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -845,6 +871,12 @@ pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.
 pub const TRAY_IN_PANEL: &str = "layout.tray_in_panel";
+
+/// The keys the workspace switcher's look, shown count and ends are kept
+/// under (M5.2m), the one names shell-ui and `edel settings` share.
+pub const WORKSPACES_LOOK: &str = "layout.workspaces_look";
+pub const WORKSPACES_SHOWN: &str = "layout.workspaces_shown";
+pub const WORKSPACES_ENDS: &str = "layout.workspaces_ends";
 
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An
@@ -2219,6 +2251,44 @@ font_size = 11
             Some(vec!["Mail".to_string(), String::new()])
         );
         assert!(check(&names).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_workspace_switcher_keys_are_checked_and_written() {
+        let base = "format = 1\n";
+        assert_eq!(
+            set(base, WORKSPACES_LOOK, "button").unwrap(),
+            "format = 1\n\n[layout]\nworkspaces_look = \"button\"\n"
+        );
+        assert_eq!(
+            set(base, WORKSPACES_SHOWN, "5").unwrap(),
+            "format = 1\n\n[layout]\nworkspaces_shown = 5\n"
+        );
+        assert_eq!(
+            set(base, WORKSPACES_ENDS, "counts").unwrap(),
+            "format = 1\n\n[layout]\nworkspaces_ends = \"counts\"\n"
+        );
+        let refused = set(base, WORKSPACES_ENDS, "dots").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.workspaces_ends: unknown value \"dots\"; use fade, arrows or counts"
+        );
+        let refused = set(base, WORKSPACES_LOOK, "dots").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.workspaces_look: unknown value \"dots\"; use numbers or button"
+        );
+        let refused = set(base, WORKSPACES_SHOWN, "10").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.workspaces_shown: expected a whole number from 1 to 9, not 10"
+        );
+        let written = set(base, WORKSPACES_SHOWN, "5").unwrap();
+        assert_eq!(
+            read(&written).unwrap().file.layout.workspaces_shown,
+            Some(5)
+        );
+        assert!(check(&written).unwrap().is_empty());
     }
 
     #[test]
