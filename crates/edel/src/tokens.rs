@@ -728,7 +728,7 @@ mod tests {
         );
         assert_eq!((tokens.shadow_blur, tokens.shadow_offset), (24, 6));
         assert!(tokens.shadow.a > 0.0 && tokens.shadow.a < 1.0);
-        assert_eq!(tokens.font, "Inter");
+        assert_eq!(tokens.font, "Inter Variable");
         let (other, notes) = Tokens::read("[font]\ninterface = \"Noto Sans\"\n[size]\nrow = 40");
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!((other.font.as_str(), other.row), ("Noto Sans", 40));
