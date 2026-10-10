@@ -155,6 +155,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |
 | `apps.installed` | list of Flathub app ids, installed per admin user | M6.1 |
+| `apps.pinned` | the apps the apps widget pins, in order, each an app's id or a role (`files`, `browser`, `mail`, `editor`, `terminal`, `music` or `settings`), those not installed left out; absent is the layout preset's. Dragging an app's icon on the panel pins it, moves it along or takes it off (dragged off the panel); Settings' Layout page lists the apps under Panels, and `edel settings set apps.pinned='["settings", "terminal"]'` sets the same list | M5.31d |
 | `addons.installed` | list of add-on names (ADR-007) | M7.2b |
 
 ## System: `[system]`

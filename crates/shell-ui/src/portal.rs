@@ -10,9 +10,13 @@
 
 use std::collections::HashMap;
 
+use edel::panel_edit::{SHELL_BUS, SHELL_PATH};
 use edel::tokens::{Colour, Tokens};
+use smithay_client_toolkit::reexports::calloop::channel;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
+
+use crate::shell_bus::ShellBus;
 
 /// The name xdg-desktop-portal finds the backend by, from
 /// `/usr/share/xdg-desktop-portal/portals/edel.portal`.
@@ -126,13 +130,18 @@ impl Backend {
 /// It then says each setting changed, as shell-ui starts again when the
 /// colour scheme does (M5.5c), so apps already open follow at once; an app
 /// told a value it has does nothing.
-pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
+///
+/// The panel editor is served on the same connection (M5.31d, `shell_bus.rs`):
+/// its object at `SHELL_PATH` is built in, and its name is requested once
+/// the portal is up, so a name another program holds leaves the portal served.
+pub fn serve(tokens: &Tokens, edits: channel::Sender<()>) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
         settings: settings(tokens),
     };
     let built = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
+        .and_then(|b| b.serve_at(SHELL_PATH, ShellBus::new(edits)))
         .and_then(|b| b.build());
     let connection = match built {
         Ok(connection) => connection,
@@ -141,6 +150,9 @@ pub fn serve(tokens: &Tokens) -> Option<zbus::blocking::Connection> {
             return None;
         }
     };
+    if let Err(e) = connection.request_name(SHELL_BUS) {
+        eprintln!("edel-shell-ui: {}", crate::messages::edit_bus_not_served(e));
+    }
     eprintln!("edel-shell-ui: serving the settings portal as {NAME}");
     let said = connection
         .object_server()

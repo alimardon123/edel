@@ -73,6 +73,22 @@ pub fn page(title: &str, intro: &str) -> (gtk::Widget, gtk::Box, gtk::Label) {
 /// keyboard where the person had it.
 pub const ASKED: &str = "edel-asked";
 
+thread_local! {
+    /// The row `--page` named by its key or title (`--page layout.panels`),
+    /// if it named one: its control takes the keyboard, as [`ASKED`] says.
+    static ASKED_ROW: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+/// Sets the row `--page` named, or none, when the app starts.
+pub fn set_asked_row(key: Option<&'static str>) {
+    ASKED_ROW.with(|row| row.set(key));
+}
+
+/// The row `--page` named, if it named one (M5.31d).
+pub fn asked_row() -> Option<&'static str> {
+    ASKED_ROW.with(std::cell::Cell::get)
+}
+
 /// Gives the keyboard to `control` if `page` was asked for by name, once.
 pub fn take_asked(page: &gtk::Widget, control: &impl IsA<gtk::Widget>) {
     if page.has_css_class(ASKED) {

@@ -452,6 +452,30 @@ msgstr ""
 msgid "Banners stay away; notifications still collect in the list the clock opens"
 msgstr ""
 
+msgid "The panels as they apply now"
+msgstr ""
+
+msgid "Edit panels"
+msgstr ""
+
+msgid "Drag widgets, change a panel's style and size"
+msgstr ""
+
+msgid "Or right-click a panel"
+msgstr ""
+
+msgid "Drag an app's icon on the panel to pin, move or unpin it"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "the call to the desktop stopped"
+msgstr ""
+
+msgid "The desktop's panels are not running, so they cannot be edited now:\n{why}"
+msgstr ""
+
 msgid "How much battery is left, and what the lid and the power button do."
 msgstr ""
 
@@ -539,6 +563,12 @@ msgstr ""
 msgid "Tiling style"
 msgstr ""
 
+msgid "Panels"
+msgstr ""
+
+msgid "Pinned apps"
+msgstr ""
+
 msgid "Window buttons"
 msgstr ""
 
@@ -570,6 +600,9 @@ msgid "Do not disturb"
 msgstr ""
 
 msgid "Channel"
+msgstr ""
+
+msgid "Which panels and docks show, where, and what they hold"
 msgstr ""
 
 msgid "Always"

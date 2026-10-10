@@ -1102,6 +1102,68 @@ case_power() {
 	echo "PASS: upower -e exits 0 with upowerd running ($(value power_list)), Settings drew its Power page (\"Plugged in\") and its Users page (\"ci\"), and at Compact width, 366 px, maximized, both fit with the sidebar folded away (upowerd, KiB: $(value power_rss_kib))"
 }
 
+case_settings_panels() {
+	# Settings' Panels group (M5.31d): ci's file holds one panel with only
+	# the clock, which shell-ui draws at once (`panels now bottom (1
+	# widgets)`). Settings opens on the Layout page asked for by name, its
+	# log says where Edit panels and Reset lie in the window, and Edit panels
+	# asks shell-ui over the bus for its editor, which opens (`panel editor
+	# asked for over the bus`, `panel editor shown`); Escape closes it without
+	# writing (`panel editor hidden`). Reset takes layout.panels out of ci's
+	# file and the bar is Classic's again (`panels now bottom (10 widgets)`).
+	one=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
+	guest 'settings panels line'
+	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$one" ||
+		fail "shell-ui did not draw the one panel ci's file asks for: $(value layers)"
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings panels'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	# The places line comes from Settings' own stderr, read by the service.
+	edit_at=none reset_at=none
+	i=0
+	while [ "$edit_at" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where its Panels group lies: $(value settings_panels_log)"
+		guest 'settings panels log'
+		text=$(value settings_panels_log)
+		edit_at=$(echo "$text" | sed -n 's/.*panels group places edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		reset_at=$(echo "$text" | sed -n 's/.*, reset \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		[ -n "$edit_at" ] || edit_at=none
+		[ "$edit_at" = none ] && sleep 1
+	done
+	[ -n "$reset_at" ] || fail "Reset is not on the Panels group, so ci's own line is not there: $text"
+	set -- $edit_at
+	ex=$1 ey=$2 ew=$3 eh=$4
+	set -- $reset_at
+	rx=$1 ry=$2 rw=$3 rh=$4
+	asked=$(count 'edel-shell-ui: panel editor asked for over the bus')
+	shown=$(count 'edel-shell-ui: panel editor shown')
+	python3 ci/qmp.py click $((x + ex + ew / 2)) $((y + ey + eh / 2))
+	wait_more 'edel-shell-ui: panel editor asked for over the bus' "$asked" ||
+		fail "Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)) did not ask shell-ui for its editor: $(value settings_panels_log)"
+	wait_more 'edel-shell-ui: panel editor shown' "$shown" || fail "shell-ui did not open its panel editor: $(value layers)"
+	hidden=$(count 'edel-shell-ui: panel editor hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: panel editor hidden' "$hidden" || fail "Escape did not close the panel editor"
+	# Reset: ci's line goes, and the desktop's panels are Classic's again.
+	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	python3 ci/qmp.py click $((x + rx + rw / 2)) $((y + ry + rh / 2))
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$ten" ||
+		fail "Reset did not bring the panels back: $(value layers)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'panels = ' &&
+		fail "Reset left layout.panels in ci's settings file: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: ci's layout.panels drew one bottom panel at once, Settings opened on its Layout page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
@@ -1987,6 +2049,72 @@ case_dock() {
 		echo "Mac-like (M5.4d): preset-mac-like.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	echo "PASS: Mac-like put a bar along the top, a dock $((w + 16)) px wide centred at $x,732 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
+}
+
+case_pins() {
+	# The apps widget's pins (M5.31d): ci's file holds one dock along the
+	# bottom with the apps widget and apps.pinned = ["terminal", "settings"],
+	# which shell-ui follows at once: "pinned apps terminal, settings", and
+	# the dock's places line apps 8+W, whose two first cells are foot and
+	# Settings, 52 px each (the dock's height less 8) and 4 px in from the
+	# apps' 8 px start, so cell k's middle lies at X + 38 + 52 k, X being the
+	# dock's left edge in the state file's edel-dock layer. The dock's middle
+	# row is Y + H / 2. Dragging Settings' middle onto foot's left quarter
+	# pins it first: "pinned settings at 0", "pinned apps settings, terminal",
+	# and ci's file holds apps.pinned = ["settings", "terminal"]. Dragged 150
+	# px up, off the dock, Settings is unpinned: "unpinned settings", "pinned
+	# apps terminal", and the file holds apps.pinned = ["terminal"]. Then the
+	# case's two lines come out of the file, and Classic's panel is back.
+	docks=$(count 'edel-shell-ui: panel places apps 8\+')
+	pins=$(count 'edel-shell-ui: pinned apps terminal, settings$')
+	guest 'pins line'
+	wait_more 'edel-shell-ui: pinned apps terminal, settings$' "$pins" ||
+		fail "apps.pinned = [\"terminal\", \"settings\"] did not reach shell-ui"
+	wait_more 'edel-shell-ui: panel places apps 8\+' "$docks" || fail "the dock did not hold the apps widget"
+	i=0
+	until value layers | grep -qE 'edel-dock@[0-9]+,[0-9]+,[0-9]+x[0-9]+'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no dock: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-dock@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-dock@//; s/[,x]/ /g')
+	dx=$1 dy=$2 dh=$4
+	y=$((dy + dh / 2))
+	first=$((dx + 38)) second=$((dx + 38 + 52)) quarter=$((dx + 8 + 4 + 13))
+	landed=$(count 'edel-shell-ui: pinned settings at 0$')
+	pinned=$(count 'edel-shell-ui: pinned apps settings, terminal$')
+	python3 ci/qmp.py drag "$second" "$y" "$quarter" "$y"
+	wait_more 'edel-shell-ui: pinned settings at 0$' "$landed" ||
+		fail "dragging Settings' cell at $second,$y onto foot's left quarter at $quarter,$y did not pin it first"
+	wait_more 'edel-shell-ui: pinned apps settings, terminal$' "$pinned" || fail "the apps widget does not show settings, terminal after the drag"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["settings", "terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
+	# Off the dock by 150 px: the first cell is Settings now.
+	unpinned=$(count 'edel-shell-ui: unpinned settings$')
+	back=$(count 'edel-shell-ui: pinned apps terminal$')
+	python3 ci/qmp.py drag "$first" "$y" "$first" $((y - 150))
+	wait_more 'edel-shell-ui: unpinned settings$' "$unpinned" ||
+		fail "dragging Settings 150 px up, off the dock, did not unpin it"
+	wait_more 'edel-shell-ui: pinned apps terminal$' "$back" || fail "the apps widget does not show terminal alone after the unpin"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"terminal\"]: $(value settings_file)"
+	# Back as the case found it: both lines out, and Classic's panel again.
+	classic=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	guest 'pins reset'
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic" ||
+		fail "taking the case's lines out did not bring Classic's panel back"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -qE 'pinned|panels' &&
+		fail "ci's settings file still holds the pins or the dock: $(value settings_file)"
+	echo "PASS: apps.pinned = [\"terminal\", \"settings\"] put two pins on the dock's apps widget at once (\"pinned apps terminal, settings\"); dragging Settings' cell onto foot's left quarter pinned it first and wrote apps.pinned = [\"settings\", \"terminal\"]; dragging it 150 px up unpinned it and wrote apps.pinned = [\"terminal\"]; taking the case's lines out brought Classic's panel back"
 }
 
 case_panels() {
@@ -3201,7 +3329,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

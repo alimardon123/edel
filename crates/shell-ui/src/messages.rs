@@ -36,6 +36,14 @@ pub fn portal_not_served(why: impl Display) -> String {
     )
 }
 
+/// The panel editor cannot be asked for over the session bus: Settings'
+/// Edit panels does not open it, the panel's right-click menu still does.
+pub fn edit_bus_not_served(why: impl Display) -> String {
+    format!(
+        "could not serve the panel editor on the session bus: {why}; Settings' Edit panels does not open it, but a panel's right-click menu does"
+    )
+}
+
 /// The portal cannot tell apps its settings.
 pub fn portal_not_said(why: impl Display) -> String {
     format!(
@@ -120,6 +128,16 @@ pub fn tray_not_kept(why: impl Display) -> String {
 
 /// There is no home folder to keep the tray's apps in the panel in.
 pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set layout.tray_in_panel='[\"APP\"]' instead, naming the apps by their tray Id";
+
+/// The apps pinned to the apps widget cannot be written down (M5.31d).
+pub fn pins_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the pinned apps: {why}; the next change to the settings puts the file's list back"
+    )
+}
+
+/// There is no home folder to keep the pinned apps in (M5.31d).
+pub const PINS_NO_HOME: &str = "no home folder to keep the pinned apps in; run edel settings set apps.pinned='[\"APP\"]' instead, naming the apps by their id or role";
 
 /// The panels the editor made cannot be written down.
 pub fn panels_not_kept(why: impl Display) -> String {
@@ -240,6 +258,14 @@ mod tests {
     }
 
     #[test]
+    fn the_panel_editor_says_what_settings_loses() {
+        assert!(
+            edit_bus_not_served("x")
+                .starts_with("could not serve the panel editor on the session bus: x;")
+        );
+    }
+
+    #[test]
     fn the_tray_says_what_apps_lose() {
         assert_eq!(
             tray_not_served("name already taken"),
@@ -291,6 +317,15 @@ mod tests {
     }
 
     #[test]
+    fn pinned_apps_that_are_not_kept_say_what_happens_next() {
+        assert_eq!(
+            pins_not_kept("Permission denied (os error 13)"),
+            "could not keep the pinned apps: Permission denied (os error 13); the next change to the settings puts the file's list back"
+        );
+        assert!(PINS_NO_HOME.contains("edel settings set apps.pinned="));
+    }
+
+    #[test]
     fn a_style_that_is_not_kept_says_the_command_that_works() {
         assert_eq!(
             style_no_home("split"),
@@ -327,6 +362,7 @@ mod tests {
             clock_not_started("x"),
             panel_not_drawn("x"),
             portal_not_said("x"),
+            edit_bus_not_served("x"),
             tray_not_served("x"),
             tray_not_said("x"),
             tray_bad_item("x"),
@@ -344,6 +380,8 @@ mod tests {
             quick_not_done("a", "x"),
             dark_style_not_kept("x"),
             DARK_STYLE_NO_HOME.to_string(),
+            pins_not_kept("x"),
+            PINS_NO_HOME.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

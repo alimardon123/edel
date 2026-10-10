@@ -16,6 +16,7 @@
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
 mod a11y;
+mod apps_drag;
 mod banner;
 mod calendar;
 mod centre;
@@ -37,6 +38,7 @@ mod popup;
 mod portal;
 mod quick;
 mod quick_card;
+mod shell_bus;
 mod status;
 mod styles;
 mod switcher;
@@ -160,9 +162,13 @@ struct Shell {
     /// The panels the settings files ask for as last applied (M5.31b):
     /// `panels_changed` compares with them.
     panel_specs: Vec<presets::Panel>,
-    /// The preset's pinned apps (M5.4c), kept so panels made later can
-    /// read the apps they show (`read_apps`).
+    /// The apps the apps widget pins, as the list names them (M5.4c, M5.31d:
+    /// `apps.pinned` over the preset's), and each shown pin's index in it,
+    /// kept so panels made later can read the apps they show (`read_apps`).
     pins: Vec<String>,
+    pin_slots: Vec<usize>,
+    /// A press on an app's cell that may become a drag (M5.31d).
+    app_press: Option<apps_drag::AppPress>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
@@ -322,21 +328,21 @@ fn run() -> Result<()> {
             &[],
         ));
     }
+    // The apps a panel's apps widget pins (M5.31d: `apps.pinned`, else the
+    // preset's), logged as the list names them.
+    let (machine, person) = settings_texts();
+    let pins = edel::panel_edit::pins_applying(machine.as_deref(), person.as_deref());
+    apps_drag::log_pins(&pins);
     // The apps a panel's apps widget shows, and whose icons the window
     // list shows, read once (M5.4c); none read when no panel holds either.
     let mut live = Live::default();
+    let mut pin_slots = Vec::new();
     if panels
         .iter()
         .any(|p| p.row.all().any(|w| w.name == "apps" || w.name == "windows"))
     {
         let installed = apps::read_all(&apps::dirs());
-        live.pinned = preset
-            .apps
-            .pinned
-            .iter()
-            .filter_map(|pin| apps::pinned(&installed, pin))
-            .map(widgets::Pin::from)
-            .collect();
+        (live.pinned, pin_slots) = apps_drag::resolve_pins(&pins, &installed);
         live.installed = installed.iter().map(widgets::Pin::from).collect();
     }
     let pool = SlotPool::new(1280 * (tokens.panel_height + strip) as usize * 4, &shm)
@@ -347,6 +353,7 @@ fn run() -> Result<()> {
     let status_wanted = panels
         .iter()
         .any(|p| p.row.all().any(|w| w.name == "status"));
+    let (edits, asks) = channel::channel::<()>();
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -363,7 +370,9 @@ fn run() -> Result<()> {
         spent: Vec::new(),
         panels,
         panel_specs: preset.panels.clone(),
-        pins: preset.apps.pinned.clone(),
+        pins,
+        pin_slots,
+        app_press: None,
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
@@ -396,7 +405,7 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens),
+        _portal: portal::serve(&tokens, edits),
         player_tx: None,
         tokens,
         fillets: fillets(),
@@ -439,6 +448,19 @@ fn run() -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
+    }
+    // Settings asks for the panel editor over the session bus (M5.31d); the
+    // calls reach the loop over a channel as the notifications' do.
+    if shell._portal.is_some() {
+        event_loop
+            .handle()
+            .insert_source(asks, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(()) = event {
+                    eprintln!("edel-shell-ui: panel editor asked for over the bus");
+                    shell.open_editor();
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the panel editor's bus: {e}"))?;
     }
     // shell-ui's own notices (M5.9e): a fallback record shown once for each
     // person, and the update check on a timer, from a person's session only.
@@ -964,6 +986,7 @@ impl Shell {
     /// either way.
     pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
         let features = edel::places::found_shared(edel::features::DIR);
+        self.app_press = None;
         let same_shape = wanted.len() == self.panel_specs.len()
             && self.panel_specs.iter().zip(&wanted).all(|(old, new)| {
                 old.edge == new.edge
@@ -999,6 +1022,7 @@ impl Shell {
         let features = edel::places::found_shared(edel::features::DIR);
         self.close_popups();
         self.tray_press = None;
+        self.app_press = None;
         for panel in std::mem::take(&mut self.panels) {
             // The layer surface's role goes first, then its surface.
             let surface = panel.surface.wl_surface().clone();
@@ -1066,12 +1090,7 @@ impl Shell {
             return;
         }
         let installed = apps::read_all(&apps::dirs());
-        self.live.pinned = self
-            .pins
-            .iter()
-            .filter_map(|pin| apps::pinned(&installed, pin))
-            .map(widgets::Pin::from)
-            .collect();
+        (self.live.pinned, self.pin_slots) = apps_drag::resolve_pins(&self.pins, &installed);
         self.live.installed = installed.iter().map(widgets::Pin::from).collect();
         self.draw_all();
     }
@@ -2073,14 +2092,21 @@ impl PointerHandler for Shell {
                 continue;
             }
             let x = event.position.0 as f32;
+            let y = event.position.1 as f32;
             match &event.kind {
                 // The tray's tooltip waits for a rest on its arrow (M5.9h).
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                     self.tooltip_hover(i, x);
+                    self.app_moved(i, x, y);
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.hide_tooltip();
                     self.close_panel_menu();
+                    // A press on an app's cell waits for the release, so the
+                    // app can be dragged (M5.31d).
+                    if self.press_app(i, x, y) {
+                        continue;
+                    }
                     // A kept tray icon's click waits for the release, so
                     // the icon can be dragged (M5.9g).
                     match self.action_at(i, x, Input::Click) {
@@ -2104,12 +2130,13 @@ impl PointerHandler for Shell {
                     }
                 }
                 PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
-                    let y = event.position.1 as f32;
+                    self.app_release(i, x, y);
                     self.tray_panel_release(i, x, y);
                 }
                 PointerEventKind::Leave { .. } => {
                     self.scrolled.reset();
                     self.tray_press = None;
+                    self.app_press = None;
                     self.hide_tooltip();
                 }
                 PointerEventKind::Axis {

@@ -48,7 +48,7 @@ pub struct TrayCard {
 }
 
 /// Whether a press from `from` to `to` moved more than [`DRAG`] px.
-fn moved(from: (f32, f32), to: (f32, f32)) -> bool {
+pub fn moved(from: (f32, f32), to: (f32, f32)) -> bool {
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     dx * dx + dy * dy > DRAG * DRAG
 }
@@ -445,15 +445,7 @@ impl Shell {
             self.tray_call(&id, false, px);
             return;
         }
-        let Some(panel) = self.panels.get(i) else {
-            return;
-        };
-        let height = paint::height(panel.style, panel.size, &self.tokens) as f32;
-        let off = match panel.edge {
-            Edge::Bottom => y < -height,
-            Edge::Top => y > 2.0 * height,
-        };
-        if !off {
+        if !self.off_panel(i, y) {
             return;
         }
         let app = self
@@ -515,6 +507,9 @@ impl Shell {
         if wanted != self.panel_specs {
             self.panels_changed(wanted);
         }
+        // apps.pinned (M5.31d): the apps widget follows the files at once.
+        let pins = edel::panel_edit::pins_applying(machine.as_deref(), person.as_deref());
+        self.set_pins(pins);
     }
 
     /// The tray's split changed: the number behind the arrow is logged when

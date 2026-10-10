@@ -622,6 +622,10 @@ impl Shell {
     /// What a drag shows on panel `i`: the widget lifted off it, and the
     /// caret where a moving drag would land there.
     pub fn drag_marks(&self, i: usize) -> (Option<&'static str>, Option<f32>) {
+        // An app dragged in the apps widget shows its landing too (M5.31d).
+        if let Some(caret) = self.app_caret(i) {
+            return (None, Some(caret));
+        }
         let Some(drag) = self
             .editor
             .as_ref()
