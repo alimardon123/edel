@@ -1945,10 +1945,12 @@ case_overview() {
 	python3 ci/qmp.py key ret
 	wait_more 'edel-compositor: overview started foot$' "$started" || fail "Return in the overview's search did not start foot"
 	wait_more 'edel-compositor: mapped window foot' "$mapped" || fail "foot did not open from the overview's search"
-	sleep 1
+	# As in the keyboard case, foot has its shell up before Super+Q.
+	sleep 2
 	unmapped=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
-	wait_more 'edel-compositor: unmapped window foot' "$unmapped" || fail "Super+Q did not close the foot the search started"
+	wait_more 'edel-compositor: unmapped window foot' "$unmapped" ||
+		fail "Super+Q did not close the foot the search started: $(value windows)"
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
 	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
