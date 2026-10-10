@@ -420,7 +420,26 @@ impl Edel {
     }
 
     fn scroll<B: InputBackend>(&mut self, event: B::PointerAxisEvent) {
+        // The wheel over the overview's strip scrolls it (M5.2j-b2): a
+        // click an item, or 30 px of a touchpad's scrolling.
         if self.overview.is_some() {
+            // Down or right is onward, whichever the wheel turned.
+            let along = |axis| {
+                event
+                    .amount_v120(axis)
+                    .map(|v| v / 120.0)
+                    .or_else(|| event.amount(axis).map(|a| a / 30.0))
+                    .unwrap_or(0.0)
+            };
+            let down = along(Axis::Vertical);
+            let steps = if down != 0.0 {
+                down
+            } else {
+                along(Axis::Horizontal)
+            };
+            if let Some(pointer) = self.seat.get_pointer() {
+                self.overview_scroll(pointer.current_location(), steps);
+            }
             return;
         }
         let Some(pointer) = self.seat.get_pointer() else {

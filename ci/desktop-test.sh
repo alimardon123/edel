@@ -1810,8 +1810,9 @@ case_overview() {
 	# window (the windows line is the same after it); its colour shows
 	# spread on the stage and small in frame 1; dragged onto frame 2 it
 	# moves there and the overview stays; a click on frame 2 shows that
-	# workspace's windows on the stage and stays; a click on lap goes to it
-	# and leaves. Kept as overview.png and overview-two.png.
+	# workspace's windows on the stage and stays; frame 3 dragged onto
+	# frame 1 takes its place, and back; a click on lap goes to it and
+	# leaves. Kept as overview.png and overview-two.png.
 	opened=$(count 'edel-compositor: mapped window lap ')
 	guest 'lap window'
 	wait_more 'edel-compositor: mapped window lap ' "$opened" || fail "the test client lap did not open: $(value windows)"
@@ -1896,6 +1897,18 @@ case_overview() {
 		[ "$i" -lt 25 ] || fail "workspace 2's stage does not show lap: $places"
 		sleep 0.2
 	done
+	# Frame 3 dragged onto frame 1 takes its place (M5.2j-b2), and frame 1
+	# dragged onto frame 3 puts them back; the overview stays.
+	set -- $(middle frame3)
+	three_x=$1 three_y=$2
+	[ -n "$three_x" ] || fail "the places line lacks frame 3: $places"
+	moved=$(count 'edel-compositor: workspace 3 moved to 1$')
+	python3 ci/qmp.py drag "$three_x" "$three_y" "$one_x" "$one_y"
+	wait_more 'edel-compositor: workspace 3 moved to 1$' "$moved" || fail "dragging frame 3 from $three_x,$three_y onto frame 1 at $one_x,$one_y did not move workspace 3 to 1"
+	moved=$(count 'edel-compositor: workspace 1 moved to 3$')
+	python3 ci/qmp.py drag "$one_x" "$one_y" "$three_x" "$three_y"
+	wait_more 'edel-compositor: workspace 1 moved to 3$' "$moved" || fail "dragging frame 1 onto frame 3 did not put the workspaces back"
+	[ "$(count 'edel-compositor: overview hidden$')" = "$hidden" ] || fail "moving workspaces in the strip left the overview"
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/overview-two.png"
 	set -- $(middle 'window lap')
@@ -1922,7 +1935,7 @@ case_overview() {
 	closed=$(count 'edel-compositor: unmapped window lap$')
 	guest 'lap off'
 	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
-	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it"
+	echo "PASS: tiled, the overview moved no window; Super+W laid the strip down the left with lap spread on the stage and small in frame 1; lap dragged onto frame 2 moved there with the overview open; a click on frame 2 showed workspace 2 and stayed; frame 3 dragged onto frame 1 moved there and back; a click on lap left to it; a click on the switcher's lit workspace at $lit,780 opened the overview and Escape left it"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a

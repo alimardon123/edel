@@ -4,21 +4,15 @@
 //! was: the button's workspace is shown. Moved, and let go over the same
 //! switcher, the workspace moves to the place its button lies over
 //! (`widgets::workspaces::landing`), with its windows, name and policy
-//! (`link.move_workspace`), and the names in the person's settings file
-//! follow the new order (`workspaces.names`, written as Settings
-//! writes a key, ADR-008). Dragged over the switcher, the panel's caret
+//! (`link.move_workspace`); the compositor writes the names in their new
+//! order. Dragged over the switcher, the panel's caret
 //! shows where the button would land. Let go anywhere else, nothing
 //! happens, and the pointer leaving the panel cancels the press.
 
-use edel::places;
-use edel::settings::{self, WORKSPACE_NAMES};
-use toml::Value;
-
+use crate::Shell;
 use crate::editor::DRAG_START;
-use crate::messages;
 use crate::widgets::Input;
 use crate::widgets::workspaces as switcher;
-use crate::{Shell, settings_texts};
 
 /// A left press on a shown button that may become a drag (M5.2p): the
 /// panel, the switcher's index on it, the place of the button pressed, and
@@ -39,22 +33,6 @@ pub struct WorkspacePress {
 /// the panel, as the editor's drag counts it (M5.31b).
 pub fn moved_along(from: (f32, f32), to: (f32, f32)) -> bool {
     (to.0 - from.0).hypot(to.1 - from.1) >= DRAG_START
-}
-
-/// The names to write for the person's `workspaces.names` after a
-/// move, as a TOML array (M5.2p): none when `list` is what the machine's
-/// file gives without the person's (ADR-008: writers never write a
-/// default), so the person's line is reset; an empty list over a machine's
-/// names says none.
-pub fn names_to_write(list: &[String], machine: &[String]) -> Option<String> {
-    (list != machine).then(|| {
-        Value::Array(
-            list.iter()
-                .map(|name| Value::String(name.clone()))
-                .collect(),
-        )
-        .to_string()
-    })
 }
 
 impl Shell {
@@ -82,15 +60,6 @@ impl Shell {
         switcher::slot(&names, &mut |words, face| {
             switcher::measure(Some(&mut self.text), &self.tokens, scale, words, face)
         })
-    }
-
-    /// How many workspaces the switcher of panel `i` shows: the screen's own
-    /// when each screen has its own (M5.2o), else all of them.
-    fn switcher_count(&self, i: usize) -> usize {
-        let panel = &self.panels[i];
-        self.workspaces
-            .names(panel.output.as_ref().or(panel.entered.as_ref()))
-            .len()
     }
 
     /// Starts a press on a shown button of the numbers look in panel `i` at
@@ -200,36 +169,6 @@ impl Shell {
         }
         self.link.move_workspace(from, to);
         eprintln!("edel-shell-ui: moved workspace {} to {}", from + 1, to + 1);
-        let count = self.switcher_count(i);
-        self.move_names(from, to, count);
-    }
-
-    /// Writes the person's `workspaces.names` in their new order after
-    /// a move from place `from` to `to` among `count` workspaces (M5.2p).
-    /// Nothing is written when there are no names at all; a failure says
-    /// what stays as it was.
-    fn move_names(&self, from: usize, to: usize, count: usize) {
-        let (machine, person) = settings_texts();
-        let names = settings::texts(WORKSPACE_NAMES, machine.as_deref(), person.as_deref())
-            .unwrap_or_default();
-        if names.is_empty() {
-            return;
-        }
-        let without =
-            settings::texts(WORKSPACE_NAMES, machine.as_deref(), None).unwrap_or_default();
-        let list = switcher::reordered_names(&names, count, from, to);
-        let value = names_to_write(&list, &without);
-        match places::person_settings().map(|p| places::found(&p)) {
-            Some(path) => {
-                if let Err(e) = settings::write(&path, WORKSPACE_NAMES, value.as_deref()) {
-                    eprintln!(
-                        "edel-shell-ui: {}",
-                        messages::names_not_kept(format!("{e:#}"))
-                    );
-                }
-            }
-            None => eprintln!("edel-shell-ui: {}", messages::NAMES_NO_HOME),
-        }
     }
 }
 
@@ -243,29 +182,5 @@ mod tests {
         assert!(!moved_along((10.0, 10.0), (13.0, 13.0)), "about 4 px");
         assert!(moved_along((10.0, 10.0), (16.0, 10.0)), "6 px is a drag");
         assert!(moved_along((0.0, 0.0), (0.0, -20.0)), "either way");
-    }
-
-    #[test]
-    fn the_names_written_are_the_list_as_toml_or_none_when_the_machine_gives_it() {
-        let names = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(
-            names_to_write(&names(&["", "", "Mail"]), &[]).as_deref(),
-            Some(r#"["", "", "Mail"]"#)
-        );
-        assert_eq!(
-            names_to_write(&names(&["Mail", "Code"]), &names(&["Mail", "Code"])),
-            None,
-            "what the machine gives is not written"
-        );
-        assert_eq!(
-            names_to_write(&[], &[]),
-            None,
-            "an empty result resets the line"
-        );
-        assert_eq!(
-            names_to_write(&[], &names(&["Mail"])).as_deref(),
-            Some("[]"),
-            "an empty list says none over the machine's names"
-        );
     }
 }

@@ -5,10 +5,13 @@
 //! scale, painted again only when what it shows changes; `glance.rs`
 //! places them. Colours come from the tokens.
 
-use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
+use tiny_skia::{
+    FillRule, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, PixmapPaint, Point, Rect,
+    SpreadMode, Stroke, Transform,
+};
 
 use edel::tokens::{Colour, Tokens};
-use edel_compositor::overview::{LABEL, Plan, TRAY_RADIUS};
+use edel_compositor::overview::{LABEL, Plan, TRAY_PAD, TRAY_RADIUS};
 use smithay::utils::{Logical, Rectangle};
 
 use edel_compositor::frame::Text;
@@ -142,6 +145,12 @@ pub fn tray(
             }
         }
     }
+    for (arrow, start) in [(plan.before, true), (plan.after, false)] {
+        if let Some(arrow) = arrow {
+            let (x, y, aw, ah) = local(arrow);
+            ends(&mut pixmap, (x, y, aw, ah), start, s, tokens);
+        }
+    }
     if let Some(text) = text {
         text.set_size(SMALL * s);
         let ink = Colour {
@@ -162,13 +171,104 @@ pub fn tray(
             );
         };
         for (frame, label) in plan.frames.iter().zip(labels) {
-            put(*frame, label, text);
+            if !frame.is_empty() {
+                put(*frame, label, text);
+            }
         }
         if let Some(add) = plan.add {
             put(add, new, text);
         }
     }
     Some(pixmap)
+}
+
+/// An end of a strip that scrolls, in the room `at` (x, y, width, height
+/// in pixels) at its start or not: the next frame's edge fading out
+/// toward the tray's end, as the panel's switcher draws its ends, under
+/// a small arrow pointing to where more lie.
+fn ends(pixmap: &mut Pixmap, at: (f32, f32, f32, f32), start: bool, s: f32, tokens: &Tokens) {
+    let (x, y, w, h) = at;
+    let across = w < h;
+    let pad = TRAY_PAD as f32 * s;
+    // The sliver of the next frame, inside the tray's padding.
+    let sliver = if across {
+        Rect::from_xywh(x + pad / 2.0, y + pad, w - pad, h - 2.0 * pad)
+    } else {
+        Rect::from_xywh(x + pad, y + pad / 2.0, w - 2.0 * pad, h - pad)
+    };
+    let (near, far) = match (across, start) {
+        (true, true) => (Point::from_xy(x + w, y), Point::from_xy(x, y)),
+        (true, false) => (Point::from_xy(x, y), Point::from_xy(x + w, y)),
+        (false, true) => (Point::from_xy(x, y + h), Point::from_xy(x, y)),
+        (false, false) => (Point::from_xy(x, y), Point::from_xy(x, y + h)),
+    };
+    let colour = |a: f32| {
+        let [r, g, b, _] = tokens.panel_text.bytes();
+        tiny_skia::Color::from_rgba8(r, g, b, (a * 255.0).round() as u8)
+    };
+    if let (Some(sliver), Some(fade)) = (
+        sliver,
+        LinearGradient::new(
+            near,
+            far,
+            vec![
+                GradientStop::new(0.0, colour(0.16)),
+                GradientStop::new(1.0, colour(0.0)),
+            ],
+            SpreadMode::Pad,
+            Transform::identity(),
+        ),
+    ) {
+        let paint = Paint {
+            shader: fade,
+            anti_alias: true,
+            ..Paint::default()
+        };
+        pixmap.fill_rect(sliver, &paint, Transform::identity(), None);
+    }
+    // The arrow, a chevron pointing out along the strip.
+    let (cx, cy, arm) = (x + w / 2.0, y + h / 2.0, 4.5 * s);
+    let mut chevron = PathBuilder::new();
+    match (across, start) {
+        (true, true) => {
+            chevron.move_to(cx + arm / 2.0, cy - arm);
+            chevron.line_to(cx - arm / 2.0, cy);
+            chevron.line_to(cx + arm / 2.0, cy + arm);
+        }
+        (true, false) => {
+            chevron.move_to(cx - arm / 2.0, cy - arm);
+            chevron.line_to(cx + arm / 2.0, cy);
+            chevron.line_to(cx - arm / 2.0, cy + arm);
+        }
+        (false, true) => {
+            chevron.move_to(cx - arm, cy + arm / 2.0);
+            chevron.line_to(cx, cy - arm / 2.0);
+            chevron.line_to(cx + arm, cy + arm / 2.0);
+        }
+        (false, false) => {
+            chevron.move_to(cx - arm, cy - arm / 2.0);
+            chevron.line_to(cx, cy + arm / 2.0);
+            chevron.line_to(cx + arm, cy - arm / 2.0);
+        }
+    }
+    if let Some(chevron) = chevron.finish() {
+        let stroke = Stroke {
+            width: (1.8 * s).max(1.0),
+            line_cap: tiny_skia::LineCap::Round,
+            line_join: tiny_skia::LineJoin::Round,
+            ..Stroke::default()
+        };
+        pixmap.stroke_path(
+            &chevron,
+            &paint_of(Colour {
+                a: 0.85,
+                ..tokens.panel_text
+            }),
+            &stroke,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 /// A window's name pill: its app's `icon`, when it has one, and its

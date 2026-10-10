@@ -61,6 +61,16 @@ pub fn workspace_not_added(why: impl Display) -> String {
     )
 }
 
+/// The workspace names cannot be written down in their new order (M5.2p).
+pub fn names_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the workspace names in their new order: {why}; the names in the settings file stay as they were"
+    )
+}
+
+/// There is no home folder to keep the workspace names in (M5.2p).
+pub const NAMES_NO_HOME: &str = "no home folder to keep the workspace names in; run edel settings set workspaces.names='[\"Mail\", \"\", \"Code\"]' instead, one name per workspace in order, empty where none";
+
 /// shell-ui cannot start.
 pub fn shell_ui_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}")
@@ -293,6 +303,8 @@ mod tests {
             folder_not_followed(Path::new("/data"), "x"),
             x11_not_started("xwayland-satellite", "x"),
             shell_ui_not_started("edel-shell-ui", "x"),
+            names_not_kept("x"),
+            NAMES_NO_HOME.to_string(),
             session_program_missing("pipewire"),
             session_program_not_started("pipewire", "x"),
             session_program_stopped("pipewire", "ended (exit status: 1)"),
