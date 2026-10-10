@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn shortcuts_merge_action_by_action() {
         let machine =
-            file("format = 1\n[shortcuts]\nclose = \"Super+W\"\nterminal = \"Super+Return\"\n");
+            file("format = 1\n[shortcuts]\nclose = \"Super+X\"\nterminal = \"Super+Return\"\n");
         let person = file("format = 1\n[shortcuts]\nclose = \"Super+X\"\n");
         let shortcuts = Settings::from_files(Some(&machine), Some(&person)).shortcuts;
         assert_eq!(shortcuts["close"], "Super+X", "the person's wins");

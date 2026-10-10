@@ -1,5 +1,5 @@
 //! Keyboard shortcuts (roadmap M5.13, ADR-008): `[shortcuts]` in the
-//! settings file maps an action to keys, such as `close_window = "Super+W"`. An
+//! settings file maps an action to keys, such as `close_window = "Super+X"`. An
 //! action the file leaves out keeps its default from [`ACTIONS`]; `""`
 //! unbinds one. Checkers refuse an unknown action, two actions on one key
 //! and a rescue action (close, launcher, lock) left without keys, so a
@@ -214,6 +214,12 @@ pub const ACTIONS: &[Action] = &[
         "Super+B",
         false,
         "Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h)",
+    ),
+    action(
+        "show_workspaces",
+        "Super+W",
+        false,
+        "Show every workspace side by side with its windows, or leave the overview (M5.2j)",
     ),
     action(
         "next_workspace",
@@ -484,7 +490,7 @@ pub fn markdown() -> String {
     let mut text = String::from(
         "# Shortcuts\n\n\
          Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. \
-         Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+W`, \
+         Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+X`, \
          or in `[shortcuts]` of the settings file; `\"\"` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. \
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
@@ -573,7 +579,7 @@ mod tests {
                 "shortcuts.close_window: a way out must keep its keys; unset it to go back to Super+Q"
             ]
         );
-        let lines = check(&file(&[("cloze", "Super+W")]));
+        let lines = check(&file(&[("cloze", "Super+X")]));
         assert_eq!(
             lines,
             ["shortcuts.cloze: unknown action; docs/SHORTCUTS.md lists them"]
@@ -581,7 +587,7 @@ mod tests {
         // Moving close off Super+Q frees it, and unbinding others is fine.
         assert!(
             check(&file(&[
-                ("close_window", "Super+W"),
+                ("close_window", "Super+X"),
                 ("open_terminal", "Super+Q"),
                 ("switch_windows", "")
             ]))
@@ -597,8 +603,8 @@ mod tests {
                 .find(|(a, _)| a.name == name)
                 .and_then(|(_, k)| k.as_ref().map(Keys::to_string))
         };
-        let (resolved, notes) = resolve(&file(&[("close_window", "Super+W")]));
-        assert_eq!(keys(&resolved, "close_window").as_deref(), Some("Super+W"));
+        let (resolved, notes) = resolve(&file(&[("close_window", "Super+X")]));
+        assert_eq!(keys(&resolved, "close_window").as_deref(), Some("Super+X"));
         assert!(notes.is_empty(), "{notes:?}");
         // The terminal asks for close's keys: close keeps them.
         let (resolved, notes) = resolve(&file(&[("open_terminal", "Super+Q")]));
@@ -620,7 +626,7 @@ mod tests {
         assert_eq!(keys(&resolved, "toggle_tiling"), None);
         assert_eq!(notes.len(), 2, "{notes:?}");
         let (_, notes) = resolve(&file(&[
-            ("cloze", "Super+W"),
+            ("cloze", "Super+X"),
             ("toggle_tiling", "Super+Q+W"),
         ]));
         assert_eq!(notes.len(), 2, "{notes:?}");

@@ -17,6 +17,7 @@ mod edelshell;
 mod everyday;
 mod extworkspace;
 mod fullscreen;
+mod glance;
 mod grabs;
 mod input;
 mod keyboard;

@@ -105,7 +105,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 
 | Key | Value | From |
 |---|---|---|
-| `shortcuts.*` | keys for the action `*`, such as `close_window = "Super+W"`, or `""` for none; the actions, their default keys and the key names are in [Keyboard shortcuts](SHORTCUTS.md). Check and set refuse an unknown action, two actions on one key and a way out (close a window, the launcher, the lock) without keys. The desktop follows them at once | M5.13a |
+| `shortcuts.*` | keys for the action `*`, such as `close_window = "Super+X"`, or `""` for none; the actions, their default keys and the key names are in [Keyboard shortcuts](SHORTCUTS.md). Check and set refuse an unknown action, two actions on one key and a way out (close a window, the launcher, the lock) without keys. The desktop follows them at once | M5.13a |
 
 ## Notifications: `[notifications]`
 

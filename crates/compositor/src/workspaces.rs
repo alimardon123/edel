@@ -257,6 +257,52 @@ impl Edel {
         true
     }
 
+    /// Moves `window`, shown or on a hidden workspace, to workspace `to`
+    /// on its screen, as a drag in the overview does (M5.2j): it shows
+    /// there on top if its screen shows `to`, else it waits on top of
+    /// `to`'s windows. False when nothing moved.
+    pub fn carry_window(&mut self, window: &Window, to: usize) -> bool {
+        let shown = self.space.elements().any(|w| w == window);
+        let frame = if shown {
+            self.frame_of(window)
+        } else {
+            self.desks
+                .hidden()
+                .find(|(_, w, _)| *w == window)
+                .map(|(_, _, frame)| frame)
+        };
+        let Some(frame) = frame else {
+            return false;
+        };
+        // A maximized window keeps the size it goes back to.
+        let size = data(window)
+            .borrow()
+            .restore
+            .map_or(frame.size, |r| r.size);
+        let areas = self.window_areas();
+        let Some((place, shows)) = self.desks.carry(window.clone(), to, size, &areas) else {
+            return false;
+        };
+        eprintln!(
+            "edel-compositor: window {} to workspace {}",
+            title(window),
+            to + 1
+        );
+        if shown {
+            self.hide(window);
+        }
+        if shows {
+            self.show(window.clone(), place, Point::default());
+        }
+        self.focus_top();
+        self.relayout();
+        self.settle_dynamic();
+        self.dirty = true;
+        self.state_changed();
+        self.repoint();
+        true
+    }
+
     /// Dynamic workspaces (M5.2i): applies `desks::dynamic_plan` to the
     /// workspaces as they are, closing the empty ones it names and adding
     /// the empty one that waits at the end, then tells the clients and the

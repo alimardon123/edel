@@ -354,11 +354,11 @@ commands() {
 		'four windows') four_windows & ;;
 		'four off') pkill -f '[e]del-testclient --size 200x150 --colour 3366cc' ;;
 		# Shortcuts (M5.13a): a window to close with keys, close moved to
-		# Super+W, and back to its default.
+		# Super+X, and back to its default.
 		'shortcut window')
 			as_ci edel-testclient --size 200x150 --colour 996633 --title keys </dev/null >/dev/null 2>&1 &
 			;;
-		'close on super-w') edel settings set shortcuts.close_window=Super+W ;;
+		'close on super-x') edel settings set shortcuts.close_window=Super+X ;;
 		# Workspaces (M5.2a): a window to send to another workspace, and
 		# closed while it is there.
 		'away window')

@@ -1596,7 +1596,7 @@ mod tests {
             Kind::WholeFromTo(least, _) => Value::Integer(least),
             Kind::Hostname => Value::String("x".into()),
             Kind::Shell => Value::String("/bin/sh".into()),
-            Kind::Keys => Value::String("Super+W".into()),
+            Kind::Keys => Value::String("Super+X".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
@@ -1818,10 +1818,10 @@ font_size = 11
     #[test]
     fn shortcuts_are_written_one_way_and_never_clash() {
         let text = "format = 1\n";
-        let set_one = set(text, "shortcuts.close_window", "super+w").unwrap();
+        let set_one = set(text, "shortcuts.close_window", "super+x").unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[shortcuts]\nclose_window = \"Super+W\"\n"
+            "format = 1\n\n[shortcuts]\nclose_window = \"Super+X\"\n"
         );
         assert!(check(&set_one).unwrap().is_empty());
         let clash = set(text, "shortcuts.open_terminal", "Super+Q")
@@ -1838,7 +1838,7 @@ font_size = 11
             unbound.contains("a way out must keep its keys"),
             "{unbound}"
         );
-        let unknown = set(text, "shortcuts.cloze", "Super+W")
+        let unknown = set(text, "shortcuts.cloze", "Super+X")
             .unwrap_err()
             .to_string();
         assert!(unknown.contains("unknown action"), "{unknown}");

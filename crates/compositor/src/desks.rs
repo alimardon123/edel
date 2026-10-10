@@ -630,6 +630,31 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         Some(place)
     }
 
+    /// Moves `window`, shown or on a hidden workspace but not minimized,
+    /// to workspace `to` on its own screen, as a drag in the overview does
+    /// (M5.2j): on top of `to`'s windows there, placed by its policy at
+    /// `size` in that screen's area in `areas`. Returns its frame there
+    /// and whether it shows now, that is, whether its screen shows `to`.
+    /// None when `to` is its workspace or does not exist, when it is
+    /// minimized, or there is no screen.
+    pub fn carry(
+        &mut self,
+        window: W,
+        to: usize,
+        size: Size<i32, Logical>,
+        areas: &Areas,
+    ) -> Option<(Rectangle<i32, Logical>, bool)> {
+        let desk = self.desk_of(&window)?;
+        if to == desk || to >= self.desks.len() || self.minimized(&window).is_some() {
+            return None;
+        }
+        let from = self.desks[desk].layout.screen_of(&window);
+        let (screen, area) = screen_in(areas, from)?;
+        self.desks[desk].layout.close(&window);
+        self.desks[desk].hidden.retain(|(w, _)| *w != window);
+        self.open_on(to, window, size, screen, area)
+    }
+
     /// Opens a new `window` on workspace `desk` (M5.2l), through that
     /// workspace's policies on `screen` as a window opening there is placed,
     /// given its size and the screen's area in `areas`. It returns its frame
@@ -782,6 +807,25 @@ mod tests {
         );
         desks.close(&1);
         assert_eq!(desks.hidden_on(&1), None);
+    }
+
+    #[test]
+    fn a_window_carried_shows_only_where_its_screen_shows_its_new_workspace() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        // Shown to the third: it waits there, hidden.
+        let (_, shows) = desks.carry(1, 2, (300, 200).into(), &areas()).unwrap();
+        assert!(!shows);
+        assert_eq!(desks.hidden_on(&1), Some(2));
+        // Hidden on the third back to the first, which is shown: it shows.
+        let (_, shows) = desks.carry(1, 0, (300, 200).into(), &areas()).unwrap();
+        assert!(shows);
+        assert_eq!((desks.hidden_on(&1), desks.desk_of(&1)), (None, Some(0)));
+        assert!(desks.hidden().next().is_none(), "the third forgot it");
+        assert!(desks.carry(1, 0, (300, 200).into(), &areas()).is_none(), "already there");
+        assert!(desks.carry(1, 3, (300, 200).into(), &areas()).is_none(), "no fourth");
+        desks.minimize(1, at(40));
+        assert!(desks.carry(1, 1, (300, 200).into(), &areas()).is_none(), "minimized");
     }
 
     #[test]

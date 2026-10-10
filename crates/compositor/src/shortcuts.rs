@@ -55,6 +55,8 @@ pub enum Act {
     /// modifiers are (M5.3c); with Shift as well, the one before.
     Switcher,
     SwitcherBack,
+    /// Show every workspace side by side, or leave that (M5.2j).
+    Overview,
 }
 
 impl Act {
@@ -68,6 +70,7 @@ impl Act {
             "close_window" => Some(Act::Close),
             "open_launcher" => Some(Act::Launcher),
             "show_tray" => Some(Act::Tray),
+            "show_workspaces" => Some(Act::Overview),
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
@@ -374,17 +377,17 @@ mod tests {
     #[test]
     fn a_rebound_close_moves_and_the_log_says_so() {
         let (old, _) = bind(&BTreeMap::new());
-        let file = BTreeMap::from([("close_window".to_string(), "Super+W".to_string())]);
+        let file = BTreeMap::from([("close_window".to_string(), "Super+X".to_string())]);
         let (new, notes) = bind(&file);
         assert!(notes.is_empty(), "{notes:?}");
         let super_ = held(true, false, false, false);
-        assert_eq!(find(&new, &super_, sym("w")), Some(Act::Close));
+        assert_eq!(find(&new, &super_, sym("x")), Some(Act::Close));
         assert_eq!(
             find(&new, &super_, sym("q")),
             None,
             "Super+Q no longer closes"
         );
-        assert_eq!(changes(&old, &new), ["shortcut close_window is Super+W"]);
+        assert_eq!(changes(&old, &new), ["shortcut close_window is Super+X"]);
         assert!(changes(&new, &new).is_empty());
         let unbound = BTreeMap::from([("open_terminal".to_string(), String::new())]);
         assert_eq!(

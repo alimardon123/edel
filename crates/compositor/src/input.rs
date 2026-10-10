@@ -53,6 +53,8 @@ enum Action {
     SwitcherDone(bool),
     /// A volume or brightness key, for shell-ui (M5.9c).
     Media(&'static str),
+    /// A key the overview keeps from the windows (M5.2j).
+    Nothing,
 }
 
 /// What is under the pointer.
@@ -132,6 +134,20 @@ impl Edel {
                                 ending = Some(true);
                             }
                         }
+                        // The overview, while open, keeps the keys from the
+                        // windows: Escape leaves it, shortcuts still work.
+                        if pressed
+                            && state.overview.is_some()
+                            && crate::shortcuts::find(&state.bindings, modifiers, latin).is_none()
+                            && !vts.contains(&sym)
+                            && crate::shortcuts::media_key(sym).is_none()
+                        {
+                            return FilterResult::Intercept(if sym == xkb::keysyms::KEY_Escape {
+                                Action::Shortcut(Act::Overview)
+                            } else {
+                                Action::Nothing
+                            });
+                        }
                         if !pressed {
                             FilterResult::Forward
                         } else if vts.contains(&sym) {
@@ -162,6 +178,7 @@ impl Edel {
                     Action::Shortcut(act) => self.shortcut(act),
                     Action::SwitcherDone(take) => self.switcher_done(take),
                     Action::Media(name) => self.media_key(name),
+                    Action::Nothing => {}
                 }
             }
             InputEvent::PointerMotion { event } => {
@@ -230,6 +247,15 @@ impl Edel {
                 let button = event.button_code();
                 let location = pointer.current_location();
                 let pressed = event.state() == ButtonState::Pressed;
+                // The overview takes every click while it is open (M5.2j).
+                if self.overview.is_some() {
+                    if button == BUTTON_LEFT && pressed {
+                        self.overview_press(location);
+                    } else if button == BUTTON_LEFT {
+                        self.overview_release(location);
+                    }
+                    return None;
+                }
                 if pressed
                     && !pointer.is_grabbed()
                     && self.press(button, location, serial, event.time_msec())
@@ -389,10 +415,14 @@ impl Edel {
             Act::Tray => self.show_tray(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
+            Act::Overview => self.toggle_overview(),
         }
     }
 
     fn scroll<B: InputBackend>(&mut self, event: B::PointerAxisEvent) {
+        if self.overview.is_some() {
+            return;
+        }
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
@@ -537,6 +567,11 @@ impl Edel {
         &mut self,
         point: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        // No window hears the pointer over the overview (M5.2j).
+        if self.overview.is_some() {
+            self.overview_motion(point);
+            return None;
+        }
         self.reveal_docks(point);
         let under = self.under(point);
         let hover = match &under {

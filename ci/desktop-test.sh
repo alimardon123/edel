@@ -52,8 +52,8 @@
 #               removal logs the tier's own animations again; ten windows
 #               opening one after another and closing at the tier llvmpipe
 #               picks keep the frame budget (M5.11b)
-#   shortcuts   edel settings set shortcuts.close_window=Super+W, sent to the VM,
-#               moves close_window: Super+Q then leaves a window open and Super+W
+#   shortcuts   edel settings set shortcuts.close_window=Super+X, sent to the VM,
+#               moves close_window: Super+Q then leaves a window open and Super+X
 #               closes it; Ctrl+Alt+T opens a terminal; removing the key
 #               brings Super+Q back (M5.13a)
 #   workspaces  Super+Shift+2 sends a new window to workspace 2, which
@@ -726,29 +726,29 @@ case_shortcuts() {
 	# which takes the keyboard as it opens.
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' 0 || fail "the test client keys did not open: $(value windows)"
-	guest 'close on super-w'
+	guest 'close on super-x'
 	wait_for 'edel-compositor: shortcut close_window is Super\+W' ||
-		fail "the compositor did not follow shortcuts.close_window = \"Super+W\""
-	# Super+Q now reaches the window, which ignores it; Super+W closes it.
+		fail "the compositor did not follow shortcuts.close_window = \"Super+X\""
+	# Super+Q now reaches the window, which ignores it; Super+X closes it.
 	python3 ci/qmp.py key meta_l-q
 	sleep 2
 	[ "$(count 'edel-compositor: unmapped window keys')" = 0 ] ||
-		fail "Super+Q still closed keys after close_window moved to Super+W"
-	python3 ci/qmp.py key meta_l-w
-	wait_more 'edel-compositor: unmapped window keys' 0 || fail "Super+W did not close keys: $(value windows)"
-	# Ctrl+Alt+T opens a terminal, which Super+W closes in turn.
+		fail "Super+Q still closed keys after close_window moved to Super+X"
+	python3 ci/qmp.py key meta_l-x
+	wait_more 'edel-compositor: unmapped window keys' 0 || fail "Super+X did not close keys: $(value windows)"
+	# Ctrl+Alt+T opens a terminal, which Super+X closes in turn.
 	opened=$(count 'edel-compositor: mapped window foot')
 	python3 ci/qmp.py key ctrl-alt-t
 	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
 	closed=$(count 'edel-compositor: unmapped window foot')
 	sleep 1
-	python3 ci/qmp.py key meta_l-w
-	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+W did not close the terminal"
+	python3 ci/qmp.py key meta_l-x
+	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+X did not close the terminal"
 	# Unset, close is Super+Q again.
 	guest 'shortcuts default'
 	wait_for 'edel-compositor: shortcut close_window is Super\+Q' ||
 		fail "removing shortcuts.close_window did not bring Super+Q back"
-	echo "PASS: shortcuts.close_window = \"Super+W\" moved close off Super+Q at once, Super+W closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
+	echo "PASS: shortcuts.close_window = \"Super+X\" moved close off Super+Q at once, Super+X closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
 }
 
 case_settings() {
