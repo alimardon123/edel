@@ -2255,9 +2255,9 @@ case_player() {
 		sleep 1
 	done
 	# The second player: two pages, a dot each.
-	pages=$(count 'edel-shell-ui: players: 2 (')
+	pages=$(count 'edel-shell-ui: players: 2 \(')
 	guest 'mpris second'
-	wait_more 'edel-shell-ui: players: 2 (' "$pages" ||
+	wait_more 'edel-shell-ui: players: 2 \(' "$pages" ||
 		fail "quick settings did not find the second player: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: player' | tail -n 3)"
 	i=0
 	until tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1 | grep -q ' dot2 '; do
@@ -2269,9 +2269,9 @@ case_player() {
 	set -- $(echo "$line" | sed -n 's/.* dot2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "${1:-}" ] || fail "the second dot has no place: $line"
 	dot_x=$((cx + $1 + $3 / 2)) dot_y=$((cy + $2 + $4 / 2))
-	walked=$(count 'edel-shell-ui: player: Morning Walk by Radio (Radio), paused, page 2 of 2')
+	walked=$(count 'edel-shell-ui: player: Morning Walk by Radio \(Radio\), paused, page 2 of 2')
 	python3 ci/qmp.py click "$dot_x" "$dot_y"
-	wait_more 'edel-shell-ui: player: Morning Walk by Radio (Radio), paused, page 2 of 2' "$walked" ||
+	wait_more 'edel-shell-ui: player: Morning Walk by Radio \(Radio\), paused, page 2 of 2' "$walked" ||
 		fail "a click on the second dot at $dot_x,$dot_y did not show Radio's player: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: player' | tail -n 3)"
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/player-pages.png"
