@@ -308,6 +308,21 @@ msgstr ""
 msgid "{ssid} is not in range now; move closer and try again"
 msgstr ""
 
+msgid "there is no panel {panel}"
+msgstr ""
+
+msgid "there is no widget at that place on the panels"
+msgstr ""
+
+msgid "the {edge} panel already shows {widget}"
+msgstr ""
+
+msgid "there is already a panel along the {edge} edge"
+msgstr ""
+
+msgid "the last panel stays: a desktop needs one to reach its menu and its windows"
+msgstr ""
+
 msgid "less than a minute"
 msgstr ""
 

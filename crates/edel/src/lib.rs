@@ -22,6 +22,7 @@ pub mod icons;
 pub mod install;
 pub mod keyboard;
 pub mod network;
+pub mod panel_edit;
 pub mod places;
 pub mod power;
 pub mod presets;
