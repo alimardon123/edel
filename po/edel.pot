@@ -314,6 +314,15 @@ msgstr ""
 msgid "{hours} {minutes}"
 msgstr ""
 
+msgid "<1 min"
+msgstr ""
+
+msgid "{n} min"
+msgstr ""
+
+msgid "{n} h"
+msgstr ""
+
 msgid "Charging"
 msgstr ""
 

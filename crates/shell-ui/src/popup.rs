@@ -24,6 +24,10 @@ use crate::paint::{self, Text, fill, lit, mix, paint_of};
 pub const PAD: f32 = 8.0;
 pub const INSET: f32 = 12.0;
 
+/// A drawn shadow and what it was drawn for: the card's size and scale in
+/// device pixels, and the cards.
+type Shadow = ((u32, u32, u32), Vec<Card>, Pixmap);
+
 /// A popup's surface, its own buffers and what it last drew, `V`.
 pub struct Popup<V> {
     pub surface: LayerSurface,
@@ -38,7 +42,7 @@ pub struct Popup<V> {
     /// means one card, the whole of it, in the menus' corners.
     cards: Vec<Card>,
     /// The shadow, drawn once for a card size, scale and cards.
-    shadow: Option<((u32, u32, u32), Vec<Card>, Pixmap)>,
+    shadow: Option<Shadow>,
     /// Configured, so it may draw.
     ready: bool,
     /// Drawn and not yet shown by the compositor: the next drawing waits
@@ -320,6 +324,19 @@ pub fn veil(tokens: &Tokens, alpha: f32) -> Colour {
     Colour {
         a: alpha,
         ..tokens.panel_text
+    }
+}
+
+/// A surface raised on a card, as the mockups draw quick settings'
+/// toggles and the notification centre's notifications: the window's
+/// colour, white, when it is lighter than the card's, else the text's at
+/// a tenth over the card, a lighter grey on the dark scheme.
+pub fn raised(tokens: &Tokens) -> Colour {
+    let light = |c: Colour| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    if light(tokens.window) > light(tokens.panel) {
+        tokens.window
+    } else {
+        veil(tokens, 0.10)
     }
 }
 

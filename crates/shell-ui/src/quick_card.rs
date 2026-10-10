@@ -17,12 +17,12 @@ use edel::presets::Edge;
 use edel::{places, settings};
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_surface};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
-use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
+use smithay_client_toolkit::seat::pointer::{BTN_LEFT, BTN_RIGHT, PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity};
 
-use crate::paint::{self, Face};
-use crate::popup::Popup;
+use crate::paint;
+use crate::popup::{Card, Popup, Rect};
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
 
@@ -228,23 +228,15 @@ impl Shell {
             dnd: crate::notify::do_not_disturb(machine.as_deref(), person.as_deref()),
             ..quick::State::default()
         };
-        let size_px = self.tokens.panel_text_size as f32 - 1.0;
-        let text = &mut self.text;
         let view = quick::view(
             &state,
             &self.live.status,
             &self.quick_tiles,
             self.quick_settings,
-            |name| {
-                quick::chip_width(
-                    text.line_in(name, size_px, Face::MEDIUM).width,
-                    quick::CHIP_MOST,
-                )
-            },
         );
         let size = quick::layout(&view).size;
         // Room for the list of outputs to open without a bigger pool.
-        let most = (size.0, size.1 + quick::MOST_OUTPUTS as u32 * 44);
+        let most = quick::most_size(size);
         let room = paint::shadow_room(&self.tokens, !crate::fillets());
         let Some(popup) = Popup::new(self, QUICK, size, most, scale, room) else {
             return;
@@ -315,19 +307,11 @@ impl Shell {
     /// What the card shows now and where it lies.
     fn quick_view(&mut self) -> Option<(quick::View, quick::Layout)> {
         let card = self.quick.as_ref()?;
-        let size = self.tokens.panel_text_size as f32 - 1.0;
-        let text = &mut self.text;
         let view = quick::view(
             &card.state,
             &self.live.status,
             &self.quick_tiles,
             self.quick_settings,
-            |name| {
-                quick::chip_width(
-                    text.line_in(name, size, Face::MEDIUM).width,
-                    quick::CHIP_MOST,
-                )
-            },
         );
         let layout = quick::layout(&view);
         Some((view, layout))
@@ -346,6 +330,15 @@ impl Shell {
             card.popup.resize(layout.size, &self.compositor);
             return;
         }
+        // The card is the rounded shape the mockups draw, its shadow round it.
+        let (w, h) = (layout.size.0 as f32, layout.size.1 as f32);
+        card.popup.set_cards(
+            vec![Card {
+                rect: Rect::new(0.0, 0.0, w, h),
+                radius: quick::RADIUS,
+            }],
+            &self.compositor,
+        );
         let Some(mut pixmap) = card.popup.canvas(&view) else {
             return;
         };
@@ -427,12 +420,11 @@ impl Shell {
             event.position.1 as f32 - room,
         );
         let over = quick::hit(&layout, x, y);
-        let compact = view.compact;
         match &event.kind {
             PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. } => {
                 card.state.hover = over;
                 if card.dragging {
-                    let percent = quick::volume_at(&layout, compact, x);
+                    let percent = quick::volume_at(&layout, x);
                     self.quick_volume(percent);
                 } else {
                     self.draw_quick();
@@ -447,7 +439,7 @@ impl Shell {
             PointerEventKind::Press { button, .. } if *button == BTN_LEFT => match over {
                 Some(quick::Focus::Slider) => {
                     card.dragging = true;
-                    let percent = quick::volume_at(&layout, compact, x);
+                    let percent = quick::volume_at(&layout, x);
                     self.quick_volume(percent);
                 }
                 Some(part) => {
@@ -455,9 +447,9 @@ impl Shell {
                     let act = match part {
                         quick::Focus::Toggle(i) => quick::Act::Toggle(i),
                         quick::Focus::Page(i) => quick::Act::Page(i),
-                        quick::Focus::Output => quick::Act::List,
+                        quick::Focus::Sound => quick::Act::List,
                         quick::Focus::Choose(i) => quick::Act::Choose(i),
-                        quick::Focus::Mute => quick::Act::Mute,
+                        quick::Focus::SoundPage => quick::Act::SoundPage,
                         quick::Focus::Settings => quick::Act::Settings,
                         quick::Focus::Slider => return,
                     };
@@ -468,6 +460,23 @@ impl Shell {
             PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
                 card.dragging = false;
                 self.send_volume();
+            }
+            // A right click opens the page: the slider's Sound settings, a
+            // round toggle's Settings page (the mockups' rule).
+            PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
+                let act = match over {
+                    Some(quick::Focus::Slider) => Some(quick::Act::SoundPage),
+                    Some(quick::Focus::Toggle(i)) => view
+                        .tiles
+                        .get(i)
+                        .filter(|t| !t.tile.pill() && t.tile.page().is_some())
+                        .map(|_| quick::Act::Page(i)),
+                    _ => None,
+                };
+                if let Some(act) = act {
+                    card.state.focus = None;
+                    self.quick_act(act);
+                }
             }
             _ => {}
         }
@@ -506,7 +515,7 @@ impl Shell {
                 let id = self.live.status.outputs.get(i).map(|o| o.id);
                 if let Some(card) = &mut self.quick {
                     card.state.list = false;
-                    card.state.focus = Some(quick::Focus::Output);
+                    card.state.focus = Some(quick::Focus::Sound);
                 }
                 if let Some(id) = id {
                     self.run_and_read(Some(Cmd::Output(id)), false);
@@ -534,6 +543,15 @@ impl Shell {
                     return;
                 };
                 let argv = [SETTINGS.to_string(), "--page".to_string(), page.to_string()];
+                self.launcher.spawn(&argv, "Settings");
+                self.close_quick();
+            }
+            Act::SoundPage => {
+                let argv = [
+                    SETTINGS.to_string(),
+                    "--page".to_string(),
+                    quick::SOUND_PAGE.to_string(),
+                ];
                 self.launcher.spawn(&argv, "Settings");
                 self.close_quick();
             }

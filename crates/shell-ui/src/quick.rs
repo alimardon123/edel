@@ -1,15 +1,17 @@
 //! Quick settings (M5.9a): the card the status area opens above itself, a
-//! sheet across the screen at Compact width. Its look is the mockups'
-//! (`docs/mockups/quick-settings.jpg`, `phone-quick.jpg`), drawn from the
-//! tokens: the menus' card, then
+//! sheet across the screen at Compact width. Its look is the fifth round of
+//! mockups' laptop board (`docs/mockups/shell/laptop.jpg`), drawn from the
+//! tokens: a card of one square grid, then
 //!
-//! - **tiles** in two columns, `radius_control` corners, never pills: the
-//!   left part toggles, a chevron part behind a hairline opens the tile's
-//!   Settings page; an "on" tile has a soft accent tint, an accent
-//!   hairline, an accent icon circle and an accent state line;
-//! - the **volume**: a caption with the output named in a chip that opens
-//!   the list of outputs, a slider, the speaker icon muting;
-//! - a **footer**: the battery's line, and a square Settings button.
+//! - **tiles** on the grid: a round toggle is one cell with its title under
+//!   it; a pill (Wi-Fi, Bluetooth) is two cells wide, its round icon at the
+//!   left and, behind it, its page (name, state and an arrow) that opens
+//!   the tile's Settings page; a right click on a round toggle with a page
+//!   opens it too;
+//! - the **shelf**: a hairline, the volume slider with its number in it, and
+//!   a chevron that opens the list of outputs (with "Sound settings" last);
+//! - a **footer**: the battery's pill with its charge and time, and the
+//!   Settings button at the right.
 //!
 //! Which tiles, and in what order, is the preset's `[quick] tiles`
 //! (`edel::presets::Quick`); a tile whose feature or hardware the machine
@@ -28,15 +30,17 @@ use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
 use crate::paint::{self, Face, Text, fill, lit, mix, outline};
-use crate::popup::{self, Rect, dim, icon_in, knob, veil};
+use crate::popup::{self, Card, Rect, dim, icon_in, knob, raised, veil};
 use crate::status::{Link, Status};
 
 /// The card's width on a screen of any size from Compact up, logical
 /// pixels; below `COMPACT_BELOW` it is as wide as the screen.
-pub const WIDTH: u32 = 360;
+pub const WIDTH: u32 = 352;
 /// A screen narrower than this is Compact (M5.6c's size classes): the
-/// card is a sheet and its touch targets are at least 44 px.
+/// card is a sheet across the screen.
 pub const COMPACT_BELOW: u32 = 600;
+/// The card's corners, as the mockups draw them.
+pub const RADIUS: f32 = 50.0;
 /// The most outputs the list shows.
 pub const MOST_OUTPUTS: usize = 6;
 /// A step of the volume on the keyboard, percent.
@@ -45,6 +49,8 @@ pub const STEP: u32 = 5;
 /// page in Settings yet (M5.12), so Layout, which has the colour scheme's
 /// neighbours; one name to change when it does.
 pub const DARK_PAGE: &str = "layout";
+/// The Settings page the list's last row opens.
+pub const SOUND_PAGE: &str = "sound";
 
 /// A tile of the card: the names are what `[quick] tiles` lists
 /// (`edel::presets::TILES`).
@@ -93,6 +99,23 @@ impl Tile {
         }
     }
 
+    /// The word under a round toggle, as the mockups have it.
+    pub fn short(self) -> &'static str {
+        match self {
+            Tile::Wifi => tr("Wi-Fi"),
+            Tile::Bluetooth => tr("Bluetooth"),
+            Tile::Airplane => tr("Airplane"),
+            Tile::DoNotDisturb => tr("Do not disturb"),
+            Tile::DarkStyle => tr("Dark"),
+        }
+    }
+
+    /// Whether the tile is a pill, two cells wide, rather than a round
+    /// toggle: the networks, whose state needs words.
+    pub fn pill(self) -> bool {
+        matches!(self, Tile::Wifi | Tile::Bluetooth)
+    }
+
     /// The shell's icon in its circle.
     pub fn icon(self) -> &'static str {
         match self {
@@ -116,6 +139,12 @@ impl Tile {
     }
 }
 
+/// Whether a tile has a page part beside its round icon: a pill with a
+/// page. Only such a part is on the card and in Tab's order.
+fn has_page(tile: Tile) -> bool {
+    tile.pill() && tile.page().is_some()
+}
+
 /// One tile as the card shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TileView {
@@ -130,10 +159,8 @@ pub struct TileView {
 pub struct VolumeView {
     pub percent: u32,
     pub muted: bool,
-    /// The output in use and the width of the chip that names it,
-    /// logical pixels.
+    /// The output in use.
     pub output: String,
-    pub chip: f32,
     /// Every output, with the one in use marked.
     pub outputs: Vec<(String, bool)>,
 }
@@ -143,23 +170,25 @@ pub struct VolumeView {
 pub struct BatteryView {
     pub percent: u32,
     pub charging: bool,
-    pub line: String,
+    /// The time to empty or to full, "4 h 10 min", when known.
+    pub time: Option<String>,
 }
 
 /// Where a pointer or the keyboard is on the card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
-    /// The left part of tile `i`
+    /// The round toggle, or a pill's icon part, of tile `i`
     Toggle(usize),
-    /// Its chevron part
+    /// A pill's page part of tile `i`
     Page(usize),
-    /// The chip that opens the list of outputs
-    Output,
+    /// The slider
+    Slider,
+    /// The chevron that opens the list of outputs
+    Sound,
     /// Row `i` of that list
     Choose(usize),
-    /// The speaker icon
-    Mute,
-    Slider,
+    /// The "Sound settings" row under the list
+    SoundPage,
     Settings,
 }
 
@@ -167,7 +196,8 @@ pub enum Focus {
 /// it changes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
-    /// The card's width, logical pixels, and whether it is a sheet.
+    /// The card's width, logical pixels, and whether it is a sheet, with
+    /// touch sizes.
     pub width: u32,
     pub compact: bool,
     pub tiles: Vec<TileView>,
@@ -190,9 +220,12 @@ pub enum Act {
     /// Open or close the list of outputs.
     List,
     Choose(usize),
+    /// Mute or unmute (the slider's Space or Return).
     Mute,
     /// The volume to this percent.
     Volume(u32),
+    /// Open the Sound page of Settings.
+    SoundPage,
     Settings,
     Close,
 }
@@ -302,21 +335,13 @@ pub fn tiles(
 }
 
 /// The volume part of the card: the output in use and the list of all.
-/// `percent` and `muted` are what the slider was just moved to or the
-/// speaker just clicked, which show over what the sound system last said;
-/// `chip` is the width of the chip naming the output, measured with the
-/// card's fonts.
-pub fn volume(
-    status: &Status,
-    percent: Option<u32>,
-    muted: Option<bool>,
-    chip: impl FnOnce(&str) -> f32,
-) -> Option<VolumeView> {
+/// `percent` and `muted` are what the slider was just moved to or muted
+/// at, which show over what the sound system last said.
+pub fn volume(status: &Status, percent: Option<u32>, muted: Option<bool>) -> Option<VolumeView> {
     let v = status.volume.as_ref()?;
     Some(VolumeView {
         percent: percent.unwrap_or(v.percent),
         muted: muted.unwrap_or(v.muted),
-        chip: chip(&v.output),
         output: v.output.clone(),
         outputs: status
             .outputs
@@ -355,14 +380,8 @@ pub struct State {
 
 /// The card showing `status` and `state`, with the tiles `names` lists
 /// (the preset's); `settings` says whether the machine has the Settings
-/// app, and `chip` measures the output's chip.
-pub fn view(
-    state: &State,
-    status: &Status,
-    names: &[String],
-    settings: bool,
-    chip: impl FnOnce(&str) -> f32,
-) -> View {
+/// app.
+pub fn view(state: &State, status: &Status, names: &[String], settings: bool) -> View {
     View {
         width: state.width,
         compact: state.compact,
@@ -375,11 +394,11 @@ pub fn view(
             },
             &state.pending,
         ),
-        volume: volume(status, state.volume, state.muted, chip),
+        volume: volume(status, state.volume, state.muted),
         battery: status.battery.as_ref().map(|b| BatteryView {
             percent: b.percent,
             charging: b.charging,
-            line: b.line.clone(),
+            time: b.time.clone(),
         }),
         settings,
         list: state.list,
@@ -408,78 +427,94 @@ pub fn mode_to_write(machine: Option<&str>, dark: bool) -> Option<&'static str> 
     (is_dark(machine, None) != dark).then_some(if dark { "dark" } else { "light" })
 }
 
-/// The width of the chip naming an output whose name is `text_width`
-/// logical pixels wide: room before the name, the name, the chevron after
-/// it, at most `most`.
-pub fn chip_width(text_width: f32, most: f32) -> f32 {
-    (CHIP_LEFT + text_width + CHIP_GAP + CHIP_CHEVRON + CHIP_RIGHT).min(most)
-}
-
-/// The widest the output's chip grows, logical pixels.
-pub const CHIP_MOST: f32 = 190.0;
-const CHIP_LEFT: f32 = 9.0;
-const CHIP_GAP: f32 = 5.0;
-const CHIP_CHEVRON: f32 = 11.0;
-const CHIP_RIGHT: f32 = 6.0;
-
 // ---- Where it lies ----
 
-/// The sizes of the card's parts: touch sizes on a Compact screen (at
-/// least 44 px where a finger lands), the mockups' otherwise.
+/// The sizes of the card's parts, logical pixels. The same on every screen:
+/// a Compact card is as wide as the screen and keeps these sizes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Metrics {
-    pub pad: f32,
+    /// Padding left and right of the grid and the shelf.
+    pub side: f32,
+    /// Padding above the grid and below the footer.
+    pub top: f32,
+    pub bottom: f32,
+    /// A round toggle's diameter, a grid cell's side.
+    pub cell: f32,
+    /// Between two columns.
     pub gap: f32,
-    pub tile: f32,
-    pub chevron: f32,
-    pub circle: f32,
-    pub caption: f32,
-    pub slider: f32,
-    pub row: f32,
-    pub button: f32,
+    /// Between two rows of the grid.
+    pub row_gap: f32,
+    /// Extra height under a round toggle for its title.
+    pub label: f32,
+    /// The icon circle inside a pill.
+    pub pill_icon: f32,
+    /// A shelf slider's height, the chevron button, the footer's buttons
+    /// and the battery pill's height.
+    pub bar: f32,
+    /// Between the grid, the shelf and the footer.
+    pub section: f32,
+    /// The glyph in a round toggle, and in a pill's icon circle.
     pub icon: f32,
+    pub pill_glyph: f32,
 }
 
+/// The sizes of the card's parts, the mockups': the same at every width
+/// but the bar-high parts (the sliders, their buttons, the list's rows
+/// and the footer's), which are 44 px on a Compact screen, where a finger
+/// lands.
 pub fn metrics(compact: bool) -> Metrics {
-    if compact {
-        Metrics {
-            pad: 14.0,
-            gap: 8.0,
-            tile: 64.0,
-            chevron: 44.0,
-            circle: 32.0,
-            caption: 44.0,
-            slider: 44.0,
-            row: 44.0,
-            button: 44.0,
-            icon: 17.0,
-        }
-    } else {
-        Metrics {
-            pad: 12.0,
-            gap: 8.0,
-            tile: 56.0,
-            chevron: 28.0,
-            circle: 30.0,
-            caption: 24.0,
-            slider: 26.0,
-            row: 32.0,
-            button: 28.0,
-            icon: 15.0,
-        }
+    Metrics {
+        side: 18.0,
+        top: 12.0,
+        bottom: 18.0,
+        cell: 64.0,
+        gap: 20.0,
+        row_gap: 10.0,
+        label: 10.0,
+        pill_icon: 38.0,
+        bar: if compact { 44.0 } else { 36.0 },
+        section: 10.0,
+        icon: 18.0,
+        pill_glyph: 16.0,
     }
 }
 
-/// Between the card's sections, and the footer's room above its row.
-const SECTION: f32 = 12.0;
-/// What a section keeps from the tiles' edge on each side.
-const INSET: f32 = 4.0;
-/// Where the slider's track starts after the speaker, and how far its
-/// knob stays from each end, logical pixels.
-const SPEAKER: f32 = 26.0;
-const KNOB: f32 = 18.0;
+/// The columns of the grid at `width`: as many cells as fit beside the
+/// side paddings, at most four and at least two.
+pub fn columns(width: u32) -> usize {
+    let m = metrics(false);
+    let fit = ((width as f32 - 2.0 * m.side + m.gap) / (m.cell + m.gap)).floor();
+    (fit.max(0.0) as usize).clamp(2, 4)
+}
 
-/// One tile's parts.
+/// The size the card may grow to with the list of outputs open, so its
+/// buffers do not change size when it opens.
+pub fn most_size(size: (u32, u32)) -> (u32, u32) {
+    // The Compact rows, the taller, so one size serves both.
+    let m = metrics(true);
+    let rows = MOST_OUTPUTS as u32 + 1;
+    (size.0, size.1 + rows * (m.bar as u32 + LIST_GAP as u32))
+}
+
+/// The space between a pill's left edge and its icon circle, logical pixels.
+const PILL_INSET: f32 = 8.0;
+/// Between the rows of the list of outputs, logical pixels.
+const LIST_GAP: f32 = 4.0;
+/// The room under the grid's last titles before the shelf's hairline,
+/// beside the sections' own, and under the hairline, as the mockups.
+const GRID_BELOW: f32 = 6.0;
+const RULE_ROOM: f32 = 17.0;
+/// The hairline's inset from the card's sides.
+const RULE_INSET: f32 = 10.0;
+/// Between the slider's track and the chevron button.
+const TRACK_GAP: f32 = 10.0;
+/// How far the Settings button stands in from the card's right edge.
+const SETTINGS_INSET: f32 = 14.0;
+/// The text of a list row starts this far from its left edge.
+const ROW_TEXT: f32 = 14.0;
+
+/// One tile's parts. A round toggle's `toggle` is its whole cell; a pill's
+/// `toggle` is its left part with the icon circle, and its `page` the rest.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TileBox {
     pub whole: Rect,
@@ -493,124 +528,149 @@ pub struct Layout {
     pub size: (u32, u32),
     pub metrics: Metrics,
     pub tiles: Vec<TileBox>,
-    pub caption: Option<Rect>,
-    pub chip: Option<Rect>,
-    pub list: Vec<Rect>,
-    pub mute: Option<Rect>,
-    /// The slider: its track beside the speaker on a desktop, the whole
-    /// bar on a Compact screen.
+    /// The slider's track, and the chevron button beside it.
     pub track: Option<Rect>,
-    /// The footer's hairline, its battery and its button.
+    pub sound: Option<Rect>,
+    /// The rows of the list of outputs while it is open, and the row
+    /// "Sound settings" after them.
+    pub list: Vec<Rect>,
+    pub sound_page: Option<Rect>,
+    /// The hairline above the shelf, at its height.
     pub rule: Option<f32>,
     pub battery: Option<Rect>,
     pub settings: Option<Rect>,
 }
 
-/// Where the parts of `view` lie.
+/// Starts a section below what is above it, unless nothing is above it yet.
+fn section(y: &mut f32, started: &mut bool, m: &Metrics) {
+    if *started {
+        *y += m.section;
+    }
+    *started = true;
+}
+
+/// Where the parts of `view` lie: the grid of tiles, then the shelf and
+/// the footer, each after a section.
 pub fn layout(view: &View) -> Layout {
     let m = metrics(view.compact);
     let w = view.width as f32;
-    let mut y = m.pad;
-    let mut first = true;
-    let mut gap = |y: &mut f32| {
-        if !first {
-            *y += SECTION;
+    let cols = columns(view.width);
+    let inner = w - 2.0 * m.side;
+    let grid = cols as f32 * m.cell + (cols - 1) as f32 * m.gap;
+    let left = (w - grid) / 2.0;
+    // Each tile's row and first column: a pill takes two cells, and one
+    // that does not fit in what is left of a row starts the next row.
+    let (mut row, mut col) = (0usize, 0usize);
+    let mut at = Vec::with_capacity(view.tiles.len());
+    for t in &view.tiles {
+        let span = if t.tile.pill() { 2 } else { 1 };
+        if col + span > cols {
+            row += 1;
+            col = 0;
         }
-        first = false;
-    };
-    // The tiles, two columns; a last one alone keeps the left column.
-    let mut tiles = Vec::new();
-    if !view.tiles.is_empty() {
-        gap(&mut y);
-        let col = ((w - 2.0 * m.pad - m.gap) / 2.0).floor();
-        let second = m.pad + col + m.gap;
-        for (i, t) in view.tiles.iter().enumerate() {
-            let (c, r) = (i % 2, i / 2);
-            let x = if c == 0 { m.pad } else { second };
-            let width = if c == 0 { col } else { w - m.pad - second };
-            let top = y + r as f32 * (m.tile + m.gap);
-            let whole = Rect::new(x, top, width, m.tile);
-            let has_page = t.tile.page().is_some();
-            let (toggle, page) = if has_page {
-                (
-                    Rect::new(x, top, width - m.chevron, m.tile),
-                    Some(Rect::new(x + width - m.chevron, top, m.chevron, m.tile)),
-                )
-            } else {
-                (whole, None)
-            };
-            tiles.push(TileBox {
-                whole,
-                toggle,
-                page,
-            });
-        }
-        let rows = view.tiles.len().div_ceil(2);
-        y += rows as f32 * m.tile + (rows - 1) as f32 * m.gap;
+        at.push((row, col));
+        col += span;
     }
-    let (mut caption, mut chip, mut list, mut mute, mut track) =
-        (None, None, Vec::new(), None, None);
-    if let Some(volume) = &view.volume {
-        gap(&mut y);
-        let (x, inner) = (m.pad + INSET, w - 2.0 * (m.pad + INSET));
-        let row = Rect::new(x, y, inner, m.caption);
-        caption = Some(row);
-        let chip_w = volume.chip.min(inner);
-        // A chip's hit area is its row's whole height.
-        chip = Some(Rect::new(row.right() - chip_w, y, chip_w, m.caption));
-        y += m.caption;
-        if view.list {
-            for i in 0..volume.outputs.len() {
-                list.push(Rect::new(
-                    m.pad,
-                    y + i as f32 * m.row,
-                    w - 2.0 * m.pad,
-                    m.row,
-                ));
+    let rows = if at.is_empty() { 0 } else { row + 1 };
+    // A row holding a round toggle has room under the circles for titles.
+    let mut heights = vec![m.cell; rows];
+    for (t, &(r, _)) in view.tiles.iter().zip(&at) {
+        if !t.tile.pill() {
+            heights[r] = m.cell + m.label;
+        }
+    }
+    let mut tops = Vec::with_capacity(rows);
+    let mut y = m.top;
+    for h in &heights {
+        tops.push(y);
+        y += h + m.row_gap;
+    }
+    if rows > 0 {
+        y -= m.row_gap;
+    }
+    let mut tiles = Vec::with_capacity(view.tiles.len());
+    for (t, &(r, c)) in view.tiles.iter().zip(&at) {
+        let x = left + c as f32 * (m.cell + m.gap);
+        let top = tops[r];
+        let b = if t.tile.pill() {
+            let whole = Rect::new(x, top, 2.0 * m.cell + m.gap, m.cell);
+            if has_page(t.tile) {
+                let toggle = Rect::new(x, top, PILL_INSET + m.pill_icon, m.cell);
+                let page = Rect::new(x + toggle.w, top, whole.w - toggle.w, m.cell);
+                TileBox {
+                    whole,
+                    toggle,
+                    page: Some(page),
+                }
+            } else {
+                TileBox {
+                    whole,
+                    toggle: whole,
+                    page: None,
+                }
             }
-            y += volume.outputs.len() as f32 * m.row;
-        }
-        y += 2.0;
-        if view.compact {
-            let bar = Rect::new(m.pad, y, w - 2.0 * m.pad, m.slider);
-            mute = Some(Rect::new(bar.x, bar.y, m.slider, m.slider));
-            track = Some(bar);
         } else {
-            mute = Some(Rect::new(x, y, SPEAKER, m.slider));
-            track = Some(Rect::new(x + SPEAKER, y, inner - SPEAKER, m.slider));
-        }
-        y += m.slider;
+            let whole = Rect::new(x, top, m.cell, m.cell);
+            TileBox {
+                whole,
+                toggle: whole,
+                page: None,
+            }
+        };
+        tiles.push(b);
     }
-    let (mut rule, mut battery, mut settings) = (None, None, None);
-    if view.battery.is_some() || view.settings {
-        gap(&mut y);
+    let mut started = !view.tiles.is_empty();
+    let (mut rule, mut track, mut sound, mut sound_page) = (None, None, None, None);
+    let mut list = Vec::new();
+    if let Some(volume) = &view.volume {
+        if started {
+            y += GRID_BELOW;
+        }
+        section(&mut y, &mut started, &m);
         rule = Some(y);
-        let row = y + 1.0 + SECTION;
-        let (x, inner) = (m.pad + INSET, w - 2.0 * (m.pad + INSET));
-        let button = Rect::new(x + inner - m.button, row, m.button, m.button);
-        if view.settings {
-            settings = Some(button);
+        y += 1.0 + RULE_ROOM;
+        track = Some(Rect::new(m.side, y, inner - m.bar - TRACK_GAP, m.bar));
+        sound = Some(Rect::new(m.side + inner - m.bar, y, m.bar, m.bar));
+        y += m.bar;
+        if view.list {
+            section(&mut y, &mut started, &m);
+            for i in 0..volume.outputs.len() + 1 {
+                let r = Rect::new(m.side, y, inner, m.bar);
+                if i < volume.outputs.len() {
+                    list.push(r);
+                } else {
+                    sound_page = Some(r);
+                }
+                y += m.bar + LIST_GAP;
+            }
+            y -= LIST_GAP;
         }
-        if view.battery.is_some() {
-            let room = if view.settings {
-                inner - m.button - 8.0
-            } else {
-                inner
-            };
-            battery = Some(Rect::new(x, row, room, m.button));
-        }
-        y = row + m.button;
     }
-    y += m.pad;
+    let (mut battery, mut settings) = (None, None);
+    if view.battery.is_some() || view.settings {
+        section(&mut y, &mut started, &m);
+        if view.battery.is_some() {
+            battery = Some(Rect::new(m.side, y, (inner - m.gap) / 2.0, m.bar));
+        }
+        if view.settings {
+            settings = Some(Rect::new(
+                m.side + inner - SETTINGS_INSET - m.bar,
+                y,
+                m.bar,
+                m.bar,
+            ));
+        }
+        y += m.bar;
+    }
+    y += m.bottom;
     Layout {
         size: (view.width, y.ceil() as u32),
         metrics: m,
         tiles,
-        caption,
-        chip,
-        list,
-        mute,
         track,
+        sound,
+        list,
+        sound_page,
         rule,
         battery,
         settings,
@@ -618,9 +678,10 @@ pub fn layout(view: &View) -> Layout {
 }
 
 /// Where the card's parts lie, as one log line CI reads to click them:
-/// `card WxH, NAME X+Y+WxH, ..., track X+Y+WxH, ...`, logical pixels from
-/// the card's corner; each tile by its name, then the volume's track, the
-/// speaker (`mute`), the output's `chip` and the `settings` button.
+/// `card WxH, NAME X+Y+WxH, ..., track X+Y+WxH, sound ..., settings ...`,
+/// logical pixels from the card's corner; each tile by its name and its
+/// whole box, then the slider's track, the chevron (`sound`) and the
+/// `settings` button.
 pub fn places(view: &View, layout: &Layout) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut parts = vec![format!("card {}x{}", layout.size.0, layout.size.1)];
@@ -629,8 +690,7 @@ pub fn places(view: &View, layout: &Layout) -> String {
     }
     for (name, rect) in [
         ("track", layout.track),
-        ("mute", layout.mute),
-        ("chip", layout.chip),
+        ("sound", layout.sound),
         ("settings", layout.settings),
     ] {
         if let Some(rect) = rect {
@@ -650,14 +710,14 @@ pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
             return Some(Focus::Toggle(i));
         }
     }
-    if layout.chip.is_some_and(|r| r.contains(x, y)) {
-        return Some(Focus::Output);
+    if layout.sound.is_some_and(|r| r.contains(x, y)) {
+        return Some(Focus::Sound);
     }
     if let Some(i) = layout.list.iter().position(|r| r.contains(x, y)) {
         return Some(Focus::Choose(i));
     }
-    if layout.mute.is_some_and(|r| r.contains(x, y)) {
-        return Some(Focus::Mute);
+    if layout.sound_page.is_some_and(|r| r.contains(x, y)) {
+        return Some(Focus::SoundPage);
     }
     if layout.track.is_some_and(|r| r.contains(x, y)) {
         return Some(Focus::Slider);
@@ -668,42 +728,38 @@ pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
     None
 }
 
-/// The volume at `x` along the slider, percent, 0 to 100: the knob keeps
-/// half its width from each end of the track on a desktop; the Compact
-/// bar fills from its left end to the finger.
-pub fn volume_at(layout: &Layout, compact: bool, x: f32) -> u32 {
+/// The volume at `x` along the slider, percent, 0 to 100: the bar fills
+/// from its left end to the pointer.
+pub fn volume_at(layout: &Layout, x: f32) -> u32 {
     let Some(track) = layout.track else {
         return 0;
     };
-    let (from, span) = if compact {
-        (track.x, track.w)
-    } else {
-        (track.x + KNOB / 2.0, track.w - KNOB)
-    };
-    let share = ((x - from) / span.max(1.0)).clamp(0.0, 1.0);
+    let share = ((x - track.x) / track.w.max(1.0)).clamp(0.0, 1.0);
     (share * 100.0).round() as u32
 }
 
 // ---- Keys ----
 
-/// What a keyboard can reach, in Tab's order: each tile's toggle and its
-/// arrow, the output chip, the list's rows while it is open, the speaker,
-/// the slider and the Settings button.
+/// What a keyboard can reach, in Tab's order: each tile's toggle and, for
+/// a pill, its page; the slider, the chevron, the list's rows while it is
+/// open, and the Settings button.
 pub fn ring(view: &View) -> Vec<Focus> {
     let mut ring = Vec::new();
     for (i, t) in view.tiles.iter().enumerate() {
         ring.push(Focus::Toggle(i));
-        if t.tile.page().is_some() {
+        if has_page(t.tile) {
             ring.push(Focus::Page(i));
         }
     }
-    if let Some(volume) = &view.volume {
-        ring.push(Focus::Output);
-        if view.list {
-            ring.extend((0..volume.outputs.len()).map(Focus::Choose));
-        }
-        ring.push(Focus::Mute);
+    if view.volume.is_some() {
         ring.push(Focus::Slider);
+        ring.push(Focus::Sound);
+        if let Some(volume) = &view.volume {
+            if view.list {
+                ring.extend((0..volume.outputs.len()).map(Focus::Choose));
+                ring.push(Focus::SoundPage);
+            }
+        }
     }
     if view.settings {
         ring.push(Focus::Settings);
@@ -713,7 +769,7 @@ pub fn ring(view: &View) -> Vec<Focus> {
 
 /// What `key` does with the keyboard on `focus`: where it goes and what
 /// it asks for. The first key to move gives the first part, or with Shift
-/// and Up or Left the last.
+/// and Up or Left the last. Up and Down move by a row of the grid.
 pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Option<Act>) {
     let ring = ring(view);
     if key == Key::Escape {
@@ -733,12 +789,14 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
             .copied()
     };
     let volume = view.volume.as_ref().map_or(0, |v| v.percent);
+    let cols = columns(view.width);
     match (key, now) {
         (Key::Activate, Focus::Toggle(i)) => (focus, Some(Act::Toggle(i))),
         (Key::Activate, Focus::Page(i)) => (focus, Some(Act::Page(i))),
-        (Key::Activate, Focus::Output) => (focus, Some(Act::List)),
+        (Key::Activate, Focus::Sound) => (focus, Some(Act::List)),
         (Key::Activate, Focus::Choose(i)) => (focus, Some(Act::Choose(i))),
-        (Key::Activate, Focus::Mute | Focus::Slider) => (focus, Some(Act::Mute)),
+        (Key::Activate, Focus::SoundPage) => (focus, Some(Act::SoundPage)),
+        (Key::Activate, Focus::Slider) => (focus, Some(Act::Mute)),
         (Key::Activate, Focus::Settings) => (focus, Some(Act::Settings)),
         (Key::Left, Focus::Slider) => (focus, Some(Act::Volume(volume.saturating_sub(STEP)))),
         (Key::Right, Focus::Slider) => (focus, Some(Act::Volume((volume + STEP).min(100)))),
@@ -748,22 +806,26 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
         (Key::Tab(true) | Key::Left, _) => (before(), None),
         (Key::Down | Key::Up, Focus::Toggle(i) | Focus::Page(i)) => {
             let down = key == Key::Down;
-            let j = if down { i + 2 } else { i.wrapping_sub(2) };
+            let j = if down {
+                Some(i + cols)
+            } else {
+                i.checked_sub(cols)
+            };
             let part = |j: usize| match now {
-                Focus::Page(_) if view.tiles.get(j).is_some_and(|t| t.tile.page().is_some()) => {
+                Focus::Page(_) if view.tiles.get(j).is_some_and(|t| has_page(t.tile)) => {
                     Focus::Page(j)
                 }
                 _ => Focus::Toggle(j),
             };
-            if view.tiles.get(j).is_some() {
-                (Some(part(j)), None)
-            } else if down {
-                let below = ring
-                    .iter()
-                    .find(|f| !matches!(f, Focus::Toggle(_) | Focus::Page(_)));
-                (below.copied().or(focus), None)
-            } else {
-                (focus, None)
+            match j.filter(|j| view.tiles.get(*j).is_some()) {
+                Some(j) => (Some(part(j)), None),
+                None if down => {
+                    let below = ring
+                        .iter()
+                        .find(|f| !matches!(f, Focus::Toggle(_) | Focus::Page(_)));
+                    (below.copied().or(focus), None)
+                }
+                None => (focus, None),
             }
         }
         (Key::Down, _) => (next(), None),
@@ -786,6 +848,7 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
             origin.1 + f64::from(r.y + r.h),
         )
     };
+    let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
     let mut out = Vec::new();
     let mut focused = None;
     for (n, part) in ring(view).into_iter().enumerate() {
@@ -817,14 +880,11 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                 trf("{title} settings", &[("title", view.tiles[i].tile.title())]),
                 layout.tiles[i].page.unwrap_or(layout.tiles[i].whole),
             ),
-            Focus::Output => {
-                let name = view.volume.as_ref().map_or("", |v| v.output.as_str());
-                item(
-                    Role::Button,
-                    trf("Output: {name}", &[("name", name)]),
-                    layout.chip.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
-                )
-            }
+            Focus::Sound => item(
+                Role::Button,
+                tr("Sound: outputs").to_string(),
+                layout.sound.unwrap_or(zero),
+            ),
             Focus::Choose(i) => {
                 let (name, current) = view
                     .volume
@@ -836,17 +896,11 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                     ..item(Role::Button, name.to_string(), layout.list[i])
                 }
             }
-            Focus::Mute => {
-                let muted = view.volume.as_ref().is_some_and(|v| v.muted);
-                Item {
-                    toggled: Some(muted),
-                    ..item(
-                        Role::Switch,
-                        tr("Mute").to_string(),
-                        layout.mute.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
-                    )
-                }
-            }
+            Focus::SoundPage => item(
+                Role::Button,
+                tr("Sound settings").to_string(),
+                layout.sound_page.unwrap_or(zero),
+            ),
             Focus::Slider => {
                 let percent = view.volume.as_ref().map_or(0, |v| v.percent);
                 Item {
@@ -854,14 +908,14 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                     ..item(
                         Role::Slider,
                         tr("Volume").to_string(),
-                        layout.track.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+                        layout.track.unwrap_or(zero),
                     )
                 }
             }
             Focus::Settings => item(
                 Role::Button,
                 tr("Settings").to_string(),
-                layout.settings.unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+                layout.settings.unwrap_or(zero),
             ),
         };
         if view.focus == Some(part) {
@@ -874,6 +928,20 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 
 // ---- How it looks ----
 
+/// The keyboard's ring round a part: 2 px in the accent, 3 px outside the
+/// part `r`, whose corners have radius `radius` (logical pixels).
+fn focus_ring(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
+    let grown = Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0);
+    let (x, y, w, h) = grown.device(s);
+    outline(
+        pixmap,
+        (x, y, w, h),
+        (radius + 3.0) * s,
+        2.0 * s,
+        tokens.accent,
+    );
+}
+
 /// Draws `view` at `scale` into `pixmap`, which is the card's size times
 /// it; without `text`, everything but the words.
 pub fn paint(
@@ -884,180 +952,98 @@ pub fn paint(
     scale: f32,
 ) {
     let s = scale;
-    popup::card(pixmap, tokens, s);
     let l = layout(view);
-    let m = l.metrics;
-    let hair = (0.5 * s).max(1.0);
-    let lit_by = |f: Focus| view.hover == Some(f);
+    let card = Rect::new(0.0, 0.0, view.width as f32, l.size.1 as f32);
+    popup::cards(
+        pixmap,
+        tokens,
+        s,
+        &[Card {
+            rect: card,
+            radius: RADIUS,
+        }],
+    );
     for (i, (t, b)) in view.tiles.iter().zip(&l.tiles).enumerate() {
-        let (x, y, w, h) = b.whole.device(s);
-        let r = tokens.radius_control as f32 * s;
-        let back = if t.on {
-            lit(tokens)
+        if t.tile.pill() {
+            pill_tile(pixmap, view, i, *b, tokens, text.as_deref_mut(), s);
         } else {
-            veil(tokens, 0.055)
-        };
-        fill(pixmap, x, y, w, h, r, back);
-        let edge = if t.on {
-            Colour {
-                a: 0.34,
-                ..tokens.accent
-            }
-        } else {
-            tokens.line
-        };
-        outline(pixmap, (x, y, w, h), r, hair, edge);
-        if lit_by(Focus::Toggle(i)) {
-            fill(pixmap, x, y, w, h, r, veil(tokens, 0.04));
-        }
-        // The circle holding the icon.
-        let c = m.circle;
-        let lead = if view.compact { 8.0 } else { 10.0 };
-        let circle = Rect::new(b.whole.x + lead, b.whole.middle() - c / 2.0, c, c);
-        let (cx, cy, cw, ch) = circle.device(s);
-        let (disc, ink) = if t.on {
-            (tokens.accent, tokens.accent_text)
-        } else {
-            (veil(tokens, 0.085), tokens.panel_text)
-        };
-        fill(pixmap, cx, cy, cw, ch, cw / 2.0, disc);
-        icon_in(pixmap, t.tile.icon(), m.icon, circle, s, ink);
-        if let Some(text) = text.as_deref_mut() {
-            // A Compact tile's words are a half pixel smaller and closer,
-            // as the mockups' touch tiles, to fit beside the 44 px arrow.
-            let (title_px, next) = if view.compact {
-                (tokens.panel_text_size as f32 - 0.5, 8.0)
-            } else {
-                (tokens.panel_text_size as f32, 9.0)
-            };
-            let title_size = title_px * s;
-            let state_size = tokens.panel_text_small_size as f32 * s;
-            let left = (circle.right() + next) * s;
-            let room = (b.toggle.right() - 6.0) * s - left;
-            let mut title = text.fit_in(t.tile.title(), title_size, room, Face::SEMIBOLD);
-            let mut state = text.fit(&t.state, state_size, room);
-            let block = title_size * 1.25 + state_size * 1.25 + s;
-            let top = y + (h - block) / 2.0;
-            text.draw(pixmap, &mut title, left, top, tokens.panel_text);
-            let ink = if t.on { tokens.accent } else { dim(tokens) };
-            text.draw(pixmap, &mut state, left, top + title_size * 1.25 + s, ink);
-        }
-        if let Some(page) = b.page {
-            let (px, py, pw, ph) = page.device(s);
-            let rule = if t.on {
-                Colour {
-                    a: 0.24,
-                    ..tokens.accent
-                }
-            } else {
-                tokens.line
-            };
-            // A hairline the tile's height less its edge, its first pixel
-            // the part's own.
-            fill(pixmap, px, py + hair, hair, ph - 2.0 * hair, 0.0, rule);
-            if lit_by(Focus::Page(i)) {
-                fill(pixmap, px, py, pw, ph, r, veil(tokens, 0.06));
-            }
-            let ink = if t.on { tokens.accent } else { dim(tokens) };
-            icon_in(pixmap, "chevron-right", 12.0, page, s, ink);
-        }
-        let ring = |pixmap: &mut Pixmap, r: Rect| {
-            let (x, y, w, h) = r.device(s);
-            outline(
-                pixmap,
-                (x, y, w, h),
-                tokens.radius_control as f32 * s,
-                2.0 * s,
-                tokens.accent,
-            );
-        };
-        if view.focus == Some(Focus::Toggle(i)) {
-            ring(pixmap, b.toggle);
-        }
-        if view.focus == Some(Focus::Page(i)) {
-            if let Some(page) = b.page {
-                ring(pixmap, page);
-            }
+            round_tile(pixmap, view, i, *b, tokens, text.as_deref_mut(), s);
         }
     }
-    if let (Some(v), Some(caption), Some(chip)) = (&view.volume, l.caption, l.chip) {
-        volume_part(
+    shelf(pixmap, view, &l, tokens, text.as_deref_mut(), s);
+    footer(pixmap, view, &l, tokens, text, s);
+}
+
+/// A round toggle: its circle with the icon, its title under it, and the
+/// focus ring or the hover light when they are on it.
+fn round_tile(
+    pixmap: &mut Pixmap,
+    view: &View,
+    i: usize,
+    b: TileBox,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let t = &view.tiles[i];
+    let m = metrics(view.compact);
+    let (x, y, w, h) = b.whole.device(s);
+    let (disc, ink) = if t.on {
+        (tokens.accent, tokens.accent_text)
+    } else {
+        (raised(tokens), tokens.panel_text)
+    };
+    fill(pixmap, x, y, w, h, w / 2.0, disc);
+    if !t.on {
+        outline(
             pixmap,
-            view,
-            v,
-            &l,
-            (caption, chip),
-            tokens,
-            text.as_deref_mut(),
-            s,
+            (x, y, w, h),
+            w / 2.0,
+            (0.5 * s).max(1.0),
+            tokens.line,
         );
     }
-    if let Some(rule) = l.rule {
-        let (x, y, w, _) = Rect::new(m.pad, rule, view.width as f32 - 2.0 * m.pad, 1.0).device(s);
-        fill(pixmap, x, y, w, hair, 0.0, tokens.line);
+    if view.hover == Some(Focus::Toggle(i)) {
+        fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.05));
     }
-    if let (Some(b), Some(room)) = (&view.battery, l.battery) {
-        let px = (15.0 * s).round();
-        let (x, y, _, h) = room.device(s);
-        let halo = s.round().max(1.0) as i32;
-        paint::battery(
-            pixmap,
-            px,
-            (x, y + ((h - px) / 2.0).round()),
-            (b.percent, b.charging),
-            dim(tokens),
-            halo,
-        );
-        if let Some(text) = text {
-            let size = (tokens.panel_text_size as f32 - 1.0) * s;
-            let left = x + (15.0 + 9.0) * s;
-            let mut line = text.fit(&b.line, size, room.right() * s - left);
-            let top = y + (h - size * 1.25) / 2.0;
-            text.draw(pixmap, &mut line, left, top, dim(tokens));
-        }
+    icon_in(pixmap, t.tile.icon(), m.icon, b.whole, s, ink);
+    if let Some(text) = text {
+        // Under the circle, 4 px below it, centred on it.
+        let room = (m.cell + m.gap - 4.0) * s;
+        // Regular, not the mockups' medium: here a space in Inter's variable
+        // font at weight 500 comes out three times as wide.
+        let mut title = text.fit_in(t.tile.short(), 10.5 * s, room, Face::REGULAR);
+        let centre = (b.whole.x + b.whole.w / 2.0) * s;
+        let top = (b.whole.y + b.whole.h + 4.0) * s;
+        let left = (centre - title.width / 2.0).round();
+        text.draw(pixmap, &mut title, left, top.round(), dim(tokens));
     }
-    if let Some(button) = l.settings {
-        let (x, y, w, h) = button.device(s);
-        let r = tokens.radius_control as f32 * s;
-        let back = if lit_by(Focus::Settings) {
-            0.085
-        } else {
-            0.055
-        };
-        fill(pixmap, x, y, w, h, r, veil(tokens, back));
-        icon_in(
-            pixmap,
-            "gear",
-            14.0 * m.icon / 15.0,
-            button,
-            s,
-            tokens.panel_text,
-        );
-        if view.focus == Some(Focus::Settings) {
-            outline(pixmap, (x, y, w, h), r, 2.0 * s, tokens.accent);
-        }
+    if view.focus == Some(Focus::Toggle(i)) {
+        focus_ring(pixmap, b.whole, b.whole.w / 2.0, s, tokens);
     }
 }
 
-/// The volume's caption, chip, list and slider.
-#[allow(clippy::too_many_arguments)]
-fn volume_part(
+/// A pill: a round icon at its left and, behind it, its name, state and
+/// arrow. On, the whole pill is the accent.
+fn pill_tile(
     pixmap: &mut Pixmap,
     view: &View,
-    v: &VolumeView,
-    l: &Layout,
-    (caption, chip): (Rect, Rect),
+    i: usize,
+    b: TileBox,
     tokens: &Tokens,
-    mut text: Option<&mut Text>,
+    text: Option<&mut Text>,
     s: f32,
 ) {
-    let hair = (0.5 * s).max(1.0);
-    let small = (tokens.panel_text_size as f32 - 1.0) * s;
-    let chip_h = if view.compact { 32.0 } else { 24.0 };
-    let shown = Rect::new(chip.x, chip.middle() - chip_h / 2.0, chip.w, chip_h);
-    let (x, y, w, h) = shown.device(s);
-    let r = tokens.radius_small as f32 * s;
-    let hovered = view.hover == Some(Focus::Output);
+    let t = &view.tiles[i];
+    let m = metrics(view.compact);
+    let on = t.on;
+    let (x, y, w, h) = b.whole.device(s);
+    let r = h / 2.0;
+    let ink = if on {
+        tokens.accent_text
+    } else {
+        tokens.panel_text
+    };
     fill(
         pixmap,
         x,
@@ -1065,84 +1051,131 @@ fn volume_part(
         w,
         h,
         r,
-        veil(tokens, if hovered || view.list { 0.085 } else { 0.055 }),
+        if on { tokens.accent } else { raised(tokens) },
     );
-    if let Some(text) = text.as_deref_mut() {
-        let mut label = text.line_in(tr("Volume"), small, Face::SEMIBOLD);
-        let top = (caption.middle() * s - small * 0.625).round();
-        text.draw(
-            pixmap,
-            &mut label,
-            (caption.x * s).round(),
-            top,
-            dim(tokens),
-        );
-        let room = (shown.w - CHIP_LEFT - CHIP_GAP - CHIP_CHEVRON - CHIP_RIGHT) * s;
-        let mut name = text.fit_in(&v.output, small, room, Face::MEDIUM);
-        let at = x + CHIP_LEFT * s;
-        text.draw(
-            pixmap,
-            &mut name,
-            at,
-            y + (h - small * 1.25) / 2.0,
-            dim(tokens),
-        );
+    if !on {
+        outline(pixmap, (x, y, w, h), r, (0.5 * s).max(1.0), tokens.line);
     }
+    if view.hover == Some(Focus::Page(i)) {
+        fill(pixmap, x, y, w, h, r, veil(tokens, 0.05));
+    }
+    let circle = Rect::new(
+        b.whole.x + PILL_INSET,
+        b.whole.middle() - m.pill_icon / 2.0,
+        m.pill_icon,
+        m.pill_icon,
+    );
+    let (cx, cy, cw, ch) = circle.device(s);
+    let disc = if on {
+        Colour {
+            a: 0.18,
+            ..tokens.accent_text
+        }
+    } else {
+        veil(tokens, 0.07)
+    };
+    fill(pixmap, cx, cy, cw, ch, cw / 2.0, disc);
+    if view.hover == Some(Focus::Toggle(i)) {
+        fill(pixmap, cx, cy, cw, ch, cw / 2.0, veil(tokens, 0.06));
+    }
+    icon_in(pixmap, t.tile.icon(), m.pill_glyph, circle, s, ink);
+    // The arrow, centred 18 px from the pill's right end.
     let chevron = Rect::new(
-        shown.right() - CHIP_RIGHT - CHIP_CHEVRON,
-        shown.y,
-        CHIP_CHEVRON,
-        shown.h,
+        b.whole.right() - 18.0 - 6.0,
+        b.whole.y + (m.cell - 12.0) / 2.0,
+        12.0,
+        12.0,
     );
-    icon_in(
-        pixmap,
-        "chevron-down",
-        CHIP_CHEVRON,
-        chevron,
-        s,
-        dim(tokens),
-    );
-    if view.focus == Some(Focus::Output) {
-        outline(pixmap, (x, y, w, h), r, 2.0 * s, tokens.accent);
+    let right = if b.page.is_some() {
+        chevron.x - 6.0
+    } else {
+        b.whole.right() - 12.0
+    };
+    if let Some(text) = text {
+        let left = (circle.right() + 6.0) * s;
+        let room = right * s - left;
+        let state_ink = if on {
+            Colour {
+                a: 0.7,
+                ..tokens.accent_text
+            }
+        } else {
+            dim(tokens)
+        };
+        let mut title = text.fit_in(t.tile.title(), 12.5 * s, room, Face::SEMIBOLD);
+        let mut state = text.fit(&t.state, 11.0 * s, room);
+        let block = 12.5 * s * 1.25 + 11.0 * s * 1.25 + 2.0 * s;
+        let top = y + (h - block) / 2.0;
+        text.draw(pixmap, &mut title, left, top, ink);
+        text.draw(
+            pixmap,
+            &mut state,
+            left,
+            top + 12.5 * s * 1.25 + 2.0 * s,
+            state_ink,
+        );
     }
-    // The list of outputs, open under the caption.
-    for (i, (rect, (name, current))) in l.list.iter().zip(&v.outputs).enumerate() {
-        let (rx, ry, rw, rh) = rect.device(s);
-        let rr = tokens.radius_control as f32 * s;
-        if *current {
-            fill(pixmap, rx, ry, rw, rh, rr, lit(tokens));
-        } else if view.hover == Some(Focus::Choose(i)) {
-            fill(pixmap, rx, ry, rw, rh, rr, veil(tokens, 0.05));
-        }
-        if let Some(text) = text.as_deref_mut() {
-            let size = tokens.panel_text_size as f32 * s;
-            let left = rx + popup::INSET * s;
-            let mut line = text.fit(name, size, rw - (popup::INSET * 2.0 + 20.0) * s);
-            text.draw(
-                pixmap,
-                &mut line,
-                left,
-                ry + (rh - size * 1.25) / 2.0,
-                tokens.panel_text,
-            );
-        }
-        if *current {
-            let tick = Rect::new(rect.right() - 12.0 - 16.0, rect.y, 16.0, rect.h);
-            icon_in(pixmap, "check", 14.0, tick, s, tokens.accent);
-        }
-        if view.focus == Some(Focus::Choose(i)) {
-            outline(pixmap, (rx, ry, rw, rh), rr, 2.0 * s, tokens.accent);
+    if b.page.is_some() {
+        let ink = if on { tokens.accent_text } else { dim(tokens) };
+        icon_in(pixmap, "chevron-right", 12.0, chevron, s, ink);
+    }
+    if view.focus == Some(Focus::Toggle(i)) {
+        let ring_at = if b.page.is_some() { circle } else { b.whole };
+        focus_ring(pixmap, ring_at, ring_at.h / 2.0, s, tokens);
+    }
+    if let Some(page) = b.page {
+        if view.focus == Some(Focus::Page(i)) {
+            focus_ring(pixmap, page, page.h / 2.0, s, tokens);
         }
     }
-    let (Some(mute), Some(track)) = (l.mute, l.track) else {
+}
+
+/// The shelf: the hairline above it, the slider with the volume in it, the
+/// chevron that opens the outputs, and the list of outputs when it is open.
+fn shelf(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    mut text: Option<&mut Text>,
+    s: f32,
+) {
+    let (Some(v), Some(track), Some(sound)) = (&view.volume, l.track, l.sound) else {
         return;
     };
+    let m = l.metrics;
+    let hair = (0.5 * s).max(1.0);
+    if let Some(rule) = l.rule {
+        let (x, y, w, _) = Rect::new(
+            m.side + RULE_INSET,
+            rule,
+            view.width as f32 - 2.0 * (m.side + RULE_INSET),
+            1.0,
+        )
+        .device(s);
+        fill(pixmap, x, y, w, hair, 0.0, tokens.line);
+    }
+    // The track: a rounded bar, the fill to the volume at least a bar wide.
+    let (tx, ty, tw, th) = track.device(s);
+    let round = th / 2.0;
+    fill(pixmap, tx, ty, tw, th, round, veil(tokens, 0.07));
     let share = v.percent.min(100) as f32 / 100.0;
-    let fill_colour = if v.muted {
-        mix(tokens.accent, tokens.panel, 0.55)
+    let filled = if v.percent > 0 {
+        (share * track.w).max(m.bar).min(track.w)
     } else {
-        tokens.accent
+        0.0
     };
+    let knob_colour = knob(tokens);
+    if filled > 0.0 {
+        let c = if v.muted {
+            mix(knob_colour, tokens.panel, 0.5)
+        } else {
+            knob_colour
+        };
+        fill(pixmap, tx, ty, filled * s, th, round, c);
+    }
+    // The speaker, 13 px from the track's left end and 16 px across; its
+    // ink is the card's text where the fill covers it.
     let icon = if v.muted || v.percent == 0 {
         "volume-muted"
     } else if v.percent <= 33 {
@@ -1152,78 +1185,136 @@ fn volume_part(
     } else {
         "volume-high"
     };
-    if view.compact {
-        // A bar the finger fills: the speaker sits in its left end.
-        let (bx, by, bw, bh) = track.device(s);
-        let rr = tokens.radius_menu as f32 * s * 0.85;
-        fill(pixmap, bx, by, bw, bh, rr, veil(tokens, 0.085));
-        let filled = (bw * share).round();
-        if filled > 0.0 {
-            fill(pixmap, bx, by, filled.max(rr), bh, rr, fill_colour);
-        }
-        let covered = filled >= (mute.w * s) * 0.7;
-        let ink = if covered {
-            tokens.accent_text
-        } else {
-            dim(tokens)
-        };
-        icon_in(pixmap, icon, 18.0, mute, s, ink);
-        if view.focus == Some(Focus::Slider) || view.focus == Some(Focus::Mute) {
-            outline(pixmap, (bx, by, bw, bh), rr, 2.0 * s, tokens.accent);
-        }
-        return;
-    }
-    let hovered = view.hover == Some(Focus::Mute);
-    let ink = if hovered {
+    let speaker = Rect::new(track.x + 13.0, track.y, 16.0, track.h);
+    let covered = filled >= 29.0;
+    let ink = if !covered {
+        dim(tokens)
+    } else if knob_colour == tokens.window {
         tokens.panel_text
     } else {
-        dim(tokens)
+        tokens.panel
     };
-    let speaker = Rect::new(mute.x, mute.y, 16.0, mute.h);
     icon_in(pixmap, icon, 16.0, speaker, s, ink);
-    let (tx, ty, tw, th) = track.device(s);
-    let thick = (6.0 * s).round();
-    let (a, b) = (tx + KNOB / 2.0 * s, tx + tw - KNOB / 2.0 * s);
-    let at = a + (b - a) * share;
-    let top = ty + ((th - thick) / 2.0).round();
-    fill(pixmap, tx, top, tw, thick, thick / 2.0, veil(tokens, 0.085));
-    fill(
-        pixmap,
-        tx,
-        top,
-        (at - tx).max(thick),
-        thick,
-        thick / 2.0,
-        fill_colour,
-    );
-    // The knob, with a soft shadow under it and a hairline round it.
-    let d = (KNOB * s).round();
-    let (kx, ky) = ((at - d / 2.0).round(), ty + ((th - d) / 2.0).round());
-    let shadow = Colour {
-        a: 0.22,
-        ..tokens.shadow
-    };
-    fill(pixmap, kx, ky + s, d, d, d / 2.0, shadow);
-    fill(pixmap, kx, ky, d, d, d / 2.0, knob(tokens));
-    outline(pixmap, (kx, ky, d, d), d / 2.0, hair, tokens.line);
-    if view.focus == Some(Focus::Slider) {
-        outline(
-            pixmap,
-            (kx - 2.0 * s, ky - 2.0 * s, d + 4.0 * s, d + 4.0 * s),
-            d / 2.0 + 2.0 * s,
-            2.0 * s,
-            tokens.accent,
-        );
+    if let Some(text) = text.as_deref_mut() {
+        // The number, 14 px in from the track's right end.
+        let size = 11.5 * s;
+        let mut number = text.line_in(&v.percent.to_string(), size, Face::SEMIBOLD.tabular());
+        let right = (track.right() - 14.0) * s;
+        let top = ty + (th - size * 1.25) / 2.0;
+        let left = right - number.width;
+        text.draw(pixmap, &mut number, left, top, dim(tokens));
     }
-    if view.focus == Some(Focus::Mute) {
-        let (sx, sy, sw, sh) = speaker.device(s);
-        outline(
-            pixmap,
-            (sx - 2.0 * s, sy, sw + 4.0 * s, sh),
-            tokens.radius_small as f32 * s,
-            2.0 * s,
-            tokens.accent,
-        );
+    if view.focus == Some(Focus::Slider) {
+        focus_ring(pixmap, track, track.h / 2.0, s, tokens);
+    }
+    // The chevron button: raised, edged, its arrow turning down while open.
+    let (sx, sy, sw, sh) = sound.device(s);
+    fill(pixmap, sx, sy, sw, sh, sw / 2.0, raised(tokens));
+    outline(pixmap, (sx, sy, sw, sh), sw / 2.0, hair, tokens.line);
+    if view.hover == Some(Focus::Sound) {
+        fill(pixmap, sx, sy, sw, sh, sw / 2.0, veil(tokens, 0.05));
+    }
+    let glyph = if view.list {
+        "chevron-down"
+    } else {
+        "chevron-right"
+    };
+    icon_in(pixmap, glyph, 14.0, sound, s, tokens.panel_text);
+    if view.focus == Some(Focus::Sound) {
+        focus_ring(pixmap, sound, m.bar / 2.0, s, tokens);
+    }
+    // The list of outputs, one row each, the one in use lit and ticked.
+    for (i, (rect, (name, current))) in l.list.iter().zip(&v.outputs).enumerate() {
+        let (rx, ry, rw, rh) = rect.device(s);
+        let rr = rh / 2.0;
+        if *current {
+            fill(pixmap, rx, ry, rw, rh, rr, lit(tokens));
+        } else if view.hover == Some(Focus::Choose(i)) {
+            fill(pixmap, rx, ry, rw, rh, rr, veil(tokens, 0.05));
+        }
+        if let Some(text) = text.as_deref_mut() {
+            let size = 13.0 * s;
+            let room = rw - (ROW_TEXT + 30.0) * s;
+            let mut line = text.fit(name, size, room);
+            let top = ry + (rh - size * 1.25) / 2.0;
+            text.draw(pixmap, &mut line, rx + ROW_TEXT * s, top, tokens.panel_text);
+        }
+        if *current {
+            let tick = Rect::new(rect.right() - ROW_TEXT - 14.0, rect.y, 14.0, rect.h);
+            icon_in(pixmap, "check", 14.0, tick, s, tokens.accent);
+        }
+        if view.focus == Some(Focus::Choose(i)) {
+            outline(pixmap, (rx, ry, rw, rh), rr, 2.0 * s, tokens.accent);
+        }
+    }
+    // "Sound settings", last, with an arrow.
+    if let Some(page) = l.sound_page {
+        let (px, py, pw, ph) = page.device(s);
+        let rr = ph / 2.0;
+        fill(pixmap, px, py, pw, ph, rr, veil(tokens, 0.05));
+        if view.hover == Some(Focus::SoundPage) {
+            fill(pixmap, px, py, pw, ph, rr, veil(tokens, 0.05));
+        }
+        if let Some(text) = text {
+            let size = 13.0 * s;
+            let mut line = text.fit(tr("Sound settings"), size, pw - (ROW_TEXT + 30.0) * s);
+            let top = py + (ph - size * 1.25) / 2.0;
+            text.draw(pixmap, &mut line, px + ROW_TEXT * s, top, tokens.panel_text);
+        }
+        let arrow = Rect::new(page.right() - ROW_TEXT - 14.0, page.y, 14.0, page.h);
+        icon_in(pixmap, "chevron-right", 14.0, arrow, s, tokens.panel_text);
+        if view.focus == Some(Focus::SoundPage) {
+            outline(pixmap, (px, py, pw, ph), rr, 2.0 * s, tokens.accent);
+        }
+    }
+}
+
+/// The footer: the battery's pill with its charge and time, and the
+/// Settings button at the right.
+fn footer(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    if let (Some(b), Some(room)) = (&view.battery, l.battery) {
+        let (x, y, w, h) = room.device(s);
+        fill(pixmap, x, y, w, h, h / 2.0, veil(tokens, 0.05));
+        let icon = (15.0 * s).round();
+        let halo = s.round().max(1.0) as i32;
+        let at = (x + (12.0 * s).round(), y + ((h - icon) / 2.0).round());
+        paint::battery(pixmap, icon, at, (b.percent, b.charging), dim(tokens), halo);
+        if let Some(text) = text {
+            let size = 11.5 * s;
+            let left = x + (12.0 + 15.0 + 8.0) * s;
+            let right = x + w - 12.0 * s;
+            let percent = trf("{percent}%", &[("percent", &b.percent.to_string())]);
+            let mut pct = text.fit_in(&percent, size, right - left, Face::SEMIBOLD);
+            let top = y + (h - size * 1.25) / 2.0;
+            text.draw(pixmap, &mut pct, left, top, tokens.panel_text);
+            let after = match (&b.time, b.charging) {
+                (Some(time), _) => Some(time.clone()),
+                (None, true) => Some(tr("charging").to_string()),
+                (None, false) => None,
+            };
+            if let Some(after) = after {
+                let at = left + pct.width + 7.0 * s;
+                let mut time = text.fit(&after, size, right - at);
+                text.draw(pixmap, &mut time, at, top, dim(tokens));
+            }
+        }
+    }
+    if let Some(button) = l.settings {
+        let (x, y, w, h) = button.device(s);
+        let hovered = view.hover == Some(Focus::Settings);
+        let back = if hovered { 0.085 } else { 0.05 };
+        fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, back));
+        icon_in(pixmap, "gear", 16.0, button, s, tokens.panel_text);
+        if view.focus == Some(Focus::Settings) {
+            focus_ring(pixmap, button, button.w / 2.0, s, tokens);
+        }
     }
 }
 
@@ -1277,23 +1368,27 @@ mod tests {
                 percent: 82,
                 charging: false,
                 line: "82 percent, 4 hours 10 minutes left".into(),
+                time: Some("4 h 10 min".into()),
             }),
             bluetooth: Some(false),
         }
     }
 
-    /// The card on a screen `screen` px wide: a sheet below Compact's edge,
-    /// else the 360 px card.
+    /// The card on a screen `screen` px wide: a sheet across it below
+    /// Compact's edge, else the 352 px card.
     fn view_of(status: &Status, dark: bool, screen: u32) -> View {
         let list = names(edel::presets::DEFAULT_TILES);
-        let compact = screen < COMPACT_BELOW;
         let state = State {
-            width: if compact { screen } else { WIDTH },
-            compact,
+            width: if screen < COMPACT_BELOW {
+                screen
+            } else {
+                WIDTH
+            },
+            compact: screen < COMPACT_BELOW,
             dark,
             ..State::default()
         };
-        view(&state, status, &list, true, |_| 90.0)
+        view(&state, status, &list, true)
     }
 
     #[test]
@@ -1307,6 +1402,7 @@ mod tests {
         for tile in ALL {
             assert_eq!(Tile::from_name(tile.name()), Some(tile));
             assert!(!tile.title().is_empty());
+            assert!(!tile.short().is_empty());
             assert!(
                 edel::icons::mask(tile.icon(), 16).is_some(),
                 "{}",
@@ -1318,6 +1414,11 @@ mod tests {
             }
         }
         assert_eq!(Tile::from_name("night_light"), None);
+        assert_eq!(
+            ALL.iter().filter(|t| t.pill()).count(),
+            2,
+            "Wi-Fi and Bluetooth are the pills"
+        );
     }
 
     #[test]
@@ -1337,6 +1438,10 @@ mod tests {
                 "Appearance exists now: point the arrow at it"
             );
         }
+        assert!(
+            main.contains(&format!("\"{SOUND_PAGE}\" => Some(Page {{")),
+            "the Settings app has no page called {SOUND_PAGE}"
+        );
     }
 
     #[test]
@@ -1423,58 +1528,96 @@ mod tests {
     }
 
     #[test]
-    fn the_card_is_360_wide_and_its_tiles_lie_in_two_columns() {
+    fn the_card_is_352_wide_and_its_tiles_lie_in_one_square_grid() {
         let view = view_of(&laptop(), false, 1280);
         let l = layout(&view);
-        assert_eq!(l.size.0, 360);
-        let m = l.metrics;
-        // 12 px in, 8 between: two tiles of 164.
-        assert_eq!(l.tiles[0].whole, Rect::new(12.0, 12.0, 164.0, 56.0));
-        assert_eq!(l.tiles[1].whole, Rect::new(184.0, 12.0, 164.0, 56.0));
-        assert_eq!(l.tiles[2].whole.y, 12.0 + 56.0 + 8.0);
-        // The arrow is the tile's right 28 px; Airplane has none.
+        assert_eq!(l.size.0, 352);
+        // Two pills share the first row, 148 wide, 20 apart, centred on
+        // four cells: 18 in, 186 in.
+        assert_eq!(l.tiles[0].whole, Rect::new(18.0, 12.0, 148.0, 64.0));
+        assert_eq!(l.tiles[1].whole, Rect::new(186.0, 12.0, 148.0, 64.0));
+        // The round toggles lie in the second row, 10 below the first.
+        let y = 12.0 + 64.0 + 10.0;
+        for (i, x) in [(2, 18.0), (3, 102.0), (4, 186.0)] {
+            assert_eq!(l.tiles[i].whole, Rect::new(x, y, 64.0, 64.0));
+            assert_eq!(l.tiles[i].toggle, l.tiles[i].whole);
+            assert_eq!(l.tiles[i].page, None);
+        }
+        // The pill's icon part is its left 46 px; its page is the rest.
         let page = l.tiles[0].page.unwrap();
-        assert_eq!((page.x, page.w), (12.0 + 164.0 - 28.0, 28.0));
-        assert_eq!(l.tiles[0].toggle.w, 164.0 - 28.0);
-        assert_eq!(l.tiles[2].page, None);
-        assert_eq!(l.tiles[2].toggle, l.tiles[2].whole);
+        assert_eq!((page.x, page.w), (18.0 + 46.0, 148.0 - 46.0));
+        assert_eq!(l.tiles[0].toggle.w, 46.0);
+        // Every gap across the grid is 20 px.
+        assert_eq!(l.tiles[1].whole.x - l.tiles[0].whole.right(), 20.0);
+        assert_eq!(l.tiles[3].whole.x - l.tiles[2].whole.right(), 20.0);
+        assert_eq!(l.tiles[4].whole.x - l.tiles[3].whole.right(), 20.0);
+        // The footer's button is a bar square 14 px in from the shelf's end.
+        let b = l.settings.unwrap();
+        assert_eq!((b.w, b.h), (36.0, 36.0));
+        assert_eq!(b.right(), 18.0 + 316.0 - 14.0);
+        // The battery pill is half the inner width less a gap: 148.
+        assert_eq!(l.battery.unwrap().w, 148.0);
         // Nothing lies outside the card.
         let bottom = l.size.1 as f32;
-        for r in [l.tiles[3].whole, l.settings.unwrap(), l.track.unwrap()] {
-            assert!(r.x >= 0.0 && r.right() <= 360.0 && r.y + r.h <= bottom - m.pad + 0.5);
+        for r in [l.tiles[4].whole, b, l.track.unwrap(), l.sound.unwrap()] {
+            assert!(r.x >= 0.0 && r.right() <= 352.0 && r.y + r.h <= bottom);
         }
-        // The footer's button is square and at the card's bottom right.
-        let b = l.settings.unwrap();
-        assert_eq!((b.w, b.h), (28.0, 28.0));
-        assert_eq!(b.right(), 360.0 - 12.0 - 4.0);
     }
 
     #[test]
-    fn at_compact_width_it_is_a_sheet_with_touch_targets() {
-        let mut view = view_of(&laptop(), false, 360);
-        assert!(view.compact);
-        for width in [360, 599] {
-            view.width = width;
-            let l = layout(&view);
-            assert_eq!(l.size.0, width);
-            let targets = l
-                .tiles
-                .iter()
-                .flat_map(|t| [Some(t.toggle), t.page])
-                .flatten()
-                .chain([l.chip, l.mute, l.track, l.settings].into_iter().flatten());
-            for r in targets {
-                assert!(r.h >= 44.0, "{r:?} is under 44 px high");
+    fn a_pill_that_does_not_fit_starts_a_new_row() {
+        let list = names(&[
+            "airplane",
+            "wifi",
+            "do_not_disturb",
+            "dark_style",
+            "bluetooth",
+        ]);
+        let state = State {
+            width: WIDTH,
+            ..State::default()
+        };
+        let view = view(&state, &laptop(), &list, false);
+        let l = layout(&view);
+        let x = |i: usize| l.tiles[i].whole.x;
+        // Four columns: Airplane in column 0, Wi-Fi in 1 and 2, Do not
+        // disturb in 3; Dark starts row 2, Bluetooth fills 1 and 2 of it.
+        assert_eq!(x(0), 18.0);
+        assert_eq!(x(1), 18.0 + 84.0);
+        assert_eq!(l.tiles[1].whole.w, 148.0);
+        assert_eq!(x(2), 18.0 + 3.0 * 84.0);
+        assert_eq!(x(3), 18.0);
+        assert!(l.tiles[3].whole.y > l.tiles[0].whole.y);
+        assert_eq!(x(4), 18.0 + 84.0);
+        assert_eq!(l.tiles[4].whole.w, 148.0);
+        assert_eq!(l.tiles[4].whole.y, l.tiles[3].whole.y);
+        // The second row has a round toggle, so it is 74 high.
+        assert_eq!(l.tiles[3].whole.y, l.tiles[0].whole.y + 74.0 + 10.0);
+    }
+
+    #[test]
+    fn at_compact_width_it_is_a_sheet_and_its_tiles_are_touch_sized() {
+        let view = view_of(&laptop(), false, 360);
+        assert_eq!(view.width, 360);
+        let l = layout(&view);
+        assert_eq!(l.size.0, 360);
+        // Every tile's parts are at least 44 px where a finger lands.
+        for t in &l.tiles {
+            assert!(t.toggle.h >= 44.0 && t.toggle.w >= 44.0, "{t:?}");
+            if let Some(page) = t.page {
+                assert!(page.w >= 44.0 && page.h >= 44.0, "{page:?}");
             }
-            for r in l.tiles.iter().filter_map(|t| t.page).chain(l.settings) {
-                assert!(r.w >= 44.0, "{r:?} is under 44 px wide");
-            }
-            assert!(l.tiles[1].whole.right() <= width as f32);
+            assert!(t.whole.right() <= 360.0);
         }
-        // From 600 px on it is the 360 px card.
-        view.compact = false;
-        view.width = WIDTH;
-        assert!(layout(&view).size.1 < 340);
+        // The slider and the buttons beside and below it are 44 px high,
+        // where the desktop's are the mockups' 36.
+        assert_eq!(l.track.unwrap().h, 44.0);
+        assert_eq!(l.settings.unwrap().h, 44.0);
+        assert_eq!(l.sound.unwrap().w, 44.0);
+        // From 600 px on it is the 352 px card, 16 px shorter.
+        let wide = view_of(&laptop(), false, 1280);
+        assert_eq!(layout(&wide).size.0, 352);
+        assert_eq!(layout(&wide).size.1 + 16, l.size.1);
     }
 
     #[test]
@@ -1483,18 +1626,16 @@ mod tests {
         let mut view = view_of(&laptop(), false, 1280);
         view.list = true;
         let open = layout(&view);
-        assert_eq!(open.size.1, full + 64, "two rows of 32");
+        // The list: a section, then two output rows and "Sound settings",
+        // 36 high each and 4 apart.
+        assert_eq!(open.size.1, full + 10 + 3 * 36 + 2 * 4, "the list's room");
         assert_eq!(open.list.len(), 2);
-        // The list lies between the caption and the slider.
-        assert!(
-            open.list[0].y
-                >= open
-                    .caption
-                    .unwrap()
-                    .right()
-                    .min(open.caption.unwrap().y + 24.0)
-        );
-        assert!(open.list[1].y + 32.0 <= open.track.unwrap().y);
+        let chevron = open.sound.unwrap();
+        assert!(open.list[0].y >= chevron.y + chevron.h);
+        // The list follows the volume row, the last row ends the card's shelf.
+        let track = open.track.unwrap();
+        assert!(open.list[0].y >= track.y + track.h);
+        assert!(open.sound_page.unwrap().y > open.list[1].y);
         let mut bare = view_of(&Status::default(), false, 1280);
         bare.settings = false;
         let l = layout(&bare);
@@ -1508,9 +1649,8 @@ mod tests {
         one.tiles.truncate(3);
         let l = layout(&one);
         assert_eq!(
-            l.tiles[2].whole.right(),
-            12.0 + 164.0,
-            "a last one keeps the left column"
+            l.tiles[2].whole.x, 18.0,
+            "a last one alone keeps the left column"
         );
     }
 
@@ -1521,18 +1661,18 @@ mod tests {
         let line = places(&view, &l);
         assert!(
             line.starts_with(&format!(
-                "card 360x{}, wifi 12+12+164x56, bluetooth 184+12+164x56, ",
+                "card 352x{}, wifi 18+12+148x64, bluetooth 186+12+148x64, airplane 18+86+64x64, ",
                 l.size.1
             )),
             "{line}"
         );
         assert!(
-            line.contains(", do_not_disturb 184+76+164x56, dark_style 12+140+164x56, track 42+"),
+            line.contains(", do_not_disturb 102+86+64x64, dark_style 186+86+64x64, track 18+"),
             "{line}"
         );
         assert!(
             line.ends_with(&format!(
-                ", settings 316+{:.0}+28x28",
+                ", settings 284+{:.0}+36x36",
                 l.settings.unwrap().y
             )),
             "{line}"
@@ -1570,20 +1710,17 @@ mod tests {
             muted: Some(true),
             ..State::default()
         };
-        let v = view(&state, &laptop(), &list, false, |_| 70.0);
+        let v = view(&state, &laptop(), &list, false);
         assert!(!v.tiles[0].on, "Wi-Fi shows off before the machine says so");
         let volume = v.volume.unwrap();
-        assert_eq!(
-            (volume.percent, volume.muted, volume.chip),
-            (30, true, 70.0)
-        );
+        assert_eq!((volume.percent, volume.muted), (30, true));
         assert!(!v.settings);
-        let machine = view(&State::default(), &laptop(), &list, true, |_| 70.0);
+        let machine = view(&State::default(), &laptop(), &list, true);
         assert_eq!(machine.volume.unwrap().percent, 62);
     }
 
     #[test]
-    fn a_pointer_finds_the_halves_of_a_tile_and_the_slider() {
+    fn a_pointer_finds_the_halves_of_a_tile_and_the_shelf() {
         let view = view_of(&laptop(), false, 1280);
         let l = layout(&view);
         let t = l.tiles[0];
@@ -1593,7 +1730,7 @@ mod tests {
         );
         let p = t.page.unwrap();
         assert_eq!(hit(&l, p.x + 4.0, p.middle()), Some(Focus::Page(0)));
-        // Airplane mode's whole tile toggles.
+        // A round toggle's whole cell toggles.
         let a = l.tiles[2];
         assert_eq!(
             hit(&l, a.whole.right() - 3.0, a.whole.middle()),
@@ -1602,12 +1739,8 @@ mod tests {
         assert_eq!(hit(&l, 1.0, 1.0), None);
         let track = l.track.unwrap();
         assert_eq!(hit(&l, track.x + 40.0, track.middle()), Some(Focus::Slider));
-        let mute = l.mute.unwrap();
-        assert_eq!(hit(&l, mute.x + 5.0, mute.middle()), Some(Focus::Mute));
-        assert_eq!(
-            hit(&l, l.chip.unwrap().x + 3.0, l.chip.unwrap().middle()),
-            Some(Focus::Output)
-        );
+        let sound = l.sound.unwrap();
+        assert_eq!(hit(&l, sound.x + 5.0, sound.middle()), Some(Focus::Sound));
         let b = l.settings.unwrap();
         assert_eq!(hit(&l, b.x + 3.0, b.y + 3.0), Some(Focus::Settings));
     }
@@ -1617,16 +1750,13 @@ mod tests {
         let view = view_of(&laptop(), false, 1280);
         let l = layout(&view);
         let t = l.track.unwrap();
-        assert_eq!(volume_at(&l, false, t.x - 50.0), 0);
-        assert_eq!(volume_at(&l, false, t.x + 9.0), 0);
-        assert_eq!(volume_at(&l, false, t.x + t.w / 2.0), 50);
-        assert_eq!(volume_at(&l, false, t.x + t.w - 9.0), 100);
-        assert_eq!(volume_at(&l, false, t.x + t.w + 40.0), 100);
-        // The Compact bar fills from its left edge to the finger.
-        let sheet = view_of(&laptop(), false, 360);
-        let l = layout(&sheet);
-        let bar = l.track.unwrap();
-        assert_eq!(volume_at(&l, true, bar.x + bar.w * 0.25), 25);
+        assert_eq!(volume_at(&l, t.x - 50.0), 0);
+        assert_eq!(volume_at(&l, t.x), 0);
+        assert_eq!(volume_at(&l, t.x + t.w / 2.0), 50);
+        assert_eq!(volume_at(&l, t.x + t.w), 100);
+        assert_eq!(volume_at(&l, t.x + t.w + 40.0), 100);
+        // A quarter of the way along is a quarter of the volume.
+        assert_eq!(volume_at(&l, t.x + t.w * 0.25), 25);
     }
 
     #[test]
@@ -1640,26 +1770,23 @@ mod tests {
             Some(Focus::Settings),
             "Shift+Tab from nowhere is the last"
         );
-        // Right goes from a toggle to its arrow, then to the next tile.
+        // Right goes from a pill's icon to its page, then to the next tile.
         let (f, _) = key(&view, Some(Focus::Toggle(0)), Key::Right);
         assert_eq!(f, Some(Focus::Page(0)));
         assert_eq!(key(&view, f, Key::Right).0, Some(Focus::Toggle(1)));
-        // Down goes to the tile below; below the last row, to the volume.
+        // Down moves by a row of four cells: from Wi-Fi to Dark style (the
+        // fifth tile, the round toggle at the row's end).
         assert_eq!(
             key(&view, Some(Focus::Toggle(0)), Key::Down).0,
-            Some(Focus::Toggle(2))
+            Some(Focus::Toggle(4))
         );
-        // The tile below has no arrow (Do not disturb), so the toggle.
-        assert_eq!(
-            key(&view, Some(Focus::Page(1)), Key::Down).0,
-            Some(Focus::Toggle(3))
-        );
+        // From the last row, Down goes to the slider.
         assert_eq!(
             key(&view, Some(Focus::Toggle(3)), Key::Down).0,
-            Some(Focus::Output)
+            Some(Focus::Slider)
         );
         assert_eq!(
-            key(&view, Some(Focus::Toggle(2)), Key::Up).0,
+            key(&view, Some(Focus::Toggle(4)), Key::Up).0,
             Some(Focus::Toggle(0))
         );
         // Space or Return does what a click does.
@@ -1670,6 +1797,14 @@ mod tests {
         assert_eq!(
             key(&view, Some(Focus::Page(0)), Key::Activate).1,
             Some(Act::Page(0))
+        );
+        assert_eq!(
+            key(&view, Some(Focus::Sound), Key::Activate).1,
+            Some(Act::List)
+        );
+        assert_eq!(
+            key(&view, Some(Focus::Slider), Key::Activate).1,
+            Some(Act::Mute)
         );
         assert_eq!(
             key(&view, Some(Focus::Settings), Key::Activate).1,
@@ -1687,6 +1822,11 @@ mod tests {
         open.list = true;
         assert_eq!(key(&open, slider, Key::Escape).1, Some(Act::List));
         assert!(ring(&open).contains(&Focus::Choose(1)));
+        // The list's last row opens the Sound page.
+        assert_eq!(
+            key(&open, Some(Focus::SoundPage), Key::Activate).1,
+            Some(Act::SoundPage)
+        );
     }
 
     #[test]
@@ -1707,9 +1847,9 @@ mod tests {
             (Role::Slider, "Volume")
         );
         assert_eq!(slider.value, Some((62.0, 0.0, 100.0)));
-        assert_eq!(first.bounds.x0, 900.0 + 12.0);
+        assert_eq!(first.bounds.x0, 900.0 + 18.0);
         assert_eq!(items.last().unwrap().label, "Settings");
-        assert!(items.iter().any(|i| i.label == "Output: Speakers"));
+        assert!(items.iter().any(|i| i.label == "Sound: outputs"));
     }
 
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
@@ -1718,9 +1858,11 @@ mod tests {
     }
 
     #[test]
-    fn an_on_tile_is_tinted_and_its_circle_is_the_accent_at_any_scale() {
+    fn an_on_round_toggle_is_the_accent_and_an_on_pill_is_tinted() {
         let tokens = Tokens::built_in();
-        let view = view_of(&laptop(), false, 1280);
+        let mut view = view_of(&laptop(), false, 1280);
+        // Do not disturb is on; Wi-Fi is on (the laptop's); Airplane is off.
+        view.tiles[3].on = true;
         let l = layout(&view);
         for s in [1u32, 2] {
             let (w, h) = (WIDTH * s, l.size.1 * s);
@@ -1728,49 +1870,49 @@ mod tests {
             paint(&mut pixmap, &view, &tokens, None, s as f32);
             assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "a round corner");
             let card = tokens.panel.bytes();
-            // The card's own colour between the tiles and at its foot.
+            // The card's own colour between the tiles and above them.
             assert_eq!(pixel(&pixmap, 180 * s, 10 * s), card);
-            // Wi-Fi is on: its circle is the accent, Bluetooth's is not.
-            let circle = |i: usize| {
-                let t = l.tiles[i].whole;
+            // Four pixels in from a round toggle's left end, at its middle,
+            // it is the accent when on and not when off.
+            let at = |r: Rect, dx: f32, dy: f32| {
                 pixel(
                     &pixmap,
-                    ((t.x + 10.0 + 4.0) * s as f32) as u32,
-                    ((t.y + 28.0) * s as f32) as u32,
+                    ((r.x + dx) * s as f32) as u32,
+                    ((r.y + dy) * s as f32) as u32,
                 )
             };
-            // Four pixels in from the circle's left end, at its middle
-            // height, it is inside it and clear of the icon.
-            assert_eq!(circle(0)[..3], tokens.accent.bytes()[..3]);
-            assert_ne!(circle(1)[..3], tokens.accent.bytes()[..3]);
-            // The on tile is tinted, the off one is not the same colour.
-            let tint = |i: usize| {
-                let t = l.tiles[i].whole;
-                pixel(
-                    &pixmap,
-                    ((t.x + 100.0) * s as f32) as u32,
-                    ((t.y + 3.0) * s as f32) as u32,
-                )
-            };
-            assert_ne!(tint(0), card);
-            assert_ne!(tint(0), tint(1), "on and off tiles differ");
+            let dnd = l.tiles[3].whole;
+            assert_eq!(at(dnd, 8.0, 32.0)[..3], tokens.accent.bytes()[..3]);
+            let airplane = l.tiles[2].whole;
+            assert_ne!(at(airplane, 8.0, 32.0)[..3], tokens.accent.bytes()[..3]);
+            // Wi-Fi's pill is the accent over its page; Bluetooth's is not.
+            let wifi = l.tiles[0].whole;
+            let bluetooth = l.tiles[1].whole;
+            assert_eq!(at(wifi, 74.0, 4.0)[..3], tokens.accent.bytes()[..3]);
+            assert_ne!(at(bluetooth, 74.0, 4.0)[..3], tokens.accent.bytes()[..3]);
+            assert_ne!(
+                at(bluetooth, 74.0, 4.0),
+                card,
+                "the off pill is not the card"
+            );
         }
     }
 
     #[test]
-    fn the_slider_fills_with_the_accent_to_the_volume() {
+    fn the_slider_fills_with_the_knob_to_the_volume() {
         let tokens = Tokens::built_in();
-        let view = view_of(&laptop(), false, 1280);
+        let mut view = view_of(&laptop(), false, 1280);
+        view.volume.as_mut().unwrap().percent = 20;
         let l = layout(&view);
         let mut pixmap = Pixmap::new(WIDTH, l.size.1).unwrap();
         paint(&mut pixmap, &view, &tokens, None, 1.0);
         let t = l.track.unwrap();
         let y = t.middle() as u32;
-        // 62 percent: the accent at a quarter of the track, the track's
-        // own faint colour near its end.
-        let at = |share: f32| pixel(&pixmap, (t.x + 9.0 + (t.w - 18.0) * share) as u32, y);
-        assert_eq!(at(0.25)[..3], tokens.accent.bytes()[..3]);
-        assert_ne!(at(0.95)[..3], tokens.accent.bytes()[..3]);
+        // At 20 percent the fill reaches a fifth of the track, the knob's
+        // colour at a tenth of it; the track's own faint colour near its end.
+        let at = |share: f32| pixel(&pixmap, (t.x + t.w * share) as u32, y);
+        assert_eq!(at(0.1)[..3], knob(&tokens).bytes()[..3]);
+        assert_ne!(at(0.95)[..3], knob(&tokens).bytes()[..3]);
     }
 
     fn fonts() -> Option<Text> {
@@ -1797,10 +1939,6 @@ mod tests {
                 let card = if width < COMPACT_BELOW { width } else { WIDTH };
                 let mut view = view_of(&laptop(), dark, width);
                 view.list = list;
-                if let Some(v) = view.volume.as_mut() {
-                    let chip = text.line_in(&v.output, 12.0, Face::MEDIUM).width;
-                    v.chip = chip_width(chip, 190.0);
-                }
                 if name == "desktop" {
                     view.hover = Some(Focus::Toggle(1));
                 }
@@ -1813,12 +1951,19 @@ mod tests {
                     (y as u32..(y + h) as u32)
                         .flat_map(|py| (x as u32..(x + w) as u32).map(move |px| (px, py)))
                         .filter(|&(px, py)| {
-                            pixel(&pixmap, px, py)[..3] == tokens.panel_text.bytes()[..3]
+                            pixel(&pixmap, px, py)[..3] != tokens.panel.bytes()[..3]
                         })
                         .count()
                 };
-                for t in &l.tiles {
-                    assert!(ink(t.toggle) > 20, "{name} {mode}: a tile's title is drawn");
+                for (t, b) in view.tiles.iter().zip(&l.tiles) {
+                    // A round toggle's title sits under its circle.
+                    let label = if t.tile.pill() {
+                        0.0
+                    } else {
+                        metrics(view.compact).label
+                    };
+                    let r = Rect::new(b.whole.x, b.whole.y, b.whole.w, b.whole.h + label);
+                    assert!(ink(r) > 20, "{name} {mode}: {} is drawn", t.tile.name());
                 }
                 if let Some(dir) = std::env::var_os("EDEL_QUICK_PNG") {
                     let dir = std::path::PathBuf::from(dir);
@@ -1840,7 +1985,7 @@ mod tests {
                         pixmap.width(),
                         pixmap.height(),
                         room,
-                        tokens.radius_menu as f32 * 2.0,
+                        RADIUS * 2.0,
                         &tokens,
                         2.0,
                     ) {

@@ -236,14 +236,16 @@ impl Shell {
         self.hide_banner();
         let (edge, scale) = self.panel_for("status");
         let screen = self.screen_width();
-        let (_, small) = notice::sizes(&self.tokens);
+        let (_, body, _, _) = notice::sizes(&self.tokens);
         let text = &mut self.text;
-        let view = banner::view(n, screen, |t, face| text.line_in(t, small, face).width);
+        let view = banner::view(n, screen, |t, face| text.line_in(t, body, face).width);
         let layout = banner::layout(&view);
         let room = paint::shadow_room(&self.tokens, !crate::fillets());
-        let Some(popup) = Popup::new(self, BANNER, layout.size, layout.size, scale, room) else {
+        let Some(mut popup) = Popup::new(self, BANNER, layout.size, layout.size, scale, room)
+        else {
             return;
         };
+        popup.set_cards(vec![banner::card(&layout)], &self.compositor);
         let side = match edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
@@ -407,11 +409,12 @@ impl Shell {
 
     /// What the centre shows for `state`, and where it lies.
     fn centre_view_for(&mut self, state: &centre::State) -> (centre::View, centre::Layout) {
-        let (_, row, small) = centre::sizes(&self.tokens);
+        let (_, _, small) = centre::sizes(&self.tokens);
+        let (_, body, _, _) = notice::sizes(&self.tokens);
         let text = &mut self.text;
-        let clear = text.line_in(tr("Clear all"), row, Face::MEDIUM).width;
+        let clear = text.line_in(tr("Clear all"), small, Face::SEMIBOLD).width;
         let view = centre::view(state, self.notifications.items(), clear, |t, face| {
-            text.line_in(t, small, face).width
+            text.line_in(t, body, face).width
         });
         let layout = centre::layout(&view);
         (view, layout)
@@ -443,9 +446,10 @@ impl Shell {
         // Room to grow when notifications come while it is open.
         let most = (size.0, size.1 + 300);
         let room = paint::shadow_room(&self.tokens, !crate::fillets());
-        let Some(popup) = Popup::new(self, CENTRE, size, most, scale, room) else {
+        let Some(mut popup) = Popup::new(self, CENTRE, size, most, scale, room) else {
             return;
         };
+        popup.set_cards(centre::cards(&layout), &self.compositor);
         let side = match edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
@@ -512,6 +516,8 @@ impl Shell {
         let Some(card) = &mut self.centre else {
             return;
         };
+        card.popup
+            .set_cards(centre::cards(&layout), &self.compositor);
         // The list may have got shorter than where it starts.
         card.state.first = state.first.min(self.notifications.len().saturating_sub(1));
         if card.popup.size() != layout.size {
