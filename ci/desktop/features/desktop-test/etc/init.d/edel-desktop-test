@@ -648,7 +648,7 @@ commands() {
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
 		'power rules')
-			for c in /sbin/poweroff /sbin/reboot /usr/libexec/edel-suspend; do
+			for c in /sbin/poweroff /sbin/reboot /usr/sbin/zzz; do
 				echo "DESKTOP-TEST: power rule $c $(su -s /bin/sh ci -c "doas -C /etc/doas.d/edel-power.conf $c" 2>&1 | tr '\n' ' ')"
 			done
 			;;
