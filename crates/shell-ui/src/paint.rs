@@ -14,12 +14,14 @@ use cosmic_text::{
 };
 use tiny_skia::{
     FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap, PixmapPaint,
-    Point, Rect, SpreadMode, Transform,
+    Point, Rect, SpreadMode, Stroke, StrokeDash, Transform,
 };
 
+use edel::i18n::tr;
 use edel::presets::{Edge, Style};
 use edel::tokens::{Colour, Tokens};
 
+use crate::popup;
 use crate::widgets::{Canvas, Live, Widget};
 
 /// Everything a panel shows, at one scale.
@@ -36,6 +38,30 @@ pub struct Look {
     pub fillets: bool,
     /// What each widget shows, in the row's order.
     pub shown: Vec<String>,
+    /// Whether the panel is being edited (M5.31b): each widget gets a tile
+    /// as wide as its title needs, and each empty group a place to drop
+    /// into. Part 2b adds what is dragged and where it would land.
+    pub editing: bool,
+}
+
+/// While a panel is edited, the least room a widget's tile has beyond its
+/// title, logical pixels on each side (M5.31b).
+pub const EDIT_PAD: f32 = 8.0;
+/// The width of an empty group's place while a panel is edited, logical
+/// pixels (M5.31b).
+pub const EMPTY_WIDTH: f32 = 40.0;
+/// The room between two tiles while a panel is edited, logical pixels: half
+/// of it at each tile's side (M5.31b).
+const TILE_ROOM: f32 = 4.0;
+
+/// Where a panel's widgets lie and, while it is edited, where its empty
+/// groups do: each widget's left edge and width in logical pixels, in the
+/// row's order, and for each group (start, centre, end) its place when it
+/// holds no widget, `None` otherwise (M5.31b).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Places {
+    pub widgets: Vec<(f32, f32)>,
+    pub empty: [Option<(f32, f32)>; 3],
 }
 
 /// A panel's widgets, from the preset, as this machine can show them.
@@ -615,9 +641,52 @@ fn fillet(x: f32, y: f32, r: f32, left: bool, up: bool) -> Option<Path> {
     p.finish()
 }
 
+/// The tile of a widget or an empty group while its panel is edited, `x`
+/// and `w` device pixels across the bar, `bar` its top and height in device
+/// pixels: a rounded tile `panel_control` high, centred in the bar, filled
+/// with the accent at 8 percent and outlined with it at 45 percent, or for
+/// an empty group dashed and unfilled, where a widget can be dropped.
+fn edit_tile(
+    pixmap: &mut Pixmap,
+    tokens: &Tokens,
+    (x, w): (f32, f32),
+    (top, height): (f32, f32),
+    s: f32,
+    empty: bool,
+) {
+    let ph = tokens.panel_control as f32 * s;
+    let y = top + ((height - ph) / 2.0).round();
+    let (x, w) = (x + TILE_ROOM / 2.0 * s, w - TILE_ROOM * s);
+    let r = tokens.radius_control as f32 * s;
+    let ink = Colour {
+        a: 0.45,
+        ..tokens.accent
+    };
+    if empty {
+        let Some(dash) = StrokeDash::new(vec![3.0 * s, 3.0 * s], 0.0) else {
+            return;
+        };
+        let stroke = Stroke {
+            width: 1.0,
+            dash: Some(dash),
+            ..Stroke::default()
+        };
+        if let Some(path) = rounded(x, y, w, ph, r) {
+            pixmap.stroke_path(&path, &paint_of(ink), &stroke, Transform::identity(), None);
+        }
+    } else {
+        let fill_colour = Colour {
+            a: 0.08,
+            ..tokens.accent
+        };
+        fill(pixmap, x, y, w, ph, r, fill_colour);
+        outline(pixmap, (x, y, w, ph), r, 1.0, ink);
+    }
+}
+
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
 /// with `row`'s widgets showing `look.shown`; returns where each widget
-/// lies, start to end, as its left edge and width in logical pixels.
+/// lies, start to end, and where the empty groups are while editing.
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
@@ -625,7 +694,7 @@ pub fn paint(
     text: Option<&mut Text>,
     icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
-) -> Vec<(f32, f32)> {
+) -> Places {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
     let strip = strip(look.style, tokens) as f32 * s;
@@ -692,33 +761,78 @@ pub fn paint(
         dock,
         along_top: look.edge == Edge::Top,
     };
+    let editing = look.editing;
+    let bar = (canvas.top, canvas.height);
     let mut shown = look.shown.iter().map(String::as_str);
-    // Each group's widgets with what they show and their widths.
+    // Each group's widgets with what they show, their widths and their
+    // natural widths; while editing a widget is at least as wide as its
+    // title, with `EDIT_PAD` at each side.
     let mut measure = |group: &[&'static Widget]| {
         group
             .iter()
             .map(|widget| {
                 let showing = shown.next().unwrap_or("");
-                let width = (widget.width)(&mut canvas, showing);
-                (*widget, showing, width)
+                let natural = (widget.width)(&mut canvas, showing);
+                let mut width = natural;
+                if editing {
+                    let size = tokens.panel_text_small_size as f32 * s;
+                    let title = canvas
+                        .text
+                        .as_mut()
+                        .map_or(0.0, |text| text.line(tr(widget.title), size).width);
+                    width = width.max(title + 2.0 * EDIT_PAD * s);
+                }
+                (*widget, showing, width, natural)
             })
             .collect::<Vec<_>>()
     };
     let start = measure(&row.start);
     let centre = measure(&row.centre);
     let end = measure(&row.end);
-    let total = |group: &[(&Widget, &str, f32)]| group.iter().map(|g| g.2).sum::<f32>();
+    let total = |group: &[(&Widget, &str, f32, f32)]| group.iter().map(|g| g.2).sum::<f32>();
+    // An empty group takes its place while editing, and nothing otherwise.
+    let slot = |group: &[(&Widget, &str, f32, f32)]| match group.is_empty() && editing {
+        true => EMPTY_WIDTH * s,
+        false => total(group),
+    };
     let pad = if dock { (DOCK_PAD * s).round() } else { 0.0 };
-    let mut places = Vec::new();
-    for (group, from) in [
+    let mut places = Places::default();
+    for (k, (group, from)) in [
         (&start, pad),
-        (&centre, ((w - total(&centre)) / 2.0).round()),
-        (&end, w - pad - total(&end)),
-    ] {
+        (&centre, ((w - slot(&centre)) / 2.0).round()),
+        (&end, w - pad - slot(&end)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if group.is_empty() {
+            if editing {
+                edit_tile(canvas.pixmap, tokens, (from, EMPTY_WIDTH * s), bar, s, true);
+                places.empty[k] = Some((from / s, EMPTY_WIDTH));
+            }
+            continue;
+        }
         let mut x = from;
-        for (widget, showing, width) in group {
-            (widget.draw)(&mut canvas, showing, x);
-            places.push((x / s, width / s));
+        for (widget, showing, width, natural) in group {
+            if editing {
+                edit_tile(canvas.pixmap, tokens, (x, *width), bar, s, false);
+            }
+            if editing && *natural <= 0.0 {
+                // A widget that shows nothing, such as an empty tray, shows
+                // its title instead, centred and dim, so it can be seen.
+                let size = tokens.panel_text_small_size as f32 * s;
+                if let Some(text) = canvas.text.as_deref_mut() {
+                    let mut line = text.line(tr(widget.title), size);
+                    let at = x + ((width - line.width) / 2.0).round();
+                    let y = popup::middle(bar.0 / s, bar.1 / s, size, s);
+                    text.draw(canvas.pixmap, &mut line, at, y, popup::dim(tokens));
+                }
+            } else {
+                // A widget as wide as its title is drawn centred in it.
+                let at = x + ((width - natural) / 2.0).round();
+                (widget.draw)(&mut canvas, showing, at);
+            }
+            places.widgets.push((x / s, width / s));
             x += width;
         }
     }
@@ -796,6 +910,7 @@ mod tests {
             style: Style::Bar,
             fillets,
             shown: row.shows(&Live::default()),
+            editing: false,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, None, row);
@@ -870,9 +985,10 @@ mod tests {
             style: Style::Dock,
             fillets: true,
             shown,
+            editing: false,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        let places = paint(&mut pixmap, &look, &tokens, None, None, &row);
+        let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
         assert_eq!(places, [(DOCK_PAD, each), (DOCK_PAD + each, each)]);
         assert_eq!(pixel(&pixmap, width / 2, 1), tokens.panel.bytes());
         assert_ne!(
@@ -1076,6 +1192,7 @@ mod tests {
             style: spec.style,
             fillets: true,
             shown,
+            editing: false,
         };
         let mut panel = Pixmap::new(look.width, look.height).unwrap();
         let places = paint(
@@ -1097,7 +1214,7 @@ mod tests {
             Transform::identity(),
             None,
         );
-        let named = row.all().map(|w| w.name).zip(places).collect();
+        let named = row.all().map(|w| w.name).zip(places.widgets).collect();
         (screen, named, tokens)
     }
 

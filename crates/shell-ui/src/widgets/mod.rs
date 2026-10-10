@@ -54,6 +54,9 @@ pub struct Canvas<'a> {
 
 pub struct Widget {
     pub name: &'static str,
+    /// What Settings, the editor's drawer and a screen reader call it,
+    /// marked with `n_` (M5.31b): "Menu", "Window title".
+    pub title: &'static str,
     /// The OS feature it talks to, if any.
     pub needs: Option<&'static str>,
     /// What it shows now: the panel draws again when this changes.
@@ -373,6 +376,7 @@ mod tests {
             menu::WIDGET,
             Widget {
                 name: "battery",
+                title: "Battery",
                 needs: Some("power"),
                 shows: none,
                 width: zero,

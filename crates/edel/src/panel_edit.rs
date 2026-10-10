@@ -12,6 +12,9 @@ use crate::i18n::{tr, trf};
 use crate::presets::{self, Edge, Hide, Panel, Style};
 use crate::settings;
 
+/// The settings key the panels are written to (M5.31b).
+pub const PANELS: &str = "layout.panels";
+
 /// The three groups of widgets a panel holds, from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
@@ -265,8 +268,8 @@ pub fn to_write(
     machine: Option<&str>,
     person: Option<&str>,
 ) -> Result<Option<String>> {
-    let without = person
-        .map(|text| settings::unset(text, "layout.panels").unwrap_or_else(|_| text.to_string()));
+    let without =
+        person.map(|text| settings::unset(text, PANELS).unwrap_or_else(|_| text.to_string()));
     if applying(machine, without.as_deref()) == panels {
         return Ok(None);
     }

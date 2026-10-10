@@ -121,6 +121,14 @@ pub fn tray_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep the tray's apps in the panel in.
 pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set layout.tray_in_panel='[\"APP\"]' instead, naming the apps by their tray Id";
 
+/// The panels the editor made cannot be written down.
+pub fn panels_not_kept(why: impl Display) -> String {
+    format!("could not keep the panels: {why}; they stay as they were")
+}
+
+/// There is no home folder to keep the panels in.
+pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set layout.panels='[...]' with the panels as TOML instead";
+
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
     format!("could not keep the {style} tiling style: {why}; it stays as it was")

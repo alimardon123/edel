@@ -2015,6 +2015,67 @@ case_panels() {
 	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart, and unsetting it brought Classic's panel back"
 }
 
+case_panel_edit() {
+	# Edit panels (M5.31b, part 2a): a right click on the panel's empty space
+	# opens the panel menu (layer edel-panel-menu), whose row Edit panels
+	# opens the drawer above the panel, and every widget shows as a tile on
+	# the panel, so the tray, which shows nothing here, has a tile of more
+	# than 0 px. The click lands on the window list's end plus 40 px, or in
+	# the middle of the widest gap when a widget covers that. Escape closes
+	# the drawer without writing anything (kept as panel-edit.png).
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed 's/.*edel-shell-ui: panel places //')
+	[ -n "$places" ] || fail "shell-ui logged no panel places line"
+	x=$(echo "$places" | tr ',' '\n' | awk '
+		{ split($2, p, "+"); s[NR] = p[1] + 0; e[NR] = s[NR] + p[2] + 0; if ($1 == "windows") wend = e[NR] }
+		END {
+			cand = wend + 40; covered = 0
+			for (i = 1; i <= NR; i++) if (cand >= s[i] && cand < e[i]) covered = 1
+			if (!covered && wend > 0) { printf "%d", cand; exit }
+			widest = 0
+			for (i = 2; i <= NR; i++) if (s[i] - e[i - 1] > widest) { widest = s[i] - e[i - 1]; mid = e[i - 1] + widest / 2 }
+			printf "%d", mid
+		}')
+	shown=$(count 'edel-shell-ui: panel menu shown')
+	python3 ci/qmp.py rightclick "$x" 780
+	wait_more 'edel-shell-ui: panel menu shown' "$shown" ||
+		fail "a right click on the panel at $x,780 did not open the panel menu"
+	i=0
+	until value layers | grep -q 'edel-panel-menu@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no panel menu surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panel-menu@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panel-menu@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	menu=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel menu places' | tail -n 1)
+	read -r cw ch <<-EOF
+		$(echo "$menu" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
+	EOF
+	read -r rx ry rw rh <<-EOF
+		$(echo "$menu" | sed -n 's/.*row edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	EOF
+	[ -n "$rh" ] || fail "the panel menu's places line is not what CI reads: $menu"
+	# The row's middle: the card lies centred in the surface, which has the shadow's room round it.
+	mx=$((sx + (sw - cw) / 2 + rx + rw / 2))
+	my=$((sy + (sh - ch) / 2 + ry + rh / 2))
+	editor=$(count 'edel-shell-ui: panel editor shown')
+	python3 ci/qmp.py click $mx $my
+	wait_more 'edel-shell-ui: panel editor shown' "$editor" ||
+		fail "the panel menu's Edit panels row at $mx,$my did not open the editor"
+	wait_for 'edel-shell-ui: panel places .*tray [0-9]+\+[1-9][0-9]*' ||
+		fail "the editor did not give the tray a tile: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1)"
+	tile=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*tray [0-9]*+\([0-9]*\).*/\1/p')
+	python3 ci/qmp.py screendump "$dir/panel-edit.png"
+	undone=$(count 'edel-shell-ui: panel editor undone')
+	hidden=$(count 'edel-shell-ui: panel editor hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: panel editor undone' "$undone" ||
+		fail "Escape did not close the panel editor without writing anything"
+	wait_more 'edel-shell-ui: panel editor hidden' "$hidden" ||
+		fail "the panel editor stayed open after Escape"
+	echo "PASS: a right click on the panel at $x,780 opened the panel menu, its Edit panels row opened the editor with the tray's tile $tile px wide, and Escape closed it without writing anything"
+}
+
 case_dockhide() {
 	# A dock that hides while covered (M5.4f): layout.panels with one dock
 	# along the bottom, hide = "covered", holding the apps. Uncovered, it
@@ -2901,10 +2962,10 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit panel-edit dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
-cases=$(sed -n 's/^case_\([a-z]*\)() {$/\1/p' "$0" | sort | tr '\n' ' ')
+cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
 for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
@@ -3037,6 +3098,6 @@ while ! grep -q 'edel login:' "$log" && [ "$i" -lt 60 ]; do
 	i=$((i + 1))
 done
 for c in "$@"; do
-	"case_$c"
+	"case_$(echo "$c" | tr '-' '_')"
 done
 stop_vm

@@ -14,9 +14,11 @@ use jiff::Zoned;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{Face, fill, mix};
+use edel::i18n::n_;
 
 pub const WIDGET: Widget = Widget {
     name: "clock",
+    title: n_("Clock"),
     needs: None,
     shows,
     width,

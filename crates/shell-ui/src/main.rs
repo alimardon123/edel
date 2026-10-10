@@ -19,6 +19,8 @@ mod a11y;
 mod banner;
 mod calendar;
 mod centre;
+mod editor;
+mod editor_card;
 mod launcher;
 mod link;
 mod messages;
@@ -29,6 +31,8 @@ mod notify_card;
 mod osd;
 mod osd_card;
 mod paint;
+mod panel_menu;
+mod panel_menu_card;
 mod popup;
 mod portal;
 mod quick;
@@ -105,6 +109,9 @@ const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
 /// The layout button's menu of tiling styles (M5.16b).
 const STYLES: &str = "edel-styles";
+/// The panel menu (M5.31b), and Edit panels' drawer.
+const PANEL_MENU: &str = "edel-panel-menu";
+const EDITOR: &str = "edel-editor";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
 /// A new notification's banner and the notification centre, which the
@@ -157,6 +164,10 @@ struct Shell {
     menu: Option<Menu>,
     /// The tiling styles' menu while it is open (M5.16b).
     styles: Option<StylesMenu>,
+    /// The panel menu while it is open (M5.31b), and the drawer of Edit
+    /// panels while it is open.
+    panel_menu: Option<panel_menu_card::PanelMenu>,
+    editor: Option<editor_card::Editor>,
     /// Quick settings while open (M5.9a), the preset's tiles for it, and
     /// whether the machine has the Settings app.
     quick: Option<QuickCard>,
@@ -244,6 +255,9 @@ struct Panel {
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
+    /// Where a panel's empty groups lie while it is edited (M5.31b), for
+    /// the drops of its editor's second part.
+    empty: [Option<(f32, f32)>; 3],
     /// The buffer attached last, kept so the one before it can be freed
     /// once the compositor releases it.
     shown: Option<Buffer>,
@@ -337,6 +351,8 @@ fn run() -> Result<()> {
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
+        panel_menu: None,
+        editor: None,
         quick: None,
         quick_tiles: preset.quick.tiles.clone(),
         quick_settings: features
@@ -535,6 +551,7 @@ fn make_panel(
         drawn: None,
         waiting: false,
         places: Vec::new(),
+        empty: [None; 3],
         shown: None,
         reader: a11y::Reader::panel(),
     }
@@ -720,6 +737,7 @@ impl Shell {
             style: panel.style,
             fillets: self.fillets,
             shown,
+            editing: self.editor.is_some(),
         };
         if panel.drawn.as_ref() == Some(&look) {
             return;
@@ -777,7 +795,7 @@ impl Shell {
     fn show(&mut self, i: usize, look: &Look) -> Result<()> {
         let panel = &self.panels[i];
         let mut pixmap = Pixmap::new(look.width, look.height).context("a panel of no size")?;
-        let places = paint::paint(
+        let placed = paint::paint(
             &mut pixmap,
             look,
             &self.tokens,
@@ -785,10 +803,10 @@ impl Shell {
             Some(&mut self.icons),
             &panel.row,
         );
-        if places != panel.places {
+        if placed.widgets != panel.places {
             // Where each widget lies, for the tests that click them.
-            let list: Vec<String> = (0..places.len())
-                .filter_map(|j| Some((panel.row.widget(j)?.name, places[j])))
+            let list: Vec<String> = (0..placed.widgets.len())
+                .filter_map(|j| Some((panel.row.widget(j)?.name, placed.widgets[j])))
                 .map(|(name, (x, w))| format!("{name} {x:.0}+{w:.0}"))
                 .collect();
             eprintln!("edel-shell-ui: panel places {}", list.join(", "));
@@ -817,7 +835,8 @@ impl Shell {
         buffer.attach_to(surface).context("attaching the buffer")?;
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
         panel.surface.commit();
-        self.panels[i].places = places;
+        self.panels[i].places = placed.widgets;
+        self.panels[i].empty = placed.empty;
         self.panels[i].waiting = true;
         if let Some(old) = self.panels[i].shown.replace(buffer) {
             self.spent.push(old);
@@ -943,6 +962,7 @@ impl Shell {
     fn close_popups(&mut self) {
         self.close_launcher();
         self.close_styles();
+        self.close_panel_menu();
         self.close_quick();
         self.hide_banner();
         self.hide_osd();
@@ -1437,6 +1457,10 @@ impl LayerShellHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
+        } else if self.is_panel_menu(surface.wl_surface()) {
+            self.close_panel_menu();
+        } else if self.is_editor(surface.wl_surface()) {
+            self.close_editor(false);
         } else if self.is_quick(surface.wl_surface()) {
             self.close_quick();
         } else if self.is_banner(surface.wl_surface()) {
@@ -1464,6 +1488,18 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
+        if self.is_panel_menu(surface.wl_surface()) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.configured();
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface.wl_surface()) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.configured();
+            }
+            return self.draw_editor();
+        }
         if self.is_launcher(surface.wl_surface()) {
             if let Some(menu) = &mut self.menu {
                 menu.popup.configured();
@@ -1544,6 +1580,18 @@ impl CompositorHandler for Shell {
             }
             return self.draw_launcher();
         }
+        if self.is_panel_menu(surface) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.set_scale(factor);
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.set_scale(factor);
+            }
+            return self.draw_editor();
+        }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
                 menu.popup.set_scale(factor);
@@ -1622,6 +1670,18 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_launcher();
+        }
+        if self.is_panel_menu(surface) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.framed();
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.framed();
+            }
+            return self.draw_editor();
         }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
@@ -1799,6 +1859,14 @@ impl PointerHandler for Shell {
                 }
                 continue;
             }
+            if self.is_panel_menu(&event.surface) {
+                self.panel_menu_pointer(event);
+                continue;
+            }
+            if self.is_editor(&event.surface) {
+                self.editor_pointer(event);
+                continue;
+            }
             if self.is_styles(&event.surface) {
                 let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
                 let (x, y) = (
@@ -1845,6 +1913,11 @@ impl PointerHandler for Shell {
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
+            // The editor's drags come in its second part: until then a
+            // press on a panel does nothing while it is open (M5.31b).
+            if self.editor.is_some() {
+                continue;
+            }
             let x = event.position.0 as f32;
             match &event.kind {
                 // The tray's tooltip waits for a rest on its arrow (M5.9h).
@@ -1853,6 +1926,7 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.hide_tooltip();
+                    self.close_panel_menu();
                     // A kept tray icon's click waits for the release, so
                     // the icon can be dragged (M5.9g).
                     match self.action_at(i, x, Input::Click) {
@@ -1868,7 +1942,12 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
                     self.hide_tooltip();
-                    self.input(i, x, Input::Menu);
+                    // A widget with a menu of its own takes the click; where
+                    // none does, the panel's menu opens (M5.31b).
+                    match self.action_at(i, x, Input::Menu) {
+                        Some((action, left, width)) => self.run_action(i, x, action, left, width),
+                        None => self.open_panel_menu(i, x),
+                    }
                 }
                 PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
                     let y = event.position.1 as f32;
@@ -1928,6 +2007,10 @@ impl KeyboardHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface) {
             self.close_styles();
+        } else if self.is_panel_menu(surface) {
+            self.close_panel_menu();
+        } else if self.is_editor(surface) {
+            self.close_editor(false);
         } else if self.is_quick(surface) {
             self.close_quick();
         } else if self.is_centre(surface) {
@@ -1945,7 +2028,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.quick.is_some() {
+        if self.editor.is_some() {
+            self.editor_key(event);
+        } else if self.panel_menu.is_some() {
+            self.panel_menu_key(event);
+        } else if self.quick.is_some() {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
@@ -1966,7 +2053,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.quick.is_some() {
+        if self.editor.is_some() {
+            self.editor_key(event);
+        } else if self.panel_menu.is_some() {
+            self.panel_menu_key(event);
+        } else if self.quick.is_some() {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);

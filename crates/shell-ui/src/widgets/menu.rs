@@ -6,7 +6,7 @@
 //! opens the launcher, or closes it (M5.3b).
 
 use accesskit::Role;
-use edel::i18n::tr;
+use edel::i18n::{n_, tr};
 
 use edel::tokens::{Colour, Tokens};
 
@@ -15,6 +15,7 @@ use crate::paint::{self, fill};
 
 pub const WIDGET: Widget = Widget {
     name: "menu",
+    title: n_("Menu"),
     needs: None,
     shows,
     width,
