@@ -2797,6 +2797,9 @@ case_tray() {
 	wait_for 'edel-shell-ui: tray: edel-testclient kept in the panel' ||
 		fail "dragging the icon from $mx,$my onto the panel at $((x + 17)),780 did not keep it there"
 	wait_more 'edel-shell-ui: tray grid hidden' "$closed" || fail "the grid did not close once its icon was kept"
+	# The grid the press began on is gone, and the pointer has not moved
+	# since: move it away so the panel has it again before the clicks below.
+	python3 ci/qmp.py move 640 300
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
