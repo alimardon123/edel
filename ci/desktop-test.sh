@@ -3870,7 +3870,12 @@ case_scale() {
 	shot scale 688 284 "$focused" >/dev/null ||
 		fail "at scale 2, 688,284 is not one's bar, #$focused: the bar is not 56 pixels high"
 	shot scale 688 294 cc3333 >/dev/null || fail "at scale 2, 688,294 is not one's red"
-	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
+	# Back to scale 1, so the cases after this one see the whole screen.
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
+	guest 'scale default'
+	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" ||
+		fail "resetting displays.Virtual-1.scale did not bring scale 1 back"
+	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
 [ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
