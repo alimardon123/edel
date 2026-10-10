@@ -553,6 +553,8 @@ impl Shell {
         if self.live.unread != before {
             eprintln!("edel-shell-ui: unread notifications {}", self.live.unread);
             self.draw_all();
+            // The lock screen counts them too (M5.10c).
+            self.draw_lock();
         }
     }
 

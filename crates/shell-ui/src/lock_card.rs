@@ -6,14 +6,24 @@
 //! it. Return checks the password on a thread (`lock::check`), whose
 //! answer comes back over a channel: right unlocks and lets go of
 //! everything, wrong says so after `lock::WRONG_WAIT`. A screen that comes
-//! while locked gets its own surface. Logs `lock asked for`,
-//! `screen locked, N screens`, `lock: wrong password` and
-//! `screen unlocked`.
+//! while locked gets its own surface. Caps Lock shows in the field, the
+//! notifications that came unread are counted with their apps' icons, a
+//! wrong password shakes the field on a timer (`lock::shake_at`, none with
+//! `appearance.animations` other than full) and a click on the go button
+//! checks the password as Return does (M5.10c). Logs `lock asked for`,
+//! `screen locked, N screens`, `lock places ...` (`lock::places`, once per
+//! screen size), `lock: wrong password` and `screen unlocked`.
+
+use std::time::{Duration, Instant};
 
 use smithay_client_toolkit::reexports::calloop::channel;
-use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_output, wl_shm};
+use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::reexports::client::protocol::{
+    wl_keyboard, wl_output, wl_shm, wl_surface,
+};
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockSurface, SessionLockSurfaceConfigure,
 };
@@ -36,6 +46,14 @@ pub struct LockCard {
     /// keeps their dots.
     checking: Option<usize>,
     user: String,
+    /// Whether Caps Lock is on, as the keyboard last said.
+    caps: bool,
+    /// When the field's shake started, while it shakes.
+    shaking: Option<Instant>,
+    /// Whether the pointer is over a go button, and the places line last
+    /// logged.
+    go_hover: bool,
+    logged: String,
 }
 
 /// One screen's lock surface.
@@ -72,6 +90,10 @@ impl Shell {
                     },
                     checking: None,
                     user: lock::user(),
+                    caps: false,
+                    shaking: None,
+                    go_hover: false,
+                    logged: String::new(),
                 });
             }
             Err(e) => eprintln!("edel-shell-ui: {}", messages::lock_not_offered(e)),
@@ -124,13 +146,18 @@ impl Shell {
             Some(dots) => (Field::Checking, dots),
             None => (card.field, card.password.letters()),
         };
+        let shake = card
+            .shaking
+            .map_or(0, |at| lock::shake_at(at.elapsed().as_millis() as u32));
         Some(View {
-            time,
-            date,
-            name: card.user.clone(),
             dots,
             field,
-            asking_name: false,
+            caps: card.caps,
+            notices: self.live.unread,
+            apps: lock::unread_apps(self.notifications.items(), self.live.unread),
+            shake,
+            go_hover: card.go_hover,
+            ..View::new(time, date, card.user.clone())
         })
     }
 
@@ -155,7 +182,24 @@ impl Shell {
             let Some(mut pixmap) = Pixmap::new(pw, ph) else {
                 continue;
             };
-            lock::paint(&mut pixmap, &view, &self.tokens, &mut self.text, s as f32);
+            lock::paint(
+                &mut pixmap,
+                &view,
+                &self.tokens,
+                &mut self.text,
+                Some(&mut self.icons),
+                s as f32,
+            );
+            let places = lock::places(&lock::layout(
+                w as f32,
+                h as f32,
+                &self.tokens,
+                view.notices > 0,
+            ));
+            if places != card.logged {
+                eprintln!("edel-shell-ui: lock places {places}");
+                card.logged = places;
+            }
             let bytes = (pw * ph * 4) as usize;
             if screen.pool.is_none() {
                 // Two buffers' room, as each drawing replaces the last.
@@ -263,6 +307,7 @@ impl Shell {
             Checked::Wrong => {
                 card.field = Field::Wrong;
                 eprintln!("edel-shell-ui: lock: wrong password");
+                return self.shake_field();
             }
             Checked::NoChecker(why) => {
                 card.field = Field::NoChecker;
@@ -285,6 +330,109 @@ impl Shell {
         drop(card);
         eprintln!("edel-shell-ui: screen unlocked");
         self.draw_all();
+    }
+}
+
+impl Shell {
+    /// Caps Lock went on or off: the field says so.
+    pub fn lock_caps(&mut self, on: bool) {
+        if let Some(card) = &mut self.lock
+            && card.caps != on
+        {
+            card.caps = on;
+            self.draw_lock();
+        }
+    }
+
+    /// Whether `surface` is one of the lock's.
+    pub fn is_lock(&self, surface: &wl_surface::WlSurface) -> bool {
+        self.lock
+            .as_ref()
+            .is_some_and(|c| c.screens.iter().any(|s| s.surface.wl_surface() == surface))
+    }
+
+    /// The pointer on a lock surface: over the go button it lights it, and
+    /// a click there checks the password, as Return does.
+    pub fn lock_pointer(&mut self, event: &PointerEvent) {
+        let Some(card) = &mut self.lock else {
+            return;
+        };
+        let Some((w, h)) = card
+            .screens
+            .iter()
+            .find(|s| s.surface.wl_surface() == &event.surface)
+            .and_then(|s| s.size)
+        else {
+            return;
+        };
+        let at = lock::layout(w as f32, h as f32, &self.tokens, self.live.unread > 0);
+        let (x, y) = (event.position.0 as f32, event.position.1 as f32);
+        let over = lock::on_go(&at, x, y);
+        match event.kind {
+            PointerEventKind::Press { button, .. } if button == BTN_LEFT && over => {
+                if card.checking.is_none() {
+                    self.check_password();
+                }
+            }
+            PointerEventKind::Leave { .. } if card.go_hover => {
+                card.go_hover = false;
+                self.draw_lock();
+            }
+            PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. }
+                if card.go_hover != over =>
+            {
+                card.go_hover = over;
+                self.draw_lock();
+            }
+            _ => {}
+        }
+    }
+
+    /// A wrong password shakes the field, drawn on a timer until the shake
+    /// is done, unless `appearance.animations` asks for less motion.
+    fn shake_field(&mut self) {
+        let (machine, person) = crate::settings_texts();
+        let motion = edel::settings::chosen(
+            edel::settings::ANIMATIONS,
+            machine.as_deref(),
+            person.as_deref(),
+        );
+        let still = motion.is_some_and(|m| m != "full");
+        let Some(card) = &mut self.lock else {
+            return;
+        };
+        if still {
+            card.shaking = None;
+            return self.draw_lock();
+        }
+        card.shaking = Some(Instant::now());
+        self.draw_lock();
+        let added = self.handle.insert_source(
+            Timer::from_duration(Duration::from_millis(16)),
+            |_, _, shell: &mut Shell| {
+                let Some(card) = &mut shell.lock else {
+                    return TimeoutAction::Drop;
+                };
+                let done = card
+                    .shaking
+                    .is_none_or(|at| at.elapsed().as_millis() as u32 >= lock::SHAKE_MS);
+                if done {
+                    card.shaking = None;
+                }
+                shell.draw_lock();
+                if done {
+                    TimeoutAction::Drop
+                } else {
+                    TimeoutAction::ToDuration(Duration::from_millis(16))
+                }
+            },
+        );
+        if let Err(e) = added {
+            eprintln!("edel-shell-ui: no timer for the lock screen's shake: {e}");
+            if let Some(card) = &mut self.lock {
+                card.shaking = None;
+            }
+        }
     }
 }
 

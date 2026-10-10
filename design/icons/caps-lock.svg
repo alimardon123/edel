@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Caps Lock is on: an arrow up over a bar, in the lock screen's field and its note (M5.10c). -->
+  <path d="M8 2.75 3.25 7.75H5.75V10.25H10.25V7.75H12.75Z"/>
+  <path d="M5.75 13h4.5"/>
+</svg>

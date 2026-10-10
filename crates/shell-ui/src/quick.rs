@@ -32,7 +32,8 @@ use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
 use crate::paint::{self, Face, Text, fill, lit, mix, outline};
-use crate::popup::{self, Card, Rect, dim, icon_in, knob, raised, veil};
+use crate::player::{self, PlayerView};
+use crate::popup::{self, Card, Rect, dim, focus_ring, icon_in, knob, raised, veil};
 use crate::status::{Link, Status};
 
 /// The card's width on a screen of any size from Compact up, logical
@@ -54,34 +55,10 @@ pub const DARK_PAGE: &str = "appearance";
 pub const SOUND_PAGE: &str = "sound";
 /// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
 pub const DISPLAYS_PAGE: &str = "displays";
-/// The player's card's height and the room between it and quick settings'
-/// card, logical pixels (M5.9d): above the card on a bottom panel, below
-/// it on a top one. It is a pill, its corners half its height, with its
-/// app's name at its top and room for the pages' dots at its foot (M5.9i,
-/// `docs/mockups/shell/player.jpg`).
-pub const PLAYER_HEIGHT: f32 = 120.0;
+/// The room between the player's card (`player.rs`, M5.9d) and quick
+/// settings' card, logical pixels: above the card on a bottom panel, below
+/// it on a top one.
 pub const PLAYER_GAP: f32 = 8.0;
-/// The cover's side, and the room between the player's parts.
-const COVER: f32 = 64.0;
-const PLAYER_SPACE: f32 = 10.0;
-/// The room between the pill's ends and its cover or Next button (M5.9i).
-const PLAYER_SIDE: f32 = 28.0;
-/// The app's row (its icon and name), its top and height, from the card's
-/// top; the icon's side; and the middle of the cover's row (M5.9i).
-const APP_TOP: f32 = 12.0;
-const APP_HIGH: f32 = 16.0;
-pub const APP_ICON: f32 = 14.0;
-const ROW_MIDDLE: f32 = 64.0;
-/// The pages' dots: a dot's side, the shown one's width, the room between
-/// them and from the card's foot to theirs (M5.9i).
-const DOT: f32 = 5.0;
-const DOT_ON: f32 = 12.0;
-const DOT_GAP: f32 = 5.0;
-const DOT_FOOT: f32 = 9.0;
-/// How far round a dot a click still finds it.
-const DOT_REACH: f32 = 6.0;
-/// The title and artist's box, its height.
-const WORDS: f32 = 36.0;
 
 /// A tile of the card: the names are what `[quick] tiles` lists
 /// (`edel::presets::TILES`).
@@ -203,23 +180,6 @@ pub struct BatteryView {
     pub charging: bool,
     /// The time to empty or to full, "4 h 10 min", when known.
     pub time: Option<String>,
-}
-
-/// The player (M5.9d) as the card shows it: what plays, which of its
-/// buttons work and its cover, decoded to a square picture when it has one.
-#[derive(Debug, Clone, PartialEq)]
-pub struct PlayerView {
-    pub title: String,
-    pub artist: String,
-    /// The app's name, whose first letter is the cover when there is none.
-    pub identity: String,
-    pub playing: bool,
-    pub can_previous: bool,
-    pub can_next: bool,
-    pub cover: Option<Pixmap>,
-    /// Its app's icon, `APP_ICON` logical pixels across at the card's scale,
-    /// when the icon themes have one (M5.9i).
-    pub app_icon: Option<Pixmap>,
 }
 
 /// Where a pointer or the keyboard is on the card.
@@ -577,7 +537,7 @@ pub fn most_size(size: (u32, u32)) -> (u32, u32) {
     let m = metrics(true);
     let rows = MOST_OUTPUTS as u32 + 1;
     // And the player's card, so one appearing never needs a bigger pool.
-    let player = (PLAYER_HEIGHT + PLAYER_GAP) as u32;
+    let player = (player::HEIGHT + PLAYER_GAP) as u32;
     (
         size.0,
         size.1 + player + rows * (m.bar as u32 + LIST_GAP as u32),
@@ -618,20 +578,11 @@ pub struct Layout {
     pub size: (u32, u32),
     pub metrics: Metrics,
     pub tiles: Vec<TileBox>,
-    /// The player's card (M5.9d), quick settings' own card (which moves
-    /// below the player's when the player is above it), and the player's
-    /// parts: its cover, the words, and the three buttons.
-    pub player: Option<Rect>,
+    /// The player's card and its parts (M5.9d, `player::place`), and
+    /// quick settings' own card, which moves below the player's when the
+    /// player is above it.
+    pub player: Option<player::Parts>,
     pub quick: Rect,
-    pub cover: Option<Rect>,
-    pub words: Option<Rect>,
-    pub previous: Option<Rect>,
-    pub play: Option<Rect>,
-    pub next: Option<Rect>,
-    /// The app's row across the player's card, its icon and name centred
-    /// in it, and the pages' dots, the shown one wider (M5.9i).
-    pub app: Option<Rect>,
-    pub dots: Vec<Rect>,
     /// The brightness slider's track, full width, above the volume's when
     /// the machine has a backlight (M5.9c).
     pub light: Option<Rect>,
@@ -690,7 +641,7 @@ pub fn layout(view: &View) -> Layout {
     // A player above the card moves all of the card down by its height and the gap.
     let above = view.player.is_some() && !view.player_below;
     let shift = if above {
-        PLAYER_HEIGHT + PLAYER_GAP
+        player::HEIGHT + PLAYER_GAP
     } else {
         0.0
     };
@@ -788,60 +739,23 @@ pub fn layout(view: &View) -> Layout {
     y += m.bottom;
     let end = y.ceil();
     let quick = Rect::new(0.0, shift, w, end - shift);
-    // The player's card, and its parts centred on its middle (M5.9d). The
-    // three buttons are 44 px on a Compact screen, where a finger lands.
-    let (mut player, mut cover, mut words, mut previous, mut play, mut next) =
-        (None, None, None, None, None, None);
-    let (mut app, mut dots) = (None, Vec::new());
+    // The player's card, and its parts (M5.9d).
     let mut height = end;
-    if view.player.is_some() {
-        let p = if above {
-            Rect::new(0.0, 0.0, w, PLAYER_HEIGHT)
+    let player = view.player.as_ref().map(|_| {
+        let card = if above {
+            Rect::new(0.0, 0.0, w, player::HEIGHT)
         } else {
-            height = end + PLAYER_GAP + PLAYER_HEIGHT;
-            Rect::new(0.0, end + PLAYER_GAP, w, PLAYER_HEIGHT)
+            height = end + PLAYER_GAP + player::HEIGHT;
+            Rect::new(0.0, end + PLAYER_GAP, w, player::HEIGHT)
         };
-        let middle = |side: f32| p.y + ROW_MIDDLE - side / 2.0;
-        let pad = PLAYER_SIDE;
-        let small = if view.compact { 44.0 } else { 28.0 };
-        let large = if view.compact { 44.0 } else { 32.0 };
-        let c = Rect::new(pad, middle(COVER), COVER, COVER);
-        let n = Rect::new(w - pad - small, middle(small), small, small);
-        let pl = Rect::new(n.x - PLAYER_SPACE - large, middle(large), large, large);
-        let pr = Rect::new(pl.x - PLAYER_SPACE - small, middle(small), small, small);
-        let left = c.right() + PLAYER_SPACE;
-        words = Some(Rect::new(
-            left,
-            middle(WORDS),
-            (pr.x - PLAYER_SPACE - left).max(0.0),
-            WORDS,
-        ));
-        app = Some(Rect::new(p.x, p.y + APP_TOP, w, APP_HIGH));
-        dots = dot_rects(
-            view.pages.len(),
-            view.page,
-            w,
-            p.y + PLAYER_HEIGHT - DOT_FOOT - DOT,
-        );
-        cover = Some(c);
-        previous = Some(pr);
-        play = Some(pl);
-        next = Some(n);
-        player = Some(p);
-    }
+        player::place(card, view.compact, view.pages.len(), view.page)
+    });
     Layout {
         size: (view.width, height as u32),
         metrics: m,
         tiles,
         player,
         quick,
-        cover,
-        words,
-        previous,
-        play,
-        next,
-        app,
-        dots,
         light,
         track,
         sound,
@@ -853,27 +767,6 @@ pub fn layout(view: &View) -> Layout {
     }
 }
 
-/// The pages' dots in a row centred across a card `w` wide, their tops at
-/// `top`: none for fewer than two pages; the shown one `DOT_ON` wide (M5.9i).
-fn dot_rects(pages: usize, page: usize, w: f32, top: f32) -> Vec<Rect> {
-    if pages < 2 {
-        return Vec::new();
-    }
-    let widths: Vec<f32> = (0..pages)
-        .map(|i| if i == page { DOT_ON } else { DOT })
-        .collect();
-    let all = widths.iter().sum::<f32>() + (pages - 1) as f32 * DOT_GAP;
-    let mut x = (w - all) / 2.0;
-    widths
-        .into_iter()
-        .map(|dw| {
-            let r = Rect::new(x, top, dw, DOT);
-            x += dw + DOT_GAP;
-            r
-        })
-        .collect()
-}
-
 /// Where the card's parts lie, as one log line CI reads to click them:
 /// `card WxH, NAME X+Y+WxH, ..., track X+Y+WxH, sound ..., settings ...`,
 /// logical pixels from the card's corner; each tile by its name and its
@@ -882,18 +775,16 @@ fn dot_rects(pages: usize, page: usize, w: f32, top: f32) -> Vec<Rect> {
 pub fn places(view: &View, layout: &Layout) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut parts = vec![format!("card {}x{}", layout.size.0, layout.size.1)];
-    if let Some(player) = layout.player {
-        parts.push(format!("player {}", at(player)));
+    if let Some(player) = &layout.player {
+        parts.push(format!("player {}", at(player.card)));
         for (name, rect) in [
-            ("previous", layout.previous),
-            ("play", layout.play),
-            ("next", layout.next),
+            ("previous", player.previous),
+            ("play", player.play),
+            ("next", player.next),
         ] {
-            if let Some(rect) = rect {
-                parts.push(format!("{name} {}", at(rect)));
-            }
+            parts.push(format!("{name} {}", at(rect)));
         }
-        for (i, dot) in layout.dots.iter().enumerate() {
+        for (i, dot) in player.dots.iter().enumerate() {
             parts.push(format!("dot{} {}", i + 1, at(*dot)));
         }
     }
@@ -917,35 +808,14 @@ pub fn places(view: &View, layout: &Layout) -> String {
 /// player's buttons come first, and Previous and Next only where the
 /// player can do them (M5.9d).
 pub fn hit(view: &View, layout: &Layout, x: f32, y: f32) -> Option<Focus> {
-    if let Some(player) = &view.player {
-        let at = |r: Option<Rect>| r.is_some_and(|r| r.contains(x, y));
-        if player.can_previous && at(layout.previous) {
-            return Some(Focus::Previous);
-        }
-        if at(layout.play) {
-            return Some(Focus::PlayPause);
-        }
-        if player.can_next && at(layout.next) {
-            return Some(Focus::Next);
-        }
-        // A dot, or the room round it, finds that page; between two dots,
-        // the nearer.
-        let near = layout
-            .dots
-            .iter()
-            .enumerate()
-            .filter(|(_, d)| {
-                y >= d.y - DOT_REACH
-                    && y <= d.y + d.h + DOT_REACH
-                    && x >= d.x - DOT_REACH
-                    && x <= d.right() + DOT_REACH
-            })
-            .min_by(|a, b| {
-                let off = |d: &Rect| (x - (d.x + d.w / 2.0)).abs();
-                off(a.1).total_cmp(&off(b.1))
+    if let (Some(p), Some(parts)) = (&view.player, &layout.player) {
+        if let Some(part) = player::hit(p, parts, x, y) {
+            return Some(match part {
+                player::Part::Previous => Focus::Previous,
+                player::Part::PlayPause => Focus::PlayPause,
+                player::Part::Next => Focus::Next,
+                player::Part::Dot(i) => Focus::Dot(i),
             });
-        if let Some((i, _)) = near {
-            return Some(Focus::Dot(i));
         }
     }
     for (i, t) in layout.tiles.iter().enumerate() {
@@ -1146,7 +1016,7 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
     let mut out = Vec::new();
     let mut focused = None;
     // The player's card is read first, as a label that says what plays.
-    if let (Some(player), Some(card)) = (&view.player, layout.player) {
+    if let (Some(player), Some(card)) = (&view.player, layout.player.as_ref().map(|p| p.card)) {
         let label = if player.artist.is_empty() {
             trf("Now playing: {title}", &[("title", &player.title)])
         } else {
@@ -1163,17 +1033,21 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
             Focus::Previous => item(
                 Role::Button,
                 tr("Previous").to_string(),
-                layout.previous.unwrap_or(zero),
+                layout.player.as_ref().map_or(zero, |p| p.previous),
             ),
             Focus::PlayPause => {
                 let playing = view.player.as_ref().is_some_and(|p| p.playing);
                 let label = if playing { tr("Pause") } else { tr("Play") };
-                item(Role::Button, label.to_string(), layout.play.unwrap_or(zero))
+                item(
+                    Role::Button,
+                    label.to_string(),
+                    layout.player.as_ref().map_or(zero, |p| p.play),
+                )
             }
             Focus::Next => item(
                 Role::Button,
                 tr("Next").to_string(),
-                layout.next.unwrap_or(zero),
+                layout.player.as_ref().map_or(zero, |p| p.next),
             ),
             Focus::Dot(i) => item(
                 Role::Button,
@@ -1185,7 +1059,11 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
                         ("app", view.pages.get(i).map_or("", String::as_str)),
                     ],
                 ),
-                layout.dots.get(i).copied().unwrap_or(zero),
+                layout
+                    .player
+                    .as_ref()
+                    .and_then(|p| p.dots.get(i).copied())
+                    .unwrap_or(zero),
             ),
             Focus::Toggle(i) => {
                 let (t, b) = (&view.tiles[i], &layout.tiles[i]);
@@ -1269,11 +1147,11 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 /// settings', each with `RADIUS` corners (M5.9d).
 pub fn cards(l: &Layout) -> Vec<Card> {
     let mut out = Vec::new();
-    if let Some(player) = l.player {
+    if let Some(player) = &l.player {
         // A pill, its corners half its height (M5.9i).
         out.push(Card {
-            rect: player,
-            radius: player.h / 2.0,
+            rect: player.card,
+            radius: player.card.h / 2.0,
         });
     }
     out.push(Card {
@@ -1281,20 +1159,6 @@ pub fn cards(l: &Layout) -> Vec<Card> {
         radius: RADIUS,
     });
     out
-}
-
-/// The keyboard's ring round a part: 2 px in the accent, 3 px outside the
-/// part `r`, whose corners have radius `radius` (logical pixels).
-fn focus_ring(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
-    let grown = Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0);
-    let (x, y, w, h) = grown.device(s);
-    outline(
-        pixmap,
-        (x, y, w, h),
-        (radius + 3.0) * s,
-        2.0 * s,
-        tokens.accent,
-    );
 }
 
 /// Draws `view` at `scale` into `pixmap`, which is the card's size times
@@ -1321,175 +1185,32 @@ pub fn paint(
     footer(pixmap, view, &l, tokens, text, s);
 }
 
-/// The player's card (M5.9d): its cover, the title over the artist, and
-/// the previous, play or pause and next buttons, with the keyboard's ring
-/// and the hover light where they are. A cover is its picture in a circle,
-/// else a circle of the accent going darker, with the app's first letter.
+/// The player's parts on its card (M5.9d), drawn by `player.rs`, with
+/// the pointer's and the keyboard's place on the card.
 fn player(
     pixmap: &mut Pixmap,
     view: &View,
     l: &Layout,
     tokens: &Tokens,
-    mut text: Option<&mut Text>,
-    s: f32,
-) {
-    let (Some(p), Some(cover), Some(words)) = (&view.player, l.cover, l.words) else {
-        return;
-    };
-    let (x, y, w, h) = cover.device(s);
-    match &p.cover {
-        Some(picture) => paint::circle_picture(pixmap, picture, (x, y, w, h)),
-        None => {
-            let bottom = mix(tokens.accent, tokens.panel_text, 0.45);
-            paint::fill_vertical(pixmap, (x, y, w, h), w / 2.0, tokens.accent, bottom);
-            if let Some(text) = text.as_deref_mut() {
-                let initial = p
-                    .identity
-                    .chars()
-                    .next()
-                    .map(|c| c.to_uppercase().to_string())
-                    .unwrap_or_default();
-                let mut letter = text.fit_in(&initial, 22.0 * s, cover.w * s, Face::SEMIBOLD);
-                let left = x + ((w - letter.width) / 2.0).round();
-                let top = y + (h - 22.0 * s * 1.25) / 2.0;
-                text.draw(pixmap, &mut letter, left, top, tokens.accent_text);
-            }
-        }
-    }
-    // The words: the title over the artist, from the box's left, beside
-    // the cover, as the mockups set them.
-    if let Some(text) = text.as_deref_mut() {
-        let room = words.w * s;
-        let (wx, wy, _, wh) = words.device(s);
-        let mut title = text.fit_in(&p.title, 12.5 * s, room, Face::SEMIBOLD);
-        let title_h = 12.5 * s * 1.25;
-        if p.artist.is_empty() {
-            let left = wx;
-            let top = wy + (wh - title_h) / 2.0;
-            text.draw(pixmap, &mut title, left, top, tokens.panel_text);
-        } else {
-            let mut artist = text.fit(&p.artist, 11.0 * s, room);
-            let block = title_h + 2.0 * s + 11.0 * s * 1.25;
-            let top = wy + (wh - block) / 2.0;
-            let left = wx;
-            text.draw(pixmap, &mut title, left, top, tokens.panel_text);
-            text.draw(
-                pixmap,
-                &mut artist,
-                left,
-                top + title_h + 2.0 * s,
-                dim(tokens),
-            );
-        }
-    }
-    // The buttons: Previous and Next are dimmed where the player cannot
-    // do them; Play or Pause is a filled circle with the glyph in the card.
-    let sides = [
-        (
-            Focus::Previous,
-            "media-previous",
-            l.previous,
-            p.can_previous,
-        ),
-        (Focus::Next, "media-next", l.next, p.can_next),
-    ];
-    for (focus, glyph, rect, able) in sides {
-        let Some(rect) = rect else {
-            continue;
-        };
-        if view.hover == Some(focus) && able {
-            let (x, y, w, h) = rect.device(s);
-            fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.06));
-        }
-        let ink = if able {
-            tokens.panel_text
-        } else {
-            Colour {
-                a: 0.5,
-                ..dim(tokens)
-            }
-        };
-        icon_in(pixmap, glyph, 14.0, rect, s, ink);
-        if view.focus == Some(focus) {
-            focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
-        }
-    }
-    if let Some(rect) = l.play {
-        let (x, y, w, h) = rect.device(s);
-        fill(pixmap, x, y, w, h, w / 2.0, tokens.panel_text);
-        if view.hover == Some(Focus::PlayPause) {
-            fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.12));
-        }
-        let glyph = if p.playing {
-            "media-pause"
-        } else {
-            "media-play"
-        };
-        icon_in(pixmap, glyph, 14.0, rect, s, tokens.panel);
-        if view.focus == Some(Focus::PlayPause) {
-            focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
-        }
-    }
-    player_app(pixmap, p, l, tokens, text, s);
-    for (i, dot) in l.dots.iter().enumerate() {
-        let (x, y, w, h) = dot.device(s);
-        let colour = if i == view.page {
-            tokens.accent
-        } else {
-            Colour {
-                a: if view.hover == Some(Focus::Dot(i)) {
-                    0.45
-                } else {
-                    0.25
-                },
-                ..tokens.panel_text
-            }
-        };
-        fill(pixmap, x, y, w, h, h / 2.0, colour);
-        if view.focus == Some(Focus::Dot(i)) {
-            focus_ring(pixmap, *dot, dot.h / 2.0, s, tokens);
-        }
-    }
-}
-
-/// The app's row at the player's top (M5.9i): its icon, when there is
-/// one, then its name, small and muted, centred together across the card.
-fn player_app(
-    pixmap: &mut Pixmap,
-    p: &PlayerView,
-    l: &Layout,
-    tokens: &Tokens,
     text: Option<&mut Text>,
     s: f32,
 ) {
-    let (Some(row), Some(text)) = (l.app, text) else {
+    let (Some(p), Some(parts)) = (&view.player, &l.player) else {
         return;
     };
-    let (rx, ry, rw, rh) = row.device(s);
-    let size = 11.0 * s;
-    let icon = p.app_icon.as_ref();
-    let side = (APP_ICON * s).round();
-    let space = 5.0 * s;
-    let lead = icon.map_or(0.0, |_| side + space);
-    let mut name = text.fit(
-        &p.identity,
-        size,
-        (rw - 2.0 * PLAYER_SIDE * s - lead).max(0.0),
-    );
-    let left = (rx + (rw - lead - name.width) / 2.0).round();
-    if let Some(icon) = icon {
-        let top = (ry + (rh - side) / 2.0).round();
-        pixmap.draw_pixmap(
-            left as i32,
-            top as i32,
-            icon.as_ref(),
-            &tiny_skia::PixmapPaint::default(),
-            tiny_skia::Transform::identity(),
-            None,
-        );
-    }
-    let top = ry + (rh - size * 1.25) / 2.0;
-    text.draw(pixmap, &mut name, left + lead, top, dim(tokens));
+    let part = |f: Option<Focus>| match f {
+        Some(Focus::Previous) => Some(player::Part::Previous),
+        Some(Focus::PlayPause) => Some(player::Part::PlayPause),
+        Some(Focus::Next) => Some(player::Part::Next),
+        Some(Focus::Dot(i)) => Some(player::Part::Dot(i)),
+        _ => None,
+    };
+    let marks = player::Marks {
+        hover: part(view.hover),
+        focus: part(view.focus),
+        page: view.page,
+    };
+    player::paint(pixmap, p, parts, marks, tokens, text, s);
 }
 
 /// A round toggle: its circle with the icon, its title under it, and the
@@ -2495,7 +2216,10 @@ mod tests {
         with.player = Some(playing(true));
         let (a, b) = (layout(&plain), layout(&with));
         // The player's card at the top, 352 by 120, and the card 128 lower.
-        assert_eq!(b.player, Some(Rect::new(0.0, 0.0, 352.0, 120.0)));
+        assert_eq!(
+            b.player.map(|p| p.card),
+            Some(Rect::new(0.0, 0.0, 352.0, 120.0))
+        );
         assert_eq!(b.quick, Rect::new(0.0, 128.0, 352.0, a.size.1 as f32));
         assert_eq!(b.size.1, a.size.1 + 128);
         for (x, y) in a.tiles.iter().zip(&b.tiles) {
@@ -2514,8 +2238,11 @@ mod tests {
         let l = layout(&view);
         // The card stays where it is, the player hangs 8 px below it.
         assert_eq!(l.quick, Rect::new(0.0, 0.0, 352.0, plain.size.1 as f32));
-        assert_eq!(l.player.unwrap().y, (l.quick.y + l.quick.h) + 8.0);
-        assert_eq!(l.player.unwrap().h, 120.0);
+        assert_eq!(
+            l.player.as_ref().unwrap().card.y,
+            (l.quick.y + l.quick.h) + 8.0
+        );
+        assert_eq!(l.player.as_ref().unwrap().card.h, 120.0);
         assert_eq!(l.size.1, plain.size.1 + 128);
     }
 
@@ -2524,7 +2251,7 @@ mod tests {
         let mut view = view_of(&laptop(), false, 1280);
         view.player = Some(playing(true));
         let l = layout(&view);
-        let play = l.play.unwrap();
+        let play = l.player.as_ref().unwrap().play;
         let (x, y) = (play.x + play.w / 2.0, play.middle());
         assert_eq!(hit(&view, &l, x, y), Some(Focus::PlayPause));
         assert_eq!(
@@ -2538,7 +2265,7 @@ mod tests {
             ..playing(true)
         });
         let l = layout(&view);
-        let prev = l.previous.unwrap();
+        let prev = l.player.as_ref().unwrap().previous;
         assert_eq!(hit(&view, &l, prev.x + prev.w / 2.0, prev.middle()), None);
         let keys = ring(&view);
         assert!(!keys.contains(&Focus::Previous));
@@ -2561,11 +2288,14 @@ mod tests {
     fn one_player_has_its_app_row_and_no_dots() {
         let view = paged(1, 0);
         let l = layout(&view);
-        assert_eq!(l.app, Some(Rect::new(0.0, 12.0, 352.0, 16.0)));
-        assert!(l.dots.is_empty());
+        assert_eq!(
+            l.player.as_ref().unwrap().app,
+            Rect::new(0.0, 12.0, 352.0, 16.0)
+        );
+        assert!(l.player.as_ref().unwrap().dots.is_empty());
         assert!(!ring(&view).iter().any(|f| matches!(f, Focus::Dot(_))));
         // The cover's row sits under the app's, centred at 64.
-        assert_eq!(l.cover.unwrap().middle(), 64.0);
+        assert_eq!(l.player.as_ref().unwrap().cover.middle(), 64.0);
         // A pill: its corners half its height.
         assert_eq!(cards(&l)[0].radius, 60.0);
     }
@@ -2574,16 +2304,26 @@ mod tests {
     fn several_players_have_a_dot_each_the_shown_one_wider() {
         let view = paged(3, 1);
         let l = layout(&view);
-        let widths: Vec<f32> = l.dots.iter().map(|d| d.w).collect();
+        let widths: Vec<f32> = l
+            .player
+            .as_ref()
+            .unwrap()
+            .dots
+            .iter()
+            .map(|d| d.w)
+            .collect();
         assert_eq!(widths, [5.0, 12.0, 5.0]);
         // Centred across the card, 5 apart, their tops 9 px over the foot.
-        let all = l.dots[2].right() - l.dots[0].x;
+        let all = l.player.as_ref().unwrap().dots[2].right() - l.player.as_ref().unwrap().dots[0].x;
         assert_eq!(all, 32.0);
-        assert_eq!(l.dots[0].x, (352.0 - 32.0) / 2.0);
-        assert_eq!(l.dots[1].x, l.dots[0].right() + 5.0);
-        assert_eq!(l.dots[0].y, 120.0 - 9.0 - 5.0);
+        assert_eq!(l.player.as_ref().unwrap().dots[0].x, (352.0 - 32.0) / 2.0);
+        assert_eq!(
+            l.player.as_ref().unwrap().dots[1].x,
+            l.player.as_ref().unwrap().dots[0].right() + 5.0
+        );
+        assert_eq!(l.player.as_ref().unwrap().dots[0].y, 120.0 - 9.0 - 5.0);
         // A click on or near a dot finds its page, and acts.
-        let d = l.dots[2];
+        let d = l.player.as_ref().unwrap().dots[2];
         assert_eq!(hit(&view, &l, d.x + 2.0, d.y - 4.0), Some(Focus::Dot(2)));
         assert_eq!(
             key(&view, Some(Focus::Dot(2)), Key::Activate).1,
@@ -2759,7 +2499,7 @@ mod tests {
                         })
                         .count()
                 };
-                if let Some(player) = l.player {
+                if let Some(player) = l.player.as_ref().map(|p| p.card) {
                     assert!(ink(player) > 20, "{name} {mode}: the player is drawn");
                 }
                 for (t, b) in view.tiles.iter().zip(&l.tiles) {

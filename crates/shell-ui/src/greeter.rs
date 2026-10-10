@@ -68,6 +68,8 @@ struct Greeter {
     field: Field,
     /// A login under way: the password's letters, for its dots.
     busy: Option<usize>,
+    /// Whether Caps Lock is on (M5.10c).
+    caps: bool,
     /// The session's command, and where the login's answer comes back.
     cmd: String,
     tx: channel::Sender<Login>,
@@ -124,6 +126,7 @@ pub fn run(cmd: String) -> Result<()> {
         asking_password: false,
         field: Field::Ready,
         busy: None,
+        caps: false,
         cmd,
         tx,
         exit: false,
@@ -192,12 +195,11 @@ impl Greeter {
             None => (self.field, self.password.letters()),
         };
         View {
-            time,
-            date,
-            name: self.name.clone(),
             dots,
             field,
             asking_name: !self.asking_password,
+            caps: self.caps,
+            ..View::new(time, date, self.name.clone())
         }
     }
 
@@ -217,7 +219,14 @@ impl Greeter {
             let Some(mut pixmap) = Pixmap::new(pw, ph) else {
                 continue;
             };
-            lock::paint(&mut pixmap, &view, &self.tokens, &mut self.text, s as f32);
+            lock::paint(
+                &mut pixmap,
+                &view,
+                &self.tokens,
+                &mut self.text,
+                None,
+                s as f32,
+            );
             if screen.pool.is_none() {
                 screen.pool = SlotPool::new(2 * (pw * ph * 4) as usize, &self.shm)
                     .inspect_err(|e| eprintln!("edel-shell-ui: no memory for the greeter: {e}"))
@@ -574,10 +583,14 @@ impl KeyboardHandler for Greeter {
         _: &QueueHandle<Self>,
         _: &wl_keyboard::WlKeyboard,
         _: u32,
-        _: Modifiers,
+        modifiers: Modifiers,
         _: RawModifiers,
         _: u32,
     ) {
+        if self.caps != modifiers.caps_lock {
+            self.caps = modifiers.caps_lock;
+            self.draw();
+        }
     }
 }
 

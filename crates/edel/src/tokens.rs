@@ -174,6 +174,15 @@ pub struct Tokens {
     pub backdrop_deep: Colour,
     /// Text and marks drawn straight on the backdrop.
     pub backdrop_text: Colour,
+    /// The lock and login screens' frosted glass (M5.10c): the field, the
+    /// notifications' count and the corner's buttons, and the hairline
+    /// round them.
+    pub lock_glass: Colour,
+    pub lock_glass_edge: Colour,
+    /// The lock and login screens' clock: its size, logical pixels, and
+    /// its weight, 100 (thin) to 900 (black).
+    pub lock_clock: u32,
+    pub lock_clock_weight: u32,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
@@ -377,6 +386,8 @@ impl Tokens {
                 "backdrop" => &mut self.backdrop,
                 "backdrop_deep" => &mut self.backdrop_deep,
                 "backdrop_text" => &mut self.backdrop_text,
+                "lock_glass" => &mut self.lock_glass,
+                "lock_glass_edge" => &mut self.lock_glass_edge,
                 _ => {
                     notes.push(format!("unknown key colour.{key} ignored"));
                     continue;
@@ -414,6 +425,7 @@ impl Tokens {
                 "shadow_offset" => (&mut self.shadow_offset, 100),
                 "row" => (&mut self.row, 200),
                 "text" => (&mut self.text_size, 100),
+                "lock_clock" => (&mut self.lock_clock, 400),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -432,6 +444,15 @@ impl Tokens {
 impl Tokens {
     fn apply_fonts(&mut self, fonts: &Table, notes: &mut Vec<String>) {
         for (key, value) in fonts {
+            if key == "lock_clock_weight" {
+                match value.as_integer().filter(|n| (100..=900).contains(n)) {
+                    Some(n) => self.lock_clock_weight = n as u32,
+                    None => notes.push(format!(
+                        "font.{key} = {value} is not a weight from 100 to 900; the built-in one is used"
+                    )),
+                }
+                continue;
+            }
             if key != "interface" {
                 notes.push(format!("unknown key font.{key} ignored"));
                 continue;
@@ -472,6 +493,8 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "backdrop",
                 "backdrop_deep",
                 "backdrop_text",
+                "lock_glass",
+                "lock_glass_edge",
             ][..],
         ),
         (
@@ -497,9 +520,10 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "text",
                 "shadow_blur",
                 "shadow_offset",
+                "lock_clock",
             ][..],
         ),
-        ("font", &["interface"][..]),
+        ("font", &["interface", "lock_clock_weight"][..]),
     ] {
         let found = table.get(section).and_then(Value::as_table);
         if let Some(key) = keys
@@ -561,6 +585,10 @@ pub fn check(text: &str) -> Result<Tokens> {
         backdrop: BLACK,
         backdrop_deep: BLACK,
         backdrop_text: BLACK,
+        lock_glass: BLACK,
+        lock_glass_edge: BLACK,
+        lock_clock: 0,
+        lock_clock_weight: 0,
         shadow_blur: 0,
         shadow_offset: 0,
         row: 0,

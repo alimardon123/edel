@@ -49,6 +49,12 @@ edge = "#00000099"
 backdrop = "#4b5263"
 backdrop_deep = "#23272f"
 backdrop_text = "#f4f6fa"
+# The lock and login screens' frosted glass (M5.10c, docs/mockups/shell/
+# lock.jpg): the password field, the notifications' count and the
+# corner's buttons are this tint over the backdrop, edged with the
+# second; the same in both schemes, as the backdrop is dark in both.
+lock_glass = "#ffffff1c"
+lock_glass_edge = "#ffffff2e"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -72,6 +78,8 @@ edge = "#14182024"
 backdrop = "#8d9aba"
 backdrop_deep = "#3c4868"
 backdrop_text = "#f7f8fb"
+lock_glass = "#ffffff1c"
+lock_glass_edge = "#ffffff2e"
 
 [size]
 # In logical pixels.
@@ -111,6 +119,9 @@ row = 36
 # drawn in two layers, a close sharp one and a far soft one (M5.5e).
 shadow_blur = 24
 shadow_offset = 6
+# The lock and login screens' clock, large and light (M5.10c); a Compact
+# screen draws it smaller to fit.
+lock_clock = 136
 
 [font]
 # The interface font's family, for title bars and everything shell-ui
@@ -118,3 +129,6 @@ shadow_offset = 6
 # variable file, one file for every weight, calls itself Inter Variable
 # (M5.30b).
 interface = "Inter Variable"
+# The lock and login screens' clock's weight, 100 (thin) to 900 (black):
+# light, as the mockups draw it (M5.10c).
+lock_clock_weight = 300

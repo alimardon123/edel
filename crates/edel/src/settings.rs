@@ -945,6 +945,11 @@ pub const NOTIFICATION_POSITION: &str = "notifications.position";
 /// share; its values are [`choices`]'.
 pub const NOTIFICATION_BADGE: &str = "notifications.badge";
 
+/// The key that says how much things move (M5.11b): `full`, the default,
+/// `reduced` or `off`; the lock screen's field shakes only at `full`
+/// (M5.10c).
+pub const ANIMATIONS: &str = "appearance.animations";
+
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.
 pub const TRAY_IN_PANEL: &str = "panels.tray";

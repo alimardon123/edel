@@ -17,7 +17,7 @@ use tiny_skia::{Pixmap, PixmapPaint, Stroke, Transform};
 use edel::tokens::{Colour, Tokens};
 
 use crate::Shell;
-use crate::paint::{self, Text, fill, lit, mix, paint_of};
+use crate::paint::{self, Text, fill, lit, mix, outline, paint_of};
 
 /// The room round a card's rows, and text's from a row's left, in logical
 /// pixels.
@@ -556,6 +556,20 @@ pub fn radio(pixmap: &mut Pixmap, tokens: &Tokens, x: f32, y: f32, d: f32, on: b
             );
         }
     }
+}
+
+/// The keyboard's ring round a part: 2 px in the accent, 3 px outside the
+/// part `r`, whose corners have radius `radius` (logical pixels).
+pub fn focus_ring(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
+    let grown = Rect::new(r.x - 3.0, r.y - 3.0, r.w + 6.0, r.h + 6.0);
+    let (x, y, w, h) = grown.device(s);
+    outline(
+        pixmap,
+        (x, y, w, h),
+        (radius + 3.0) * s,
+        2.0 * s,
+        tokens.accent,
+    );
 }
 
 #[cfg(test)]
