@@ -81,6 +81,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/lock-media.jpg](shell/lock-media.jpg) | The lock screen while music plays (M5.10c): the player as a frosted card in the bottom left corner, across from the buttons, with the cover, the time played and the controls |
 | [shell/lock-media-options.jpg](shell/lock-media-options.jpg) | Five places for the lock screen's player (2026-10-10): Alimardon chose the bottom left corner (2, `lock-media.jpg`) as the default for now, shown only while something plays; every place stays a choice in Settings, and a later round may redesign it |
 | [shell/greeter.jpg](shell/greeter.jpg) | The login screen (M5.10c): the same design, the people of the machine to pick and Other to type a name |
+| [shell/greeter-sessions.jpg](shell/greeter-sessions.jpg) | The login screen with a second session installed (M5.10c, Alimardon 2026-10-10): a chip in the corner names the session and opens the frosted "Desktop for this login" menu; Console stands for any session an add-on or developer mode adds, and with one session the chip is not there |
 | [shell/lock-phone.jpg](shell/lock-phone.jpg) | A phone's lock screen (M9): the player under the clock, then the notifications as frosted cards saying only what arrived, the torch and camera; then the passcode on round frosted keys |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
 
@@ -125,7 +126,7 @@ The rules under them:
 
 The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
-boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg`, `greeter-sessions.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
