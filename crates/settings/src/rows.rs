@@ -46,6 +46,11 @@ pub const ROWS: &[Row] = &[
         key: "layout.close_button",
         title: n_("Close button"),
     },
+    // The tray's apps in the panel (M5.9h): the card lists each app.
+    Row {
+        key: "layout.tray_in_panel",
+        title: n_("Tray"),
+    },
     // The Displays page (M5.7a); the `*` is a screen's name.
     Row {
         key: "displays.*.resolution",
@@ -219,7 +224,7 @@ mod tests {
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
-        assert_eq!(titles.len(), 8);
+        assert_eq!(titles.len(), 9);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

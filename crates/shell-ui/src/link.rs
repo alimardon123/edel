@@ -4,8 +4,9 @@
 //! that switches it; the launcher's key (M5.3b); the window
 //! switcher's titles and its end (M5.3c); and the keyboard's layouts and
 //! the one in use, for the layout indicator, with the request for the
-//! next one (M5.9f); and the tray's key, which opens the tray's grid
-//! with the keyboard (M5.9h). Without it (another
+//! next one (M5.9f); the tray's key, which opens the tray's grid
+//! with the keyboard (M5.9h); and the settings files' changes, which
+//! shell-ui reads again (M5.9h). Without it (another
 //! compositor) the toggle shows nothing and only the menu button opens
 //! the launcher.
 
@@ -96,6 +97,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::SwitcherHide => shell.hide_switcher(),
             edel_shell_v1::Event::MediaKey { key } => shell.media_key(&key),
             edel_shell_v1::Event::Tray => shell.tray_key_pressed(),
+            edel_shell_v1::Event::Settings => shell.settings_changed(),
         }
     }
 }

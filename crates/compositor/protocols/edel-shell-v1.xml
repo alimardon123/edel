@@ -17,8 +17,9 @@
       policy when bound and whenever it changes, the launcher event
       when the launcher's key is pressed, the tray event when the
       tray's key is pressed (M5.9h), the volume and brightness
-      keys (M5.9c), and the keyboard's layouts and the one in use
-      (M5.9f), which shell-ui asks to change with next_keyboard_layout.
+      keys (M5.9c), the keyboard's layouts and the one in use
+      (M5.9f), which shell-ui asks to change with next_keyboard_layout,
+      and the settings files' changes (M5.9h).
     </description>
 
     <request name="destroy" type="destructor">
@@ -52,6 +53,14 @@
         The tray's key was pressed (Super+B unless [shortcuts] says
         otherwise): shell-ui opens the grid of the apps behind the tray's
         arrow with the keyboard on its first app, or closes it (M5.9h).
+      </description>
+    </event>
+
+    <event name="settings">
+      <description summary="the settings files changed">
+        The settings files changed (M5.9h): shell-ui reads again what it
+        reads from them while running, such as `layout.tray_in_panel`.
+        Sent at every change, whoever made it.
       </description>
     </event>
 

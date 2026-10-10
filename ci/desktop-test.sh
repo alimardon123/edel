@@ -2725,8 +2725,10 @@ case_tray() {
 	# button named by the item's title, a click asks the item to Activate and
 	# a right click for its ContextMenu; when the item's app ends, the icon
 	# goes. Pointing at the arrow shows its tooltip, Super+B opens the grid
-	# with the keyboard and Escape closes it (M5.9h). The key is taken out
-	# again at the end (`tray reset`).
+	# with the keyboard and Escape closes it (M5.9h). Settings' Tray card
+	# lists the app in the panel, then, after a reset of the key, behind the
+	# arrow, and the panel follows at once. The key is taken out again at the
+	# end (`tray reset`).
 	panel=$(token panel)
 	python3 ci/qmp.py move 640 300
 	items=$(count 'edel-shell-ui: tray: 1 items')
@@ -2824,6 +2826,35 @@ case_tray() {
 		i=$((i + 1))
 		[ "$i" -lt 5 ] || fail "the test item was not asked to Activate and then for its ContextMenu: $(value sni)"
 	done
+	# Settings' Tray card (M5.9h): opened on the Layout page, it lists the
+	# app in the panel, the choice the drag made. Resetting the key puts it
+	# behind the arrow, and the panel and the card follow at once. Super+Q
+	# closes Settings again.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open for the tray card: $(value windows)"
+	i=0
+	while :; do
+		guest 'settings log'
+		wait_for 'DESKTOP-TEST: settings_log .*edel-settings: tray card lists edel-testclient \(in the panel\)' 3 && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "Settings' Tray card does not list edel-testclient in the panel: $(value settings_log)"
+	done
+	behind=$(count 'edel-shell-ui: tray: 1 behind the arrow')
+	guest 'tray reset'
+	wait_more 'edel-shell-ui: tray: 1 behind the arrow' "$behind" ||
+		fail "resetting layout.tray_in_panel did not put the app behind the arrow in the panel"
+	i=0
+	while :; do
+		guest 'settings log'
+		wait_for 'DESKTOP-TEST: settings_log .*edel-settings: tray card lists edel-testclient \(behind the arrow\)' 3 && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "Settings' Tray card did not follow the reset: $(value settings_log)"
+	done
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	python3 ci/qmp.py move 640 300
 	items=$(count 'edel-shell-ui: tray: 0 items')
 	guest 'sni off'
@@ -2841,7 +2872,7 @@ case_tray() {
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
 	value settings_file | grep -q 'tray_in_panel' &&
 		fail "ci's settings file still holds layout.tray_in_panel after tray reset: $(value settings_file)"
-	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, the icon went when its app ended, and tray reset took the key out again"
+	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote layout.tray_in_panel = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {

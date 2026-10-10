@@ -387,6 +387,8 @@ commands() {
 		'settings window')
 			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
 			;;
+		# What Settings logged while open (M5.9h): its Tray card's lines.
+		'settings log') say "settings_log $(tr '\n' ';' </tmp/settings.log 2>/dev/null)" ;;
 		# Settings on its Displays page (M5.7a), as ci.
 		'display window')
 			as_ci edel-settings --page displays </dev/null >/tmp/settings-display.log 2>&1 &

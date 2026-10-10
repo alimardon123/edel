@@ -4,7 +4,8 @@
 //! sent when shell-ui binds and whenever it changes (`sync_shell`, run
 //! with the state file), for the panel's layout toggle; `toggle_policy`,
 //! which switches it as Super+T does; the launcher's key (M5.3b) and the
-//! tray's key (M5.9h), which show or hide shell-ui's grids;
+//! tray's key (M5.9h), which show or hide shell-ui's grids, and the
+//! settings files' changes (M5.9h), which shell-ui reads again;
 //! which shows or hides shell-ui's launcher; and the window switcher's
 //! titles and its end (M5.3c), which shell-ui draws; and the keyboard's
 //! layouts and the one in use (M5.9f), for the layout indicator, with the
@@ -149,6 +150,17 @@ impl Edel {
         for (link, _) in self.links.0.borrow().iter() {
             if link.is_alive() {
                 link.tray();
+            }
+        }
+    }
+
+    /// The settings files changed (M5.9h): every link reads them again, as
+    /// the tray's list is read when the tray changes. Nothing is logged,
+    /// as it happens at every change.
+    pub fn tell_settings(&self) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.settings();
             }
         }
     }

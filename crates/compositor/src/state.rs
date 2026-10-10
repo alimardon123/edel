@@ -559,6 +559,8 @@ impl Edel {
         } else if old.title_bars != new.title_bars || rescaled {
             self.relayout();
         }
+        // Shell-ui reads the files again too (M5.9h), as the tray's list.
+        self.tell_settings();
     }
 
     /// Whether the compositor draws title bars under the active policy.
