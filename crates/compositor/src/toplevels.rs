@@ -119,7 +119,7 @@ impl Edel {
         }
         // A column the scroll style has scrolled off screen (M5.16c) is
         // still on its screen's workspace, so the window list offers it.
-        if screens.is_empty() {
+        if screens.is_empty() && self.desks.hidden_on(window).is_none() {
             if let Some(name) = self.desks.layout_of(window).screen_of(window) {
                 screens.extend(self.space.outputs().find(|o| o.name() == name));
             }
