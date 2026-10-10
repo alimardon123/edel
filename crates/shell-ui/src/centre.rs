@@ -169,7 +169,7 @@ pub fn metrics(compact: bool) -> Metrics {
             day: 40.0,
             week_gap: 2.0,
             today: 36.0,
-            list: 230.0,
+            list: 320.0,
         }
     } else {
         Metrics {
@@ -184,7 +184,7 @@ pub fn metrics(compact: bool) -> Metrics {
             day: 30.0,
             week_gap: 2.0,
             today: 30.0,
-            list: 250.0,
+            list: 280.0,
         }
     }
 }
