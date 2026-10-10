@@ -495,14 +495,45 @@ impl Shell {
         }
     }
 
-    /// A click on the notifications button (M5.9k): the notifications
-    /// open alone, without the calendar, or close if open.
-    pub fn toggle_notifications(&mut self) {
+    /// A click on the notifications button (M5.9k) on panel `i`, whose
+    /// middle lies `at` logical pixels along it: the notifications open
+    /// alone, without the calendar, hung on the button, or close if open.
+    pub fn toggle_notifications(&mut self, i: usize, at: f32) {
         if self.centre.is_some() {
             self.close_centre();
         } else {
             self.open_centre(false);
+            self.hang_centre(i, at);
         }
+    }
+
+    /// The open list hung on the point `at` along panel `i`: centred on it
+    /// and kept inside the panel, as the tray's grid hangs on its arrow,
+    /// so a button at either end or in the middle opens it beside itself.
+    /// A Compact sheet stays across the screen.
+    fn hang_centre(&mut self, i: usize, at: f32) {
+        let Some(panel_width) = self.panels.get(i).map(|p| p.width) else {
+            return;
+        };
+        let room = paint::shadow_room(&self.tokens, !crate::fillets()) as i32;
+        let Some(card) = &self.centre else {
+            return;
+        };
+        if card.state.compact {
+            return;
+        }
+        let size = card.state.width as i32;
+        let left =
+            (at as i32 - size / 2).clamp(MARGIN, (panel_width as i32 - size - MARGIN).max(MARGIN));
+        let m = MARGIN - room;
+        let surface = &card.popup.surface;
+        let side = match self.panels[i].edge {
+            Edge::Top => Anchor::TOP,
+            Edge::Bottom => Anchor::BOTTOM,
+        };
+        surface.set_anchor(side | Anchor::LEFT);
+        surface.set_margin(m, m, m, left - room);
+        surface.commit();
     }
 
     /// The notifications button's count follows the list (M5.9k): one more

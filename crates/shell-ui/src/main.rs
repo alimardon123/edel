@@ -1249,7 +1249,7 @@ impl Shell {
             Action::Styles => self.toggle_styles(i, left + width / 2.0),
             Action::Quick => self.toggle_quick(),
             Action::Centre => self.toggle_centre(),
-            Action::Notifications => self.toggle_notifications(),
+            Action::Notifications => self.toggle_notifications(i, left + width / 2.0),
             Action::TrayOpen => self.toggle_tray_grid(i, left + widgets::tray::arrow_middle()),
             Action::App(id) => self.open_app(&id),
             Action::Tray(id, menu) => self.tray_call(&id, menu, x),

@@ -320,6 +320,7 @@ commands() {
 		# The notifications button (M5.9k): a panel holding it beside the
 		# clock, and what it shows while some are unread.
 		'panels bell') edel settings set 'panels.list=[{ edge = "bottom", end = ["notifications", "clock"] }]' ;;
+		'panels bell start') edel settings set 'panels.list=[{ edge = "bottom", start = ["notifications"], end = ["clock"] }]' ;;
 		'badge count') edel settings set notifications.badge=count ;;
 		'badge default') edel settings reset notifications.badge ;;
 		# The fallback notice (M5.9e): a record of a fallback from slot B

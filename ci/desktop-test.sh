@@ -2407,11 +2407,32 @@ case_notify() {
 	guest 'notify one'
 	wait_more 'edel-shell-ui: unread notifications [1-9]' "$unread" || fail "the second notification was not counted unread"
 	shot bell-count $((bell + 32)) 772 "$accent" >/dev/null || fail "with notifications.badge = count the button shows no count pill at $((bell + 32)),772"
+	# The list hangs on the button wherever it lies (M5.9k): with the bell
+	# at the panel's start, it opens at the screen's left, not its right.
+	guest 'panels bell start'
+	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button first did not reach the panel"
+	start=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
+	[ "$start" -lt 100 ] || fail "the notifications button first in the panel lies at $start"
+	shown=$(count 'edel-shell-ui: notification centre shown')
+	python3 ci/qmp.py click $((start + 17)) 780
+	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((start + 17)),780 opened no notifications"
+	i=0
+	until value layers | grep -q 'edel-centre@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no notifications list: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-centre@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-centre@//; s/[,x]/ /g')
+	[ "$1" -le 40 ] || fail "the list of the notifications button at $start opened at $1,$2, not at the screen's left: $(value layers)"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the list at the left"
 	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'badge default'
 	guest 'panels default'
 	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$ten" || fail "resetting panels.list did not bring Classic's panel back"
-	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself; notifications.position put banners at$places; the notifications button showed the accent's dot for an unread one, opened the notifications without the calendar and read them, and with notifications.badge = count showed a count"
+	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself; notifications.position put banners at$places; the notifications button showed the accent's dot for an unread one, opened the notifications without the calendar and read them, and with notifications.badge = count showed a count; moved to the panel's start, its list opened at the screen's left"
 }
 
 case_osd() {
