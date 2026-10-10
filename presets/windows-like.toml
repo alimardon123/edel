@@ -35,4 +35,4 @@ tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
 edge = "bottom"
 start = ["menu", "search"]
 centre = ["apps"]
-end = ["workspaces", "layout", "tray", "status", "clock"]
+end = ["workspaces", "layout", "tray", "keyboard", "status", "clock"]

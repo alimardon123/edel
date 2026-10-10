@@ -47,11 +47,15 @@ impl Edel {
                 };
                 eprintln!("edel-compositor: keyboard {which} {}", names.join(", "));
             }
-            Err(e) => eprintln!(
-                "edel-compositor: {}",
-                messages::keyboard_not_loaded(&written, format!("{e:?}"))
-            ),
+            Err(e) => {
+                eprintln!(
+                    "edel-compositor: {}",
+                    messages::keyboard_not_loaded(&written, format!("{e:?}"))
+                );
+                return;
+            }
         }
+        self.tell_keyboard();
     }
 
     /// Goes to the next of the keyboard's layouts, and says which.
@@ -67,5 +71,6 @@ impl Edel {
         if let Some(name) = name {
             eprintln!("edel-compositor: keyboard layout now {name}");
         }
+        self.tell_keyboard();
     }
 }

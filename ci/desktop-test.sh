@@ -1268,6 +1268,23 @@ case_keyboard() {
 		fail "edel settings set region.keyboard=xx was not refused with its message: $(value keyboard_bad)"
 	guest 'keyboard de'
 	wait_for 'edel-compositor: keyboard layouts de, us' || fail "the compositor did not load the layouts de and us"
+	# The layout indicator (M5.9f): with two layouts the panel shows the one
+	# in use, DE, and a click on it goes to the next, English. shell-ui says
+	# where it lies (`panel places`); the click is at its middle. Super+Space
+	# then goes back to German, as the rest of the case expects.
+	wait_for 'edel-shell-ui: panel places .*keyboard [0-9]+\+[1-9][0-9]*' 5 ||
+		fail "the panel shows no keyboard indicator with two layouts: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	kbd=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	set -- $kbd
+	at=$(($1 + $2 / 2))
+	switched=$(count 'edel-compositor: keyboard layout now English')
+	python3 ci/qmp.py click "$at" 780
+	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
+		fail "a click on the keyboard indicator at $at,780 did not go to English"
+	switched=$(count 'edel-compositor: keyboard layout now German')
+	python3 ci/qmp.py key meta_l-spc
+	wait_more 'edel-compositor: keyboard layout now German' "$switched" ||
+		fail "Super+Space did not go back to German after the click"
 	opened=$(count 'edel-compositor: mapped window foot')
 	python3 ci/qmp.py key ctrl-alt-t
 	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
@@ -1280,7 +1297,7 @@ case_keyboard() {
 	guest 'key file'
 	wait_for 'DESKTOP-TEST: keyfile ' || fail "the service did not look for the file"
 	[ "$(value keyfile)" = z ] || fail "with the German layout, typing y in foot made $(value keyfile), not z"
-	switched=$(count 'edel-compositor: keyboard layout now')
+	switched=$(count 'edel-compositor: keyboard layout now English')
 	python3 ci/qmp.py key meta_l-spc
 	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
 		fail "Super+Space did not go to the next layout, English (US)"
@@ -1289,7 +1306,7 @@ case_keyboard() {
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
 	guest 'keyboard default'
 	wait_for "edel-compositor: keyboard layout us, xkb's default" || fail "unsetting region.keyboard did not bring the US layout back"
-	echo "PASS: region.keyboard = \"de,us\" loaded at once, y typed z in foot, Super+Space went to English (US), xx was refused with its message, and unsetting it brought US back"
+	echo "PASS: region.keyboard = \"de,us\" loaded at once, the panel showed the keyboard indicator and a click on it went to English (US) and Super+Space back to German, y typed z in foot, Super+Space went to English (US), xx was refused with its message, and unsetting it brought US back"
 }
 
 case_workspaces() {

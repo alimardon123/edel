@@ -12,6 +12,7 @@
 
 pub mod apps;
 pub mod clock;
+pub mod keyboard;
 pub mod layout;
 pub mod menu;
 pub mod search;
@@ -86,6 +87,8 @@ pub struct Live {
     pub view: Option<usize>,
     pub windows: Vec<Task>,
     pub policy: String,
+    /// The keyboard's layouts' xkb names and the one in use (M5.9f).
+    pub keyboard: (Vec<String>, usize),
     /// Whether the launcher is open, for the menu button's lit tile.
     pub launcher: bool,
     /// Whether quick settings are open, for the status area's lit pill
@@ -169,6 +172,8 @@ pub enum Action {
     Minimize(usize),
     /// Switch the shown workspace's policy, as Super+T.
     TogglePolicy,
+    /// Go to the keyboard's next layout, as Super+Space (M5.9f).
+    NextKeyboardLayout,
     /// Open the launcher, or close it (M5.3b).
     Launcher,
     /// Open the tiling styles' menu beside the widget (M5.16b).
@@ -201,6 +206,7 @@ pub const TABLE: &[Widget] = &[
     windows::WIDGET,
     workspaces::WIDGET,
     layout::WIDGET,
+    keyboard::WIDGET,
     tray::WIDGET,
     clock::WIDGET,
     title::WIDGET,

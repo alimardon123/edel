@@ -524,6 +524,7 @@ mod tests {
                 "layout",
                 "separator",
                 "tray",
+                "keyboard",
                 "status",
                 "clock"
             ]

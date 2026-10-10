@@ -848,6 +848,7 @@ impl Shell {
             }
             Some(Action::Minimize(window)) => self.toplevels.minimize(window),
             Some(Action::TogglePolicy) => self.link.toggle_policy(),
+            Some(Action::NextKeyboardLayout) => self.link.next_keyboard_layout(),
             Some(Action::Launcher) => self.toggle_launcher(),
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::Quick) => self.toggle_quick(),

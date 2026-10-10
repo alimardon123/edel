@@ -35,7 +35,7 @@ tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
 edge = "top"
 start = ["menu", "title"]
 centre = []
-end = ["workspaces", "layout", "tray", "status", "clock"]
+end = ["workspaces", "layout", "tray", "keyboard", "status", "clock"]
 
 # The dock: a card along the bottom, keeping its height free of windows.
 [[panels]]
