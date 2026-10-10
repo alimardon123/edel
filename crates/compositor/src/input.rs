@@ -107,6 +107,19 @@ impl Edel {
                     event.time_msec(),
                     |state, modifiers, keysym| {
                         let sym = keysym.modified_sym().raw();
+                        if state.log_keys {
+                            eprintln!(
+                                "edel-compositor: key {:#x} {} logo {} ctrl {} alt {} shift {}, {} down, overview {}",
+                                sym,
+                                if pressed { "pressed" } else { "released" },
+                                modifiers.logo,
+                                modifiers.ctrl,
+                                modifiers.alt,
+                                modifiers.shift,
+                                down,
+                                state.overview.is_some()
+                            );
+                        }
                         let vts =
                             xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12;
                         // Keys where a Latin layout has them, whatever the
