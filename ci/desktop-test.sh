@@ -1277,11 +1277,11 @@ case_keyboard() {
 	kbd=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	set -- $kbd
 	at=$(($1 + $2 / 2))
-	switched=$(count 'edel-compositor: keyboard layout now')
+	switched=$(count 'edel-compositor: keyboard layout now English')
 	python3 ci/qmp.py click "$at" 780
 	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
 		fail "a click on the keyboard indicator at $at,780 did not go to English"
-	switched=$(count 'edel-compositor: keyboard layout now')
+	switched=$(count 'edel-compositor: keyboard layout now German')
 	python3 ci/qmp.py key meta_l-spc
 	wait_more 'edel-compositor: keyboard layout now German' "$switched" ||
 		fail "Super+Space did not go back to German after the click"
@@ -1297,7 +1297,7 @@ case_keyboard() {
 	guest 'key file'
 	wait_for 'DESKTOP-TEST: keyfile ' || fail "the service did not look for the file"
 	[ "$(value keyfile)" = z ] || fail "with the German layout, typing y in foot made $(value keyfile), not z"
-	switched=$(count 'edel-compositor: keyboard layout now')
+	switched=$(count 'edel-compositor: keyboard layout now English')
 	python3 ci/qmp.py key meta_l-spc
 	wait_more 'edel-compositor: keyboard layout now English' "$switched" ||
 		fail "Super+Space did not go to the next layout, English (US)"
