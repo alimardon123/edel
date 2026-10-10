@@ -513,6 +513,7 @@ case_respawn() {
 		fail "the greeter at 640,790 is not the lock's #$(token backdrop_deep)"
 	python3 ci/qmp.py type 'ci\n'
 	sleep 1
+	shot greeter-name >/dev/null
 	python3 ci/qmp.py type 'not-it\n'
 	# greetd answers a wrong password after PAM's own wait; the greeter
 	# keeps the user name, and Return takes it to the password again.
@@ -527,7 +528,10 @@ case_respawn() {
 	fi
 	case "$(value login_ready)" in
 	"ci output "*" ready") ;;
-	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
+	*)
+		guest 'greeter log'
+		sleep 3
+		fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
 	case "$(value greeter_said)" in
 	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*) ;;

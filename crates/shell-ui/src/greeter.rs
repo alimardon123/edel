@@ -522,6 +522,7 @@ impl KeyboardHandler for Greeter {
         _: &[u32],
         _: &[Keysym],
     ) {
+        eprintln!("edel-shell-ui: greeter has the keyboard");
     }
 
     fn leave(
