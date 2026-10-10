@@ -4,7 +4,7 @@
 # every boot (M3.4, docs/TRY-IT.md).
 format = 1
 summary = "Real laptops: the long-term kernel, firmware for graphics and Wi-Fi, CPU microcode and the hardware report"
-why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them, and CPU microcode, which GRUB loads before the initramfs (M3.3a); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
+why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them (kept to the chips of the last ten years' laptops and desktops by the [[keep]] list below, M5.30), and CPU microcode, which GRUB loads before the initramfs (M3.3a); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
 # eMMC disks of small laptops: without mmc the initramfs cannot find a
 # root installed on one.
 initramfs = ["mmc"]
@@ -28,3 +28,74 @@ packages = [
 
 [services]
 default = ["edel-report"]
+
+# The firmware the stick keeps (M5.30), by device: the graphics, wired,
+# Wi-Fi and Bluetooth chips of the laptops and desktops of the last ten
+# years, the reference laptop's (Intel Iris Xe, i915) first, and their
+# cameras, sensors and sound. Everything else the firmware packages carry
+# (servers' network cards, routers' and phones' Wi-Fi, versions the kernel
+# cannot load) is taken out when the image is built; a listed pattern that
+# matches nothing fails the build. Of Intel's Wi-Fi, only the newest
+# version of each chip the kernel's iwlwifi asks for stays (a chip it does
+# not name keeps every version).
+[[keep]]
+under = "lib/firmware"
+files = [
+  # Graphics: AMD (GCN and newer, and the older Radeons) and Intel
+  # (Skylake to Meteor Lake with i915, Lunar Lake and newer with xe).
+  "amdgpu/*",
+  "radeon/*",
+  "i915/*",
+  "xe/*",
+  # Wired: Realtek's Ethernet chips, on most laptops and desktops.
+  "rtl_nic/*",
+  # Wi-Fi and Bluetooth, Intel: the chips themselves and the names the
+  # driver asks for, links into intel/iwlwifi.
+  "intel/iwlwifi/*",
+  "iwlwifi-*",
+  "intel/ibt-*",
+  # Intel cameras (IPU, the visual sensing controller), the sensor hub
+  # that turns the screen, the NPU, and the audio DSPs of older laptops.
+  "intel/ipu/*",
+  "intel/ipu3-fw.bin.zst",
+  "intel/irci_*",
+  "intel/vsc/*",
+  "intel/ish/*",
+  "intel/vpu/*",
+  "intel/avs/*",
+  "intel/avs/*/*",
+  "intel/catpt/*/*",
+  "intel/dsp_fw_*",
+  "intel/fw_sst_*",
+  "intel/IntcSST2.bin.zst",
+  # Wi-Fi and Bluetooth, MediaTek: MT7921 and MT7922 (MT7961), MT7902,
+  # MT7925 and MT7927, and the older MT7601, MT76x0, MT76x2 and MT7663.
+  "mediatek/WIFI_*",
+  "mediatek/BT_RAM_CODE_*",
+  "mediatek/mt7925/*",
+  "mediatek/mt7927/*",
+  "mediatek/mt7601u.bin.zst",
+  "mediatek/mt7610*",
+  "mediatek/mt7650*",
+  "mediatek/mt7662*",
+  "mediatek/mt7663*",
+  "mediatek/mt7668*",
+  "mt7601u.bin.zst",
+  "mt7650.bin.zst",
+  "mt7662*",
+  # Wi-Fi, Qualcomm: QCA6174 and QCA9377 (ath10k), WCN6855, QCA6390,
+  # QCA2066 and QCA6698AQ (ath11k), the laptops' chips.
+  "ath10k/QCA6174/*/*",
+  "ath10k/QCA9377/*/*",
+  "ath11k/WCN6855/*/*",
+  "ath11k/WCN6855/*/nfa765/*",
+  "ath11k/QCA6390/*/*",
+  "ath11k/QCA2066/*/*",
+  "ath11k/QCA6698AQ/*/*",
+  # Wi-Fi, Realtek: every chip of rtlwifi, rtw88 and rtw89.
+  "rtlwifi/*",
+  "rtw88/*",
+  "rtw89/*",
+]
+newest = ["intel/iwlwifi/*"]
+newest_by = "iwlwifi"

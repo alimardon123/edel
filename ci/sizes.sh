@@ -78,7 +78,13 @@ fi
 		[ -e "$f" ] && echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"
 	done
 	for d in out/work/*/rootfs; do
-		[ -d "$d" ] && echo "| $(basename "$(dirname "$d")") installed files | $(sudo du -sh "$d" | cut -f1) |"
+		[ -d "$d" ] || continue
+		image=$(basename "$(dirname "$d")")
+		echo "| $image installed files | $(sudo du -sh "$d" | cut -f1) |"
+		# What the firmware and the fonts take of it (M5.30).
+		for part in lib/firmware usr/share/fonts; do
+			[ -d "$d/$part" ] && echo "| $image /$part | $(sudo du -sh "$d/$part" | cut -f1) |"
+		done
 	done
 } >>"$summary"
 

@@ -20,6 +20,7 @@ pub mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
 pub mod install;
+pub mod keep;
 pub mod keyboard;
 pub mod network;
 pub mod panel_edit;

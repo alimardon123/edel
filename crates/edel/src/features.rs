@@ -54,6 +54,11 @@ pub struct Feature {
     /// from beside itself.
     #[serde(default)]
     pub programs: Vec<String>,
+    /// What the image keeps of its packages' files under a folder (M5.30,
+    /// `edel::keep`): the laptop feature's firmware, the fonts feature's
+    /// fonts.
+    #[serde(default)]
+    pub keep: Vec<crate::keep::Keep>,
     /// The default apps (M6.2); only the `apps` feature has them.
     #[serde(default)]
     pub flatpak: Vec<String>,
@@ -178,6 +183,9 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
     }
     if let Some(p) = feature.packages.iter().find(|p| !is_package(p)) {
         bail!("package {p:?} is not a package name");
+    }
+    for keep in &feature.keep {
+        crate::keep::check(keep)?;
     }
     let mut seen: Vec<&str> = Vec::new();
     for (level, service) in feature.services.entries() {
