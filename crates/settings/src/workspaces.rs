@@ -20,8 +20,8 @@ use crate::files::{self, Files, apps_text, list_text};
 use crate::{icon, rows, widgets};
 
 /// The key of the names row and the apps row.
-const NAMES: &str = "layout.workspace_names";
-const APPS: &str = "layout.app_workspaces";
+const NAMES: &str = "workspaces.names";
+const APPS: &str = "workspaces.apps";
 
 /// The Workspaces group's names and apps, as the page shows them.
 pub struct Card {

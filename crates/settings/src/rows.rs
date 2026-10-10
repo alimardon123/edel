@@ -27,13 +27,13 @@ pub const ROWS: &[Row] = &[
     },
     // The panels that apply, and the editor that changes them (M5.31d).
     Row {
-        key: "layout.panels",
+        key: "panels.list",
         title: n_("Panels"),
     },
     // The apps the dock's apps widget pins, listed under Panels; the drag
     // on the panel changes them (M5.31d).
     Row {
-        key: "apps.pinned",
+        key: "panels.pinned",
         title: n_("Pinned apps"),
     },
     Row {
@@ -59,42 +59,48 @@ pub const ROWS: &[Row] = &[
     },
     // The tray's apps in the panel (M5.9h): the card lists each app.
     Row {
-        key: "layout.tray_in_panel",
+        key: "panels.tray",
         title: n_("Tray"),
     },
-    // The workspaces (M5.2n): the count, dynamic and per-screen ones, the
-    // names and the apps that open on their own workspace, and the
-    // switcher's look, shown count and ends.
+    // The Workspaces page (M5.2n, its own page since M5.2q): the count,
+    // dynamic and per-screen ones, the names and the apps that open on
+    // their own workspace.
     Row {
-        key: "layout.workspaces",
+        key: "workspaces.count",
         title: n_("Number of workspaces"),
     },
     Row {
-        key: "layout.dynamic_workspaces",
+        key: "workspaces.dynamic",
         title: n_("Dynamic workspaces"),
     },
     Row {
-        key: "layout.workspaces_per_screen",
+        key: "workspaces.per_screen",
         title: n_("Workspaces on each screen"),
     },
     Row {
-        key: "layout.workspace_names",
+        key: "workspaces.names",
         title: n_("Workspace names"),
     },
     Row {
-        key: "layout.app_workspaces",
+        key: "workspaces.apps",
         title: n_("Apps on their workspace"),
     },
+    // The Appearance page (M5.2q): light or dark, then the workspace
+    // switcher's look, shown count and ends.
     Row {
-        key: "layout.workspaces_look",
+        key: "appearance.mode",
+        title: n_("Style"),
+    },
+    Row {
+        key: "appearance.switcher_look",
         title: n_("Switcher look"),
     },
     Row {
-        key: "layout.workspaces_shown",
+        key: "appearance.switcher_shown",
         title: n_("Numbers shown"),
     },
     Row {
-        key: "layout.workspaces_ends",
+        key: "appearance.switcher_ends",
         title: n_("Switcher ends"),
     },
     // The Displays page (M5.7a); the `*` is a screen's name.
@@ -130,7 +136,7 @@ pub const ROWS: &[Row] = &[
 pub const PANELS_WHAT: &str = n_("Which panels and docks show, where, and what they hold");
 
 /// The key of the row `name` means, by its key or its title, whatever the
-/// case (`layout.panels` or `Panels`), if one does.
+/// case (`panels.list` or `Panels`), if one does.
 pub fn row_named(name: &str) -> Option<&'static str> {
     let name = name.trim().to_lowercase();
     ROWS.iter()
@@ -174,6 +180,9 @@ pub fn label(value: &str) -> String {
         "fade" => n_("Fade"),
         "arrows" => n_("Arrows"),
         "counts" => n_("Counts"),
+        "light" => n_("Light"),
+        "dark" => n_("Dark"),
+        "auto" => n_("Automatic"),
         "stack" => n_("Stack"),
         "split" => n_("Split"),
         "scroll" => n_("Scroll"),
@@ -287,7 +296,10 @@ mod tests {
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
-        assert_eq!(titles.len(), 18);
+        assert_eq!(titles.len(), 8);
+        assert_eq!(on_page("panels").count(), 3);
+        assert_eq!(on_page("workspaces").count(), 5);
+        assert_eq!(on_page("appearance").count(), 4);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
@@ -348,18 +360,18 @@ mod tests {
 
     #[test]
     fn the_pinned_apps_row_is_titled_as_the_panels_group_says() {
-        assert_eq!(title("apps.pinned"), "Pinned apps");
-        assert_eq!(row_named("Pinned apps"), Some("apps.pinned"));
+        assert_eq!(title("panels.pinned"), "Pinned apps");
+        assert_eq!(row_named("Pinned apps"), Some("panels.pinned"));
     }
 
     #[test]
     fn the_panels_row_is_found_by_its_key_or_its_title() {
-        assert_eq!(row_named("layout.panels"), Some("layout.panels"));
-        assert_eq!(row_named("Panels"), Some("layout.panels"));
-        assert_eq!(row_named("PANELS"), Some("layout.panels"));
+        assert_eq!(row_named("panels.list"), Some("panels.list"));
+        assert_eq!(row_named("Panels"), Some("panels.list"));
+        assert_eq!(row_named("PANELS"), Some("panels.list"));
         assert_eq!(row_named("panel"), None, "a start is not a row");
         assert_eq!(row_named("scale"), Some("displays.*.scale"));
-        assert_eq!(title("layout.panels"), "Panels");
+        assert_eq!(title("panels.list"), "Panels");
     }
 
     #[test]

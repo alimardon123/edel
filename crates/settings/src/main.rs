@@ -88,7 +88,7 @@ fn main() -> gtk::glib::ExitCode {
     let app = adw::Application::builder().application_id(APP_ID).build();
     // Any argument is --page (others were refused above), and a page
     // opened by name gives the keyboard to its main control; a row named
-    // (`--page layout.panels`) gives it to that row's control (M5.31d).
+    // (`--page panels.list`) gives it to that row's control (M5.31d).
     let asked = std::env::args().len() > 1;
     let row = std::env::args()
         .skip(1)
@@ -188,6 +188,29 @@ fn all_pages() -> Vec<Page> {
                 icon: "page-layout",
                 section: Some(page.section),
                 build: layout::page,
+                needs: Some("shell"),
+            }),
+            // The panels, the workspaces and the look are the desktop's
+            // as well (M5.2q): pages of their own beside Layout.
+            "panels" => Some(Page {
+                title: tr(page.title),
+                icon: "page-panels",
+                section: Some(page.section),
+                build: layout::panels_page,
+                needs: Some("shell"),
+            }),
+            "workspaces" => Some(Page {
+                title: tr(page.title),
+                icon: "page-workspaces",
+                section: Some(page.section),
+                build: layout::workspaces_page,
+                needs: Some("shell"),
+            }),
+            "appearance" => Some(Page {
+                title: tr(page.title),
+                icon: "page-appearance",
+                section: Some(page.section),
+                build: layout::appearance_page,
                 needs: Some("shell"),
             }),
             // The screens are the compositor's too.
@@ -513,6 +536,9 @@ mod tests {
             titles,
             [
                 "Layout",
+                "Panels",
+                "Workspaces",
+                "Appearance",
                 "Displays",
                 "Sound",
                 "Network",
@@ -553,6 +579,9 @@ mod tests {
             titles(""),
             [
                 "Layout",
+                "Panels",
+                "Workspaces",
+                "Appearance",
                 "Displays",
                 "Sound",
                 "Network",
@@ -579,6 +608,9 @@ mod tests {
         assert_eq!(titles("user"), ["Users"]);
         assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
+        assert_eq!(titles("pinned"), ["Panels"]);
+        assert_eq!(titles("dynamic"), ["Workspaces"]);
+        assert_eq!(titles("switcher"), ["Appearance"]);
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
         assert!(titles("nothing like this").is_empty());
@@ -589,23 +621,26 @@ mod tests {
         let pages = all_pages();
         let at = |name: &str| page_named(&pages, name);
         assert_eq!(at("layout"), Some(0));
-        assert_eq!(at("displays"), Some(1));
-        assert_eq!(at("Displays"), Some(1));
-        assert_eq!(at("display"), Some(1), "the start of one name");
-        assert_eq!(at("sound"), Some(2));
-        assert_eq!(at("Sound"), Some(2));
-        assert_eq!(at("users"), Some(7));
-        assert_eq!(at("network"), Some(3));
-        assert_eq!(at("bluetooth"), Some(4));
-        assert_eq!(at("blue"), Some(4));
-        assert_eq!(at("power"), Some(5));
-        assert_eq!(at("notifications"), Some(6));
-        assert_eq!(at("notif"), Some(6));
-        assert_eq!(at("updates"), Some(8));
-        assert_eq!(at("system"), Some(9));
-        assert_eq!(at("sy"), Some(9));
-        assert_eq!(at("about"), Some(10));
-        assert_eq!(at("abo"), Some(10));
+        assert_eq!(at("panels"), Some(1));
+        assert_eq!(at("workspaces"), Some(2));
+        assert_eq!(at("appearance"), Some(3));
+        assert_eq!(at("displays"), Some(4));
+        assert_eq!(at("Displays"), Some(4));
+        assert_eq!(at("display"), Some(4), "the start of one name");
+        assert_eq!(at("sound"), Some(5));
+        assert_eq!(at("Sound"), Some(5));
+        assert_eq!(at("users"), Some(10));
+        assert_eq!(at("network"), Some(6));
+        assert_eq!(at("bluetooth"), Some(7));
+        assert_eq!(at("blue"), Some(7));
+        assert_eq!(at("power"), Some(8));
+        assert_eq!(at("notifications"), Some(9));
+        assert_eq!(at("notif"), Some(9));
+        assert_eq!(at("updates"), Some(11));
+        assert_eq!(at("system"), Some(12));
+        assert_eq!(at("sy"), Some(12));
+        assert_eq!(at("about"), Some(13));
+        assert_eq!(at("abo"), Some(13));
         assert_eq!(at(""), None);
         assert_eq!(at("l"), Some(0), "one start only");
     }
@@ -614,12 +649,15 @@ mod tests {
     fn a_row_names_its_page_and_asks_for_its_control() {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         let pages = all_pages();
-        assert_eq!(page_named(&pages, "layout.panels"), Some(0));
-        assert_eq!(page_named(&pages, "Panels"), Some(0));
-        assert_eq!(page_named(&pages, "scale"), Some(1), "a row of Displays");
-        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(0));
-        assert_eq!(start_page(args(&["--page=layout.panels"]), &pages), Ok(0));
-        assert_eq!(rows::row_named("layout.panels"), Some("layout.panels"));
+        assert_eq!(page_named(&pages, "panels.list"), Some(1));
+        assert_eq!(page_named(&pages, "Panels"), Some(1));
+        assert_eq!(page_named(&pages, "scale"), Some(4), "a row of Displays");
+        assert_eq!(page_named(&pages, "workspaces.count"), Some(2));
+        assert_eq!(page_named(&pages, "Number of workspaces"), Some(2));
+        assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(3));
+        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(1));
+        assert_eq!(start_page(args(&["--page=panels.list"]), &pages), Ok(1));
+        assert_eq!(rows::row_named("panels.list"), Some("panels.list"));
         assert_eq!(rows::row_named("--page"), None);
     }
 
@@ -629,15 +667,15 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(10));
-        assert_eq!(start(&["--page=about"]), Ok(10));
-        assert_eq!(start(&["--page", "updates"]), Ok(8));
-        assert_eq!(start(&["--page", "sound"]), Ok(2));
-        assert_eq!(start(&["--page", "users"]), Ok(7));
-        assert_eq!(start(&["--page", "notifications"]), Ok(6));
-        assert_eq!(start(&["--page", "network"]), Ok(3));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(4));
-        assert_eq!(start(&["--page", "power"]), Ok(5));
+        assert_eq!(start(&["--page", "about"]), Ok(13));
+        assert_eq!(start(&["--page=about"]), Ok(13));
+        assert_eq!(start(&["--page", "updates"]), Ok(11));
+        assert_eq!(start(&["--page", "sound"]), Ok(5));
+        assert_eq!(start(&["--page", "users"]), Ok(10));
+        assert_eq!(start(&["--page", "notifications"]), Ok(9));
+        assert_eq!(start(&["--page", "network"]), Ok(6));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(7));
+        assert_eq!(start(&["--page", "power"]), Ok(8));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -671,6 +709,9 @@ mod tests {
             titles(&dir),
             [
                 "Layout",
+                "Panels",
+                "Workspaces",
+                "Appearance",
                 "Displays",
                 "Notifications",
                 "Users",
@@ -684,6 +725,9 @@ mod tests {
             titles(&dir),
             [
                 "Layout",
+                "Panels",
+                "Workspaces",
+                "Appearance",
                 "Displays",
                 "Sound",
                 "Notifications",

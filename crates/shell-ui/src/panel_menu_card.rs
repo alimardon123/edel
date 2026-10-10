@@ -2,7 +2,7 @@
 //! lays it out and draws it; this opens it at a right click on a panel
 //! where no widget took the click, holds its surface and keyboard while it
 //! is open, and makes the change a choice says. A change is written at
-//! once as the person's `layout.panels` (the drawer's writer, `save_panels`)
+//! once as the person's `panels.list` (the drawer's writer, `save_panels`)
 //! and the Undo bar offers to take it back. Like the tiling styles' menu it
 //! is a `Popup` hung on the panel at the pointer's place, with the keyboard
 //! exclusive, and it is let go when it closes.
@@ -176,7 +176,7 @@ impl Shell {
     }
 
     /// Makes the change `row` and `hit` say to the panel on `edge`. The new
-    /// panels are written as the person's `layout.panels`, then shown, and
+    /// panels are written as the person's `panels.list`, then shown, and
     /// the Undo bar opens over the panel for the old ones, unless the writer
     /// had nothing to write. A refused change is logged and the menu stays.
     fn change_panels(&mut self, row: Row, hit: Hit, edge: Edge, scale: u32) {

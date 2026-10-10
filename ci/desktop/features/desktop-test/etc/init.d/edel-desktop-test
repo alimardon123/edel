@@ -186,12 +186,12 @@ commands() {
 		'preset mac-like') edel settings set layout.preset=mac-like ;;
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
-		'panels clock') edel settings set 'layout.panels=[{ edge = "bottom", end = ["clock"] }]' ;;
+		'panels clock') edel settings set 'panels.list=[{ edge = "bottom", end = ["clock"] }]' ;;
 		# A floating large bar (M5.31c): 48 px high, 8 px from the sides.
-		'panels floating') edel settings set 'layout.panels=[{ edge = "bottom", size = "large", floating = true, start = ["menu"], end = ["clock"] }]' ;;
-		'panels default') edel settings reset layout.panels ;;
+		'panels floating') edel settings set 'panels.list=[{ edge = "bottom", size = "large", floating = true, start = ["menu"], end = ["clock"] }]' ;;
+		'panels default') edel settings reset panels.list ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
-		'dock hiding') edel settings set 'layout.panels=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		'dock hiding') edel settings set 'panels.list=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
 		# A window that asks to fill its screen (M5.20).
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
@@ -273,7 +273,7 @@ commands() {
 		# the tray case's drag wrote it.
 		# The tray's key out of ci's own file (M5.9g): edel settings
 		# reset edits the machine's file, which is root's.
-		'tray reset') as_ci "sed -i '/^tray_in_panel *=/d' /home/ci/.config/edel/$settings_name" ;;
+		'tray reset') as_ci "sed -i '/^tray *=/d' /home/ci/.config/edel/$settings_name" ;;
 		# Now playing (M5.9d): a test MPRIS player on ci's session bus,
 		# printing what quick settings asks of it into a file, read back
 		# with `mpris log`; `mpris off` ends it.
@@ -369,25 +369,25 @@ commands() {
 		# the case starts with none; the layout keys it sets and resets; and
 		# the state file's shown workspace, count and names read back.
 		'dynamic clear') pkill -f '[e]del-testclient'; pkill -x foot ;;
-		'dynamic on') edel settings set layout.dynamic_workspaces=true ;;
-		'dynamic names') edel settings set 'layout.workspace_names=["Mail"]' ;;
-		'dynamic default') edel settings reset layout.dynamic_workspaces && edel settings reset layout.workspace_names ;;
+		'dynamic on') edel settings set workspaces.dynamic=true ;;
+		'dynamic names') edel settings set 'workspaces.names=["Mail"]' ;;
+		'dynamic default') edel settings reset workspaces.dynamic && edel settings reset workspaces.names ;;
 		# The switcher's look and names (M5.2m): a name for workspace 1,
 		# the button look, and both keys' reset.
-		'switcher names') edel settings set 'layout.workspace_names=["Mail"]' ;;
-		'switcher button') edel settings set layout.workspaces_look=button ;;
-		'switcher default') edel settings reset layout.workspace_names && edel settings reset layout.workspaces_look ;;
+		'switcher names') edel settings set 'workspaces.names=["Mail"]' ;;
+		'switcher button') edel settings set appearance.switcher_look=button ;;
+		'switcher default') edel settings reset workspaces.names && edel settings reset appearance.switcher_look ;;
 		# Each screen's own workspaces (M5.2k), on and back to every
 		# screen switching together.
-		'screens apart on') edel settings set layout.workspaces_per_screen=true ;;
-		'screens apart off') edel settings reset layout.workspaces_per_screen ;;
+		'screens apart on') edel settings set workspaces.per_screen=true ;;
+		'screens apart off') edel settings reset workspaces.per_screen ;;
 		# A panel on every screen holding the switcher alone (M5.2o).
-		'screens panel') edel settings set 'layout.panels=[{ edge = "bottom", screens = "every", centre = ["workspaces"] }]' ;;
-		'screens panel off') edel settings reset layout.panels ;;
+		'screens panel') edel settings set 'panels.list=[{ edge = "bottom", screens = "every", centre = ["workspaces"] }]' ;;
+		'screens panel off') edel settings reset panels.list ;;
 		# Apps on their workspace (M5.2l): a rule for the test client's app id,
 		# the window it opens with that id, and the rule's reset.
-		'apps on 3') edel settings set 'layout.app_workspaces={ "edel-placed" = 3 }' ;;
-		'apps off') edel settings reset layout.app_workspaces ;;
+		'apps on 3') edel settings set 'workspaces.apps={ "edel-placed" = 3 }' ;;
+		'apps off') edel settings reset workspaces.apps ;;
 		'placed window')
 			as_ci edel-testclient --size 200x150 --colour 44aa77 --title placed --app-id edel-placed </dev/null >/dev/null 2>&1 &
 			;;
@@ -432,7 +432,7 @@ commands() {
 		# starts has it, so its Tray card reads the tray's apps.
 		'settings on the bus')
 			bus=$(session_bus)
-			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings" </dev/null >/tmp/settings.log 2>&1 &
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page panels.tray" </dev/null >/tmp/settings.log 2>&1 &
 			;;
 		# What Settings logged while open (M5.9h): its Tray card's lines.
 		'settings log') say "settings_log $(tr '\n' ';' </tmp/settings.log 2>/dev/null)" ;;
@@ -444,25 +444,31 @@ commands() {
 		# Settings' Panels group (M5.31d): ci's own file, not the machine's, holds
 		# one panel with only the clock; Settings opens on the Layout page with
 		# the keyboard on Edit panels, and its log says where that button lies.
-		'settings panels line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", end = [\"clock\"] }]' >/home/ci/.config/edel/$settings_name" ;;
+		'settings panels line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[panels]' 'list = [{ edge = \"bottom\", end = [\"clock\"] }]' >/home/ci/.config/edel/$settings_name" ;;
 		'settings panels')
 			# On the session's bus, which its Edit panels button calls.
 			bus=$(session_bus)
-			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page layout.panels" </dev/null >/tmp/settings-panels.log 2>&1 &
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page panels" </dev/null >/tmp/settings-panels.log 2>&1 &
 			;;
 		'settings panels log') say "settings_panels_log $(tr '\n' ';' </tmp/settings-panels.log 2>/dev/null)" ;;
-		# Settings' Workspaces group (M5.2n): opened on the Layout page by the
-		# name layout.workspaces, its log says where the count's buttons lie.
+		# Settings' Workspaces group (M5.2n): opened on the Workspaces page by
+		# its name, workspaces, its log says where the count's buttons lie.
 		'settings workspaces')
-			as_ci edel-settings --page layout.workspaces </dev/null >/tmp/settings-workspaces.log 2>&1 &
+			as_ci edel-settings --page workspaces.count </dev/null >/tmp/settings-workspaces.log 2>&1 &
 			;;
-		'settings workspaces reset') as_ci "sed -i '/^workspaces *=/d' /home/ci/.config/edel/$settings_name" ;;
+		'settings workspaces reset') as_ci "sed -i '/^count *= *6$/d' /home/ci/.config/edel/$settings_name" ;;
+		# Settings' Appearance page (M5.2q): opened by the name of its Style
+		# row, its log says where Light, Dark and Automatic lie.
+		'settings appearance')
+			as_ci edel-settings --page appearance.mode </dev/null >/tmp/settings-appearance.log 2>&1 &
+			;;
+		'settings appearance log') say "settings_appearance_log $(tr '\n' ';' </tmp/settings-appearance.log 2>/dev/null)" ;;
 		'settings workspaces log') say "settings_workspaces_log $(tr '\n' ';' </tmp/settings-workspaces.log 2>/dev/null)" ;;
 		# The apps widget's pins (M5.31d): ci's own file with one dock along
 		# the bottom holding the apps widget, and two pins, terminal and
 		# settings; `pins reset` takes both lines out again.
-		'pins line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", style = \"dock\", centre = [\"apps\"] }]' '[apps]' 'pinned = [\"terminal\", \"settings\"]' >/home/ci/.config/edel/$settings_name" ;;
-		'pins reset') as_ci "sed -i '/^pinned *=/d; /^panels *=/d' /home/ci/.config/edel/$settings_name" ;;
+		'pins line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[panels]' 'list = [{ edge = \"bottom\", style = \"dock\", centre = [\"apps\"] }]' 'pinned = [\"terminal\", \"settings\"]' >/home/ci/.config/edel/$settings_name" ;;
+		'pins reset') as_ci "sed -i '/^pinned *=/d; /^list *=/d' /home/ci/.config/edel/$settings_name" ;;
 		# What Settings holds of its own while open (M5.6a), read as
 		# shell-ui's is: the least of three reads a second apart, the
 		# budgeted number, and VmRSS, reported.

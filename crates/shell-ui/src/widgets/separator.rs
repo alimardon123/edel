@@ -3,7 +3,7 @@
 //! icons, in the panel text's colour at 15 percent, a little over half a
 //! button tall, with room on both sides. It shows nothing that changes,
 //! says nothing to a screen reader and takes no input; a preset or
-//! `layout.panels` places it by the name `separator`.
+//! `panels.list` places it by the name `separator`.
 
 use accesskit::Role;
 

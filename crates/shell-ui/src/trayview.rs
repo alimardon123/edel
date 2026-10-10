@@ -41,7 +41,7 @@ pub const COLUMNS_COMPACT: usize = 3;
 pub struct Icon {
     /// The item's `Id` (`service/path`), which a click asks to act.
     pub id: String,
-    /// The app's name for `layout.tray_in_panel`, which `places` logs.
+    /// The app's name for `panels.tray`, which `places` logs.
     pub app: String,
     /// What a reader calls it: the item's title, else "Tray item".
     pub title: String,

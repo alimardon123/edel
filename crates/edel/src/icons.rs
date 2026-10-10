@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 55] = [
+pub const BUILT_IN: [(&str, &str); 58] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -41,6 +41,19 @@ pub const BUILT_IN: [(&str, &str); 55] = [
     (
         "page-layout",
         include_str!("../../../design/icons/page-layout.svg"),
+    ),
+    // The Panels, Workspaces and Appearance pages' (M5.2q).
+    (
+        "page-panels",
+        include_str!("../../../design/icons/page-panels.svg"),
+    ),
+    (
+        "page-workspaces",
+        include_str!("../../../design/icons/page-workspaces.svg"),
+    ),
+    (
+        "page-appearance",
+        include_str!("../../../design/icons/page-appearance.svg"),
     ),
     (
         "page-displays",

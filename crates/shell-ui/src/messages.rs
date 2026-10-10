@@ -127,7 +127,7 @@ pub fn tray_not_kept(why: impl Display) -> String {
 }
 
 /// There is no home folder to keep the tray's apps in the panel in.
-pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set layout.tray_in_panel='[\"APP\"]' instead, naming the apps by their tray Id";
+pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set panels.tray='[\"APP\"]' instead, naming the apps by their tray Id";
 
 /// The apps pinned to the apps widget cannot be written down (M5.31d).
 pub fn pins_not_kept(why: impl Display) -> String {
@@ -137,7 +137,7 @@ pub fn pins_not_kept(why: impl Display) -> String {
 }
 
 /// There is no home folder to keep the pinned apps in (M5.31d).
-pub const PINS_NO_HOME: &str = "no home folder to keep the pinned apps in; run edel settings set apps.pinned='[\"APP\"]' instead, naming the apps by their id or role";
+pub const PINS_NO_HOME: &str = "no home folder to keep the pinned apps in; run edel settings set panels.pinned='[\"APP\"]' instead, naming the apps by their id or role";
 
 /// The workspace names cannot be written down in their new order (M5.2p).
 pub fn names_not_kept(why: impl Display) -> String {
@@ -147,7 +147,7 @@ pub fn names_not_kept(why: impl Display) -> String {
 }
 
 /// There is no home folder to keep the workspace names in (M5.2p).
-pub const NAMES_NO_HOME: &str = "no home folder to keep the workspace names in; run edel settings set layout.workspace_names='[\"Mail\", \"\", \"Code\"]' instead, one name per workspace in order, empty where none";
+pub const NAMES_NO_HOME: &str = "no home folder to keep the workspace names in; run edel settings set workspaces.names='[\"Mail\", \"\", \"Code\"]' instead, one name per workspace in order, empty where none";
 
 /// The panels the editor made cannot be written down.
 pub fn panels_not_kept(why: impl Display) -> String {
@@ -161,7 +161,7 @@ pub fn panel_not_changed(why: impl Display) -> String {
 }
 
 /// There is no home folder to keep the panels in.
-pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set layout.panels='[...]' with the panels as TOML instead";
+pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set panels.list='[...]' with the panels as TOML instead";
 
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
@@ -323,7 +323,7 @@ mod tests {
             tray_not_kept("Permission denied (os error 13)"),
             "could not keep the tray's apps in the panel: Permission denied (os error 13); they stay as they were"
         );
-        assert!(TRAY_NO_HOME.contains("edel settings set layout.tray_in_panel="));
+        assert!(TRAY_NO_HOME.contains("edel settings set panels.tray="));
     }
 
     #[test]
@@ -332,7 +332,7 @@ mod tests {
             pins_not_kept("Permission denied (os error 13)"),
             "could not keep the pinned apps: Permission denied (os error 13); the next change to the settings puts the file's list back"
         );
-        assert!(PINS_NO_HOME.contains("edel settings set apps.pinned="));
+        assert!(PINS_NO_HOME.contains("edel settings set panels.pinned="));
     }
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
             names_not_kept("Permission denied (os error 13)"),
             "could not keep the workspace names in their new order: Permission denied (os error 13); the names in the settings file stay as they were"
         );
-        assert!(NAMES_NO_HOME.contains("edel settings set layout.workspace_names="));
+        assert!(NAMES_NO_HOME.contains("edel settings set workspaces.names="));
     }
 
     #[test]
