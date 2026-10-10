@@ -10,9 +10,13 @@
 //! notifications that came unread are counted with their apps' icons, a
 //! wrong password shakes the field on a timer (`lock::shake_at`, none with
 //! `appearance.animations` other than full) and a click on the go button
-//! checks the password as Return does (M5.10c). Logs `lock asked for`,
-//! `screen locked, N screens`, `lock places ...` (`lock::places`, once per
-//! screen size), `lock: wrong password` and `screen unlocked`.
+//! checks the password as Return does (M5.10c). The bottom right corner
+//! (`corner.rs`) holds Power, whose menu runs its choice through `power.rs`,
+//! and the keyboard layout; it takes the pointer, and Escape closes the menu
+//! first. Logs `lock asked for`, `screen locked, N screens`, `lock places ...`
+//! (`lock::places` and `corner::places`, once per screen size),
+//! `lock: wrong password`, `power menu shown, 3 rows`, `power menu hidden`,
+//! `power: NAME` and `screen unlocked`.
 
 use std::time::{Duration, Instant};
 
@@ -31,9 +35,12 @@ use smithay_client_toolkit::shm::slot::SlotPool;
 use tiny_skia::Pixmap;
 
 use crate::Shell;
+use crate::corner::{self, Button};
 use crate::lock::{self, Checked, Field, Password, View};
 use crate::messages;
 use crate::paint;
+use crate::power;
+use crate::widgets::keyboard;
 
 /// The lock while it holds.
 pub struct LockCard {
@@ -54,6 +61,12 @@ pub struct LockCard {
     /// logged.
     go_hover: bool,
     logged: String,
+    /// Power's menu is open, and whether an update waits for a restart
+    /// (read when the menu opens).
+    menu: bool,
+    restart_waiting: bool,
+    /// The corner's button or row under the pointer.
+    corner_hover: Option<corner::Hit>,
 }
 
 /// One screen's lock surface.
@@ -64,7 +77,8 @@ struct Screen {
     size: Option<(u32, u32)>,
     scale: u32,
     pool: Option<SlotPool>,
-    drawn: Option<View>,
+    /// What was drawn last: the lock's view and the corner's.
+    drawn: Option<(View, corner::View)>,
 }
 
 impl Shell {
@@ -94,6 +108,9 @@ impl Shell {
                     shaking: None,
                     go_hover: false,
                     logged: String::new(),
+                    menu: false,
+                    restart_waiting: false,
+                    corner_hover: None,
                 });
             }
             Err(e) => eprintln!("edel-shell-ui: {}", messages::lock_not_offered(e)),
@@ -161,12 +178,35 @@ impl Shell {
         })
     }
 
+    /// What the lock's corner shows now: the short name of the layout in
+    /// use when there are two or more, and Power's menu. `None` without a
+    /// lock.
+    fn corner_view(&self) -> Option<corner::View> {
+        let card = self.lock.as_ref()?;
+        let (layouts, active) = &self.live.keyboard;
+        let layout = if layouts.len() >= 2 {
+            layouts.get(*active).map(|name| keyboard::short(name))
+        } else {
+            None
+        };
+        Some(corner::View {
+            layout,
+            menu: card.menu,
+            restart_waiting: card.restart_waiting,
+            hover: card.corner_hover,
+        })
+    }
+
     /// Draws every configured lock surface whose view changed: on a key,
     /// an answer and the minute.
     pub fn draw_lock(&mut self) {
         let Some(view) = self.lock_view() else {
             return;
         };
+        let Some(corner_now) = self.corner_view() else {
+            return;
+        };
+        let shown = (view, corner_now);
         let Some(card) = &mut self.lock else {
             return;
         };
@@ -174,7 +214,7 @@ impl Shell {
             let Some((w, h)) = screen.size else {
                 continue;
             };
-            if screen.drawn.as_ref() == Some(&view) {
+            if screen.drawn.as_ref() == Some(&shown) {
                 continue;
             }
             let s = screen.scale;
@@ -184,18 +224,25 @@ impl Shell {
             };
             lock::paint(
                 &mut pixmap,
-                &view,
+                &shown.0,
                 &self.tokens,
                 &mut self.text,
                 Some(&mut self.icons),
                 s as f32,
             );
-            let places = lock::places(&lock::layout(
-                w as f32,
-                h as f32,
+            let (fw, fh) = (w as f32, h as f32);
+            let corner_at = corner::layout(fw, fh, &shown.1);
+            corner::paint(
+                &mut pixmap,
+                &shown.1,
+                &corner_at,
                 &self.tokens,
-                view.notices > 0,
-            ));
+                &mut self.text,
+                s as f32,
+            );
+            let lock_places =
+                lock::places(&lock::layout(fw, fh, &self.tokens, shown.0.notices > 0));
+            let places = format!("{lock_places}, {}", corner::places(&corner_at));
             if places != card.logged {
                 eprintln!("edel-shell-ui: lock places {places}");
                 card.logged = places;
@@ -231,7 +278,7 @@ impl Shell {
                 continue;
             }
             surface.commit();
-            screen.drawn = Some(view.clone());
+            screen.drawn = Some(shown.clone());
         }
     }
 
@@ -243,6 +290,9 @@ impl Shell {
         };
         if card.checking.is_some() {
             return;
+        }
+        if card.menu && matches!(event.keysym, Keysym::Escape) {
+            return self.set_power_menu(false);
         }
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => return self.check_password(),
@@ -351,9 +401,55 @@ impl Shell {
             .is_some_and(|c| c.screens.iter().any(|s| s.surface.wl_surface() == surface))
     }
 
-    /// The pointer on a lock surface: over the go button it lights it, and
-    /// a click there checks the password, as Return does.
+    /// Opens or closes Power's menu, logging it, and draws again. Opening
+    /// reads whether an update waits for a restart.
+    fn set_power_menu(&mut self, open: bool) {
+        let Some(card) = &mut self.lock else {
+            return;
+        };
+        if open {
+            card.restart_waiting = power::restart_waiting();
+            card.menu = true;
+            eprintln!(
+                "edel-shell-ui: power menu shown, {} rows",
+                power::CHOICES.len()
+            );
+        } else {
+            card.menu = false;
+            eprintln!("edel-shell-ui: power menu hidden");
+        }
+        self.draw_lock();
+    }
+
+    /// Closes Power's menu, then runs `choice` on a thread of its own, so
+    /// the drawing never waits for it.
+    fn run_power(&mut self, choice: power::Choice) {
+        self.set_power_menu(false);
+        eprintln!("edel-shell-ui: power: {}", choice.name());
+        let spawned = std::thread::Builder::new()
+            .name("power".into())
+            .spawn(move || {
+                if let Err(e) = power::run(choice) {
+                    eprintln!("edel-shell-ui: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::power_failed(choice.name(), e)
+            );
+        }
+    }
+
+    /// The pointer on a lock surface. Over the corner, a button lights up
+    /// and a click acts: Power opens or closes its menu, the layout button
+    /// goes to the next layout, a row runs its choice. A click elsewhere
+    /// closes an open menu. Over the go button, the pointer lights it and
+    /// a click checks the password, as Return does.
     pub fn lock_pointer(&mut self, event: &PointerEvent) {
+        let Some(corner_now) = self.corner_view() else {
+            return;
+        };
         let Some(card) = &mut self.lock else {
             return;
         };
@@ -365,23 +461,46 @@ impl Shell {
         else {
             return;
         };
-        let at = lock::layout(w as f32, h as f32, &self.tokens, self.live.unread > 0);
         let (x, y) = (event.position.0 as f32, event.position.1 as f32);
+        let at = lock::layout(w as f32, h as f32, &self.tokens, self.live.unread > 0);
         let over = lock::on_go(&at, x, y);
+        let corner_at = corner::layout(w as f32, h as f32, &corner_now);
+        let hit = corner::hit(&corner_at, x, y);
         match event.kind {
-            PointerEventKind::Press { button, .. } if button == BTN_LEFT && over => {
-                if card.checking.is_none() {
-                    self.check_password();
+            PointerEventKind::Press { button, .. } if button == BTN_LEFT => match hit {
+                Some(corner::Hit::Button(Button::Power)) => {
+                    let open = !card.menu;
+                    self.set_power_menu(open);
+                }
+                Some(corner::Hit::Button(Button::Layout)) => {
+                    if card.menu {
+                        self.set_power_menu(false);
+                    }
+                    self.link.next_keyboard_layout();
+                    self.draw_lock();
+                }
+                Some(corner::Hit::Row(i)) => {
+                    if let Some(&choice) = power::CHOICES.get(i) {
+                        self.run_power(choice);
+                    }
+                }
+                None if card.menu => self.set_power_menu(false),
+                None if over && card.checking.is_none() => self.check_password(),
+                None => {}
+            },
+            PointerEventKind::Leave { .. } => {
+                let changed = card.go_hover || card.corner_hover.is_some();
+                card.go_hover = false;
+                card.corner_hover = None;
+                if changed {
+                    self.draw_lock();
                 }
             }
-            PointerEventKind::Leave { .. } if card.go_hover => {
-                card.go_hover = false;
-                self.draw_lock();
-            }
             PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. }
-                if card.go_hover != over =>
+                if card.go_hover != over || card.corner_hover != hit =>
             {
                 card.go_hover = over;
+                card.corner_hover = hit;
                 self.draw_lock();
             }
             _ => {}
