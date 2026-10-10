@@ -1,8 +1,10 @@
 //! shell-ui's end of `edel-shell-v1` (roadmap M5.3), the compositor's
 //! private protocol (`crates/compositor/protocols/edel-shell-v1.xml`):
 //! the shown workspace's policy, for the layout toggle, and the request
-//! that switches it; the launcher's key (M5.3b); and the window
-//! switcher's titles and its end (M5.3c). Without it (another
+//! that switches it; the launcher's key (M5.3b); the window
+//! switcher's titles and its end (M5.3c); and the keyboard's layouts and
+//! the one in use, for the layout indicator, with the request for the
+//! next one (M5.9f). Without it (another
 //! compositor) the toggle shows nothing and only the menu button opens
 //! the launcher.
 
@@ -48,6 +50,13 @@ impl Link {
             link.toggle_policy();
         }
     }
+
+    /// Asks for the keyboard's next layout, as Super+Space (M5.9f).
+    pub fn next_keyboard_layout(&self) {
+        if let Some(link) = &self.0 {
+            link.next_keyboard_layout();
+        }
+    }
 }
 
 /// The link's user data: its events change what the panel shows.
@@ -65,6 +74,18 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
         match event {
             edel_shell_v1::Event::Policy { name } => {
                 shell.live.policy = name;
+                shell.draw_all();
+            }
+            edel_shell_v1::Event::Keyboard { layouts, active } => {
+                shell.live.keyboard = (
+                    layouts
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                    active as usize,
+                );
                 shell.draw_all();
             }
             edel_shell_v1::Event::Launcher => shell.toggle_launcher(),

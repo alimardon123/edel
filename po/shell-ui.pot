@@ -221,6 +221,9 @@ msgstr ""
 msgid "Apps: {names}"
 msgstr ""
 
+msgid "Keyboard layout: {name}, click for the next"
+msgstr ""
+
 msgid "Layout: tiling"
 msgstr ""
 

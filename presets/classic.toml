@@ -44,7 +44,7 @@ tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
 edge = "bottom"
 start = ["menu", "separator", "windows"]
 centre = []
-end = ["workspaces", "layout", "separator", "tray", "status", "clock"]
+end = ["workspaces", "layout", "separator", "tray", "keyboard", "status", "clock"]
 
 # What the session starts with the compositor and shell-ui (M5.7b), as
 # commands: a program on the PATH or an absolute path, then its arguments.
