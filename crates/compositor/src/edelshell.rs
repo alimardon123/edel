@@ -200,6 +200,9 @@ impl Dispatch<EdelShellV1, ()> for Edel {
         match request {
             edel_shell_v1::Request::TogglePolicy => state.toggle_tiling(),
             edel_shell_v1::Request::NextKeyboardLayout => state.next_keyboard_layout(),
+            edel_shell_v1::Request::MoveWorkspace { from, to } => {
+                state.move_workspace(from as usize, to as usize);
+            }
             _ => {}
         }
     }

@@ -51,6 +51,7 @@ mod trayview;
 mod undo_bar;
 mod watch;
 mod widgets;
+mod workspace_drag;
 mod workspaces;
 
 use anyhow::{Context, Result};
@@ -169,6 +170,8 @@ struct Shell {
     pin_slots: Vec<usize>,
     /// A press on an app's cell that may become a drag (M5.31d).
     app_press: Option<apps_drag::AppPress>,
+    /// A press on a switcher's button that may become a drag (M5.2p).
+    workspace_press: Option<workspace_drag::WorkspacePress>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
@@ -382,6 +385,7 @@ fn run() -> Result<()> {
         pins,
         pin_slots,
         app_press: None,
+        workspace_press: None,
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
@@ -1020,6 +1024,7 @@ impl Shell {
     pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
         let features = edel::places::found_shared(edel::features::DIR);
         self.app_press = None;
+        self.workspace_press = None;
         let same_shape = wanted.len() == self.panel_specs.len()
             && self.panel_specs.iter().zip(&wanted).all(|(old, new)| {
                 old.edge == new.edge
@@ -1056,6 +1061,7 @@ impl Shell {
         self.close_popups();
         self.tray_press = None;
         self.app_press = None;
+        self.workspace_press = None;
         for panel in std::mem::take(&mut self.panels) {
             // The layer surface's role goes first, then its surface.
             let surface = panel.surface.wl_surface().clone();
@@ -2145,6 +2151,7 @@ impl PointerHandler for Shell {
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                     self.tooltip_hover(i, x);
                     self.app_moved(i, x, y);
+                    self.workspace_moved(i, x, y);
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.hide_tooltip();
@@ -2152,6 +2159,11 @@ impl PointerHandler for Shell {
                     // A press on an app's cell waits for the release, so the
                     // app can be dragged (M5.31d).
                     if self.press_app(i, x, y) {
+                        continue;
+                    }
+                    // So does a press on a switcher's button, which a
+                    // release without a move shows (M5.2p).
+                    if self.press_workspace(i, x, y) {
                         continue;
                     }
                     // A kept tray icon's click waits for the release, so
@@ -2178,12 +2190,14 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
                     self.app_release(i, x, y);
+                    self.workspace_release(i, x, y);
                     self.tray_panel_release(i, x, y);
                 }
                 PointerEventKind::Leave { .. } => {
                     self.scrolled.reset();
                     self.tray_press = None;
                     self.app_press = None;
+                    self.workspace_press = None;
                     self.hide_tooltip();
                 }
                 PointerEventKind::Axis {

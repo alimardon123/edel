@@ -626,6 +626,10 @@ impl Shell {
         if let Some(caret) = self.app_caret(i) {
             return (None, Some(caret));
         }
+        // A switcher's button dragged shows its landing too (M5.2p).
+        if let Some(caret) = self.workspace_caret(i) {
+            return (None, Some(caret));
+        }
         let Some(drag) = self
             .editor
             .as_ref()

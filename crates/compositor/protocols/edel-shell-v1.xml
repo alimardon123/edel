@@ -40,6 +40,17 @@
       </description>
     </request>
 
+    <request name="move_workspace">
+      <description summary="move a workspace to another place">
+        The workspace at place `from` moves to place `to`, both from 0,
+        with its windows, its name and its policy, as a drag of its
+        switcher button asks (M5.2p); the ones between shift by one. The
+        settings file's names are the client's to write.
+      </description>
+      <arg name="from" type="uint" summary="the workspace's place now"/>
+      <arg name="to" type="uint" summary="its place after the move"/>
+    </request>
+
     <event name="launcher">
       <description summary="show or hide the launcher">
         The launcher's key was pressed (Super, tapped alone, unless
