@@ -110,6 +110,7 @@ impl Shell {
                 self.hide_banner();
             }
         }
+        self.count_unread(true);
         let hide_same = |shell: &mut Shell| {
             // The banner this one replaced shows what is no longer so.
             if shell.banner.as_ref().is_some_and(|b| b.id == n.id) {
@@ -144,6 +145,7 @@ impl Shell {
             self.hide_banner();
         }
         self.say_closed(id, reason);
+        self.count_unread(false);
         self.draw_centre();
     }
 
@@ -237,6 +239,7 @@ impl Shell {
         if let Some(card) = &mut self.centre {
             card.state.first = 0;
         }
+        self.count_unread(false);
         self.draw_centre();
     }
 
@@ -483,12 +486,73 @@ impl Shell {
 
     // ---- The notification centre ----
 
-    /// A click on the clock: the centre opens, or closes if open.
-    pub fn toggle_centre(&mut self) {
+    /// A click on the clock on panel `i`, whose middle lies `at` logical
+    /// pixels along it: the centre opens hung on the clock, or closes if
+    /// open.
+    pub fn toggle_centre(&mut self, i: usize, at: f32) {
         if self.centre.is_some() {
             self.close_centre();
         } else {
-            self.open_centre();
+            self.open_centre(true);
+            self.hang_centre(i, at);
+        }
+    }
+
+    /// A click on the notifications button (M5.9k) on panel `i`, whose
+    /// middle lies `at` logical pixels along it: the notifications open
+    /// alone, without the calendar, hung on the button, or close if open.
+    pub fn toggle_notifications(&mut self, i: usize, at: f32) {
+        if self.centre.is_some() {
+            self.close_centre();
+        } else {
+            self.open_centre(false);
+            self.hang_centre(i, at);
+        }
+    }
+
+    /// The open list hung on the point `at` along panel `i`: centred on it
+    /// and kept inside the panel, as the tray's grid hangs on its arrow,
+    /// so the clock or the bell at either end or in the middle opens it
+    /// beside itself.
+    /// A Compact sheet stays across the screen.
+    fn hang_centre(&mut self, i: usize, at: f32) {
+        let Some(panel_width) = self.panels.get(i).map(|p| p.width) else {
+            return;
+        };
+        let room = paint::shadow_room(&self.tokens, !crate::fillets()) as i32;
+        let Some(card) = &self.centre else {
+            return;
+        };
+        if card.state.compact {
+            return;
+        }
+        let size = card.state.width as i32;
+        let left =
+            (at as i32 - size / 2).clamp(MARGIN, (panel_width as i32 - size - MARGIN).max(MARGIN));
+        let m = MARGIN - room;
+        let surface = &card.popup.surface;
+        let side = match self.panels[i].edge {
+            Edge::Top => Anchor::TOP,
+            Edge::Bottom => Anchor::BOTTOM,
+        };
+        surface.set_anchor(side | Anchor::LEFT);
+        surface.set_margin(m, m, m, left - room);
+        surface.commit();
+    }
+
+    /// The notifications button's count follows the list (M5.9k): one more
+    /// for a notification that came while the list was closed, never more
+    /// than the list holds; the panels are drawn again when it changes,
+    /// and the log says so.
+    fn count_unread(&mut self, came: bool) {
+        let before = self.live.unread;
+        if came && self.centre.is_none() {
+            self.live.unread += 1;
+        }
+        self.live.unread = self.live.unread.min(self.notifications.len());
+        if self.live.unread != before {
+            eprintln!("edel-shell-ui: unread notifications {}", self.live.unread);
+            self.draw_all();
         }
     }
 
@@ -511,19 +575,21 @@ impl Shell {
 
     /// Opens the centre over the clock's panel (below it on a panel along
     /// the top), a sheet across the screen when Compact, with the
-    /// keyboard.
-    fn open_centre(&mut self) {
+    /// keyboard; without the calendar, over the notifications button's
+    /// panel (M5.9k). Opening it reads every notification.
+    fn open_centre(&mut self, calendar: bool) {
         self.close_launcher();
         self.close_styles();
         self.close_quick();
         self.close_tray_grid();
         self.hide_banner();
-        let (edge, scale) = self.panel_for("clock");
+        let (edge, scale) = self.panel_for(if calendar { "clock" } else { "notifications" });
         let (width, compact) = centre::width_for(self.screen_width());
         let today = calendar::today();
         let state = centre::State {
             width,
             compact,
+            calendar,
             dnd: self.do_not_disturb(),
             month: calendar::Month::of(today),
             today,
@@ -577,8 +643,14 @@ impl Shell {
             scrolled: widgets::Scrolled::default(),
             logged: String::new(),
         });
-        // The clock lights while the centre is open.
-        self.live.centre = true;
+        // The clock lights while the centre is open, the bell while the
+        // notifications it opened are; either way they are read.
+        self.live.centre = calendar;
+        self.live.bell_open = !calendar;
+        if self.live.unread > 0 {
+            self.live.unread = 0;
+            eprintln!("edel-shell-ui: unread notifications 0");
+        }
         self.draw_all();
     }
 
@@ -592,6 +664,7 @@ impl Shell {
         }
         drop(card);
         self.live.centre = false;
+        self.live.bell_open = false;
         self.draw_all();
         eprintln!("edel-shell-ui: notification centre hidden");
     }

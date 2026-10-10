@@ -60,6 +60,9 @@ pub fn sizes(tokens: &Tokens) -> (f32, f32, f32) {
 pub struct State {
     pub width: u32,
     pub compact: bool,
+    /// Whether the calendar card shows under the notifications: the
+    /// clock's centre has it, the notifications button's not (M5.9k).
+    pub calendar: bool,
     pub dnd: bool,
     pub month: Month,
     pub today: Ymd,
@@ -86,6 +89,7 @@ pub enum Part {
 pub struct View {
     pub width: u32,
     pub compact: bool,
+    pub calendar: bool,
     /// The notifications shown, newest first, from the one the list
     /// starts at.
     pub items: Vec<notice::Item>,
@@ -231,6 +235,7 @@ pub fn view(
     View {
         width: state.width,
         compact: state.compact,
+        calendar: state.calendar,
         newer: first,
         older: list.len() - first - items.len(),
         items,
@@ -327,6 +332,27 @@ pub fn layout(view: &View) -> Layout {
         }
     }
     let first = Rect::new(0.0, 0.0, w, y + m.pad);
+    if !view.calendar {
+        // The notifications alone (M5.9k): no second card, and the
+        // calendar's parts nowhere a pointer can reach.
+        let none = Rect::new(0.0, first.h, 0.0, 0.0);
+        return Layout {
+            size: (view.width, first.h.ceil() as u32),
+            metrics: m,
+            boxes: [first, none],
+            title,
+            clear,
+            empty,
+            cards,
+            more: more_rect,
+            dnd: moon,
+            month: none,
+            prev: none,
+            next: none,
+            weekdays: none,
+            grid: none,
+        };
+    }
     // The calendar card: the month row, the weekdays, the days.
     let top = first.y + first.h + CARD_GAP;
     let mut y = top + m.pad;
@@ -359,11 +385,13 @@ pub fn layout(view: &View) -> Layout {
     }
 }
 
-/// The two cards as the popup holds them, the notifications card first.
+/// The cards as the popup holds them, the notifications card first, the
+/// calendar's when it shows.
 pub fn cards(layout: &Layout) -> Vec<Card> {
     layout
         .boxes
         .iter()
+        .filter(|rect| rect.h > 0.0)
         .map(|&rect| Card {
             rect,
             radius: RADIUS,
@@ -385,8 +413,10 @@ pub fn places(layout: &Layout) -> String {
         parts.push(format!("notification{i} {}", at(card.whole)));
         parts.push(format!("close{i} {}", at(card.close)));
     }
-    for (name, rect) in [("prev", layout.prev), ("next", layout.next)] {
-        parts.push(format!("{name} {}", at(rect)));
+    if layout.boxes[1].h > 0.0 {
+        for (name, rect) in [("prev", layout.prev), ("next", layout.next)] {
+            parts.push(format!("{name} {}", at(rect)));
+        }
     }
     parts.join(", ")
 }
@@ -447,7 +477,9 @@ pub fn ring(view: &View) -> Vec<Part> {
         ring.extend((0..item.buttons.len()).map(|a| Part::Card(i, Hit::Button(a))));
         ring.push(Part::Card(i, Hit::Close));
     }
-    ring.extend([Part::Prev, Part::Next]);
+    if view.calendar {
+        ring.extend([Part::Prev, Part::Next]);
+    }
     ring
 }
 
@@ -571,36 +603,38 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
             put(&mut out, close, Some(Part::Card(i, Hit::Close)));
         }
     }
-    put(
-        &mut out,
-        plain(
-            accesskit::Role::Heading,
-            view.month.title(),
-            layout.month,
+    if view.calendar {
+        put(
+            &mut out,
+            plain(
+                accesskit::Role::Heading,
+                view.month.title(),
+                layout.month,
+                None,
+            ),
             None,
-        ),
-        None,
-    );
-    put(
-        &mut out,
-        plain(
-            accesskit::Role::Button,
-            tr("Previous month").to_string(),
-            layout.prev,
-            None,
-        ),
-        Some(Part::Prev),
-    );
-    put(
-        &mut out,
-        plain(
-            accesskit::Role::Button,
-            tr("Next month").to_string(),
-            layout.next,
-            None,
-        ),
-        Some(Part::Next),
-    );
+        );
+        put(
+            &mut out,
+            plain(
+                accesskit::Role::Button,
+                tr("Previous month").to_string(),
+                layout.prev,
+                None,
+            ),
+            Some(Part::Prev),
+        );
+        put(
+            &mut out,
+            plain(
+                accesskit::Role::Button,
+                tr("Next month").to_string(),
+                layout.next,
+                None,
+            ),
+            Some(Part::Next),
+        );
+    }
     (out, focused)
 }
 
@@ -710,6 +744,9 @@ pub fn paint(
     }
 
     // The calendar: its month, the two buttons, the weekdays and the days.
+    if !view.calendar {
+        return;
+    }
     if let Some(text) = text.as_deref_mut() {
         let mut line = text.fit_in(
             &view.month.title(),
@@ -845,6 +882,7 @@ mod tests {
         State {
             width,
             compact,
+            calendar: true,
             dnd: false,
             month: Month {
                 year: 2026,
@@ -928,6 +966,29 @@ mod tests {
         );
         let v = view_of(1280, &[tall]);
         assert_eq!(v.items.len(), 1);
+    }
+
+    #[test]
+    fn without_the_calendar_there_is_one_card_and_no_month_to_reach() {
+        let list = [note(1, "Hello", "Body", &[])];
+        let with = view(&state(1280), &list, 50.0, six);
+        let mut alone = state(1280);
+        alone.calendar = false;
+        let v = view(&alone, &list, 50.0, six);
+        let (l, lw) = (layout(&v), layout(&with));
+        // The surface is the notifications card alone, as tall as it is there.
+        assert_eq!(l.boxes[0], lw.boxes[0]);
+        assert_eq!(l.size.1 as f32, l.boxes[0].h.ceil());
+        assert!(l.size.1 < lw.size.1);
+        assert_eq!(cards(&l).len(), 1);
+        assert_eq!(cards(&lw).len(), 2);
+        // No month button to click, to tab to or to log.
+        let (px, py) = (lw.prev.x + 1.0, lw.prev.y + 1.0);
+        assert_eq!(hit(&lw, px, py), Some(Part::Prev));
+        assert_eq!(hit(&l, l.prev.x, l.prev.y), None);
+        assert!(!ring(&v).contains(&Part::Prev));
+        assert!(!places(&l).contains("prev"), "{}", places(&l));
+        assert!(places(&lw).contains("prev"));
     }
 
     #[test]

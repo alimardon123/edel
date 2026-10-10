@@ -332,6 +332,9 @@ msgstr ""
 msgid "Apps: {names}"
 msgstr ""
 
+msgid "Notifications, {count} unread"
+msgstr ""
+
 msgid "Clock"
 msgstr ""
 

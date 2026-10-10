@@ -2375,7 +2375,64 @@ case_notify() {
 		places="$places $where $1,$2"
 		wait_more 'edel-shell-ui: banner hidden' "$hidden" 15 || fail "the banner with notifications.position $where did not go away by itself"
 	done
-	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself; notifications.position put banners at$places"
+	# The notifications button (M5.9k): a panel holding it beside the
+	# clock; a notification that comes while the list is closed is unread,
+	# and the bell shows the accent's dot at its top right (24,12 into the
+	# widget); a click opens the notifications alone, with no calendar, and
+	# reads them; with notifications.badge = "count" the next one shows a
+	# pill reaching past the dot, its right part at 32,12 in the accent.
+	accent=$(token accent)
+	guest 'panels bell'
+	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button did not reach the panel: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	bell=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
+	unread=$(count 'edel-shell-ui: unread notifications [1-9]')
+	guest 'notify one'
+	wait_more 'edel-shell-ui: unread notifications [1-9]' "$unread" || fail "a notification that came while the list was closed was not counted unread"
+	shot bell-dot $((bell + 24)) 772 "$accent" >/dev/null || fail "the notifications button at $bell shows no dot in the accent at $((bell + 24)),772"
+	shown=$(count 'edel-shell-ui: notification centre shown')
+	read=$(count 'edel-shell-ui: unread notifications 0$')
+	python3 ci/qmp.py click $((bell + 17)) 780
+	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((bell + 17)),780 opened no notifications"
+	wait_more 'edel-shell-ui: unread notifications 0$' "$read" || fail "opening the notifications did not read them"
+	sleep 1
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1)
+	echo "$line" | grep -q 'prev ' && fail "the notifications button's list shows the calendar: $line"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the notifications the button opened"
+	guest 'badge count'
+	wait_for 'edel-shell-ui: notifications badge count$' || fail "notifications.badge = count did not reach shell-ui"
+	unread=$(count 'edel-shell-ui: unread notifications [1-9]')
+	guest 'notify one'
+	wait_more 'edel-shell-ui: unread notifications [1-9]' "$unread" || fail "the second notification was not counted unread"
+	shot bell-count $((bell + 32)) 772 "$accent" >/dev/null || fail "with notifications.badge = count the button shows no count pill at $((bell + 32)),772"
+	# The list hangs on the button wherever it lies (M5.9k): with the bell
+	# at the panel's start, it opens at the screen's left, not its right.
+	guest 'panels bell start'
+	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button first did not reach the panel"
+	start=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
+	[ "$start" -lt 100 ] || fail "the notifications button first in the panel lies at $start"
+	shown=$(count 'edel-shell-ui: notification centre shown')
+	python3 ci/qmp.py click $((start + 17)) 780
+	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((start + 17)),780 opened no notifications"
+	i=0
+	until value layers | grep -q 'edel-centre@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no notifications list: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-centre@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-centre@//; s/[,x]/ /g')
+	[ "$1" -le 40 ] || fail "the list of the notifications button at $start opened at $1,$2, not at the screen's left: $(value layers)"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the list at the left"
+	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	guest 'badge default'
+	guest 'panels default'
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$ten" || fail "resetting panels.list did not bring Classic's panel back"
+	echo "PASS: a notification sent on the session bus showed a 360 px banner in the panel's colour, a click on the clock opened the notification centre with it listed, with do not disturb set the second one was listed without a banner, and with the key taken out the third showed a banner that went by itself; notifications.position put banners at$places; the notifications button showed the accent's dot for an unread one, opened the notifications without the calendar and read them, and with notifications.badge = count showed a count; moved to the panel's start, its list opened at the screen's left"
 }
 
 case_osd() {

@@ -1,12 +1,13 @@
 //! The Notifications page (roadmap M5.9b): Do not disturb, the key
 //! `notifications.do_not_disturb`, which keeps banners away while the
-//! notifications still collect in the list the panel's clock opens, and
-//! Where notifications appear, `notifications.position` (M5.9j). Each is
-//! the same line of the person's settings file as `edel settings set`
-//! (and, for the first, quick settings' tile and the centre's switch), so each shows
-//! what the others chose: the page follows the files while it is open.
-//! shell-ui reads the keys at each notification, so a change applies to
-//! the next one. Nothing runs here but the file monitors.
+//! notifications still collect in the list the panel's clock opens; Where
+//! notifications appear, `notifications.position` (M5.9j); and Unread
+//! badge, `notifications.badge`, what the notifications button shows
+//! (M5.9k). Each is the same line of the person's settings file as `edel
+//! settings set` (and Do not disturb as quick settings' tile and the
+//! centre's switch), so each shows what the others chose: the page follows
+//! the files while it is open. shell-ui follows them at once. Nothing runs
+//! here but the file monitors.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -15,7 +16,7 @@ use gtk::gio;
 use gtk::prelude::*;
 
 use edel::i18n::{n_, tr};
-use edel::settings::{DO_NOT_DISTURB, NOTIFICATION_POSITION};
+use edel::settings::{DO_NOT_DISTURB, NOTIFICATION_BADGE, NOTIFICATION_POSITION};
 
 use crate::files::Files;
 use crate::{rows, widgets};
@@ -26,18 +27,78 @@ const INTRO: &str =
 /// What the row's line says under its title.
 const WHAT: &str = n_("Banners stay away; notifications still collect in the list the clock opens");
 
-/// What the place's row says under its title.
-const PLACE_WHAT: &str =
-    n_("Automatic puts them by the status area; a banner keeps clear of panels");
+/// The rows that choose one of a key's values: the key, what the row says
+/// under its title, and the value that applies without the key, which is
+/// taken out of the file rather than written.
+const CHOICES: [(&str, &str, &str); 2] = [
+    (
+        NOTIFICATION_POSITION,
+        n_("Automatic puts them by the status area; a banner keeps clear of panels"),
+        "auto",
+    ),
+    (
+        NOTIFICATION_BADGE,
+        n_("What the notifications button shows while some are unread"),
+        "dot",
+    ),
+];
 
-/// The place that applies without the key.
-const AUTO: &str = "auto";
+/// One row choosing one of a key's values, from [`CHOICES`].
+struct ChoiceRow {
+    key: &'static str,
+    what: &'static str,
+    release: &'static str,
+    choice: Rc<widgets::Choice>,
+    row: widgets::Row,
+}
+
+impl ChoiceRow {
+    fn new(
+        group: &gtk::Box,
+        (key, what, release): (&'static str, &'static str, &'static str),
+    ) -> ChoiceRow {
+        let labels = rows::values(key).iter().map(|v| rows::label(v)).collect();
+        let choice = widgets::Choice::new(labels);
+        let row = widgets::row(group, rows::title(key), &choice.widget());
+        ChoiceRow {
+            key,
+            what,
+            release,
+            choice,
+            row,
+        }
+    }
+
+    /// The value that applies now, the release's without a line.
+    fn value(&self, files: &Files) -> String {
+        files
+            .chosen(self.key)
+            .filter(|v| rows::values(self.key).contains(&v.as_str()))
+            .unwrap_or_else(|| self.release.to_string())
+    }
+
+    /// Shows what the files say, without calling back.
+    fn update(&self, files: &Files) {
+        let value = self.value(files);
+        let at = rows::values(self.key)
+            .iter()
+            .position(|v| *v == value)
+            .unwrap_or(0);
+        self.choice.set_selected(at);
+        let source = files.source(self.key);
+        let line = match rows::note(&source, false) {
+            Some(note) => format!("{} · {note}", tr(self.what)),
+            None => tr(self.what).to_string(),
+        };
+        self.row.subtitle.set_label(&line);
+        self.row.reset.set_visible(rows::resettable(&source));
+    }
+}
 
 struct Ui {
     switch: gtk::Switch,
     row: widgets::Row,
-    place: Rc<widgets::Choice>,
-    place_row: widgets::Row,
+    choices: Vec<ChoiceRow>,
     problem: gtk::Label,
     /// Set while the page itself moves the switch, so that is no choice.
     quiet: Cell<bool>,
@@ -46,11 +107,15 @@ struct Ui {
 }
 
 impl Ui {
-    /// Shows what the files say now: the switch, and where it comes from.
+    /// Shows what the files say now: each control, and where its value
+    /// comes from.
     fn update(&self) {
         let files = Files::here();
         self.quiet.set(true);
         self.switch.set_active(files.do_not_disturb());
+        for choice in &self.choices {
+            choice.update(&files);
+        }
         self.quiet.set(false);
         let source = files.source(DO_NOT_DISTURB);
         let line = match rows::note(&source, false) {
@@ -59,22 +124,6 @@ impl Ui {
         };
         self.row.subtitle.set_label(&line);
         self.row.reset.set_visible(rows::resettable(&source));
-        let values = rows::values(NOTIFICATION_POSITION);
-        let chosen = files.chosen(NOTIFICATION_POSITION);
-        let at = chosen
-            .as_deref()
-            .and_then(|v| values.iter().position(|w| *w == v))
-            .unwrap_or(0);
-        self.quiet.set(true);
-        self.place.set_selected(at);
-        self.quiet.set(false);
-        let source = files.source(NOTIFICATION_POSITION);
-        let line = match rows::note(&source, false) {
-            Some(note) => format!("{} · {note}", tr(PLACE_WHAT)),
-            None => tr(PLACE_WHAT).to_string(),
-        };
-        self.place_row.subtitle.set_label(&line);
-        self.place_row.reset.set_visible(rows::resettable(&source));
     }
 
     /// Shows why a change was not written, or takes an old message away.
@@ -98,9 +147,7 @@ pub fn page() -> gtk::Widget {
         rows::title(DO_NOT_DISTURB),
         &switch.clone().upcast::<gtk::Widget>(),
     );
-    let values = rows::values(NOTIFICATION_POSITION);
-    let place = widgets::Choice::new(values.iter().map(|v| rows::label(v)).collect());
-    let place_row = widgets::row(&group, rows::title(NOTIFICATION_POSITION), &place.widget());
+    let choices = CHOICES.map(|c| ChoiceRow::new(&group, c)).into();
     let files = Files::here();
     let monitors = std::iter::once(&files.machine)
         .chain(files.person.as_ref())
@@ -113,8 +160,7 @@ pub fn page() -> gtk::Widget {
     let ui = Rc::new(Ui {
         switch,
         row,
-        place,
-        place_row,
+        choices,
         problem,
         quiet: Cell::new(false),
         monitors,
@@ -152,32 +198,36 @@ pub fn page() -> gtk::Widget {
             .set_text(&rows::command(&[(DO_NOT_DISTURB, value)]));
         widgets::copied(button);
     });
-    let weak = Rc::downgrade(&ui);
-    ui.place.connect_changed(move || {
-        let Some(ui) = weak.upgrade() else { return };
-        if !ui.quiet.get() {
-            // Automatic is what applies without the key, so it is taken out.
-            let value = rows::values(NOTIFICATION_POSITION)[ui.place.selected()];
-            ui.report(Files::here().choose_over(NOTIFICATION_POSITION, value, Some(AUTO)));
-            ui.update();
-        }
-    });
-    let weak = Rc::downgrade(&ui);
-    ui.place_row.reset.connect_clicked(move |_| {
-        if let Some(ui) = weak.upgrade() {
-            ui.report(Files::here().set(NOTIFICATION_POSITION, None));
-            ui.update();
-        }
-    });
-    ui.place_row.copy.connect_clicked(move |button| {
-        let value = Files::here()
-            .chosen(NOTIFICATION_POSITION)
-            .unwrap_or_else(|| AUTO.to_string());
-        button
-            .clipboard()
-            .set_text(&rows::command(&[(NOTIFICATION_POSITION, value)]));
-        widgets::copied(button);
-    });
+    for (i, choice) in ui.choices.iter().enumerate() {
+        let weak = Rc::downgrade(&ui);
+        choice.choice.connect_changed(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if !ui.quiet.get() {
+                // What applies without the key is taken out, not written.
+                let c = &ui.choices[i];
+                let value = rows::values(c.key)[c.choice.selected()];
+                ui.report(Files::here().choose_over(c.key, value, Some(c.release)));
+                ui.update();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        choice.row.reset.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                ui.report(Files::here().set(ui.choices[i].key, None));
+                ui.update();
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        choice.row.copy.connect_clicked(move |button| {
+            let Some(ui) = weak.upgrade() else { return };
+            let c = &ui.choices[i];
+            let value = c.value(&Files::here());
+            button
+                .clipboard()
+                .set_text(&rows::command(&[(c.key, value)]));
+            widgets::copied(button);
+        });
+    }
     // The page's state lives as long as the page does.
     let keep = ui.clone();
     page.connect_destroy(move |_| {
@@ -206,7 +256,21 @@ mod tests {
             "edel settings set notifications.position=top-right"
         );
         assert_eq!(rows::label("top-right"), "Top right");
-        assert_eq!(rows::label(AUTO), "Automatic");
-        assert_eq!(rows::on_page("notifications").count(), 2);
+        assert_eq!(rows::label("auto"), "Automatic");
+        assert_eq!(rows::title(NOTIFICATION_BADGE), "Unread badge");
+        assert_eq!(rows::label("count"), "Count");
+        assert_eq!(rows::on_page("notifications").count(), 3);
+    }
+
+    #[test]
+    fn each_choice_rows_release_value_is_one_of_its_keys_values() {
+        for (key, _, release) in CHOICES {
+            assert!(rows::values(key).contains(&release), "{key}: {release}");
+            assert_eq!(
+                rows::values(key)[0],
+                release,
+                "{key} lists its default first"
+            );
+        }
     }
 }

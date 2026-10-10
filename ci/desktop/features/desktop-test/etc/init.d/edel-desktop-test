@@ -317,6 +317,12 @@ commands() {
 		# Where banners appear (M5.9j), in the machine's file, and back.
 		'banners top-right' | 'banners top-left') edel settings set "notifications.position=${command#banners }" ;;
 		'banners default') edel settings reset notifications.position ;;
+		# The notifications button (M5.9k): a panel holding it beside the
+		# clock, and what it shows while some are unread.
+		'panels bell') edel settings set 'panels.list=[{ edge = "bottom", end = ["notifications", "clock"] }]' ;;
+		'panels bell start') edel settings set 'panels.list=[{ edge = "bottom", start = ["notifications"], end = ["clock"] }]' ;;
+		'badge count') edel settings set notifications.badge=count ;;
+		'badge default') edel settings reset notifications.badge ;;
 		# The fallback notice (M5.9e): a record of a fallback from slot B
 		# to A, dated 2026-10-10, as the update code writes it (root, the
 		# data partition's own file), and its removal with ci's stamp of

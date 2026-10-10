@@ -11,6 +11,7 @@
 //! `features/`, and when a built-in preset names a widget missing here.
 
 pub mod apps;
+pub mod bell;
 pub mod clock;
 pub mod keyboard;
 pub mod layout;
@@ -116,6 +117,14 @@ pub struct Live {
     /// Whether the notification centre is open, for the clock's lit
     /// button (M5.9b).
     pub centre: bool,
+    /// Whether the notifications the bell opened are open, for its lit
+    /// tile (M5.9k).
+    pub bell_open: bool,
+    /// How many notifications came since the list was last opened, at
+    /// most as many as it holds, and what the bell shows for them,
+    /// `notifications.badge` (`dot`, `count` or `none`; empty is `dot`).
+    pub unread: usize,
+    pub badge: String,
     /// How the machine is connected, how loud it is and how full its
     /// battery is (M5.9a); each part only where the machine has it.
     pub status: crate::status::Status,
@@ -206,6 +215,9 @@ pub enum Action {
     Quick,
     /// Open the notification centre over the clock, or close it (M5.9b).
     Centre,
+    /// Open the notifications alone, without the calendar, over the
+    /// notifications button, or close them (M5.9k).
+    Notifications,
     /// The app with this desktop file id: bring its window forward, or
     /// minimize it if it is the focused one, or start the app (M5.4c).
     App(String),
@@ -240,6 +252,7 @@ pub const TABLE: &[Widget] = &[
     search::WIDGET,
     separator::WIDGET,
     status::WIDGET,
+    bell::WIDGET,
 ];
 
 /// Scrolling added up but not yet a step: a high-resolution wheel's

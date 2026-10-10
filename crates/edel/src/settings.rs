@@ -399,6 +399,11 @@ pub const KEYS: &[Key] = &[
             "top",
         ]),
     ),
+    // What the notifications button shows while some are unread (M5.9k).
+    now(
+        "notifications.badge",
+        Kind::OneOf(&["dot", "count", "none"]),
+    ),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -713,6 +718,10 @@ pub struct Notifications {
     /// `top`; absent is `auto` (M5.9j).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<String>,
+    /// What the notifications button shows while some are unread: `dot`,
+    /// `count` or `none`; absent is `dot` (M5.9k).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub badge: Option<String>,
 }
 
 /// The Updates page.
@@ -930,6 +939,11 @@ pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
 /// The key that says where banners appear (M5.9j), the one name shell-ui,
 /// Settings and `edel settings` share; its values are [`choices`]'.
 pub const NOTIFICATION_POSITION: &str = "notifications.position";
+
+/// The key that says what the notifications button shows while some are
+/// unread (M5.9k), the one name shell-ui, Settings and `edel settings`
+/// share; its values are [`choices`]'.
+pub const NOTIFICATION_BADGE: &str = "notifications.badge";
 
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.

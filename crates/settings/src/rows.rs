@@ -134,6 +134,11 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::NOTIFICATION_POSITION,
         title: n_("Where notifications appear"),
     },
+    // What the notifications button shows while some are unread (M5.9k).
+    Row {
+        key: edel::settings::NOTIFICATION_BADGE,
+        title: n_("Unread badge"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",
@@ -197,6 +202,9 @@ pub fn label(value: &str) -> String {
         "stack" => n_("Stack"),
         "split" => n_("Split"),
         "scroll" => n_("Scroll"),
+        "dot" => n_("Dot"),
+        "count" => n_("Count"),
+        "none" => n_("None"),
         _ => return crate::files::title(&value.replace('-', " ")),
     };
     tr(word).to_string()
