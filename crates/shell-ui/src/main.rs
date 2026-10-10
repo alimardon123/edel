@@ -22,6 +22,7 @@ mod centre;
 mod launcher;
 mod link;
 mod messages;
+mod mpris;
 mod notice;
 mod notify;
 mod notify_card;
@@ -35,6 +36,7 @@ mod quick_card;
 mod status;
 mod styles;
 mod switcher;
+mod telling;
 mod toplevels;
 mod tray;
 mod watch;
@@ -71,6 +73,8 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::time::Duration;
+
 use tiny_skia::Pixmap;
 
 use edel::places;
@@ -171,6 +175,8 @@ struct Shell {
     /// The settings portal's backend on the session's bus (M5.5a), and
     /// the tray's watcher (M5.2e), served while this lives.
     _portal: Option<zbus::blocking::Connection>,
+    /// Where the players' news goes while quick settings is open (M5.9d).
+    player_tx: Option<channel::Sender<mpris::Event>>,
     text: Text,
     icons: icons::Icons,
     fillets: bool,
@@ -379,6 +385,7 @@ fn run() -> Result<()> {
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
         _portal: portal::serve(&tokens),
+        player_tx: None,
         tokens,
         fillets: fillets(),
         exit: false,
@@ -420,6 +427,24 @@ fn run() -> Result<()> {
                 })
                 .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
+    }
+    // shell-ui's own notices (M5.9e): a fallback record shown once for each
+    // person, and the update check on a timer, from a person's session only.
+    shell.tell_fallback();
+    check_updates(&event_loop.handle());
+    // What plays (M5.9d): read over MPRIS only while quick settings is open,
+    // its news reaching the loop over a channel as the tray's does.
+    if shell._portal.is_some() {
+        let (events, news) = channel::channel();
+        event_loop
+            .handle()
+            .insert_source(news, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(event) = event {
+                    shell.player_changed(event);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
+        shell.player_tx = Some(events);
     }
     // The status area (M5.9a): what the machine says is read once now, and
     // again when the system bus says NetworkManager or UPower changed
@@ -507,6 +532,64 @@ fn fillets() -> bool {
         .and_then(|text| text.parse::<toml::Table>().ok())
         .and_then(|t| t.get("tier")?.as_str().map(String::from));
     tier.is_some_and(|t| t != "lite")
+}
+
+/// The update check (M5.9e): `edel update --check` runs ten minutes after
+/// start (`EDEL_UPDATE_CHECK_SECS` seconds, for tests), then every six
+/// hours, each run in a short thread whose answer comes back over a
+/// channel, so the loop never waits for the network. Only where the
+/// `edel` command is installed and a person has a state folder to keep
+/// their stamps in.
+fn check_updates(handle: &LoopHandle<'static, Shell>) {
+    if places::person_state_dir().is_none() || !edel_installed() {
+        return;
+    }
+    let first = std::env::var("EDEL_UPDATE_CHECK_SECS")
+        .ok()
+        .and_then(|secs| secs.parse().ok())
+        .unwrap_or(telling::FIRST_CHECK_SECS);
+    let (answers, news) = channel::channel::<Result<String, String>>();
+    let watching = handle.insert_source(news, |event, _, shell: &mut Shell| {
+        if let channel::Event::Msg(answer) = event {
+            shell.update_checked(answer);
+        }
+    });
+    if let Err(e) = watching {
+        eprintln!("edel-shell-ui: could not watch the update check: {e}");
+        return;
+    }
+    let timer = Timer::from_duration(Duration::from_secs(first));
+    let checked = handle.insert_source(timer, move |_, _, _shell: &mut Shell| {
+        let answers = answers.clone();
+        std::thread::spawn(move || {
+            let _ = answers.send(run_update_check());
+        });
+        TimeoutAction::ToDuration(Duration::from_secs(telling::CHECK_EVERY_SECS))
+    });
+    if let Err(e) = checked {
+        eprintln!("edel-shell-ui: could not time the update check: {e}");
+    }
+}
+
+/// `edel update --check`'s standard output, or why it did not run.
+fn run_update_check() -> Result<String, String> {
+    let out = std::process::Command::new("edel")
+        .args(["update", "--check"])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        Err(format!("edel update --check ended with {}", out.status))
+    }
+}
+
+/// Whether an `edel` program is in one of the `PATH` folders.
+fn edel_installed() -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("edel").is_file()))
 }
 
 /// Draws the panels again when the minute changes, for the clock, and

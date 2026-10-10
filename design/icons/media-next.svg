@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#000" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Next track (M5.9d): a triangle pointing right and a bar at the right. -->
+  <path d="M5.5 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L7 4.64a1 1 0 0 0-1.5.86z"/>
+  <rect x="16.5" y="6" width="2.5" height="12" rx="1"/>
+</svg>

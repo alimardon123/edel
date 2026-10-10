@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 50] = [
+pub const BUILT_IN: [(&str, &str); 54] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -185,6 +185,23 @@ pub const BUILT_IN: [(&str, &str); 50] = [
     (
         "chevron-left",
         include_str!("../../../design/icons/chevron-left.svg"),
+    ),
+    // Now playing's buttons (M5.9d): play, pause and the two track buttons.
+    (
+        "media-play",
+        include_str!("../../../design/icons/media-play.svg"),
+    ),
+    (
+        "media-pause",
+        include_str!("../../../design/icons/media-pause.svg"),
+    ),
+    (
+        "media-previous",
+        include_str!("../../../design/icons/media-previous.svg"),
+    ),
+    (
+        "media-next",
+        include_str!("../../../design/icons/media-next.svg"),
     ),
 ];
 

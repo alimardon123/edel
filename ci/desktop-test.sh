@@ -1729,6 +1729,85 @@ case_osd() {
 	echo "PASS: the volume up key took the sink from $before to $want as wpctl status shows, and shell-ui showed its pop-up above the status area and took it away by itself"
 }
 
+case_player() {
+	# Now playing (M5.9d): a test MPRIS player plays "Night Drive" by
+	# Lumen on ci's session bus; quick settings, opened from the status
+	# area, reads it and shows its card, and a click on the card's play or
+	# pause button reaches the player, which prints it (`mpris log`).
+	# Kept as player.png.
+	guest mpris
+	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+		sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
+	pill_x=$(($1 + $2 / 2))
+	sleep 2
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	heard=$(count 'edel-shell-ui: player: Night Drive by Lumen')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "a click on the status area did not open quick settings"
+	wait_more 'edel-shell-ui: player: Night Drive by Lumen' "$heard" ||
+		fail "quick settings did not read the test player: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: player' | tail -n 3)"
+	i=0
+	until tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1 | grep -q ' play '; do
+		i=$((i + 1))
+		[ "$i" -lt 25 ] || fail "quick settings shows no player card: $(tr -d '\r' <"$log" | grep -a 'quick places' | tail -n 1)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-quick@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-quick@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*quick places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
+	set -- $(echo "$line" | sed -n 's/.* play \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "the player card has no play button: $line"
+	python3 ci/qmp.py screendump "$dir/player.png"
+	python3 ci/qmp.py click $((cx + $1 + $3 / 2)) $((cy + $2 + $4 / 2))
+	i=0
+	until guest 'mpris log' && value mpris | grep -q 'play pause'; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "a click on the card's play button at $((cx + $1 + $3 / 2)),$((cy + $2 + $4 / 2)) did not reach the player: $(value mpris)"
+		sleep 1
+	done
+	hidden=$(count 'edel-shell-ui: quick settings hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "Escape did not close quick settings"
+	guest 'mpris off'
+	echo "PASS: quick settings read the test player over MPRIS and showed Night Drive by Lumen on its card, and a click on its play button reached the player (mpris $(value mpris))"
+}
+
+case_fallback() {
+	# The fallback notice (M5.9e): a record that the last update went back
+	# (`fallback record`, written as root in the data partition, as
+	# edel's update code writes it) is shown by shell-ui when it starts,
+	# as a banner and in its list, and its stamp keeps the record's date.
+	# After shell-ui starts again it says the notice was already seen and
+	# shows no second banner. Kept as fallback.png.
+	guest 'fallback record'
+	shown=$(count 'edel-shell-ui: fallback notice shown')
+	banners=$(count 'edel-shell-ui: banner shown')
+	started=$(count 'edel-compositor: started edel-shell-ui')
+	guest 'kill panel'
+	wait_more 'edel-compositor: started edel-shell-ui' "$started" ||
+		fail "the compositor did not start edel-shell-ui again after kill -9"
+	wait_more 'edel-shell-ui: fallback notice shown' "$shown" ||
+		fail "shell-ui did not show the fallback notice from the record: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	wait_more 'edel-shell-ui: banner shown' "$banners" ||
+		fail "shell-ui showed no banner for the fallback notice"
+	python3 ci/qmp.py screendump "$dir/fallback.png"
+	already=$(count 'edel-shell-ui: fallback notice already seen')
+	banners=$(count 'edel-shell-ui: banner shown')
+	started=$(count 'edel-compositor: started edel-shell-ui')
+	guest 'kill panel'
+	wait_more 'edel-compositor: started edel-shell-ui' "$started" ||
+		fail "the compositor did not start edel-shell-ui again after the second kill -9"
+	wait_more 'edel-shell-ui: fallback notice already seen' "$already" ||
+		fail "shell-ui did not say the fallback notice was already seen: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	sleep 2
+	[ "$(count 'edel-shell-ui: banner shown')" = "$banners" ] || fail "a second banner showed for the same fallback record"
+	guest 'fallback clear'
+	echo "PASS: shell-ui showed the fallback notice as a banner when it started, and after it started again it said the notice was already seen and showed no second banner"
+}
+
 case_switcher() {
 	# The window switcher (M5.3c): with away opened over one, Alt held
 	# and Tab chooses one, the window used before away; shell-ui draws

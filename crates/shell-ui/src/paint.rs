@@ -12,7 +12,10 @@ use cosmic_text::{
     Attrs, Buffer, Color, Family, FeatureTag, FontFeatures, FontSystem, Metrics, Shaping,
     SwashCache, Weight,
 };
-use tiny_skia::{FillRule, Paint, Path, PathBuilder, Pixmap, PixmapPaint, Rect, Transform};
+use tiny_skia::{
+    FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap, PixmapPaint,
+    Point, Rect, SpreadMode, Transform,
+};
 
 use edel::presets::{Edge, Style};
 use edel::tokens::{Colour, Tokens};
@@ -393,6 +396,79 @@ pub fn lit(tokens: &Tokens) -> Colour {
         a: 0.18,
         ..tokens.accent
     }
+}
+
+/// Fills the rectangle with corners of radius `r` with a colour that goes
+/// from `top` at its top edge to `bottom` at its bottom one (M5.9d: a
+/// cover without a picture).
+pub fn fill_vertical(
+    pixmap: &mut Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+    top: Colour,
+    bottom: Colour,
+) {
+    let Some(path) = rounded(x, y, w, h, r) else {
+        return;
+    };
+    let stops = vec![
+        GradientStop::new(0.0, colour(top)),
+        GradientStop::new(1.0, colour(bottom)),
+    ];
+    let start = Point::from_xy(x, y);
+    let end = Point::from_xy(x, y + h);
+    let Some(shader) =
+        LinearGradient::new(start, end, stops, SpreadMode::Pad, Transform::identity())
+    else {
+        return;
+    };
+    let paint = Paint {
+        shader,
+        anti_alias: true,
+        ..Paint::default()
+    };
+    pixmap.fill_path(
+        &path,
+        &paint,
+        FillRule::Winding,
+        Transform::identity(),
+        None,
+    );
+}
+
+/// Draws `picture` (a square) into the rectangle `(x, y, w, h)` of device
+/// pixels, cut to a circle that fills it (M5.9d: a cover). The picture is
+/// scaled on its own layer, which is masked to the circle and then drawn.
+pub fn circle_picture(pixmap: &mut Pixmap, picture: &Pixmap, (x, y, w, h): (f32, f32, f32, f32)) {
+    let (side_w, side_h) = (w.round() as u32, h.round() as u32);
+    let Some(mut layer) = Pixmap::new(side_w, side_h) else {
+        return;
+    };
+    let scale = Transform::from_scale(
+        side_w as f32 / picture.width() as f32,
+        side_h as f32 / picture.height() as f32,
+    );
+    let smooth = PixmapPaint {
+        quality: tiny_skia::FilterQuality::Bicubic,
+        ..PixmapPaint::default()
+    };
+    layer.draw_pixmap(0, 0, picture.as_ref(), &smooth, scale, None);
+    let Some(circle) = rounded(0.0, 0.0, w, h, w.min(h) / 2.0) else {
+        return;
+    };
+    let Some(mut mask) = Mask::new(side_w, side_h) else {
+        return;
+    };
+    mask.fill_path(&circle, FillRule::Winding, true, Transform::identity());
+    layer.apply_mask(&mask);
+    pixmap.draw_pixmap(
+        x.round() as i32,
+        y.round() as i32,
+        layer.as_ref(),
+        &PixmapPaint::default(),
+        Transform::identity(),
+        None,
+    );
 }
 
 /// Fills the rectangle with corners of radius `r` in `c`.

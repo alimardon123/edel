@@ -267,6 +267,15 @@ commands() {
 			;;
 		'sni log') say "sni $(tr '\n' ';' </tmp/sni.log)" ;;
 		'sni off') pkill -f '[e]del-testclient --sni' ;;
+		# Now playing (M5.9d): a test MPRIS player on ci's session bus,
+		# printing what quick settings asks of it into a file, read back
+		# with `mpris log`; `mpris off` ends it.
+		mpris)
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --mpris" </dev/null >/tmp/mpris.log 2>&1 &
+			;;
+		'mpris log') say "mpris $(tr '\n' ';' </tmp/mpris.log)" ;;
+		'mpris off') pkill -f '[e]del-testclient --mpris' ;;
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;
@@ -293,6 +302,16 @@ commands() {
 		# release's own.
 		'dnd on') edel settings set notifications.do_not_disturb=true ;;
 		'dnd default') edel settings reset notifications.do_not_disturb ;;
+		# The fallback notice (M5.9e): a record of a fallback from slot B
+		# to A, dated 2026-10-10, as the update code writes it (root, the
+		# data partition's own file), and its removal with ci's stamp of
+		# the record shell-ui has shown.
+		'fallback record')
+			printf 'format = 1\nfrom = "B"\nto = "A"\ndate = 2026-10-10T00:00:00Z\n' >"$data_dir/last-fallback.toml"
+			;;
+		'fallback clear')
+			rm -f "$data_dir/last-fallback.toml" "/home/ci/$(dirname "$home_session_log")/fallback-seen"
+			;;
 		# appearance.animations (M5.11b), reduced and back to the default.
 		'motion reduced') edel settings set appearance.animations=reduced ;;
 		'motion off') edel settings set appearance.animations=off ;;
