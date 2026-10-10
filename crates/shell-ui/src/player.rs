@@ -1,13 +1,20 @@
-//! The player (M5.9d, M5.9i; its own module since M5.10c): what plays, as
-//! quick settings shows it above or below its card and the lock screen in
-//! its corner, both calling this one module at their own sizes (ADR-010's
-//! one copy of everything). A pill `HEIGHT` high, its corners half its
-//! height, the app's icon and name centred at its top, then the cover, the
-//! title over the artist, and previous, play or pause and next, with a dot
-//! for each player under them when two or more play
-//! (`docs/mockups/shell/player.jpg`). Plain data and drawing, tested
-//! without a display: [`place`] lays out a card, [`hit`] finds a part,
-//! [`paint`] draws it. What plays comes from `mpris.rs`.
+//! The player (M5.9d, M5.9i, M5.10c): what plays, as quick settings shows it
+//! above or below its card and the lock screen in its corner, both calling
+//! this one module at their own sizes (ADR-010's one copy of everything).
+//! Two shapes ([`Shape`]): the card, a pill `HEIGHT` high with its app's
+//! icon and name centred at its top, then the cover, the title over the
+//! artist, and previous, play or pause and next, with a dot for each player
+//! under them when two or more play (`docs/mockups/shell/player.jpg`); and
+//! the lock screen's wide pill `WIDE` across (M5.10c), its cover at the
+//! left, the app's name, the title over the artist and the track's bar with
+//! the time played and the length, and the buttons at its right
+//! (`docs/mockups/shell/lock-media.jpg`). The cover, the words, the buttons,
+//! the app's row and the dots are drawn by the same functions for both.
+//! Plain data and drawing, tested without a display: [`place`] and
+//! [`place_wide`] lay out a card, [`hit`] finds a part, [`paint`] draws it.
+//! What plays comes from `mpris.rs`.
+
+use std::time::Duration;
 
 use edel::tokens::{Colour, Tokens};
 use tiny_skia::Pixmap;
@@ -19,17 +26,58 @@ use crate::popup::{Rect, dim, focus_ring, icon_in, veil};
 /// height, with its app's name at its top and room for the pages' dots at
 /// its foot (M5.9i).
 pub const HEIGHT: f32 = 120.0;
+/// The wide pill's size, logical pixels (M5.10c): the lock screen's player,
+/// at its bottom left.
+/// The wide pill's buttons' glyphs, logical pixels (M5.10c).
+const WIDE_GLYPH: f32 = 18.0;
+pub const WIDE: (f32, f32) = (400.0, 100.0);
 /// The cover's side, and the room between the player's parts.
 const COVER: f32 = 64.0;
 const SPACE: f32 = 10.0;
 /// The room between the pill's ends and its cover or Next button (M5.9i).
 const SIDE: f32 = 28.0;
+/// The wide pill's cover side, and its room from the left end (M5.10c).
+const WIDE_COVER: f32 = 76.0;
+const WIDE_EDGE: f32 = 12.0;
+/// The room between the wide pill's cover and its words (M5.10c).
+const WIDE_GAP: f32 = 16.0;
+/// The wide pill's words box, from the card's top (M5.10c).
+const WIDE_WORDS_TOP: f32 = 26.0;
+const WIDE_WORDS_HIGH: f32 = 40.0;
+/// The wide pill's progress bar, from the card's top, its height and its
+/// length (M5.10c). On a Compact screen the bar stops where the words stop.
+const WIDE_BAR_TOP: f32 = 72.0;
+const WIDE_BAR_HIGH: f32 = 4.0;
+const WIDE_BAR: f32 = 136.0;
+/// The track's times, from the card's top, their height and their width
+/// (M5.10c): the played time at the bar's left end, the length at its right.
+const WIDE_TIME_TOP: f32 = 78.0;
+const WIDE_TIME_HIGH: f32 = 14.0;
+const WIDE_TIME_WIDE: f32 = 40.0;
+/// The times' text, logical pixels (M5.10c).
+const WIDE_TIME_SIZE: f32 = 11.0;
+/// The wide pill's buttons: the centres of Previous, Play and Next, from
+/// the card's left, and the sides of Previous and Next and of Play (M5.10c).
+/// The centres are the mockup's. Play's centre is 316, not the 340 the
+/// first plan had: at 340 its 48 px would reach 364 and Next could not fit
+/// inside the card beside it.
+const WIDE_PREVIOUS_X: f32 = 266.0;
+const WIDE_PLAY_X: f32 = 316.0;
+const WIDE_NEXT_X: f32 = 366.0;
+const WIDE_SMALL: f32 = 28.0;
+const WIDE_LARGE: f32 = 48.0;
+/// The side of every button on a Compact screen, where a finger lands
+/// (M5.10c): the centres stay where they are, so the gaps shrink.
+const TOUCH: f32 = 44.0;
 /// The app's row (its icon and name), its top and height, from the card's
 /// top; the icon's side; and the middle of the cover's row (M5.9i).
 const APP_TOP: f32 = 12.0;
 const APP_HIGH: f32 = 16.0;
 pub const APP_ICON: f32 = 14.0;
 const ROW_MIDDLE: f32 = 64.0;
+/// The cover's initial, in logical pixels on the card's 64 px cover; it
+/// grows with a bigger cover (M5.10c).
+const LETTER: f32 = 22.0;
 /// The pages' dots: a dot's side, the shown one's width, the room between
 /// them and from the card's foot to theirs (M5.9i).
 const DOT: f32 = 5.0;
@@ -56,6 +104,21 @@ pub struct PlayerView {
     /// Its app's icon, `APP_ICON` logical pixels across at the card's scale,
     /// when the icon themes have one (M5.9i).
     pub app_icon: Option<Pixmap>,
+    /// The time played now, when the app says (M5.10c). The wide pill draws
+    /// it at the bar's left end.
+    pub position: Option<Duration>,
+    /// The track's length, when the app says (M5.10c). The wide pill draws
+    /// it at the bar's right end, and the bar's played part needs it.
+    pub length: Option<Duration>,
+}
+
+/// Which of the two shapes a player is drawn in (M5.10c).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shape {
+    /// Quick settings' card, laid out by [`place`].
+    Card,
+    /// The lock screen's wide pill, laid out by [`place_wide`].
+    Wide,
 }
 
 /// A part of the player a pointer or the keyboard can be on.
@@ -72,16 +135,24 @@ pub enum Part {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parts {
     pub card: Rect,
+    /// The shape these parts are laid out in (M5.10c).
+    pub shape: Shape,
     pub cover: Rect,
     /// The title and artist's box.
     pub words: Rect,
     pub previous: Rect,
     pub play: Rect,
     pub next: Rect,
-    /// The app's row across the card, its icon and name centred in it.
+    /// The app's row: across the card, its icon and name centred in it; in
+    /// the wide pill, from the words' left (M5.10c).
     pub app: Rect,
     /// The pages' dots, the shown one wider; none for one page.
     pub dots: Vec<Rect>,
+    /// The track's progress bar, its whole length; Wide only (M5.10c).
+    pub progress: Option<Rect>,
+    /// The time played, at the bar's left end, and the length, at its right
+    /// end; Wide only (M5.10c).
+    pub times: Option<(Rect, Rect)>,
 }
 
 /// The parts of a player's card at `card`, `pages` players in all and
@@ -98,6 +169,7 @@ pub fn place(card: Rect, compact: bool, pages: usize, page: usize) -> Parts {
     let left = cover.right() + SPACE;
     Parts {
         card,
+        shape: Shape::Card,
         cover,
         words: Rect::new(
             left,
@@ -110,6 +182,75 @@ pub fn place(card: Rect, compact: bool, pages: usize, page: usize) -> Parts {
         next,
         app: Rect::new(card.x, card.y + APP_TOP, card.w, APP_HIGH),
         dots: dot_rects(pages, page, card, card.y + HEIGHT - DOT_FOOT - DOT),
+        progress: None,
+        times: None,
+    }
+}
+
+/// The parts of the wide pill at `card` (M5.10c), `pages` players in all
+/// and `page` the one shown: the cover at the left, the app's row and the
+/// words beside it, the track's bar and times under them, and Previous,
+/// Play and Next at the right, all centred on the card's middle. On a
+/// Compact screen the buttons are 44 px and keep their centres.
+pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts {
+    let centred = |cx: f32, side: f32| {
+        Rect::new(
+            card.x + cx - side / 2.0,
+            card.y + WIDE.1 / 2.0 - side / 2.0,
+            side,
+            side,
+        )
+    };
+    let small = if compact { TOUCH } else { WIDE_SMALL };
+    let large = if compact { TOUCH } else { WIDE_LARGE };
+    let previous = centred(WIDE_PREVIOUS_X, small);
+    let play = centred(WIDE_PLAY_X, large);
+    let next = centred(WIDE_NEXT_X, small);
+    let cover = Rect::new(
+        card.x + WIDE_EDGE,
+        card.y + (WIDE.1 - WIDE_COVER) / 2.0,
+        WIDE_COVER,
+        WIDE_COVER,
+    );
+    let left = cover.right() + WIDE_GAP;
+    let words = Rect::new(
+        left,
+        card.y + WIDE_WORDS_TOP,
+        (previous.x - SPACE - left).max(0.0),
+        WIDE_WORDS_HIGH,
+    );
+    let bar = Rect::new(
+        words.x,
+        card.y + WIDE_BAR_TOP,
+        WIDE_BAR.min(words.w),
+        WIDE_BAR_HIGH,
+    );
+    let times = (
+        Rect::new(
+            bar.x,
+            card.y + WIDE_TIME_TOP,
+            WIDE_TIME_WIDE,
+            WIDE_TIME_HIGH,
+        ),
+        Rect::new(
+            bar.right() - WIDE_TIME_WIDE,
+            card.y + WIDE_TIME_TOP,
+            WIDE_TIME_WIDE,
+            WIDE_TIME_HIGH,
+        ),
+    );
+    Parts {
+        card,
+        shape: Shape::Wide,
+        cover,
+        words,
+        previous,
+        play,
+        next,
+        app: Rect::new(words.x, card.y + APP_TOP, words.w, APP_HIGH),
+        dots: dot_rects(pages, page, card, card.y + WIDE.1 - DOT_FOOT - DOT),
+        progress: Some(bar),
+        times: Some(times),
     }
 }
 
@@ -164,6 +305,18 @@ pub fn hit(p: &PlayerView, parts: &Parts, x: f32, y: f32) -> Option<Part> {
         .map(|(i, _)| Part::Dot(i))
 }
 
+/// A track's time as the player shows it (M5.10c): `m:ss`, and `h:mm:ss`
+/// from an hour, so 84 s reads "1:24" and 3725 s "1:02:05".
+pub fn clock_time(d: Duration) -> String {
+    let secs = d.as_secs();
+    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 /// Where the pointer and the keyboard are, and the page shown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Marks {
@@ -173,11 +326,12 @@ pub struct Marks {
 }
 
 /// Draws the player's parts (not its card, which the caller draws as its
-/// own cards are): its cover, the title over the artist, and the previous,
-/// play or pause and next buttons, with the keyboard's ring and the hover
-/// light where they are. A cover is its picture in a circle, else a circle
-/// of the accent going darker, with the app's first letter. Without
-/// `text`, everything but the words.
+/// own cards are): its cover, the title over the artist, the wide pill's
+/// bar and times, the previous, play or pause and next buttons, and the
+/// app's row and the dots, with the keyboard's ring and the hover light
+/// where they are. A cover is its picture in a circle, else a circle of the
+/// accent going darker, with the app's first letter. Without `text`,
+/// everything but the words.
 pub fn paint(
     pixmap: &mut Pixmap,
     p: &PlayerView,
@@ -187,6 +341,25 @@ pub fn paint(
     mut text: Option<&mut Text>,
     s: f32,
 ) {
+    cover(pixmap, p, parts, tokens, text.as_deref_mut(), s);
+    words(pixmap, p, parts, tokens, text.as_deref_mut(), s);
+    track(pixmap, p, parts, tokens, text.as_deref_mut(), s);
+    buttons(pixmap, p, parts, marks, tokens, s);
+    app_row(pixmap, p, parts, tokens, text, s);
+    dots(pixmap, parts, marks, tokens, s);
+}
+
+/// The cover, in both shapes: its picture in a circle, else a circle of the
+/// accent going darker with the app's first letter (M5.10c: the letter
+/// grows with the cover).
+fn cover(
+    pixmap: &mut Pixmap,
+    p: &PlayerView,
+    parts: &Parts,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
     let cover = parts.cover;
     let (x, y, w, h) = cover.device(s);
     match &p.cover {
@@ -194,46 +367,145 @@ pub fn paint(
         None => {
             let bottom = mix(tokens.accent, tokens.panel_text, 0.45);
             paint::fill_vertical(pixmap, (x, y, w, h), w / 2.0, tokens.accent, bottom);
-            if let Some(text) = text.as_deref_mut() {
+            if let Some(text) = text {
+                let letter = LETTER * cover.w / COVER * s;
                 let initial = p
                     .identity
                     .chars()
                     .next()
                     .map(|c| c.to_uppercase().to_string())
                     .unwrap_or_default();
-                let mut letter = text.fit_in(&initial, 22.0 * s, cover.w * s, Face::SEMIBOLD);
-                let left = x + ((w - letter.width) / 2.0).round();
-                let top = y + (h - 22.0 * s * 1.25) / 2.0;
-                text.draw(pixmap, &mut letter, left, top, tokens.accent_text);
+                let mut line = text.fit_in(&initial, letter, cover.w * s, Face::SEMIBOLD);
+                let left = x + ((w - line.width) / 2.0).round();
+                let top = y + (h - letter * 1.25) / 2.0;
+                text.draw(pixmap, &mut line, left, top, tokens.accent_text);
             }
         }
     }
-    // The words: the title over the artist, from the box's left, beside
-    // the cover, as the mockups set them.
-    if let Some(text) = text.as_deref_mut() {
-        let room = parts.words.w * s;
-        let (wx, wy, _, wh) = parts.words.device(s);
-        let mut title = text.fit_in(&p.title, 12.5 * s, room, Face::SEMIBOLD);
-        let title_h = 12.5 * s * 1.25;
-        if p.artist.is_empty() {
-            let top = wy + (wh - title_h) / 2.0;
-            text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
-        } else {
-            let mut artist = text.fit(&p.artist, 11.0 * s, room);
-            let block = title_h + 2.0 * s + 11.0 * s * 1.25;
-            let top = wy + (wh - block) / 2.0;
-            text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
-            text.draw(
-                pixmap,
-                &mut artist,
-                wx,
-                top + title_h + 2.0 * s,
-                dim(tokens),
-            );
+}
+
+/// The title over the artist, from the words' box's left, beside the
+/// cover; the sizes are the card's (12.5 and 11 px) or the wide pill's (17
+/// and 13 px), as the mockups set them (M5.10c).
+fn words(
+    pixmap: &mut Pixmap,
+    p: &PlayerView,
+    parts: &Parts,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let Some(text) = text else {
+        return;
+    };
+    let (title_px, artist_px) = match parts.shape {
+        Shape::Card => (12.5, 11.0),
+        Shape::Wide => (17.0, 13.0),
+    };
+    let room = parts.words.w * s;
+    let (wx, wy, _, wh) = parts.words.device(s);
+    let mut title = text.fit_in(&p.title, title_px * s, room, Face::SEMIBOLD);
+    let title_h = title_px * s * 1.25;
+    if p.artist.is_empty() {
+        let top = wy + (wh - title_h) / 2.0;
+        text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
+    } else {
+        let mut artist = text.fit(&p.artist, artist_px * s, room);
+        let block = title_h + 2.0 * s + artist_px * s * 1.25;
+        let top = wy + (wh - block) / 2.0;
+        text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
+        text.draw(
+            pixmap,
+            &mut artist,
+            wx,
+            top + title_h + 2.0 * s,
+            dim(tokens),
+        );
+    }
+}
+
+/// The track's progress (the wide pill, M5.10c): the bar's track, its played
+/// part up to the share of the length the position is, and the time played
+/// at its left end and the length at its right. No times without a length;
+/// no played part without a position and a length.
+fn track(
+    pixmap: &mut Pixmap,
+    p: &PlayerView,
+    parts: &Parts,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let Some(bar) = parts.progress else {
+        return;
+    };
+    let (x, y, w, h) = bar.device(s);
+    let radius = (h / 2.0).min(w / 2.0);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        radius,
+        mix(tokens.panel_text, tokens.panel, 0.75),
+    );
+    if let (Some(at), Some(length)) = (p.position, p.length) {
+        if !length.is_zero() {
+            let share = (at.as_secs_f32() / length.as_secs_f32()).clamp(0.0, 1.0);
+            let played = w * share;
+            if played > 0.0 {
+                let radius = radius.min(played / 2.0);
+                fill(pixmap, x, y, played, h, radius, tokens.panel_text);
+            }
         }
     }
-    // The buttons: Previous and Next are dimmed where the player cannot
-    // do them; Play or Pause is a filled circle with the glyph in the card.
+    let (Some((played_box, length_box)), Some(length), Some(text)) = (parts.times, p.length, text)
+    else {
+        return;
+    };
+    if let Some(at) = p.position {
+        clock_label(pixmap, text, at, played_box, false, tokens, s);
+    }
+    clock_label(pixmap, text, length, length_box, true, tokens, s);
+}
+
+/// One of the track's times, drawn in its box from the left, or from the
+/// right when `right` is set, and centred vertically (M5.10c).
+fn clock_label(
+    pixmap: &mut Pixmap,
+    text: &mut Text,
+    time: Duration,
+    at: Rect,
+    right: bool,
+    tokens: &Tokens,
+    s: f32,
+) {
+    let size = WIDE_TIME_SIZE * s;
+    let mut line = text.line_in(&clock_time(time), size, Face::REGULAR.tabular());
+    let (x, y, w, h) = at.device(s);
+    let left = if right { x + w - line.width } else { x };
+    let top = y + (h - size * 1.25) / 2.0;
+    text.draw(pixmap, &mut line, left, top, dim(tokens));
+}
+
+/// The buttons, in both shapes: Previous and Next, dimmed where the player
+/// cannot do them, and Play or Pause, a filled circle with its glyph in the
+/// card's colour. Each has its hover light and the keyboard's ring.
+fn buttons(
+    pixmap: &mut Pixmap,
+    p: &PlayerView,
+    parts: &Parts,
+    marks: Marks,
+    tokens: &Tokens,
+    s: f32,
+) {
+    // The buttons' glyphs: larger on the wide pill, as the lock screen's
+    // mockup draws them (M5.10c).
+    let glyph_px = match parts.shape {
+        Shape::Card => 14.0,
+        Shape::Wide => WIDE_GLYPH,
+    };
     let sides = [
         (
             Part::Previous,
@@ -256,7 +528,7 @@ pub fn paint(
                 ..dim(tokens)
             }
         };
-        icon_in(pixmap, glyph, 14.0, rect, s, ink);
+        icon_in(pixmap, glyph, glyph_px, rect, s, ink);
         if marks.focus == Some(part) {
             focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
         }
@@ -272,11 +544,15 @@ pub fn paint(
     } else {
         "media-play"
     };
-    icon_in(pixmap, glyph, 14.0, rect, s, tokens.panel);
+    icon_in(pixmap, glyph, glyph_px, rect, s, tokens.panel);
     if marks.focus == Some(Part::PlayPause) {
         focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
     }
-    app_row(pixmap, p, parts, tokens, text, s);
+}
+
+/// The pages' dots (M5.9i): the shown one in the accent and wider, the
+/// others faint, each with its hover light and the keyboard's ring.
+fn dots(pixmap: &mut Pixmap, parts: &Parts, marks: Marks, tokens: &Tokens, s: f32) {
     for (i, dot) in parts.dots.iter().enumerate() {
         let (x, y, w, h) = dot.device(s);
         let colour = if i == marks.page {
@@ -299,7 +575,8 @@ pub fn paint(
 }
 
 /// The app's row at the player's top (M5.9i): its icon, when there is
-/// one, then its name, small and muted, centred together across the card.
+/// one, then its name, small and muted, centred together across the card;
+/// in the wide pill, the icon and name start at the words' left (M5.10c).
 fn app_row(
     pixmap: &mut Pixmap,
     p: &PlayerView,
@@ -317,8 +594,15 @@ fn app_row(
     let side = (APP_ICON * s).round();
     let space = 5.0 * s;
     let lead = icon.map_or(0.0, |_| side + space);
-    let mut name = text.fit(&p.identity, size, (rw - 2.0 * SIDE * s - lead).max(0.0));
-    let left = (rx + (rw - lead - name.width) / 2.0).round();
+    let room = match parts.shape {
+        Shape::Card => rw - 2.0 * SIDE * s - lead,
+        Shape::Wide => rw - lead,
+    };
+    let mut name = text.fit(&p.identity, size, room.max(0.0));
+    let left = match parts.shape {
+        Shape::Card => (rx + (rw - lead - name.width) / 2.0).round(),
+        Shape::Wide => rx.round(),
+    };
     if let Some(icon) = icon {
         let top = (ry + (rh - side) / 2.0).round();
         pixmap.draw_pixmap(
@@ -348,7 +632,18 @@ mod tests {
             can_next: can,
             cover: None,
             app_icon: None,
+            position: None,
+            length: None,
         }
+    }
+
+    /// The wide pill as the lock screen puts it, at (24, 676).
+    fn wide_card() -> Rect {
+        Rect::new(24.0, 676.0, WIDE.0, WIDE.1)
+    }
+
+    fn overlap(a: &Rect, b: &Rect) -> bool {
+        a.x < b.right() && b.x < a.right() && a.y < b.y + b.h && b.y < a.y + a.h
     }
 
     #[test]
@@ -362,6 +657,8 @@ mod tests {
         assert_eq!(moved.app, shift(at_zero.app));
         assert_eq!(at_zero.next.right(), 352.0 - SIDE);
         assert!(at_zero.dots.is_empty());
+        assert_eq!(at_zero.shape, Shape::Card);
+        assert!(at_zero.progress.is_none() && at_zero.times.is_none());
     }
 
     #[test]
@@ -386,5 +683,169 @@ mod tests {
         assert_eq!(hit(&playing(false), &parts, x, y), Some(Part::PlayPause));
         let (x, y) = mid(parts.dots[1]);
         assert_eq!(hit(&playing(true), &parts, x, y), Some(Part::Dot(1)));
+    }
+
+    #[test]
+    fn the_wide_pill_lays_its_parts_inside_its_card_and_apart() {
+        let card = wide_card();
+        let inside = |r: &Rect| {
+            r.x >= card.x
+                && r.y >= card.y
+                && r.right() <= card.right()
+                && r.y + r.h <= card.y + card.h
+        };
+        for compact in [false, true] {
+            let parts = place_wide(card, compact, 1, 0);
+            assert_eq!(parts.shape, Shape::Wide);
+            let bar = parts.progress.expect("the wide pill has a bar");
+            let (played, length) = parts.times.expect("the wide pill has times");
+            for r in [
+                parts.cover,
+                parts.words,
+                parts.previous,
+                parts.play,
+                parts.next,
+                parts.app,
+                bar,
+                played,
+                length,
+            ] {
+                assert!(inside(&r), "{r:?} leaves the card, compact {compact}");
+            }
+            let buttons = [parts.previous, parts.play, parts.next];
+            for (i, a) in buttons.iter().enumerate() {
+                for b in &buttons[i + 1..] {
+                    assert!(!overlap(a, b), "{a:?} and {b:?} overlap, compact {compact}");
+                }
+                assert!(!overlap(a, &parts.words), "the words meet a button");
+                assert!(!overlap(a, &bar), "the bar meets a button");
+            }
+            assert!(!overlap(&parts.cover, &parts.words));
+            assert!(!overlap(&played, &length));
+        }
+    }
+
+    #[test]
+    fn the_wide_pill_places_its_cover_play_and_bar_as_the_mockup_does() {
+        let parts = place_wide(wide_card(), false, 1, 0);
+        assert_eq!(parts.cover.x, 36.0);
+        assert_eq!(parts.cover.w, WIDE_COVER);
+        assert_eq!(parts.play.x + parts.play.w / 2.0, 24.0 + WIDE_PLAY_X);
+        assert_eq!(parts.progress.expect("a bar").w, 136.0);
+        assert_eq!(parts.words.x, parts.app.x);
+        assert!(parts.dots.is_empty());
+    }
+
+    #[test]
+    fn the_compact_buttons_are_touch_sized_and_keep_their_centres() {
+        let card = Rect::new(0.0, 0.0, 352.0, HEIGHT);
+        let card_parts = place(card, true, 1, 0);
+        for r in [card_parts.previous, card_parts.play, card_parts.next] {
+            assert!(
+                r.w >= 44.0 && r.h >= 44.0 && card.contains(r.x, r.y),
+                "{r:?}"
+            );
+        }
+        let parts = place_wide(wide_card(), true, 1, 0);
+        for r in [parts.previous, parts.play, parts.next] {
+            assert_eq!(r.w, TOUCH);
+            assert_eq!(r.h, TOUCH);
+        }
+        assert_eq!(
+            parts.next.x + parts.next.w / 2.0,
+            24.0 + WIDE_NEXT_X,
+            "the centres stay where the wide pill has them"
+        );
+    }
+
+    #[test]
+    fn clock_time_reads_minutes_and_seconds_then_hours() {
+        let at = |secs: u64| clock_time(Duration::from_secs(secs));
+        assert_eq!(at(0), "0:00");
+        assert_eq!(at(59), "0:59");
+        assert_eq!(at(84), "1:24");
+        assert_eq!(at(3600), "1:00:00");
+        assert_eq!(at(3725), "1:02:05");
+    }
+
+    #[test]
+    fn hit_finds_the_wide_pills_buttons() {
+        let parts = place_wide(wide_card(), false, 1, 0);
+        let mid = |r: Rect| (r.x + r.w / 2.0, r.y + r.h / 2.0);
+        let (x, y) = mid(parts.play);
+        assert_eq!(hit(&playing(true), &parts, x, y), Some(Part::PlayPause));
+        let (x, y) = mid(parts.previous);
+        assert_eq!(hit(&playing(true), &parts, x, y), Some(Part::Previous));
+        assert_eq!(hit(&playing(false), &parts, x, y), None);
+        let (x, y) = mid(parts.next);
+        assert_eq!(hit(&playing(true), &parts, x, y), Some(Part::Next));
+    }
+
+    #[test]
+    fn the_wide_pill_draws_its_played_part_lighter_than_its_track() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let card = wide_card();
+        let parts = place_wide(card, false, 1, 0);
+        let view = PlayerView {
+            title: "Night Drive".into(),
+            artist: "Lumen".into(),
+            identity: "Music".into(),
+            position: Some(Duration::from_secs(84)),
+            length: Some(Duration::from_secs(221)),
+            ..playing(true)
+        };
+        let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        fill(
+            &mut pixmap,
+            0.0,
+            0.0,
+            1280.0,
+            800.0,
+            0.0,
+            tokens.lock_backdrop_deep,
+        );
+        paint(
+            &mut pixmap,
+            &view,
+            &parts,
+            Marks::default(),
+            &tokens,
+            Some(&mut text),
+            1.0,
+        );
+        let bar = parts.progress.expect("a bar");
+        let level = |px: f32, py: f32| {
+            let c = pixmap.pixel(px as u32, py as u32).expect("on the pixmap");
+            u32::from(c.red()) + u32::from(c.green()) + u32::from(c.blue())
+        };
+        let mid = bar.y + bar.h / 2.0;
+        let played = level(bar.x + 4.0, mid);
+        let far = level(bar.right() - 4.0, mid);
+        assert!(played > far, "played {played}, track {far}");
+        if let Ok(dir) = std::env::var("EDEL_LOCK_PNG") {
+            let (x, y, w, h) = card.device(1.0);
+            let mut shot = Pixmap::new(1280, 800).unwrap();
+            fill(
+                &mut shot,
+                0.0,
+                0.0,
+                1280.0,
+                800.0,
+                0.0,
+                tokens.lock_backdrop_deep,
+            );
+            crate::lock::glass(&mut shot, (x, y, w, h), h / 2.0, 1.0, &tokens);
+            paint(
+                &mut shot,
+                &view,
+                &parts,
+                Marks::default(),
+                &tokens,
+                Some(&mut text),
+                1.0,
+            );
+            shot.save_png(format!("{dir}/player-wide.png")).unwrap();
+        }
     }
 }

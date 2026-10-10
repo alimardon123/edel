@@ -9,6 +9,7 @@
 //! the buttons ask a player through [`call`].
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use futures_lite::StreamExt;
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
@@ -44,6 +45,15 @@ pub struct Player {
     /// Whether the previous and next buttons work for it.
     pub can_previous: bool,
     pub can_next: bool,
+    /// The track's length from `mpris:length` (microseconds, sent as i64 or
+    /// u64 by different apps); None when it gives none or a negative one
+    /// (M5.10c).
+    pub length: Option<Duration>,
+    /// The `Position` property when it was read; None when that failed or
+    /// was negative (M5.10c).
+    pub position: Option<Duration>,
+    /// When `position` was read, so [`position_now`] can move it on.
+    pub read_at: Instant,
 }
 
 /// What the tasks tell the event loop: every player that plays or pauses
@@ -67,6 +77,44 @@ pub struct Follow {
 pub fn order(mut players: Vec<Player>) -> Vec<Player> {
     players.sort_by(|a, b| (!a.playing, &a.bus).cmp(&(!b.playing, &b.bus)));
     players
+}
+
+/// Whether two lists show the same players. `read_at` is when each was
+/// read, not what it shows, so it does not count (M5.10c): a read that
+/// changed nothing is not sent again.
+fn same(a: &[Player], b: &[Player]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(x, y)| {
+            let mut y = y.clone();
+            y.read_at = x.read_at;
+            *x == y
+        })
+}
+
+/// The track's length from `mpris:length`, in microseconds as an i64 or a
+/// u64 (apps send either); None for a negative one (M5.10c).
+fn length_of(value: &OwnedValue) -> Option<Duration> {
+    let us = i64::try_from(value.clone()).ok().or_else(|| {
+        u64::try_from(value.clone())
+            .ok()
+            .and_then(|us| i64::try_from(us).ok())
+    })?;
+    u64::try_from(us).ok().map(Duration::from_micros)
+}
+
+/// Where the player is now (M5.10c): while it plays, the position read plus
+/// the time since, never past the length; while it is paused, the position
+/// read. None when the position was not read.
+pub fn position_now(p: &Player, now: Instant) -> Option<Duration> {
+    let read = p.position?;
+    if !p.playing {
+        return Some(read);
+    }
+    let at = read + now.saturating_duration_since(p.read_at);
+    Some(match p.length {
+        Some(length) => at.min(length),
+        None => at,
+    })
 }
 
 /// The artists in `xesam:artist`, joined with ", ". Apps that give one name
@@ -134,6 +182,15 @@ async fn read(connection: &zbus::Connection, bus: &str) -> Option<Player> {
         "Paused" => false,
         _ => return None,
     };
+    // Read as close to the call as the bus allows, so the position is the
+    // one of this moment (M5.10c).
+    let read_at = Instant::now();
+    let position = player
+        .get_property::<i64>("Position")
+        .await
+        .ok()
+        .and_then(|us| u64::try_from(us).ok())
+        .map(Duration::from_micros);
     let metadata = player
         .get_property::<OwnedValue>("Metadata")
         .await
@@ -148,6 +205,7 @@ async fn read(connection: &zbus::Connection, bus: &str) -> Option<Player> {
         .get("xesam:artist")
         .map(artist_of)
         .unwrap_or_default();
+    let length = metadata.get("mpris:length").and_then(length_of);
     let cover = metadata
         .get("mpris:artUrl")
         .and_then(|v| String::try_from(v.clone()).ok())
@@ -176,6 +234,9 @@ async fn read(connection: &zbus::Connection, bus: &str) -> Option<Player> {
             .get_property::<bool>("CanGoNext")
             .await
             .unwrap_or(false),
+        length,
+        position,
+        read_at,
     })
 }
 
@@ -221,7 +282,7 @@ async fn watch(connection: zbus::Connection, events: Sender<Event>) {
     let mut last: Option<Vec<Player>> = None;
     loop {
         let found = order(read_all(&connection, &bus).await);
-        if last.as_ref() != Some(&found) {
+        if !last.as_deref().is_some_and(|old| same(old, &found)) {
             last = Some(found.clone());
             if events.send(Event::Players(found)).is_err() {
                 return;
@@ -301,7 +362,54 @@ mod tests {
             cover: None,
             can_previous: false,
             can_next: false,
+            length: None,
+            position: None,
+            read_at: Instant::now(),
         }
+    }
+
+    #[test]
+    fn the_position_moves_on_while_playing_and_stops_at_the_length() {
+        let t0 = Instant::now();
+        let mut p = Player {
+            position: Some(Duration::from_secs(84)),
+            length: Some(Duration::from_secs(221)),
+            read_at: t0,
+            ..player("org.mpris.MediaPlayer2.a", true)
+        };
+        let later = |secs: u64| t0 + Duration::from_secs(secs);
+        assert_eq!(position_now(&p, later(5)), Some(Duration::from_secs(89)));
+        p.length = Some(Duration::from_secs(90));
+        assert_eq!(position_now(&p, later(10)), Some(Duration::from_secs(90)));
+        p.length = None;
+        assert_eq!(position_now(&p, later(10)), Some(Duration::from_secs(94)));
+        p.playing = false;
+        assert_eq!(position_now(&p, later(10)), Some(Duration::from_secs(84)));
+        p.position = None;
+        assert_eq!(position_now(&p, later(10)), None);
+    }
+
+    #[test]
+    fn a_length_is_read_as_i64_or_u64_and_a_negative_one_is_none() {
+        let as_i64 = OwnedValue::try_from(Value::from(221_000_000i64)).unwrap();
+        let as_u64 = OwnedValue::try_from(Value::from(221_000_000u64)).unwrap();
+        let negative = OwnedValue::try_from(Value::from(-1i64)).unwrap();
+        let text = OwnedValue::try_from(Value::from("long")).unwrap();
+        assert_eq!(length_of(&as_i64), Some(Duration::from_secs(221)));
+        assert_eq!(length_of(&as_u64), Some(Duration::from_secs(221)));
+        assert_eq!(length_of(&negative), None);
+        assert_eq!(length_of(&text), None);
+    }
+
+    #[test]
+    fn a_read_that_shows_the_same_is_the_same_whenever_it_was_read() {
+        let a = player("org.mpris.MediaPlayer2.a", true);
+        let mut b = a.clone();
+        b.read_at += Duration::from_secs(1);
+        assert!(same(std::slice::from_ref(&a), std::slice::from_ref(&b)));
+        b.playing = false;
+        assert!(!same(std::slice::from_ref(&a), std::slice::from_ref(&b)));
+        assert!(!same(&[a], &[]));
     }
 
     #[test]

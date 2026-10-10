@@ -2206,6 +2206,8 @@ mod tests {
             can_next: can,
             cover: None,
             app_icon: None,
+            position: None,
+            length: None,
         }
     }
 

@@ -508,6 +508,8 @@ impl Shell {
             can_next: p.can_next,
             cover: None,
             app_icon: None,
+            position: None,
+            length: None,
         });
         view.player_below = self
             .panels
