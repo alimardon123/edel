@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Power: the lock and login screens' corner button and Shut down in its menu (M5.10c). -->
+  <path d="M8 2.25v5.25"/>
+  <path d="M4.75 4.5a5 5 0 1 0 6.5 0"/>
+</svg>

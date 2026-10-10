@@ -316,7 +316,13 @@ fn glow(pixmap: &mut Pixmap, centre: (f32, f32), radius: f32, colour: Colour, a:
 
 /// Frosted glass: the tokens' tint over what lies behind, edged with
 /// their hairline, its corners `r` (device pixels).
-fn glass(pixmap: &mut Pixmap, (x, y, w, h): (f32, f32, f32, f32), r: f32, s: f32, tokens: &Tokens) {
+pub(crate) fn glass(
+    pixmap: &mut Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+    s: f32,
+    tokens: &Tokens,
+) {
     fill(pixmap, x, y, w, h, r, tokens.lock_glass);
     outline(pixmap, (x, y, w, h), r, s, tokens.lock_glass_edge);
 }
