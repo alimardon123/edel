@@ -12,7 +12,7 @@ Every Edel OS image is a list of features. A feature is one file, `features/NAME
 | `container` | busybox and apk with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
 | `machine` | A booted machine: OpenRC, logs, console and serial logins, and the clock set from the network once at each start (`edel-clock`, busybox `ntpd`, M1.13; it waits for NetworkManager's address where that runs) | `alpine-base` | devfs, dmesg; modules, sysctl, hostname, bootmisc, syslog; edel-clock; mount-ro, killprocs, savecache | vm, desktop |
 | `mdev` | Device events with busybox mdev, which loads the drivers for the hardware found | none | mdev, hwdrivers | vm |
-| `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle | desktop |
+| `udev` | Device events with udev, whose database libinput and the compositor read | `eudev`, `udev-init-scripts`, `udev-init-scripts-openrc` | udev, udev-trigger, udev-settle, edel-dri | desktop |
 | `ab-boot` | Two root slots, rollback, `/data`, the settings file; the watchdog and disk modules, the mkinitfs features, health `default-runlevel` | `dosfstools`, `e2fsprogs`, `e2fsprogs-extra`, `libgcc`, `partx`, `sfdisk` | edel-guard, edel-data; edel-settings; edel-boot-ok | vm, desktop |
 | `ssh` | Log in from another computer, with an ed25519 host key; switchable | `openssh-server` | sshd | vm; the desktop ships it off |
 | `vm` | The small kernel for virtual machines, and the network by DHCP on eth0 with busybox's `networking` (`etc/network/interfaces`); the desktop has NetworkManager instead, so one thing manages eth0 | `linux-virt` | networking | vm |

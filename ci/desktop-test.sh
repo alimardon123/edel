@@ -1102,6 +1102,68 @@ case_power() {
 	echo "PASS: upower -e exits 0 with upowerd running ($(value power_list)), Settings drew its Power page (\"Plugged in\") and its Users page (\"ci\"), and at Compact width, 366 px, maximized, both fit with the sidebar folded away (upowerd, KiB: $(value power_rss_kib))"
 }
 
+case_settings_panels() {
+	# Settings' Panels group (M5.31d): ci's file holds one panel with only
+	# the clock, which shell-ui draws at once (`panels now bottom (1
+	# widgets)`). Settings opens on the Layout page asked for by name, its
+	# log says where Edit panels and Reset lie in the window, and Edit panels
+	# asks shell-ui over the bus for its editor, which opens (`panel editor
+	# asked for over the bus`, `panel editor shown`); Escape closes it without
+	# writing (`panel editor hidden`). Reset takes layout.panels out of ci's
+	# file and the bar is Classic's again (`panels now bottom (10 widgets)`).
+	one=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
+	guest 'settings panels line'
+	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$one" ||
+		fail "shell-ui did not draw the one panel ci's file asks for: $(value layers)"
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings panels'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Layout page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	# The places line comes from Settings' own stderr, read by the service.
+	edit_at=none reset_at=none
+	i=0
+	while [ "$edit_at" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where its Panels group lies: $(value settings_panels_log)"
+		guest 'settings panels log'
+		text=$(value settings_panels_log)
+		edit_at=$(echo "$text" | sed -n 's/.*panels group places edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		reset_at=$(echo "$text" | sed -n 's/.*, reset \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		[ -n "$edit_at" ] || edit_at=none
+		[ "$edit_at" = none ] && sleep 1
+	done
+	[ -n "$reset_at" ] || fail "Reset is not on the Panels group, so ci's own line is not there: $text"
+	set -- $edit_at
+	ex=$1 ey=$2 ew=$3 eh=$4
+	set -- $reset_at
+	rx=$1 ry=$2 rw=$3 rh=$4
+	asked=$(count 'edel-shell-ui: panel editor asked for over the bus')
+	shown=$(count 'edel-shell-ui: panel editor shown')
+	python3 ci/qmp.py click $((x + ex + ew / 2)) $((y + ey + eh / 2))
+	wait_more 'edel-shell-ui: panel editor asked for over the bus' "$asked" ||
+		fail "Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)) did not ask shell-ui for its editor: $(value settings_panels_log)"
+	wait_more 'edel-shell-ui: panel editor shown' "$shown" || fail "shell-ui did not open its panel editor: $(value layers)"
+	hidden=$(count 'edel-shell-ui: panel editor hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: panel editor hidden' "$hidden" || fail "Escape did not close the panel editor"
+	# Reset: ci's line goes, and the desktop's panels are Classic's again.
+	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	python3 ci/qmp.py click $((x + rx + rw / 2)) $((y + ry + rh / 2))
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$ten" ||
+		fail "Reset did not bring the panels back: $(value layers)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'panels = ' &&
+		fail "Reset left layout.panels in ci's settings file: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: ci's layout.panels drew one bottom panel at once, Settings opened on its Layout page with Edit panels at $((x + ex + ew / 2)),$((y + ey + eh / 2)), the click asked shell-ui for its editor, which opened and closed with Escape, and Reset took the line out of ci's file and brought Classic's ten widgets back"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
@@ -1989,6 +2051,72 @@ case_dock() {
 	echo "PASS: Mac-like put a bar along the top, a dock $((w + 16)) px wide centred at $x,732 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
 }
 
+case_pins() {
+	# The apps widget's pins (M5.31d): ci's file holds one dock along the
+	# bottom with the apps widget and apps.pinned = ["terminal", "settings"],
+	# which shell-ui follows at once: "pinned apps terminal, settings", and
+	# the dock's places line apps 8+W, whose two first cells are foot and
+	# Settings, 52 px each (the dock's height less 8) and 4 px in from the
+	# apps' 8 px start, so cell k's middle lies at X + 38 + 52 k, X being the
+	# dock's left edge in the state file's edel-dock layer. The dock's middle
+	# row is Y + H / 2. Dragging Settings' middle onto foot's left quarter
+	# pins it first: "pinned settings at 0", "pinned apps settings, terminal",
+	# and ci's file holds apps.pinned = ["settings", "terminal"]. Dragged 150
+	# px up, off the dock, Settings is unpinned: "unpinned settings", "pinned
+	# apps terminal", and the file holds apps.pinned = ["terminal"]. Then the
+	# case's two lines come out of the file, and Classic's panel is back.
+	docks=$(count 'edel-shell-ui: panel places apps 8\+')
+	pins=$(count 'edel-shell-ui: pinned apps terminal, settings$')
+	guest 'pins line'
+	wait_more 'edel-shell-ui: pinned apps terminal, settings$' "$pins" ||
+		fail "apps.pinned = [\"terminal\", \"settings\"] did not reach shell-ui"
+	wait_more 'edel-shell-ui: panel places apps 8\+' "$docks" || fail "the dock did not hold the apps widget"
+	i=0
+	until value layers | grep -qE 'edel-dock@[0-9]+,[0-9]+,[0-9]+x[0-9]+'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no dock: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-dock@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-dock@//; s/[,x]/ /g')
+	dx=$1 dy=$2 dh=$4
+	y=$((dy + dh / 2))
+	first=$((dx + 38)) second=$((dx + 38 + 52)) quarter=$((dx + 8 + 4 + 13))
+	landed=$(count 'edel-shell-ui: pinned settings at 0$')
+	pinned=$(count 'edel-shell-ui: pinned apps settings, terminal$')
+	python3 ci/qmp.py drag "$second" "$y" "$quarter" "$y"
+	wait_more 'edel-shell-ui: pinned settings at 0$' "$landed" ||
+		fail "dragging Settings' cell at $second,$y onto foot's left quarter at $quarter,$y did not pin it first"
+	wait_more 'edel-shell-ui: pinned apps settings, terminal$' "$pinned" || fail "the apps widget does not show settings, terminal after the drag"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["settings", "terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
+	# Off the dock by 150 px: the first cell is Settings now.
+	unpinned=$(count 'edel-shell-ui: unpinned settings$')
+	back=$(count 'edel-shell-ui: pinned apps terminal$')
+	python3 ci/qmp.py drag "$first" "$y" "$first" $((y - 150))
+	wait_more 'edel-shell-ui: unpinned settings$' "$unpinned" ||
+		fail "dragging Settings 150 px up, off the dock, did not unpin it"
+	wait_more 'edel-shell-ui: pinned apps terminal$' "$back" || fail "the apps widget does not show terminal alone after the unpin"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"terminal\"]: $(value settings_file)"
+	# Back as the case found it: both lines out, and Classic's panel again.
+	classic=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	guest 'pins reset'
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic" ||
+		fail "taking the case's lines out did not bring Classic's panel back"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -qE 'pinned|panels' &&
+		fail "ci's settings file still holds the pins or the dock: $(value settings_file)"
+	echo "PASS: apps.pinned = [\"terminal\", \"settings\"] put two pins on the dock's apps widget at once (\"pinned apps terminal, settings\"); dragging Settings' cell onto foot's left quarter pinned it first and wrote apps.pinned = [\"settings\", \"terminal\"]; dragging it 150 px up unpinned it and wrote apps.pinned = [\"terminal\"]; taking the case's lines out brought Classic's panel back"
+}
+
 case_panels() {
 	# The panels as a setting (M5.4e, followed without a restart by
 	# M5.31b): layout.panels with one panel along the bottom holding only
@@ -1996,6 +2124,8 @@ case_panels() {
 	# widgets)", so 20,776, inside the menu button's first square, is the
 	# panel's colour; unsetting it brings Classic's panel back, of 10
 	# widgets, and no restart of shell-ui happens. Kept as panels-clock.png.
+	# Then a floating large bar (M5.31c) holds the menu and the clock, 48 px
+	# high, 8 px in from each side and 8 px above the bottom.
 	panel=$(token panel)
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
@@ -2004,6 +2134,23 @@ case_panels() {
 		fail "edel settings set layout.panels did not reach shell-ui's panel"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
+	floats=$(count 'edel-shell-ui: panels now bottom \(2 widgets\)')
+	guest 'panels floating'
+	wait_more 'edel-shell-ui: panels now bottom \(2 widgets\)' "$floats" ||
+		fail "edel settings set a floating large bar did not reach shell-ui's panel"
+	# The screen is 1280x800 (Virtual-1, as case_outputs reads it): a bar of
+	# 48 px at 8,Y, 16 px narrower than the screen, ends 8 px above its bottom.
+	screen_w=1280 screen_h=800
+	i=0
+	until value layers | grep -qE "edel-panel@8,[0-9]+,$((screen_w - 16))x48"; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the floating bar is not 48 px high and $((screen_w - 16)) px wide at 8 px in: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panel@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panel@//; s/[,x]/ /g')
+	fx=$1 fy=$2 fw=$3 fh=$4
+	[ "$fx" = 8 ] && [ "$fh" = 48 ] && [ $((fy + fh)) = $((screen_h - 8)) ] ||
+		fail "the floating bar is at $fx,$fy, $fw x $fh: it should be 8 px in, 48 px high and end 8 px above the bottom"
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
 	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
@@ -2012,7 +2159,7 @@ case_panels() {
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting layout.panels did not bring Classic's menu button back"
 	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
 		fail "layout.panels restarted shell-ui, which it no longer does"
-	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart, and unsetting it brought Classic's panel back"
+	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting layout.panels brought Classic's panel back"
 }
 
 # last_places: the text of the newest panel places line, after its prefix.
@@ -2020,13 +2167,13 @@ last_places() {
 	tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed 's/.*edel-shell-ui: panel places //'
 }
 
-# open_editor_from_menu: a right click on the panel's empty space, past the
-# window list's end by 40 px (or in the widest gap a widget leaves), then a
-# click on the middle of the panel menu's Edit panels row. Waits for the
-# drawer's first drawing and for the panel's new places line, which is the
-# drawing with its widgets as tiles. case_panel_edit opens the editor this
-# way twice.
-open_editor_from_menu() {
+# open_panel_menu_at_space: a right click on the panel's empty space, past the
+# window list's end by 40 px (or in the widest gap a widget leaves), then the
+# wait for the panel menu's surface and its places line. It leaves the menu
+# open: sx, sy, sw and sh are its surface, cw and ch its card and menu its
+# places line, which menu_middle reads. open_editor_from_menu and the dock
+# step of case_panel_edit both open it this way.
+open_panel_menu_at_space() {
 	places=$(last_places)
 	[ -n "$places" ] || fail "shell-ui logged no panel places line"
 	x=$(echo "$places" | tr ',' '\n' | awk '
@@ -2055,13 +2202,29 @@ open_editor_from_menu() {
 	read -r cw ch <<-EOF
 		$(echo "$menu" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
 	EOF
+	[ -n "$ch" ] || fail "the panel menu's places line is not what CI reads: $menu"
+}
+
+# menu_middle NAME: the middle of the panel menu's part NAME on the screen,
+# as its places line names it ('row edit', 'style dock'), in mx and my. The
+# card lies centred in the surface, which has the shadow's room round it.
+menu_middle() {
+	name=$1
 	read -r rx ry rw rh <<-EOF
-		$(echo "$menu" | sed -n 's/.*row edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		$(echo "$menu" | sed -n "s/.*$name \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p")
 	EOF
-	[ -n "$rh" ] || fail "the panel menu's places line is not what CI reads: $menu"
-	# The row's middle: the card lies centred in the surface, which has the shadow's room round it.
+	[ -n "$rh" ] || fail "the panel menu's places line has no $name: $menu"
 	mx=$((sx + (sw - cw) / 2 + rx + rw / 2))
 	my=$((sy + (sh - ch) / 2 + ry + rh / 2))
+}
+
+# open_editor_from_menu: a click on the middle of the panel menu's Edit
+# panels row, after open_panel_menu_at_space. Waits for the drawer's first
+# drawing and for the panel's new places line, which is the drawing with its
+# widgets as tiles. case_panel_edit opens the editor this way twice.
+open_editor_from_menu() {
+	open_panel_menu_at_space
+	menu_middle 'row edit'
 	editor=$(count 'edel-shell-ui: panel editor shown')
 	tiles=$(count 'edel-shell-ui: panel places')
 	python3 ci/qmp.py click $mx $my
@@ -2087,7 +2250,9 @@ case_panel_edit() {
 	# they were, taking the line out again when there was none (the
 	# panel's last places line ends with the clock). The drawer's and the
 	# bar's places come from their own log lines, the surfaces from the
-	# state file's layers.
+	# state file's layers. Last, the panel menu's Style row: its Dock
+	# segment writes style = "dock" and the panel becomes a dock (edel-dock,
+	# kept as panel-menu-dock.png), and its Undo bar takes it back to a bar.
 	open_editor_from_menu
 	python3 ci/qmp.py screendump "$dir/panel-edit-open.png"
 	wait_for 'edel-shell-ui: panel places .*tray [0-9]+\+[1-9][0-9]*' ||
@@ -2212,7 +2377,70 @@ case_panel_edit() {
 		value settings_file | grep -q 'start = \["clock"' &&
 			fail "ci's settings file still holds the clock first after Undo: $(value settings_file)"
 	fi
-	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote layout.panels with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\")"
+	# The panel menu's Style row: the panel is a bar again after Undo, so a
+	# right click on its empty space opens the menu, and its Dock segment,
+	# clicked at its middle, writes the dock and shows it as edel-dock.
+	open_panel_menu_at_space
+	menu_middle 'style dock'
+	changed=$(count 'edel-shell-ui: panel menu changed style dock, layout.panels written')
+	python3 ci/qmp.py click "$mx" "$my"
+	wait_more 'edel-shell-ui: panel menu changed style dock, layout.panels written' "$changed" ||
+		fail "the panel menu's Dock segment at $mx,$my did not write the dock: $(tr -d '\r' <"$log" | grep -a 'panel menu' | tail -n 1)"
+	i=0
+	until value layers | grep -q 'edel-dock@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no dock surface: $(value layers)"
+		sleep 0.2
+	done
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'style = "dock"' ||
+		fail "ci's settings file does not hold style = \"dock\": $(value settings_file)"
+	python3 ci/qmp.py screendump "$dir/panel-menu-dock.png"
+
+	# Undo on the dock's Undo bar: the panels go back to the bar, and the
+	# line says dock no more.
+	bar=$(count 'edel-shell-ui: panels undo bar shown')
+	i=0
+	until value layers | grep -q 'edel-panels-undo@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no Undo bar surface after the dock: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panels-undo@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panels-undo@//; s/[,x]/ /g')
+	bx=$1 by=$2 bw=$3 bh=$4
+	bar_places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panels undo bar places' | tail -n 1)
+	read -r cw ch <<-EOF
+		$(echo "$bar_places" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
+	EOF
+	read -r ux uy uw uh <<-EOF
+		$(echo "$bar_places" | sed -n 's/.*undo \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	EOF
+	[ -n "$uh" ] || fail "the dock's Undo bar places line is not what CI reads: $bar_places"
+	mx=$((bx + (bw - cw) / 2 + ux + uw / 2))
+	my=$((by + (bh - ch) / 2 + uy + uh / 2))
+	undone=$(count "edel-shell-ui: panels undone, $what")
+	gone=$(count 'edel-shell-ui: panels undo bar hidden')
+	places_before=$(count 'edel-shell-ui: panel places')
+	python3 ci/qmp.py click "$mx" "$my"
+	wait_more "edel-shell-ui: panels undone, $what" "$undone" ||
+		fail "Undo at $mx,$my did not take the dock back: $(tr -d '\r' <"$log" | grep -a 'panels undone' | tail -n 1)"
+	wait_more 'edel-shell-ui: panels undo bar hidden' "$gone" || fail "the Undo bar stayed up after the dock's Undo"
+	wait_more 'edel-shell-ui: panel places' "$places_before" || fail "the panel did not draw again after the dock's Undo"
+	i=0
+	until value layers | grep -q 'edel-panel@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the panel is not a bar again after Undo: $(value layers)"
+		sleep 0.2
+	done
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'style = "dock"' &&
+		fail "ci's settings file still holds the dock after Undo: $(value settings_file)"
+
+	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote layout.panels with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\"); the panel menu's Dock segment made the panel a dock (edel-dock, style = \"dock\" in ci's file), and its Undo bar took it back to a bar"
 }
 
 case_dockhide() {
@@ -3101,7 +3329,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit dockhide fullscreen keyboard settings display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

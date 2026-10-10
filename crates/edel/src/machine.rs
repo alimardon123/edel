@@ -16,6 +16,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use edel::i18n::{tr, trf};
+use edel::panel_edit;
 use edel::places;
 use edel::settings::{self, SettingsFile, User};
 use edel::users::ADMIN_GROUP;
@@ -904,12 +905,13 @@ pub fn set(assignments: &[String]) -> Result<()> {
 }
 
 /// Whether the desktop follows `key` at once, as it does the layout,
-/// screen, look and shortcut keys (M4.5, M4.6, M5.5c, M5.13a); `edel
-/// settings apply` applies the rest.
+/// screen, look and shortcut keys (M4.5, M4.6, M5.5c, M5.13a) and the apps
+/// the apps widget pins (M5.31d); `edel settings apply` applies the rest.
 fn desktop_follows(key: &str) -> bool {
-    ["layout.", "displays.", "appearance.", "shortcuts."]
-        .iter()
-        .any(|section| key.starts_with(section))
+    key == panel_edit::PINNED
+        || ["layout.", "displays.", "appearance.", "shortcuts."]
+            .iter()
+            .any(|section| key.starts_with(section))
 }
 
 /// `edel settings reset KEY...`: removes each key, so the release decides
@@ -1557,6 +1559,20 @@ mod tests {
         assert!(desktop_follows("layout.tiling"));
         assert!(desktop_follows("displays.eDP-1.scale"));
         assert!(!desktop_follows("network.hostname"));
+        // The pins are followed at once, the rest of [apps] is not.
+        assert!(desktop_follows("apps.pinned"));
+        assert!(!desktop_follows("apps.installed"));
+    }
+
+    #[test]
+    fn apply_does_nothing_for_the_pinned_apps() {
+        // The pins need nothing applied, as layout.tray_in_panel needs
+        // nothing (M5.31d): the desktop reads them from the file itself.
+        let file =
+            settings::read("format = 1\n[apps]\npinned = [\"settings\", \"terminal\"]\n").unwrap();
+        let (changes, notes) = plan(&file.file, &Machine::default());
+        assert!(changes.is_empty(), "{changes:?}");
+        assert!(notes.is_empty(), "{notes:?}");
     }
 
     #[test]

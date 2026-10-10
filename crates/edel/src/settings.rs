@@ -330,6 +330,8 @@ pub const KEYS: &[Key] = &[
     ),
     later("updates.restart_window", Kind::Text),
     later("apps.installed", Kind::Texts),
+    // The apps the apps widget pins, in order, by id or role (M5.31d).
+    now("apps.pinned", Kind::Texts),
     later("addons.installed", Kind::Texts),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
@@ -604,6 +606,10 @@ pub struct Updates {
 pub struct Apps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed: Option<Vec<String>>,
+    /// The apps the apps widget pins, in order, each an app's id or a role
+    /// such as `terminal` (M5.31d); absent is the layout preset's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<Vec<String>>,
 }
 
 /// The Add-ons page.
@@ -1626,6 +1632,15 @@ font_size = 11
                 "expected panels as a preset writes them",
             ),
             (r#""clock""#, "expected a list of panels"),
+            // A size this release lacks names the sizes it has (M5.31c).
+            (
+                r#"[{ edge = "bottom", size = "huge" }]"#,
+                "unknown variant `huge`, expected one of `small`, `medium`, `large`",
+            ),
+            (
+                r#"[{ edge = "bottom", style = "dock", floating = true }]"#,
+                "a dock floats already; take floating out of the bottom panel",
+            ),
         ] {
             let error = set("format = 1\n", "layout.panels", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");

@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{icon, preview, rows, tray};
+use crate::{icon, panels, preview, rows, tray};
 
 const INTRO: &str = n_(
     "One preset sets up the whole desktop: its panels, where windows open \
@@ -115,6 +115,8 @@ struct Ui {
     monitors: Vec<gio::FileMonitor>,
     /// The Tray card, which follows the files too (M5.9h).
     tray: Rc<tray::Card>,
+    /// The Panels group, which follows them too (M5.31d).
+    panels: Rc<panels::Card>,
 }
 
 impl Ui {
@@ -135,6 +137,7 @@ impl Ui {
         self.changes
             .show(files.own_layout() != *self.before.borrow());
         self.tray.show();
+        self.panels.show(&files, &now.preset);
         self.bar.show(
             now.window_buttons == "left",
             [now.minimize_button, now.maximize_button, now.close_button],
@@ -226,6 +229,9 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         Control::choice("layout.tiling_style"),
     ));
 
+    // The panels that apply, and the editor that changes them (M5.31d).
+    let panels = panels::card(&content, theme, &problem);
+
     // Everything about title bars in one group, each row named as its key
     // is (ADR-008's same names decision): a bar drawn as the compositor
     // draws it, so every choice shows at once, then where bars show, the
@@ -295,6 +301,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         quiet: Cell::new(false),
         monitors,
         tray: tray.clone(),
+        panels: panels.clone(),
     });
     ui.update();
     tray.refresh();
@@ -341,6 +348,18 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             vec![setting.key],
         );
     }
+    // Asked for the Panels group by name, the keyboard goes to its Edit
+    // panels button once the page shows (M5.31d); the page's own rule is
+    // `widgets::take_asked`.
+    let edit = panels.edit();
+    page.connect_map(move |page| {
+        let (page, edit) = (page.clone(), edit.clone());
+        gtk::glib::idle_add_local_once(move || {
+            if widgets::asked_row() == Some(edel::panel_edit::PANELS) {
+                widgets::take_asked(&page, &edit);
+            }
+        });
+    });
     let weak = Rc::downgrade(&ui);
     ui.changes.undo.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {

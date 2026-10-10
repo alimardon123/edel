@@ -153,6 +153,52 @@ pub fn logical_width(count: usize, cell: f32) -> f32 {
     }
 }
 
+/// A cell's width in a widget `width` logical pixels wide: the cells share
+/// the widget's width less its room at each end, in a bar or a dock alike.
+pub fn cell_side(shown: &str, width: f32) -> f32 {
+    match read(shown).len() {
+        0 => 0.0,
+        count => (width - 2.0 * EDGE) / count as f32,
+    }
+}
+
+/// The index of the cell under `x` logical pixels from the widget's left,
+/// when cells are `cell` wide; none in the room at either end or past the
+/// last cell (M5.31d).
+pub fn cell_at(shown: &str, x: f32, cell: f32) -> Option<usize> {
+    if x < EDGE || cell <= 0.0 {
+        return None;
+    }
+    let i = ((x - EDGE) / cell).floor() as usize;
+    (i < read(shown).len()).then_some(i)
+}
+
+/// The x of boundary `boundary` in a widget whose cells are `cell` wide,
+/// logical pixels from the widget's left: the place between two cells, the
+/// first one at the room's end (M5.31d).
+pub fn boundary_x(cell: f32, boundary: usize) -> f32 {
+    EDGE + boundary as f32 * cell
+}
+
+/// The boundary a dragged app lands at among the `pinned` cells, when the
+/// pointer is at `x` logical pixels from the widget's left and cells are
+/// `cell` wide (M5.31d): before the cell under the pointer in its left
+/// half, after it in its right half, and never past the last pinned cell.
+/// A boundary is a place between cells, so `0` is before the first.
+pub fn landing(x: f32, cell: f32, pinned: usize) -> usize {
+    if cell <= 0.0 {
+        return 0;
+    }
+    let at = (x - EDGE) / cell;
+    let cell_under = at.floor();
+    let boundary = if at - cell_under >= 0.5 {
+        cell_under + 1.0
+    } else {
+        cell_under
+    };
+    (boundary.max(0.0) as usize).min(pinned)
+}
+
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
     let (cell, _) = sizes(canvas);
     logical_width(read(shown).len(), cell) * canvas.scale
@@ -261,12 +307,7 @@ fn input(shown: &str, input: Input) -> Option<Action> {
         return None;
     };
     let cells = read(shown);
-    if at < EDGE || cells.is_empty() {
-        return None;
-    }
-    // The cells share the widget's width, in a bar or a dock alike.
-    let cell = (width - 2.0 * EDGE) / cells.len() as f32;
-    let i = ((at - EDGE) / cell).floor() as usize;
+    let i = cell_at(shown, at, cell_side(shown, width))?;
     cells.get(i).map(|c| Action::App(c.id.to_string()))
 }
 
@@ -350,6 +391,50 @@ mod tests {
             None
         );
         assert_eq!(input(shown, Input::Scroll(1)), None);
+    }
+
+    #[test]
+    fn a_cell_is_found_by_where_the_pointer_is() {
+        let shown = "+\tfoot\tfoot\tFoot\n \tmail\tmail\tMail";
+        let cell = cell_side(shown, logical_width(2, CELL));
+        assert_eq!(cell, CELL);
+        assert_eq!(cell_at(shown, 2.0, cell), None, "the room at the start");
+        assert_eq!(cell_at(shown, EDGE, cell), Some(0));
+        assert_eq!(cell_at(shown, EDGE + CELL, cell), Some(1));
+        assert_eq!(
+            cell_at(shown, EDGE + 2.0 * CELL, cell),
+            None,
+            "past the last"
+        );
+        assert_eq!(cell_at(shown, EDGE, 0.0), None, "no cells, no cell");
+    }
+
+    #[test]
+    fn a_dock_shares_its_width_between_its_cells() {
+        // Two cells of 52 px in a dock: the widget is 2 x 4 + 2 x 52 wide.
+        let shown = "*\tfoot\tfoot\tFoot\n \tmail\tmail\tMail";
+        assert_eq!(cell_side(shown, 2.0 * EDGE + 2.0 * 52.0), 52.0);
+        assert_eq!(cell_side("", 100.0), 0.0);
+    }
+
+    #[test]
+    fn a_boundary_is_the_room_or_the_gap_between_cells() {
+        assert_eq!(boundary_x(CELL, 0), EDGE);
+        assert_eq!(boundary_x(CELL, 2), EDGE + 2.0 * CELL);
+    }
+
+    #[test]
+    fn a_dragged_app_lands_before_or_after_the_cell_under_it() {
+        // Left half of cell 0 is before it, right half after it.
+        assert_eq!(landing(EDGE + 5.0, CELL, 2), 0);
+        assert_eq!(landing(EDGE + 25.0, CELL, 2), 1);
+        // Cell 1: its left half is the boundary 1, its right half 2.
+        assert_eq!(landing(EDGE + CELL + 5.0, CELL, 2), 1);
+        assert_eq!(landing(EDGE + CELL + 25.0, CELL, 2), 2);
+        // Never past the pinned cells, nor before the first.
+        assert_eq!(landing(EDGE + 3.0 * CELL, CELL, 2), 2);
+        assert_eq!(landing(-40.0, CELL, 2), 0);
+        assert_eq!(landing(10.0, 0.0, 2), 0, "no cell width, no place");
     }
 
     #[test]

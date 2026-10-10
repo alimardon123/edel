@@ -398,6 +398,9 @@ msgstr ""
 msgid "only a dock hides; the {edge} panel is a bar"
 msgstr ""
 
+msgid "a dock floats already; take floating out of the {edge} panel"
+msgstr ""
+
 msgid "Classic"
 msgstr ""
 
