@@ -20,7 +20,7 @@ use edel::tokens::{Colour, Tokens};
 use tiny_skia::Pixmap;
 
 use crate::paint::{self, Face, Text, fill, mix};
-use crate::popup::{Rect, dim, focus_ring, icon_in, veil};
+use crate::popup::{Rect, dim, focus_ring, icon_in};
 
 /// The card's height, logical pixels. It is a pill, its corners half its
 /// height, with its app's name at its top and room for the pages' dots at
@@ -29,8 +29,21 @@ pub const HEIGHT: f32 = 120.0;
 /// The wide pill's size, logical pixels (M5.10c): the lock screen's player,
 /// at its bottom left.
 /// The wide pill's buttons' glyphs, logical pixels (M5.10c).
-const WIDE_GLYPH: f32 = 18.0;
+const WIDE_GLYPH: f32 = 22.0;
+/// Play's or Pause's glyph on the wide pill's 48 px disc.
+const WIDE_PLAY_GLYPH: f32 = 18.0;
 pub const WIDE: (f32, f32) = (400.0, 100.0);
+/// The row the wide pill grows by under its track with two or more players,
+/// so its dots lie clear of the times, `DOT_FOOT` from its foot as quick
+/// settings' do.
+const WIDE_PAGES_ROW: f32 = 16.0;
+
+/// The wide pill's size with `pages` players: `WIDE`, and one row taller
+/// for the dots with two or more.
+pub fn wide_size(pages: usize) -> (f32, f32) {
+    let row = if pages > 1 { WIDE_PAGES_ROW } else { 0.0 };
+    (WIDE.0, WIDE.1 + row)
+}
 /// The cover's side, and the room between the player's parts.
 const COVER: f32 = 64.0;
 const SPACE: f32 = 10.0;
@@ -155,6 +168,52 @@ pub struct Parts {
     pub times: Option<(Rect, Rect)>,
 }
 
+/// The colours a player is drawn in: a card's on the panel's colour
+/// (quick settings), the wide pill's on the lock screen's glass over its
+/// dark backdrop, in both schemes (M5.10c4, `docs/mockups/shell/
+/// lock-media.jpg`: white, its muted words at 68 percent, the track at 22).
+#[derive(Clone, Copy)]
+struct Inks {
+    text: Colour,
+    muted: Colour,
+    track: Colour,
+    /// Play's disc and its glyph.
+    disc: Colour,
+    on_disc: Colour,
+}
+
+impl Inks {
+    fn of(shape: Shape, tokens: &Tokens) -> Inks {
+        match shape {
+            Shape::Card => Inks {
+                text: tokens.panel_text,
+                muted: dim(tokens),
+                track: mix(tokens.panel_text, tokens.panel, 0.75),
+                disc: tokens.panel_text,
+                on_disc: tokens.panel,
+            },
+            Shape::Wide => {
+                let white = tokens.backdrop_text;
+                Inks {
+                    text: white,
+                    muted: Colour { a: 0.68, ..white },
+                    track: Colour { a: 0.22, ..white },
+                    disc: white,
+                    on_disc: tokens.lock_backdrop_deep,
+                }
+            }
+        }
+    }
+
+    /// `alpha` of the text, for hover lights and faint dots.
+    fn veil(self, alpha: f32) -> Colour {
+        Colour {
+            a: alpha,
+            ..self.text
+        }
+    }
+}
+
 /// The parts of a player's card at `card`, `pages` players in all and
 /// `page` the one shown. The three buttons are 44 px on a Compact screen,
 /// where a finger lands.
@@ -248,7 +307,9 @@ pub fn place_wide(card: Rect, compact: bool, pages: usize, page: usize) -> Parts
         play,
         next,
         app: Rect::new(words.x, card.y + APP_TOP, words.w, APP_HIGH),
-        dots: dot_rects(pages, page, card, card.y + WIDE.1 - DOT_FOOT - DOT),
+        // Centred across the card at its foot, in the row `wide_size`
+        // adds under the track, as quick settings' are.
+        dots: dot_rects(pages, page, card, card.y + card.h - DOT_FOOT - DOT),
         progress: Some(bar),
         times: Some(times),
     }
@@ -398,6 +459,7 @@ fn words(
     let Some(text) = text else {
         return;
     };
+    let ink = Inks::of(parts.shape, tokens);
     let (title_px, artist_px) = match parts.shape {
         Shape::Card => (12.5, 11.0),
         Shape::Wide => (17.0, 13.0),
@@ -408,19 +470,13 @@ fn words(
     let title_h = title_px * s * 1.25;
     if p.artist.is_empty() {
         let top = wy + (wh - title_h) / 2.0;
-        text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
+        text.draw(pixmap, &mut title, wx, top, ink.text);
     } else {
         let mut artist = text.fit(&p.artist, artist_px * s, room);
         let block = title_h + 2.0 * s + artist_px * s * 1.25;
         let top = wy + (wh - block) / 2.0;
-        text.draw(pixmap, &mut title, wx, top, tokens.panel_text);
-        text.draw(
-            pixmap,
-            &mut artist,
-            wx,
-            top + title_h + 2.0 * s,
-            dim(tokens),
-        );
+        text.draw(pixmap, &mut title, wx, top, ink.text);
+        text.draw(pixmap, &mut artist, wx, top + title_h + 2.0 * s, ink.muted);
     }
 }
 
@@ -439,24 +495,17 @@ fn track(
     let Some(bar) = parts.progress else {
         return;
     };
+    let ink = Inks::of(parts.shape, tokens);
     let (x, y, w, h) = bar.device(s);
     let radius = (h / 2.0).min(w / 2.0);
-    fill(
-        pixmap,
-        x,
-        y,
-        w,
-        h,
-        radius,
-        mix(tokens.panel_text, tokens.panel, 0.75),
-    );
+    fill(pixmap, x, y, w, h, radius, ink.track);
     if let (Some(at), Some(length)) = (p.position, p.length) {
         if !length.is_zero() {
             let share = (at.as_secs_f32() / length.as_secs_f32()).clamp(0.0, 1.0);
             let played = w * share;
             if played > 0.0 {
                 let radius = radius.min(played / 2.0);
-                fill(pixmap, x, y, played, h, radius, tokens.panel_text);
+                fill(pixmap, x, y, played, h, radius, ink.text);
             }
         }
     }
@@ -465,9 +514,9 @@ fn track(
         return;
     };
     if let Some(at) = p.position {
-        clock_label(pixmap, text, at, played_box, false, tokens, s);
+        clock_label(pixmap, text, at, played_box, false, ink, s);
     }
-    clock_label(pixmap, text, length, length_box, true, tokens, s);
+    clock_label(pixmap, text, length, length_box, true, ink, s);
 }
 
 /// One of the track's times, drawn in its box from the left, or from the
@@ -478,7 +527,7 @@ fn clock_label(
     time: Duration,
     at: Rect,
     right: bool,
-    tokens: &Tokens,
+    ink: Inks,
     s: f32,
 ) {
     let size = WIDE_TIME_SIZE * s;
@@ -486,7 +535,7 @@ fn clock_label(
     let (x, y, w, h) = at.device(s);
     let left = if right { x + w - line.width } else { x };
     let top = y + (h - size * 1.25) / 2.0;
-    text.draw(pixmap, &mut line, left, top, dim(tokens));
+    text.draw(pixmap, &mut line, left, top, ink.muted);
 }
 
 /// The buttons, in both shapes: Previous and Next, dimmed where the player
@@ -502,10 +551,11 @@ fn buttons(
 ) {
     // The buttons' glyphs: larger on the wide pill, as the lock screen's
     // mockup draws them (M5.10c).
-    let glyph_px = match parts.shape {
-        Shape::Card => 14.0,
-        Shape::Wide => WIDE_GLYPH,
+    let (glyph_px, play_px) = match parts.shape {
+        Shape::Card => (14.0, 14.0),
+        Shape::Wide => (WIDE_GLYPH, WIDE_PLAY_GLYPH),
     };
+    let ink = Inks::of(parts.shape, tokens);
     let sides = [
         (
             Part::Previous,
@@ -518,33 +568,44 @@ fn buttons(
     for (part, glyph, rect, able) in sides {
         if marks.hover == Some(part) && able {
             let (x, y, w, h) = rect.device(s);
-            fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.06));
+            fill(pixmap, x, y, w, h, w / 2.0, ink.veil(0.06));
         }
-        let ink = if able {
-            tokens.panel_text
+        let colour = if able {
+            ink.text
         } else {
             Colour {
                 a: 0.5,
-                ..dim(tokens)
+                ..ink.muted
             }
         };
-        icon_in(pixmap, glyph, glyph_px, rect, s, ink);
+        icon_in(pixmap, glyph, glyph_px, rect, s, colour);
         if marks.focus == Some(part) {
             focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
         }
     }
     let rect = parts.play;
     let (x, y, w, h) = rect.device(s);
-    fill(pixmap, x, y, w, h, w / 2.0, tokens.panel_text);
+    fill(pixmap, x, y, w, h, w / 2.0, ink.disc);
     if marks.hover == Some(Part::PlayPause) {
-        fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.12));
+        fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            w / 2.0,
+            Colour {
+                a: 0.12,
+                ..ink.on_disc
+            },
+        );
     }
     let glyph = if p.playing {
         "media-pause"
     } else {
         "media-play"
     };
-    icon_in(pixmap, glyph, glyph_px, rect, s, tokens.panel);
+    icon_in(pixmap, glyph, play_px, rect, s, ink.on_disc);
     if marks.focus == Some(Part::PlayPause) {
         focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
     }
@@ -564,7 +625,7 @@ fn dots(pixmap: &mut Pixmap, parts: &Parts, marks: Marks, tokens: &Tokens, s: f3
                 } else {
                     0.25
                 },
-                ..tokens.panel_text
+                ..Inks::of(parts.shape, tokens).text
             }
         };
         fill(pixmap, x, y, w, h, h / 2.0, colour);
@@ -593,7 +654,7 @@ fn app_row(
     let icon = p.app_icon.as_ref();
     let side = (APP_ICON * s).round();
     let space = 5.0 * s;
-    let lead = icon.map_or(0.0, |_| side + space);
+    let lead = side + space;
     let room = match parts.shape {
         Shape::Card => rw - 2.0 * SIDE * s - lead,
         Shape::Wide => rw - lead,
@@ -603,19 +664,47 @@ fn app_row(
         Shape::Card => (rx + (rw - lead - name.width) / 2.0).round(),
         Shape::Wide => rx.round(),
     };
-    if let Some(icon) = icon {
-        let top = (ry + (rh - side) / 2.0).round();
-        pixmap.draw_pixmap(
-            left as i32,
-            top as i32,
-            icon.as_ref(),
-            &tiny_skia::PixmapPaint::default(),
-            tiny_skia::Transform::identity(),
-            None,
-        );
+    let top = (ry + (rh - side) / 2.0).round();
+    match icon {
+        // Drawn at the side the card asks for, whatever size it was read at.
+        Some(icon) => {
+            let k = side / icon.width().max(1) as f32;
+            pixmap.draw_pixmap(
+                0,
+                0,
+                icon.as_ref(),
+                &tiny_skia::PixmapPaint {
+                    quality: tiny_skia::FilterQuality::Bilinear,
+                    ..tiny_skia::PixmapPaint::default()
+                },
+                tiny_skia::Transform::from_row(k, 0.0, 0.0, k, left, top),
+                None,
+            );
+        }
+        // No icon: the app's initial on an accent tile, as the panel's
+        // apps widget draws one.
+        None => {
+            fill(pixmap, left, top, side, side, side * 0.3, tokens.accent);
+            let initial = p
+                .identity
+                .chars()
+                .next()
+                .map(|c| c.to_uppercase().to_string())
+                .unwrap_or_default();
+            let mut letter = text.fit_in(&initial, side * 0.64, side, Face::SEMIBOLD);
+            let lx = left + (side - letter.width) / 2.0;
+            let ly = top + (side - side * 0.64 * 1.25) / 2.0;
+            text.draw(pixmap, &mut letter, lx, ly, tokens.accent_text);
+        }
     }
     let top = ry + (rh - size * 1.25) / 2.0;
-    text.draw(pixmap, &mut name, left + lead, top, dim(tokens));
+    text.draw(
+        pixmap,
+        &mut name,
+        left + lead,
+        top,
+        Inks::of(parts.shape, tokens).muted,
+    );
 }
 
 #[cfg(test)]
@@ -759,6 +848,25 @@ mod tests {
     }
 
     #[test]
+    fn the_wide_pills_dots_lie_in_their_own_row_clear_of_the_times() {
+        assert_eq!(wide_size(1), WIDE);
+        let (w, h) = wide_size(3);
+        let card = Rect::new(24.0, 600.0, w, h);
+        let parts = place_wide(card, false, 3, 1);
+        let (played, length) = parts.times.expect("the times");
+        let bar = parts.progress.expect("the bar");
+        for dot in &parts.dots {
+            for other in [played, length, bar, parts.play, parts.cover] {
+                assert!(
+                    dot.y >= other.y + other.h + 4.0,
+                    "{dot:?} is close to {other:?}"
+                );
+            }
+            assert_eq!(dot.y + dot.h, card.y + card.h - DOT_FOOT);
+        }
+    }
+
+    #[test]
     fn clock_time_reads_minutes_and_seconds_then_hours() {
         let at = |secs: u64| clock_time(Duration::from_secs(secs));
         assert_eq!(at(0), "0:00");
@@ -847,5 +955,99 @@ mod tests {
             );
             shot.save_png(format!("{dir}/player-wide.png")).unwrap();
         }
+    }
+
+    /// Under `EDEL_LOCK_PNG`, the lock screen with two players on the wide
+    /// pill, the first playing and shown, its page dot lit (M5.10c), for
+    /// looking at the whole screen as the mockup draws it.
+    #[test]
+    fn the_lock_screen_with_two_players_draws() {
+        let Ok(dir) = std::env::var("EDEL_LOCK_PNG") else {
+            return;
+        };
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let mut pixmap = Pixmap::new(1280, 800).expect("a screen-sized pixmap");
+        let mut screen =
+            crate::lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        screen.dots = 6;
+        screen.notices = 3;
+        screen.apps = vec![
+            ("Mail".into(), String::new()),
+            ("Chat".into(), String::new()),
+        ];
+        crate::lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
+        let corner = crate::corner::View {
+            layout: Some("EN".into()),
+            menu: false,
+            restart_waiting: false,
+            hover: None,
+        };
+        let corner_at = crate::corner::layout(1280.0, 800.0, &corner);
+        crate::corner::paint(&mut pixmap, &corner, &corner_at, &tokens, &mut text, 1.0);
+        let (cw, ch) = wide_size(2);
+        let card = Rect::new(24.0, 800.0 - 24.0 - ch, cw, ch);
+        let (x, y, w, h) = card.device(1.0);
+        crate::lock::lift(&mut pixmap, card, card.h / 2.0, 1.0, &tokens);
+        crate::lock::glass(&mut pixmap, (x, y, w, h), h / 2.0, 1.0, &tokens);
+        // A cover and an app icon as an app gives them, the mockup's colours.
+        let picture = |side: u32, stops: &[(f32, u32)]| {
+            let mut p = Pixmap::new(side, side).expect("a picture");
+            let stops = stops
+                .iter()
+                .map(|&(at, rgb)| {
+                    let [_, r, g, b] = rgb.to_be_bytes();
+                    tiny_skia::GradientStop::new(at, tiny_skia::Color::from_rgba8(r, g, b, 255))
+                })
+                .collect();
+            let shader = tiny_skia::LinearGradient::new(
+                tiny_skia::Point::from_xy(0.0, 0.0),
+                tiny_skia::Point::from_xy(0.0, side as f32),
+                stops,
+                tiny_skia::SpreadMode::Pad,
+                tiny_skia::Transform::identity(),
+            )
+            .expect("a gradient");
+            let paint = tiny_skia::Paint {
+                shader,
+                ..tiny_skia::Paint::default()
+            };
+            let all =
+                tiny_skia::Rect::from_xywh(0.0, 0.0, side as f32, side as f32).expect("a square");
+            p.fill_rect(all, &paint, tiny_skia::Transform::identity(), None);
+            p
+        };
+        let cover = picture(76, &[(0.0, 0x2a2b6c), (0.55, 0x8a55b8), (1.0, 0xf48a6c)]);
+        let icon = picture(14, &[(0.0, 0xff6f8f), (1.0, 0xe0335a)]);
+        let view = PlayerView {
+            title: "Night Drive".into(),
+            artist: "Lumen".into(),
+            identity: "Music".into(),
+            playing: true,
+            can_previous: true,
+            can_next: true,
+            cover: Some(cover),
+            app_icon: Some(icon),
+            position: Some(Duration::from_secs(84)),
+            length: Some(Duration::from_secs(221)),
+        };
+        let parts = place_wide(card, false, 2, 0);
+        let marks = Marks {
+            hover: None,
+            focus: None,
+            page: 0,
+        };
+        paint(
+            &mut pixmap,
+            &view,
+            &parts,
+            marks,
+            &tokens,
+            Some(&mut text),
+            1.0,
+        );
+        pixmap
+            .save_png(format!("{dir}/lock-player-pages.png"))
+            .expect("the PNG is written");
     }
 }

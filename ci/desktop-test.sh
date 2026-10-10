@@ -3249,7 +3249,10 @@ case_lock() {
 	# password is said, and ci's own, typed without Return and sent by a
 	# click on the go button, unlocks. Its power button opens a menu of
 	# three rows, suspend, restart and shutdown, which Escape closes; no
-	# row is clicked. Kept as lock.png, lock-power.png and lock-go.png.
+	# row is clicked. Then (M5.10c4) ci's test player, Night Drive by
+	# Lumen, shows its card once it plays, and the card's play button,
+	# read from the lock places line, pauses it, which the player prints.
+	# Kept as lock.png, lock-power.png, lock-player.png and lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3275,6 +3278,25 @@ case_lock() {
 	shot lock-power 640 790 "$deep" >/dev/null || true
 	python3 ci/qmp.py key esc
 	wait_for 'edel-shell-ui: power menu hidden$' || fail "Escape did not close the power menu"
+	# The player card (M5.10c4): the test player plays, the card shows once
+	# it does, and a click on its play button, read from the last lock
+	# places line, reaches the player, which pauses and prints it, as
+	# case_player checks.
+	guest mpris
+	wait_for 'edel-shell-ui: lock player shown, Night Drive by Lumen$' ||
+		fail "the lock screen did not show the test player: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
+	play=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.* play \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$play" ] || fail "shell-ui did not say where the lock's play button lies: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
+	set -- $play
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	i=0
+	until guest 'mpris log' && value mpris | grep -q 'play pause'; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "a click on the lock's play button did not reach the player: $(value mpris)"
+		sleep 1
+	done
+	shot lock-player 640 790 "$deep" >/dev/null || true
+	guest 'mpris off'
 	# A click where a window lies reaches no window: nothing moves and
 	# nothing comes forward.
 	python3 ci/qmp.py click 400 300
@@ -3301,7 +3323,7 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
 }
 
 case_scheme() {

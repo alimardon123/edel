@@ -122,8 +122,15 @@ pub struct Layout {
     pub note: f32,
 }
 
+/// The room a desktop's screen keeps free under the field (M5.10c4): the
+/// tallest player card (`player::wide_size` with pages), `corner::EDGE`
+/// from the bottom, and 16 px above it.
+fn foot() -> f32 {
+    crate::player::wide_size(2).1 + crate::corner::EDGE + 16.0
+}
+
 /// The screen's width below which it is Compact (M5.6c's size classes).
-const COMPACT_BELOW: f32 = 600.0;
+pub(crate) const COMPACT_BELOW: f32 = 600.0;
 /// The field's size: as wide as `FIELD_WIDE`, or the screen less 48 px,
 /// and touch-sized (44 px) high; the go button 4 px inside its end.
 const FIELD_WIDE: f32 = 300.0;
@@ -154,8 +161,15 @@ pub fn layout(w: f32, h: f32, tokens: &Tokens, notices: bool) -> Layout {
     let count = notices.then_some(clock_end + if compact { 12.0 } else { 24.0 });
     let above = count.map_or(clock_end, |c| c + COUNT_HIGH);
     let field_w = FIELD_WIDE.min(w - 48.0).max(120.0);
-    // The disc, the name and the field stand together below the middle.
-    let avatar_y = (h * 0.64).max(above + 24.0 + AVATAR);
+    // The disc, the name and the field stand together below the middle,
+    // above `foot()` on a desktop's screen, where the player card lies.
+    let below_disc = AVATAR + 12.0 + NAME * 1.25 + 14.0 + FIELD_HIGH;
+    let lowest = if compact {
+        f32::MAX
+    } else {
+        h - foot() - below_disc
+    };
+    let avatar_y = (h * 0.64).min(lowest).max(above + 24.0 + AVATAR);
     let name = avatar_y + AVATAR + 12.0;
     let field_y = name + NAME * 1.25 + 14.0;
     let field = Rect::new((w - field_w) / 2.0, field_y, field_w, FIELD_HIGH);
@@ -320,6 +334,28 @@ fn glow(pixmap: &mut Pixmap, centre: (f32, f32), radius: f32, colour: Colour, a:
         None,
     );
 }
+
+/// A frosted card that holds words (M5.10c): a solid base of the
+/// backdrop's own colours at `CARD_SOLID`, so text reads over any
+/// backdrop, then the glass over it. The corner's power menu and the
+/// player's card are drawn with it, so both change here.
+pub(crate) fn frosted(
+    pixmap: &mut Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+    s: f32,
+    tokens: &Tokens,
+) {
+    let solid = Colour {
+        a: CARD_SOLID,
+        ..mix(tokens.lock_backdrop_deep, tokens.lock_backdrop, 0.35)
+    };
+    fill(pixmap, x, y, w, h, r, solid);
+    glass(pixmap, (x, y, w, h), r, s, tokens);
+}
+
+/// How solid a frosted card's base is under its glass.
+const CARD_SOLID: f32 = 0.85;
 
 /// Frosted glass: the tokens' tint over what lies behind, edged with
 /// their hairline, its corners `r` (device pixels).
@@ -591,7 +627,8 @@ pub(crate) fn disc(
 
 /// A soft shadow under a part `r` (logical pixels) with corners `radius`,
 /// so it seems to float over the backdrop: the tokens' shadow, half as
-/// deep, as the lock screen's parts sit on a dark backdrop already.
+/// deep, as the lock screen's parts sit on a dark backdrop already; drawn
+/// only round the part.
 pub(crate) fn lift(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &Tokens) {
     let room = paint::shadow_room(tokens, false);
     let (w, h) = ((r.w * s).round() as u32, (r.h * s).round() as u32);
@@ -602,13 +639,29 @@ pub(crate) fn lift(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &T
         opacity: 0.6,
         ..tiny_skia::PixmapPaint::default()
     };
+    // Only round the part, never under it: the part is glass, and a shadow
+    // under it would grey it (CSS's box-shadow is drawn the same way).
+    let (x, y) = ((r.x * s).round(), (r.y * s).round());
+    let mut outside = tiny_skia::Mask::new(pixmap.width(), pixmap.height());
+    if let (Some(mask), Some(path)) = (
+        outside.as_mut(),
+        paint::rounded(x, y, w as f32, h as f32, radius * s),
+    ) {
+        mask.fill_path(
+            &path,
+            tiny_skia::FillRule::Winding,
+            true,
+            Transform::identity(),
+        );
+        mask.invert();
+    }
     pixmap.draw_pixmap(
-        (r.x * s).round() as i32 - room as i32,
-        (r.y * s).round() as i32 - room as i32,
+        x as i32 - room as i32,
+        y as i32 - room as i32,
         shadow.as_ref(),
         &paint,
         Transform::identity(),
-        None,
+        outside.as_ref(),
     );
 }
 
