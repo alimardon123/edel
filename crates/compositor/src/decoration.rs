@@ -242,7 +242,7 @@ impl Edel {
     /// its own, nor in tiling when `layout.title_bars = "floating-only"`,
     /// nor while it is fullscreen.
     pub fn insets(&self, window: &Window) -> Insets {
-        if server_side(window) && self.bars_shown() && !self.is_fullscreen(window) {
+        if server_side(window) && self.bars_shown(window) && !self.is_fullscreen(window) {
             Insets::server_side(&self.tokens)
         } else {
             Insets::default()

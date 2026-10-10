@@ -196,6 +196,7 @@ impl Edel {
                     },
                 );
                 pointer.frame(self);
+                self.note_screen();
                 self.dirty = true;
             }
             InputEvent::PointerMotionAbsolute { event } => {
@@ -219,6 +220,7 @@ impl Edel {
                     self.hold_on(&surface, &pointer);
                 }
                 pointer.frame(self);
+                self.note_screen();
                 self.dirty = true;
             }
             InputEvent::PointerButton { event } => {
@@ -483,6 +485,7 @@ impl Edel {
                 },
             );
             pointer.frame(self);
+            self.note_screen();
         }
         self.dirty = true;
     }

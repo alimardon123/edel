@@ -83,7 +83,7 @@ impl Edel {
     /// else the first.
     pub fn home(&self, window: &Window) -> Option<(String, Rectangle<i32, Logical>)> {
         let areas = self.window_areas();
-        let name = self.desks.layout().screen_of(window);
+        let name = self.desks.layout_of(window).screen_of(window);
         screen_in(&areas, name).map(|(name, area)| (name.to_string(), area))
     }
 

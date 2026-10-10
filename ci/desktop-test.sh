@@ -33,7 +33,9 @@
 #               file, and the second turned off by
 #               edel settings set displays.Virtual-2.enabled=false; a
 #               window opens on the screen the mouse took the pointer to
-#               (M5.2g)
+#               (M5.2g); with layout.workspaces_per_screen on, Super+2 shows
+#               workspace 2 on Virtual-2 alone, and off, both screens switch
+#               together (M5.2k)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
@@ -3193,6 +3195,33 @@ case_pointer() {
 	echo "PASS: the cursor is where the pointer is, and the compositor offers tablets, cursor shapes, fractional scale and viewporter"
 }
 
+# outputs_show A B: asks the VM for the state file (guest 'state now') until
+# Virtual-1 shows workspace A and Virtual-2 workspace B, up to 5 tries a
+# second apart (M5.2k); what it last read is left in $outputs_now. The
+# state file is read from one copy between the VM's two markers.
+outputs_show() {
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: ran state now: 0')
+		guest 'state now'
+		wait_more 'DESKTOP-TEST: ran state now: 0' "$seen" || return 1
+		tr -d '\r' <"$log" | awk '/DESKTOP-TEST: state_begin/ { buf = "" } /DESKTOP-TEST: state / { sub(/.*DESKTOP-TEST: state /, ""); buf = buf $0 "\n" } /DESKTOP-TEST: state_end/ { last = buf } END { printf "%s", last }' >"$dir/outputs.toml"
+		python3 - "$dir/outputs.toml" "$1" "$2" >"$dir/outputs.now" <<-'EOF'
+			import sys, tomllib
+			outputs = {o["name"]: o.get("workspace") for o in tomllib.load(open(sys.argv[1], "rb")).get("outputs", [])}
+			want = {"Virtual-1": int(sys.argv[2]), "Virtual-2": int(sys.argv[3])}
+			print(f"Virtual-1 shows {outputs.get('Virtual-1')}, Virtual-2 shows {outputs.get('Virtual-2')}")
+			sys.exit(0 if all(outputs.get(n) == w for n, w in want.items()) else 1)
+		EOF
+		status=$?
+		outputs_now=$(cat "$dir/outputs.now")
+		[ "$status" -eq 0 ] && return 0
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || return 1
+		sleep 1
+	done
+}
+
 case_outputs() {
 	n=$(tr -d '\r' <"$log" | grep -c 'DESKTOP-TEST: screen output Virtual-[12] [0-9]*x[0-9]* ready' || true)
 	[ "$n" = 2 ] || fail "$n screens showed a first frame, not 2: $(grep 'DESKTOP-TEST: screen' "$log" | tr -d '\r')"
@@ -3218,14 +3247,37 @@ case_outputs() {
 	closed=$(count 'edel-compositor: unmapped window away')
 	guest 'away off'
 	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
-	# The pointer back on Virtual-1 before Virtual-2 goes.
+	# Each screen's own workspaces (M5.2k), with the pointer still on
+	# Virtual-2: on, Super+2 shows workspace 2 there alone, Virtual-1 stays
+	# on 1; off, every screen shows the workspace of the pointer's screen,
+	# so both show 2, and Super+1 from Virtual-1 brings both back to 1.
+	guest 'screens apart on'
+	wait_for 'DESKTOP-TEST: ran screens apart on: 0' ||
+		fail "layout.workspaces_per_screen = true did not run in the VM"
+	wait_for 'edel-compositor: workspaces per screen on' ||
+		fail "the compositor did not log that workspaces per screen are on"
+	shows=$(count 'edel-compositor: workspace 2 on Virtual-2$')
+	python3 ci/qmp.py key meta_l-2
+	wait_more 'edel-compositor: workspace 2 on Virtual-2$' "$shows" ||
+		fail "Super+2 on Virtual-2 did not show workspace 2 there"
+	outputs_show 1 2 || fail "with workspaces per screen on, Super+2 did not show workspace 2 on Virtual-2 alone: $outputs_now"
+	guest 'screens apart off'
+	wait_for 'DESKTOP-TEST: ran screens apart off: 0' ||
+		fail "layout.workspaces_per_screen reset did not run in the VM"
+	wait_for 'edel-compositor: workspaces per screen off' ||
+		fail "the compositor did not log that workspaces per screen are off"
+	outputs_show 2 2 || fail "with workspaces per screen off, both screens should show workspace 2: $outputs_now"
 	python3 ci/qmp.py move 640 400
+	shows=$(count 'edel-compositor: workspace 1$')
+	python3 ci/qmp.py key meta_l-1
+	wait_more 'edel-compositor: workspace 1$' "$shows" || fail "Super+1 did not show workspace 1"
+	outputs_show 1 1 || fail "with workspaces per screen off, Super+1 should bring both screens to workspace 1: $outputs_now"
 	guest 'screen 2 off'
 	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
 		fail "edel settings set displays.Virtual-2.enabled=false did not run in the VM"
 	wait_for 'edel-compositor: output Virtual-2 off' ||
 		fail "the compositor did not turn Virtual-2 off"
-	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off"
+	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, and displays.Virtual-2.enabled = false turned the second off, with layout.workspaces_per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
 }
 
 case_tray() {
