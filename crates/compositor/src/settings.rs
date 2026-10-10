@@ -65,6 +65,9 @@ pub struct Settings {
     pub workspace_count: Option<usize>,
     /// `layout.dynamic_workspaces` (M5.2i): absent means off.
     pub dynamic_workspaces: bool,
+    /// `layout.workspaces_per_screen` (M5.2k): absent means off, every
+    /// screen switching together.
+    pub workspaces_per_screen: bool,
     /// `layout.workspace_names` (M5.2i), the first workspace's first; an
     /// empty text is no name.
     pub workspace_names: Vec<String>,
@@ -123,6 +126,9 @@ impl Settings {
             }
             if let Some(dynamic) = file.layout.dynamic_workspaces {
                 settings.dynamic_workspaces = dynamic;
+            }
+            if let Some(per_screen) = file.layout.workspaces_per_screen {
+                settings.workspaces_per_screen = per_screen;
             }
             if let Some(names) = &file.layout.workspace_names {
                 settings.workspace_names.clone_from(names);
@@ -203,6 +209,12 @@ impl Settings {
     /// Whether empty workspaces come and go as the windows do (M5.2i).
     pub fn dynamic(&self) -> bool {
         self.dynamic_workspaces
+    }
+
+    /// Whether each screen shows its own workspace (M5.2k), so Super+N
+    /// switches only the screen the pointer is on.
+    pub fn per_screen(&self) -> bool {
+        self.workspaces_per_screen
     }
 
     /// The workspaces' names, the first workspace's first (M5.2i).
@@ -503,12 +515,20 @@ mod tests {
         assert_eq!(Settings::default().workspaces(), 4, "Classic has four");
         assert!(!Settings::default().dynamic());
         let machine = file(
-            "format = 1\n[layout]\nworkspaces = 2\ndynamic_workspaces = true\nworkspace_names = [\"Mail\"]\n",
+            "format = 1\n[layout]\nworkspaces = 2\ndynamic_workspaces = true\nworkspaces_per_screen = true\nworkspace_names = [\"Mail\"]\n",
         );
         let person = file("format = 1\n[layout]\nworkspaces = 6\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         assert_eq!(both.workspaces(), 6, "the person's count wins");
         assert!(both.dynamic());
+        assert!(
+            both.per_screen(),
+            "the machine's key stays when the person's file is silent"
+        );
+        assert!(
+            !Settings::default().per_screen(),
+            "absent is every screen together"
+        );
         assert_eq!(both.names(), ["Mail"]);
         assert_eq!(Settings::from_files(Some(&machine), None).workspaces(), 2);
     }

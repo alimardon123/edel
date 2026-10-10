@@ -297,7 +297,7 @@ impl Edel {
     /// Raises `window` and gives it the keyboard.
     pub fn focus(&mut self, window: &Window) {
         // The scroll style brings the window's column into view.
-        let scrolled = self.desks.layout_mut().focused(window);
+        let scrolled = self.desks.layout_of_mut(window).focused(window);
         self.space.raise_element(window, true);
         let surface = window.toplevel().map(|t| t.wl_surface().clone());
         if let Some(keyboard) = self.seat.get_keyboard() {
@@ -313,7 +313,7 @@ impl Edel {
     /// Super+R: the focused column's next width, in the scroll style.
     pub fn widen_focused(&mut self) {
         if let Some(window) = self.focused_window() {
-            if self.desks.layout_mut().widen(&window) {
+            if self.desks.layout_of_mut(&window).widen(&window) {
                 self.relayout();
             }
         }
@@ -336,8 +336,18 @@ impl Edel {
         let Some((screen, area)) = found else {
             return;
         };
-        let frame = self.desks.layout_mut().moved(window, frame, &screen, area);
+        let frame = self
+            .desks
+            .layout_of_mut(window)
+            .moved(window, frame, &screen, area);
         self.put(window, frame);
+        // With workspaces on each screen, put on another screen, it joins
+        // the workspace shown there (M5.2k).
+        if self.desks.per_screen() {
+            self.settle_screens();
+            self.note_screen();
+            self.relayout();
+        }
         self.dirty = true;
         self.state_changed();
     }
@@ -351,7 +361,7 @@ impl Edel {
             return;
         }
         let place = self.insets(window).window(frame);
-        let tiled = self.desks.layout().rearranges();
+        let tiled = self.desks.layout_of(window).rearranges();
         if let Some(toplevel) = window.toplevel() {
             toplevel.with_pending_state(|state| {
                 state.size = Some(place.size);
@@ -393,7 +403,7 @@ impl Edel {
         let areas = self.window_areas();
         if !areas.is_empty() {
             let stack: Vec<Window> = self.space.elements().cloned().collect();
-            for (window, frame) in self.desks.layout_mut().arrange(&areas) {
+            for (window, frame) in self.desks.arrange(&areas) {
                 if self.is_fullscreen(&window) {
                     self.fullscreen(&window, None);
                 } else if self.is_maximized(&window) {
@@ -429,7 +439,7 @@ impl Edel {
     pub fn bring_forward(&mut self, window: &Window) {
         if !self.restore(window) {
             if let Some(desk) = self.desks.hidden_on(window) {
-                self.switch_workspace(desk);
+                self.switch_for(desk, window);
             }
             if self.space.element_geometry(window).is_some() {
                 self.focus(window);
@@ -514,6 +524,9 @@ impl Edel {
             self.announce_workspaces();
             self.state_changed();
         }
+        if old.per_screen() != new.per_screen() {
+            self.set_per_screen(new.per_screen());
+        }
         if new.dynamic() {
             self.settle_dynamic();
         } else if self.desks.count() != new.workspaces() {
@@ -568,9 +581,10 @@ impl Edel {
         self.tell_settings();
     }
 
-    /// Whether the compositor draws title bars under the active policy.
-    pub fn bars_shown(&self) -> bool {
-        self.settings.bars_in(self.desks.layout().name())
+    /// Whether the compositor draws title bars round `window` under its
+    /// workspace's policy.
+    pub fn bars_shown(&self, window: &Window) -> bool {
+        self.settings.bars_in(self.desks.layout_of(window).name())
     }
 
     /// `window` leaves the screen, closed or hidden: the policy forgets its
@@ -591,6 +605,7 @@ impl Edel {
             .get_keyboard()
             .and_then(|k| k.current_focus())
             .is_none_or(|focus| window.toplevel().is_some_and(|t| t.wl_surface() == &focus));
+        let tiled = self.desks.layout_of(window).rearranges();
         self.desks.close(window);
         self.space.unmap_elem(window);
         if had_keyboard {
@@ -598,7 +613,7 @@ impl Edel {
                 self.focus(&top);
             }
         }
-        if self.desks.layout().rearranges() {
+        if tiled {
             self.relayout();
         }
         self.settle_dynamic();
@@ -624,7 +639,9 @@ impl Edel {
         }
         let frame = self.insets(window).frame(place);
         if let Some((screen, area)) = self.home(window) {
-            self.desks.layout_mut().moved(window, frame, &screen, area);
+            self.desks
+                .layout_of_mut(window)
+                .moved(window, frame, &screen, area);
         }
         self.state_changed();
     }
@@ -633,6 +650,7 @@ impl Edel {
     /// and maximized windows fill it.
     pub fn outputs_changed(&mut self) {
         self.screens_changed_for_layers();
+        self.settle_screens();
         self.relayout();
         self.announce_workspaces();
     }
@@ -662,6 +680,8 @@ impl Edel {
             Value::String(self.desks.layout().name().into()),
         );
         let shown = self.desks.active();
+        // The workspace in use: the pointer's screen's, with workspaces on
+        // each screen (M5.2k); each screen's own is in its table.
         table.insert("workspace".into(), Value::Integer(shown as i64 + 1));
         table.insert(
             "workspaces".into(),
@@ -679,6 +699,8 @@ impl Edel {
                 let area = self.space.output_geometry(output)?;
                 let mut t = Table::new();
                 t.insert("name".into(), Value::String(output.name()));
+                let desk = self.desks.shown_on(&output.name());
+                t.insert("workspace".into(), Value::Integer(desk as i64 + 1));
                 t.insert(
                     "scale".into(),
                     Value::Float(output.current_scale().fractional_scale()),
@@ -728,7 +750,10 @@ impl Edel {
         let windows = self
             .space
             .elements()
-            .filter_map(|window| Some((shown, window, self.space.element_geometry(window)?)))
+            .filter_map(|window| {
+                let desk = self.desks.desk_of(window).unwrap_or(shown);
+                Some((desk, window, self.space.element_geometry(window)?))
+            })
             .chain(hidden)
             .filter_map(|(desk, window, place)| {
                 let toplevel = window.toplevel()?;
@@ -928,7 +953,7 @@ impl CompositorHandler for Edel {
         if drawn {
             let window = self.unplaced.remove(i);
             let insets = self.insets(&window);
-            let frame = self.desks.layout_mut().open(
+            let frame = self.desks.layout_on_mut(&screen).open(
                 window.clone(),
                 insets.frame_size(window.geometry().size),
                 &screen,
@@ -955,7 +980,7 @@ impl CompositorHandler for Edel {
             if fullscreen {
                 self.fullscreen(&window, None);
             }
-            if self.desks.layout().rearranges() {
+            if self.desks.layout_of(&window).rearranges() {
                 self.relayout();
             }
             self.settle_dynamic();

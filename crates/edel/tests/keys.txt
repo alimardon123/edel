@@ -62,3 +62,4 @@ apps.pinned
 layout.workspaces
 layout.dynamic_workspaces
 layout.workspace_names
+layout.workspaces_per_screen

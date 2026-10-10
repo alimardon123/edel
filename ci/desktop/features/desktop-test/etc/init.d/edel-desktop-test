@@ -372,6 +372,17 @@ commands() {
 		'dynamic on') edel settings set layout.dynamic_workspaces=true ;;
 		'dynamic names') edel settings set 'layout.workspace_names=["Mail"]' ;;
 		'dynamic default') edel settings reset layout.dynamic_workspaces && edel settings reset layout.workspace_names ;;
+		# Each screen's own workspaces (M5.2k), on and back to every
+		# screen switching together.
+		'screens apart on') edel settings set layout.workspaces_per_screen=true ;;
+		'screens apart off') edel settings reset layout.workspaces_per_screen ;;
+		# The state file as it is now (M5.2k), between two markers, so the
+		# case reads one whole copy; report prints it once, at start only.
+		'state now')
+			say "state_begin"
+			while IFS= read -r line; do say "state $line"; done <"$state_file"
+			say "state_end"
+			;;
 		'workspace state')
 			say "workspace_state $(awk -F' = ' '/^\[/ { exit } $1 == "workspace" { shown = $2 } $1 == "workspaces" { count = $2 } $1 == "workspace_names" { names = $2 } END { printf "shown %s count %s names %s", shown, count, names }' "$state_file")"
 			;;

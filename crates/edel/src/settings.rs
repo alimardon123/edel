@@ -293,6 +293,7 @@ pub const KEYS: &[Key] = &[
         Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
     ),
     now("layout.dynamic_workspaces", Kind::Flag),
+    now("layout.workspaces_per_screen", Kind::Flag),
     now("layout.workspace_names", Kind::Texts),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
@@ -506,6 +507,11 @@ pub struct Layout {
     /// ones close (M5.2i); absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic_workspaces: Option<bool>,
+    /// Whether each screen shows its own workspace, so Super+1 to Super+9
+    /// switch only the screen the pointer is on, instead of every screen
+    /// switching together (M5.2k); absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspaces_per_screen: Option<bool>,
     /// The workspaces' names, the first workspace's first, an empty text
     /// meaning no name (M5.2i).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2158,6 +2164,10 @@ font_size = 11
         assert_eq!(
             set("format = 1\n", "layout.dynamic_workspaces", "true").unwrap(),
             "format = 1\n\n[layout]\ndynamic_workspaces = true\n"
+        );
+        assert_eq!(
+            set("format = 1\n", "layout.workspaces_per_screen", "true").unwrap(),
+            "format = 1\n\n[layout]\nworkspaces_per_screen = true\n"
         );
         let names = set("format = 1\n", "layout.workspace_names", r#"["Mail", ""]"#).unwrap();
         assert_eq!(

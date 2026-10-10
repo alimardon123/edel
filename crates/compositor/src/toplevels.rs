@@ -95,8 +95,8 @@ impl Edel {
         // workspace is where it was.
         let minimized = self.desks.minimized(window);
         let place = self.space.element_geometry(window).or_else(|| {
-            let (desk, frame) = minimized?;
-            (desk == self.desks.active()).then(|| self.insets(window).window(frame))
+            let frame = self.desks.minimized_shown(window)?;
+            Some(self.insets(window).window(frame))
         });
         let mut screens: Vec<&Output> = self
             .space
@@ -108,7 +108,7 @@ impl Edel {
             .collect();
         // A window minimized here whose screen went is on the one it would
         // come back on, so the window list still offers it.
-        if screens.is_empty() && minimized.is_some_and(|(desk, _)| desk == self.desks.active()) {
+        if screens.is_empty() && self.desks.minimized_shown(window).is_some() {
             let name = self.desks.minimized_screen(window);
             screens.extend(
                 self.space
@@ -119,8 +119,8 @@ impl Edel {
         }
         // A column the scroll style has scrolled off screen (M5.16c) is
         // still on its screen's workspace, so the window list offers it.
-        if screens.is_empty() {
-            if let Some(name) = self.desks.layout().screen_of(window) {
+        if screens.is_empty() && self.desks.hidden_on(window).is_none() {
+            if let Some(name) = self.desks.layout_of(window).screen_of(window) {
                 screens.extend(self.space.outputs().find(|o| o.name() == name));
             }
         }

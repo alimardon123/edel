@@ -8,6 +8,11 @@
 //! Dynamic workspaces (M5.2i): [`dynamic_plan`] says which empty workspaces
 //! close and whether one more waits at the end, from the windows each one
 //! holds; a named workspace stays when it empties.
+//! Workspaces on each screen (M5.2k): with `layout.workspaces_per_screen`
+//! each screen shows a workspace of its own, a workspace's windows on a
+//! screen show where that screen shows it, and a window put on another
+//! screen joins the workspace shown there; else every screen shows the
+//! same one.
 //! Plain data, so it is tested without a display; `workspaces.rs` in the
 //! compositor maps and unmaps the windows.
 
@@ -86,12 +91,12 @@ pub struct Plan {
     pub add: bool,
 }
 
-/// The plan for workspaces holding `counts` windows each, with `active`
-/// shown and `kept(i)` true for a named workspace `i`. The shown one never
-/// closes, and at most [`MOST`] workspaces are kept.
-pub fn dynamic_plan(counts: &[usize], active: usize, kept: impl Fn(usize) -> bool) -> Plan {
+/// The plan for workspaces holding `counts` windows each, with those in
+/// `shown` on a screen and `kept(i)` true for a named workspace `i`. A
+/// shown one never closes, and at most [`MOST`] workspaces are kept.
+pub fn dynamic_plan(counts: &[usize], shown: &[usize], kept: impl Fn(usize) -> bool) -> Plan {
     let remove: Vec<usize> = (0..counts.len())
-        .filter(|&i| counts[i] == 0 && i != active && !kept(i))
+        .filter(|&i| counts[i] == 0 && !shown.contains(&i) && !kept(i))
         .collect();
     let remaining: Vec<usize> = (0..counts.len()).filter(|i| !remove.contains(i)).collect();
     let waiting = remaining
@@ -104,10 +109,18 @@ pub fn dynamic_plan(counts: &[usize], active: usize, kept: impl Fn(usize) -> boo
 /// Every workspace, and which one is shown.
 pub struct Desks<W> {
     desks: Vec<Desk<W>>,
+    /// The workspace in use: shown on every screen, or, with workspaces on
+    /// each screen, on the one in use (`here`).
     active: usize,
     gap: u32,
     /// The tiling style every workspace's tiling uses (M5.16).
     style: Style,
+    /// Whether each screen shows its own workspace (M5.2k).
+    per_screen: bool,
+    /// Then the workspace each screen shows, by the screen's name.
+    screens: Vec<(String, usize)>,
+    /// The screen in use, the pointer's, which shows `active`.
+    here: Option<String>,
 }
 
 impl<W: Clone + PartialEq + 'static> Desks<W> {
@@ -119,6 +132,9 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
             active: 0,
             gap,
             style: Style::default(),
+            per_screen: false,
+            screens: Vec::new(),
+            here: None,
         }
     }
 
@@ -204,14 +220,234 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     /// and nothing changes, for the shown workspace, one with windows, or
     /// the only one.
     pub fn remove(&mut self, index: usize) -> bool {
-        if index == self.active || self.desks.len() < 2 || !self.is_empty(index) {
+        if self.shown().contains(&index) || self.desks.len() < 2 || !self.is_empty(index) {
             return false;
         }
         self.desks.remove(index);
         if index < self.active {
             self.active -= 1;
         }
+        for (_, desk) in &mut self.screens {
+            if index < *desk {
+                *desk -= 1;
+            }
+        }
         true
+    }
+
+    /// Whether each screen shows its own workspace (M5.2k).
+    pub fn per_screen(&self) -> bool {
+        self.per_screen
+    }
+
+    /// Each screen shows its own workspace from now on, or every screen
+    /// the same one. Turned on, every screen starts with the one in use;
+    /// before it is turned off, the compositor shows the one in use on
+    /// every screen (`switch_on`), and any of its windows still hidden,
+    /// on a screen that went, are returned to show with their frames.
+    pub fn set_per_screen(&mut self, on: bool) -> Vec<(W, Rectangle<i32, Logical>)> {
+        self.per_screen = on;
+        for (_, desk) in &mut self.screens {
+            *desk = self.active;
+        }
+        if on {
+            return Vec::new();
+        }
+        std::mem::take(&mut self.desks[self.active].hidden)
+    }
+
+    /// The workspace screen `name` shows; the one in use for a screen not
+    /// seen yet.
+    pub fn shown_on(&self, name: &str) -> usize {
+        if !self.per_screen {
+            return self.active;
+        }
+        self.screens
+            .iter()
+            .find(|(n, _)| n == name)
+            .map_or(self.active, |(_, desk)| *desk)
+    }
+
+    /// Every workspace on a screen, the one in use first.
+    pub fn shown(&self) -> Vec<usize> {
+        let mut shown = vec![self.active];
+        if self.per_screen {
+            for (_, desk) in &self.screens {
+                if !shown.contains(desk) {
+                    shown.push(*desk);
+                }
+            }
+        }
+        shown
+    }
+
+    /// The pointer is on screen `name`, which is in use from now on: its
+    /// workspace is the one Super+1 to Super+9, the policy toggle and new
+    /// windows act on. True when that is another workspace than before.
+    pub fn use_screen(&mut self, name: &str) -> bool {
+        if self.here.as_deref() == Some(name) {
+            return false;
+        }
+        self.here = Some(name.to_string());
+        let before = self.active;
+        self.active = self.shown_on(name);
+        self.active != before
+    }
+
+    /// The workspace holding `window`, shown, hidden or minimized.
+    pub fn desk_of(&self, window: &W) -> Option<usize> {
+        self.desks.iter().position(|d| {
+            d.layout.screen_of(window).is_some() || d.minimized.iter().any(|(w, ..)| w == window)
+        })
+    }
+
+    /// The policies of the workspace holding `window`, else the one in use.
+    pub fn layout_of(&self, window: &W) -> &Workspace<W> {
+        let desk = self.desk_of(window).unwrap_or(self.active);
+        &self.desks[desk].layout
+    }
+
+    /// The policies of the workspace screen `name` shows, where a window
+    /// opening there goes.
+    pub fn layout_on_mut(&mut self, name: &str) -> &mut Workspace<W> {
+        let desk = self.shown_on(name);
+        &mut self.desks[desk].layout
+    }
+
+    pub fn layout_of_mut(&mut self, window: &W) -> &mut Workspace<W> {
+        let desk = self.desk_of(window).unwrap_or(self.active);
+        &mut self.desks[desk].layout
+    }
+
+    /// With workspaces on each screen, shows workspace `to` on screen
+    /// `name`, hiding `shown`, the windows on that screen bottom first
+    /// with their frames, and returns `to`'s windows on that screen to
+    /// show; else as [`Desks::switch`] does for every screen. None when
+    /// `to` is already shown there or does not exist.
+    pub fn switch_on(
+        &mut self,
+        to: usize,
+        name: &str,
+        shown: Vec<(W, Rectangle<i32, Logical>)>,
+    ) -> Option<Vec<(W, Rectangle<i32, Logical>)>> {
+        if !self.per_screen {
+            return self.switch(to, shown);
+        }
+        let from = self.shown_on(name);
+        if to == from || to >= self.desks.len() {
+            return None;
+        }
+        self.desks[from].hidden.extend(shown);
+        match self.screens.iter_mut().find(|(n, _)| n == name) {
+            Some((_, desk)) => *desk = to,
+            None => self.screens.push((name.to_string(), to)),
+        }
+        if self.here.as_deref().is_none_or(|here| here == name) {
+            self.active = to;
+        }
+        let desk = &mut self.desks[to];
+        let (back, stay) = std::mem::take(&mut desk.hidden)
+            .into_iter()
+            .partition(|(w, _)| desk.layout.screen_of(w) == Some(name));
+        desk.hidden = stay;
+        Some(back)
+    }
+
+    /// Where the policies put the windows on screen now, given each
+    /// screen's area in `areas`: the workspace in use's, or, with
+    /// workspaces on each screen, each screen's own workspace's there.
+    pub fn arrange(&mut self, areas: &Areas) -> Vec<(W, Rectangle<i32, Logical>)> {
+        if !self.per_screen {
+            return self.desks[self.active].layout.arrange(areas);
+        }
+        let mut placed = Vec::new();
+        for desk in self.shown() {
+            for (window, frame) in self.desks[desk].layout.arrange(areas) {
+                let d = &self.desks[desk];
+                let here = d
+                    .layout
+                    .screen_of(&window)
+                    .is_some_and(|name| self.shown_on(name) == desk);
+                if here && !d.hidden.iter().any(|(w, _)| *w == window) {
+                    placed.push((window, frame));
+                }
+            }
+        }
+        placed
+    }
+
+    /// With workspaces on each screen, after the screens changed or a
+    /// window was put on another screen: the screens in `areas` are the
+    /// ones there are, a window in `on_screen` (with its frame) whose
+    /// screen shows another workspace joins that one, where it is, and a
+    /// hidden window whose screen shows its workspace comes back; those
+    /// are returned, bottom first with their frames, to show. A window
+    /// whose screen went counts as on the first. Nothing with every screen
+    /// showing the same workspace.
+    pub fn settle_screens(
+        &mut self,
+        on_screen: &[(W, Rectangle<i32, Logical>)],
+        areas: &Areas,
+    ) -> Vec<(W, Rectangle<i32, Logical>)> {
+        if !self.per_screen {
+            return Vec::new();
+        }
+        let active = self.active;
+        self.screens
+            .retain(|(n, _)| areas.iter().any(|(a, _)| a == n));
+        for (name, _) in areas {
+            if !self.screens.iter().any(|(n, _)| n == name) {
+                self.screens.push((name.clone(), active));
+            }
+        }
+        if self
+            .here
+            .as_ref()
+            .is_some_and(|here| !areas.iter().any(|(a, _)| a == here))
+        {
+            // The pointer goes to the first screen, and so does the use.
+            self.here = None;
+            if let Some((first, _)) = areas.first() {
+                self.active = self.shown_on(first);
+            }
+        }
+        for (window, frame) in on_screen {
+            let Some(from) = self.desk_of(window) else {
+                continue;
+            };
+            let Some((name, area)) = screen_in(areas, self.desks[from].layout.screen_of(window))
+            else {
+                continue;
+            };
+            let to = self.shown_on(name);
+            if to == from {
+                continue;
+            }
+            self.desks[from].layout.close(window);
+            let layout = &mut self.desks[to].layout;
+            layout.open(window.clone(), frame.size, name, area);
+            layout.moved(window, *frame, name, area);
+        }
+        let mut back = Vec::new();
+        for i in 0..self.desks.len() {
+            let hidden = std::mem::take(&mut self.desks[i].hidden);
+            for (window, frame) in hidden {
+                let screen = self.desks[i].layout.screen_of(&window);
+                let gone = screen.is_none_or(|s| !areas.iter().any(|(a, _)| a == s));
+                match screen_in(areas, screen) {
+                    Some((name, area)) if self.shown_on(name) == i => {
+                        if gone {
+                            let layout = &mut self.desks[i].layout;
+                            layout.close(&window);
+                            layout.open(window.clone(), frame.size, name, area);
+                        }
+                        back.push((window, frame));
+                    }
+                    _ => self.desks[i].hidden.push((window, frame)),
+                }
+            }
+        }
+        back
     }
 
     /// The shown workspace, from 0.
@@ -276,25 +512,45 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         })
     }
 
-    /// The shown workspace's minimized windows, the latest last.
+    /// The minimized windows of the workspaces on screen, each shown
+    /// where its screen shows its workspace, the latest last.
     pub fn minimized_here(&self) -> impl Iterator<Item = &W> {
-        self.desks[self.active].minimized.iter().map(|(w, ..)| w)
+        self.desks.iter().enumerate().flat_map(move |(i, d)| {
+            d.minimized
+                .iter()
+                .filter(move |(_, _, screen)| self.shown_on(screen.as_deref().unwrap_or("")) == i)
+                .map(|(w, ..)| w)
+        })
+    }
+
+    /// The frame `window` had, if it is minimized on a workspace its
+    /// screen shows.
+    pub fn minimized_shown(&self, window: &W) -> Option<Rectangle<i32, Logical>> {
+        self.desks.iter().enumerate().find_map(|(i, d)| {
+            d.minimized
+                .iter()
+                .find(|(w, ..)| w == window)
+                .filter(|(_, _, screen)| self.shown_on(screen.as_deref().unwrap_or("")) == i)
+                .map(|(_, at, _)| *at)
+        })
     }
 
     pub fn minimize(&mut self, window: W, frame: Rectangle<i32, Logical>) {
-        let desk = &mut self.desks[self.active];
+        let desk = self.desk_of(&window).unwrap_or(self.active);
+        let desk = &mut self.desks[desk];
         let screen = desk.layout.screen_of(&window).map(str::to_string);
         desk.layout.close(&window);
         desk.minimized.retain(|(w, ..)| *w != window);
         desk.minimized.push((window, frame, screen));
     }
 
-    /// Brings back `window`, minimized on this workspace, to its screen
-    /// in `areas` (else the first): its policy places it where it was if
-    /// it can (floating), else where it says (a tile). Returns its frame;
-    /// none when it is not minimized here or there is no screen.
+    /// Brings back `window`, minimized, to its screen in `areas` (else
+    /// the first): its policy places it where it was if it can
+    /// (floating), else where it says (a tile). Returns its frame; none
+    /// when it is not minimized or there is no screen.
     pub fn restore(&mut self, window: &W, areas: &Areas) -> Option<Rectangle<i32, Logical>> {
-        let desk = &mut self.desks[self.active];
+        let (desk, _) = self.minimized(window)?;
+        let desk = &mut self.desks[desk];
         let i = desk.minimized.iter().position(|(w, ..)| w == window)?;
         let (screen, area) = screen_in(areas, desk.minimized[i].2.as_deref())?;
         let (window, frame, _) = desk.minimized.remove(i);
@@ -314,16 +570,16 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         if to == self.active || to >= self.desks.len() {
             return None;
         }
-        self.desks[self.active].hidden = shown;
+        self.desks[self.active].hidden.extend(shown);
         self.active = to;
         Some(std::mem::take(&mut self.desks[to].hidden))
     }
 
-    /// Moves `window`, shown on this workspace, to workspace `to`, on top
-    /// of its windows on the same screen; its policy there places it,
-    /// given its frame's size and the screen's area in `areas`; returns
-    /// its frame there. None when `to` is this workspace or does not
-    /// exist, or there is no screen.
+    /// Moves `window`, shown, to workspace `to`, on top of its windows on
+    /// the same screen; its policy there places it, given its frame's
+    /// size and the screen's area in `areas`; returns its frame there.
+    /// None when `to` is its workspace or does not exist, when it is not
+    /// shown, or there is no screen.
     pub fn send(
         &mut self,
         window: W,
@@ -331,12 +587,13 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         size: smithay::utils::Size<i32, Logical>,
         areas: &Areas,
     ) -> Option<Rectangle<i32, Logical>> {
-        if to == self.active || to >= self.desks.len() {
+        let desk = self.desk_of(&window).unwrap_or(self.active);
+        if to == desk || to >= self.desks.len() || self.hidden_on(&window).is_some() {
             return None;
         }
-        let from = self.desks[self.active].layout.screen_of(&window);
+        let from = self.desks[desk].layout.screen_of(&window);
         let (screen, area) = screen_in(areas, from)?;
-        self.desks[self.active].layout.close(&window);
+        self.desks[desk].layout.close(&window);
         let place = self.desks[to]
             .layout
             .open(window.clone(), size, screen, area);
@@ -368,7 +625,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
         policy: &str,
     ) -> Option<Vec<(W, Rectangle<i32, Logical>)>> {
         let count = count.clamp(1, MOST);
-        if count == self.desks.len() || self.active >= count {
+        if count == self.desks.len() || self.shown().iter().any(|&d| d >= count) {
             return None;
         }
         while self.desks.len() < count {
@@ -399,7 +656,9 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
                 .open(window.clone(), was.size, &screen, area);
             placed.push((window, frame));
         }
-        if last == self.active {
+        // With workspaces on each screen, `settle_screens` shows those
+        // whose screen shows the last.
+        if last == self.active && !self.per_screen {
             return Some(placed);
         }
         self.desks[last].hidden.extend(placed);
@@ -459,7 +718,7 @@ mod tests {
         assert_eq!(desks.hidden().next().map(|(_, _, p)| p), Some(place));
         assert!(
             desks.send(1, 0, (300, 200).into(), &areas()).is_none(),
-            "already here"
+            "not shown"
         );
         assert!(
             desks.send(1, 3, (300, 200).into(), &areas()).is_none(),
@@ -613,7 +872,7 @@ mod tests {
     fn one_window_gives_two_workspaces_and_closing_it_gives_one() {
         let none = |_: usize| false;
         assert_eq!(
-            dynamic_plan(&[1], 0, none),
+            dynamic_plan(&[1], &[0], none),
             Plan {
                 remove: Vec::new(),
                 add: true
@@ -622,20 +881,20 @@ mod tests {
         // Its window closed, the empty second one closes too, and the
         // first, empty and shown, is the one that waits.
         assert_eq!(
-            dynamic_plan(&[0, 0], 0, none),
+            dynamic_plan(&[0, 0], &[0], none),
             Plan {
                 remove: vec![1],
                 add: false
             }
         );
-        assert_eq!(dynamic_plan(&[0], 0, none), Plan::default());
+        assert_eq!(dynamic_plan(&[0], &[0], none), Plan::default());
     }
 
     #[test]
     fn a_named_empty_workspace_in_the_middle_stays() {
         let named_second = |i: usize| i == 1;
         assert_eq!(
-            dynamic_plan(&[1, 0, 1], 0, named_second),
+            dynamic_plan(&[1, 0, 1], &[0], named_second),
             Plan {
                 remove: Vec::new(),
                 add: true
@@ -644,7 +903,7 @@ mod tests {
         // The unnamed empty one after it closes, and the named one is
         // the last left, so one more waits after it.
         assert_eq!(
-            dynamic_plan(&[1, 0, 0], 0, named_second),
+            dynamic_plan(&[1, 0, 0], &[0], named_second),
             Plan {
                 remove: vec![2],
                 add: true
@@ -657,14 +916,14 @@ mod tests {
         let none = |_: usize| false;
         // Shown and empty, the second stays, the first closes.
         assert_eq!(
-            dynamic_plan(&[0, 0, 1], 1, none),
+            dynamic_plan(&[0, 0, 1], &[1], none),
             Plan {
                 remove: vec![0],
                 add: true
             }
         );
-        assert_eq!(dynamic_plan(&[1, 0], 1, none), Plan::default());
-        assert_eq!(dynamic_plan(&[1; MOST], 0, none), Plan::default());
+        assert_eq!(dynamic_plan(&[1, 0], &[1], none), Plan::default());
+        assert_eq!(dynamic_plan(&[1; MOST], &[0], none), Plan::default());
     }
 
     #[test]
@@ -715,6 +974,109 @@ mod tests {
         // Set again by position, none for the rest.
         desks.set_names(&[String::new(), "Code".to_string()]);
         assert_eq!(desks.labels(), ["1", "Code"]);
+    }
+
+    fn two() -> Vec<(String, Rectangle<i32, Logical>)> {
+        let right = Rectangle::new((1280, 0).into(), (1024, 768).into());
+        vec![("one".to_string(), area()), ("two".to_string(), right)]
+    }
+
+    fn right(x: i32) -> Rectangle<i32, Logical> {
+        Rectangle::new((1280 + x, 10).into(), (300, 200).into())
+    }
+
+    #[test]
+    fn each_screen_switches_on_its_own_and_together_again() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.set_per_screen(true);
+        assert!(desks.settle_screens(&[], &two()).is_empty());
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        desks
+            .layout_mut()
+            .open(2, (300, 200).into(), "two", two()[1].1);
+        // The pointer on the second screen: Super+2 shows the second
+        // workspace there alone, hiding window 2.
+        assert!(!desks.use_screen("two"), "both show the first");
+        let back = desks.switch_on(1, "two", vec![(2, right(10))]).unwrap();
+        assert!(back.is_empty());
+        assert_eq!((desks.shown_on("one"), desks.shown_on("two")), (0, 1));
+        assert_eq!(desks.active(), 1);
+        assert_eq!(desks.shown(), [1, 0]);
+        assert_eq!(desks.hidden_on(&2), Some(0));
+        // Only window 1 is laid out: 2 waits on the second screen.
+        let placed = desks.arrange(&two());
+        assert_eq!(placed.iter().map(|(w, _)| *w).collect::<Vec<_>>(), [1]);
+        // The first screen in use again shows the first workspace.
+        assert!(desks.use_screen("one"));
+        assert_eq!(desks.active(), 0);
+        assert!(
+            desks.switch_on(0, "one", Vec::new()).is_none(),
+            "shown there"
+        );
+        // A window sent away from the first screen lands on the third
+        // workspace, still on its screen.
+        desks.send(1, 2, (300, 200).into(), &two()).unwrap();
+        assert_eq!(desks.desk_of(&1), Some(2));
+        // Back on the second screen, Super+1 brings window 2 back there.
+        desks.use_screen("two");
+        assert_eq!(
+            desks.switch_on(0, "two", Vec::new()).unwrap(),
+            vec![(2, right(10))]
+        );
+        // Off: the screens follow the one in use, which the compositor
+        // shows on each first.
+        desks.set_per_screen(false);
+        assert_eq!((desks.shown_on("one"), desks.shown_on("two")), (0, 0));
+        assert_eq!(desks.shown(), [0]);
+    }
+
+    #[test]
+    fn a_window_put_on_another_screen_joins_the_workspace_shown_there() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.set_per_screen(true);
+        desks.settle_screens(&[], &two());
+        desks.use_screen("two");
+        desks.switch_on(2, "two", Vec::new());
+        desks.use_screen("one");
+        desks.layout_mut().open(1, (300, 200).into(), "one", area());
+        // Dragged onto the second screen, it is on the third workspace.
+        desks
+            .layout_of_mut(&1)
+            .moved(&1, right(40), "two", two()[1].1);
+        assert!(desks.settle_screens(&[(1, right(40))], &two()).is_empty());
+        assert_eq!(desks.desk_of(&1), Some(2));
+        assert_eq!(desks.layout_of(&1).screen_of(&1), Some("two"));
+        // Every workspace shown somewhere is kept by dynamic workspaces.
+        assert_eq!(
+            dynamic_plan(&[0, 0, 1], &desks.shown(), |_| false).remove,
+            [1]
+        );
+        assert!(!desks.remove(2), "shown on the second screen");
+    }
+
+    #[test]
+    fn a_screen_that_goes_brings_its_windows_to_the_first() {
+        let mut desks: Desks<u32> = Desks::new(3, 8);
+        desks.set_per_screen(true);
+        desks.settle_screens(&[], &two());
+        desks
+            .layout_mut()
+            .open(1, (300, 200).into(), "two", two()[1].1);
+        desks.use_screen("two");
+        // Window 1 hides on the second screen behind the second workspace.
+        desks.switch_on(1, "two", vec![(1, right(0))]);
+        desks
+            .layout_mut()
+            .open(2, (300, 200).into(), "two", two()[1].1);
+        // The second screen goes. Window 2, shown there on the second
+        // workspace, joins the first screen's, and window 1, whose
+        // workspace the first shows, comes back.
+        let back = desks.settle_screens(&[(2, right(20))], &areas());
+        assert_eq!(back, vec![(1, right(0))]);
+        assert_eq!(desks.desk_of(&2), Some(0));
+        assert_eq!(desks.layout_of(&1).screen_of(&1), Some("one"));
+        assert_eq!(desks.shown(), [0]);
+        assert_eq!(desks.arrange(&areas()).len(), 2);
     }
 
     #[test]
