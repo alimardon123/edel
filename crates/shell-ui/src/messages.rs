@@ -72,7 +72,6 @@ pub fn tray_call_failed(id: &str, method: &str, why: impl Display) -> String {
 }
 
 /// A play, pause or track command could not reach a media player (M5.9d).
-#[allow(dead_code)] // Read by mpris::call, which the card's buttons use.
 pub fn player_call_failed(bus: &str, method: &str, why: impl Display) -> String {
     format!(
         "could not ask the media player {bus} to {method}: {why}; the app may have closed or may not offer it"

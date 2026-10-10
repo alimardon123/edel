@@ -20,11 +20,15 @@ use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, BTN_RIGHT, PointerEvent, PointerEventKind};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity};
+use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
-use crate::popup::{Card, Popup, Rect};
+use crate::popup::Popup;
 use crate::status::{self, Cmd, Msg};
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
 use crate::{mpris, paint};
+
+/// The side of a cover's picture, pixels (M5.9d).
+const COVER_PX: u32 = 128;
 
 /// Which slider a drag is moving, if one is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,10 +58,13 @@ pub struct QuickCard {
     /// Where the card's parts were last logged, so a line says it only
     /// when it changed.
     logged: String,
-    /// Follows the players while the card is open (M5.9d); dropped with it.
-    #[allow(dead_code)]
-    // Held only for its drop: the players are followed while the card lives.
-    follow: Option<mpris::Follow>,
+    /// The player's cover: the file it was read from, and the picture made
+    /// of it, none when it did not load (so it is not read again). Kept
+    /// while the card is open (M5.9d).
+    cover: Option<(String, Option<Pixmap>)>,
+    /// Follows the players while the card is open (M5.9d). Held only for its
+    /// drop: the players are followed while the card lives.
+    _follow: Option<mpris::Follow>,
 }
 
 impl QuickCard {
@@ -281,12 +288,7 @@ impl Shell {
             dnd: crate::notify::do_not_disturb(machine.as_deref(), person.as_deref()),
             ..quick::State::default()
         };
-        let view = quick::view(
-            &state,
-            &self.live.status,
-            &self.quick_tiles,
-            self.quick_settings,
-        );
+        let view = self.card_view(&state);
         let size = quick::layout(&view).size;
         // Room for the list of outputs to open without a bigger pool.
         let most = quick::most_size(size);
@@ -339,7 +341,8 @@ impl Shell {
             sent_light: None,
             setting_light: false,
             logged: String::new(),
-            follow,
+            cover: None,
+            _follow: follow,
         });
         // The pill lights while the card is open.
         self.live.quick = true;
@@ -389,15 +392,57 @@ impl Shell {
         self.quick.as_ref().is_some_and(|c| c.popup.is(surface))
     }
 
-    /// What the card shows now and where it lies.
-    fn quick_view(&mut self) -> Option<(quick::View, quick::Layout)> {
-        let card = self.quick.as_ref()?;
-        let view = quick::view(
-            &card.state,
+    /// The card with `state`, what the machine says, and the player (M5.9d)
+    /// with its cover still to be decoded; the card hangs below the player
+    /// when the status area's panel lies along the top.
+    fn card_view(&self, state: &quick::State) -> quick::View {
+        let mut view = quick::view(
+            state,
             &self.live.status,
             &self.quick_tiles,
             self.quick_settings,
         );
+        view.player = self.live.player.as_ref().map(|p| quick::PlayerView {
+            title: p.title.clone(),
+            artist: p.artist.clone(),
+            identity: p.identity.clone(),
+            playing: p.playing,
+            can_previous: p.can_previous,
+            can_next: p.can_next,
+            cover: None,
+        });
+        view.player_below = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "status") && p.edge == Edge::Top);
+        view
+    }
+
+    /// The player's cover as a picture, read from its file once and kept
+    /// while the card is open; a file that is not a PNG, or does not load,
+    /// gives none (M5.9d).
+    fn player_cover(&mut self) -> Option<Pixmap> {
+        let path = self.live.player.as_ref().and_then(|p| p.cover.clone());
+        let card = self.quick.as_mut()?;
+        let Some(path) = path else {
+            card.cover = None;
+            return None;
+        };
+        if card.cover.as_ref().is_none_or(|(held, _)| *held != path) {
+            let picture = load_cover(&path);
+            card.cover = Some((path, picture));
+        }
+        card.cover.as_ref().and_then(|(_, picture)| picture.clone())
+    }
+
+    /// What the card shows now and where it lies.
+    fn quick_view(&mut self) -> Option<(quick::View, quick::Layout)> {
+        let cover = self.player_cover();
+        let card = self.quick.as_ref()?;
+        let mut view = self.card_view(&card.state);
+        if let Some(player) = &mut view.player {
+            player.cover = cover;
+        }
         let layout = quick::layout(&view);
         Some((view, layout))
     }
@@ -416,14 +461,8 @@ impl Shell {
             return;
         }
         // The card is the rounded shape the mockups draw, its shadow round it.
-        let (w, h) = (layout.size.0 as f32, layout.size.1 as f32);
-        card.popup.set_cards(
-            vec![Card {
-                rect: Rect::new(0.0, 0.0, w, h),
-                radius: quick::RADIUS,
-            }],
-            &self.compositor,
-        );
+        card.popup
+            .set_cards(quick::cards(&layout), &self.compositor);
         let Some(mut pixmap) = card.popup.canvas(&view) else {
             return;
         };
@@ -504,7 +543,7 @@ impl Shell {
             event.position.0 as f32 - room,
             event.position.1 as f32 - room,
         );
-        let over = quick::hit(&layout, x, y);
+        let over = quick::hit(&view, &layout, x, y);
         match &event.kind {
             PointerEventKind::Motion { .. } | PointerEventKind::Enter { .. } => {
                 card.state.hover = over;
@@ -540,6 +579,9 @@ impl Shell {
                         quick::Focus::Choose(i) => quick::Act::Choose(i),
                         quick::Focus::SoundPage => quick::Act::SoundPage,
                         quick::Focus::Settings => quick::Act::Settings,
+                        quick::Focus::Previous => quick::Act::Player("Previous"),
+                        quick::Focus::PlayPause => quick::Act::Player("PlayPause"),
+                        quick::Focus::Next => quick::Act::Player("Next"),
                         quick::Focus::Slider | quick::Focus::Light => return,
                     };
                     self.quick_act(act);
@@ -675,6 +717,13 @@ impl Shell {
                 self.launcher.spawn(&[SETTINGS.to_string()], "Settings");
                 self.close_quick();
             }
+            // The player's change comes back through `player_changed`, and
+            // the card stays open.
+            Act::Player(method) => {
+                if let (Some(player), Some(connection)) = (&self.live.player, &self._portal) {
+                    mpris::call(connection, &player.bus, method);
+                }
+            }
         }
     }
 
@@ -750,4 +799,27 @@ impl Shell {
         }
         self.draw_quick();
     }
+}
+
+/// The cover at `path` as a square picture of `COVER_PX` pixels, when it is
+/// a PNG the app gave as a local file (M5.9d). Anything else, JPEG included,
+/// and a file that does not load give None, quietly: the card then shows the
+/// app's initial.
+fn load_cover(path: &str) -> Option<Pixmap> {
+    let source = Pixmap::load_png(path).ok()?;
+    let mut square = Pixmap::new(COVER_PX, COVER_PX)?;
+    // Cropped from its middle to a square, never stretched, as album art
+    // is not always square.
+    let (w, h) = (source.width() as f32, source.height() as f32);
+    let k = COVER_PX as f32 / w.min(h);
+    let scale = Transform::from_scale(k, k).post_translate(
+        (COVER_PX as f32 - w * k) / 2.0,
+        (COVER_PX as f32 - h * k) / 2.0,
+    );
+    let smooth = PixmapPaint {
+        quality: FilterQuality::Bicubic,
+        ..PixmapPaint::default()
+    };
+    square.draw_pixmap(0, 0, source.as_ref(), &smooth, scale, None);
+    Some(square)
 }

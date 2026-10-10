@@ -55,6 +55,16 @@ pub const DARK_PAGE: &str = "layout";
 pub const SOUND_PAGE: &str = "sound";
 /// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
 pub const DISPLAYS_PAGE: &str = "displays";
+/// The player's card's height and the room between it and quick settings'
+/// card, logical pixels (M5.9d): above the card on a bottom panel, below
+/// it on a top one.
+pub const PLAYER_HEIGHT: f32 = 100.0;
+pub const PLAYER_GAP: f32 = 8.0;
+/// The cover's side, and the room between the player's parts.
+const COVER: f32 = 64.0;
+const PLAYER_SPACE: f32 = 10.0;
+/// The title and artist's box, its height.
+const WORDS: f32 = 36.0;
 
 /// A tile of the card: the names are what `[quick] tiles` lists
 /// (`edel::presets::TILES`).
@@ -178,6 +188,20 @@ pub struct BatteryView {
     pub time: Option<String>,
 }
 
+/// The player (M5.9d) as the card shows it: what plays, which of its
+/// buttons work and its cover, decoded to a square picture when it has one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlayerView {
+    pub title: String,
+    pub artist: String,
+    /// The app's name, whose first letter is the cover when there is none.
+    pub identity: String,
+    pub playing: bool,
+    pub can_previous: bool,
+    pub can_next: bool,
+    pub cover: Option<Pixmap>,
+}
+
 /// Where a pointer or the keyboard is on the card.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -196,6 +220,10 @@ pub enum Focus {
     /// The "Sound settings" row under the list
     SoundPage,
     Settings,
+    /// The player's previous, play or pause and next buttons (M5.9d)
+    Previous,
+    PlayPause,
+    Next,
 }
 
 /// Everything the card shows at one moment, so it is drawn again only when
@@ -218,6 +246,10 @@ pub struct View {
     /// Where the keyboard is, once a key was pressed, and the pointer.
     pub focus: Option<Focus>,
     pub hover: Option<Focus>,
+    /// What plays, when something does (M5.9d), and whether the card hangs
+    /// from a panel along the top, so the player goes below it.
+    pub player: Option<PlayerView>,
+    pub player_below: bool,
 }
 
 /// What a person's click or key asks for.
@@ -239,6 +271,9 @@ pub enum Act {
     /// Open the Displays page of Settings (M5.9c).
     DisplaysPage,
     Settings,
+    /// Ask the player to do this MPRIS method: `PlayPause`, `Previous` or
+    /// `Next` (M5.9d). The card stays open.
+    Player(&'static str),
     Close,
 }
 
@@ -420,6 +455,8 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
         list: state.list,
         focus: state.focus,
         hover: state.hover,
+        player: None,
+        player_below: false,
     }
 }
 
@@ -509,7 +546,12 @@ pub fn most_size(size: (u32, u32)) -> (u32, u32) {
     // The Compact rows, the taller, so one size serves both.
     let m = metrics(true);
     let rows = MOST_OUTPUTS as u32 + 1;
-    (size.0, size.1 + rows * (m.bar as u32 + LIST_GAP as u32))
+    // And the player's card, so one appearing never needs a bigger pool.
+    let player = (PLAYER_HEIGHT + PLAYER_GAP) as u32;
+    (
+        size.0,
+        size.1 + player + rows * (m.bar as u32 + LIST_GAP as u32),
+    )
 }
 
 /// The space between a pill's left edge and its icon circle, logical pixels.
@@ -546,6 +588,16 @@ pub struct Layout {
     pub size: (u32, u32),
     pub metrics: Metrics,
     pub tiles: Vec<TileBox>,
+    /// The player's card (M5.9d), quick settings' own card (which moves
+    /// below the player's when the player is above it), and the player's
+    /// parts: its cover, the words, and the three buttons.
+    pub player: Option<Rect>,
+    pub quick: Rect,
+    pub cover: Option<Rect>,
+    pub words: Option<Rect>,
+    pub previous: Option<Rect>,
+    pub play: Option<Rect>,
+    pub next: Option<Rect>,
     /// The brightness slider's track, full width, above the volume's when
     /// the machine has a backlight (M5.9c).
     pub light: Option<Rect>,
@@ -601,7 +653,14 @@ pub fn layout(view: &View) -> Layout {
         }
     }
     let mut tops = Vec::with_capacity(rows);
-    let mut y = m.top;
+    // A player above the card moves all of the card down by its height and the gap.
+    let above = view.player.is_some() && !view.player_below;
+    let shift = if above {
+        PLAYER_HEIGHT + PLAYER_GAP
+    } else {
+        0.0
+    };
+    let mut y = m.top + shift;
     for h in &heights {
         tops.push(y);
         y += h + m.row_gap;
@@ -693,10 +752,52 @@ pub fn layout(view: &View) -> Layout {
         y += m.bar;
     }
     y += m.bottom;
+    let end = y.ceil();
+    let quick = Rect::new(0.0, shift, w, end - shift);
+    // The player's card, and its parts centred on its middle (M5.9d). The
+    // three buttons are 44 px on a Compact screen, where a finger lands.
+    let (mut player, mut cover, mut words, mut previous, mut play, mut next) =
+        (None, None, None, None, None, None);
+    let mut height = end;
+    if view.player.is_some() {
+        let p = if above {
+            Rect::new(0.0, 0.0, w, PLAYER_HEIGHT)
+        } else {
+            height = end + PLAYER_GAP + PLAYER_HEIGHT;
+            Rect::new(0.0, end + PLAYER_GAP, w, PLAYER_HEIGHT)
+        };
+        let middle = |side: f32| p.y + (PLAYER_HEIGHT - side) / 2.0;
+        let pad = m.side;
+        let small = if view.compact { 44.0 } else { 28.0 };
+        let large = if view.compact { 44.0 } else { 32.0 };
+        let c = Rect::new(pad, middle(COVER), COVER, COVER);
+        let n = Rect::new(w - pad - small, middle(small), small, small);
+        let pl = Rect::new(n.x - PLAYER_SPACE - large, middle(large), large, large);
+        let pr = Rect::new(pl.x - PLAYER_SPACE - small, middle(small), small, small);
+        let left = c.right() + PLAYER_SPACE;
+        words = Some(Rect::new(
+            left,
+            p.y + (PLAYER_HEIGHT - WORDS) / 2.0,
+            (pr.x - PLAYER_SPACE - left).max(0.0),
+            WORDS,
+        ));
+        cover = Some(c);
+        previous = Some(pr);
+        play = Some(pl);
+        next = Some(n);
+        player = Some(p);
+    }
     Layout {
-        size: (view.width, y.ceil() as u32),
+        size: (view.width, height as u32),
         metrics: m,
         tiles,
+        player,
+        quick,
+        cover,
+        words,
+        previous,
+        play,
+        next,
         light,
         track,
         sound,
@@ -716,6 +817,18 @@ pub fn layout(view: &View) -> Layout {
 pub fn places(view: &View, layout: &Layout) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut parts = vec![format!("card {}x{}", layout.size.0, layout.size.1)];
+    if let Some(player) = layout.player {
+        parts.push(format!("player {}", at(player)));
+        for (name, rect) in [
+            ("previous", layout.previous),
+            ("play", layout.play),
+            ("next", layout.next),
+        ] {
+            if let Some(rect) = rect {
+                parts.push(format!("{name} {}", at(rect)));
+            }
+        }
+    }
     for (t, b) in view.tiles.iter().zip(&layout.tiles) {
         parts.push(format!("{} {}", t.tile.name(), at(b.whole)));
     }
@@ -732,8 +845,22 @@ pub fn places(view: &View, layout: &Layout) -> String {
     parts.join(", ")
 }
 
-/// The part of the card at `x`, `y` (logical pixels from its corner).
-pub fn hit(layout: &Layout, x: f32, y: f32) -> Option<Focus> {
+/// The part of the card at `x`, `y` (logical pixels from its corner). The
+/// player's buttons come first, and Previous and Next only where the
+/// player can do them (M5.9d).
+pub fn hit(view: &View, layout: &Layout, x: f32, y: f32) -> Option<Focus> {
+    if let Some(player) = &view.player {
+        let at = |r: Option<Rect>| r.is_some_and(|r| r.contains(x, y));
+        if player.can_previous && at(layout.previous) {
+            return Some(Focus::Previous);
+        }
+        if at(layout.play) {
+            return Some(Focus::PlayPause);
+        }
+        if player.can_next && at(layout.next) {
+            return Some(Focus::Next);
+        }
+    }
     for (i, t) in layout.tiles.iter().enumerate() {
         if t.page.is_some_and(|p| p.contains(x, y)) {
             return Some(Focus::Page(i));
@@ -785,11 +912,20 @@ pub fn brightness_at(layout: &Layout, x: f32) -> u32 {
 
 // ---- Keys ----
 
-/// What a keyboard can reach, in Tab's order: each tile's toggle and, for
-/// a pill, its page; the slider, the chevron, the list's rows while it is
-/// open, and the Settings button.
+/// What a keyboard can reach, in Tab's order: the player's buttons (those
+/// it can do), each tile's toggle and, for a pill, its page; the slider,
+/// the chevron, the list's rows while it is open, and the Settings button.
 pub fn ring(view: &View) -> Vec<Focus> {
     let mut ring = Vec::new();
+    if let Some(player) = &view.player {
+        if player.can_previous {
+            ring.push(Focus::Previous);
+        }
+        ring.push(Focus::PlayPause);
+        if player.can_next {
+            ring.push(Focus::Next);
+        }
+    }
     for (i, t) in view.tiles.iter().enumerate() {
         ring.push(Focus::Toggle(i));
         if has_page(t.tile) {
@@ -847,6 +983,9 @@ pub fn key(view: &View, focus: Option<Focus>, key: Key) -> (Option<Focus>, Optio
         (Key::Activate, Focus::SoundPage) => (focus, Some(Act::SoundPage)),
         (Key::Activate, Focus::Slider) => (focus, Some(Act::Mute)),
         (Key::Activate, Focus::Settings) => (focus, Some(Act::Settings)),
+        (Key::Activate, Focus::Previous) => (focus, Some(Act::Player("Previous"))),
+        (Key::Activate, Focus::PlayPause) => (focus, Some(Act::Player("PlayPause"))),
+        (Key::Activate, Focus::Next) => (focus, Some(Act::Player("Next"))),
         (Key::Left, Focus::Light) => (
             focus,
             Some(Act::Brightness(brightness.saturating_sub(STEP))),
@@ -905,18 +1044,46 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
         )
     };
     let zero = Rect::new(0.0, 0.0, 0.0, 0.0);
+    let item = |role, label: String, bounds: Rect| Item {
+        role,
+        label,
+        bounds: rect(bounds),
+        children: Vec::new(),
+        toggled: None,
+        value: None,
+    };
     let mut out = Vec::new();
     let mut focused = None;
-    for (n, part) in ring(view).into_iter().enumerate() {
-        let item = |role, label: String, bounds: Rect| Item {
-            role,
-            label,
-            bounds: rect(bounds),
-            children: Vec::new(),
-            toggled: None,
-            value: None,
+    // The player's card is read first, as a label that says what plays.
+    if let (Some(player), Some(card)) = (&view.player, layout.player) {
+        let label = if player.artist.is_empty() {
+            trf("Now playing: {title}", &[("title", &player.title)])
+        } else {
+            trf(
+                "Now playing: {title} by {artist}",
+                &[("title", &player.title), ("artist", &player.artist)],
+            )
         };
+        out.push(item(Role::Label, label, card));
+    }
+    let first = out.len();
+    for (n, part) in ring(view).into_iter().enumerate() {
         let built = match part {
+            Focus::Previous => item(
+                Role::Button,
+                tr("Previous").to_string(),
+                layout.previous.unwrap_or(zero),
+            ),
+            Focus::PlayPause => {
+                let playing = view.player.as_ref().is_some_and(|p| p.playing);
+                let label = if playing { tr("Pause") } else { tr("Play") };
+                item(Role::Button, label.to_string(), layout.play.unwrap_or(zero))
+            }
+            Focus::Next => item(
+                Role::Button,
+                tr("Next").to_string(),
+                layout.next.unwrap_or(zero),
+            ),
             Focus::Toggle(i) => {
                 let (t, b) = (&view.tiles[i], &layout.tiles[i]);
                 Item {
@@ -986,7 +1153,7 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
             ),
         };
         if view.focus == Some(part) {
-            focused = Some(n);
+            focused = Some(first + n);
         }
         out.push(built);
     }
@@ -994,6 +1161,23 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 }
 
 // ---- How it looks ----
+
+/// The cards the popup draws: the player's (when there is one) and quick
+/// settings', each with `RADIUS` corners (M5.9d).
+pub fn cards(l: &Layout) -> Vec<Card> {
+    let mut out = Vec::new();
+    if let Some(player) = l.player {
+        out.push(Card {
+            rect: player,
+            radius: RADIUS,
+        });
+    }
+    out.push(Card {
+        rect: l.quick,
+        radius: RADIUS,
+    });
+    out
+}
 
 /// The keyboard's ring round a part: 2 px in the accent, 3 px outside the
 /// part `r`, whose corners have radius `radius` (logical pixels).
@@ -1020,16 +1204,7 @@ pub fn paint(
 ) {
     let s = scale;
     let l = layout(view);
-    let card = Rect::new(0.0, 0.0, view.width as f32, l.size.1 as f32);
-    popup::cards(
-        pixmap,
-        tokens,
-        s,
-        &[Card {
-            rect: card,
-            radius: RADIUS,
-        }],
-    );
+    popup::cards(pixmap, tokens, s, &cards(&l));
     for (i, (t, b)) in view.tiles.iter().zip(&l.tiles).enumerate() {
         if t.tile.pill() {
             pill_tile(pixmap, view, i, *b, tokens, text.as_deref_mut(), s);
@@ -1038,7 +1213,119 @@ pub fn paint(
         }
     }
     shelf(pixmap, view, &l, tokens, text.as_deref_mut(), s);
+    player(pixmap, view, &l, tokens, text.as_deref_mut(), s);
     footer(pixmap, view, &l, tokens, text, s);
+}
+
+/// The player's card (M5.9d): its cover, the title over the artist, and
+/// the previous, play or pause and next buttons, with the keyboard's ring
+/// and the hover light where they are. A cover is its picture in a circle,
+/// else a circle of the accent going darker, with the app's first letter.
+fn player(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    mut text: Option<&mut Text>,
+    s: f32,
+) {
+    let (Some(p), Some(cover), Some(words)) = (&view.player, l.cover, l.words) else {
+        return;
+    };
+    let (x, y, w, h) = cover.device(s);
+    match &p.cover {
+        Some(picture) => paint::circle_picture(pixmap, picture, (x, y, w, h)),
+        None => {
+            let bottom = mix(tokens.accent, tokens.panel_text, 0.45);
+            paint::fill_vertical(pixmap, (x, y, w, h), w / 2.0, tokens.accent, bottom);
+            if let Some(text) = text.as_deref_mut() {
+                let initial = p
+                    .identity
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_default();
+                let mut letter = text.fit_in(&initial, 22.0 * s, cover.w * s, Face::SEMIBOLD);
+                let left = x + ((w - letter.width) / 2.0).round();
+                let top = y + (h - 22.0 * s * 1.25) / 2.0;
+                text.draw(pixmap, &mut letter, left, top, tokens.accent_text);
+            }
+        }
+    }
+    // The words: the title over the artist, from the box's left, beside
+    // the cover, as the mockups set them.
+    if let Some(text) = text {
+        let room = words.w * s;
+        let (wx, wy, _, wh) = words.device(s);
+        let mut title = text.fit_in(&p.title, 12.5 * s, room, Face::SEMIBOLD);
+        let title_h = 12.5 * s * 1.25;
+        if p.artist.is_empty() {
+            let left = wx;
+            let top = wy + (wh - title_h) / 2.0;
+            text.draw(pixmap, &mut title, left, top, tokens.panel_text);
+        } else {
+            let mut artist = text.fit(&p.artist, 11.0 * s, room);
+            let block = title_h + 2.0 * s + 11.0 * s * 1.25;
+            let top = wy + (wh - block) / 2.0;
+            let left = wx;
+            text.draw(pixmap, &mut title, left, top, tokens.panel_text);
+            text.draw(
+                pixmap,
+                &mut artist,
+                left,
+                top + title_h + 2.0 * s,
+                dim(tokens),
+            );
+        }
+    }
+    // The buttons: Previous and Next are dimmed where the player cannot
+    // do them; Play or Pause is a filled circle with the glyph in the card.
+    let sides = [
+        (
+            Focus::Previous,
+            "media-previous",
+            l.previous,
+            p.can_previous,
+        ),
+        (Focus::Next, "media-next", l.next, p.can_next),
+    ];
+    for (focus, glyph, rect, able) in sides {
+        let Some(rect) = rect else {
+            continue;
+        };
+        if view.hover == Some(focus) && able {
+            let (x, y, w, h) = rect.device(s);
+            fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.06));
+        }
+        let ink = if able {
+            tokens.panel_text
+        } else {
+            Colour {
+                a: 0.5,
+                ..dim(tokens)
+            }
+        };
+        icon_in(pixmap, glyph, 14.0, rect, s, ink);
+        if view.focus == Some(focus) {
+            focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
+        }
+    }
+    if let Some(rect) = l.play {
+        let (x, y, w, h) = rect.device(s);
+        fill(pixmap, x, y, w, h, w / 2.0, tokens.panel_text);
+        if view.hover == Some(Focus::PlayPause) {
+            fill(pixmap, x, y, w, h, w / 2.0, veil(tokens, 0.12));
+        }
+        let glyph = if p.playing {
+            "media-pause"
+        } else {
+            "media-play"
+        };
+        icon_in(pixmap, glyph, 14.0, rect, s, tokens.panel);
+        if view.focus == Some(Focus::PlayPause) {
+            focus_ring(pixmap, rect, rect.h / 2.0, s, tokens);
+        }
+    }
 }
 
 /// A round toggle: its circle with the icon, its title under it, and the
@@ -1848,7 +2135,10 @@ mod tests {
             Some(track.y),
             "the chevron is beside the volume only"
         );
-        assert_eq!(hit(&l, light.x + 40.0, light.middle()), Some(Focus::Light));
+        assert_eq!(
+            hit(&view, &l, light.x + 40.0, light.middle()),
+            Some(Focus::Light)
+        );
         assert!(
             places(&view, &l).contains("light "),
             "CI reads where it lies"
@@ -1887,24 +2177,30 @@ mod tests {
         let l = layout(&view);
         let t = l.tiles[0];
         assert_eq!(
-            hit(&l, t.toggle.x + 10.0, t.toggle.middle()),
+            hit(&view, &l, t.toggle.x + 10.0, t.toggle.middle()),
             Some(Focus::Toggle(0))
         );
         let p = t.page.unwrap();
-        assert_eq!(hit(&l, p.x + 4.0, p.middle()), Some(Focus::Page(0)));
+        assert_eq!(hit(&view, &l, p.x + 4.0, p.middle()), Some(Focus::Page(0)));
         // A round toggle's whole cell toggles.
         let a = l.tiles[2];
         assert_eq!(
-            hit(&l, a.whole.right() - 3.0, a.whole.middle()),
+            hit(&view, &l, a.whole.right() - 3.0, a.whole.middle()),
             Some(Focus::Toggle(2))
         );
-        assert_eq!(hit(&l, 1.0, 1.0), None);
+        assert_eq!(hit(&view, &l, 1.0, 1.0), None);
         let track = l.track.unwrap();
-        assert_eq!(hit(&l, track.x + 40.0, track.middle()), Some(Focus::Slider));
+        assert_eq!(
+            hit(&view, &l, track.x + 40.0, track.middle()),
+            Some(Focus::Slider)
+        );
         let sound = l.sound.unwrap();
-        assert_eq!(hit(&l, sound.x + 5.0, sound.middle()), Some(Focus::Sound));
+        assert_eq!(
+            hit(&view, &l, sound.x + 5.0, sound.middle()),
+            Some(Focus::Sound)
+        );
         let b = l.settings.unwrap();
-        assert_eq!(hit(&l, b.x + 3.0, b.y + 3.0), Some(Focus::Settings));
+        assert_eq!(hit(&view, &l, b.x + 3.0, b.y + 3.0), Some(Focus::Settings));
     }
 
     #[test]
@@ -2014,6 +2310,113 @@ mod tests {
         assert!(items.iter().any(|i| i.label == "Sound: outputs"));
     }
 
+    /// A player of Night Drive by Lumen, playing, with `can` for each of
+    /// Previous and Next, and no cover.
+    fn playing(can: bool) -> PlayerView {
+        PlayerView {
+            title: "Night Drive".into(),
+            artist: "Lumen".into(),
+            identity: "Lumen".into(),
+            playing: true,
+            can_previous: can,
+            can_next: can,
+            cover: None,
+        }
+    }
+
+    #[test]
+    fn a_player_sits_above_the_card_on_a_bottom_panel() {
+        let plain = view_of(&laptop(), false, 1280);
+        let mut with = plain.clone();
+        with.player = Some(playing(true));
+        let (a, b) = (layout(&plain), layout(&with));
+        // The player's card at the top, 352 by 100, and the card 108 lower.
+        assert_eq!(b.player, Some(Rect::new(0.0, 0.0, 352.0, 100.0)));
+        assert_eq!(b.quick, Rect::new(0.0, 108.0, 352.0, a.size.1 as f32));
+        assert_eq!(b.size.1, a.size.1 + 108);
+        for (x, y) in a.tiles.iter().zip(&b.tiles) {
+            assert_eq!(y.whole.y, x.whole.y + 108.0);
+        }
+        assert_eq!(b.track.unwrap().y, a.track.unwrap().y + 108.0);
+        assert_eq!(b.settings.unwrap().y, a.settings.unwrap().y + 108.0);
+    }
+
+    #[test]
+    fn a_player_sits_below_the_card_on_a_top_panel() {
+        let mut view = view_of(&laptop(), false, 1280);
+        let plain = layout(&view);
+        view.player = Some(playing(true));
+        view.player_below = true;
+        let l = layout(&view);
+        // The card stays where it is, the player hangs 8 px below it.
+        assert_eq!(l.quick, Rect::new(0.0, 0.0, 352.0, plain.size.1 as f32));
+        assert_eq!(l.player.unwrap().y, (l.quick.y + l.quick.h) + 8.0);
+        assert_eq!(l.player.unwrap().h, 100.0);
+        assert_eq!(l.size.1, plain.size.1 + 108);
+    }
+
+    #[test]
+    fn the_player_buttons_are_found_and_act() {
+        let mut view = view_of(&laptop(), false, 1280);
+        view.player = Some(playing(true));
+        let l = layout(&view);
+        let play = l.play.unwrap();
+        let (x, y) = (play.x + play.w / 2.0, play.middle());
+        assert_eq!(hit(&view, &l, x, y), Some(Focus::PlayPause));
+        assert_eq!(
+            key(&view, Some(Focus::PlayPause), Key::Activate).1,
+            Some(Act::Player("PlayPause"))
+        );
+        // A player that cannot go back has no Previous in the ring, and its
+        // button is not hit, though it is drawn.
+        view.player = Some(PlayerView {
+            can_previous: false,
+            ..playing(true)
+        });
+        let l = layout(&view);
+        let prev = l.previous.unwrap();
+        assert_eq!(hit(&view, &l, prev.x + prev.w / 2.0, prev.middle()), None);
+        let keys = ring(&view);
+        assert!(!keys.contains(&Focus::Previous));
+        assert_eq!(keys.first(), Some(&Focus::PlayPause));
+        assert!(keys.contains(&Focus::Next));
+    }
+
+    #[test]
+    fn places_name_the_player_and_its_buttons() {
+        let mut view = view_of(&laptop(), false, 1280);
+        view.player = Some(playing(true));
+        let l = layout(&view);
+        let line = places(&view, &l);
+        assert!(
+            line.starts_with(&format!("card 352x{}, player 0+0+352x100, ", l.size.1)),
+            "{line}"
+        );
+        assert!(line.contains(", previous "), "{line}");
+        assert!(line.contains(", play "), "{line}");
+        assert!(line.contains(", next "), "{line}");
+        // The buttons come before the tiles.
+        assert!(
+            line.find(", play ").unwrap() < line.find(", wifi ").unwrap(),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn a_screen_reader_reads_the_player_first() {
+        let mut view = view_of(&laptop(), false, 1280);
+        view.player = Some(playing(true));
+        view.focus = Some(Focus::PlayPause);
+        let l = layout(&view);
+        let (items, focused) = items(&view, &l, (0.0, 0.0));
+        assert_eq!(items[0].role, Role::Label);
+        assert_eq!(items[0].label, "Now playing: Night Drive by Lumen");
+        assert_eq!(items[1].label, "Previous");
+        let play = &items[focused.unwrap()];
+        assert_eq!((play.role, play.label.as_str()), (Role::Button, "Pause"));
+        assert_eq!(items.len(), ring(&view).len() + 1);
+    }
+
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
         let c = pixmap.pixel(x, y).unwrap().demultiply();
         [c.red(), c.green(), c.blue(), c.alpha()]
@@ -2096,6 +2499,7 @@ mod tests {
             for (width, name, list) in [
                 (1280, "desktop", false),
                 (1280, "desktop-list", true),
+                (1280, "desktop-player", false),
                 (360, "compact", false),
             ] {
                 let card = if width < COMPACT_BELOW { width } else { WIDTH };
@@ -2106,6 +2510,9 @@ mod tests {
                 view.list = list;
                 if name == "desktop" {
                     view.hover = Some(Focus::Toggle(1));
+                }
+                if name == "desktop-player" {
+                    view.player = Some(playing(true));
                 }
                 let l = layout(&view);
                 let mut pixmap = Pixmap::new(card * 2, l.size.1 * 2).unwrap();
@@ -2120,6 +2527,9 @@ mod tests {
                         })
                         .count()
                 };
+                if let Some(player) = l.player {
+                    assert!(ink(player) > 20, "{name} {mode}: the player is drawn");
+                }
                 for (t, b) in view.tiles.iter().zip(&l.tiles) {
                     // A round toggle's title sits under its circle.
                     let label = if t.tile.pill() {

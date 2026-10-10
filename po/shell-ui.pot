@@ -146,6 +146,24 @@ msgstr ""
 msgid "Not connected"
 msgstr ""
 
+msgid "Now playing: {title}"
+msgstr ""
+
+msgid "Now playing: {title} by {artist}"
+msgstr ""
+
+msgid "Previous"
+msgstr ""
+
+msgid "Pause"
+msgstr ""
+
+msgid "Play"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
 msgid "{title}, {state}"
 msgstr ""
 

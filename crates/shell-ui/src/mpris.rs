@@ -53,8 +53,10 @@ pub enum Event {
 
 /// The task that follows the players. Dropping it cancels the task, so the
 /// card holds it while it is open and lets go of it when it closes.
-#[allow(dead_code)] // Held only for its drop: the task runs while it lives.
-pub struct Follow(zbus::Task<()>);
+pub struct Follow {
+    /// Held only for its drop: the task runs while it lives.
+    _task: zbus::Task<()>,
+}
 
 /// The player to show: the first that plays, else the first paused one. The
 /// list keeps the bus's order, so a playing one always wins.
@@ -258,12 +260,11 @@ pub fn follow(connection: &zbus::blocking::Connection, events: Sender<Event>) ->
         .inner()
         .executor()
         .spawn(watch(connection.inner().clone(), events), "mpris follow");
-    Follow(task)
+    Follow { _task: task }
 }
 
 /// Asks the player at `bus` to do `method` on its player interface
 /// (`PlayPause`, `Previous` or `Next`), without waiting for its answer.
-#[allow(dead_code)] // The card's buttons ask through it once they are drawn.
 pub fn call(connection: &zbus::blocking::Connection, bus: &str, method: &'static str) {
     let connection = connection.inner().clone();
     let bus = bus.to_string();
