@@ -451,6 +451,13 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page layout.panels" </dev/null >/tmp/settings-panels.log 2>&1 &
 			;;
 		'settings panels log') say "settings_panels_log $(tr '\n' ';' </tmp/settings-panels.log 2>/dev/null)" ;;
+		# Settings' Workspaces group (M5.2n): opened on the Layout page by the
+		# name layout.workspaces, its log says where the count's buttons lie.
+		'settings workspaces')
+			as_ci edel-settings --page layout.workspaces </dev/null >/tmp/settings-workspaces.log 2>&1 &
+			;;
+		'settings workspaces reset') as_ci "sed -i '/^workspaces *=/d' /home/ci/.config/edel/$settings_name" ;;
+		'settings workspaces log') say "settings_workspaces_log $(tr '\n' ';' </tmp/settings-workspaces.log 2>/dev/null)" ;;
 		# The apps widget's pins (M5.31d): ci's own file with one dock along
 		# the bottom holding the apps widget, and two pins, terminal and
 		# settings; `pins reset` takes both lines out again.

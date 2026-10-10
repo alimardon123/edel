@@ -25,6 +25,51 @@ pub struct Layout {
     pub close_button: bool,
     pub minimize_button: bool,
     pub maximize_button: bool,
+    /// How many workspaces (M5.2n, `layout.workspaces`).
+    pub workspaces: u32,
+    /// Whether an empty workspace always waits at the end (M5.2n,
+    /// `layout.dynamic_workspaces`).
+    pub dynamic_workspaces: bool,
+    /// Whether each screen shows its own workspace (M5.2n,
+    /// `layout.workspaces_per_screen`).
+    pub workspaces_per_screen: bool,
+    /// The switcher's look, `numbers` or `button` (M5.2n,
+    /// `layout.workspaces_look`).
+    pub workspaces_look: String,
+    /// How many workspaces the switcher shows at once (M5.2n,
+    /// `layout.workspaces_shown`).
+    pub workspaces_shown: u32,
+    /// What the switcher shows where more workspaces lie (M5.2n,
+    /// `layout.workspaces_ends`).
+    pub workspaces_ends: String,
+    /// The workspaces' names, the first workspace's first (M5.2n,
+    /// `layout.workspace_names`).
+    pub workspace_names: Vec<String>,
+    /// Apps and the workspace each always opens on (M5.2n,
+    /// `layout.app_workspaces`).
+    pub app_workspaces: BTreeMap<String, i64>,
+}
+
+/// A list of texts as the TOML array `edel settings set` takes, such as
+/// `["Mail", ""]`.
+pub fn list_text(names: &[String]) -> String {
+    toml::Value::Array(
+        names
+            .iter()
+            .map(|name| toml::Value::String(name.clone()))
+            .collect(),
+    )
+    .to_string()
+}
+
+/// Apps and their workspace numbers as the TOML inline table `edel settings
+/// set` takes, such as `{ "org.mozilla.firefox" = 2 }`.
+pub fn apps_text(apps: &BTreeMap<String, i64>) -> String {
+    let table = apps
+        .iter()
+        .map(|(app, number)| (app.clone(), toml::Value::Integer(*number)))
+        .collect();
+    toml::Value::Table(table).to_string()
 }
 
 impl Layout {
@@ -39,6 +84,14 @@ impl Layout {
             "layout.close_button" => Some(self.close_button.to_string()),
             "layout.minimize_button" => Some(self.minimize_button.to_string()),
             "layout.maximize_button" => Some(self.maximize_button.to_string()),
+            "layout.workspaces" => Some(self.workspaces.to_string()),
+            "layout.dynamic_workspaces" => Some(self.dynamic_workspaces.to_string()),
+            "layout.workspaces_per_screen" => Some(self.workspaces_per_screen.to_string()),
+            "layout.workspaces_look" => Some(self.workspaces_look.clone()),
+            "layout.workspaces_shown" => Some(self.workspaces_shown.to_string()),
+            "layout.workspaces_ends" => Some(self.workspaces_ends.clone()),
+            "layout.workspace_names" => Some(list_text(&self.workspace_names)),
+            "layout.app_workspaces" => Some(apps_text(&self.app_workspaces)),
             _ => None,
         }
     }
@@ -57,6 +110,14 @@ fn own(layout: &settings::Layout, key: &str) -> Option<String> {
         "layout.close_button" => flag(layout.close_button),
         "layout.minimize_button" => flag(layout.minimize_button),
         "layout.maximize_button" => flag(layout.maximize_button),
+        "layout.workspaces" => layout.workspaces.map(|n| n.to_string()),
+        "layout.dynamic_workspaces" => flag(layout.dynamic_workspaces),
+        "layout.workspaces_per_screen" => flag(layout.workspaces_per_screen),
+        "layout.workspaces_look" => layout.workspaces_look.clone(),
+        "layout.workspaces_shown" => layout.workspaces_shown.map(|n| n.to_string()),
+        "layout.workspaces_ends" => layout.workspaces_ends.clone(),
+        "layout.workspace_names" => layout.workspace_names.as_deref().map(list_text),
+        "layout.app_workspaces" => layout.app_workspaces.as_ref().map(apps_text),
         _ => None,
     }
 }
@@ -110,6 +171,16 @@ impl Files {
             .tiling_style
             .as_ref()
             .or(machine.tiling_style.as_ref());
+        let look = person
+            .workspaces_look
+            .as_ref()
+            .or(machine.workspaces_look.as_ref());
+        let ends = person
+            .workspaces_ends
+            .as_ref()
+            .or(machine.workspaces_ends.as_ref());
+        let most = presets::MOST_WORKSPACES as u32;
+        let in_range = |n: u32| (1..=most).contains(&n);
         Layout {
             preset: name,
             tiling: person
@@ -134,6 +205,42 @@ impl Files {
                 .maximize_button
                 .or(machine.maximize_button)
                 .unwrap_or(true),
+            // Absent, the preset's count of workspaces (M5.2n); a number
+            // out of range is the same as none.
+            workspaces: person
+                .workspaces
+                .or(machine.workspaces)
+                .filter(|n| in_range(*n))
+                .unwrap_or(preset.workspaces.count as u32),
+            dynamic_workspaces: person
+                .dynamic_workspaces
+                .or(machine.dynamic_workspaces)
+                .unwrap_or(false),
+            workspaces_per_screen: person
+                .workspaces_per_screen
+                .or(machine.workspaces_per_screen)
+                .unwrap_or(false),
+            workspaces_look: known("layout.workspaces_look", look)
+                .unwrap_or_else(|| settings::WORKSPACES_LOOK_DEFAULT.to_string()),
+            workspaces_shown: person
+                .workspaces_shown
+                .or(machine.workspaces_shown)
+                .filter(|n| in_range(*n))
+                .unwrap_or(settings::WORKSPACES_SHOWN_DEFAULT),
+            workspaces_ends: known("layout.workspaces_ends", ends)
+                .unwrap_or_else(|| settings::WORKSPACES_ENDS_DEFAULT.to_string()),
+            // The person's list or table is the whole one, not merged with
+            // the machine's (M5.2n).
+            workspace_names: person
+                .workspace_names
+                .clone()
+                .or_else(|| machine.workspace_names.clone())
+                .unwrap_or_default(),
+            app_workspaces: person
+                .app_workspaces
+                .clone()
+                .or_else(|| machine.app_workspaces.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -180,6 +287,14 @@ impl Files {
             "layout.close_button" => person.close_button.take().is_some(),
             "layout.minimize_button" => person.minimize_button.take().is_some(),
             "layout.maximize_button" => person.maximize_button.take().is_some(),
+            "layout.workspaces" => person.workspaces.take().is_some(),
+            "layout.dynamic_workspaces" => person.dynamic_workspaces.take().is_some(),
+            "layout.workspaces_per_screen" => person.workspaces_per_screen.take().is_some(),
+            "layout.workspaces_look" => person.workspaces_look.take().is_some(),
+            "layout.workspaces_shown" => person.workspaces_shown.take().is_some(),
+            "layout.workspaces_ends" => person.workspaces_ends.take().is_some(),
+            "layout.workspace_names" => person.workspace_names.take().is_some(),
+            "layout.app_workspaces" => person.app_workspaces.take().is_some(),
             _ => return Err(format!("{key} is not on the Layout page")),
         };
         let without = Self::layout_from(&machine, &person);
@@ -556,6 +671,113 @@ mod tests {
         assert_eq!(
             refused,
             "notifications.do_not_disturb: expected true or false, not \"maybe\""
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_workspace_count_is_written_only_when_it_differs_from_the_preset() {
+        let dir = scratch("workspaces");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let read = || std::fs::read_to_string(&person).unwrap_or_default();
+        // Classic has four workspaces: four writes nothing.
+        files.choose("layout.workspaces", "4").unwrap();
+        assert!(!person.exists(), "{}", read());
+        assert_eq!(files.layout().workspaces, 4);
+        // Six is written exactly as `edel settings set` writes it.
+        files.choose("layout.workspaces", "6").unwrap();
+        let by_command = settings::set(
+            &format!("format = {}\n", settings::FORMAT),
+            "layout.workspaces",
+            "6",
+        )
+        .unwrap();
+        assert_eq!(read(), by_command);
+        assert!(read().contains("workspaces = 6"), "{}", read());
+        assert_eq!(files.layout().workspaces, 6);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn workspace_names_are_written_as_edel_settings_set_writes_them() {
+        let dir = scratch("names");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        files
+            .choose("layout.workspace_names", &list_text(&["Mail".into()]))
+            .unwrap();
+        let by_command = settings::set(
+            &format!("format = {}\n", settings::FORMAT),
+            "layout.workspace_names",
+            r#"["Mail"]"#,
+        )
+        .unwrap();
+        assert_eq!(std::fs::read_to_string(&person).unwrap(), by_command);
+        assert_eq!(files.layout().workspace_names, ["Mail"]);
+        assert_eq!(
+            list_text(&["Mail".into(), String::new()]),
+            r#"["Mail", ""]"#
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn workspace_apps_are_written_as_a_table_that_edel_settings_takes() {
+        let dir = scratch("apps");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let mut apps = BTreeMap::new();
+        apps.insert("org.mozilla.firefox".to_string(), 2);
+        let text = apps_text(&apps);
+        assert_eq!(text, r#"{ "org.mozilla.firefox" = 2 }"#);
+        assert_eq!(apps_text(&BTreeMap::new()), "{}");
+        assert!(settings::set("format = 1\n", "layout.app_workspaces", &text).is_ok());
+        files.choose("layout.app_workspaces", &text).unwrap();
+        assert_eq!(files.layout().app_workspaces, apps);
+        // An empty table or list is what a person writes over a machine's
+        // own, so `edel settings set` must take them too.
+        assert!(settings::set("format = 1\n", "layout.app_workspaces", "{}").is_ok());
+        assert!(settings::set("format = 1\n", "layout.workspace_names", "[]").is_ok());
+        assert!(read_back(&person).contains("org.mozilla.firefox"));
+        // Nothing in the table is what applies without it: it is taken out.
+        files.choose("layout.app_workspaces", "{}").unwrap();
+        assert!(!read_back(&person).contains("firefox"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The text of a file, or nothing when it is not there.
+    fn read_back(path: &PathBuf) -> String {
+        std::fs::read_to_string(path).unwrap_or_default()
+    }
+
+    #[test]
+    fn the_switcher_shows_three_numbers_until_a_file_says_otherwise() {
+        let dir = scratch("shown");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: None,
+        };
+        assert_eq!(
+            files.layout().value("layout.workspaces_shown").as_deref(),
+            Some("3")
+        );
+        assert_eq!(
+            files.layout().value("layout.workspaces_look").as_deref(),
+            Some("numbers")
+        );
+        assert_eq!(
+            files.layout().value("layout.workspaces_ends").as_deref(),
+            Some("arrows")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

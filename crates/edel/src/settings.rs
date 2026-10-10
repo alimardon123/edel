@@ -877,6 +877,12 @@ pub const TRAY_IN_PANEL: &str = "layout.tray_in_panel";
 pub const WORKSPACES_LOOK: &str = "layout.workspaces_look";
 pub const WORKSPACES_SHOWN: &str = "layout.workspaces_shown";
 pub const WORKSPACES_ENDS: &str = "layout.workspaces_ends";
+/// What the switcher shows when neither file sets its keys (M5.2m): the
+/// numbers, three at once, an arrow where more lie. shell-ui draws these
+/// and Settings shows them.
+pub const WORKSPACES_LOOK_DEFAULT: &str = "numbers";
+pub const WORKSPACES_SHOWN_DEFAULT: u32 = 3;
+pub const WORKSPACES_ENDS_DEFAULT: &str = "arrows";
 
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An

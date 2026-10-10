@@ -5,6 +5,7 @@
 //! own, the look is `style.rs`'s from the tokens, and another toolkit
 //! would be these few functions again (ADR-004).
 
+use gtk::graphene;
 use gtk::prelude::*;
 
 use edel::i18n::{tr, trf};
@@ -473,13 +474,13 @@ pub fn banner(content: &gtk::Box, name: &str, version: &str) -> gtk::FlowBox {
 /// A big button added to the row of a [`banner`].
 pub fn add_big(buttons: &gtk::FlowBox, label: &str, main: bool) -> gtk::Button {
     let button = big_button(label, main);
-    place(buttons, &button);
+    add_to_flow(buttons, &button);
     button
 }
 
 /// Appends `button` to a [`button_flow`] at its own width, not stretched
 /// to fill what the row has left.
-fn place(flow: &gtk::FlowBox, button: &gtk::Button) {
+fn add_to_flow(flow: &gtk::FlowBox, button: &gtk::Button) {
     flow.append(button);
 }
 
@@ -540,7 +541,7 @@ impl Hero {
 
     /// Adds a big button after the others.
     pub fn add(&self, button: &gtk::Button) {
-        place(&self.buttons, button);
+        add_to_flow(&self.buttons, button);
     }
 
     /// Shows or hides `button`, with the place the card holds for it.
@@ -882,6 +883,41 @@ impl Choice {
     }
 }
 
+/// The space left above a group the page scrolls to, in logical pixels.
+const SCROLL_MARGIN: f64 = 24.0;
+
+/// Scrolls the page so `widget` lies near the top of its view (M5.31d, M5.2n):
+/// a group asked for by name is shown whole, its heading first, even on a
+/// window too small for the page.
+pub fn scroll_to_top(widget: &gtk::Widget) {
+    let Some(scroll) = widget
+        .ancestor(gtk::ScrolledWindow::static_type())
+        .and_downcast::<gtk::ScrolledWindow>()
+    else {
+        return;
+    };
+    let Some(at) = widget.compute_bounds(&scroll) else {
+        return;
+    };
+    let adjustment = scroll.vadjustment();
+    adjustment.set_value(adjustment.value() + f64::from(at.y()) - SCROLL_MARGIN);
+}
+
+/// A widget's place in the window as CI reads it, `X+Y+WxH` in logical
+/// pixels from the window's top left corner, or `none` when it has none.
+pub fn place(bounds: Option<graphene::Rect>) -> String {
+    match bounds {
+        Some(r) => format!(
+            "{:.0}+{:.0}+{:.0}x{:.0}",
+            r.x(),
+            r.y(),
+            r.width(),
+            r.height()
+        ),
+        None => "none".to_string(),
+    }
+}
+
 /// A value chosen from a few that are all in view, as a row of buttons
 /// joined into one, the chosen one in the accent: a click is the whole
 /// change, where a [`Choice`] needs a click to open and another to pick.
@@ -920,6 +956,11 @@ impl Segments {
 
     pub fn selected(&self) -> usize {
         self.selected.get()
+    }
+
+    /// The buttons, in the order of the labels (CI's places and focus).
+    pub fn buttons(&self) -> Vec<gtk::ToggleButton> {
+        self.buttons.borrow().clone()
     }
 
     /// Shows choice `at` as chosen, without calling back.
@@ -981,5 +1022,17 @@ impl Segments {
         }
         *self.buttons.borrow_mut() = buttons;
         self.set_selected(at);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_place_reads_as_ci_reads_it() {
+        let at = graphene::Rect::new(12.4, 300.0, 88.0, 30.2);
+        assert_eq!(place(Some(at)), "12+300+88x30");
+        assert_eq!(place(None), "none");
     }
 }
