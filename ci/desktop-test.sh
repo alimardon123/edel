@@ -1577,10 +1577,11 @@ case_workspaces_dynamic() {
 	# Super+Ctrl+Shift+Right sends away to the second and follows it: the
 	# first, empty now, closes, so away's workspace is the first of two.
 	sent=$(count 'edel-compositor: window away to workspace 2$')
-	shown_away=$(count 'DESKTOP-TEST: windows 1 away@')
 	python3 ci/qmp.py key meta_l-ctrl-shift-right
 	wait_more 'edel-compositor: window away to workspace 2$' "$sent" || fail "Super+Ctrl+Shift+Right did not send away to workspace 2"
-	wait_more 'DESKTOP-TEST: windows 1 away@' "$shown_away" || fail "the window did not follow to its workspace: $(value windows)"
+	# Alone on screen before and after, away may print no new windows
+	# line; the state file below shows where it is.
+	wait_for 'DESKTOP-TEST: windows 1 away@' || fail "the window did not follow to its workspace: $(value windows)"
 	state_is 'shown 1 count 2 names ["", ""]' || fail "after the move, away's workspace is not the first of two: $(value workspace_state)"
 	# Closing away leaves one workspace again.
 	closed=$(count 'edel-compositor: workspaces now 1 \(dynamic\)')
