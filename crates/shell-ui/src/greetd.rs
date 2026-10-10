@@ -277,18 +277,18 @@ pub fn log_in(greetd: &mut Greetd, user: &str, password: &str, cmd: &[&str]) -> 
     // At most a few prompts: PAM asks once for a password, maybe once
     // more for a message.
     for _ in 0..8 {
-        let answer = greetd.ask(&next);
+        let got = greetd.ask(&next);
         // What greetd said to each step, for the greeter's log; never
         // the password.
         let step = fields(&next)
             .and_then(|f| f.into_iter().next())
             .map(|(_, v)| v)
             .unwrap_or_default();
-        match &answer {
+        match &got {
             Ok(reply) => eprintln!("edel-shell-ui: greetd: {step}: {}", said(reply)),
             Err(e) => eprintln!("edel-shell-ui: greetd: {step}: {e:#}"),
         }
-        match answer {
+        match got {
             Ok(Reply::Success) if next.contains("\"start_session\"") => return Login::Started,
             Ok(Reply::Success) => next = start_session(cmd),
             Ok(Reply::Prompt { secret: true, .. }) => next = answer(Some(password)),
