@@ -645,6 +645,13 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# The power menu's rules (M5.10c): doas answers what it would do
+		# for ci, in group seat, without running anything.
+		'power rules')
+			for c in /sbin/poweroff /sbin/reboot /usr/libexec/edel-suspend; do
+				echo "DESKTOP-TEST: power rule $c $(su -s /bin/sh ci -c "doas -C /etc/doas.d/edel-power.conf $c" 2>&1 | tr '\n' ' ')"
+			done
+			;;
 		# What the greeter, its compositor and greetd said (M5.10b), for
 		# a login that does not finish.
 		'greeter log')
