@@ -376,6 +376,16 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour e0a030 --title lap </dev/null >/dev/null 2>&1 &
 			;;
 		'lap off') pkill -f '[e]del-testclient --size 200x150 --colour e0a030' ;;
+		# Whether the compositor runs, sleeps or hangs, and where (the
+		# overview case's failures, M5.2j-b3): its state, CPU time and the
+		# kernel call it waits in, twice a second apart.
+		'compositor state')
+			pid=$(pidof edel-compositor | cut -d' ' -f1)
+			one=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
+			sleep 1
+			two=$(cut -d' ' -f3,14,15 "/proc/$pid/stat" 2>/dev/null)
+			say "compositor_state pid $pid: $one then $two, waiting in $(cat "/proc/$pid/wchan" 2>/dev/null)"
+			;;
 		# Dynamic workspaces (M5.2i): every test window and foot closed, so
 		# the case starts with none; the layout keys it sets and resets; and
 		# the state file's shown workspace, count and names read back.
