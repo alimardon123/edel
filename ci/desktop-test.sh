@@ -2051,6 +2051,72 @@ case_dock() {
 	echo "PASS: Mac-like put a bar along the top, a dock $((w + 16)) px wide centred at $x,732 above an 8 px gap, and the window buttons on the left; foot's cell in the dock started foot, and unsetting the preset brought Classic back"
 }
 
+case_pins() {
+	# The apps widget's pins (M5.31d): ci's file holds one dock along the
+	# bottom with the apps widget and apps.pinned = ["terminal", "settings"],
+	# which shell-ui follows at once: "pinned apps terminal, settings", and
+	# the dock's places line apps 8+W, whose two first cells are foot and
+	# Settings, 52 px each (the dock's height less 8) and 4 px in from the
+	# apps' 8 px start, so cell k's middle lies at X + 38 + 52 k, X being the
+	# dock's left edge in the state file's edel-dock layer. The dock's middle
+	# row is Y + H / 2. Dragging Settings' middle onto foot's left quarter
+	# pins it first: "pinned settings at 0", "pinned apps settings, terminal",
+	# and ci's file holds apps.pinned = ["settings", "terminal"]. Dragged 150
+	# px up, off the dock, Settings is unpinned: "unpinned settings", "pinned
+	# apps terminal", and the file holds apps.pinned = ["terminal"]. Then the
+	# case's two lines come out of the file, and Classic's panel is back.
+	docks=$(count 'edel-shell-ui: panel places apps 8\+')
+	pins=$(count 'edel-shell-ui: pinned apps terminal, settings$')
+	guest 'pins line'
+	wait_more 'edel-shell-ui: pinned apps terminal, settings$' "$pins" ||
+		fail "apps.pinned = [\"terminal\", \"settings\"] did not reach shell-ui"
+	wait_more 'edel-shell-ui: panel places apps 8\+' "$docks" || fail "the dock did not hold the apps widget"
+	i=0
+	until value layers | grep -qE 'edel-dock@[0-9]+,[0-9]+,[0-9]+x[0-9]+'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no dock: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-dock@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-dock@//; s/[,x]/ /g')
+	dx=$1 dy=$2 dh=$4
+	y=$((dy + dh / 2))
+	first=$((dx + 38)) second=$((dx + 38 + 52)) quarter=$((dx + 8 + 4 + 13))
+	landed=$(count 'edel-shell-ui: pinned settings at 0$')
+	pinned=$(count 'edel-shell-ui: pinned apps settings, terminal$')
+	python3 ci/qmp.py drag "$second" "$y" "$quarter" "$y"
+	wait_more 'edel-shell-ui: pinned settings at 0$' "$landed" ||
+		fail "dragging Settings' cell at $second,$y onto foot's left quarter at $quarter,$y did not pin it first"
+	wait_more 'edel-shell-ui: pinned apps settings, terminal$' "$pinned" || fail "the apps widget does not show settings, terminal after the drag"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["settings", "terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"settings\", \"terminal\"]: $(value settings_file)"
+	# Off the dock by 150 px: the first cell is Settings now.
+	unpinned=$(count 'edel-shell-ui: unpinned settings$')
+	back=$(count 'edel-shell-ui: pinned apps terminal$')
+	python3 ci/qmp.py drag "$first" "$y" "$first" $((y - 150))
+	wait_more 'edel-shell-ui: unpinned settings$' "$unpinned" ||
+		fail "dragging Settings 150 px up, off the dock, did not unpin it"
+	wait_more 'edel-shell-ui: pinned apps terminal$' "$back" || fail "the apps widget does not show terminal alone after the unpin"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'pinned = \["terminal"\]' ||
+		fail "ci's settings file does not hold apps.pinned = [\"terminal\"]: $(value settings_file)"
+	# Back as the case found it: both lines out, and Classic's panel again.
+	classic=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
+	guest 'pins reset'
+	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic" ||
+		fail "taking the case's lines out did not bring Classic's panel back"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -qE 'pinned|panels' &&
+		fail "ci's settings file still holds the pins or the dock: $(value settings_file)"
+	echo "PASS: apps.pinned = [\"terminal\", \"settings\"] put two pins on the dock's apps widget at once (\"pinned apps terminal, settings\"); dragging Settings' cell onto foot's left quarter pinned it first and wrote apps.pinned = [\"settings\", \"terminal\"]; dragging it 150 px up unpinned it and wrote apps.pinned = [\"terminal\"]; taking the case's lines out brought Classic's panel back"
+}
+
 case_panels() {
 	# The panels as a setting (M5.4e, followed without a restart by
 	# M5.31b): layout.panels with one panel along the bottom holding only
@@ -3263,7 +3329,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels display sound network power updates portal tray scheme scale respawn
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

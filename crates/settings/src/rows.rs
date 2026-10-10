@@ -30,6 +30,12 @@ pub const ROWS: &[Row] = &[
         key: "layout.panels",
         title: n_("Panels"),
     },
+    // The apps the dock's apps widget pins, listed under Panels; the drag
+    // on the panel changes them (M5.31d).
+    Row {
+        key: "apps.pinned",
+        title: n_("Pinned apps"),
+    },
     Row {
         key: "layout.title_bars",
         title: n_("Title bars"),
@@ -298,6 +304,12 @@ mod tests {
         let titles: Vec<&str> = on_page("displays").map(|r| r.title).collect();
         assert_eq!(titles, ["Resolution", "Scale", "Position", "On"]);
         assert_eq!(title("displays.*.scale"), "Scale");
+    }
+
+    #[test]
+    fn the_pinned_apps_row_is_titled_as_the_panels_group_says() {
+        assert_eq!(title("apps.pinned"), "Pinned apps");
+        assert_eq!(row_named("Pinned apps"), Some("apps.pinned"));
     }
 
     #[test]

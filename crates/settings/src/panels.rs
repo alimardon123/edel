@@ -14,8 +14,9 @@ use gtk::graphene;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
+use edel::apps;
 use edel::i18n::{tr, trf};
-use edel::panel_edit::{self, EDIT_PANELS, PANELS, SHELL_BUS, SHELL_INTERFACE, SHELL_PATH};
+use edel::panel_edit::{self, EDIT_PANELS, PANELS, PINNED, SHELL_BUS, SHELL_INTERFACE, SHELL_PATH};
 use edel::presets::Panel;
 use edel::settings::Source;
 
@@ -37,6 +38,10 @@ pub struct Card {
     /// Where `layout.panels` comes from, with Reset and Copy as command.
     source: widgets::Source,
     edit: gtk::Button,
+    /// The apps the apps widget pins, by name, and their row: where
+    /// `apps.pinned` comes from, with Reset and Copy as command (M5.31d).
+    pins: gtk::Label,
+    pins_row: widgets::Row,
     problem: gtk::Label,
 }
 
@@ -69,11 +74,24 @@ pub fn card(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<C
     // The row names its control after the row; the button keeps its own
     // name, which is what a screen reader should read.
     edit.update_property(&[gtk::accessible::Property::Label(tr("Edit panels"))]);
+    // The pinned apps: the drag on the panel changes them, so the row only
+    // shows them (M5.31d).
+    let pins = gtk::Label::builder()
+        .xalign(1.0)
+        .wrap(true)
+        .css_classes(["edel-source"])
+        .build();
+    let pins_row = widgets::row(&group, rows::title(PINNED), &pins.clone().upcast());
+    pins_row.subtitle.set_label(tr(
+        "Drag an app's icon on the panel to pin, move or unpin it",
+    ));
     let card = Rc::new(Card {
         shown,
         picture,
         source,
         edit,
+        pins,
+        pins_row,
         problem: problem.clone(),
     });
     card.wire();
@@ -100,13 +118,43 @@ impl Card {
             .label
             .set_label(&rows::describe(&source, &title));
         self.source.reset.set_visible(rows::resettable(&source));
+        self.show_pins(files);
     }
 
-    /// Connects Reset, Copy as command and the Edit panels button.
+    /// Shows the apps pinned, by name, and where `apps.pinned` comes from;
+    /// the row's line says what the drag does, then the source (M5.31d).
+    fn show_pins(&self, files: &Files) {
+        let names = names_of(&files.pins(), &apps::read_all(&apps::dirs()));
+        let shown = if names.is_empty() {
+            tr("None").to_string()
+        } else {
+            names.join(", ")
+        };
+        self.pins.set_label(&shown);
+        let source = files.source(PINNED);
+        let hint = tr("Drag an app's icon on the panel to pin, move or unpin it");
+        let line = match rows::note(&source, true) {
+            Some(note) => format!("{hint} · {note}"),
+            None => hint.to_string(),
+        };
+        self.pins_row.subtitle.set_label(&line);
+        self.pins_row.reset.set_visible(rows::resettable(&source));
+    }
+
+    /// Connects Reset, Copy as command and the Edit panels button, and the
+    /// pinned apps' Reset and Copy as command.
     fn wire(&self) {
         let problem = self.problem.clone();
         self.source.reset.connect_clicked(move |_| {
             report(&problem, Files::here().set(PANELS, None));
+        });
+        let problem = self.problem.clone();
+        self.pins_row
+            .reset
+            .connect_clicked(move |_| report(&problem, Files::here().set(PINNED, None)));
+        self.pins_row.copy.connect_clicked(move |button| {
+            button.clipboard().set_text(&copy_pins_command());
+            widgets::copied(button);
         });
         let problem = self.problem.clone();
         self.source
@@ -215,6 +263,25 @@ fn copy_command() -> Result<String, String> {
     }
 }
 
+/// The apps the pins name, as Settings shows them in the list's order: each
+/// app's name when it is installed, else the pin as it is written (M5.31d).
+pub fn names_of(pins: &[String], installed: &[apps::App]) -> Vec<String> {
+    pins.iter()
+        .map(|pin| apps::pinned(installed, pin).map_or_else(|| pin.clone(), |app| app.name.clone()))
+        .collect()
+}
+
+/// The command Copy as command gives for the pinned apps: `edel settings
+/// reset apps.pinned` when the person has a list of their own, else the
+/// `set` line for the list that applies now (ADR-008).
+fn copy_pins_command() -> String {
+    let files = Files::here();
+    match files.source(PINNED) {
+        Source::Person(_) => format!("edel settings reset {PINNED}"),
+        _ => rows::command(&[(PINNED, panel_edit::pins_value(&files.pins()))]),
+    }
+}
+
 /// Asks shell-ui to open its panel editor over the session bus, as a
 /// panel's right-click menu does. Blocking, so it runs on GIO's thread; with
 /// no desktop it fails with the bus's own words.
@@ -254,6 +321,17 @@ fn place(bounds: Option<graphene::Rect>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pinned_apps_are_named_as_settings_knows_them() {
+        let installed = vec![apps::parse(
+            "[Desktop Entry]\nType=Application\nName=Foot\nExec=foot\nCategories=TerminalEmulator;\n",
+        )
+        .unwrap()];
+        let pins = ["terminal".to_string(), "gone".to_string()];
+        assert_eq!(names_of(&pins, &installed), ["Foot", "gone"]);
+        assert!(names_of(&[], &installed).is_empty());
+    }
 
     #[test]
     fn a_place_reads_as_ci_reads_it() {

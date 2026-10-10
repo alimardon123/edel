@@ -409,9 +409,16 @@ commands() {
 		# the keyboard on Edit panels, and its log says where that button lies.
 		'settings panels line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", end = [\"clock\"] }]' >/home/ci/.config/edel/$settings_name" ;;
 		'settings panels')
-			as_ci edel-settings --page layout.panels </dev/null >/tmp/settings-panels.log 2>&1 &
+			# On the session's bus, which its Edit panels button calls.
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page layout.panels" </dev/null >/tmp/settings-panels.log 2>&1 &
 			;;
 		'settings panels log') say "settings_panels_log $(tr '\n' ';' </tmp/settings-panels.log 2>/dev/null)" ;;
+		# The apps widget's pins (M5.31d): ci's own file with one dock along
+		# the bottom holding the apps widget, and two pins, terminal and
+		# settings; `pins reset` takes both lines out again.
+		'pins line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[layout]' 'panels = [{ edge = \"bottom\", style = \"dock\", centre = [\"apps\"] }]' '[apps]' 'pinned = [\"terminal\", \"settings\"]' >/home/ci/.config/edel/$settings_name" ;;
+		'pins reset') as_ci "sed -i '/^pinned *=/d; /^panels *=/d' /home/ci/.config/edel/$settings_name" ;;
 		# What Settings holds of its own while open (M5.6a), read as
 		# shell-ui's is: the least of three reads a second apart, the
 		# budgeted number, and VmRSS, reported.

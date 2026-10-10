@@ -155,6 +155,16 @@ impl Files {
         )
     }
 
+    /// The apps the apps widget pins that apply (M5.31d): the person's
+    /// `apps.pinned` over the machine's, else the preset's.
+    pub fn pins(&self) -> Vec<String> {
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        panel_edit::pins_applying(
+            read(Some(&self.machine)).as_deref(),
+            read(self.person.as_ref()).as_deref(),
+        )
+    }
+
     /// Chooses `value` for the layout key `key`: written to the person's
     /// file, or taken out of it when it is what would apply without it,
     /// as writers never write a default (ADR-008).

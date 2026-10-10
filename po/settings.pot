@@ -464,6 +464,12 @@ msgstr ""
 msgid "Or right-click a panel"
 msgstr ""
 
+msgid "Drag an app's icon on the panel to pin, move or unpin it"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
 msgid "the call to the desktop stopped"
 msgstr ""
 
@@ -558,6 +564,9 @@ msgid "Tiling style"
 msgstr ""
 
 msgid "Panels"
+msgstr ""
+
+msgid "Pinned apps"
 msgstr ""
 
 msgid "Window buttons"

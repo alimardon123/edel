@@ -15,6 +15,10 @@ use crate::settings;
 /// The settings key the panels are written to (M5.31b).
 pub const PANELS: &str = "layout.panels";
 
+/// The settings key the apps the apps widget pins are written to, in
+/// order (M5.31d): the dock's drag of an app's icon writes it.
+pub const PINNED: &str = "apps.pinned";
+
 /// The session-bus name shell-ui serves its panel editor on (M5.31d).
 pub const SHELL_BUS: &str = "org.edel.Shell";
 /// The object path shell-ui serves it at (M5.31d).
@@ -345,6 +349,65 @@ pub fn to_write(
         return Ok(None);
     }
     value(panels).map(Some)
+}
+
+/// The apps pinned to the apps widget that apply (M5.31d): the person's
+/// `apps.pinned` over the machine's, else the list the preset named by
+/// `layout.preset` pins (the person's over the machine's, as `applying`
+/// finds it). A file that does not read, or is not in this release's
+/// format, counts as absent.
+pub fn pins_applying(machine: Option<&str>, person: Option<&str>) -> Vec<String> {
+    let read = |text: Option<&str>| {
+        text.and_then(|t| settings::read(t).ok())
+            .map(|read| read.file)
+            .unwrap_or_default()
+    };
+    let (machine, person) = (read(machine), read(person));
+    if let Some(pins) = person.apps.pinned.clone().or(machine.apps.pinned.clone()) {
+        return pins;
+    }
+    let name = person.layout.preset.or(machine.layout.preset);
+    presets::named(name.as_deref()).0.apps.pinned
+}
+
+/// `list` with `app` taken out where it is and put at `index`, counted
+/// after that removal and clamped to the list's end (M5.31d). An app not
+/// in the list is put in.
+pub fn pin_at(list: &[String], app: &str, index: usize) -> Vec<String> {
+    let mut out = unpin(list, app);
+    out.insert(index.min(out.len()), app.to_string());
+    out
+}
+
+/// `list` without `app` (M5.31d).
+pub fn unpin(list: &[String], app: &str) -> Vec<String> {
+    list.iter().filter(|a| a.as_str() != app).cloned().collect()
+}
+
+/// `list` as the TOML array `edel settings set apps.pinned=VALUE` takes
+/// and writes, such as `["settings", "terminal"]`.
+pub fn pins_value(list: &[String]) -> String {
+    let items = list
+        .iter()
+        .map(|app| toml::Value::String(app.clone()))
+        .collect();
+    toml::Value::Array(items).to_string()
+}
+
+/// The `apps.pinned` value to write for `list`, or `None` when `list` is
+/// what applies without the person's own line: a default is never written
+/// (ADR-008). The person's `apps.pinned` is taken out for the comparison.
+pub fn pins_to_write(
+    list: &[String],
+    machine: Option<&str>,
+    person: Option<&str>,
+) -> Option<String> {
+    let without =
+        person.map(|text| settings::unset(text, PINNED).unwrap_or_else(|_| text.to_string()));
+    if pins_applying(machine, without.as_deref()) == list {
+        return None;
+    }
+    Some(pins_value(list))
 }
 
 #[cfg(test)]
@@ -695,5 +758,102 @@ mod tests {
         assert!(e.to_string().contains("there is no panel 3"), "{e}");
         let e = set_style(&panels, 3, Style::Dock).unwrap_err();
         assert!(e.to_string().contains("there is no panel 3"), "{e}");
+    }
+
+    fn strings(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_pins_are_the_persons_then_the_machines_then_the_presets() {
+        let mac = presets::named(Some("mac-like")).0.apps.pinned;
+        assert_eq!(
+            pins_applying(None, None),
+            Vec::<String>::new(),
+            "Classic pins none"
+        );
+        assert_eq!(
+            pins_applying(None, Some("format = 1\n[layout]\npreset = \"mac-like\"\n")),
+            mac
+        );
+        let machine = "format = 1\n[apps]\npinned = [\"foot\"]\n";
+        assert_eq!(pins_applying(Some(machine), None), ["foot"]);
+        let person = "format = 1\n[apps]\npinned = [\"mail\", \"terminal\"]\n";
+        assert_eq!(
+            pins_applying(Some(machine), Some(person)),
+            ["mail", "terminal"]
+        );
+        // The person's empty list pins none, over the machine's.
+        let none = "format = 1\n[apps]\npinned = []\n";
+        assert!(pins_applying(Some(machine), Some(none)).is_empty());
+        // The machine's preset, when neither file sets the list.
+        let hive = "format = 1\n[layout]\npreset = \"hive\"\n";
+        assert!(pins_applying(Some(hive), None).is_empty());
+    }
+
+    #[test]
+    fn an_app_moves_to_an_index_counted_after_it_is_taken_out() {
+        let list = strings(&["files", "browser", "terminal"]);
+        assert_eq!(
+            pin_at(&list, "terminal", 0),
+            ["terminal", "files", "browser"]
+        );
+        assert_eq!(
+            pin_at(&list, "files", 2),
+            ["browser", "terminal", "files"],
+            "removed first, so index 2 is last"
+        );
+        assert_eq!(
+            pin_at(&list, "files", 99),
+            ["browser", "terminal", "files"],
+            "clamped"
+        );
+        // An app not in the list is put in, at the index.
+        assert_eq!(
+            pin_at(&list, "foot", 1),
+            ["files", "foot", "browser", "terminal"]
+        );
+    }
+
+    #[test]
+    fn an_app_is_unpinned_and_the_others_keep_their_order() {
+        let list = strings(&["files", "browser", "terminal"]);
+        assert_eq!(unpin(&list, "browser"), ["files", "terminal"]);
+        assert_eq!(unpin(&list, "foot"), list, "not pinned: nothing changes");
+    }
+
+    #[test]
+    fn the_value_is_the_array_settings_set_writes() {
+        let list = strings(&["settings", "terminal"]);
+        let value = pins_value(&list);
+        assert_eq!(value, r#"["settings", "terminal"]"#);
+        let file = settings::set("format = 1\n", PINNED, &value).unwrap();
+        assert_eq!(
+            file,
+            "format = 1\n\n[apps]\npinned = [\"settings\", \"terminal\"]\n"
+        );
+        assert_eq!(pins_value(&[]), "[]");
+    }
+
+    #[test]
+    fn a_default_is_never_written_and_a_persons_own_line_is_taken_out() {
+        let list = strings(&["settings", "terminal"]);
+        assert_eq!(
+            pins_to_write(&list, None, None),
+            Some(r#"["settings", "terminal"]"#.to_string())
+        );
+        // What applies without the person's line is written as no line.
+        let machine = "format = 1\n[apps]\npinned = [\"settings\", \"terminal\"]\n";
+        assert_eq!(pins_to_write(&list, Some(machine), None), None);
+        // A person's line equal to the preset's is taken out, not kept.
+        let mac = presets::named(Some("mac-like")).0.apps.pinned;
+        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[apps]\npinned = [\"files\", \"browser\", \"mail\", \"music\", \"editor\", \"terminal\", \"settings\"]\n";
+        assert_eq!(mac.len(), 7);
+        assert_eq!(pins_to_write(&mac, None, Some(person)), None);
+        // An empty list is a choice, written.
+        assert_eq!(
+            pins_to_write(&[], Some(machine), None),
+            Some("[]".to_string())
+        );
     }
 }
