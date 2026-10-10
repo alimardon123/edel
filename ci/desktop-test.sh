@@ -1934,9 +1934,11 @@ case_overview() {
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
 	# Typing in the overview searches (M5.2j-b3): foot and Return start
 	# foot and leave; Super+Q closes it again.
+	sleep 1
 	shown=$(count 'edel-compositor: overview shown$')
 	python3 ci/qmp.py key meta_l-w
-	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview for the search"
+	wait_more 'edel-compositor: overview shown$' "$shown" ||
+		fail "Super+W did not show the overview for the search; the compositor's last overview lines: $(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview' | tail -n 3 | tr '\n' '|')"
 	started=$(count 'edel-compositor: overview started foot$')
 	mapped=$(count 'edel-compositor: mapped window foot')
 	python3 ci/qmp.py type 'foot'
