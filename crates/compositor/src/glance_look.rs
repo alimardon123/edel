@@ -284,11 +284,12 @@ pub fn tray(
     plan: &Plan,
     frames: &[(String, Mark)],
     bar: f32,
-    new: &str,
+    words: (&str, &str),
     scale: f64,
     tokens: &Tokens,
     text: Option<&mut Text>,
 ) -> Option<Pixmap> {
+    let (new, caption) = words;
     let s = scale as f32;
     let t = plan.tray;
     let (w, h) = ((t.size.w as f32 * s).ceil(), (t.size.h as f32 * s).ceil());
@@ -376,7 +377,16 @@ pub fn tray(
         }
     }
     if let Some(text) = text {
+        // The caption, "Workspaces", quiet at the tray's head.
         text.set_size(SMALL * s);
+        let (cx, cy, cw, ch) = local(plan.caption);
+        let words = text.fit(caption, cw);
+        let baseline = (cy + ch / 2.0 + (text.ascent() + text.descent()) / 2.0).round();
+        let quiet = Colour {
+            a: 0.7,
+            ..tokens.backdrop_text
+        };
+        text.draw_on(&mut pixmap, &words, (cx + 2.0 * s).round(), baseline, quiet);
         let ink = Colour {
             a: 0.92,
             ..tokens.backdrop_text

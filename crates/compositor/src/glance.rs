@@ -800,7 +800,7 @@ impl Edel {
                 drawn.extend(placed(renderer, card, place, area, scale));
             }
         }
-        let placeholder = tr("Type to search");
+        let placeholder = tr("Search windows and apps");
         let shows = format!(
             "{} {placeholder} {:?} {scale} {:?}",
             overview.search.query, field.size, self.tokens.panel
@@ -883,9 +883,10 @@ impl Edel {
             })
             .collect();
         let new = tr("New");
+        let caption = tr("Workspaces");
         let bar = frame_bar(&screen.plan, screen.area, &self.tokens);
         let shows = format!(
-            "{:?} {labels:?} {marks:?} {bar} {new} {scale} {:?} {:?} {}",
+            "{:?} {labels:?} {marks:?} {bar} {new} {caption} {scale} {:?} {:?} {}",
             screen.plan,
             self.tokens.panel,
             self.tokens.backdrop,
@@ -902,7 +903,7 @@ impl Edel {
                 &screen.plan,
                 &frames,
                 bar,
-                new,
+                (new, caption),
                 scale,
                 &self.tokens,
                 self.text.as_mut(),

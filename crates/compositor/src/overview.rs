@@ -139,6 +139,8 @@ pub const TRAY_PAD: i32 = 12;
 pub const TRAY_EDGE: i32 = 14;
 /// The tray's corners.
 pub const TRAY_RADIUS: i32 = 18;
+/// The tray's header row, "Workspaces" in small letters at its top.
+pub const CAPTION: i32 = 20;
 /// The room kept between the tray and the spread windows, and round the
 /// spread windows, and between them.
 pub const ROOM: i32 = 16;
@@ -168,6 +170,8 @@ pub struct Plan {
     /// The search field, centred along the stage's top, `ROOM` from the
     /// tray and from the windows under it.
     pub search: Rectangle<i32, Logical>,
+    /// The tray's caption row.
+    pub caption: Rectangle<i32, Logical>,
     pub first: usize,
     pub shows: usize,
     pub before: Option<Rectangle<i32, Logical>>,
@@ -234,7 +238,10 @@ pub fn plan(
     let item_long = if across { size.w } else { size.h + LABEL };
     let item_short = if across { size.h + LABEL } else { size.w };
     let length = |n: usize| n as i32 * item_long + (n as i32 - 1).max(0) * gap + 2 * TRAY_PAD;
-    let room = if across { area.size.w } else { area.size.h } - 2 * TRAY_EDGE;
+    // The caption takes a row at the tray's top: along a side's strip,
+    // across a top or bottom one.
+    let (head_long, head_short) = if across { (0, CAPTION) } else { (CAPTION, 0) };
+    let room = if across { area.size.w } else { area.size.h } - 2 * TRAY_EDGE - head_long;
     // Every item when they fit; else as many as fit between two arrows.
     let (shows, ends) = if length(items) <= room {
         (items, 0)
@@ -243,8 +250,8 @@ pub fn plan(
         (usize::try_from(fit).unwrap_or(0).clamp(1, items), ARROW)
     };
     let first = first.min(items - shows.min(items));
-    let long = length(shows) + 2 * ends;
-    let short = item_short + 2 * TRAY_PAD;
+    let long = length(shows) + 2 * ends + head_long;
+    let short = item_short + 2 * TRAY_PAD + head_short;
     let (a, z) = (area.loc, area.loc + area.size);
     let tray: Rectangle<i32, Logical> = match side {
         Side::Left => Rectangle::new(
@@ -269,9 +276,9 @@ pub fn plan(
         if !seen.contains(&i) {
             return Rectangle::new(tray.loc, Size::default());
         }
-        let step = ends + TRAY_PAD + (i - first) as i32 * (item_long + gap);
+        let step = head_long + ends + TRAY_PAD + (i - first) as i32 * (item_long + gap);
         let at = if across {
-            (tray.loc.x + step, tray.loc.y + TRAY_PAD)
+            (tray.loc.x + step, tray.loc.y + TRAY_PAD + head_short)
         } else {
             (tray.loc.x + TRAY_PAD, tray.loc.y + step)
         };
@@ -281,12 +288,16 @@ pub fn plan(
     let add = (add && seen.contains(&count)).then(|| place(count));
     // The arrows lie in the room at each end, across the tray.
     let arrow = |start: bool| -> Rectangle<i32, Logical> {
-        let along = if start { 0 } else { long - ends - TRAY_PAD / 2 };
+        let along = if start {
+            head_long
+        } else {
+            long - ends - TRAY_PAD / 2
+        };
         let wide = ends + TRAY_PAD / 2;
         if across {
             Rectangle::new(
-                (tray.loc.x + along, tray.loc.y).into(),
-                (wide, short).into(),
+                (tray.loc.x + along, tray.loc.y + head_short).into(),
+                (wide, short - head_short).into(),
             )
         } else {
             Rectangle::new(
@@ -332,6 +343,10 @@ pub fn plan(
         add,
         stage,
         search,
+        caption: Rectangle::new(
+            (tray.loc.x + TRAY_PAD, tray.loc.y + TRAY_PAD / 2).into(),
+            (tray.size.w - 2 * TRAY_PAD, CAPTION).into(),
+        ),
         first,
         shows,
         before,
@@ -479,8 +494,11 @@ mod tests {
         assert_eq!(p.frames.len(), 4);
         assert_eq!(p.tray.loc.x, TRAY_EDGE);
         assert_eq!(p.tray.size.w, 141 + 2 * TRAY_PAD);
-        // Five items (four and the add frame) of 88 + 18, 10 apart, padded.
-        assert_eq!(p.tray.size.h, 5 * 106 + 4 * 10 + 2 * TRAY_PAD);
+        // Five items (four and the add frame) of 88 + 18, 10 apart, padded,
+        // under the caption's row.
+        assert_eq!(p.tray.size.h, CAPTION + 5 * 106 + 4 * 10 + 2 * TRAY_PAD);
+        assert_eq!(p.frames[0].loc.y, p.tray.loc.y + CAPTION + TRAY_PAD);
+        assert!(p.caption.loc.y < p.frames[0].loc.y && p.caption.size.h == CAPTION);
         // Centred down the free area.
         assert_eq!(p.tray.loc.y, (752 - p.tray.size.h) / 2);
         assert_eq!(p.frames[1].loc.y, p.frames[0].loc.y + 106 + 10);
@@ -548,7 +566,10 @@ mod tests {
         // (372 - 24 - 48 + 10) / (106 + 10) = 2 shown, between two arrows.
         assert_eq!((p.first, p.shows), (0, 2));
         assert!(p.before.is_none() && p.after.is_some());
-        assert_eq!(p.tray.size.h, 2 * 106 + 10 + 2 * TRAY_PAD + 2 * ARROW);
+        assert_eq!(
+            p.tray.size.h,
+            CAPTION + 2 * 106 + 10 + 2 * TRAY_PAD + 2 * ARROW
+        );
         assert!(p.tray.loc.y >= TRAY_EDGE && p.tray.loc.y + p.tray.size.h <= 400 - TRAY_EDGE);
         let shown: Vec<_> = p.frames.iter().filter(|f| !f.is_empty()).collect();
         assert_eq!(shown.len(), 2);
