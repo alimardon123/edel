@@ -24,6 +24,7 @@ mod grabs;
 mod input;
 mod keyboard;
 mod layers;
+mod lock;
 mod outputs;
 mod pointer;
 mod program;

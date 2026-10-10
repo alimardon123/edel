@@ -19,6 +19,25 @@ pub fn missing(global: &str) -> String {
     format!("the compositor does not offer {global}, so no panel can be drawn")
 }
 
+/// The compositor offers no lock (M5.10): the screen does not lock.
+pub fn lock_not_offered(why: impl Display) -> String {
+    format!(
+        "could not lock the screen: the compositor does not offer ext-session-lock-v1 ({why}); the session stays as it is"
+    )
+}
+
+/// The compositor refused the lock, as when another program holds one.
+pub const LOCK_REFUSED: &str =
+    "the screen was not locked: the compositor refused, as another lock screen may be up";
+
+/// No password helper: the lock screen stays up and says so.
+pub const NO_PASSWORD_CHECKER: &str = "the screen stays locked: no password helper (unix_chkpwd, part of Linux-PAM) is installed, so no password can be checked; switch to another terminal with Ctrl+Alt+F2 and log in there to end the session";
+
+/// The password could not be checked this time.
+pub fn password_not_checked(why: impl Display) -> String {
+    format!("could not check the password: {why}; the screen stays locked, try again")
+}
+
 /// shell-ui stops with an error.
 pub fn stopped(why: impl Display) -> String {
     format!("could not run: {why}; the compositor starts it again unless it keeps failing")

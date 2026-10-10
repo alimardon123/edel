@@ -473,7 +473,11 @@ impl Edel {
     /// The keyboard goes to the top window, or to nothing on an empty
     /// workspace, so no key reaches a hidden window. With workspaces on
     /// each screen, the top one on the pointer's screen goes first.
-    fn focus_top(&mut self) {
+    pub fn focus_top(&mut self) {
+        // Locked, the keyboard stays with the lock screen (M5.10).
+        if self.is_locked() {
+            return;
+        }
         let here = self
             .desks
             .per_screen()

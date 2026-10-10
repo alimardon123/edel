@@ -3112,6 +3112,43 @@ case_portal() {
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
+case_lock() {
+	# The lock screen (M5.10): Super+L asks shell-ui to lock, the
+	# compositor shows nothing of the session but each screen's lock
+	# surface, whose bottom is the tokens' backdrop_deep where the panel
+	# was, and a click where a window was reaches no window. A wrong
+	# password is said, and ci's own unlocks. Kept as lock.png.
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	before=$(value windows)
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	python3 ci/qmp.py key meta_l-l
+	wait_for 'edel-compositor: screen locked$' || fail "Super+L did not lock the screen"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up its lock screen"
+	deep=$(token backdrop_deep)
+	shot lock 640 790 "$deep" >/dev/null ||
+		fail "the locked screen at 640,790 is not the lock's #$deep but $(python3 ci/qmp.py pixel "$dir/lock.png" 640 790)"
+	# A click where a window lies reaches no window: nothing moves and
+	# nothing comes forward.
+	python3 ci/qmp.py click 400 300
+	sleep 1
+	[ "$(value windows)" = "$before" ] || fail "a click on the lock screen changed the windows: $before, then $(value windows)"
+	shot lock-clicked 640 790 "$deep" >/dev/null || fail "after a click the lock screen is gone"
+	wrong=$(count 'edel-shell-ui: lock: wrong password$')
+	python3 ci/qmp.py type 'not-it\n'
+	wait_more 'edel-shell-ui: lock: wrong password$' "$wrong" || fail "a wrong password was not said to be wrong"
+	shot lock-wrong 640 790 "$deep" >/dev/null || fail "a wrong password unlocked the screen"
+	# The wrong one's wait ends before the right one is typed.
+	sleep 3
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_for 'edel-shell-ui: lock: checking a password of 17 letters$' ||
+		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
+	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
+	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, a click reached no window, a wrong password was refused and ci's own unlocked it"
+}
+
 case_scheme() {
 	# Light and dark (M5.5c): edel settings set appearance.mode=dark
 	# gives the compositor the tokens' [colour], drawing the title bars

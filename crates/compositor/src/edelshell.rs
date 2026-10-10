@@ -157,6 +157,21 @@ impl Edel {
     /// The settings files changed (M5.9h): every link reads them again, as
     /// the tray's list is read when the tray changes. Nothing is logged,
     /// as it happens at every change.
+    /// Super+L (M5.10): shell-ui locks the screen. Whether a link heard it.
+    pub fn tell_lock(&self) -> bool {
+        let mut told = false;
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.lock();
+                told = true;
+            }
+        }
+        if told {
+            eprintln!("edel-compositor: lock asked for");
+        }
+        told
+    }
+
     pub fn tell_settings(&self) {
         for (link, _) in self.links.0.borrow().iter() {
             if link.is_alive() {
@@ -181,6 +196,11 @@ impl GlobalDispatch<EdelShellV1, ()> for Edel {
         data_init: &mut DataInit<'_, Edel>,
     ) {
         let link = data_init.init(resource, ());
+        // A locked session whose lock screen went with the last shell-ui
+        // is locked again by this one (M5.10).
+        if state.lock_orphaned() {
+            link.lock();
+        }
         state.links.0.borrow_mut().push((link, Told::default()));
         state.sync_shell();
         state.tell_keyboard();

@@ -633,6 +633,8 @@ commands() {
 		# The session's compositor dies (M4.7b): greetd should start its
 		# greeter, our compositor, which writes a new ready line; then ci
 		# logs in through it with a password only this image sets.
+		# The lock screen (M5.10): ci's password, which the lock checks.
+		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd
 			before=$(cut -d' ' -f1 /proc/uptime)
