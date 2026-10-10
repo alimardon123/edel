@@ -25,6 +25,9 @@ inotify = { version = "0.11.5", default-features = false }
 # and libseat backends join with the virtual GPU (M4.2b).
 smithay = { version = "=0.7.0", default-features = false, features = ["backend_drm", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "renderer_gl", "wayland_frontend"] }
 toml = "1.1.6"
+# The overview's tray, labels and buttons (M5.2j-b), drawn as shell-ui draws
+# its cards; already in the tree through edel's icons.
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std"] }
 # The code for our private protocol, protocols/edel-shell-v1.xml (M5.3);
 # already in the tree through smithay's protocols.
 wayland-scanner = "0.31.11"

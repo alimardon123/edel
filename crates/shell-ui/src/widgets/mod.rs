@@ -191,6 +191,9 @@ pub enum Action {
     /// Minimize the window at this place in [`Live::windows`].
     Minimize(usize),
     /// Switch the shown workspace's policy, as Super+T.
+    /// Show the overview, or leave it, as Super+W (M5.2j-b): a click on
+    /// the switcher's lit workspace.
+    Overview,
     TogglePolicy,
     /// Go to the keyboard's next layout, as Super+Space (M5.9f).
     NextKeyboardLayout,

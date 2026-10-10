@@ -18,6 +18,7 @@ mod everyday;
 mod extworkspace;
 mod fullscreen;
 mod glance;
+mod glance_look;
 mod grabs;
 mod input;
 mod keyboard;

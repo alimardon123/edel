@@ -1,34 +1,48 @@
-//! The overview on screen (roadmap M5.2j): Super+W shows every workspace
-//! of each screen side by side, each as a frame of the screen's shape with
-//! its windows drawn smaller where they lie, the shown one edged in the
-//! accent. A click on a frame shows that workspace and leaves; a window
-//! dragged to another frame moves there; Escape or Super+W again leaves.
-//! The pictures are those each window last showed, so nothing is drawn
-//! again until something changes. `edel_compositor::overview` holds the
-//! geometry.
+//! The overview on screen (roadmap M5.2j; laid out anew in M5.2j-b after
+//! `docs/mockups/shell/overview.jpg`): Super+W, or a click on the panel
+//! switcher's lit workspace, shows on each screen every workspace small in
+//! a strip on a tray along one side (`workspaces.overview_strip`, the left
+//! by default) and the shown workspace's windows spread out large on the
+//! rest, each with its app and title under it and a close button while the
+//! pointer is over it. The panels stay; the wallpaper is dimmed. A click on
+//! a window goes to it; a click on a small workspace shows its windows
+//! here; a window dragged onto a small workspace moves there; the frame
+//! with a plus adds a workspace; a click on nothing, Escape or Super+W
+//! leaves. The pictures are those each window last showed, and no window
+//! is moved or resized: tiling or floating, every workspace is as it was
+//! when the overview closes. `edel_compositor::overview` holds the
+//! geometry and `glance_look.rs` paints the tray, the names and the close
+//! button.
 
 use std::collections::HashMap;
 
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::Renderer;
-use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
+use smithay::backend::renderer::element::memory::{
+    MemoryRenderBuffer, MemoryRenderBufferRenderElement,
+};
 use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::Window;
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle};
+use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
+use edel::i18n::tr;
 use edel::tokens::Colour;
-use edel_compositor::overview::{frame_at, frames, into, scale, shrink};
+use edel_compositor::overview::{Plan, Side, frame_at, plan, spread};
 
-use crate::decoration::data;
+use crate::decoration::{app_id, data, title};
+use crate::glance_look::{self, CLOSE, NAME_ICON, PILL};
 use crate::render::{Drawn, Element};
 use crate::state::Edel;
 
 /// How far the pointer moves, in logical pixels, before a press on a
 /// window becomes a drag rather than a click.
 const DRAG_FROM: f64 = 6.0;
+/// The gap between a spread window and its name pill.
+const PILL_GAP: i32 = 6;
 
 /// The overview while it is open.
 #[derive(Default)]
@@ -38,10 +52,25 @@ pub struct Overview {
     /// The flat colours drawn, each kept by what it is, so a frame drawn
     /// again unchanged is not redrawn.
     solids: HashMap<String, SolidColorBuffer>,
-    /// The ids of the windows' pictures, by window and surface.
-    ids: HashMap<(Window, usize), Id>,
+    /// The ids of the windows' pictures, by window, place and surface.
+    ids: HashMap<(Window, bool, usize), Id>,
     /// The plain cards of windows never drawn yet.
-    cards: HashMap<Window, SolidColorBuffer>,
+    cards: HashMap<(Window, bool), SolidColorBuffer>,
+    /// The painted parts, each kept with what it shows: each screen's
+    /// tray, each window's name, the close button.
+    trays: HashMap<String, Painted>,
+    names: HashMap<Window, Painted>,
+    close: Option<Painted>,
+    /// The last places line logged for each screen.
+    logged: HashMap<String, String>,
+}
+
+/// A painted picture, what it shows (to paint it again only when that
+/// changes) and its size in pixels.
+struct Painted {
+    shows: String,
+    buffer: MemoryRenderBuffer,
+    pixels: (i32, i32),
 }
 
 /// A window picked up in the overview.
@@ -56,17 +85,56 @@ struct Drag {
     moving: bool,
 }
 
-/// One screen in the overview: its area, its workspaces' frames and the
-/// windows of each, bottom first, with their frames on the screen.
+/// One screen in the overview: its name and area, its plan, the workspace
+/// it shows, every window with its workspace and frame (bottom first), and
+/// the shown workspace's windows spread out (frame, place on the stage).
 pub struct Screen {
     pub name: String,
     pub area: Rectangle<i32, Logical>,
-    pub frames: Vec<Rectangle<i32, Logical>>,
+    pub plan: Plan,
+    pub shown: usize,
     pub windows: Vec<(usize, Window, Rectangle<i32, Logical>)>,
+    pub spread: Vec<Spread>,
+}
+
+/// A window of the shown workspace spread on the stage: the window, its
+/// frame on the screen and where the overview draws it.
+pub type Spread = (Window, Rectangle<i32, Logical>, Rectangle<i32, Logical>);
+
+/// What lies under the pointer in the overview.
+enum Hit {
+    Close(Window),
+    Window(String, Window, Rectangle<i32, Logical>),
+    Frame(String, usize),
+    Add,
+    Tray,
+    Nothing,
+}
+
+/// The close button over the corner of a window spread at `at`.
+fn close_rect(at: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
+    Rectangle::new(
+        (
+            at.loc.x + at.size.w - CLOSE / 2 - 2,
+            at.loc.y - CLOSE / 2 + 2,
+        )
+            .into(),
+        (CLOSE, CLOSE).into(),
+    )
+}
+
+/// The room round a spread window that still counts as over it: the
+/// close button's half outside its corner.
+fn reach(at: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
+    Rectangle::new(
+        (at.loc.x, at.loc.y - CLOSE / 2).into(),
+        (at.size.w + CLOSE / 2, at.size.h + CLOSE / 2).into(),
+    )
 }
 
 impl Edel {
-    /// Super+W: shows the overview, or leaves it.
+    /// Super+W, or a click on the panel switcher's lit workspace: shows
+    /// the overview, or leaves it.
     pub fn toggle_overview(&mut self) {
         if self.overview.is_some() {
             self.leave_overview();
@@ -94,16 +162,26 @@ impl Edel {
     /// Every screen as the overview lays it out.
     pub fn overview_screens(&self) -> Vec<Screen> {
         let count = self.desks.count();
+        let side = Side::named(self.settings.overview_strip());
+        let add = !self.settings.dynamic() && count < edel_compositor::desks::MOST;
+        let areas = self.window_areas();
         let mut screens: Vec<Screen> = self
             .space
             .outputs()
             .filter_map(|output| {
                 let area = self.space.output_geometry(output)?;
+                let name = output.name();
+                let free = areas
+                    .iter()
+                    .find(|(n, _)| *n == name)
+                    .map_or(area, |(_, r)| *r);
                 Some(Screen {
-                    name: output.name(),
+                    shown: self.desks.shown_on(&name),
+                    name,
                     area,
-                    frames: frames(area, count),
+                    plan: plan(area, free, count, add, side),
                     windows: Vec::new(),
+                    spread: Vec::new(),
                 })
             })
             .collect();
@@ -116,7 +194,7 @@ impl Edel {
         let mut put = |desk: usize, window: &Window, frame: Rectangle<i32, Logical>| {
             let name = screen_of(window);
             let screen = screens
-                .iter_mut()
+                .iter()
                 .position(|s| Some(&s.name) == name.as_ref())
                 .unwrap_or(0);
             if let Some(screen) = screens.get_mut(screen) {
@@ -135,33 +213,63 @@ impl Edel {
                 put(desk, window, frame);
             }
         }
+        for screen in &mut screens {
+            let mine: Vec<_> = screen
+                .windows
+                .iter()
+                .filter(|(desk, _, _)| *desk == screen.shown)
+                .map(|(_, w, f)| (w.clone(), *f))
+                .collect();
+            let sizes: Vec<Size<i32, Logical>> = mine.iter().map(|(_, f)| f.size).collect();
+            let at = spread(screen.plan.stage, &sizes);
+            screen.spread = mine
+                .into_iter()
+                .zip(at)
+                .map(|((w, f), at)| (w, f, at))
+                .collect();
+        }
         screens
     }
 
-    /// The window drawn under `point` in the overview, with its screen and
-    /// its picture's frame there, the top one first.
-    fn overview_window_at(
-        &self,
-        point: Point<f64, Logical>,
-    ) -> Option<(String, Window, Rectangle<i32, Logical>)> {
-        self.overview_screens().into_iter().find_map(|screen| {
-            screen
-                .windows
-                .iter()
-                .rev()
-                .find_map(|(desk, window, frame)| {
-                    let at = shrink(screen.frames[*desk], screen.area, *frame);
-                    at.to_f64()
-                        .contains(point)
-                        .then(|| (screen.name.clone(), window.clone(), at))
-                })
-        })
+    /// What lies under `point`, and the window under it if any (for the
+    /// close button, shown while the pointer is over a window).
+    fn overview_hit(&self, point: Point<f64, Logical>) -> Hit {
+        let screens = self.overview_screens();
+        let Some(screen) = screens.iter().find(|s| s.area.to_f64().contains(point)) else {
+            return Hit::Nothing;
+        };
+        let over = screen
+            .spread
+            .iter()
+            .rev()
+            .find(|(_, _, at)| reach(*at).to_f64().contains(point));
+        if let Some((window, _, at)) = over {
+            if close_rect(*at).to_f64().contains(point) {
+                return Hit::Close(window.clone());
+            }
+            if at.to_f64().contains(point) {
+                return Hit::Window(screen.name.clone(), window.clone(), *at);
+            }
+        }
+        if let Some(i) = frame_at(&screen.plan.frames, point) {
+            return Hit::Frame(screen.name.clone(), i);
+        }
+        if screen.plan.add.is_some_and(|a| a.to_f64().contains(point)) {
+            return Hit::Add;
+        }
+        if screen.plan.tray.to_f64().contains(point) {
+            return Hit::Tray;
+        }
+        Hit::Nothing
     }
 
     /// A button went down while the overview is open: on a window it may
-    /// become a drag; on a frame, or after a click, see `overview_release`.
+    /// become a drag; see `overview_release` for what a click does.
     pub fn overview_press(&mut self, point: Point<f64, Logical>) {
-        let held = self.overview_window_at(point);
+        let held = match self.overview_hit(point) {
+            Hit::Window(screen, window, at) => Some((screen, window, at)),
+            _ => None,
+        };
         let Some(overview) = &mut self.overview else {
             return;
         };
@@ -174,59 +282,94 @@ impl Edel {
         });
     }
 
-    /// The pointer moved while the overview is open: a held window follows.
+    /// The pointer moved while the overview is open: a held window
+    /// follows, and the close button follows the window under it.
     pub fn overview_motion(&mut self, point: Point<f64, Logical>) {
-        let Some(drag) = self.overview.as_mut().and_then(|o| o.drag.as_mut()) else {
-            return;
-        };
-        let moved = point - drag.from;
-        if moved.x.hypot(moved.y) >= DRAG_FROM {
-            drag.moving = true;
+        if let Some(drag) = self.overview.as_mut().and_then(|o| o.drag.as_mut()) {
+            let moved = point - drag.from;
+            if moved.x.hypot(moved.y) >= DRAG_FROM {
+                drag.moving = true;
+            }
         }
         self.dirty = true;
     }
 
-    /// The button came up while the overview is open. A window dragged to
-    /// another frame of its screen moves to that workspace and the
-    /// overview stays; a click shows the workspace under it, with the
-    /// window clicked on top, and leaves; a click outside every frame
-    /// leaves.
+    /// The button came up while the overview is open. A window dragged
+    /// onto a small workspace of its screen moves there and the overview
+    /// stays; a click on a window goes to it and leaves; on its close
+    /// button closes it; on a small workspace shows its windows here (the
+    /// shown one leaves to it); on the plus adds a workspace; on the tray
+    /// does nothing; on nothing leaves.
     pub fn overview_release(&mut self, point: Point<f64, Logical>) {
         let Some(overview) = &mut self.overview else {
             return;
         };
         let drag = overview.drag.take();
-        let screens = self.overview_screens();
-        let target = screens
-            .iter()
-            .find(|s| s.area.to_f64().contains(point))
-            .and_then(|s| Some((s.name.clone(), frame_at(&s.frames, point)?)));
+        let hit = self.overview_hit(point);
         if let Some(drag) = drag.as_ref().filter(|d| d.moving) {
-            if let Some((_, to)) = target.filter(|(name, _)| *name == drag.screen) {
-                self.carry_window(&drag.window, to);
+            if let Hit::Frame(name, to) = hit {
+                if name == drag.screen {
+                    self.carry_window(&drag.window, to);
+                }
             }
             self.dirty = true;
             return;
         }
-        let Some((name, to)) = target else {
-            self.leave_overview();
-            return;
-        };
-        self.leave_overview();
-        if self.desks.per_screen() {
-            self.switch_screen(to, &name);
-        } else {
-            self.switch_workspace(to);
-        }
-        if let Some(drag) = drag {
-            if self.space.elements().any(|w| *w == drag.window) {
-                self.space.raise_element(&drag.window, true);
-                self.focus(&drag.window);
+        match hit {
+            Hit::Close(window) => {
+                self.close(&window);
+                self.dirty = true;
             }
+            Hit::Window(_, window, _) => {
+                self.leave_overview();
+                if self.space.elements().any(|w| *w == window) {
+                    self.space.raise_element(&window, true);
+                    self.focus(&window);
+                }
+            }
+            Hit::Frame(name, to) => {
+                let shown = self.desks.shown_on(&name);
+                if to == shown {
+                    self.leave_overview();
+                    return;
+                }
+                if self.desks.per_screen() {
+                    self.switch_screen(to, &name);
+                } else {
+                    self.switch_workspace(to);
+                }
+                self.dirty = true;
+            }
+            Hit::Add => self.add_workspace(),
+            Hit::Tray => {}
+            Hit::Nothing => self.leave_overview(),
         }
     }
 
-    /// What the overview draws on `output` at `scale`, front to back.
+    /// The plus in the strip: one workspace more, written to the person's
+    /// settings file as `workspaces.count`, as Settings' Workspaces page
+    /// writes it; the file's watch then adds it here.
+    fn add_workspace(&mut self) {
+        let count = self.desks.count() + 1;
+        let Some(path) = edel::places::person_settings() else {
+            eprintln!(
+                "edel-compositor: {}",
+                edel_compositor::messages::workspace_not_added("no settings file for this person")
+            );
+            return;
+        };
+        match edel::settings::write(&path, "workspaces.count", Some(&count.to_string())) {
+            Ok(()) => eprintln!("edel-compositor: overview added workspace {count}"),
+            Err(e) => eprintln!(
+                "edel-compositor: {}",
+                edel_compositor::messages::workspace_not_added(format!("{e:#}"))
+            ),
+        }
+    }
+
+    /// What the overview draws on `output` at `scale`, front to back: the
+    /// panels, the held window, the close button and names, the spread
+    /// windows, the strip, the tray, the dimmed wallpaper.
     pub fn overview_elements(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -246,39 +389,98 @@ impl Edel {
             .get_pointer()
             .map(|p| p.current_location())
             .unwrap_or_default();
-        let shown = self.desks.shown_on(&name);
         let tokens = self.tokens.clone();
         let Some(mut overview) = self.overview.take() else {
             return Vec::new();
         };
+        self.log_places(&mut overview, &screen);
         let held = overview
             .drag
             .as_ref()
             .filter(|d| d.moving)
             .map(|d| (d.window.clone(), d.grip));
-        let mut front = Vec::new();
-        let mut back = Vec::new();
-        // The window held, at the pointer, over everything.
+        let hidden = self.hidden_layers();
+        let mut front: Vec<Drawn> =
+            crate::layers::elements(renderer, output, self.layers_over(output), scale, &hidden)
+                .into_iter()
+                .map(|e| Drawn::Plain(Element::Surface(e)))
+                .collect();
+        // The window held, at the pointer, over everything else.
         if let Some((window, grip)) = &held {
-            if let Some((desk, _, frame)) = screen.windows.iter().find(|(_, w, _)| w == window) {
-                let at = shrink(screen.frames[*desk], screen.area, *frame);
+            if let Some((_, place, at)) = screen.spread.iter().find(|(w, _, _)| w == window) {
                 let moved = Rectangle::new((pointer - *grip).to_i32_round(), at.size);
-                if screen.area.overlaps(moved) {
+                if area.overlaps(moved) {
                     front.extend(self.overview_window(
                         renderer,
                         &mut overview,
                         window,
-                        *frame,
-                        screen.frames[*desk],
-                        &screen,
-                        Some(moved.loc - at.loc),
+                        *place,
+                        moved,
+                        area,
+                        false,
                         scale,
                     ));
                 }
             }
         }
-        for (i, frame) in screen.frames.iter().enumerate() {
-            let (edge, width) = if i == shown {
+        // The window under the pointer: its close button and its edge.
+        let over = held
+            .is_none()
+            .then(|| {
+                screen
+                    .spread
+                    .iter()
+                    .rev()
+                    .find(|(_, _, at)| reach(*at).to_f64().contains(pointer))
+            })
+            .flatten();
+        if let Some((_, _, at)) = over {
+            front.extend(self.overview_close(
+                renderer,
+                &mut overview,
+                close_rect(*at),
+                area,
+                scale,
+            ));
+            for (j, line) in edges(*at, 2).into_iter().enumerate() {
+                front.push(solid(
+                    &mut overview,
+                    format!("over {j}"),
+                    line,
+                    tokens.accent,
+                    area,
+                    scale,
+                ));
+            }
+        }
+        // Each spread window's name under it, then the windows.
+        for (window, _, at) in &screen.spread {
+            if held.as_ref().is_some_and(|(h, _)| h == window) {
+                continue;
+            }
+            front.extend(self.overview_name(renderer, &mut overview, window, *at, area, scale));
+        }
+        for (window, place, at) in screen.spread.iter().rev() {
+            if held.as_ref().is_some_and(|(h, _)| h == window) {
+                continue;
+            }
+            front.extend(self.overview_window(
+                renderer,
+                &mut overview,
+                window,
+                *place,
+                *at,
+                area,
+                false,
+                scale,
+            ));
+        }
+        // The strip: each workspace's frame, its windows small, its edge.
+        let shrink = |frame: Rectangle<i32, Logical>, place: Rectangle<i32, Logical>| {
+            edel_compositor::overview::shrink(frame, screen.area, place)
+        };
+        for (i, frame) in screen.plan.frames.iter().enumerate() {
+            let (edge, width) = if i == screen.shown {
                 (tokens.accent, 2)
             } else {
                 (tokens.edge, 1)
@@ -293,24 +495,19 @@ impl Edel {
                     scale,
                 ));
             }
-            let windows = screen
-                .windows
-                .iter()
-                .rev()
-                .filter(|(desk, w, _)| *desk == i && held.as_ref().is_none_or(|(h, _)| h != w));
-            for (_, window, place) in windows {
+            for (_, window, place) in screen.windows.iter().rev().filter(|(d, _, _)| *d == i) {
                 front.extend(self.overview_window(
                     renderer,
                     &mut overview,
                     window,
                     *place,
-                    *frame,
-                    &screen,
-                    None,
+                    shrink(*frame, *place),
+                    area,
+                    true,
                     scale,
                 ));
             }
-            back.push(solid(
+            front.push(solid(
                 &mut overview,
                 format!("frame {i}"),
                 *frame,
@@ -319,22 +516,194 @@ impl Edel {
                 scale,
             ));
         }
-        back.push(solid(
+        front.extend(self.overview_tray(renderer, &mut overview, &screen, scale));
+        // The wallpaper under it all, dimmed; the background colour where
+        // there is none.
+        front.push(solid(
+            &mut overview,
+            "veil".into(),
+            area,
+            Colour {
+                r: 0.04,
+                g: 0.05,
+                b: 0.08,
+                a: 0.32,
+            },
+            area,
+            scale,
+        ));
+        front.extend(
+            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale, &hidden)
+                .into_iter()
+                .map(|e| Drawn::Plain(Element::Surface(e))),
+        );
+        front.push(solid(
             &mut overview,
             "screen".into(),
             area,
-            tokens.panel,
+            tokens.background,
             area,
             scale,
         ));
         self.overview = Some(overview);
-        front.extend(back);
         front
     }
 
-    /// `window`, whose frame on the screen is `place`, drawn smaller in
-    /// workspace frame `frame`, moved by `by` when held; its parts front
-    /// to back.
+    /// Logs where the overview's parts lie on `screen` when that changes,
+    /// for CI to click them: `overview places NAME SIDE, tray X+Y+WxH,
+    /// frame1 X+Y+WxH, ..., add X+Y+WxH, window TITLE X+Y+WxH, ...`.
+    fn log_places(&self, overview: &mut Overview, screen: &Screen) {
+        let at = |r: Rectangle<i32, Logical>| {
+            format!("{}+{}+{}x{}", r.loc.x, r.loc.y, r.size.w, r.size.h)
+        };
+        let side = self.settings.overview_strip();
+        let mut parts = vec![
+            format!("{} {side}", screen.name),
+            format!("tray {}", at(screen.plan.tray)),
+        ];
+        for (i, frame) in screen.plan.frames.iter().enumerate() {
+            parts.push(format!("frame{} {}", i + 1, at(*frame)));
+        }
+        if let Some(add) = screen.plan.add {
+            parts.push(format!("add {}", at(add)));
+        }
+        for (window, _, spread) in &screen.spread {
+            parts.push(format!("window {} {}", title(window), at(*spread)));
+        }
+        let line = parts.join(", ");
+        if overview.logged.get(&screen.name) != Some(&line) {
+            eprintln!("edel-compositor: overview places {line}");
+            overview.logged.insert(screen.name.clone(), line);
+        }
+    }
+
+    /// The tray of `screen`, painted again only when its labels, its
+    /// plan, the scale or the colours change.
+    fn overview_tray(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        overview: &mut Overview,
+        screen: &Screen,
+        scale: f64,
+    ) -> Vec<Drawn> {
+        let names = self.desks.names();
+        let labels: Vec<String> = (0..screen.plan.frames.len())
+            .map(|i| match names.get(i).filter(|n| !n.is_empty()) {
+                Some(name) => format!("{} \u{b7} {name}", i + 1),
+                None => (i + 1).to_string(),
+            })
+            .collect();
+        let new = tr("New");
+        let shows = format!(
+            "{:?} {labels:?} {new} {scale} {:?} {}",
+            screen.plan,
+            self.tokens.panel,
+            self.text.is_some()
+        );
+        let stale = overview
+            .trays
+            .get(&screen.name)
+            .is_none_or(|p| p.shows != shows);
+        if stale {
+            let Some(pixmap) = glance_look::tray(
+                &screen.plan,
+                &labels,
+                new,
+                scale,
+                &self.tokens,
+                self.text.as_mut(),
+            ) else {
+                return Vec::new();
+            };
+            overview
+                .trays
+                .insert(screen.name.clone(), painted(shows, &pixmap));
+        }
+        let Some(painted) = overview.trays.get(&screen.name) else {
+            return Vec::new();
+        };
+        placed(renderer, painted, screen.plan.tray, screen.area, scale)
+    }
+
+    /// `window`'s name pill under its spread picture at `at`.
+    fn overview_name(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        overview: &mut Overview,
+        window: &Window,
+        at: Rectangle<i32, Logical>,
+        area: Rectangle<i32, Logical>,
+        scale: f64,
+    ) -> Vec<Drawn> {
+        let words = title(window);
+        let icon_name = self.app_icons.name(&app_id(window));
+        let most = (at.size.w + 40).max(120);
+        let shows = format!(
+            "{words} {icon_name:?} {most} {scale} {:?}",
+            self.tokens.panel
+        );
+        let stale = overview.names.get(window).is_none_or(|p| p.shows != shows);
+        if stale {
+            let px = (f64::from(NAME_ICON) * scale).round() as u32;
+            let icon = icon_name
+                .as_deref()
+                .and_then(|name| self.app_icons.picture(name, px))
+                .cloned();
+            let Some(text) = self.text.as_mut() else {
+                return Vec::new();
+            };
+            let Some(pixmap) =
+                glance_look::name(&words, icon.as_ref(), most, scale, &self.tokens, text)
+            else {
+                return Vec::new();
+            };
+            overview
+                .names
+                .insert(window.clone(), painted(shows, &pixmap));
+        }
+        let Some(painted) = overview.names.get(window) else {
+            return Vec::new();
+        };
+        let w = (f64::from(painted.pixels.0) / scale).round() as i32;
+        let place = Rectangle::new(
+            (
+                at.loc.x + (at.size.w - w) / 2,
+                at.loc.y + at.size.h + PILL_GAP,
+            )
+                .into(),
+            (w, PILL).into(),
+        );
+        placed(renderer, painted, place, area, scale)
+    }
+
+    /// The close button at `place`.
+    fn overview_close(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        overview: &mut Overview,
+        place: Rectangle<i32, Logical>,
+        area: Rectangle<i32, Logical>,
+        scale: f64,
+    ) -> Vec<Drawn> {
+        let shows = format!(
+            "{scale} {:?} {:?}",
+            self.tokens.panel, self.tokens.panel_text
+        );
+        if overview.close.as_ref().is_none_or(|p| p.shows != shows) {
+            let Some(pixmap) = glance_look::close(scale, &self.tokens) else {
+                return Vec::new();
+            };
+            overview.close = Some(painted(shows, &pixmap));
+        }
+        let Some(painted) = &overview.close else {
+            return Vec::new();
+        };
+        placed(renderer, painted, place, area, scale)
+    }
+
+    /// `window`, whose frame on the screen is `place`, drawn into `to` (a
+    /// rect of `place`'s shape) on the screen at `area`; `small` for the
+    /// strip's frames, whose pictures are kept apart from the stage's.
     #[allow(clippy::too_many_arguments)]
     fn overview_window(
         &mut self,
@@ -342,15 +711,15 @@ impl Edel {
         overview: &mut Overview,
         window: &Window,
         place: Rectangle<i32, Logical>,
-        frame: Rectangle<i32, Logical>,
-        screen: &Screen,
-        by: Option<Point<i32, Logical>>,
+        to: Rectangle<i32, Logical>,
+        area: Rectangle<i32, Logical>,
+        small: bool,
         scale_out: f64,
     ) -> Vec<Drawn> {
-        let k = scale(frame, screen.area);
-        let by = by.unwrap_or_default().to_f64();
+        let k = f64::from(to.size.w) / f64::from(place.size.w.max(1));
         let at = |p: Point<f64, Logical>| {
-            (into(frame, screen.area, p) + by - screen.area.loc.to_f64()).to_physical(scale_out)
+            (to.loc.to_f64() + (p - place.loc.to_f64()).upscale(k) - area.loc.to_f64())
+                .to_physical(scale_out)
         };
         let insets = self.insets(window);
         let inner = insets.window(place);
@@ -359,12 +728,9 @@ impl Edel {
         let frame_data = data(window).borrow();
         let mut parts: Vec<Drawn> = Vec::new();
         if let Some((buffer, pixels)) = (insets.top > 0).then(|| frame_data.last_bar()).flatten() {
-            let size = smithay::utils::Size::<f64, Logical>::from((
-                f64::from(place.size.w),
-                f64::from(insets.top),
-            ))
-            .upscale(k)
-            .to_i32_round();
+            let size = Size::<f64, Logical>::from((f64::from(place.size.w), f64::from(insets.top)))
+                .upscale(k)
+                .to_i32_round();
             match MemoryRenderBufferRenderElement::from_buffer(
                 renderer,
                 at(place.loc.to_f64()),
@@ -383,7 +749,7 @@ impl Edel {
         for (n, part) in frame_data.picture.iter().enumerate().rev() {
             let id = overview
                 .ids
-                .entry((window.clone(), n))
+                .entry((window.clone(), small, n))
                 .or_insert_with(Id::new)
                 .clone();
             let size = part.size.to_f64().upscale(k).to_i32_round();
@@ -407,18 +773,55 @@ impl Edel {
         drop(frame_data);
         // A window never drawn yet shows as a plain card in its place.
         if none_drawn {
-            let card = shrink(frame, screen.area, place);
-            let card = Rectangle::new(card.loc + by.to_i32_round(), card.size);
-            let buffer = overview.cards.entry(window.clone()).or_default();
-            parts.push(flat(
-                buffer,
-                card,
-                self.tokens.title_bar,
-                screen.area,
-                scale_out,
-            ));
+            let buffer = overview.cards.entry((window.clone(), small)).or_default();
+            parts.push(flat(buffer, to, self.tokens.title_bar, area, scale_out));
         }
         parts
+    }
+}
+
+/// `pixmap` as a buffer to draw, with what it shows.
+fn painted(shows: String, pixmap: &tiny_skia::Pixmap) -> Painted {
+    let pixels = (pixmap.width() as i32, pixmap.height() as i32);
+    Painted {
+        shows,
+        buffer: MemoryRenderBuffer::from_slice(
+            pixmap.data(),
+            Fourcc::Abgr8888,
+            pixels,
+            1,
+            Transform::Normal,
+            None,
+        ),
+        pixels,
+    }
+}
+
+/// `painted` drawn over `place` on the screen at `area`.
+fn placed(
+    renderer: &mut GlesRenderer,
+    painted: &Painted,
+    place: Rectangle<i32, Logical>,
+    area: Rectangle<i32, Logical>,
+    scale: f64,
+) -> Vec<Drawn> {
+    let at = (place.loc - area.loc).to_f64().to_physical(scale);
+    match MemoryRenderBufferRenderElement::from_buffer(
+        renderer,
+        at,
+        &painted.buffer,
+        None,
+        Some(Rectangle::from_size(
+            (f64::from(painted.pixels.0), f64::from(painted.pixels.1)).into(),
+        )),
+        Some(place.size),
+        Kind::Unspecified,
+    ) {
+        Ok(element) => vec![Drawn::Plain(Element::Bar(element))],
+        Err(e) => {
+            eprintln!("edel-compositor: drawing the overview failed: {e}");
+            Vec::new()
+        }
     }
 }
 

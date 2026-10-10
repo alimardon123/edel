@@ -60,6 +60,14 @@ impl Link {
         }
     }
 
+    /// Asks for the overview, or to leave it, as Super+W (M5.2j-b): a click
+    /// on the switcher's lit workspace.
+    pub fn toggle_overview(&self) {
+        if let Some(link) = &self.0 {
+            link.toggle_overview();
+        }
+    }
+
     /// Asks for workspace `from` to move to place `to`, as a drag of its
     /// switcher button does (M5.2p).
     pub fn move_workspace(&self, from: usize, to: usize) {
