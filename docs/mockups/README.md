@@ -65,7 +65,7 @@ review of M8.18 first) may revisit them for better taste.
 |---|---|
 | [shell/laptop.jpg](shell/laptop.jpg) | Classic on a laptop: quick settings over the status area, the player its own card above it, brightness and volume on the bottom shelf, edit, Settings and power in the footer beside the battery |
 | [shell/tablet.jpg](shell/tablet.jpg) | Tablet: tiled under a top bar; quick settings at touch size in the top right corner, with the phone's header, the player below it |
-| [shell/phone.jpg](shell/phone.jpg) | Phone: quick settings pulled down, its header the battery with edit, Settings and power on the top row, then a large clock over the date with the year (Alimardon, 2026-10-10), the player below; the volume pop-up beside the volume keys |
+| [shell/phone.jpg](shell/phone.jpg) | Phone: quick settings pulled down, its header a large clock with the battery at the right, then the date with the year and the edit, Settings and power buttons (Alimardon, 2026-10-10), the player below; the volume pop-up beside the volume keys |
 | [shell/notifications-laptop.jpg](shell/notifications-laptop.jpg) | A click on the clock: the notifications card, with Do not disturb as a moon button in its title row and Clear all, the calendar card below |
 | [shell/notifications-phone.jpg](shell/notifications-phone.jpg) | Phone: a swipe down from the top left opens a full shade, with no card and no calendar, the battery shown |
 | [shell/notifications-tablet.jpg](shell/notifications-tablet.jpg) | Tablet: the same shade over the dimmed screen |
@@ -78,7 +78,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/player.jpg](shell/player.jpg) | The player card (M5.9i, chosen by Alimardon on 2026-10-10 as option 2A): a pill, its app's icon and name small at the top centre; with several players each is a page, switched by scrolling sideways, a swipe or a click on tiny dots under the controls, the shown dot a short accent pill |
 | [shell/overview.jpg](shell/overview.jpg) | The overview, Super+W (M5.2j-b, approved by Alimardon on 2026-10-10): every workspace small in a strip on a frosted tray, a frame to add one, search, and the shown workspace's windows large and labelled; a workspace dragged along the strip reorders them; the strip down the left by default, or on any side with `workspaces.overview_strip`; a click on the switcher's lit workspace opens it too |
 | [shell/lock.jpg](shell/lock.jpg) | The lock screen (M5.10c, proposed 2026-10-10): the wallpaper blurred and dimmed, the date over a large light clock, how many notifications came and from which apps, never their words, the person and a frosted password field with a Caps Lock warning; in the bottom right corner the keyboard layout, accessibility and power, its menu open: Suspend, Restart (an update waits) and Shut down |
-| [shell/lock-media.jpg](shell/lock-media.jpg) | The lock screen while music plays (M5.10c): the player under the clock as its own frosted card, with the cover, the time played and the controls |
+| [shell/lock-media.jpg](shell/lock-media.jpg) | The lock screen while music plays (M5.10c): the player as a frosted card in the bottom left corner, across from the buttons, with the cover, the time played and the controls |
 | [shell/greeter.jpg](shell/greeter.jpg) | The login screen (M5.10c): the same design, the people of the machine to pick and Other to type a name |
 | [shell/lock-phone.jpg](shell/lock-phone.jpg) | A phone's lock screen (M9): the player under the clock, then the notifications as frosted cards saying only what arrived, the torch and camera; then the passcode on round frosted keys |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
@@ -102,8 +102,8 @@ The rules under them:
   then (Alimardon, 2026-10-10, `shell/player.jpg`).
 - **Edit, Settings and power** sit on the anchored edge: the footer on a
   bottom panel; when the sheet hangs from the top (phone, tablet), the
-  header's top row, beside the battery, as 38 px rounded squares over a
-  large clock and the date with the year (Alimardon, 2026-10-10). A chevron on a pill opens its
+  header, as 36 px rounded squares on the date's row, under a large
+  clock with the battery at its right (Alimardon, 2026-10-10). A chevron on a pill opens its
   details in place.
 - **A slider is only a slider.** One lying on a shelf has its chevron
   beside it; one standing in the grid has no button at all: a right
