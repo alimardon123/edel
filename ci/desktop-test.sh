@@ -224,6 +224,15 @@ say() {
 
 fail() {
 	echo "FAIL: $*"
+	# What the session's compositor is doing at that moment, once per
+	# run: its threads' states, wait channels and kernel stacks, so a
+	# compositor that stopped answering shows where it waits.
+	if [ -z "${failing:-}" ] && [ -S "${commands:-}" ]; then
+		failing=1
+		guest 'compositor state' 2>/dev/null
+		wait_for 'DESKTOP-TEST: compositor_state ' 10 && echo "compositor: $(value compositor_state)"
+		wait_for 'DESKTOP-TEST: compositor_stack ' 5 && echo "compositor stack: $(value compositor_stack)"
+	fi
 	stop_vm
 	exit 1
 }
