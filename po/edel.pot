@@ -479,6 +479,12 @@ msgstr ""
 msgid "{person}'s last desktop session ended without closing; its log is {log}, and edel report gathers it with the rest"
 msgstr ""
 
+msgid "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a later release brings the hardware packs that hold them"
+msgstr ""
+
+msgid "the language {language} needs {script} fonts, which this system does not carry; text in it shows as boxes until a later release brings them"
+msgstr ""
+
 msgid "{disk} is not a removable disk, so the report stays off its EFI system partition"
 msgstr ""
 
