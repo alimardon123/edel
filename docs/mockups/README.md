@@ -72,6 +72,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/settings.jpg](shell/settings.jpg) | Every setting these pictures need: its choices, its default and its proposed key; Alimardon's decisions, and four defaults Claude picked by the principles (how many workspaces show, the ends of their strip, the volume pop-up on, new tray apps behind the arrow), which they can overrule |
 | [shell/standing-slider.jpg](shell/standing-slider.jpg) | How Sound is reached from a standing volume slider: six ways compared, and the one chosen, no button, a right click or a still hold |
 | [shell/player.jpg](shell/player.jpg) | The player card (M5.9i, chosen by Alimardon on 2026-10-10 as option 2A): a pill, its app's icon and name small at the top centre; with several players each is a page, switched by scrolling sideways, a swipe or a click on tiny dots under the controls, the shown dot a short accent pill |
+| [shell/overview.jpg](shell/overview.jpg) | The overview, Super+W (M5.2j-b, approved by Alimardon on 2026-10-10): every workspace small in a strip, a frame to add one, search, and the shown workspace's windows large and labelled; a workspace dragged along the strip reorders them; the strip on the top (the default), the bottom, the left or the right, `workspaces.overview_strip` |
 | [shell/options.jpg](shell/options.jpg) | The other layouts a person can switch to: the shelf at the top, both shelves, the player inside the grid, the sliders standing in it |
 
 The rules under them:
@@ -113,7 +114,7 @@ The rules under them:
 
 The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
-boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg` (the same Playwright and Chromium, at twice the size, as JPEG).
+boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg` and `canvas/overview.html` `overview.jpg` (the same Playwright and Chromium, at twice the size, as JPEG).
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
