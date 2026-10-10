@@ -151,9 +151,12 @@ fn spot_at_landing(now: &[presets::Panel], panel: usize, landing: &Landing) -> O
     })
 }
 
-/// Where a panel's line starts its edge: the drawer or a panel lies above
-/// or below the screen's edge by `above` (the margin the compositor keeps).
+/// Hangs the drawer or the Undo bar `above` logical pixels from the
+/// screen's edge. It takes no notice of the panels' exclusive zones, which
+/// the compositor would otherwise add to the margin (the margin already
+/// clears the panel), so the drag's geometry can place it.
 fn anchor_above(surface: &LayerSurface, edge: Edge, above: i32) {
+    surface.set_exclusive_zone(-1);
     match edge {
         Edge::Bottom => {
             surface.set_anchor(Anchor::BOTTOM);
