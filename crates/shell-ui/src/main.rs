@@ -37,6 +37,7 @@ mod status;
 mod styles;
 mod switcher;
 mod telling;
+mod tooltip;
 mod toplevels;
 mod tray;
 mod tray_card;
@@ -52,7 +53,7 @@ use smithay_client_toolkit::compositor::{
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle};
+use smithay_client_toolkit::reexports::calloop::{EventLoop, LoopHandle, RegistrationToken};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
 use smithay_client_toolkit::reexports::client::protocol::{
@@ -113,6 +114,8 @@ const CENTRE: &str = "edel-centre";
 const OSD: &str = "edel-osd";
 /// The tray's grid of the apps behind its arrow (M5.9g).
 const TRAY_GRID: &str = "edel-tray";
+/// The tray's tooltip, a label over the arrow (M5.9h).
+const TOOLTIP: &str = "edel-tooltip";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
 /// The feature that brings it.
@@ -167,6 +170,10 @@ struct Shell {
     tray_grid: Option<TrayCard>,
     tray_behind: usize,
     tray_press: Option<(usize, String, f32, f32)>,
+    /// The tray's tooltip while it shows (M5.9h), and the timer that shows
+    /// it once the pointer has rested on the arrow.
+    tooltip: Option<tooltip::Tip>,
+    tooltip_timer: Option<RegistrationToken>,
     /// Whether Shift is held, for Shift+F10 on the tray's grid.
     shift: bool,
     /// The status area's reading (M5.9a): whether a panel holds it, how
@@ -390,6 +397,8 @@ fn run() -> Result<()> {
         tray_grid: None,
         tray_behind: 0,
         tray_press: None,
+        tooltip: None,
+        tooltip_timer: None,
         shift: false,
         status_wanted,
         status_busy: 0,
@@ -1316,6 +1325,8 @@ impl LayerShellHandler for Shell {
             self.close_centre();
         } else if self.is_tray_grid(surface.wl_surface()) {
             self.close_tray_grid();
+        } else if self.is_tooltip(surface.wl_surface()) {
+            self.hide_tooltip();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
         } else {
@@ -1372,6 +1383,12 @@ impl LayerShellHandler for Shell {
                 card.popup.configured();
             }
             return self.draw_tray_grid();
+        }
+        if self.is_tooltip(surface.wl_surface()) {
+            if let Some(tip) = &mut self.tooltip {
+                tip.popup.configured();
+            }
+            return self.draw_tooltip();
         }
         if self.is_switcher(surface.wl_surface()) {
             if let Some(flip) = &mut self.flip {
@@ -1440,6 +1457,12 @@ impl CompositorHandler for Shell {
                 card.popup.set_scale(factor);
             }
             return self.draw_tray_grid();
+        }
+        if self.is_tooltip(surface) {
+            if let Some(tip) = &mut self.tooltip {
+                tip.popup.set_scale(factor);
+            }
+            return self.draw_tooltip();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1513,6 +1536,12 @@ impl CompositorHandler for Shell {
                 card.popup.framed();
             }
             return self.draw_tray_grid();
+        }
+        if self.is_tooltip(surface) {
+            if let Some(tip) = &mut self.tooltip {
+                tip.popup.framed();
+            }
+            return self.draw_tooltip();
         }
         if self.is_switcher(surface) {
             if let Some(flip) = &mut self.flip {
@@ -1696,7 +1725,12 @@ impl PointerHandler for Shell {
             };
             let x = event.position.0 as f32;
             match &event.kind {
+                // The tray's tooltip waits for a rest on its arrow (M5.9h).
+                PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
+                    self.tooltip_hover(i, x);
+                }
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                    self.hide_tooltip();
                     // A kept tray icon's click waits for the release, so
                     // the icon can be dragged (M5.9g).
                     match self.action_at(i, x, Input::Click) {
@@ -1711,6 +1745,7 @@ impl PointerHandler for Shell {
                     }
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
+                    self.hide_tooltip();
                     self.input(i, x, Input::Menu);
                 }
                 PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
@@ -1720,6 +1755,7 @@ impl PointerHandler for Shell {
                 PointerEventKind::Leave { .. } => {
                     self.scrolled.reset();
                     self.tray_press = None;
+                    self.hide_tooltip();
                 }
                 PointerEventKind::Axis {
                     horizontal,
