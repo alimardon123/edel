@@ -365,6 +365,12 @@ commands() {
 			as_ci edel-testclient --size 200x150 --colour 7744aa --title away </dev/null >/dev/null 2>&1 &
 			;;
 		'away off') pkill -f '[e]del-testclient --size 200x150 --colour 7744aa' ;;
+		# Overview (M5.2j): a window to send to another workspace and see in
+		# the overview, and closed while there.
+		'lap window')
+			as_ci edel-testclient --size 200x150 --colour e0a030 --title lap </dev/null >/dev/null 2>&1 &
+			;;
+		'lap off') pkill -f '[e]del-testclient --size 200x150 --colour e0a030' ;;
 		# Dynamic workspaces (M5.2i): every test window and foot closed, so
 		# the case starts with none; the layout keys it sets and resets; and
 		# the state file's shown workspace, count and names read back.

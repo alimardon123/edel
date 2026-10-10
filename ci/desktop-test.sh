@@ -84,6 +84,13 @@
 #               workspace 1: the state file's window reads 3, the top level
 #               one 1; closing it logs unmapped, and the rule's reset ends
 #               the case (M5.2l)
+#   overview    Super+W shows the overview, every workspace of the screen as a
+#               frame with its windows' last pictures: a test client, lap,
+#               sent to workspace 2 while the person stays on 1 shows its
+#               colour in frame 2 and not in frame 1; dragging its picture
+#               onto frame 3 moves it there and the overview stays open;
+#               Escape leaves; Super+W again and a click on frame 3 show
+#               workspace 3 and leave, and Super+1 goes back (M5.2j)
 #   windows     a new window adds a button to the panel's window list,
 #               lit; its title bar's minimize button hides it and a click
 #               on its button brings it back (M5.2h)
@@ -1739,6 +1746,69 @@ case_app_workspaces() {
 	guest 'apps off'
 	wait_for 'DESKTOP-TEST: ran apps off: 0' || fail "the layout.app_workspaces reset did not run in the VM"
 	echo "PASS: layout.app_workspaces = { \"edel-placed\" = 3 } opened a window of that app on workspace 3 while the person stayed on workspace 1 (the state file's window reads 3, the top level one 1), closing it logged unmapped, and the reset ran"
+}
+
+case_overview() {
+	# The overview (M5.2j-a): Super+W shows every workspace of the screen
+	# side by side as a frame, each with its windows' last pictures. lap, a
+	# test client, is sent to workspace 2 while the person stays on 1, so
+	# its colour shows in frame 2 (344,312 280x175 on 1280x800) and not in
+	# frame 1. Dragging its picture onto frame 3 moves it there and the
+	# overview stays open; Escape leaves. Super+W again and a click on frame
+	# 3 show workspace 3 and leave, Super+1 goes back, and lap closes.
+	opened=$(count 'edel-compositor: mapped window lap ')
+	guest 'lap window'
+	wait_more 'edel-compositor: mapped window lap ' "$opened" || fail "the test client lap did not open: $(value windows)"
+	place=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: mapped window lap ' | tail -n 1 | sed 's/.*mapped window lap at //')
+	[ -n "$place" ] || fail "the log does not say where lap opened"
+	sent=$(count 'edel-compositor: window lap to workspace 2$')
+	python3 ci/qmp.py key meta_l-shift-2
+	wait_more 'edel-compositor: window lap to workspace 2$' "$sent" || fail "Super+Shift+2 did not send lap to workspace 2"
+	shown=$(count 'edel-compositor: overview shown$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview"
+	# The overview draws on the next frame, so the screenshot is taken up to
+	# 10 times, a second apart, until lap's colour is in frame 2.
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/overview.png"
+		in_two=$(python3 ci/qmp.py where "$dir/overview.png" 344 312 280 175 e0a030)
+		if [ "$in_two" != none ]; then
+			break
+		fi
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "frame 2 of the overview, at 344,312 280x175, has no picture in lap's colour e0a030"
+		sleep 1
+	done
+	set -- $in_two
+	cx=$1 cy=$2 n=$3
+	in_one=$(python3 ci/qmp.py where "$dir/overview.png" 32 312 280 175 e0a030)
+	[ "$in_one" = none ] || fail "frame 1 of the overview has a picture in lap's colour, though lap is on workspace 2: $in_one"
+	# A drag of lap's picture onto frame 3 moves lap there, and the overview
+	# stays open, so Escape below still finds it shown.
+	hidden=$(count 'edel-compositor: overview hidden$')
+	moved=$(count 'edel-compositor: window lap to workspace 3$')
+	python3 ci/qmp.py drag "$cx" "$cy" 796 399
+	wait_more 'edel-compositor: window lap to workspace 3$' "$moved" || fail "dragging lap's picture, at $cx,$cy, onto frame 3 did not move lap to workspace 3"
+	[ "$(count 'edel-compositor: overview hidden$')" = "$hidden" ] || fail "the overview left after lap was dropped on frame 3"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview"
+	# Super+W again, then a click on frame 3: it leaves and shows workspace 3.
+	shown=$(count 'edel-compositor: overview shown$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview again"
+	hidden=$(count 'edel-compositor: overview hidden$')
+	shows=$(count 'edel-compositor: workspace 3$')
+	python3 ci/qmp.py click 796 399
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "a click on frame 3 did not leave the overview"
+	wait_more 'edel-compositor: workspace 3$' "$shows" || fail "a click on frame 3 did not show workspace 3"
+	back=$(count 'edel-compositor: workspace 1$')
+	python3 ci/qmp.py key meta_l-1
+	wait_more 'edel-compositor: workspace 1$' "$back" || fail "Super+1 did not show workspace 1 after the overview"
+	closed=$(count 'edel-compositor: unmapped window lap$')
+	guest 'lap off'
+	wait_more 'edel-compositor: unmapped window lap$' "$closed" || fail "lap did not close"
+	echo "PASS: lap, mapped at $place, went to workspace 2 with Super+Shift+2; Super+W showed the overview with lap's colour in frame 2 at 344,312 280x175, centred at $cx,$cy in $n pixels, and not in frame 1; dragging its picture onto frame 3 at 796,399 moved lap to workspace 3 and the overview stayed open; Escape left it; Super+W and a click on frame 3 left it and showed workspace 3, Super+1 brought back workspace 1, and lap closed"
 }
 
 # search_line NAME WANT: takes screenshots into $dir/NAME.png, one a
