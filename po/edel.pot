@@ -725,6 +725,15 @@ msgstr ""
 msgid "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]"
 msgstr ""
 
+msgid "{app} is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
+msgstr ""
+
+msgid "{app} has workspace {value}; use a whole number from 1 to {most}"
+msgstr ""
+
+msgid "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }"
+msgstr ""
+
 msgid "{others} or {last}"
 msgstr ""
 

@@ -200,6 +200,8 @@ pub enum Kind {
     Hosts,
     /// A release channel's name, such as `"stable"` ([`is_channel`], M5.8c)
     Channel,
+    /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
+    AppWorkspaces,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -294,6 +296,8 @@ pub const KEYS: &[Key] = &[
     ),
     now("layout.dynamic_workspaces", Kind::Flag),
     now("layout.workspaces_per_screen", Kind::Flag),
+    // Apps that always open on their own workspace, by app id (M5.2l).
+    now("layout.app_workspaces", Kind::AppWorkspaces),
     now("layout.workspace_names", Kind::Texts),
     now("displays.*.position", Kind::Pair),
     now("displays.*.scale", Kind::Number),
@@ -512,6 +516,11 @@ pub struct Layout {
     /// switching together (M5.2k); absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspaces_per_screen: Option<bool>,
+    /// Apps that always open on their own workspace, each app's id and
+    /// the workspace's number from 1 (M5.2l); absent opens every app on
+    /// the workspace in use.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app_workspaces: Option<BTreeMap<String, i64>>,
     /// The workspaces' names, the first workspace's first, an empty text
     /// meaning no name (M5.2i).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1371,7 +1380,41 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::Panels, _) => fail(tr(
             "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]",
         )),
+        (Kind::AppWorkspaces, Value::Table(apps)) => {
+            for (app, number) in apps {
+                if !is_app_id(app) {
+                    return Err(trf(
+                        "{app} is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\"",
+                        &[("app", &format!("{app:?}"))],
+                    ));
+                }
+                match number {
+                    Value::Integer(n)
+                        if (1..=crate::presets::MOST_WORKSPACES as i64).contains(n) => {}
+                    _ => {
+                        return Err(trf(
+                            "{app} has workspace {value}; use a whole number from 1 to {most}",
+                            &[
+                                ("app", &format!("{app:?}")),
+                                ("value", &number.to_string()),
+                                ("most", &crate::presets::MOST_WORKSPACES.to_string()),
+                            ],
+                        ));
+                    }
+                }
+            }
+            Ok(value.clone())
+        }
+        (Kind::AppWorkspaces, _) => fail(tr(
+            "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }",
+        )),
     }
+}
+
+/// An app id as a window gives it (M5.2l): text with no whitespace or
+/// control characters, such as `org.mozilla.firefox`.
+pub fn is_app_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| !c.is_whitespace() && !c.is_control())
 }
 
 /// A single DNS label, as `hostname` and `/etc/hostname` take it.
@@ -1517,6 +1560,7 @@ mod tests {
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::Channel => Value::String("stable".into()),
+            Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
         }
     }
 
@@ -2175,5 +2219,60 @@ font_size = 11
             Some(vec!["Mail".to_string(), String::new()])
         );
         assert!(check(&names).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_app_opens_on_its_workspace_checked_and_written_one_way() {
+        let line = |value: &str| format!("format = 1\n[layout]\napp_workspaces = {value}\n");
+        let written = set(
+            "format = 1\n",
+            "layout.app_workspaces",
+            "{ \"org.mozilla.firefox\" = 2 }",
+        )
+        .unwrap();
+        assert_eq!(
+            written,
+            "format = 1\n\n[layout]\napp_workspaces = { \"org.mozilla.firefox\" = 2 }\n"
+        );
+        assert!(check(&written).unwrap().is_empty());
+        let apps = read(&written).unwrap().file.layout.app_workspaces.unwrap();
+        assert_eq!(apps.get("org.mozilla.firefox"), Some(&2));
+        assert_eq!(
+            format!(
+                "{:#}",
+                set(
+                    "format = 1\n",
+                    "layout.app_workspaces",
+                    "{ \"org.mozilla.firefox\" = 10 }"
+                )
+                .unwrap_err()
+            ),
+            "layout.app_workspaces: \"org.mozilla.firefox\" has workspace 10; use a whole number from 1 to 9"
+        );
+        assert_eq!(
+            check(&line("{ \"org.mozilla.firefox\" = \"x\" }")).unwrap(),
+            [
+                "layout.app_workspaces: \"org.mozilla.firefox\" has workspace \"x\"; use a whole number from 1 to 9"
+            ]
+        );
+        assert_eq!(
+            check(&line("{ \"org firefox\" = 2 }")).unwrap(),
+            [
+                "layout.app_workspaces: \"org firefox\" is not an app id; use the id an app's window gives, such as \"org.mozilla.firefox\""
+            ]
+        );
+        assert_eq!(
+            check(&line("\"org.mozilla.firefox\"")).unwrap(),
+            [
+                "layout.app_workspaces: expected apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }, not \"org.mozilla.firefox\""
+            ]
+        );
+        assert!(is_app_id("org.gnome.Nautilus"));
+        assert!(!is_app_id(""));
+        assert!(!is_app_id("a\tb"));
+        assert_eq!(
+            sample(Kind::AppWorkspaces).to_string(),
+            "{ \"org.mozilla.firefox\" = 2 }"
+        );
     }
 }

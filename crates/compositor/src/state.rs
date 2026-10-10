@@ -67,7 +67,7 @@ use edel_compositor::settings::{self, Settings};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
 
-use crate::decoration::{data, server_side, title};
+use crate::decoration::{app_id, data, server_side, title};
 use crate::grabs::{Kind, WindowGrab};
 use crate::pointer::Cursors;
 use crate::statefile::{self, StateFile};
@@ -952,17 +952,42 @@ impl CompositorHandler for Edel {
         };
         if drawn {
             let window = self.unplaced.remove(i);
+            data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
             let insets = self.insets(&window);
-            let frame = self.desks.layout_on_mut(&screen).open(
-                window.clone(),
-                insets.frame_size(window.geometry().size),
-                &screen,
-                area,
-            );
+            let size = insets.frame_size(window.geometry().size);
+            // An app with a rule (`layout.app_workspaces`, M5.2l) opens on
+            // its workspace; that workspace not shown, the window waits there,
+            // unmapped, and the person stays where they are.
+            let ruled = self
+                .settings
+                .app_workspace(&app_id(&window))
+                .and_then(|desk| {
+                    let opened = self
+                        .desks
+                        .open_on(desk, window.clone(), size, &screen, area)?;
+                    Some((desk, opened))
+                });
+            let frame = match ruled {
+                Some((desk, (_, false))) => {
+                    eprintln!(
+                        "edel-compositor: window {} opened on workspace {} (layout.app_workspaces)",
+                        title(&window),
+                        desk + 1
+                    );
+                    self.settle_dynamic();
+                    self.announce_workspaces();
+                    self.state_changed();
+                    return;
+                }
+                Some((_, (frame, true))) => frame,
+                None => self
+                    .desks
+                    .layout_on_mut(&screen)
+                    .open(window.clone(), size, &screen, area),
+            };
             let place = insets.window(frame);
             self.put(&window, frame);
             self.animations.opened(&window);
-            data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
             eprintln!(
                 "edel-compositor: mapped window {} at {},{} {}x{}",
                 title(&window),
