@@ -92,6 +92,19 @@ impl Edel {
         };
         let search = &mut overview.search;
         let before = search.query.clone();
+        // The keys that act are logged by name, for CI; the letters typed
+        // are not, as a search can hold anything.
+        let named = match sym {
+            xkb::keysyms::KEY_Escape => Some("Escape"),
+            xkb::keysyms::KEY_Return | xkb::keysyms::KEY_KP_Enter => Some("Return"),
+            xkb::keysyms::KEY_BackSpace => Some("BackSpace"),
+            xkb::keysyms::KEY_Up => Some("Up"),
+            xkb::keysyms::KEY_Down => Some("Down"),
+            _ => None,
+        };
+        if let Some(name) = named {
+            eprintln!("edel-compositor: overview key {name}");
+        }
         match sym {
             xkb::keysyms::KEY_Escape => {
                 if search.query.is_empty() {

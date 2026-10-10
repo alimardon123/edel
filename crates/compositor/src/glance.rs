@@ -172,6 +172,14 @@ impl Edel {
             return;
         }
         if self.dragging || self.switcher.is_some() {
+            eprintln!(
+                "edel-compositor: overview not shown: {}",
+                if self.dragging {
+                    "a window is being dragged"
+                } else {
+                    "the window switcher is open"
+                }
+            );
             return;
         }
         self.overview = Some(Overview::default());
