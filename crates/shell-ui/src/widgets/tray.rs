@@ -13,7 +13,7 @@
 //! and each icon as a button named by its item's title.
 
 use accesskit::Role;
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::tokens::Tokens;
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
@@ -24,6 +24,7 @@ use crate::tray::Item;
 
 pub const WIDGET: Widget = Widget {
     name: "tray",
+    title: n_("Tray"),
     needs: None,
     shows,
     width,
@@ -635,9 +636,12 @@ mod tests {
             style: edel::presets::Style::Bar,
             fillets: false,
             shown: row.shows(&live),
+            editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
-        let places = paint(&mut pixmap, &look, &tokens, None, None, &row);
+        let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
         let (x, w) = places[0];
         assert_eq!(w, logical_width(1, false));
         let strip = fillet_height(&tokens);
@@ -668,9 +672,12 @@ mod tests {
                 style: edel::presets::Style::Bar,
                 fillets: false,
                 shown: row.shows(live),
+                editing: false,
+                lifted: None,
+                caret: None,
             };
             let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
-            let places = paint(&mut pixmap, &look, &tokens, None, None, &row);
+            let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
             (pixmap, places[0].0)
         };
         let rgb = |pixmap: &tiny_skia::Pixmap, x: u32, y: u32| {

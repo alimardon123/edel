@@ -9,7 +9,7 @@
 //! focused one, or starts the app when no window of it is open.
 
 use accesskit::Role;
-use edel::i18n::trf;
+use edel::i18n::{n_, trf};
 use tiny_skia::{FilterQuality, PixmapPaint, Rect, Transform};
 
 use edel::tokens::Colour;
@@ -19,6 +19,7 @@ use crate::paint::{fill, mix, paint_of};
 
 pub const WIDGET: Widget = Widget {
     name: "apps",
+    title: n_("Apps"),
     needs: None,
     shows,
     width,

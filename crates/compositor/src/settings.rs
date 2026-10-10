@@ -198,12 +198,6 @@ impl Settings {
         }
     }
 
-    /// Whether `layout.panels` changed (M5.4e), which shell-ui follows by
-    /// starting again, as for a preset.
-    pub fn panels_differ(&self, other: &Settings) -> bool {
-        self.panels != other.panels
-    }
-
     /// Whether windows under `policy` get the compositor's title bars.
     pub fn bars_in(&self, policy: &str) -> bool {
         self.title_bars == TitleBars::Always || policy == "floating"
@@ -374,17 +368,13 @@ mod tests {
     }
 
     #[test]
-    fn the_persons_panels_win_and_only_a_change_of_them_counts() {
+    fn the_persons_panels_win() {
         let machine =
             file("format = 1\n[layout]\npanels = [{ edge = \"top\", end = [\"clock\"] }]\n");
         let person = file("format = 1\n[[layout.panels]]\nedge = \"bottom\"\nstart = [\"menu\"]\n");
         let both = Settings::from_files(Some(&machine), Some(&person));
         let panels = both.panels.clone().unwrap();
         assert_eq!(panels[0].edge, edel::presets::Edge::Bottom);
-        let only_machine = Settings::from_files(Some(&machine), None);
-        assert!(both.panels_differ(&only_machine));
-        assert!(!both.panels_differ(&both.clone()));
-        assert!(Settings::default().panels_differ(&only_machine));
     }
 
     #[test]

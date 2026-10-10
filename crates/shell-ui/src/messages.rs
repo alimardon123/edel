@@ -121,6 +121,20 @@ pub fn tray_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep the tray's apps in the panel in.
 pub const TRAY_NO_HOME: &str = "no home folder to keep the tray's apps in the panel in; run edel settings set layout.tray_in_panel='[\"APP\"]' instead, naming the apps by their tray Id";
 
+/// The panels the editor made cannot be written down.
+pub fn panels_not_kept(why: impl Display) -> String {
+    format!("could not keep the panels: {why}; they stay as they were")
+}
+
+/// A change to the panels the editor was asked for is refused: the panels
+/// stay as they were.
+pub fn panel_not_changed(why: impl Display) -> String {
+    format!("could not change the panels: {why}; they stay as they were")
+}
+
+/// There is no home folder to keep the panels in.
+pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set layout.panels='[...]' with the panels as TOML instead";
+
 /// A chosen tiling style cannot be written down.
 pub fn style_not_kept(style: &str, why: impl Display) -> String {
     format!("could not keep the {style} tiling style: {why}; it stays as it was")
@@ -195,6 +209,14 @@ mod tests {
             "the compositor does not offer zwlr_layer_shell_v1, so no panel can be drawn"
         );
         assert!(NO_COMPOSITOR.starts_with("could not connect to the compositor;"));
+    }
+
+    #[test]
+    fn a_refused_panel_change_says_the_panels_stay() {
+        assert_eq!(
+            panel_not_changed("there is no widget at that place on the panels"),
+            "could not change the panels: there is no widget at that place on the panels; they stay as they were"
+        );
     }
 
     #[test]

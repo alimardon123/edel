@@ -5,7 +5,7 @@
 //! (M5.3b).
 
 use accesskit::Role;
-use edel::i18n::tr;
+use edel::i18n::{n_, tr};
 use tiny_skia::{LineCap, PathBuilder, Stroke, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
@@ -13,6 +13,7 @@ use crate::paint::{fill, mix, paint_of};
 
 pub const WIDGET: Widget = Widget {
     name: "search",
+    title: n_("Search"),
     needs: None,
     shows,
     width,

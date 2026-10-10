@@ -538,8 +538,6 @@ impl Edel {
         if old.preset_differs(&new) {
             let name = new.preset.as_deref().unwrap_or(edel::presets::DEFAULT);
             crate::shellui::restart(self, &format!("the preset is now {name}"));
-        } else if old.panels_differ(&new) {
-            crate::shellui::restart(self, "the panels changed");
         } else if old.color_scheme != new.color_scheme {
             let name = new.color_scheme.name();
             crate::shellui::restart(self, &format!("the colour scheme is now {name}"));

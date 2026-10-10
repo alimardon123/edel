@@ -17,7 +17,7 @@
 //! hears "Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent".
 
 use accesskit::Role;
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{self, fill};
@@ -25,6 +25,7 @@ use crate::status::{Link, Status};
 
 pub const WIDGET: Widget = Widget {
     name: "status",
+    title: n_("Status"),
     needs: None,
     shows,
     width,

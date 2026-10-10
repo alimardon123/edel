@@ -9,7 +9,7 @@
 //! scale.
 
 use accesskit::Role;
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use tiny_skia::{FillRule, Pixmap, PixmapPaint, Transform};
 
 use edel::tokens::Colour;
@@ -19,6 +19,7 @@ use crate::paint::{Face, Text, mix, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
     name: "workspaces",
+    title: n_("Workspaces"),
     needs: None,
     shows,
     width,

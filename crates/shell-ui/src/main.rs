@@ -19,6 +19,8 @@ mod a11y;
 mod banner;
 mod calendar;
 mod centre;
+mod editor;
+mod editor_card;
 mod launcher;
 mod link;
 mod messages;
@@ -29,6 +31,8 @@ mod notify_card;
 mod osd;
 mod osd_card;
 mod paint;
+mod panel_menu;
+mod panel_menu_card;
 mod popup;
 mod portal;
 mod quick;
@@ -42,6 +46,7 @@ mod toplevels;
 mod tray;
 mod tray_card;
 mod trayview;
+mod undo_bar;
 mod watch;
 mod widgets;
 mod workspaces;
@@ -76,6 +81,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::path::Path;
 use std::time::Duration;
 
 use tiny_skia::Pixmap;
@@ -104,6 +110,11 @@ const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
 /// The layout button's menu of tiling styles (M5.16b).
 const STYLES: &str = "edel-styles";
+/// The panel menu (M5.31b), and Edit panels' drawer.
+const PANEL_MENU: &str = "edel-panel-menu";
+const EDITOR: &str = "edel-editor";
+/// The Undo bar after Done, where the drawer was (M5.31b).
+const UNDO: &str = "edel-panels-undo";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
 /// A new notification's banner and the notification centre, which the
@@ -145,11 +156,23 @@ struct Shell {
     /// lets go of them so their pages can be given back (free_spent).
     spent: Vec<Buffer>,
     panels: Vec<Panel>,
+    /// The panels the settings files ask for as last applied (M5.31b):
+    /// `panels_changed` compares with them.
+    panel_specs: Vec<presets::Panel>,
+    /// The preset's pinned apps (M5.4c), kept so panels made later can
+    /// read the apps they show (`read_apps`).
+    pins: Vec<String>,
     launcher: launcher::Launcher,
     /// The launcher's surface while it is open.
     menu: Option<Menu>,
     /// The tiling styles' menu while it is open (M5.16b).
     styles: Option<StylesMenu>,
+    /// The panel menu while it is open (M5.31b), and the drawer of Edit
+    /// panels while it is open.
+    panel_menu: Option<panel_menu_card::PanelMenu>,
+    editor: Option<editor_card::Editor>,
+    /// Done's Undo bar, while it shows (M5.31b).
+    undo_bar: Option<editor_card::UndoBar>,
     /// Quick settings while open (M5.9a), the preset's tiles for it, and
     /// whether the machine has the Settings app.
     quick: Option<QuickCard>,
@@ -237,6 +260,9 @@ struct Panel {
     /// Where each widget lies, start to end: its left edge and width in
     /// logical pixels, for clicks.
     places: Vec<(f32, f32)>,
+    /// Where a panel's empty groups lie while it is edited (M5.31b), for
+    /// the drops of its editor's second part.
+    empty: [Option<(f32, f32)>; 3],
     /// The buffer attached last, kept so the one before it can be freed
     /// once the compositor releases it.
     shown: Option<Buffer>,
@@ -276,71 +302,14 @@ fn run() -> Result<()> {
     let features = &edel::places::found_shared(edel::features::DIR);
     let mut panels = Vec::new();
     for spec in &preset.panels {
-        let pick = |names: &[String]| {
-            let (found, notes) = widgets::usable(names, features);
-            for note in notes {
-                eprintln!("edel-shell-ui: {note}");
-            }
-            found
-        };
-        let row = Row {
-            start: pick(&spec.start),
-            centre: pick(&spec.centre),
-            end: pick(&spec.end),
-        };
-        // Along the edge of the first screen; the strip on its inner side
-        // for the fillets is drawn but takes no space and no clicks. A
-        // dock is centred along its edge, a little away from it, and
-        // keeps that much free of windows too; its width follows what it
-        // holds once drawn, square until then.
-        let dock = spec.style == Style::Dock;
-        let namespace = if dock { DOCK } else { NAMESPACE };
-        let surface = compositor.create_surface(&qh);
-        let surface = layers.create_layer_surface(&qh, surface, Layer::Top, Some(namespace), None);
-        let edge = match spec.edge {
-            Edge::Top => Anchor::TOP,
-            Edge::Bottom => Anchor::BOTTOM,
-        };
-        if dock {
-            surface.set_anchor(edge);
-            surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
-            let (top, bottom) = match spec.edge {
-                Edge::Top => (DOCK_MARGIN, 0),
-                Edge::Bottom => (0, DOCK_MARGIN),
-            };
-            surface.set_margin(top, 0, bottom, 0);
-        } else {
-            surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-            surface.set_size(0, tokens.panel_height + strip);
-        }
-        // A dock that hides while a window covers it (M5.4f) keeps
-        // nothing free; the compositor hides it.
-        let zone = if dock && spec.hide == Hide::Covered {
-            0
-        } else {
-            paint::height(spec.style, &tokens) as i32
-        };
-        surface.set_exclusive_zone(zone);
-        surface.set_keyboard_interactivity(KeyboardInteractivity::None);
-        surface.commit();
-        eprintln!(
-            "edel-shell-ui: panel {namespace} along the {}",
-            spec.edge.name()
-        );
-        panels.push(Panel {
-            edge: spec.edge,
-            style: spec.style,
-            surface,
-            row,
-            width: 0,
-            asked: 0,
-            scale: 1,
-            drawn: None,
-            waiting: false,
-            places: Vec::new(),
-            shown: None,
-            reader: a11y::Reader::panel(),
-        });
+        panels.push(make_panel(
+            &compositor,
+            &layers,
+            &qh,
+            &tokens,
+            features,
+            spec,
+        ));
     }
     // The apps a panel's apps widget shows, and whose icons the window
     // list shows, read once (M5.4c); none read when no panel holds either.
@@ -382,9 +351,14 @@ fn run() -> Result<()> {
         pool,
         spent: Vec::new(),
         panels,
+        panel_specs: preset.panels.clone(),
+        pins: preset.apps.pinned.clone(),
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
+        panel_menu: None,
+        editor: None,
+        undo_bar: None,
         quick: None,
         quick_tiles: preset.quick.tiles.clone(),
         quick_settings: features
@@ -501,6 +475,92 @@ fn run() -> Result<()> {
         shell.free_spent();
     }
     Ok(())
+}
+
+/// The widgets a panel holds, from its lines, as this machine can show
+/// them; anything skipped is noted on the standard error.
+fn row_of(spec: &presets::Panel, features: &Path) -> Row {
+    let pick = |names: &[String]| {
+        let (found, notes) = widgets::usable(names, features);
+        for note in notes {
+            eprintln!("edel-shell-ui: {note}");
+        }
+        found
+    };
+    Row {
+        start: pick(&spec.start),
+        centre: pick(&spec.centre),
+        end: pick(&spec.end),
+    }
+}
+
+/// Makes one of the preset's panels as a layer surface of its own, with
+/// the widgets it holds (M5.1b, M5.4d, M5.4f, M5.31b: `panels_changed`
+/// makes them again too).
+fn make_panel(
+    compositor: &CompositorState,
+    layers: &LayerShell,
+    qh: &QueueHandle<Shell>,
+    tokens: &Tokens,
+    features: &Path,
+    spec: &presets::Panel,
+) -> Panel {
+    let strip = paint::fillet_height(tokens);
+    let row = row_of(spec, features);
+    // Along the edge of the first screen; the strip on its inner side
+    // for the fillets is drawn but takes no space and no clicks. A
+    // dock is centred along its edge, a little away from it, and
+    // keeps that much free of windows too; its width follows what it
+    // holds once drawn, square until then.
+    let dock = spec.style == Style::Dock;
+    let namespace = if dock { DOCK } else { NAMESPACE };
+    let surface = compositor.create_surface(qh);
+    let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), None);
+    let edge = match spec.edge {
+        Edge::Top => Anchor::TOP,
+        Edge::Bottom => Anchor::BOTTOM,
+    };
+    if dock {
+        surface.set_anchor(edge);
+        surface.set_size(paint::DOCK_HEIGHT, paint::DOCK_HEIGHT);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (DOCK_MARGIN, 0),
+            Edge::Bottom => (0, DOCK_MARGIN),
+        };
+        surface.set_margin(top, 0, bottom, 0);
+    } else {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, tokens.panel_height + strip);
+    }
+    // A dock that hides while a window covers it (M5.4f) keeps
+    // nothing free; the compositor hides it.
+    let zone = if dock && spec.hide == Hide::Covered {
+        0
+    } else {
+        paint::height(spec.style, tokens) as i32
+    };
+    surface.set_exclusive_zone(zone);
+    surface.set_keyboard_interactivity(KeyboardInteractivity::None);
+    surface.commit();
+    eprintln!(
+        "edel-shell-ui: panel {namespace} along the {}",
+        spec.edge.name()
+    );
+    Panel {
+        edge: spec.edge,
+        style: spec.style,
+        surface,
+        row,
+        width: 0,
+        asked: 0,
+        scale: 1,
+        drawn: None,
+        waiting: false,
+        places: Vec::new(),
+        empty: [None; 3],
+        shown: None,
+        reader: a11y::Reader::panel(),
+    }
 }
 
 /// The image's tokens in `scheme` if it has them, else the built-in ones;
@@ -663,6 +723,7 @@ impl Shell {
                 &panel.row,
                 &shown,
                 panel.scale,
+                self.editor.is_some(),
             );
             if natural != panel.width {
                 let panel = &mut self.panels[i];
@@ -674,6 +735,7 @@ impl Shell {
                 return;
             }
         }
+        let (lifted, caret) = self.drag_marks(i);
         let panel = &self.panels[i];
         let look = Look {
             width: panel.width * panel.scale,
@@ -683,6 +745,9 @@ impl Shell {
             style: panel.style,
             fillets: self.fillets,
             shown,
+            editing: self.editor.is_some(),
+            lifted,
+            caret,
         };
         if panel.drawn.as_ref() == Some(&look) {
             return;
@@ -740,7 +805,7 @@ impl Shell {
     fn show(&mut self, i: usize, look: &Look) -> Result<()> {
         let panel = &self.panels[i];
         let mut pixmap = Pixmap::new(look.width, look.height).context("a panel of no size")?;
-        let places = paint::paint(
+        let placed = paint::paint(
             &mut pixmap,
             look,
             &self.tokens,
@@ -748,10 +813,10 @@ impl Shell {
             Some(&mut self.icons),
             &panel.row,
         );
-        if places != panel.places {
+        if placed.widgets != panel.places {
             // Where each widget lies, for the tests that click them.
-            let list: Vec<String> = (0..places.len())
-                .filter_map(|j| Some((panel.row.widget(j)?.name, places[j])))
+            let list: Vec<String> = (0..placed.widgets.len())
+                .filter_map(|j| Some((panel.row.widget(j)?.name, placed.widgets[j])))
                 .map(|(name, (x, w))| format!("{name} {x:.0}+{w:.0}"))
                 .collect();
             eprintln!("edel-shell-ui: panel places {}", list.join(", "));
@@ -780,7 +845,8 @@ impl Shell {
         buffer.attach_to(surface).context("attaching the buffer")?;
         surface.frame(&self.qh, FrameCallbackData(surface.clone()));
         panel.surface.commit();
-        self.panels[i].places = places;
+        self.panels[i].places = placed.widgets;
+        self.panels[i].empty = placed.empty;
         self.panels[i].waiting = true;
         if let Some(old) = self.panels[i].shown.replace(buffer) {
             self.spent.push(old);
@@ -828,6 +894,93 @@ impl Shell {
         for i in 0..self.panels.len() {
             self.draw(i);
         }
+    }
+
+    /// The panels `layout.panels` asks for now (M5.31b). When they keep
+    /// each panel's edge, style and hiding, each panel takes its new
+    /// widgets and is drawn again, its surface kept; otherwise the open
+    /// popups close, the panels' surfaces go and every wanted panel is
+    /// made anew. Logs `panels now EDGE (N widgets), ...` either way.
+    pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
+        let features = edel::places::found_shared(edel::features::DIR);
+        let same_shape = wanted.len() == self.panel_specs.len()
+            && self.panel_specs.iter().zip(&wanted).all(|(old, new)| {
+                old.edge == new.edge && old.style == new.style && old.hide == new.hide
+            });
+        if same_shape {
+            for (panel, spec) in self.panels.iter_mut().zip(&wanted) {
+                panel.row = row_of(spec, &features);
+                panel.drawn = None;
+            }
+            self.draw_all();
+        } else {
+            self.close_popups();
+            self.tray_press = None;
+            for panel in std::mem::take(&mut self.panels) {
+                // The layer surface's role goes first, then its surface.
+                let surface = panel.surface.wl_surface().clone();
+                drop(panel);
+                surface.destroy();
+            }
+            self.panels = wanted
+                .iter()
+                .map(|spec| {
+                    make_panel(
+                        &self.compositor,
+                        &self.layers,
+                        &self.qh,
+                        &self.tokens,
+                        &features,
+                        spec,
+                    )
+                })
+                .collect();
+        }
+        let list: Vec<String> = self
+            .panels
+            .iter()
+            .map(|p| format!("{} ({} widgets)", p.edge.name(), p.row.all().count()))
+            .collect();
+        eprintln!("edel-shell-ui: panels now {}", list.join(", "));
+        self.panel_specs = wanted;
+        self.read_apps();
+    }
+
+    /// The apps the apps widget and the window list show, read once, when
+    /// a panel first holds either (at start, or when the panels change).
+    fn read_apps(&mut self) {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "apps" || w.name == "windows"));
+        if !wanted || !self.live.installed.is_empty() {
+            return;
+        }
+        let installed = apps::read_all(&apps::dirs());
+        self.live.pinned = self
+            .pins
+            .iter()
+            .filter_map(|pin| apps::pinned(&installed, pin))
+            .map(widgets::Pin::from)
+            .collect();
+        self.live.installed = installed.iter().map(widgets::Pin::from).collect();
+        self.draw_all();
+    }
+
+    /// Closes every popup that hangs on a panel or shows over the desktop,
+    /// each its own way, so none is left pointing at a panel that goes.
+    fn close_popups(&mut self) {
+        self.close_launcher();
+        self.close_styles();
+        self.close_panel_menu();
+        self.close_quick();
+        self.hide_banner();
+        self.hide_osd();
+        self.hide_undo_bar();
+        self.close_centre();
+        self.close_tray_grid();
+        self.hide_tooltip();
+        self.hide_switcher();
     }
 
     /// `input` at `x` logical pixels along panel `i`: the widget there,
@@ -1315,6 +1468,12 @@ impl LayerShellHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
+        } else if self.is_panel_menu(surface.wl_surface()) {
+            self.close_panel_menu();
+        } else if self.is_editor(surface.wl_surface()) {
+            self.close_editor(false);
+        } else if self.is_undo_bar(surface.wl_surface()) {
+            self.hide_undo_bar();
         } else if self.is_quick(surface.wl_surface()) {
             self.close_quick();
         } else if self.is_banner(surface.wl_surface()) {
@@ -1342,6 +1501,24 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
+        if self.is_panel_menu(surface.wl_surface()) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.configured();
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface.wl_surface()) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.configured();
+            }
+            return self.draw_editor();
+        }
+        if self.is_undo_bar(surface.wl_surface()) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.configured();
+            }
+            return self.draw_undo_bar();
+        }
         if self.is_launcher(surface.wl_surface()) {
             if let Some(menu) = &mut self.menu {
                 menu.popup.configured();
@@ -1422,6 +1599,24 @@ impl CompositorHandler for Shell {
             }
             return self.draw_launcher();
         }
+        if self.is_panel_menu(surface) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.set_scale(factor);
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.set_scale(factor);
+            }
+            return self.draw_editor();
+        }
+        if self.is_undo_bar(surface) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.set_scale(factor);
+            }
+            return self.draw_undo_bar();
+        }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
                 menu.popup.set_scale(factor);
@@ -1500,6 +1695,24 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_launcher();
+        }
+        if self.is_panel_menu(surface) {
+            if let Some(menu) = &mut self.panel_menu {
+                menu.popup.framed();
+            }
+            return self.draw_panel_menu();
+        }
+        if self.is_editor(surface) {
+            if let Some(editor) = &mut self.editor {
+                editor.popup.framed();
+            }
+            return self.draw_editor();
+        }
+        if self.is_undo_bar(surface) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.framed();
+            }
+            return self.draw_undo_bar();
         }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
@@ -1677,6 +1890,18 @@ impl PointerHandler for Shell {
                 }
                 continue;
             }
+            if self.is_panel_menu(&event.surface) {
+                self.panel_menu_pointer(event);
+                continue;
+            }
+            if self.is_editor(&event.surface) {
+                self.editor_pointer(event);
+                continue;
+            }
+            if self.is_undo_bar(&event.surface) {
+                self.undo_pointer(event);
+                continue;
+            }
             if self.is_styles(&event.surface) {
                 let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
                 let (x, y) = (
@@ -1723,6 +1948,12 @@ impl PointerHandler for Shell {
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
+            // While the editor is open a press on a widget starts a drag
+            // (M5.31b); nothing else on a panel acts.
+            if self.editor.is_some() {
+                self.editor_panel_pointer(i, event);
+                continue;
+            }
             let x = event.position.0 as f32;
             match &event.kind {
                 // The tray's tooltip waits for a rest on its arrow (M5.9h).
@@ -1731,6 +1962,7 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.hide_tooltip();
+                    self.close_panel_menu();
                     // A kept tray icon's click waits for the release, so
                     // the icon can be dragged (M5.9g).
                     match self.action_at(i, x, Input::Click) {
@@ -1746,7 +1978,12 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Press { button, .. } if *button == BTN_RIGHT => {
                     self.hide_tooltip();
-                    self.input(i, x, Input::Menu);
+                    // A widget with a menu of its own takes the click; where
+                    // none does, the panel's menu opens (M5.31b).
+                    match self.action_at(i, x, Input::Menu) {
+                        Some((action, left, width)) => self.run_action(i, x, action, left, width),
+                        None => self.open_panel_menu(i, x),
+                    }
                 }
                 PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
                     let y = event.position.1 as f32;
@@ -1806,6 +2043,10 @@ impl KeyboardHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface) {
             self.close_styles();
+        } else if self.is_panel_menu(surface) {
+            self.close_panel_menu();
+        } else if self.is_editor(surface) {
+            self.close_editor(false);
         } else if self.is_quick(surface) {
             self.close_quick();
         } else if self.is_centre(surface) {
@@ -1823,7 +2064,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.quick.is_some() {
+        if self.editor.is_some() {
+            self.editor_key(event);
+        } else if self.panel_menu.is_some() {
+            self.panel_menu_key(event);
+        } else if self.quick.is_some() {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
@@ -1844,7 +2089,11 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.quick.is_some() {
+        if self.editor.is_some() {
+            self.editor_key(event);
+        } else if self.panel_menu.is_some() {
+            self.panel_menu_key(event);
+        } else if self.quick.is_some() {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
