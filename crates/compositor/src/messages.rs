@@ -23,6 +23,14 @@ pub fn gpu_open(path: &Path) -> String {
     )
 }
 
+/// The context when the card udev names never shows its file.
+pub fn gpu_missing(path: &Path) -> String {
+    format!(
+        "the graphics card {} that udev names did not appear under /dev/dri within 10 s, and no other card did; the desktop starts again in a moment and tries once more",
+        path.display()
+    )
+}
+
 /// The context when EGL, the way to draw with the card, does not start.
 pub const NO_EGL: &str =
     "could not start EGL on the graphics card; its Mesa driver is missing or too old";
@@ -218,6 +226,10 @@ mod tests {
         assert_eq!(
             gpu_open(Path::new("/dev/dri/card0")),
             "could not open the graphics card /dev/dri/card0; this user needs to be in group video or seat"
+        );
+        assert!(
+            gpu_missing(Path::new("/dev/dri/card0"))
+                .starts_with("the graphics card /dev/dri/card0 that udev names did not appear")
         );
         assert_eq!(
             screen_dark("HDMI-A-1", "no free CRTC drives it"),
