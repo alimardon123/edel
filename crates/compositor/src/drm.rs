@@ -18,6 +18,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -119,16 +120,17 @@ fn open_seat() -> Result<(
 /// file under /dev/dri is made (the desktop stick's greeter failed five
 /// times in 12 s on 2026-10-08, seatd saying it could not find
 /// /dev/dri/card0, and greetd gave up); so wait for it as for the seat, up
-/// to 10 s, saying so once.
+/// to 10 s, saying so once. A card can also go while the firmware's
+/// framebuffer hands the screen to the real driver, which may come back
+/// as card1 while udev still names card0 (the stick's `live` session
+/// waited 10 s for a card0 that never came, 2026-10-10), so the first card
+/// whose file exists wins, udev's primary first, then the files under
+/// /dev/dri themselves.
 fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
     let find = || -> Result<Option<std::path::PathBuf>> {
-        Ok(match primary_gpu(seat).context(messages::GPU_LIST)? {
-            Some(path) => Some(path),
-            None => all_gpus(seat)
-                .context(messages::GPU_LIST)?
-                .into_iter()
-                .next(),
-        })
+        let primary = primary_gpu(seat).context(messages::GPU_LIST)?;
+        let all = all_gpus(seat).context(messages::GPU_LIST)?;
+        Ok(pick_gpu(primary, all, &cards_in_dev(), |p| p.exists()))
     };
     let until = Instant::now() + Duration::from_secs(10);
     let mut said = false;
@@ -138,7 +140,7 @@ fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
             Some(path) if path.exists() => return Ok(path),
             _ if Instant::now() >= until => {
                 return match found {
-                    Some(path) => Err(anyhow::anyhow!(messages::gpu_open(&path))),
+                    Some(path) => Err(anyhow::anyhow!(messages::gpu_missing(&path))),
                     None => Err(anyhow::anyhow!(messages::NO_GPU)),
                 };
             }
@@ -153,6 +155,44 @@ fn wait_for_gpu(seat: &str) -> Result<std::path::PathBuf> {
             }
         }
     }
+}
+
+/// The card files under /dev/dri, `card0` first.
+fn cards_in_dev() -> Vec<std::path::PathBuf> {
+    let mut cards: Vec<std::path::PathBuf> = std::fs::read_dir("/dev/dri")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("card"))
+        })
+        .collect();
+    cards.sort();
+    cards
+}
+
+/// Which card to draw with: udev's primary card if its file `exists`, else
+/// the first of udev's cards whose file does, else the first card file
+/// under /dev/dri; with none there, the card udev names, to wait for.
+fn pick_gpu(
+    primary: Option<std::path::PathBuf>,
+    all: Vec<std::path::PathBuf>,
+    in_dev: &[std::path::PathBuf],
+    exists: impl Fn(&Path) -> bool,
+) -> Option<std::path::PathBuf> {
+    if let Some(path) = primary.as_ref().filter(|p| exists(p)) {
+        return Some(path.clone());
+    }
+    if let Some(path) = all.iter().find(|p| exists(p)) {
+        return Some(path.clone());
+    }
+    if let Some(path) = in_dev.iter().find(|p| exists(p)) {
+        return Some(path.clone());
+    }
+    primary.or_else(|| all.into_iter().next())
 }
 
 /// Why the seat may not open, in words a person can act on: whether
@@ -914,5 +954,50 @@ mod tests {
         assert!(!draws_whole("i915"));
         assert!(!draws_whole("virtio_gpu"));
         assert!(!draws_whole(""));
+    }
+
+    #[test]
+    fn the_first_card_whose_file_exists_wins() {
+        let p = |s: &str| std::path::PathBuf::from(s);
+        let only = |live: &'static [&'static str]| {
+            move |path: &Path| live.iter().any(|l| path == Path::new(l))
+        };
+        // The primary card, when its file is there.
+        assert_eq!(
+            pick_gpu(
+                Some(p("/dev/dri/card0")),
+                vec![p("/dev/dri/card0")],
+                &[],
+                only(&["/dev/dri/card0"])
+            ),
+            Some(p("/dev/dri/card0"))
+        );
+        // The framebuffer's card0 went and the driver's card came back as
+        // card1, which udev lists while still calling card0 primary.
+        assert_eq!(
+            pick_gpu(
+                Some(p("/dev/dri/card0")),
+                vec![p("/dev/dri/card0"), p("/dev/dri/card1")],
+                &[p("/dev/dri/card1")],
+                only(&["/dev/dri/card1"])
+            ),
+            Some(p("/dev/dri/card1"))
+        );
+        // udev has not heard of card1 yet, but its file is there.
+        assert_eq!(
+            pick_gpu(
+                Some(p("/dev/dri/card0")),
+                vec![p("/dev/dri/card0")],
+                &[p("/dev/dri/card1")],
+                only(&["/dev/dri/card1"])
+            ),
+            Some(p("/dev/dri/card1"))
+        );
+        // Nothing there yet: wait for the card udev names.
+        assert_eq!(
+            pick_gpu(Some(p("/dev/dri/card0")), vec![], &[], only(&[])),
+            Some(p("/dev/dri/card0"))
+        );
+        assert_eq!(pick_gpu(None, vec![], &[], only(&[])), None);
     }
 }
