@@ -1,0 +1,41 @@
+#!/sbin/openrc-run
+# Makes again a graphics card's file under /dev/dri that the kernel lists
+# in /sys/class/drm but /dev lacks. Alpine's initramfs hands device events
+# to busybox's mdev while it finds the root, and loads simpledrm, the
+# firmware's framebuffer, which the real driver (bochs-drm in a VM, i915
+# or amdgpu on a laptop) takes over: simpledrm's card0 goes and the
+# driver's card0 comes at once, and when mdev's run for the removal lands
+# after the new file is made, it deletes that file and leaves /dev/dri
+# empty, so the desktop finds no card (the desktop stick's `live` test,
+# 2026-10-10). udev then applies its rules to the file, as for one the
+# kernel made.
+
+description="Make missing graphics card files"
+
+depend() {
+	need udev
+	after udev-settle
+	before seatd greetd
+}
+
+start() {
+	ebegin "Checking the graphics cards' files"
+	made=""
+	for dev in /sys/class/drm/*/dev; do
+		[ -e "$dev" ] || continue
+		name=${dev%/dev}
+		name=${name##*/}
+		[ -e "/dev/dri/$name" ] && continue
+		IFS=: read -r major minor <"$dev" || continue
+		mkdir -p /dev/dri
+		if mknod "/dev/dri/$name" c "$major" "$minor"; then
+			echo "edel-dri: /dev/dri/$name was missing though the kernel lists it; made it again" >/dev/console
+			made="$made $name"
+		fi
+	done
+	if [ -n "$made" ]; then
+		udevadm trigger --action=change --subsystem-match=drm
+		udevadm settle --timeout=5
+	fi
+	eend 0
+}
