@@ -238,6 +238,10 @@ impl Edel {
     /// as the launcher, gets it once, when it first shows; a click
     /// elsewhere takes it away again, as the launcher expects.
     fn give_keyboard(&mut self, output: &Output, surface: &WlSurface) {
+        // Locked, the keyboard stays with the lock screen (M5.10).
+        if self.is_locked() {
+            return;
+        }
         if !crate::state::has_buffer(surface) {
             // Hidden without being destroyed: it gives the keyboard back,
             // and gets it again when it shows.
@@ -291,7 +295,7 @@ impl Edel {
 
     /// A click on a layer that takes the keyboard gives it the keyboard.
     pub fn focus_layer(&mut self, layer: &LayerSurface) {
-        if !layer.can_receive_keyboard_focus() {
+        if !layer.can_receive_keyboard_focus() || self.is_locked() {
             return;
         }
         let surface = layer.wl_surface().clone();

@@ -204,6 +204,10 @@ impl Edel {
             self.leave_overview();
             return;
         }
+        // Nothing of the session opens over the lock screen (M5.10).
+        if self.is_locked() {
+            return;
+        }
         if self.dragging || self.switcher.is_some() {
             eprintln!(
                 "edel-compositor: overview not shown: {}",

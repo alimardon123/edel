@@ -123,6 +123,23 @@ impl Edel {
                         }
                         let vts =
                             xkb::keysyms::KEY_XF86Switch_VT_1..=xkb::keysyms::KEY_XF86Switch_VT_12;
+                        // Locked (M5.10), every key goes to the lock
+                        // screen and no shortcut acts; the volume and
+                        // brightness keys and another terminal still work.
+                        if state.is_locked() {
+                            state.tap = None;
+                            return if pressed && vts.contains(&sym) {
+                                FilterResult::Intercept(Action::Vt(
+                                    (sym - xkb::keysyms::KEY_XF86Switch_VT_1 + 1) as i32,
+                                ))
+                            } else if let Some(name) =
+                                crate::shortcuts::media_key(sym).filter(|_| pressed)
+                            {
+                                FilterResult::Intercept(Action::Media(name))
+                            } else {
+                                FilterResult::Forward
+                            };
+                        }
                         // Keys where a Latin layout has them, whatever the
                         // layout.
                         let latin = keysym.raw_latin_sym_or_raw_current_sym();
@@ -262,6 +279,20 @@ impl Edel {
                 let button = event.button_code();
                 let location = pointer.current_location();
                 let pressed = event.state() == ButtonState::Pressed;
+                // Locked, a click reaches the lock screen alone (M5.10).
+                if self.is_locked() {
+                    pointer.button(
+                        self,
+                        &ButtonEvent {
+                            button,
+                            state: event.state(),
+                            serial,
+                            time: event.time_msec(),
+                        },
+                    );
+                    pointer.frame(self);
+                    return None;
+                }
                 // The overview takes every click while it is open (M5.2j).
                 if self.overview.is_some() {
                     if button == BUTTON_LEFT && pressed {
@@ -310,7 +341,10 @@ impl Edel {
             InputEvent::GestureSwipeEnd { event } => {
                 if let Some((fingers, dy)) = self.swipe.take() {
                     let open = self.overview.is_some();
-                    if !event.cancelled() && edel_compositor::overview::swiped(fingers, dy, open) {
+                    if !event.cancelled()
+                        && !self.is_locked()
+                        && edel_compositor::overview::swiped(fingers, dy, open)
+                    {
                         eprintln!("edel-compositor: overview swipe");
                         self.toggle_overview();
                     }
@@ -448,6 +482,7 @@ impl Edel {
             Act::MoveToPrevious => self.move_to_neighbour(false),
             Act::Launcher => self.show_launcher(),
             Act::Tray => self.show_tray(),
+            Act::Lock => self.ask_lock(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
             Act::Overview => self.toggle_overview(),
@@ -621,6 +656,10 @@ impl Edel {
         &mut self,
         point: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        // Locked, only the lock screen hears the pointer (M5.10).
+        if self.is_locked() {
+            return self.lock_under(point);
+        }
         // No window hears the pointer over the overview (M5.2j).
         if self.overview.is_some() {
             self.overview_motion(point);

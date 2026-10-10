@@ -160,6 +160,11 @@ impl Edel {
             .into_iter()
             .map(Drawn::Plain)
             .collect();
+        // A locked session shows its lock screen alone (M5.10).
+        if self.is_locked() {
+            elements.extend(self.lock_elements(renderer, output, scale));
+            return elements;
+        }
         // The overview covers the screen while it is open (M5.2j).
         if self.overview.is_some() {
             elements.extend(self.overview_elements(renderer, output, scale));

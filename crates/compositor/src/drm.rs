@@ -748,6 +748,7 @@ impl Gpu {
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
+                state.lock_drawn(&screen.output.name());
                 state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
                 state.frame_drawn(
@@ -782,6 +783,7 @@ impl Gpu {
                 );
             }
             crate::layers::send_frames(&screen.output, now);
+            state.lock_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
         }
         // While a window opens, closes or slides, the screens draw again

@@ -179,6 +179,7 @@ fn draw(window: &mut Window, state: &mut Edel) {
                 eprintln!("edel-compositor: showing the frame failed: {e}");
             }
             state.telemetry.frame(started.elapsed(), !damage.is_empty());
+            state.lock_drawn(&window.output.name());
             state.frame_drawn(
                 started.elapsed(),
                 crate::tiers::refresh_interval(&window.output),
@@ -197,5 +198,6 @@ fn draw(window: &mut Window, state: &mut Edel) {
         });
     }
     crate::layers::send_frames(&window.output, now);
+    state.lock_frames(&window.output, now);
     state.cursor_frame(&window.output, now);
 }

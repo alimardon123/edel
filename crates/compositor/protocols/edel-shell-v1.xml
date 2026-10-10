@@ -121,6 +121,15 @@
       <arg name="active" type="uint" summary="the layout in use, from 0"/>
     </event>
 
+    <event name="lock">
+      <description summary="lock the screen">
+        The lock key was pressed (Super+L unless [shortcuts] says
+        otherwise), or the session is locked with no lock surface left,
+        as when shell-ui was started again: shell-ui locks the screen with
+        ext-session-lock-v1 (M5.10).
+      </description>
+    </event>
+
     <event name="policy">
       <description summary="the shown workspace's policy">
         How the shown workspace places its windows.

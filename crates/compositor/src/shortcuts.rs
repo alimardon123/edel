@@ -48,6 +48,8 @@ pub enum Act {
     MoveToPrevious,
     /// Show or hide shell-ui's launcher (M5.3b).
     Launcher,
+    /// Lock the screen (M5.10).
+    Lock,
     /// Show or hide shell-ui's tray grid, the apps behind the tray's
     /// arrow, with the keyboard on them (M5.9h).
     Tray,
@@ -70,6 +72,7 @@ impl Act {
             "close_window" => Some(Act::Close),
             "open_launcher" => Some(Act::Launcher),
             "show_tray" => Some(Act::Tray),
+            "lock_screen" => Some(Act::Lock),
             "show_workspaces" => Some(Act::Overview),
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),

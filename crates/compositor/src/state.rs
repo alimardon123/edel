@@ -170,6 +170,9 @@ pub struct Edel {
     xdg_shell: XdgShellState,
     /// Panels, docks and backgrounds (`layers.rs`).
     pub layer_shell: WlrLayerShellState,
+    /// ext-session-lock-v1 and the lock while the session is locked (M5.10).
+    pub session_lock: smithay::wayland::session_lock::SessionLockManagerState,
+    pub locked: Option<crate::lock::Locked>,
     shm: ShmState,
     seat_state: SeatState<Edel>,
     data_device: DataDeviceState,
@@ -220,6 +223,12 @@ impl Edel {
                 &display,
                 crate::sandbox::shell_may,
             ),
+            // The lock screen, the shell's alone (M5.10).
+            session_lock: smithay::wayland::session_lock::SessionLockManagerState::new::<Edel, _>(
+                &display,
+                crate::sandbox::shell_may,
+            ),
+            locked: None,
             _security_context: smithay::wayland::security_context::SecurityContextState::new::<
                 Edel,
                 _,
@@ -311,6 +320,11 @@ impl Edel {
 
     /// Raises `window` and gives it the keyboard.
     pub fn focus(&mut self, window: &Window) {
+        // Locked, the keyboard stays with the lock screen (M5.10).
+        if self.is_locked() {
+            self.space.raise_element(window, true);
+            return;
+        }
         // The scroll style brings the window's column into view.
         let scrolled = self.desks.layout_of_mut(window).focused(window);
         self.space.raise_element(window, true);
@@ -751,6 +765,8 @@ impl Edel {
             "tier".into(),
             Value::String(self.deadline.tier().name().into()),
         );
+        // Whether the lock screen is up (M5.10).
+        table.insert("locked".into(), Value::Boolean(self.is_locked()));
         // How many surfaces keep the screen on (M5.23).
         table.insert(
             "idle_inhibitors".into(),
