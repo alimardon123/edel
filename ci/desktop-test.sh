@@ -1996,6 +1996,8 @@ case_panels() {
 	# widgets)", so 20,776, inside the menu button's first square, is the
 	# panel's colour; unsetting it brings Classic's panel back, of 10
 	# widgets, and no restart of shell-ui happens. Kept as panels-clock.png.
+	# Then a floating large bar (M5.31c) holds the menu and the clock, 48 px
+	# high, 8 px in from each side and 8 px above the bottom.
 	panel=$(token panel)
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
 	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
@@ -2004,6 +2006,23 @@ case_panels() {
 		fail "edel settings set layout.panels did not reach shell-ui's panel"
 	wait_for 'edel-shell-ui: panel places clock [0-9]+\+[0-9]+$' || fail "shell-ui's panel does not hold the clock alone"
 	shot panels-clock 20 776 "$panel" >/dev/null || fail "20,776 is not the panel's colour: the menu button is still there"
+	floats=$(count 'edel-shell-ui: panels now bottom \(2 widgets\)')
+	guest 'panels floating'
+	wait_more 'edel-shell-ui: panels now bottom \(2 widgets\)' "$floats" ||
+		fail "edel settings set a floating large bar did not reach shell-ui's panel"
+	# The screen is 1280x800 (Virtual-1, as case_outputs reads it): a bar of
+	# 48 px at 8,Y, 16 px narrower than the screen, ends 8 px above its bottom.
+	screen_w=1280 screen_h=800
+	i=0
+	until value layers | grep -qE "edel-panel@8,[0-9]+,$((screen_w - 16))x48"; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the floating bar is not 48 px high and $((screen_w - 16)) px wide at 8 px in: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panel@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panel@//; s/[,x]/ /g')
+	fx=$1 fy=$2 fw=$3 fh=$4
+	[ "$fx" = 8 ] && [ "$fh" = 48 ] && [ $((fy + fh)) = $((screen_h - 8)) ] ||
+		fail "the floating bar is at $fx,$fy, $fw x $fh: it should be 8 px in, 48 px high and end 8 px above the bottom"
 	classic=$(count 'edel-shell-ui: panel places menu 0\+')
 	classic_panel=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'panels default'
@@ -2012,7 +2031,7 @@ case_panels() {
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting layout.panels did not bring Classic's menu button back"
 	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
 		fail "layout.panels restarted shell-ui, which it no longer does"
-	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart, and unsetting it brought Classic's panel back"
+	echo "PASS: layout.panels with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting layout.panels brought Classic's panel back"
 }
 
 # last_places: the text of the newest panel places line, after its prefix.
@@ -2020,13 +2039,13 @@ last_places() {
 	tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed 's/.*edel-shell-ui: panel places //'
 }
 
-# open_editor_from_menu: a right click on the panel's empty space, past the
-# window list's end by 40 px (or in the widest gap a widget leaves), then a
-# click on the middle of the panel menu's Edit panels row. Waits for the
-# drawer's first drawing and for the panel's new places line, which is the
-# drawing with its widgets as tiles. case_panel_edit opens the editor this
-# way twice.
-open_editor_from_menu() {
+# open_panel_menu_at_space: a right click on the panel's empty space, past the
+# window list's end by 40 px (or in the widest gap a widget leaves), then the
+# wait for the panel menu's surface and its places line. It leaves the menu
+# open: sx, sy, sw and sh are its surface, cw and ch its card and menu its
+# places line, which menu_middle reads. open_editor_from_menu and the dock
+# step of case_panel_edit both open it this way.
+open_panel_menu_at_space() {
 	places=$(last_places)
 	[ -n "$places" ] || fail "shell-ui logged no panel places line"
 	x=$(echo "$places" | tr ',' '\n' | awk '
@@ -2055,13 +2074,29 @@ open_editor_from_menu() {
 	read -r cw ch <<-EOF
 		$(echo "$menu" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
 	EOF
+	[ -n "$ch" ] || fail "the panel menu's places line is not what CI reads: $menu"
+}
+
+# menu_middle NAME: the middle of the panel menu's part NAME on the screen,
+# as its places line names it ('row edit', 'style dock'), in mx and my. The
+# card lies centred in the surface, which has the shadow's room round it.
+menu_middle() {
+	name=$1
 	read -r rx ry rw rh <<-EOF
-		$(echo "$menu" | sed -n 's/.*row edit \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		$(echo "$menu" | sed -n "s/.*$name \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p")
 	EOF
-	[ -n "$rh" ] || fail "the panel menu's places line is not what CI reads: $menu"
-	# The row's middle: the card lies centred in the surface, which has the shadow's room round it.
+	[ -n "$rh" ] || fail "the panel menu's places line has no $name: $menu"
 	mx=$((sx + (sw - cw) / 2 + rx + rw / 2))
 	my=$((sy + (sh - ch) / 2 + ry + rh / 2))
+}
+
+# open_editor_from_menu: a click on the middle of the panel menu's Edit
+# panels row, after open_panel_menu_at_space. Waits for the drawer's first
+# drawing and for the panel's new places line, which is the drawing with its
+# widgets as tiles. case_panel_edit opens the editor this way twice.
+open_editor_from_menu() {
+	open_panel_menu_at_space
+	menu_middle 'row edit'
 	editor=$(count 'edel-shell-ui: panel editor shown')
 	tiles=$(count 'edel-shell-ui: panel places')
 	python3 ci/qmp.py click $mx $my
@@ -2087,7 +2122,9 @@ case_panel_edit() {
 	# they were, taking the line out again when there was none (the
 	# panel's last places line ends with the clock). The drawer's and the
 	# bar's places come from their own log lines, the surfaces from the
-	# state file's layers.
+	# state file's layers. Last, the panel menu's Style row: its Dock
+	# segment writes style = "dock" and the panel becomes a dock (edel-dock,
+	# kept as panel-menu-dock.png), and its Undo bar takes it back to a bar.
 	open_editor_from_menu
 	python3 ci/qmp.py screendump "$dir/panel-edit-open.png"
 	wait_for 'edel-shell-ui: panel places .*tray [0-9]+\+[1-9][0-9]*' ||
@@ -2212,7 +2249,70 @@ case_panel_edit() {
 		value settings_file | grep -q 'start = \["clock"' &&
 			fail "ci's settings file still holds the clock first after Undo: $(value settings_file)"
 	fi
-	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote layout.panels with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\")"
+	# The panel menu's Style row: the panel is a bar again after Undo, so a
+	# right click on its empty space opens the menu, and its Dock segment,
+	# clicked at its middle, writes the dock and shows it as edel-dock.
+	open_panel_menu_at_space
+	menu_middle 'style dock'
+	changed=$(count 'edel-shell-ui: panel menu changed style dock, layout.panels written')
+	python3 ci/qmp.py click "$mx" "$my"
+	wait_more 'edel-shell-ui: panel menu changed style dock, layout.panels written' "$changed" ||
+		fail "the panel menu's Dock segment at $mx,$my did not write the dock: $(tr -d '\r' <"$log" | grep -a 'panel menu' | tail -n 1)"
+	i=0
+	until value layers | grep -q 'edel-dock@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no dock surface: $(value layers)"
+		sleep 0.2
+	done
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'style = "dock"' ||
+		fail "ci's settings file does not hold style = \"dock\": $(value settings_file)"
+	python3 ci/qmp.py screendump "$dir/panel-menu-dock.png"
+
+	# Undo on the dock's Undo bar: the panels go back to the bar, and the
+	# line says dock no more.
+	bar=$(count 'edel-shell-ui: panels undo bar shown')
+	i=0
+	until value layers | grep -q 'edel-panels-undo@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no Undo bar surface after the dock: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-panels-undo@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-panels-undo@//; s/[,x]/ /g')
+	bx=$1 by=$2 bw=$3 bh=$4
+	bar_places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panels undo bar places' | tail -n 1)
+	read -r cw ch <<-EOF
+		$(echo "$bar_places" | sed -n 's/.*card \([0-9]*\)x\([0-9]*\),.*/\1 \2/p')
+	EOF
+	read -r ux uy uw uh <<-EOF
+		$(echo "$bar_places" | sed -n 's/.*undo \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	EOF
+	[ -n "$uh" ] || fail "the dock's Undo bar places line is not what CI reads: $bar_places"
+	mx=$((bx + (bw - cw) / 2 + ux + uw / 2))
+	my=$((by + (bh - ch) / 2 + uy + uh / 2))
+	undone=$(count "edel-shell-ui: panels undone, $what")
+	gone=$(count 'edel-shell-ui: panels undo bar hidden')
+	places_before=$(count 'edel-shell-ui: panel places')
+	python3 ci/qmp.py click "$mx" "$my"
+	wait_more "edel-shell-ui: panels undone, $what" "$undone" ||
+		fail "Undo at $mx,$my did not take the dock back: $(tr -d '\r' <"$log" | grep -a 'panels undone' | tail -n 1)"
+	wait_more 'edel-shell-ui: panels undo bar hidden' "$gone" || fail "the Undo bar stayed up after the dock's Undo"
+	wait_more 'edel-shell-ui: panel places' "$places_before" || fail "the panel did not draw again after the dock's Undo"
+	i=0
+	until value layers | grep -q 'edel-panel@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the panel is not a bar again after Undo: $(value layers)"
+		sleep 0.2
+	done
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'style = "dock"' &&
+		fail "ci's settings file still holds the dock after Undo: $(value settings_file)"
+
+	echo "PASS: Edit panels: a right click opened the menu and its Edit panels row the drawer, whose tray had a tile $tile px wide; Escape closed it without writing; a second opening moved the clock to the start, and Done wrote layout.panels with it first and showed the Undo bar, which shows the clock at the start, then Undo put the panels back (\"$what\"); the panel menu's Dock segment made the panel a dock (edel-dock, style = \"dock\" in ci's file), and its Undo bar took it back to a bar"
 }
 
 case_dockhide() {

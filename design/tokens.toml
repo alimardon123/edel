@@ -73,6 +73,9 @@ title_text = 13
 gap = 8
 # shell-ui's panel along the screen's edge, and its clock's letters (M5.1b).
 panel = 40
+# The small and large panels a panel's menu offers (M5.31c).
+panel_small = 34
+panel_large = 48
 panel_text = 13
 # What is drawn on the panel, from the mockups (M5.29): the smaller text
 # (the clock's date), a button's height, the app icon in a button and the

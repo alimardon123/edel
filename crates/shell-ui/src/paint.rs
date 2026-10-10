@@ -18,7 +18,7 @@ use tiny_skia::{
 };
 
 use edel::i18n::tr;
-use edel::presets::{Edge, Style};
+use edel::presets::{Edge, Size, Style};
 use edel::tokens::{Colour, Tokens};
 
 use crate::popup;
@@ -34,6 +34,10 @@ pub struct Look {
     pub scale: u32,
     pub edge: Edge,
     pub style: Style,
+    /// How tall the panel is (M5.31c), and whether a bar floats (M5.31c):
+    /// a floating bar is drawn as a dock's card, with no fillets.
+    pub size: Size,
+    pub floating: bool,
     /// Whether the fillets are drawn (not on the Lite tier).
     pub fillets: bool,
     /// What each widget shows, in the row's order.
@@ -112,35 +116,44 @@ pub fn fillet_height(tokens: &Tokens) -> u32 {
 }
 
 /// How tall the strip for the fillets is on a panel of `style`: a dock
-/// has none.
-pub fn strip(style: Style, tokens: &Tokens) -> u32 {
-    match style {
-        Style::Bar => fillet_height(tokens),
-        Style::Dock => 0,
+/// has none, nor a floating bar, which is a card of its own.
+pub fn strip(style: Style, floating: bool, tokens: &Tokens) -> u32 {
+    match (style, floating) {
+        (Style::Bar, false) => fillet_height(tokens),
+        (Style::Bar, true) | (Style::Dock, _) => 0,
     }
 }
 
 /// The panel's top row in its buffer, in logical pixels; the strip lies
 /// on the side towards the screen's middle.
-pub fn panel_top(edge: Edge, style: Style, tokens: &Tokens) -> u32 {
+pub fn panel_top(edge: Edge, style: Style, floating: bool, tokens: &Tokens) -> u32 {
     match edge {
-        Edge::Bottom => strip(style, tokens),
+        Edge::Bottom => strip(style, floating, tokens),
         Edge::Top => 0,
     }
 }
 
-/// The room inside a dock's card at each end, in logical pixels.
+/// The room inside a dock's card, or a floating bar's, at each end, in
+/// logical pixels.
 pub const DOCK_PAD: f32 = 8.0;
-/// A dock's height and its corners' radius, in logical pixels: taller and
-/// rounder than a bar, for bigger icons.
-pub const DOCK_HEIGHT: u32 = 60;
+/// How much taller a dock is than the bar of its size, for bigger icons
+/// (M5.31c): a medium dock is 60 px high, as it was before sizes.
+pub const DOCK_EXTRA: u32 = 20;
+/// The corners' radius of a dock or a floating bar, in logical pixels:
+/// rounder than a bar's square edge, for bigger icons.
 const DOCK_RADIUS: f32 = 18.0;
 
-/// A panel's own height, without the fillets' strip, in logical pixels.
-pub fn height(style: Style, tokens: &Tokens) -> u32 {
+/// A panel's own height, without the fillets' strip, in logical pixels:
+/// the bar's height for its size, a dock's with its extra room (M5.31c).
+pub fn height(style: Style, size: Size, tokens: &Tokens) -> u32 {
+    let bar = match size {
+        Size::Small => tokens.panel_small_height,
+        Size::Medium => tokens.panel_height,
+        Size::Large => tokens.panel_large_height,
+    };
     match style {
-        Style::Bar => tokens.panel_height,
-        Style::Dock => DOCK_HEIGHT,
+        Style::Bar => bar,
+        Style::Dock => bar + DOCK_EXTRA,
     }
 }
 
@@ -797,7 +810,8 @@ fn edit_tile(
 
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
 /// with `row`'s widgets showing `look.shown`; returns where each widget
-/// lies, start to end, and where the empty groups are while editing.
+/// lies, start to end, and where the empty groups are while editing. A
+/// dock or a floating bar is drawn as a card (M5.31c).
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
@@ -808,13 +822,16 @@ pub fn paint(
 ) -> Places {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
-    let strip = strip(look.style, tokens) as f32 * s;
+    let strip = strip(look.style, look.floating, tokens) as f32 * s;
     let panel_h = h - strip;
-    let top = panel_top(look.edge, look.style, tokens) as f32 * s;
+    let top = panel_top(look.edge, look.style, look.floating, tokens) as f32 * s;
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     let panel = paint_of(tokens.panel);
+    // A dock and a floating bar are cards; only a dock is `dock` for its
+    // widgets, which may draw bigger there.
     let dock = look.style == Style::Dock;
-    if dock {
+    let card = dock || look.floating;
+    if card {
         // A card rounded all round, with the tokens' hairline inside its
         // edge, so it reads on any background.
         let r = DOCK_RADIUS * s;
@@ -840,7 +857,7 @@ pub fn paint(
             pixmap.fill_rect(rect, &paint_of(tokens.edge), Transform::identity(), None);
         }
     }
-    if look.fillets && !dock {
+    if look.fillets && !card {
         let (inner, up) = match look.edge {
             Edge::Bottom => (strip, true),
             Edge::Top => (panel_h, false),
@@ -901,7 +918,7 @@ pub fn paint(
         true => EMPTY_WIDTH * s,
         false => total(group),
     };
-    let pad = if dock { (DOCK_PAD * s).round() } else { 0.0 };
+    let pad = if card { (DOCK_PAD * s).round() } else { 0.0 };
     let mut places = Places::default();
     for (k, (group, from)) in [
         (&start, pad),
@@ -946,20 +963,23 @@ pub fn paint(
 }
 
 /// How wide a dock holding `row`, showing `shown`, is in logical pixels:
-/// its widgets side by side and the card's room at both ends. While the
-/// panel is edited (`editing`) each widget counts as its edit width and
-/// each empty group as its place, so the dock holds the tiles (M5.31b).
+/// its widgets side by side and the card's room at both ends. `size` and
+/// `scale` are the dock's size (M5.31c) and the buffer's scale, given
+/// together to keep the argument count down. While the panel is edited
+/// (`editing`) each widget counts as its edit width and each empty group
+/// as its place, so the dock holds the tiles (M5.31b).
 pub fn natural_width(
     tokens: &Tokens,
     text: Option<&mut Text>,
     icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
     shown: &[String],
-    scale: u32,
+    (size, scale): (Size, u32),
     editing: bool,
 ) -> u32 {
     let s = scale.max(1) as f32;
-    let Some(mut pixmap) = Pixmap::new(1, (DOCK_HEIGHT as f32 * s) as u32) else {
+    let dock_height = height(Style::Dock, size, tokens);
+    let Some(mut pixmap) = Pixmap::new(1, (dock_height as f32 * s) as u32) else {
         return 0;
     };
     let height = pixmap.height() as f32;
@@ -1030,6 +1050,8 @@ mod tests {
             scale: 1,
             edge,
             style: Style::Bar,
+            size: Size::Medium,
+            floating: false,
             fillets,
             shown: row.shows(&Live::default()),
             editing: false,
@@ -1087,6 +1109,50 @@ mod tests {
     }
 
     #[test]
+    fn a_floating_bar_is_a_card_with_no_strip_and_each_size_has_its_height() {
+        let tokens = Tokens::built_in();
+        assert_eq!(strip(Style::Bar, true, &tokens), 0);
+        assert_eq!(panel_top(Edge::Bottom, Style::Bar, true, &tokens), 0);
+        assert_eq!(strip(Style::Bar, false, &tokens), fillet_height(&tokens));
+        assert_eq!(
+            height(Style::Bar, Size::Small, &tokens),
+            tokens.panel_small_height
+        );
+        assert_eq!(
+            height(Style::Bar, Size::Large, &tokens),
+            tokens.panel_large_height
+        );
+        assert_eq!(
+            height(Style::Dock, Size::Small, &tokens),
+            tokens.panel_small_height + DOCK_EXTRA
+        );
+        let row = classic();
+        let look = Look {
+            width: 640,
+            height: height(Style::Bar, Size::Medium, &tokens),
+            scale: 1,
+            edge: Edge::Bottom,
+            style: Style::Bar,
+            size: Size::Medium,
+            floating: true,
+            fillets: true,
+            shown: row.shows(&Live::default()),
+            editing: false,
+            lifted: None,
+            caret: None,
+        };
+        let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
+        paint(&mut pixmap, &look, &tokens, None, None, &row);
+        assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "its corners are round");
+        assert_eq!(pixel(&pixmap, 320, 1), tokens.panel.bytes());
+        assert_ne!(
+            pixel(&pixmap, 320, 0),
+            tokens.panel.bytes(),
+            "the hairline round its edge"
+        );
+    }
+
+    #[test]
     fn a_dock_is_a_card_as_wide_as_what_it_holds_rounded_all_round() {
         let tokens = Tokens::built_in();
         let menu = find("menu").unwrap();
@@ -1096,9 +1162,8 @@ mod tests {
             end: vec![],
         };
         let shown = row.shows(&Live::default());
-        let width = natural_width(&tokens, None, None, &row, &shown, 1, false);
-        let h = DOCK_HEIGHT;
-        assert_eq!(height(Style::Dock, &tokens), h);
+        let width = natural_width(&tokens, None, None, &row, &shown, (Size::Medium, 1), false);
+        let h = height(Style::Dock, Size::Medium, &tokens);
         let each = menu::logical_width(&tokens);
         assert_eq!(width, (2.0 * each + 2.0 * DOCK_PAD) as u32);
         let look = Look {
@@ -1107,6 +1172,8 @@ mod tests {
             scale: 1,
             edge: Edge::Bottom,
             style: Style::Dock,
+            size: Size::Medium,
+            floating: false,
             fillets: true,
             shown,
             editing: false,
@@ -1125,8 +1192,8 @@ mod tests {
         assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "its corners are round");
         assert_eq!(pixel(&pixmap, width - 1, h - 1)[3], 0);
         // No fillets and no strip: its buffer is the card.
-        assert_eq!(strip(Style::Dock, &tokens), 0);
-        assert_eq!(panel_top(Edge::Bottom, Style::Dock, &tokens), 0);
+        assert_eq!(strip(Style::Dock, false, &tokens), 0);
+        assert_eq!(panel_top(Edge::Bottom, Style::Dock, false, &tokens), 0);
     }
 
     #[test]
@@ -1304,19 +1371,21 @@ mod tests {
                 Some(&mut icons),
                 &row,
                 &shown,
-                scale,
+                (spec.size, scale),
                 false,
             )
         } else {
             width
         };
-        let strip = strip(spec.style, &tokens);
+        let strip = strip(spec.style, spec.floating, &tokens);
         let look = Look {
             width: natural * scale,
-            height: (height(spec.style, &tokens) + strip) * scale,
+            height: (height(spec.style, spec.size, &tokens) + strip) * scale,
             scale,
             edge: spec.edge,
             style: spec.style,
+            size: spec.size,
+            floating: spec.floating,
             fillets: true,
             shown,
             editing: false,
@@ -1383,10 +1452,13 @@ mod tests {
         let mut icons = edel::app_icons::Icons::new(vec![theme()]);
         let look = Look {
             width: 1280,
-            height: height(spec.style, &tokens) + strip(spec.style, &tokens),
+            height: height(spec.style, spec.size, &tokens)
+                + strip(spec.style, spec.floating, &tokens),
             scale: 1,
             edge: spec.edge,
             style: spec.style,
+            size: spec.size,
+            floating: spec.floating,
             fillets: false,
             shown,
             editing: true,
@@ -1402,8 +1474,8 @@ mod tests {
             Some(&mut icons),
             &row,
         );
-        let bar_mid =
-            (panel_top(spec.edge, spec.style, &tokens) + height(spec.style, &tokens) / 2) as i32;
+        let bar_mid = (panel_top(spec.edge, spec.style, spec.floating, &tokens)
+            + height(spec.style, spec.size, &tokens) / 2) as i32;
         let (x, y) = (10, bar_mid as u32);
         assert_eq!(pixel(&panel, x, y), tokens.accent.bytes(), "the caret");
         assert_eq!(places.widgets.len(), row.all().count(), "every widget lies");

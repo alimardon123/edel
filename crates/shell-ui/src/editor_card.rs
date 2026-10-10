@@ -12,7 +12,7 @@
 use edel::i18n::tr;
 use edel::panel_edit::{self, Group, PANELS, Spot};
 use edel::places;
-use edel::presets::{self, Edge, Style};
+use edel::presets::{self, Edge, Size, Style};
 use edel::settings;
 use smithay_client_toolkit::reexports::calloop::RegistrationToken;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -37,7 +37,7 @@ use crate::{DOCK_MARGIN, EDITOR, MARGIN, Panel, Shell, UNDO, fillets, settings_t
 /// What `save_panels` did, as the log lines say it.
 const WRITTEN: &str = "layout.panels written";
 const TAKEN: &str = "layout.panels taken out";
-const NOTHING: &str = "nothing to write";
+pub(crate) const NOTHING: &str = "nothing to write";
 
 /// The open drawer: its surface and what it shows, the keyboard, what a
 /// screen reader reads, the last places logged, and the panels it started
@@ -99,7 +99,7 @@ fn mark_placed(view: &mut View, now: &[presets::Panel]) {
 }
 
 /// The keyboard key the drawer takes for `sym`, if any.
-fn key_of(sym: Keysym) -> Option<Key> {
+pub fn key_of(sym: Keysym) -> Option<Key> {
     Some(match sym {
         Keysym::Left => Key::Left,
         Keysym::Right => Key::Right,
@@ -186,6 +186,22 @@ fn landing_row(panel: &Panel) -> Vec<(&'static str, Group, f32, f32)> {
 }
 
 impl Shell {
+    /// How far above its edge a popup on a panel of this shape starts, in
+    /// logical pixels: the panel's height, the gap a dock or a floating bar
+    /// keeps above it, and the margin every popup keeps, less the `room`
+    /// round the popup's own card. The drawer, the Undo bar and the panel
+    /// menu share it (M5.31b, M5.31c).
+    pub(crate) fn above_panel(&self, style: Style, size: Size, floating: bool, room: u32) -> i32 {
+        paint::height(style, size, &self.tokens) as i32
+            + match (style, floating) {
+                (Style::Dock, _) => DOCK_MARGIN,
+                (Style::Bar, true) => self.tokens.gap as i32,
+                (Style::Bar, false) => 0,
+            }
+            + MARGIN
+            - room as i32
+    }
+
     /// Opens Edit panels (M5.31b): the drawer centred above the bottom panel
     /// (below the top one when there is no bottom panel), the keyboard
     /// exclusive, and every panel showing its widgets as tiles. The Undo
@@ -204,9 +220,15 @@ impl Shell {
         else {
             return;
         };
-        let (edge, style, scale) = {
+        let (edge, style, size, floating, scale) = {
             let panel = &self.panels[i];
-            (panel.edge, panel.style, panel.scale)
+            (
+                panel.edge,
+                panel.style,
+                panel.size,
+                panel.floating,
+                panel.scale,
+            )
         };
         // Every widget the release has that this machine can show.
         let features = places::found_shared(edel::features::DIR);
@@ -241,12 +263,9 @@ impl Shell {
             return;
         };
         popup.set_cards(editor::cards(&layout, &self.tokens), &self.compositor);
-        // The panel's height, and the dock's gap above it, with the margin
-        // every popup keeps; the drawer is centred by the compositor.
-        let above = paint::height(style, &self.tokens) as i32
-            + if style == Style::Dock { DOCK_MARGIN } else { 0 }
-            + MARGIN
-            - room as i32;
+        // The drawer is centred by the compositor; its height above the
+        // panel is the panel's.
+        let above = self.above_panel(style, size, floating, room);
         anchor_above(&popup.surface, edge, above);
         popup
             .surface
@@ -380,7 +399,7 @@ impl Shell {
     /// applies without it is what they are now (writers never write a
     /// default, ADR-008). Returns what it did, `WRITTEN`, `TAKEN` or
     /// `NOTHING`, or `None` after saying why it could not.
-    fn save_panels(&self, now: &[presets::Panel]) -> Option<&'static str> {
+    pub(crate) fn save_panels(&self, now: &[presets::Panel]) -> Option<&'static str> {
         let (machine, person) = settings_texts();
         let value = match panel_edit::to_write(now, machine.as_deref(), person.as_deref()) {
             Ok(value) => value,
@@ -518,27 +537,36 @@ impl Shell {
 
     /// Panel `i`'s place on the screen: a bar spans the screen's width
     /// along its edge, a dock its width centred, `DOCK_MARGIN` from the
-    /// edge; each is its surface, the fillets' strip included.
+    /// edge, and a floating bar `size.gap` from its edge and both sides
+    /// (M5.31c); each is its surface, the fillets' strip included, at its
+    /// size. This is the main screen's: a panel on another screen is
+    /// placed by that screen (`screens = "every"`).
     pub fn panel_rect(&self, i: usize) -> (f32, f32, f32, f32) {
         let (sw, sh) = self.screen_size();
         let Some(panel) = self.panels.get(i) else {
             return (0.0, 0.0, 0.0, 0.0);
         };
         let bottom = panel.edge == Edge::Bottom;
-        let h = (paint::height(panel.style, &self.tokens) + paint::strip(panel.style, &self.tokens))
-            as f32;
-        let (x, w) = match panel.style {
-            Style::Bar => (0.0, sw),
-            Style::Dock => {
+        let gap = if panel.floating {
+            self.tokens.gap as f32
+        } else {
+            0.0
+        };
+        let h = (paint::height(panel.style, panel.size, &self.tokens)
+            + paint::strip(panel.style, panel.floating, &self.tokens)) as f32;
+        let (x, w) = match (panel.style, panel.floating) {
+            (Style::Dock, _) => {
                 let w = panel.width as f32;
                 (((sw - w) / 2.0).round(), w)
             }
+            (Style::Bar, true) => (gap, sw - 2.0 * gap),
+            (Style::Bar, false) => (0.0, sw),
         };
         let y = match (panel.style, bottom) {
             (Style::Dock, true) => sh - h - DOCK_MARGIN as f32,
             (Style::Dock, false) => DOCK_MARGIN as f32,
-            (Style::Bar, true) => sh - h,
-            (Style::Bar, false) => 0.0,
+            (Style::Bar, true) => sh - h - gap,
+            (Style::Bar, false) => gap,
         };
         (x, y, w, h)
     }
@@ -832,7 +860,13 @@ impl Shell {
 
     /// Opens the Undo bar where the drawer was, for `undo_bar::SECONDS`:
     /// it puts `original` back when Undo is pressed.
-    fn open_undo_bar(&mut self, edge: Edge, above: i32, scale: u32, original: Vec<presets::Panel>) {
+    pub(crate) fn open_undo_bar(
+        &mut self,
+        edge: Edge,
+        above: i32,
+        scale: u32,
+        original: Vec<presets::Panel>,
+    ) {
         let view = undo_bar::View {
             hover: false,
             width: self.screen_width(),

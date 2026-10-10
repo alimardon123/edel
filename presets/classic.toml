@@ -39,7 +39,11 @@ tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
 # bottom, holding shell-ui's widgets by name: from its start, in its
 # centre and towards its end. It is a bar along the whole edge, or with
 # style = "dock" a card as wide as what it holds (M5.4d), which with
-# hide = "covered" steps aside while a window covers it (M5.4f).
+# hide = "covered" steps aside while a window covers it (M5.4f). Its
+# size = "small", "medium" (the default) or "large" sets its height from
+# the tokens, floating = true makes a bar float with a gap round it, and
+# screens = "every" puts one on each screen; a panel leaves out what it
+# does not change (M5.31c).
 [[panels]]
 edge = "bottom"
 start = ["menu", "separator", "windows"]
