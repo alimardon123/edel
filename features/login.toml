@@ -3,11 +3,12 @@
 # PAM file with pam_rundir, its conf.d, which runs greetd under
 # supervise-daemon, and edel-live, which logs the person called live in on
 # a USB stick (M3.6); greetd, not a supervisor, starts the compositor
-# again when a session ends.
+# again when a session ends. doas.d/edel-power.conf gives the lock and
+# login screens' power menu its three commands (M5.10c).
 format = 1
 summary = "Login: greetd and its greeter, with a private runtime directory per session"
-why = "greetd starts the session after login and the greeter again when it ends, a crash included; its greeter is edel-shell-ui --greeter (feature shell) on edel-compositor (feature compositor), which logs in through greetd's own socket; pam_rundir gives every session, the greeter's too, /run/user/UID (mode 0700) without logind, which Wayland needs for its socket. edel-live runs edel boot live at boot, so a USB stick, or a virtual machine nobody has set up yet, logs a person in by itself."
-packages = ["greetd", "greetd-openrc", "pam-rundir"]
+why = "greetd starts the session after login and the greeter again when it ends, a crash included; its greeter is edel-shell-ui --greeter (feature shell) on edel-compositor (feature compositor), which logs in through greetd's own socket; pam_rundir gives every session, the greeter's too, /run/user/UID (mode 0700) without logind, which Wayland needs for its socket. edel-live runs edel boot live at boot, so a USB stick, or a virtual machine nobody has set up yet, logs a person in by itself. doas, with one rule file, lets the people at the machine (group seat) run exactly poweroff, reboot and zzz (Alpine's suspend to memory, a 7 KB program) from the lock and login screens' power menu, with no logind, polkit or service of ours (M5.10c; M6.5 adds its other rules)."
+packages = ["greetd", "greetd-openrc", "pam-rundir", "doas", "zzz"]
 
 [services]
 boot = ["edel-live"]

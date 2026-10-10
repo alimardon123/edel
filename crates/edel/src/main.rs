@@ -19,6 +19,7 @@ mod release;
 mod report;
 mod run;
 mod shell;
+mod system_power;
 mod update;
 
 use std::path::PathBuf;
@@ -127,6 +128,14 @@ enum Commands {
     /// desktop's effect tier while a session runs, and which log to read
     /// when the last boot or desktop session went wrong
     Status,
+    /// Restart this machine now: the system's own reboot, through doas when
+    /// you are not root
+    Restart,
+    /// Shut this machine down now: the system's own poweroff, through doas
+    /// when you are not root
+    Shutdown,
+    /// Suspend this machine to memory now; a key or the power button wakes it
+    Suspend,
     /// Steps the boot services run
     #[command(hide = true)]
     Boot {
@@ -392,6 +401,9 @@ impl Commands {
             Commands::Update { .. } => "update",
             Commands::Rollback => "rollback",
             Commands::Status => "status",
+            Commands::Restart => "restart",
+            Commands::Shutdown => "shutdown",
+            Commands::Suspend => "suspend",
             Commands::Install { .. } => "install",
             Commands::Report { .. } => "report",
             Commands::Settings { .. } => "settings",
@@ -536,6 +548,9 @@ fn run(command: Commands) -> Result<()> {
         }
         Commands::Rollback => update::rollback(),
         Commands::Status => update::status(),
+        Commands::Restart => system_power::run(system_power::Action::Restart),
+        Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
+        Commands::Suspend => system_power::run(system_power::Action::Suspend),
         Commands::Install {
             disk,
             settings,
@@ -621,6 +636,9 @@ mod tests {
             (&["edel", "update", "release.toml"][..], "update"),
             (&["edel", "rollback"], "rollback"),
             (&["edel", "status"], "status"),
+            (&["edel", "restart"], "restart"),
+            (&["edel", "shutdown"], "shutdown"),
+            (&["edel", "suspend"], "suspend"),
             (&["edel", "report"], "report"),
             (&["edel", "settings", "export"], "settings"),
             (&["edel", "boot", "guard"], "boot"),
@@ -649,7 +667,8 @@ mod tests {
     fn help_lists_what_people_run() {
         let help = Cli::command().render_help().to_string();
         for shown in [
-            "update", "rollback", "status", "install", "report", "settings", "image",
+            "update", "rollback", "status", "restart", "shutdown", "suspend", "install", "report",
+            "settings", "image",
         ] {
             assert!(
                 help.contains(&format!("  {shown} ")),

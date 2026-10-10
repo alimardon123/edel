@@ -86,6 +86,9 @@ msgstr ""
 msgid "Next month"
 msgstr ""
 
+msgid "Update waiting"
+msgstr ""
+
 msgid "Edit panels"
 msgstr ""
 
@@ -225,6 +228,15 @@ msgid "Large"
 msgstr ""
 
 msgid "Panel menu"
+msgstr ""
+
+msgid "Suspend"
+msgstr ""
+
+msgid "Restart"
+msgstr ""
+
+msgid "Shut down"
 msgstr ""
 
 msgid "Wi-Fi"

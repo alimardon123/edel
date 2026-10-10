@@ -237,9 +237,24 @@ pub fn huge_pages_on(why: impl Display) -> String {
 /// The compositor ended the connection.
 pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes with it";
 
+/// A power choice on the lock screen failed (M5.10c).
+pub fn power_failed(what: &str, why: impl Display) -> String {
+    format!(
+        "could not {what}: {why}; the power rules come with the login feature (doas), so check that it is installed"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_power_choice_that_fails_says_what_to_check() {
+        assert_eq!(
+            power_failed("restart", "exit status: 1"),
+            "could not restart: exit status: 1; the power rules come with the login feature (doas), so check that it is installed"
+        );
+    }
 
     #[test]
     fn a_failure_to_start_says_what_happens_next() {

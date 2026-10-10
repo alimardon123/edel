@@ -67,6 +67,10 @@ pub const DEFAULT_REACHED: &str = run!("/default-reached");
 pub const CONFIRMED: &str = run!("/confirmed");
 /// The boot's "Started in" line, for `edel report` (M3.2).
 pub const STARTED: &str = run!("/started");
+/// Written by `edel update` and `edel rollback` once a slot waits for a
+/// restart, and gone at the next boot, as `/run` is memory (M5.10c): the
+/// lock screen's power menu marks Restart while it exists.
+pub const RESTART_PENDING: &str = run!("/restart-pending");
 /// One updater at a time (M1.1).
 pub const UPDATE_LOCK: &str = run!("/update.lock");
 /// greetd's config with the live session (M3.6).

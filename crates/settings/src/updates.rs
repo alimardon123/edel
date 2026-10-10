@@ -371,7 +371,7 @@ impl Ui {
         let command = match view.primary.action {
             Action::Check => cmd::line(&["update", "--check"]),
             Action::Install => cmd::line(&["update"]),
-            Action::Restart => "reboot".to_string(),
+            Action::Restart => "edel restart".to_string(),
         };
         self.primary
             .set_tooltip_text(Some(&trf("Runs {command}", &[("command", &command)])));
@@ -585,15 +585,15 @@ impl Ui {
         });
     }
 
-    /// Restart now: `reboot`.
+    /// Restart now: `edel restart` (M5.10c).
     fn restart(self: &Rc<Self>) {
         self.set_phase(Phase::Restarting);
         let ui = self.clone();
         glib::spawn_future_local(async move {
-            let Ok(done) = gio::spawn_blocking(cmd::reboot).await else {
+            let Ok(done) = gio::spawn_blocking(cmd::restart).await else {
                 return ui.set_phase(stopped(Doing::Restart));
             };
-            ui.show_last("reboot", &done);
+            ui.show_last("edel restart", &done);
             if !done.ok {
                 ui.set_phase(failed(Doing::Restart, &done));
             }

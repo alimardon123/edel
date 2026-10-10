@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 60] = [
+pub const BUILT_IN: [(&str, &str); 62] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -180,6 +180,9 @@ pub const BUILT_IN: [(&str, &str); 60] = [
         include_str!("../../../design/icons/battery-bolt.svg"),
     ),
     ("moon", include_str!("../../../design/icons/moon.svg")),
+    // Power: the lock screen's corner button and its menu (M5.10c).
+    ("power", include_str!("../../../design/icons/power.svg")),
+    ("restart", include_str!("../../../design/icons/restart.svg")),
     (
         "arrow-right",
         include_str!("../../../design/icons/arrow-right.svg"),

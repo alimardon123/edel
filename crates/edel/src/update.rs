@@ -604,6 +604,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     let mut env = esp.load()?;
     after_install(&mut env, slot);
     esp.save(&env)?;
+    mark_restart_pending(&slot.to_string());
     println!(
         "edel update: {}",
         trf(
@@ -615,6 +616,17 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         )
     );
     Ok(())
+}
+
+/// Leaves `places::RESTART_PENDING` saying which slot starts next, for
+/// the lock screen's power menu to mark Restart (M5.10c). `/run` is memory,
+/// so it goes with the next boot. The slot is already chosen when this runs,
+/// so a file that cannot be written changes nothing but the mark.
+fn mark_restart_pending(slot: &str) {
+    let path = Path::new(edel::places::RESTART_PENDING);
+    if let Err(e) = fs::write(path, format!("{slot}\n")) {
+        eprintln!("warning: could not write {}: {e}", path.display());
+    }
 }
 
 /// The update image does not fit the slot it was to be written to.
@@ -747,6 +759,7 @@ pub fn rollback() -> Result<()> {
     let mut env = esp.load()?;
     let target = roll_back(&mut env, disk.running)?;
     esp.save(&env)?;
+    mark_restart_pending(&target.to_string());
     println!(
         "edel rollback: {}",
         trf(
