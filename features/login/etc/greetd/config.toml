@@ -1,14 +1,13 @@
-# greetd (roadmap M4.1, M4.2b, M4.7b): the greeter is our compositor
-# running agreety, the text greeter, in foot, so the login screen is drawn
-# by the compositor and comes back whenever a session ends, a crashed one
-# included. After login agreety starts the person's session,
-# /usr/libexec/edel-session (our compositor with a session bus), and
-# exits, which ends the greeter's compositor. On a USB stick edel boot
-# live adds a session that logs the person called live in (M3.6). The
-# compositor greets people itself from M5.10.
+# greetd (roadmap M4.1, M4.2b, M4.7b, M5.10b): the greeter is our
+# compositor running shell-ui's greeter, so the login screen is drawn as
+# the lock screen is and comes back whenever a session ends, a crashed one
+# included. After login the greeter asks greetd to start the person's
+# session, /usr/libexec/edel-session (our compositor with a session bus),
+# and exits, which ends the greeter's compositor. On a USB stick edel boot
+# live adds a session that logs the person called live in (M3.6).
 [terminal]
 vt = 7
 
 [default_session]
-command = "edel-compositor -- foot agreety --cmd /usr/libexec/edel-session"
+command = "edel-compositor -- edel-shell-ui --greeter --cmd /usr/libexec/edel-session"
 user = "greetd"

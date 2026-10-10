@@ -1,6 +1,6 @@
 #!/bin/sh
 # The person's session (roadmap M4.2b, M3.6): what greetd starts after a
-# login, from the greeter's agreety (etc/greetd/config.toml) or, on a
+# login, from shell-ui's greeter (etc/greetd/config.toml) or, on a
 # stick, for the person called live (edel boot live). Our compositor with
 # a session bus, which apps and portals talk over, in a session named
 # Edel (XDG_CURRENT_DESKTOP), which apps and the portals go by (M5.5a).

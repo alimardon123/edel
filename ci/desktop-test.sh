@@ -224,6 +224,15 @@ say() {
 
 fail() {
 	echo "FAIL: $*"
+	# What the session's compositor is doing at that moment, once per
+	# run: its threads' states, wait channels and kernel stacks, so a
+	# compositor that stopped answering shows where it waits.
+	if [ -z "${failing:-}" ] && [ -S "${commands:-}" ]; then
+		failing=1
+		guest 'compositor state' 2>/dev/null
+		wait_for 'DESKTOP-TEST: compositor_state ' 10 && echo "compositor: $(value compositor_state)"
+		wait_for 'DESKTOP-TEST: compositor_stack ' 5 && echo "compositor stack: $(value compositor_stack)"
+	fi
 	stop_vm
 	exit 1
 }
@@ -481,7 +490,8 @@ case_xwayland() {
 case_respawn() {
 	# greetd owns the compositor's lifecycle (M4.7b): when the session's
 	# compositor dies, the session ends and greetd starts its greeter, our
-	# compositor running agreety in foot, which writes the health file.
+	# compositor running shell-ui's greeter (M5.10b), which writes the
+	# health file.
 	guest 'kill compositor'
 	wait_for 'DESKTOP-TEST: (respawn_seconds|respawn:)' ||
 		fail "no word from the test service after kill -9 edel-compositor"
@@ -497,19 +507,44 @@ case_respawn() {
 	"edel-compositor: tier=lite (renderer llvmpipe"*) ;;
 	*) fail "the greeter's compositor did not pick tier=lite under llvmpipe: \"$(value greeter_tier)\"" ;;
 	esac
-	# The login screen itself: foot, running agreety, the only window, with
-	# the keyboard. Logging in as ci there ends the greeter's compositor,
-	# and greetd starts ci's, which takes the health file back.
-	wait_for 'DESKTOP-TEST: windows 1 foot@' ||
-		fail "the greeter's compositor shows no foot window: $(value windows)"
-	sleep 2
+	# The login screen itself (M5.10b): shell-ui's greeter on every
+	# screen, with the keyboard, asking for the user name, then the
+	# password. A wrong password is said and the user name asked for
+	# again; ci's own logs in, which ends the greeter's compositor, and
+	# greetd starts ci's, which takes the health file back. Kept as
+	# greeter.png.
+	wait_for 'DESKTOP-TEST: greeter_shown ' || fail "no word from the test service about the greeter"
+	case "$(value greeter_shown)" in
+	"edel-shell-ui: greeter shown, "*) ;;
+	*) fail "shell-ui's greeter did not show: \"$(value greeter_shown)\"" ;;
+	esac
+	shot greeter 640 790 "$(token backdrop_deep)" >/dev/null ||
+		fail "the greeter at 640,790 is not the lock's #$(token backdrop_deep)"
 	python3 ci/qmp.py type 'ci\n'
-	sleep 3
+	sleep 1
+	shot greeter-name 640 790 "$(token backdrop_deep)" >/dev/null || true
+	python3 ci/qmp.py type 'not-it\n'
+	# greetd answers a wrong password after PAM's own wait; the greeter
+	# keeps the user name, and Return takes it to the password again.
+	sleep 5
+	python3 ci/qmp.py key ret
+	sleep 1
 	python3 ci/qmp.py type 'edel-desktop-test\n'
-	wait_for 'DESKTOP-TEST: login_ready ' || fail "no word from the test service after the login"
+	if ! wait_for 'DESKTOP-TEST: login_ready ' 90; then
+		guest 'greeter log'
+		sleep 3
+		fail "no word from the test service after the login: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	fi
 	case "$(value login_ready)" in
 	"ci output "*" ready") ;;
-	*) fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
+	*)
+		guest 'greeter log'
+		sleep 3
+		fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
+	esac
+	case "$(value greeter_said)" in
+	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*) ;;
+	*) fail "the greeter did not refuse the wrong password and then start ci's session: $(value greeter_said)" ;;
 	esac
 	# The session's log (M5.28a), ci's ~/.local/state/edel/session.log:
 	# the new session warns that the one before ended without closing,
@@ -526,7 +561,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed agreety in foot, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
 }
 
 case_layers() {
@@ -1831,7 +1866,7 @@ case_overview() {
 	before=$(value windows)
 	shown=$(count 'edel-compositor: overview shown$')
 	python3 ci/qmp.py key meta_l-w
-	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview"
+	wait_more 'edel-compositor: overview shown$' "$shown" || overview_fail "Super+W did not show the overview"
 	hidden=$(count 'edel-compositor: overview hidden$')
 	python3 ci/qmp.py key esc
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
@@ -1942,7 +1977,7 @@ case_overview() {
 		fail "at Lite the overview's picture of lap is no longer the e0a030 it last drew"
 	# A click on lap goes to it and leaves.
 	python3 ci/qmp.py click "$lap_x" "$lap_y"
-	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "a click on lap at $lap_x,$lap_y did not leave the overview"
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "a click on lap at $lap_x,$lap_y did not leave the overview"
 	i=0
 	until set -- $(value windows | tr ' ' '\n' | sed -n 's/^lap@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p') &&
 		[ -n "${1:-}" ] && python3 ci/qmp.py screendump "$dir/overview-left.png" &&

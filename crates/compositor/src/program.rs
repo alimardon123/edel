@@ -2,9 +2,9 @@
 //! `edel-compositor -- PROGRAM ARG...` the compositor starts it once the
 //! desktop is on screen, with the session's Wayland socket and X11 display,
 //! and stops when it exits. greetd's greeter session is the compositor
-//! running agreety, the text greeter, in foot, until the compositor greets
-//! people itself (M5.10): when the greeter logs someone in it exits, the
-//! greeter's compositor stops, and greetd starts the person's session.
+//! running shell-ui's greeter (`edel-shell-ui --greeter`, M5.10b): when
+//! the greeter logs someone in it exits, the greeter's compositor stops,
+//! and greetd starts the person's session.
 
 use std::io;
 use std::process::{Command, ExitStatus};
