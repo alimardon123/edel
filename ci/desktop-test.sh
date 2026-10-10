@@ -1545,6 +1545,17 @@ case_workspaces_dynamic() {
 	guest 'dynamic default'
 	wait_more 'edel-compositor: 4 workspaces$' "$fours" || fail "the preset's four workspaces did not come back"
 	state_is 'shown 1 count 4 names ["", "", "", ""]' || fail "the reset did not give four unnamed workspaces: $(value workspace_state)"
+	# Workspaces added here start in layout.tiling's policy, tiling since
+	# the tiling case, and the floated first closed while empty: Super+T
+	# floats the first again, as the cases after this one expect.
+	toggled=$(count 'edel-compositor: windows now (tiling|floating)$')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now (tiling|floating)$' "$toggled" || fail "Super+T did not switch the first workspace's policy"
+	if tr -d '\r' <"$log" | grep -aE 'edel-compositor: windows now (tiling|floating)$' | tail -n 1 | grep -q tiling; then
+		toggled=$(count 'edel-compositor: windows now floating$')
+		python3 ci/qmp.py key meta_l-t
+		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+T did not float the first workspace again"
+	fi
 	echo "PASS: with layout.dynamic_workspaces on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; layout.workspace_names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
 }
 
