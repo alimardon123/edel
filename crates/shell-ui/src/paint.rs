@@ -690,6 +690,7 @@ pub fn paint(
         top,
         height: panel_h,
         dock,
+        along_top: look.edge == Edge::Top,
     };
     let mut shown = look.shown.iter().map(String::as_str);
     // Each group's widgets with what they show and their widths.
@@ -748,6 +749,7 @@ pub fn natural_width(
         top: 0.0,
         height,
         dock: true,
+        along_top: false,
     };
     let widgets: f32 = row
         .all()

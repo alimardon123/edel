@@ -212,6 +212,15 @@ msgstr ""
 msgid "Later"
 msgstr ""
 
+msgid "Tray item"
+msgstr ""
+
+msgid "Drag to the panel to keep"
+msgstr ""
+
+msgid "Tray settings"
+msgstr ""
+
 msgid "{name} (focused)"
 msgstr ""
 
@@ -272,10 +281,16 @@ msgstr ""
 msgid "Focused window: {title}"
 msgstr ""
 
-msgid "Tray item"
+msgid "Tray: {names}"
 msgstr ""
 
-msgid "Tray: {names}"
+msgid "Tray: {count} hidden"
+msgstr ""
+
+msgid "Tray: {names}, {count} hidden"
+msgstr ""
+
+msgid "Hidden icons ({count})"
 msgstr ""
 
 msgid "{title} (focused)"

@@ -39,6 +39,8 @@ mod switcher;
 mod telling;
 mod toplevels;
 mod tray;
+mod tray_card;
+mod trayview;
 mod watch;
 mod widgets;
 mod workspaces;
@@ -834,6 +836,7 @@ impl Shell {
             top: 0.0,
             height: 1.0,
             dock: panel.style == Style::Dock,
+            along_top: panel.edge == Edge::Top,
         };
         let action = (widget.input)(&mut canvas, shown, input(x - left, width));
         match action {
@@ -853,6 +856,7 @@ impl Shell {
             Some(Action::Styles) => self.toggle_styles(i, left + width / 2.0),
             Some(Action::Quick) => self.toggle_quick(),
             Some(Action::Centre) => self.toggle_centre(),
+            Some(Action::TrayOpen) => self.toggle_tray_grid(),
             Some(Action::App(id)) => self.open_app(&id),
             Some(Action::Tray(id, menu)) => self.tray_call(&id, menu, x),
             None => {}
@@ -884,6 +888,7 @@ impl Shell {
         if self.live.tray.len() != before {
             eprintln!("edel-shell-ui: tray: {} items", self.live.tray.len());
         }
+        self.live.tray_in_panel = tray_in_panel();
         self.draw_all();
     }
 
@@ -1766,6 +1771,18 @@ fn settings_texts() -> (Option<String>, Option<String>) {
         read(places::machine_settings()),
         places::person_settings().and_then(read),
     )
+}
+
+/// `layout.tray_in_panel` as the machine's and the person's files say it
+/// now: the apps kept in the panel (M5.9g).
+fn tray_in_panel() -> Vec<String> {
+    let (machine, person) = settings_texts();
+    edel::settings::texts(
+        edel::settings::TRAY_IN_PANEL,
+        machine.as_deref(),
+        person.as_deref(),
+    )
+    .unwrap_or_default()
 }
 
 /// Removes the whole pages inside `bytes` from memory; reading them

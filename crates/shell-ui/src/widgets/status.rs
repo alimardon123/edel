@@ -392,6 +392,7 @@ mod tests {
                 top: 0.0,
                 height: h as f32,
                 dock: false,
+                along_top: false,
             };
             draw(&mut canvas, &shown, 0.0);
             pixmap

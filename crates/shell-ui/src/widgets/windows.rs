@@ -492,6 +492,7 @@ mod tests {
             top: 0.0,
             height: 1.0,
             dock: false,
+            along_top: false,
         };
         run(&mut canvas)
     }

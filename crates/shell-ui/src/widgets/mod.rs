@@ -47,6 +47,9 @@ pub struct Canvas<'a> {
     pub height: f32,
     /// Whether the panel is a dock (M5.4d), whose widgets may draw bigger.
     pub dock: bool,
+    /// Whether the panel lies along the screen's top, so an arrow points
+    /// down (M5.9g); false where no panel is known.
+    pub along_top: bool,
 }
 
 pub struct Widget {
@@ -83,6 +86,12 @@ pub struct Widget {
 pub struct Live {
     /// The tray's items, as their apps last said them (M5.2e).
     pub tray: Vec<crate::tray::Item>,
+    /// `layout.tray_in_panel`: the apps kept in the panel, by their item's
+    /// `Id`, in the panel's order; read when the tray changes and when
+    /// shell-ui writes it (M5.9g).
+    pub tray_in_panel: Vec<String>,
+    /// Whether the tray's arrow's grid is open, for its lit button (M5.9g).
+    pub tray_open: bool,
     pub workspaces: Vec<(String, bool)>,
     pub view: Option<usize>,
     pub windows: Vec<Task>,
@@ -188,6 +197,8 @@ pub enum Action {
     /// The tray item with this id (`service/path`): its app is asked to
     /// do what a click does, or with `true` to open its menu (M5.2e).
     Tray(String, bool),
+    /// Open the tray's grid of the apps behind its arrow, or close it (M5.9g).
+    TrayOpen,
 }
 
 /// For widgets that take no input.
