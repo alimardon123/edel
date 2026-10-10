@@ -513,7 +513,7 @@ case_respawn() {
 		fail "the greeter at 640,790 is not the lock's #$(token backdrop_deep)"
 	python3 ci/qmp.py type 'ci\n'
 	sleep 1
-	shot greeter-name >/dev/null
+	shot greeter-name 640 790 "$(token backdrop_deep)" >/dev/null || true
 	python3 ci/qmp.py type 'not-it\n'
 	# greetd answers a wrong password after PAM's own wait; the greeter
 	# keeps the user name, and Return takes it to the password again.
