@@ -637,6 +637,8 @@ mod tests {
             fillets: false,
             shown: row.shows(&live),
             editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
         let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
@@ -671,6 +673,8 @@ mod tests {
                 fillets: false,
                 shown: row.shows(live),
                 editing: false,
+                lifted: None,
+                caret: None,
             };
             let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
             let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;

@@ -89,6 +89,9 @@ msgstr ""
 msgid "Edit panels"
 msgstr ""
 
+msgid "Drop here to take it off the panel"
+msgstr ""
+
 msgid "Drag a widget along the panels or onto another, from here to add it, or here to take it away"
 msgstr ""
 
@@ -102,6 +105,9 @@ msgid "{title}, on a panel"
 msgstr ""
 
 msgid "Add {title}"
+msgstr ""
+
+msgid "Panels changed"
 msgstr ""
 
 msgid "Type to search"

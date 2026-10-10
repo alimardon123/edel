@@ -8,14 +8,19 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
+use edel::panel_edit::Group;
 use edel::tokens::Tokens;
-use tiny_skia::{Pixmap, PixmapPaint, Transform};
+use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item as Node;
-use crate::paint::{Face, Text, fill};
+use crate::paint::{EDIT_PAD, Face, LIFTED, Text, fill, outline};
 use crate::popup::{self, Card, Rect, dim, veil, wrap};
 use crate::trayview::Key;
 use crate::widgets::{Canvas, Widget};
+
+/// How far the pointer moves, pressed, before a press becomes a drag, in
+/// logical pixels (M5.31b).
+pub const DRAG_START: f32 = 6.0;
 
 /// The margin round the drawer's content, logical pixels.
 pub const PAD: f32 = 16.0;
@@ -84,6 +89,80 @@ pub struct View {
     pub width: u32,
     pub hover: Option<Part>,
     pub focus: Option<Part>,
+    /// A drawer tile being dragged, by its index: drawn at 35 percent.
+    pub lifted: Option<usize>,
+    /// A widget of a panel is dragged over the drawer: it gets an outline
+    /// and the hint says it will be taken off the panel.
+    pub taking: bool,
+}
+
+/// Where a widget dragged to a panel would land there (M5.31b): the group,
+/// the widget it lands before (`None`: the group's end), and the caret's
+/// place in the panel's logical x.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Landing {
+    pub group: Group,
+    pub before: Option<&'static str>,
+    pub caret: f32,
+}
+
+/// Where a dragged widget would land on a panel (M5.31b). `row` is each
+/// widget the panel shows, in order, with its group and its place (left and
+/// width, logical pixels from the panel's left); `empty` is each group's
+/// place while the panel is edited; `x` is the pointer along the panel;
+/// `lifted` is the widget being dragged off it, which is not a place to
+/// land by. Inside an empty group's place the widget lands in that group's
+/// end. Otherwise the nearest widget decides: before its middle it lands
+/// before it, after its middle before the next widget of its group (the
+/// group's end when none). `None` when nothing is there to land by.
+pub fn landing(
+    row: &[(&'static str, Group, f32, f32)],
+    empty: [Option<(f32, f32)>; 3],
+    x: f32,
+    lifted: Option<&str>,
+) -> Option<Landing> {
+    for (k, place) in empty.iter().enumerate() {
+        if let Some((left, width)) = *place {
+            if x >= left && x <= left + width {
+                return Some(Landing {
+                    group: Group::ALL[k],
+                    before: None,
+                    caret: left + width / 2.0,
+                });
+            }
+        }
+    }
+    let distance = |left: f32, width: f32| {
+        if x < left {
+            left - x
+        } else if x > left + width {
+            x - left - width
+        } else {
+            0.0
+        }
+    };
+    let (index, _) = row
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, ..))| Some(*name) != lifted)
+        .map(|(i, &(_, _, left, width))| (i, distance(left, width)))
+        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let (name, group, left, width) = row[index];
+    if x < left + width / 2.0 {
+        return Some(Landing {
+            group,
+            before: Some(name),
+            caret: left,
+        });
+    }
+    let after = row[index + 1..]
+        .iter()
+        .find(|(other, g, ..)| *g == group && Some(*other) != lifted);
+    Some(Landing {
+        group,
+        before: after.map(|(other, ..)| *other),
+        caret: left + width,
+    })
 }
 
 /// The parts a press or the keyboard reaches.
@@ -269,12 +348,80 @@ pub fn places(l: &Layout, view: &View) -> String {
     out
 }
 
+/// A tile's picture (M5.31b): the widget drawn whole into a pixmap its
+/// natural width by `panel_control` high, then laid into the tile's `layer`
+/// centred in its top part, scaled down to fit the tile less `EDIT_PAD` at
+/// each side when it is wider (never up), so nothing spills out of a tile.
+fn picture(
+    layer: &mut Pixmap,
+    widget: &Widget,
+    shown: &str,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    icons: Option<&mut edel::app_icons::Icons>,
+    s: f32,
+) {
+    let (mut text, mut icons) = (text, icons);
+    let height = tokens.panel_control as f32 * s;
+    let top = PICTURE_TOP * s;
+    let natural = {
+        let mut canvas = Canvas {
+            pixmap: layer,
+            tokens,
+            text: text.as_deref_mut(),
+            icons: icons.as_deref_mut(),
+            scale: s,
+            top,
+            height,
+            dock: false,
+            along_top: false,
+        };
+        (widget.width)(&mut canvas, shown)
+    };
+    let Some(mut piece) = Pixmap::new(natural.ceil().max(1.0) as u32, height.ceil() as u32) else {
+        return;
+    };
+    {
+        let mut canvas = Canvas {
+            pixmap: &mut piece,
+            tokens,
+            text,
+            icons,
+            scale: s,
+            top: 0.0,
+            height,
+            dock: false,
+            along_top: false,
+        };
+        (widget.draw)(&mut canvas, shown, 0.0);
+    }
+    let lw = layer.width() as f32;
+    let room = lw - 2.0 * EDIT_PAD * s;
+    let fit = (room / natural.max(1.0)).min(1.0);
+    let (w, h) = (natural * fit, height * fit);
+    let x = ((lw - w) / 2.0).round();
+    let y = top + ((height - h) / 2.0).round();
+    let paint = PixmapPaint {
+        quality: FilterQuality::Bilinear,
+        ..PixmapPaint::default()
+    };
+    layer.draw_pixmap(
+        0,
+        0,
+        piece.as_ref(),
+        &paint,
+        Transform::from_row(fit, 0.0, 0.0, fit, x, y),
+        None,
+    );
+}
+
 /// Draws `view` at `s` into `pixmap`, which is the card's size times it:
-/// the card, the heading and its hint (at most two lines), each tile (a
-/// raised tile with the widget drawn in its top part as it is on a panel
-/// and its title under it, at half strength when a panel holds it, a veil
-/// when the pointer or the keyboard is on it), the hairline and the two
-/// buttons.
+/// the card (outlined when a panel's widget is dragged over it), the
+/// heading and its hint (at most two lines), each tile (a raised tile with
+/// the widget's picture in its top part and its title under it, at half
+/// strength when a panel holds it and at 35 percent while it is dragged, a
+/// veil when the pointer or the keyboard is on it), the hairline and the
+/// two buttons.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -287,6 +434,16 @@ pub fn paint(
     let mut icons = icons;
     let mut text = text;
     popup::cards(pixmap, tokens, s, &cards(l, tokens));
+    if view.taking {
+        let (x, y, w, h) = l.card.device(s);
+        outline(
+            pixmap,
+            (x, y, w, h),
+            tokens.radius_menu as f32 * s,
+            2.0 * s,
+            tokens.accent,
+        );
+    }
     let heading = tokens.panel_text_size as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
     if let Some(text) = text.as_deref_mut() {
@@ -294,9 +451,13 @@ pub fn paint(
         let y = popup::middle(PAD, HEADING, heading, s);
         text.draw(pixmap, &mut line, PAD * s, y, tokens.panel_text);
         let room = (l.card.w - 2.0 * PAD) * s;
-        let hint = tr(
-            "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
-        );
+        let hint = if view.taking {
+            tr("Drop here to take it off the panel")
+        } else {
+            tr(
+                "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
+            )
+        };
         let lines = wrap(hint, hint_lines(view), room, |t| text.line(t, small).width);
         for (i, words) in lines.iter().enumerate() {
             let mut line = text.fit(words, small, room);
@@ -318,20 +479,15 @@ pub fn paint(
             fill(&mut layer, 0.0, 0.0, lw, lh, radius, veil(tokens, 0.06));
         }
         if let Some(widget) = widget_of(tile.name) {
-            let mut canvas = Canvas {
-                pixmap: &mut layer,
+            picture(
+                &mut layer,
+                widget,
+                &tile.shown,
                 tokens,
-                text: text.as_deref_mut(),
-                icons: icons.as_deref_mut(),
-                scale: s,
-                top: PICTURE_TOP * s,
-                height: tokens.panel_control as f32 * s,
-                dock: false,
-                along_top: false,
-            };
-            let width = (widget.width)(&mut canvas, &tile.shown);
-            let at = ((lw - width) / 2.0).round();
-            (widget.draw)(&mut canvas, &tile.shown, at);
+                text.as_deref_mut(),
+                icons.as_deref_mut(),
+                s,
+            );
         }
         if let Some(text) = text.as_deref_mut() {
             let mut words = text.fit(&tile.title, small, lw - 2.0 * popup::PAD * s);
@@ -339,8 +495,15 @@ pub fn paint(
             let at = ((lw - words.width) / 2.0).round();
             text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
         }
+        let opacity = if view.lifted == Some(i) {
+            LIFTED
+        } else if tile.placed {
+            0.5
+        } else {
+            1.0
+        };
         let paint = PixmapPaint {
-            opacity: if tile.placed { 0.5 } else { 1.0 },
+            opacity,
             ..PixmapPaint::default()
         };
         pixmap.draw_pixmap(
@@ -449,6 +612,8 @@ mod tests {
             width,
             hover: None,
             focus: None,
+            lifted: None,
+            taking: false,
         }
     }
 
@@ -530,6 +695,109 @@ mod tests {
         );
     }
 
+    /// A panel's row for the landing tests: a start group of `menu` and
+    /// `windows`, and the end group's `clock`, with their places.
+    fn row() -> Vec<(&'static str, Group, f32, f32)> {
+        vec![
+            ("menu", Group::Start, 0.0, 40.0),
+            ("windows", Group::Start, 40.0, 100.0),
+            ("clock", Group::End, 1200.0, 60.0),
+        ]
+    }
+
+    const NO_EMPTY: [Option<(f32, f32)>; 3] = [None, None, None];
+
+    #[test]
+    fn a_drop_before_the_first_widget_lands_before_it() {
+        let l = landing(&row(), NO_EMPTY, 5.0, None).unwrap();
+        assert_eq!(
+            l,
+            Landing {
+                group: Group::Start,
+                before: Some("menu"),
+                caret: 0.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_drop_after_the_last_of_a_group_lands_at_its_end() {
+        let l = landing(&row(), NO_EMPTY, 130.0, None).unwrap();
+        assert_eq!(
+            l,
+            Landing {
+                group: Group::Start,
+                before: None,
+                caret: 140.0
+            },
+            "after windows' middle, the start group's end"
+        );
+        let l = landing(&row(), NO_EMPTY, 1230.0, None).unwrap();
+        assert_eq!(l.group, Group::End);
+        assert_eq!(l.before, None);
+    }
+
+    #[test]
+    fn a_drop_inside_an_empty_group_lands_in_it_at_its_middle() {
+        let mut empty = NO_EMPTY;
+        empty[1] = Some((600.0, 40.0));
+        let l = landing(&row(), empty, 610.0, None).unwrap();
+        assert_eq!(
+            l,
+            Landing {
+                group: Group::Centre,
+                before: None,
+                caret: 620.0
+            }
+        );
+    }
+
+    #[test]
+    fn the_lifted_widget_is_not_a_place_to_land_by() {
+        let r = vec![
+            ("menu", Group::Start, 0.0, 40.0),
+            ("windows", Group::Start, 40.0, 40.0),
+        ];
+        // Over windows, which is lifted: menu is the nearest, and after its
+        // middle the group's end is the next widget left, none.
+        let l = landing(&r, NO_EMPTY, 60.0, Some("windows")).unwrap();
+        assert_eq!(
+            l,
+            Landing {
+                group: Group::Start,
+                before: None,
+                caret: 40.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_gap_between_groups_goes_to_the_nearer_widget() {
+        let r = vec![
+            ("menu", Group::Start, 0.0, 40.0),
+            ("clock", Group::End, 100.0, 40.0),
+        ];
+        let before_clock = landing(&r, NO_EMPTY, 80.0, None).unwrap();
+        assert_eq!(
+            before_clock,
+            Landing {
+                group: Group::End,
+                before: Some("clock"),
+                caret: 100.0
+            },
+            "80 is 20 from the clock and 40 from the menu"
+        );
+        let after_menu = landing(&r, NO_EMPTY, 60.0, None).unwrap();
+        assert_eq!(after_menu.group, Group::Start, "60 is 20 from the menu");
+        assert_eq!(after_menu.caret, 40.0);
+    }
+
+    #[test]
+    fn an_empty_row_gives_no_landing() {
+        assert_eq!(landing(&[], NO_EMPTY, 10.0, None), None);
+        assert_eq!(landing(&[], NO_EMPTY, 10.0, Some("menu")), None);
+    }
+
     #[test]
     fn places_name_every_tile_and_the_footer() {
         let v = view(2, 1280, false);
@@ -576,6 +844,8 @@ mod tests {
                 width: 1280,
                 hover: None,
                 focus: Some(Part::Done),
+                lifted: None,
+                taking: false,
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();

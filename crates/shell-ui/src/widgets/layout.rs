@@ -129,6 +129,8 @@ mod tests {
             fillets: false,
             shown: row.shows(&live),
             editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, None, &row);

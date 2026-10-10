@@ -46,6 +46,7 @@ mod toplevels;
 mod tray;
 mod tray_card;
 mod trayview;
+mod undo_bar;
 mod watch;
 mod widgets;
 mod workspaces;
@@ -112,6 +113,8 @@ const STYLES: &str = "edel-styles";
 /// The panel menu (M5.31b), and Edit panels' drawer.
 const PANEL_MENU: &str = "edel-panel-menu";
 const EDITOR: &str = "edel-editor";
+/// The Undo bar after Done, where the drawer was (M5.31b).
+const UNDO: &str = "edel-panels-undo";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
 /// A new notification's banner and the notification centre, which the
@@ -168,6 +171,8 @@ struct Shell {
     /// panels while it is open.
     panel_menu: Option<panel_menu_card::PanelMenu>,
     editor: Option<editor_card::Editor>,
+    /// Done's Undo bar, while it shows (M5.31b).
+    undo_bar: Option<editor_card::UndoBar>,
     /// Quick settings while open (M5.9a), the preset's tiles for it, and
     /// whether the machine has the Settings app.
     quick: Option<QuickCard>,
@@ -353,6 +358,7 @@ fn run() -> Result<()> {
         styles: None,
         panel_menu: None,
         editor: None,
+        undo_bar: None,
         quick: None,
         quick_tiles: preset.quick.tiles.clone(),
         quick_settings: features
@@ -717,6 +723,7 @@ impl Shell {
                 &panel.row,
                 &shown,
                 panel.scale,
+                self.editor.is_some(),
             );
             if natural != panel.width {
                 let panel = &mut self.panels[i];
@@ -728,6 +735,7 @@ impl Shell {
                 return;
             }
         }
+        let (lifted, caret) = self.drag_marks(i);
         let panel = &self.panels[i];
         let look = Look {
             width: panel.width * panel.scale,
@@ -738,6 +746,8 @@ impl Shell {
             fillets: self.fillets,
             shown,
             editing: self.editor.is_some(),
+            lifted,
+            caret,
         };
         if panel.drawn.as_ref() == Some(&look) {
             return;
@@ -966,6 +976,7 @@ impl Shell {
         self.close_quick();
         self.hide_banner();
         self.hide_osd();
+        self.hide_undo_bar();
         self.close_centre();
         self.close_tray_grid();
         self.hide_tooltip();
@@ -1461,6 +1472,8 @@ impl LayerShellHandler for Shell {
             self.close_panel_menu();
         } else if self.is_editor(surface.wl_surface()) {
             self.close_editor(false);
+        } else if self.is_undo_bar(surface.wl_surface()) {
+            self.hide_undo_bar();
         } else if self.is_quick(surface.wl_surface()) {
             self.close_quick();
         } else if self.is_banner(surface.wl_surface()) {
@@ -1499,6 +1512,12 @@ impl LayerShellHandler for Shell {
                 editor.popup.configured();
             }
             return self.draw_editor();
+        }
+        if self.is_undo_bar(surface.wl_surface()) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.configured();
+            }
+            return self.draw_undo_bar();
         }
         if self.is_launcher(surface.wl_surface()) {
             if let Some(menu) = &mut self.menu {
@@ -1592,6 +1611,12 @@ impl CompositorHandler for Shell {
             }
             return self.draw_editor();
         }
+        if self.is_undo_bar(surface) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.set_scale(factor);
+            }
+            return self.draw_undo_bar();
+        }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
                 menu.popup.set_scale(factor);
@@ -1682,6 +1707,12 @@ impl CompositorHandler for Shell {
                 editor.popup.framed();
             }
             return self.draw_editor();
+        }
+        if self.is_undo_bar(surface) {
+            if let Some(bar) = &mut self.undo_bar {
+                bar.popup.framed();
+            }
+            return self.draw_undo_bar();
         }
         if self.is_styles(surface) {
             if let Some(menu) = &mut self.styles {
@@ -1867,6 +1898,10 @@ impl PointerHandler for Shell {
                 self.editor_pointer(event);
                 continue;
             }
+            if self.is_undo_bar(&event.surface) {
+                self.undo_pointer(event);
+                continue;
+            }
             if self.is_styles(&event.surface) {
                 let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
                 let (x, y) = (
@@ -1913,9 +1948,10 @@ impl PointerHandler for Shell {
             let Some(i) = self.panel_of(&event.surface) else {
                 continue;
             };
-            // The editor's drags come in its second part: until then a
-            // press on a panel does nothing while it is open (M5.31b).
+            // While the editor is open a press on a widget starts a drag
+            // (M5.31b); nothing else on a panel acts.
             if self.editor.is_some() {
+                self.editor_panel_pointer(i, event);
                 continue;
             }
             let x = event.position.0 as f32;

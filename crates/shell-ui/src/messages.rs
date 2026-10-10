@@ -126,6 +126,12 @@ pub fn panels_not_kept(why: impl Display) -> String {
     format!("could not keep the panels: {why}; they stay as they were")
 }
 
+/// A change to the panels the editor was asked for is refused: the panels
+/// stay as they were.
+pub fn panel_not_changed(why: impl Display) -> String {
+    format!("could not change the panels: {why}; they stay as they were")
+}
+
 /// There is no home folder to keep the panels in.
 pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set layout.panels='[...]' with the panels as TOML instead";
 
@@ -203,6 +209,14 @@ mod tests {
             "the compositor does not offer zwlr_layer_shell_v1, so no panel can be drawn"
         );
         assert!(NO_COMPOSITOR.starts_with("could not connect to the compositor;"));
+    }
+
+    #[test]
+    fn a_refused_panel_change_says_the_panels_stay() {
+        assert_eq!(
+            panel_not_changed("there is no widget at that place on the panels"),
+            "could not change the panels: there is no widget at that place on the panels; they stay as they were"
+        );
     }
 
     #[test]

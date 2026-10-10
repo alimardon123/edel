@@ -42,6 +42,12 @@ pub struct Look {
     /// as wide as its title needs, and each empty group a place to drop
     /// into. Part 2b adds what is dragged and where it would land.
     pub editing: bool,
+    /// The widget dragged off this panel (M5.31b), drawn at 35 percent
+    /// strength with its tile; `None` when nothing is dragged.
+    pub lifted: Option<&'static str>,
+    /// Where a dragged widget would land here, logical pixels from the
+    /// panel's left: a caret. `None` when none would.
+    pub caret: Option<f32>,
 }
 
 /// While a panel is edited, the least room a widget's tile has beyond its
@@ -53,6 +59,13 @@ pub const EMPTY_WIDTH: f32 = 40.0;
 /// The room between two tiles while a panel is edited, logical pixels: half
 /// of it at each tile's side (M5.31b).
 const TILE_ROOM: f32 = 4.0;
+/// A widget narrower than this, logical pixels, shows its title in edit
+/// mode instead of its drawing, as an empty widget does: the separator's
+/// line (13 px, its room included) and an empty tray (M5.31b). A line
+/// that narrow is no picture to show.
+pub const TITLE_BELOW: f32 = 16.0;
+/// How strong a dragged widget is drawn, as a share of full (M5.31b).
+pub const LIFTED: f32 = 0.35;
 
 /// Where a panel's widgets lie and, while it is edited, where its empty
 /// groups do: each widget's left edge and width in logical pixels, in the
@@ -641,6 +654,104 @@ fn fillet(x: f32, y: f32, r: f32, left: bool, up: bool) -> Option<Path> {
     p.finish()
 }
 
+/// The width a widget takes while its panel is edited, device pixels: its
+/// natural width, or its title with `EDIT_PAD` at each side where that is
+/// wider (M5.31b). Drawing and `natural_width` both measure with it.
+pub fn edit_width(canvas: &mut Canvas, widget: &Widget, natural: f32) -> f32 {
+    let s = canvas.scale;
+    let size = canvas.tokens.panel_text_small_size as f32 * s;
+    let title = canvas
+        .text
+        .as_mut()
+        .map_or(0.0, |text| text.line(tr(widget.title), size).width);
+    natural.max(title + 2.0 * EDIT_PAD * s)
+}
+
+/// One widget's place while its panel is edited: its left edge, its width
+/// and its natural width, in device pixels, and the bar's top and height.
+#[derive(Clone, Copy)]
+struct EditPlace {
+    x: f32,
+    width: f32,
+    natural: f32,
+    bar: (f32, f32),
+}
+
+/// Draws a widget in edit mode: its tile, then its drawing centred in it,
+/// or its title, dim and centred, where it is narrower than `TITLE_BELOW`.
+fn edit_widget(canvas: &mut Canvas, widget: &Widget, showing: &str, place: EditPlace) {
+    let (tokens, s) = (canvas.tokens, canvas.scale);
+    edit_tile(
+        canvas.pixmap,
+        tokens,
+        (place.x, place.width),
+        place.bar,
+        s,
+        false,
+    );
+    if place.natural < TITLE_BELOW * s {
+        let size = tokens.panel_text_small_size as f32 * s;
+        if let Some(text) = canvas.text.as_deref_mut() {
+            let mut line = text.line(tr(widget.title), size);
+            let at = place.x + ((place.width - line.width) / 2.0).round();
+            let y = popup::middle(place.bar.0 / s, place.bar.1 / s, size, s);
+            text.draw(canvas.pixmap, &mut line, at, y, popup::dim(tokens));
+        }
+    } else {
+        let at = place.x + ((place.width - place.natural) / 2.0).round();
+        (widget.draw)(canvas, showing, at);
+    }
+}
+
+/// `edit_widget` for the widget dragged off its panel: drawn on a layer of
+/// its own, which lies over the bar at `LIFTED` strength.
+fn lifted_widget(canvas: &mut Canvas, widget: &Widget, showing: &str, place: EditPlace) {
+    let (w, h) = (canvas.pixmap.width(), canvas.pixmap.height());
+    let Some(mut layer) = Pixmap::new(w, h) else {
+        return;
+    };
+    {
+        let mut inner = Canvas {
+            pixmap: &mut layer,
+            tokens: canvas.tokens,
+            text: canvas.text.as_deref_mut(),
+            icons: canvas.icons.as_deref_mut(),
+            scale: canvas.scale,
+            top: canvas.top,
+            height: canvas.height,
+            dock: canvas.dock,
+            along_top: canvas.along_top,
+        };
+        edit_widget(&mut inner, widget, showing, place);
+    }
+    let paint = PixmapPaint {
+        opacity: LIFTED,
+        ..PixmapPaint::default()
+    };
+    canvas
+        .pixmap
+        .draw_pixmap(0, 0, layer.as_ref(), &paint, Transform::identity(), None);
+}
+
+/// The caret that shows where a dragged widget would land (M5.31b): a 2 px
+/// line in the accent, a button high, centred in the bar, its ends round.
+/// `at` is logical pixels along the panel; `bar` is the bar's top and
+/// height in device pixels.
+fn caret_line(pixmap: &mut Pixmap, tokens: &Tokens, at: f32, bar: (f32, f32), s: f32) {
+    let ph = tokens.panel_control as f32 * s;
+    let y = bar.0 + ((bar.1 - ph) / 2.0).round();
+    let w = 2.0 * s;
+    fill(
+        pixmap,
+        (at * s - s).round(),
+        y,
+        w,
+        ph,
+        w / 2.0,
+        tokens.accent,
+    );
+}
+
 /// The tile of a widget or an empty group while its panel is edited, `x`
 /// and `w` device pixels across the bar, `bar` its top and height in device
 /// pixels: a rounded tile `panel_control` high, centred in the bar, filled
@@ -773,15 +884,10 @@ pub fn paint(
             .map(|widget| {
                 let showing = shown.next().unwrap_or("");
                 let natural = (widget.width)(&mut canvas, showing);
-                let mut width = natural;
-                if editing {
-                    let size = tokens.panel_text_small_size as f32 * s;
-                    let title = canvas
-                        .text
-                        .as_mut()
-                        .map_or(0.0, |text| text.line(tr(widget.title), size).width);
-                    width = width.max(title + 2.0 * EDIT_PAD * s);
-                }
+                let width = match editing {
+                    true => edit_width(&mut canvas, widget, natural),
+                    false => natural,
+                };
                 (*widget, showing, width, natural)
             })
             .collect::<Vec<_>>()
@@ -813,34 +919,36 @@ pub fn paint(
             continue;
         }
         let mut x = from;
-        for (widget, showing, width, natural) in group {
-            if editing {
-                edit_tile(canvas.pixmap, tokens, (x, *width), bar, s, false);
-            }
-            if editing && *natural <= 0.0 {
-                // A widget that shows nothing, such as an empty tray, shows
-                // its title instead, centred and dim, so it can be seen.
-                let size = tokens.panel_text_small_size as f32 * s;
-                if let Some(text) = canvas.text.as_deref_mut() {
-                    let mut line = text.line(tr(widget.title), size);
-                    let at = x + ((width - line.width) / 2.0).round();
-                    let y = popup::middle(bar.0 / s, bar.1 / s, size, s);
-                    text.draw(canvas.pixmap, &mut line, at, y, popup::dim(tokens));
-                }
-            } else {
+        for &(widget, showing, width, natural) in group {
+            let place = EditPlace {
+                x,
+                width,
+                natural,
+                bar,
+            };
+            if !editing {
                 // A widget as wide as its title is drawn centred in it.
                 let at = x + ((width - natural) / 2.0).round();
                 (widget.draw)(&mut canvas, showing, at);
+            } else if look.lifted == Some(widget.name) {
+                lifted_widget(&mut canvas, widget, showing, place);
+            } else {
+                edit_widget(&mut canvas, widget, showing, place);
             }
             places.widgets.push((x / s, width / s));
             x += width;
         }
     }
+    if let Some(at) = look.caret {
+        caret_line(canvas.pixmap, tokens, at, bar, s);
+    }
     places
 }
 
 /// How wide a dock holding `row`, showing `shown`, is in logical pixels:
-/// its widgets side by side and the card's room at both ends.
+/// its widgets side by side and the card's room at both ends. While the
+/// panel is edited (`editing`) each widget counts as its edit width and
+/// each empty group as its place, so the dock holds the tiles (M5.31b).
 pub fn natural_width(
     tokens: &Tokens,
     text: Option<&mut Text>,
@@ -848,6 +956,7 @@ pub fn natural_width(
     row: &Row,
     shown: &[String],
     scale: u32,
+    editing: bool,
 ) -> u32 {
     let s = scale.max(1) as f32;
     let Some(mut pixmap) = Pixmap::new(1, (DOCK_HEIGHT as f32 * s) as u32) else {
@@ -865,11 +974,24 @@ pub fn natural_width(
         dock: true,
         along_top: false,
     };
-    let widgets: f32 = row
+    let mut widgets: f32 = row
         .all()
         .zip(shown)
-        .map(|(widget, showing)| (widget.width)(&mut canvas, showing))
+        .map(|(widget, showing)| {
+            let natural = (widget.width)(&mut canvas, showing);
+            match editing {
+                true => edit_width(&mut canvas, widget, natural),
+                false => natural,
+            }
+        })
         .sum();
+    if editing {
+        let empty = [&row.start, &row.centre, &row.end]
+            .iter()
+            .filter(|group| group.is_empty())
+            .count();
+        widgets += empty as f32 * EMPTY_WIDTH * s;
+    }
     (widgets / s + 2.0 * DOCK_PAD).ceil() as u32
 }
 
@@ -911,6 +1033,8 @@ mod tests {
             fillets,
             shown: row.shows(&Live::default()),
             editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, None, row);
@@ -972,7 +1096,7 @@ mod tests {
             end: vec![],
         };
         let shown = row.shows(&Live::default());
-        let width = natural_width(&tokens, None, None, &row, &shown, 1);
+        let width = natural_width(&tokens, None, None, &row, &shown, 1, false);
         let h = DOCK_HEIGHT;
         assert_eq!(height(Style::Dock, &tokens), h);
         let each = menu::logical_width(&tokens);
@@ -986,6 +1110,8 @@ mod tests {
             fillets: true,
             shown,
             editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
@@ -1179,6 +1305,7 @@ mod tests {
                 &row,
                 &shown,
                 scale,
+                false,
             )
         } else {
             width
@@ -1193,6 +1320,8 @@ mod tests {
             fillets: true,
             shown,
             editing: false,
+            lifted: None,
+            caret: None,
         };
         let mut panel = Pixmap::new(look.width, look.height).unwrap();
         let places = paint(
@@ -1216,6 +1345,80 @@ mod tests {
         );
         let named = row.all().map(|w| w.name).zip(places.widgets).collect();
         (screen, named, tokens)
+    }
+
+    /// Classic's bottom panel while it is edited, the clock lifted off its
+    /// end and the caret where it would land at the start (M5.31b): the
+    /// caret is the accent where it stands, the lifted clock is drawn
+    /// faded, and the separator's title shows in its tile, its line being
+    /// under `TITLE_BELOW`. With `EDEL_PANEL_PNG` set, writes it.
+    #[test]
+    fn an_edited_panel_shows_the_lifted_widget_and_the_caret() {
+        let tokens = Tokens::built_in();
+        let (preset, _) = edel::presets::named(Some("classic"));
+        let spec = &preset.panels[0];
+        let pick = |names: &[String]| {
+            names
+                .iter()
+                .filter_map(|n| find(n))
+                .collect::<Vec<&'static Widget>>()
+        };
+        let row = Row {
+            start: pick(&spec.start),
+            centre: pick(&spec.centre),
+            end: pick(&spec.end),
+        };
+        let live = Live::default();
+        let shown: Vec<String> = row
+            .all()
+            .map(|w| {
+                if w.name == "clock" {
+                    "14:05\nSat 3 Oct".to_string()
+                } else {
+                    (w.shows)(&live)
+                }
+            })
+            .collect();
+        let mut text = Text::load(&tokens.font);
+        let mut icons = edel::app_icons::Icons::new(vec![theme()]);
+        let look = Look {
+            width: 1280,
+            height: height(spec.style, &tokens) + strip(spec.style, &tokens),
+            scale: 1,
+            edge: spec.edge,
+            style: spec.style,
+            fillets: false,
+            shown,
+            editing: true,
+            lifted: Some("clock"),
+            caret: Some(10.0),
+        };
+        let mut panel = Pixmap::new(look.width, look.height).unwrap();
+        let places = paint(
+            &mut panel,
+            &look,
+            &tokens,
+            Some(&mut text),
+            Some(&mut icons),
+            &row,
+        );
+        let bar_mid =
+            (panel_top(spec.edge, spec.style, &tokens) + height(spec.style, &tokens) / 2) as i32;
+        let (x, y) = (10, bar_mid as u32);
+        assert_eq!(pixel(&panel, x, y), tokens.accent.bytes(), "the caret");
+        assert_eq!(places.widgets.len(), row.all().count(), "every widget lies");
+        // Over the screen's colour, as it would lie, for the picture.
+        let mut screen = Pixmap::new(look.width, look.height).unwrap();
+        screen.fill(colour(tokens.background));
+        screen.draw_pixmap(
+            0,
+            0,
+            panel.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+        write_png("panel-editing", &screen);
     }
 
     /// With `EDEL_PANEL_PNG` set, writes `pixmap` as `name`.png there.
