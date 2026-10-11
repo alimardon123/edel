@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.5 -1.5 18 18">
+  <!-- More (M5.10c7b): three dots in a row, for a menu of a thing's
+       less used actions (Duplicate, Rename, Delete). -->
+  <circle cx="1.75" cy="7.5" r="1.75"/>
+  <circle cx="7.5" cy="7.5" r="1.75"/>
+  <circle cx="13.25" cy="7.5" r="1.75"/>
+</svg>

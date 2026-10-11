@@ -392,85 +392,64 @@ msgstr ""
 msgid "What shows where more workspaces lie"
 msgstr ""
 
-msgid "How the lock and login screens look."
+msgid "Pick a look. Each look keeps its own arrangement and background."
 msgstr ""
 
 msgid "Your own arrangement"
 msgstr ""
 
-msgid "The look's own"
+msgid "Changed over {look} on the command line."
 msgstr ""
 
-msgid "Navy"
+msgid "Built in. Edit it on the lock; your changes become a new look."
 msgstr ""
 
-msgid "Blurred"
+msgid "Yours. Edit it on the lock, where it is."
 msgstr ""
 
-msgid "Sharp"
+msgid "There is a look called {look} already. Choose another name."
 msgstr ""
 
-msgid "Picture"
-msgstr ""
-
-msgid "How the clock is drawn"
-msgstr ""
-
-msgid "Off shows the hours from 1 to 12"
-msgstr ""
-
-msgid "How the date is written"
+msgid "More for {look}"
 msgstr ""
 
 msgid "Off hides the number of notifications that wait"
 msgstr ""
 
-msgid "Choose one picture"
+msgid "Built in"
 msgstr ""
 
-msgid "Edit it where it is: move, add or take away parts on the lock itself."
+msgid "In use"
 msgstr ""
 
-msgid "Edit lock screen"
+msgid "From the look in use"
 msgstr ""
 
-msgid "Save as"
+msgid "New look"
 msgstr ""
 
 msgid "Looks"
 msgstr ""
 
-msgid "Background"
+msgid "Keep as a look"
 msgstr ""
 
-msgid "Clock and date"
+msgid "Customize"
 msgstr ""
 
-msgid "Digital"
+msgid "More"
 msgstr ""
 
-msgid "Stacked"
+msgid "Duplicate"
 msgstr ""
 
-msgid "Analog"
+msgid "Rename…"
 msgstr ""
 
-msgid "Face"
+msgid "Delete…"
 msgstr ""
 
-msgid "24-hour clock"
-msgstr ""
-
-msgid "Long"
-msgstr ""
-
-msgid "Short"
-msgstr ""
-
-msgid "Numeric"
-msgstr ""
-
-msgid "Date"
+msgid "On every look"
 msgstr ""
 
 msgid "Unread notifications count"
@@ -482,19 +461,31 @@ msgstr ""
 msgid "The desktop's lock screen is not running, so it cannot be edited now:\n{why}"
 msgstr ""
 
+msgid "Rename look"
+msgstr ""
+
 msgid "Name, such as home"
 msgstr ""
 
 msgid "Name of the look"
 msgstr ""
 
-msgid "Name this look. It keeps the parts you see now and shows in the cards above."
+msgid "Give this look another name. It keeps its parts and its background, and shows in the cards above."
 msgstr ""
 
 msgid "Cancel"
 msgstr ""
 
-msgid "Save"
+msgid "Rename"
+msgstr ""
+
+msgid "Delete the look {look}?"
+msgstr ""
+
+msgid "It cannot be brought back."
+msgstr ""
+
+msgid "Delete"
 msgstr ""
 
 msgid "--page needs the name of a page, such as --page displays"
@@ -813,6 +804,12 @@ msgid "Switcher ends"
 msgstr ""
 
 msgid "Look"
+msgstr ""
+
+msgid "Background"
+msgstr ""
+
+msgid "Clock and date"
 msgstr ""
 
 msgid "Unread count"
