@@ -13,8 +13,9 @@ use edel::tokens::Tokens;
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item as Node;
-use crate::paint::{EDIT_PAD, Face, LIFTED, Text, fill, outline};
-use crate::popup::{self, Card, Rect, dim, veil, wrap};
+use crate::edit_kit;
+use crate::paint::{EDIT_PAD, Face, LIFTED, Text, outline};
+use crate::popup::{self, Card, Rect, wrap};
 use crate::trayview::Key;
 use crate::widgets::{Canvas, Widget};
 
@@ -29,8 +30,11 @@ pub const WIDTH: f32 = 560.0;
 /// The room the drawer keeps at each side of a screen narrower than it.
 const SIDE: f32 = 32.0;
 /// A tile's size on a desktop; a compact drawer shrinks its width to fit.
-pub const TILE: (f32, f32) = (112.0, 64.0);
-/// The room between tiles, rows and columns alike.
+pub const TILE: (f32, f32) = (104.0, 84.0);
+/// The opacity of a tile a panel already holds (its picture and words alike).
+const CHOSEN_OPACITY: f32 = 0.5;
+/// The room between tiles, rows and columns alike, and between the buttons.
+const TILE_GAP: f32 = 10.0;
 const GAP: f32 = 8.0;
 /// The heading's line, and the hint under it: two lines at most.
 const HEADING: f32 = 22.0;
@@ -52,25 +56,24 @@ fn hint_lines(view: &View) -> usize {
 /// The room between the hint and the tiles, and between the tiles and the
 /// hairline.
 const SPACE: f32 = 12.0;
-/// The footer below the hairline, and its buttons' size on a desktop and
-/// on a touch screen (Compact), logical pixels.
-const FOOTER: f32 = 44.0;
+/// The buttons' width, and their height on a desktop and on a touch screen
+/// (Compact), logical pixels (`edit_kit`'s).
 const BUTTON_WIDTH: f32 = 88.0;
-const BUTTON: f32 = 32.0;
-const BUTTON_TOUCH: f32 = 44.0;
+const BUTTON: f32 = edit_kit::BUTTON;
+const BUTTON_TOUCH: f32 = edit_kit::BUTTON_TOUCH;
 /// Three tiles across on a Compact screen.
 const COLUMNS_COMPACT: usize = 3;
-/// Where a tile's picture starts from the tile's top, where its title line
-/// starts and how high it is, logical pixels.
+/// Where a tile's picture starts from the tile's top, logical pixels.
 const PICTURE_TOP: f32 = 10.0;
-const TITLE_TOP: f32 = 44.0;
-const TITLE_LINE: f32 = 16.0;
 
 /// One widget in the drawer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tile {
     /// Its name in the widget table, which its picture is drawn from.
     pub name: &'static str,
+    /// The icon its tile shows in place of a picture (the lock screen's
+    /// parts), empty for a widget's picture.
+    pub icon: &'static str,
     /// Its title as people read it.
     pub title: String,
     /// What it shows now, as its picture shows it.
@@ -244,31 +247,36 @@ pub fn layout(view: &View) -> Layout {
     let width = card_width(view);
     let columns = columns(view);
     let tile_w = if view.compact {
-        (width - 2.0 * PAD - (columns - 1) as f32 * GAP) / columns as f32
+        (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
     } else {
         TILE.0
     };
     let rows = view.tiles.len().max(1).div_ceil(columns);
-    let used = columns as f32 * tile_w + (columns - 1) as f32 * GAP;
-    let left = ((width - used) / 2.0).round();
     let top = PAD + HEADING + HINT_GAP + hint_lines(view) as f32 * HINT_LINE + SPACE;
+    // Each row's tiles are centred across the card on their own, so a short
+    // row (the last one) sits in the middle too.
+    let row_left = |row: usize| {
+        let n = (view.tiles.len() - row * columns).min(columns) as f32;
+        let used = n * tile_w + (n - 1.0) * TILE_GAP;
+        ((width - used) / 2.0).round()
+    };
     let tiles = (0..view.tiles.len())
         .map(|i| {
             let (row, column) = (i / columns, i % columns);
             Rect::new(
-                left + column as f32 * (tile_w + GAP),
-                top + row as f32 * (TILE.1 + GAP),
+                row_left(row) + column as f32 * (tile_w + TILE_GAP),
+                top + row as f32 * (TILE.1 + TILE_GAP),
                 tile_w,
                 TILE.1,
             )
         })
         .collect();
-    let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * GAP;
-    // The hairline is one pixel high, then the footer.
-    let footer_top = tiles_bottom + SPACE + 1.0;
-    let height = footer_top + FOOTER;
+    let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
+    // The footer holds the buttons, with the card's padding under them.
+    let footer_top = tiles_bottom + SPACE;
     let button = if view.compact { BUTTON_TOUCH } else { BUTTON };
-    let y = footer_top + (FOOTER - button) / 2.0;
+    let height = footer_top + button + PAD;
+    let y = footer_top;
     let done = Rect::new(width - PAD - BUTTON_WIDTH, y, BUTTON_WIDTH, button);
     let undo = Rect::new(done.x - GAP - BUTTON_WIDTH, y, BUTTON_WIDTH, button);
     Layout {
@@ -280,12 +288,22 @@ pub fn layout(view: &View) -> Layout {
     }
 }
 
-/// The card, with the menus' corners.
-pub fn cards(l: &Layout, tokens: &Tokens) -> Vec<Card> {
+/// The card, with the sheet's corners (`edit_kit::SHEET_RADIUS`), so a
+/// popup's shadow follows them.
+pub fn cards(l: &Layout, _tokens: &Tokens) -> Vec<Card> {
     vec![Card {
         rect: l.card,
-        radius: tokens.radius_menu as f32,
+        radius: edit_kit::SHEET_RADIUS,
     }]
+}
+
+/// The look an editor is dressed in: the lock screen's glass for its
+/// drawer, the desktop's colours for the panels' (`edit_kit::Style`).
+pub fn style(kind: Kind) -> edit_kit::Style {
+    match kind {
+        Kind::LockScreen => edit_kit::Style::GLASS,
+        Kind::Panels => edit_kit::Style::DESKTOP,
+    }
 }
 
 /// The part under `x`, `y` (logical pixels from the card's corner), if
@@ -431,13 +449,12 @@ fn picture(
     );
 }
 
-/// Draws `view` at `s` into `pixmap`, which is the card's size times it:
-/// the card (outlined when a panel's widget is dragged over it), the
-/// heading and its hint (at most two lines), each tile (a raised tile with
-/// the widget's picture in its top part and its title under it, at half
-/// strength when a panel holds it and at 35 percent while it is dragged, a
-/// veil when the pointer or the keyboard is on it), the hairline and the
-/// two buttons.
+/// Draws `view` at `s` into `pixmap`, which is the card's size times it: the
+/// sheet (`edit_kit::sheet`, glass or desktop by `style`), outlined when a
+/// panel's widget is dragged over it, the heading and its hint (at most two
+/// lines), each tile (`edit_kit::tile`: its icon or a panel's picture, its
+/// title, at half strength when a panel holds it and at 35 percent while it
+/// is dragged), then Undo and Done as the kit's buttons.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -449,18 +466,20 @@ pub fn paint(
 ) {
     let mut icons = icons;
     let mut text = text;
-    popup::cards(pixmap, tokens, s, &cards(l, tokens));
+    let style = style(view.kind);
+    pixmap.fill(tiny_skia::Color::TRANSPARENT);
+    edit_kit::sheet(pixmap, l.card, tokens, style, s);
     if view.taking {
         let (x, y, w, h) = l.card.device(s);
         outline(
             pixmap,
             (x, y, w, h),
-            tokens.radius_menu as f32 * s,
+            edit_kit::SHEET_RADIUS * style.scale * s,
             2.0 * s,
             tokens.accent,
         );
     }
-    let heading = tokens.panel_text_size as f32 * s;
+    let heading = (tokens.panel_text_size + 2) as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
     if let Some(text) = text.as_deref_mut() {
         let heading_words = match view.kind {
@@ -469,40 +488,60 @@ pub fn paint(
         };
         let mut line = text.line_in(heading_words, heading, Face::SEMIBOLD);
         let y = popup::middle(PAD, HEADING, heading, s);
-        text.draw(pixmap, &mut line, PAD * s, y, tokens.panel_text);
-        let room = (l.card.w - 2.0 * PAD) * s;
-        let hint = match (view.kind, view.taking) {
-            (Kind::Panels, true) => tr("Drop here to take it off the panel"),
-            (Kind::Panels, false) => tr(
-                "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
-            ),
-            (Kind::LockScreen, true) => tr("Drop here to take it away"),
-            (Kind::LockScreen, false) => {
-                tr("Drag a part anywhere, from here to add it, or here to take it away")
-            }
-        };
-        let lines = wrap(hint, hint_lines(view), room, |t| text.line(t, small).width);
-        for (i, words) in lines.iter().enumerate() {
-            let mut line = text.fit(words, small, room);
-            let top = PAD + HEADING + HINT_GAP + i as f32 * HINT_LINE;
-            let y = popup::middle(top, HINT_LINE, small, s);
-            text.draw(pixmap, &mut line, PAD * s, y, dim(tokens));
+        let ink = edit_kit::inks(style, tokens).text;
+        text.draw(pixmap, &mut line, PAD * s, y, ink);
+    }
+    let hint_words = match (view.kind, view.taking) {
+        (Kind::Panels, true) => tr("Drop here to take it off the panel"),
+        (Kind::Panels, false) => tr(
+            "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
+        ),
+        (Kind::LockScreen, true) => tr("Drop here to take it away"),
+        (Kind::LockScreen, false) => {
+            tr("Drag a part anywhere, from here to add it, or here to take it away")
         }
+    };
+    let room = l.card.w - 2.0 * PAD;
+    let lines = match text.as_deref_mut() {
+        Some(text) => wrap(hint_words, hint_lines(view), room * s, |t| {
+            text.line(t, small).width
+        }),
+        None => vec![hint_words.to_string()],
+    };
+    for (i, words) in lines.iter().enumerate() {
+        let top = PAD + HEADING + HINT_GAP + i as f32 * HINT_LINE;
+        let rect = Rect::new(PAD, top, room, HINT_LINE);
+        edit_kit::hint(pixmap, words, rect, tokens, text.as_deref_mut(), style, s);
     }
     for (i, (tile, rect)) in view.tiles.iter().zip(&l.tiles).enumerate() {
         let (x, y, w, h) = rect.device(s);
         let Some(mut layer) = Pixmap::new(w.round() as u32, h.round() as u32) else {
             continue;
         };
-        let (lw, lh) = (layer.width() as f32, layer.height() as f32);
-        let radius = tokens.radius_control as f32 * s;
-        fill(&mut layer, 0.0, 0.0, lw, lh, radius, popup::raised(tokens));
         let part = Part::Tile(i);
-        if view.hover == Some(part) || view.focus == Some(part) {
-            fill(&mut layer, 0.0, 0.0, lw, lh, radius, veil(tokens, 0.06));
-        }
+        // The focus ring lies outside the tile, so it is drawn on the card
+        // below, not inside the tile's own layer (where it would be cut).
+        let focused = view.focus == Some(part);
+        let state = if view.hover == Some(part) || focused {
+            edit_kit::State::Hover
+        } else {
+            edit_kit::State::Rest
+        };
+        let tile_rect = Rect::new(0.0, 0.0, rect.w, rect.h);
+        edit_kit::tile(
+            &mut layer,
+            tile_rect,
+            tile.icon,
+            &tile.title,
+            state,
+            false,
+            tokens,
+            text.as_deref_mut(),
+            style,
+            s,
+        );
         // A panel's tile shows the widget as it is on a panel; a lock
-        // screen's tile has no picture, only its title (M5.10c6).
+        // screen's tile has its icon and title only.
         if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(tile.name)) {
             picture(
                 &mut layer,
@@ -514,25 +553,10 @@ pub fn paint(
                 s,
             );
         }
-        if let Some(text) = text.as_deref_mut() {
-            if view.kind == Kind::LockScreen {
-                // The title alone, centred in the tile in the panel text's size.
-                let size = tokens.panel_text_size as f32 * s;
-                let mut words = text.fit(&tile.title, size, lw - 2.0 * popup::PAD * s);
-                let y = popup::middle(0.0, TILE.1, size, s);
-                let at = ((lw - words.width) / 2.0).round();
-                text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
-            } else {
-                let mut words = text.fit(&tile.title, small, lw - 2.0 * popup::PAD * s);
-                let y = popup::middle(TITLE_TOP, TITLE_LINE, small, s);
-                let at = ((lw - words.width) / 2.0).round();
-                text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
-            }
-        }
         let opacity = if view.lifted == Some(i) {
             LIFTED
         } else if tile.placed {
-            0.5
+            CHOSEN_OPACITY
         } else {
             1.0
         };
@@ -548,45 +572,32 @@ pub fn paint(
             Transform::identity(),
             None,
         );
+        if focused {
+            popup::focus_ring(pixmap, *rect, edit_kit::TILE_RADIUS, s, tokens);
+        }
     }
-    let rule = l.card.h - FOOTER - 1.0;
-    fill(
-        pixmap,
-        PAD * s,
-        rule * s,
-        (l.card.w - 2.0 * PAD) * s,
-        s.max(1.0),
-        0.0,
-        tokens.line,
-    );
-    for (part, rect, words, ink, back) in [
-        (
-            Part::Undo,
-            l.undo,
-            tr("Undo"),
-            tokens.panel_text,
-            popup::raised(tokens),
-        ),
-        (
-            Part::Done,
-            l.done,
-            tr("Done"),
-            tokens.accent_text,
-            tokens.accent,
-        ),
+    for (part, rect, words, kind) in [
+        (Part::Undo, l.undo, tr("Undo"), edit_kit::ButtonKind::Quiet),
+        (Part::Done, l.done, tr("Done"), edit_kit::ButtonKind::Accent),
     ] {
-        let (x, y, w, h) = rect.device(s);
-        let radius = tokens.radius_control as f32 * s;
-        fill(pixmap, x, y, w, h, radius, back);
-        if view.hover == Some(part) || view.focus == Some(part) {
-            fill(pixmap, x, y, w, h, radius, veil(tokens, 0.06));
-        }
-        if let Some(text) = text.as_deref_mut() {
-            let mut line = text.line(words, heading);
-            let at = x + ((w - line.width) / 2.0).round();
-            let baseline = popup::middle(rect.y, rect.h, heading, s);
-            text.draw(pixmap, &mut line, at, baseline, ink);
-        }
+        let state = if view.focus == Some(part) {
+            edit_kit::State::Focus
+        } else if view.hover == Some(part) {
+            edit_kit::State::Hover
+        } else {
+            edit_kit::State::Rest
+        };
+        edit_kit::button(
+            pixmap,
+            rect,
+            words,
+            kind,
+            state,
+            tokens,
+            text.as_deref_mut(),
+            style,
+            s,
+        );
     }
 }
 
@@ -637,6 +648,7 @@ mod tests {
             kind: Kind::Panels,
             tiles: (0..n)
                 .map(|i| Tile {
+                    icon: "",
                     name: "clock",
                     title: format!("Widget {i}"),
                     shown: String::new(),
@@ -656,21 +668,25 @@ mod tests {
     fn a_desktop_drawer_is_four_tiles_across_and_centred_in_560() {
         let l = layout(&view(6, 1280, false));
         assert_eq!(l.size.0, 560);
+        // Four tiles and three gaps, centred in the 560 px card.
+        let left = ((560.0 - (4.0 * TILE.0 + 3.0 * TILE_GAP)) / 2.0).round();
         assert_eq!(
             l.tiles[0],
-            Rect::new(44.0, 69.0, TILE.0, TILE.1),
+            Rect::new(left, 69.0, TILE.0, TILE.1),
             "the hint on one line"
         );
-        assert_eq!(l.tiles[3].x, 44.0 + 3.0 * (TILE.0 + GAP));
-        assert_eq!(l.tiles[4].y, 69.0 + TILE.1 + GAP, "the second row");
+        assert_eq!(l.tiles[3].x, left + 3.0 * (TILE.0 + TILE_GAP));
+        assert_eq!(l.tiles[4].y, 69.0 + TILE.1 + TILE_GAP, "the second row");
     }
 
     #[test]
     fn a_compact_drawer_is_the_screen_wide_with_three_tiles_across() {
         let l = layout(&view(7, 360, true));
         assert_eq!(l.size.0, 360);
-        assert_eq!(l.tiles[0], Rect::new(PAD, 84.0, 104.0, TILE.1));
-        assert_eq!(l.tiles[2].x, PAD + 2.0 * (104.0 + GAP));
+        // Three tiles fill the screen less the padding and the gaps.
+        let tile_w = (360.0 - 2.0 * PAD - 2.0 * TILE_GAP) / 3.0;
+        assert_eq!(l.tiles[0], Rect::new(PAD, 84.0, tile_w, TILE.1));
+        assert_eq!(l.tiles[2].x, PAD + 2.0 * (tile_w + TILE_GAP));
         assert_eq!(l.done.h, BUTTON_TOUCH, "touch-sized buttons");
     }
 
@@ -867,6 +883,7 @@ mod tests {
                 .iter()
                 .filter(|w| w.name != "apps" && w.name != "search")
                 .map(|w| Tile {
+                    icon: "",
                     name: w.name,
                     title: tr(w.title).to_string(),
                     shown: (w.shows)(&live),
@@ -915,12 +932,14 @@ mod tests {
         let mut text = Text::load(&tokens.font);
         let tiles = vec![
             Tile {
+                icon: "",
                 name: "message",
                 title: "Message".into(),
                 shown: String::new(),
                 placed: false,
             },
             Tile {
+                icon: "",
                 name: "battery",
                 title: "Battery".into(),
                 shown: String::new(),

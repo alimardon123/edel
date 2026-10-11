@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 63] = [
+pub const BUILT_IN: [(&str, &str); 68] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -232,6 +232,16 @@ pub const BUILT_IN: [(&str, &str); 63] = [
         "media-next",
         include_str!("../../../design/icons/media-next.svg"),
     ),
+    // The edit mode's parts (M5.10c6c3): the lock screen's clock, date,
+    // message, picture and now playing, in its drawer and on its tiles.
+    ("clock", include_str!("../../../design/icons/clock.svg")),
+    (
+        "calendar",
+        include_str!("../../../design/icons/calendar.svg"),
+    ),
+    ("message", include_str!("../../../design/icons/message.svg")),
+    ("picture", include_str!("../../../design/icons/picture.svg")),
+    ("music", include_str!("../../../design/icons/music.svg")),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name

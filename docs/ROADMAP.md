@@ -782,6 +782,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`. Since 2026-10-07 only a change to the plan gets an entry: a finished step is recorded by its tick and its "Done with:" note, so the many PRs running side by side do not all add a line at the same place.
 
+- 2026-10-11: the edit modes get one shared, elegant look (`edit_kit.rs` in shell-ui: a framed stage, quiet outlines with name chips, frosted sheets, icon tiles and pill buttons), used by the lock screen's edit mode and the panels' drawer now and by any later editor, with a glass style over the lock and a plain one over the desktop. Asked by Alimardon ("make lock/login screen editor much more beautiful and easy to use ... elegant and premium", and "flexible too ... for panel editors too").
 - 2026-10-11: M5.10c6c split into 10c6c1 (the keys and the screen reader), 10c6c2 (the parts' cards) and 10c6c3 (the tabs and the lock screen's own way in), one PR each (Simple).
 - 2026-10-11: M5.10c4d added: a person's own light and dark pair of pictures (`appearance.wallpaper_dark`), and one picture of theirs setting the mode its brightness suits; colours from the picture stay with 12b1. Asked by Alimardon.
 - 2026-10-11: M5.12b1 split into 12b1a (the accents, the contrast check and the keys), 12b1b (the desktop following them live) and 12b1c (the Appearance page's colours), one PR each (Simple).

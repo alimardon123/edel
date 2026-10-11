@@ -12,16 +12,17 @@
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{self, Anchor, Guide, Part, Placed, SNAP};
-use edel::tokens::{Colour, Tokens};
+use edel::tokens::Tokens;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item;
+use crate::edit_kit;
 use crate::editor::{self, Act, DRAG_START, Tile};
 use crate::lock;
-use crate::paint::{Text, fill, outline};
+use crate::paint::Text;
 use crate::part_card;
 use crate::player;
-use crate::popup::{self, Rect};
+use crate::popup::Rect;
 use crate::trayview::Key;
 
 /// The drawer's room above the screen's bottom edge, logical pixels: the
@@ -41,15 +42,6 @@ const CLOCK_NEW: (f32, f32) = (240.0, 120.0);
 const DATE_NEW: (f32, f32) = (260.0, 24.0);
 const COUNT_NEW: (f32, f32) = (200.0, 36.0);
 const BATTERY_NEW: (f32, f32) = (80.0, 22.0);
-
-/// How far a placed part's outline is drawn in, and the line's width, logical
-/// pixels, and the accent's line for a hovered or dragged part.
-const PART_LINE: f32 = 1.5;
-const HOVER_LINE: f32 = 2.0;
-/// The guides' width, logical pixels.
-const GUIDE_LINE: f32 = 1.0;
-/// How much of `lock_glass` a dragged part's new place is veiled with.
-const VEIL: f32 = 0.35;
 
 /// What the edit mode shows (M5.10c6b): the parts as they stand, the one
 /// being dragged and where, the guides it snaps to, the part under the
@@ -136,6 +128,22 @@ pub fn part_title(part: Part) -> String {
     }
 }
 
+/// The icon a part shows on its tile in the drawer and on the screen's
+/// outline (M5.10c6c3): the clock's dial, the calendar, the bell, the music,
+/// the person, the message, the picture and the battery, from `design/icons/`.
+pub fn part_icon(part: Part) -> &'static str {
+    match part {
+        Part::Clock => "clock",
+        Part::Date => "calendar",
+        Part::Count => "bell",
+        Part::Player => "music",
+        Part::Person => "person",
+        Part::Message => "message",
+        Part::Picture => "picture",
+        Part::Battery => "battery",
+    }
+}
+
 /// The part a drawer tile is named for (`Part::name`), if the release has it.
 pub fn part_named(name: &str) -> Option<Part> {
     [
@@ -175,6 +183,7 @@ pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
         .filter(|part| *part != Part::Picture)
         .map(|part| Tile {
             name: part.name(),
+            icon: part_icon(part),
             title: part_title(part),
             shown: String::new(),
             placed: false,
@@ -243,26 +252,15 @@ pub fn preview(screen: (f32, f32), drawer: &editor::Layout) -> Preview {
     }
 }
 
-/// Lays the lock screen's picture `lock` (the whole screen at `s`) into
-/// `target`, the edit mode's surface at `s`: the backdrop's deep colour all
-/// round, then the picture at `preview`'s place and size, smoothly scaled.
-pub fn compose(target: &mut Pixmap, lock: &Pixmap, preview: Preview, tokens: &Tokens, s: f32) {
-    let deep = tokens.lock_backdrop_deep;
-    if let Some(colour) = tiny_skia::Color::from_rgba(deep.r, deep.g, deep.b, 1.0) {
-        target.fill(colour);
-    }
-    let smooth = PixmapPaint {
-        quality: tiny_skia::FilterQuality::Bilinear,
-        ..PixmapPaint::default()
-    };
-    target.draw_pixmap(
-        0,
-        0,
-        lock.as_ref(),
-        &smooth,
-        Transform::from_row(preview.k, 0.0, 0.0, preview.k, preview.x * s, preview.y * s),
-        None,
-    );
+/// The lock screen's picture as it stands on the screen in the edit mode
+/// (logical pixels): the whole screen at the preview's scale, at its place.
+pub fn picture_rect(screen: (f32, f32), preview: Preview) -> Rect {
+    Rect::new(
+        preview.x,
+        preview.y,
+        screen.0 * preview.k,
+        screen.1 * preview.k,
+    )
 }
 
 /// A rectangle of the edit model's, as the lock screen's maths reads it.
@@ -637,14 +635,138 @@ pub fn places(
     out
 }
 
-/// Draws the edit mode at `s` over what `lock::paint` drew (M5.10c6b): each
-/// placed part outlined in `lock_glass_edge` (2 px accent for the one under
-/// the pointer or being dragged); a dragged part's new place veiled with
-/// `lock_glass` and outlined in accent; the guides as 1 px accent lines
-/// across the whole screen; a player's place drawn as the glass with "Now
-/// playing" in it, since the edit mode has no card to show. The drawer is
-/// `paint_drawer`'s, over the composed picture.
+/// Draws the edit mode's overlay at `s` (M5.10c6c3) over the composed
+/// picture, in the screen's logical pixels: each placed part's outline
+/// (`edit_kit::outline_part`, at rest, under the pointer, focused, or lifted)
+/// with its name's chip when it is not at rest. A dragged part is cut from
+/// the picture at its old place, which is dimmed (`edit_kit::vacate`), and
+/// drawn at the place it would take, lifted with the accent outline and its
+/// chip; the player is drawn again as its card. A dragged drawer part, and a
+/// part dragged over the drawer, show the outline alone. The guides are
+/// dashed accent lines across the picture only. The drawer is `paint_drawer`'s.
 pub fn paint(
+    pixmap: &mut Pixmap,
+    view: &View,
+    at: &lock::Layout,
+    preview: Preview,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+) {
+    let style = edit_kit::Style::GLASS;
+    let dragged = view.drag.filter(|d| d.moving);
+    let over = dragged.is_some_and(|d| d.over_drawer);
+    let moved = match dragged.map(|d| d.from) {
+        Some(From::Part(i)) => Some(i),
+        _ => None,
+    };
+    // The dragged part's new place on the screen, and the picture cut from
+    // its old place, which moves with the pointer.
+    let target_now = target(view, at).map(|(r, _)| preview.to_screen(r));
+    let mut piece = None;
+    if let Some(old) = moved.and_then(|i| at.placed.get(i).copied().flatten()) {
+        let old = preview.to_screen(old);
+        let (x, y, w, h) = old.device(s);
+        if let Some(mut cut) = Pixmap::new(w.round().max(1.0) as u32, h.round().max(1.0) as u32) {
+            cut.draw_pixmap(
+                -x.round() as i32,
+                -y.round() as i32,
+                pixmap.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+            piece = Some(cut);
+        }
+        edit_kit::vacate(pixmap, old, tokens, s);
+    }
+    // The parts at rest, under the pointer or the keyboard. The dragged one
+    // keeps its resting outline at its old place.
+    for (i, (part, rect)) in view.parts.iter().zip(&at.placed).enumerate() {
+        let Some(rect) = rect else {
+            continue;
+        };
+        let screen = preview.to_screen(*rect);
+        let state = if moved == Some(i) {
+            edit_kit::State::Rest
+        } else if view.focus == Some(Focus::Part(i)) {
+            edit_kit::State::Focus
+        } else if view.hover == Some(i) {
+            edit_kit::State::Hover
+        } else {
+            edit_kit::State::Rest
+        };
+        edit_kit::outline_part(pixmap, screen, state, tokens, style, s);
+        if state != edit_kit::State::Rest {
+            edit_kit::chip(
+                pixmap,
+                &part_title(part.part),
+                edit_kit::part_area(screen),
+                tokens,
+                Some(&mut *text),
+                style,
+                s,
+            );
+        }
+    }
+    if let (Some(drag), Some(new)) = (dragged, target_now) {
+        if !over {
+            match drag.from {
+                From::Part(_) => {
+                    if let Some(piece) = &piece {
+                        let (x, y, _, _) = new.device(s);
+                        pixmap.draw_pixmap(
+                            x.round() as i32,
+                            y.round() as i32,
+                            piece.as_ref(),
+                            &PixmapPaint::default(),
+                            Transform::identity(),
+                            None,
+                        );
+                    }
+                }
+                From::Drawer(_) => {}
+            }
+        }
+        edit_kit::outline_part(pixmap, new, edit_kit::State::Lifted, tokens, style, s);
+        let name = match drag.from {
+            From::Part(i) => view
+                .parts
+                .get(i)
+                .map_or(String::new(), |p| part_title(p.part)),
+            From::Drawer(part) => part_title(part),
+        };
+        edit_kit::chip(
+            pixmap,
+            &name,
+            edit_kit::part_area(new),
+            tokens,
+            Some(&mut *text),
+            style,
+            s,
+        );
+    }
+    let picture = picture_rect(view.screen, preview);
+    let guides: Vec<Guide> = view
+        .guides
+        .iter()
+        .map(|g| Guide {
+            vertical: g.vertical,
+            at: if g.vertical {
+                preview.x + g.at * preview.k
+            } else {
+                preview.y + g.at * preview.k
+            },
+        })
+        .collect();
+    edit_kit::guides(pixmap, &guides, picture, tokens, s);
+}
+
+/// The edit mode's own placeholders, drawn into the lock picture at its full
+/// size (M5.10c6c3), so they scale with it: the player's card as it shows
+/// (the glass pill and the player's drawing with the sample words "Now
+/// playing" and an empty cover). Called before the picture is laid smaller.
+pub fn draw_placeholders(
     pixmap: &mut Pixmap,
     view: &View,
     at: &lock::Layout,
@@ -652,77 +774,45 @@ pub fn paint(
     text: &mut Text,
     s: f32,
 ) {
-    let radius = tokens.radius_control as f32 * s;
-    let dragged = view.drag.filter(|d| d.moving);
-    for (i, (part, rect)) in view.parts.iter().zip(&at.placed).enumerate() {
-        let Some(rect) = rect else {
-            continue;
-        };
-        let device = rect.device(s);
-        if part.part == Part::Player {
-            lock::glass(pixmap, device, radius, s, tokens);
-            let size = tokens.panel_text_size as f32 * s;
-            let mut line = text.line(tr("Now playing"), size);
-            let x = device.0 + ((device.2 - line.width) / 2.0).round();
-            let y = crate::popup::middle(rect.y, rect.h, size, s);
-            text.draw(pixmap, &mut line, x, y, tokens.backdrop_text);
-        }
-        let marked = view.hover == Some(i) || dragged.is_some_and(|d| d.from == From::Part(i));
-        if marked {
-            outline(pixmap, device, radius, HOVER_LINE * s, tokens.accent);
-        } else {
-            outline(
-                pixmap,
-                device,
-                radius,
-                PART_LINE * s,
-                tokens.lock_glass_edge,
-            );
+    let compact = view.screen.0 < lock::COMPACT_BELOW;
+    for (part, rect) in view.parts.iter().zip(&at.placed) {
+        if let (Part::Player, Some(rect)) = (part.part, rect) {
+            draw_player(pixmap, *rect, compact, tokens, text, s);
         }
     }
-    // The dragged part at the place it would take, veiled, with its outline.
-    if let Some((rect, _)) = dragged
-        .filter(|d| !d.over_drawer)
-        .and_then(|_| target(view, at))
-    {
-        let device = rect.device(s);
-        let veil = Colour {
-            a: VEIL,
-            ..tokens.lock_glass
-        };
-        fill(pixmap, device.0, device.1, device.2, device.3, radius, veil);
-        outline(pixmap, device, radius, HOVER_LINE * s, tokens.accent);
-    }
-    // The keyboard's focus on a placed part: the ring round it (M5.10c6c).
-    if let Some(Focus::Part(i)) = view.focus {
-        if let Some(Some(rect)) = at.placed.get(i) {
-            popup::focus_ring(pixmap, *rect, tokens.radius_control as f32, s, tokens);
-        }
-    }
-    let (pw, ph) = (pixmap.width() as f32, pixmap.height() as f32);
-    for guide in &view.guides {
-        if guide.vertical {
-            fill(
-                pixmap,
-                (guide.at * s).round(),
-                0.0,
-                GUIDE_LINE * s,
-                ph,
-                0.0,
-                tokens.accent,
-            );
-        } else {
-            fill(
-                pixmap,
-                0.0,
-                (guide.at * s).round(),
-                pw,
-                GUIDE_LINE * s,
-                0.0,
-                tokens.accent,
-            );
-        }
-    }
+}
+
+/// The player's card at `rect` (logical pixels), `draw_placeholders`' one part.
+fn draw_player(
+    pixmap: &mut Pixmap,
+    rect: Rect,
+    compact: bool,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+) {
+    let radius = rect.h / 2.0;
+    lock::lift(pixmap, rect, radius, s, tokens);
+    lock::glass(pixmap, rect.device(s), radius * s, s, tokens);
+    let parts = player::place_wide(rect, compact, 1, 0);
+    let sample = player::PlayerView {
+        title: tr("Now playing").into(),
+        artist: String::new(),
+        identity: tr("Music").into(),
+        playing: false,
+        can_previous: true,
+        can_next: true,
+        cover: None,
+        app_icon: None,
+        position: None,
+        length: None,
+    };
+    let marks = player::Marks {
+        hover: None,
+        focus: None,
+        page: 0,
+    };
+    player::paint(pixmap, &sample, &parts, marks, tokens, Some(text), s);
 }
 
 /// Draws the drawer through `editor::paint` at its place on the edit mode's
@@ -730,6 +820,9 @@ pub fn paint(
 pub fn paint_drawer(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s: f32) {
     let layout = editor::layout(&view.drawer);
     let place = drawer_rect(view.screen, &layout);
+    // The sheet's shadow lies outside the sheet, so it is cast here on the
+    // whole screen: the layer below has no room round the sheet.
+    lock::lift(pixmap, place, edit_kit::SHEET_RADIUS, s, tokens);
     if let Some(mut layer) = Pixmap::new(
         (layout.size.0 as f32 * s).ceil() as u32,
         (layout.size.1 as f32 * s).ceil() as u32,
@@ -1027,7 +1120,13 @@ mod tests {
         ));
         dragged_rect(&mut view, &at);
         assert!(!view.guides.is_empty(), "the clock snaps near the margin");
-        let lock_view = lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        let mut lock_view =
+            lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        lock_view.notices = 2;
+        lock_view.apps = vec![
+            ("Mail".into(), "mail".into()),
+            ("Calendar".into(), "calendar".into()),
+        ];
         let mut pixmap = Pixmap::new(1280, 800).unwrap();
         lock::paint(
             &mut pixmap,
@@ -1041,14 +1140,32 @@ mod tests {
             &edel::wallpapers::Wallpaper::Background,
             1.0,
         );
-        paint(&mut pixmap, &view, &at, &tokens, &mut text, 1.0);
         let drawer = editor::layout(&view.drawer);
         let place = drawer_rect(view.screen, &drawer);
         // The lock smaller above the drawer, and the drawer over it.
         let shown = preview(view.screen, &drawer);
         let lock = pixmap;
         let mut pixmap = Pixmap::new(1280, 800).unwrap();
-        compose(&mut pixmap, &lock, shown, &tokens, 1.0);
+        let picture = picture_rect(view.screen, shown);
+        edit_kit::stage(
+            &mut pixmap,
+            Rect::new(0.0, 0.0, 1280.0, 800.0),
+            picture,
+            &tokens,
+            edit_kit::Style::GLASS,
+            1.0,
+        );
+        let mut lock = lock;
+        draw_placeholders(&mut lock, &view, &at, &tokens, &mut text, 1.0);
+        edit_kit::stage_frame(
+            &mut pixmap,
+            &lock,
+            picture,
+            &tokens,
+            edit_kit::Style::GLASS,
+            1.0,
+        );
+        paint(&mut pixmap, &view, &at, shown, &tokens, &mut text, 1.0);
         paint_drawer(&mut pixmap, &view, &tokens, &mut text, 1.0);
         // Nothing of the lock lies under the drawer.
         assert!(shown.y + 800.0 * shown.k <= place.y - PREVIEW_GAP + 0.5);
@@ -1061,7 +1178,132 @@ mod tests {
         if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
             let dir = std::path::PathBuf::from(dir);
             std::fs::create_dir_all(&dir).unwrap();
-            pixmap.save_png(dir.join("lock-editor.png")).unwrap();
+            pixmap.save_png(dir.join("lock-editor-drag.png")).unwrap();
+        }
+    }
+
+    /// The edit mode as the surface draws it for `view`: the lock with its
+    /// placeholders, laid smaller on the stage, the marks over it and the drawer.
+    fn render(view: &View, at: &lock::Layout, tokens: &Tokens, text: &mut Text) -> Pixmap {
+        let mut lock_view =
+            lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        lock_view.notices = 2;
+        lock_view.apps = vec![
+            ("Mail".into(), "mail".into()),
+            ("Calendar".into(), "calendar".into()),
+        ];
+        let mut lock = Pixmap::new(view.screen.0 as u32, view.screen.1 as u32).unwrap();
+        lock::paint(
+            &mut lock,
+            &lock_view,
+            at,
+            tokens,
+            text,
+            None,
+            &mut lock::Pictures::default(),
+            &mut lock::Backdrops::default(),
+            &edel::wallpapers::Wallpaper::Background,
+            1.0,
+        );
+        draw_placeholders(&mut lock, view, at, tokens, text, 1.0);
+        let drawer = editor::layout(&view.drawer);
+        let shown = preview(view.screen, &drawer);
+        let picture = picture_rect(view.screen, shown);
+        let mut pixmap = Pixmap::new(view.screen.0 as u32, view.screen.1 as u32).unwrap();
+        edit_kit::stage(
+            &mut pixmap,
+            Rect::new(0.0, 0.0, view.screen.0, view.screen.1),
+            picture,
+            tokens,
+            edit_kit::Style::GLASS,
+            1.0,
+        );
+        edit_kit::stage_frame(
+            &mut pixmap,
+            &lock,
+            picture,
+            tokens,
+            edit_kit::Style::GLASS,
+            1.0,
+        );
+        paint(&mut pixmap, view, at, shown, tokens, text, 1.0);
+        paint_drawer(&mut pixmap, view, tokens, text, 1.0);
+        pixmap
+    }
+
+    /// Writes the edit mode at rest (`lock-editor.png`) and with the date
+    /// focused (`lock-editor-focus.png`) into `EDEL_LOCK_PNG`, and checks that
+    /// the focus ring and the chip show.
+    #[test]
+    fn the_edit_mode_at_rest_and_with_the_date_focused() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let classic = lock_screen::classic(false);
+        let at = at_classic(&classic);
+        let mut view = view_of(classic.clone());
+        let rest = render(&view, &at, &tokens, &mut text);
+        let date = index_of(&classic, "date");
+        set_focus(&mut view, Some(Focus::Part(date)));
+        let focused = render(&view, &at, &tokens, &mut text);
+        assert_ne!(rest.data(), focused.data(), "the focus shows");
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            rest.save_png(dir.join("lock-editor.png")).unwrap();
+            focused.save_png(dir.join("lock-editor-focus.png")).unwrap();
+        }
+    }
+
+    /// The edit mode on a phone (360 by 740 logical pixels, a Compact screen):
+    /// the drawer is the screen's width with touch-sized buttons, the lock
+    /// laid smaller above it and every part in the screen. Writes
+    /// `lock-editor-phone.png` into `EDEL_LOCK_PNG`.
+    #[test]
+    fn the_edit_mode_fits_a_phone_screen() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let classic = lock_screen::classic(false);
+        let corner_at = corner::layout(
+            360.0,
+            740.0,
+            &corner::View {
+                layout: Some("EN".into()),
+                menu: false,
+                restart_waiting: false,
+                hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
+            },
+        );
+        let look = lock::Look {
+            parts: &classic,
+            player: Some(player::wide_size(1)),
+            people: false,
+            keep_out: lock::keep_out(&corner_at),
+            battery: false,
+            background: Background::Backdrop,
+        };
+        let at = lock::layout(360.0, 740.0, &tokens, true, &look, &mut text);
+        let mut view = view_of(classic.clone());
+        view.screen = (360.0, 740.0);
+        view.drawer.compact = true;
+        view.drawer.width = 360;
+        let drawer = editor::layout(&view.drawer);
+        let place = drawer_rect(view.screen, &drawer);
+        assert!(place.x >= 0.0 && place.x + place.w <= 360.0, "{place:?}");
+        assert!(place.y >= 0.0 && place.y + place.h <= 740.0, "{place:?}");
+        let shown = preview(view.screen, &drawer);
+        assert!(shown.k > 0.2 && shown.k <= 1.0, "{shown:?}");
+        assert!(
+            shown.y + 740.0 * shown.k <= place.y,
+            "the lock is over the drawer"
+        );
+        let pixmap = render(&view, &at, &tokens, &mut text);
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            pixmap.save_png(dir.join("lock-editor-phone.png")).unwrap();
         }
     }
 
@@ -1222,13 +1464,20 @@ mod tests {
         let mut view = view_of(classic.clone());
         let accent =
             [tokens.accent.r, tokens.accent.g, tokens.accent.b].map(|c| (c * 255.0).round() as i32);
+        // The screen is the lock's own, so the part's place is its place.
+        let same = Preview {
+            k: 1.0,
+            x: 0.0,
+            y: 0.0,
+        };
         let mut ringed = |view: &View| -> bool {
             let mut pixmap = Pixmap::new(1280, 800).unwrap();
-            paint(&mut pixmap, view, &at, &tokens, &mut text, 1.0);
-            // The ring is 3 px outside the part's left edge, 2 px wide.
+            paint(&mut pixmap, view, &at, same, &tokens, &mut text, 1.0);
+            // The ring lies 3 px outside the outline, which is 8 px outside
+            // the part: 11 px out from the part's left edge, 2 px wide.
             let y = (r.y + r.h / 2.0) as u32;
-            (0..6).any(|k| {
-                let x = (r.x - 6.0 + k as f32) as u32;
+            (0..8).any(|k| {
+                let x = (r.x - 12.0 + k as f32) as u32;
                 pixmap.pixel(x, y).is_some_and(|p| {
                     let c = p.demultiply();
                     p.alpha() > 200

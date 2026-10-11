@@ -943,7 +943,14 @@ const SETTLED: f32 = 0.85;
 
 /// A soft round light of `colour` at `centre`, `radius` across, fading to
 /// nothing, kept above `floor` so the bottom stays the deep colour.
-fn glow(pixmap: &mut Pixmap, centre: (f32, f32), radius: f32, colour: Colour, a: f32, floor: f32) {
+pub(crate) fn glow(
+    pixmap: &mut Pixmap,
+    centre: (f32, f32),
+    radius: f32,
+    colour: Colour,
+    a: f32,
+    floor: f32,
+) {
     let c = |alpha: f32| {
         tiny_skia::Color::from_rgba(colour.r, colour.g, colour.b, alpha.clamp(0.0, 1.0))
             .unwrap_or(tiny_skia::Color::TRANSPARENT)
