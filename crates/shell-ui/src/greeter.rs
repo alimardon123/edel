@@ -56,9 +56,10 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
-use edel::lock_screen::Placed;
 use edel::places;
+use edel::settings::LockScreen;
 use edel::tokens::Tokens;
+use edel::wallpapers::Wallpaper;
 
 use crate::corner;
 use crate::greetd::{self, Login};
@@ -67,6 +68,7 @@ use crate::messages;
 use crate::paint::{self, Text};
 use crate::people;
 use crate::power;
+use crate::quick;
 use crate::sessions::{self, Session};
 
 /// The greeter: its screens, what is typed and where it stands.
@@ -115,10 +117,13 @@ struct Greeter {
     /// Where the login's answer comes back.
     tx: channel::Sender<Login>,
     exit: bool,
-    /// The parts the machine's file says, read once at start (people have
-    /// no files of their own here), and the pictures they show.
-    parts: Option<Vec<Placed>>,
+    /// The lock settings the machine's file says, read once at start (people
+    /// have no files of their own here), the wallpaper behind them, and the
+    /// pictures and backgrounds they show.
+    lock: LockScreen,
+    wallpaper: Wallpaper,
     pictures: lock::Pictures,
+    backdrops: lock::Backdrops,
 }
 
 /// One screen's surface.
@@ -164,7 +169,10 @@ pub fn run(cmd: String) -> Result<()> {
         Some(person) => (person.login.clone(), true),
         None => (String::new(), false),
     };
-    let parts = lock::parts_of(crate::settings_texts().0.as_deref(), None);
+    let machine = crate::settings_texts().0;
+    let lock = lock::lock_settings(machine.as_deref(), None);
+    let dark = quick::is_dark(machine.as_deref(), None);
+    let wallpaper = lock::wallpaper_of(machine.as_deref(), None, dark);
     // The sessions installed, with the one `--cmd` names as the default
     // (M5.10c3b). A machine with no session files offers only `--cmd`.
     let (sessions, default_session) =
@@ -172,8 +180,10 @@ pub fn run(cmd: String) -> Result<()> {
     // A missing or unreadable file means every person's default.
     let remembered = std::fs::read_to_string(places::GREETER_SESSIONS).unwrap_or_default();
     let mut greeter = Greeter {
-        parts,
+        lock,
+        wallpaper,
         pictures: lock::Pictures::default(),
+        backdrops: lock::Backdrops::default(),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -478,9 +488,10 @@ impl Greeter {
                     fh,
                     &self.tokens,
                     false,
-                    self.parts.as_deref(),
+                    &self.lock,
                     None,
                     people,
+                    false,
                     &corner_at,
                     &mut self.text,
                 );
@@ -511,6 +522,8 @@ impl Greeter {
                 &mut self.text,
                 None,
                 &mut self.pictures,
+                &mut self.backdrops,
+                &self.wallpaper,
                 s as f32,
             );
             corner::paint(
@@ -759,9 +772,10 @@ impl Greeter {
             h,
             &self.tokens,
             false,
-            self.parts.as_deref(),
+            &self.lock,
             None,
             people,
+            false,
             &corner_at,
             &mut self.text,
         );

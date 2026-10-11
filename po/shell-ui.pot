@@ -95,10 +95,19 @@ msgstr ""
 msgid "Edit panels"
 msgstr ""
 
+msgid "Edit lock screen"
+msgstr ""
+
 msgid "Drop here to take it off the panel"
 msgstr ""
 
 msgid "Drag a widget along the panels or onto another, from here to add it, or here to take it away"
+msgstr ""
+
+msgid "Drop here to take it away"
+msgstr ""
+
+msgid "Drag a part anywhere, from here to add it, or here to take it away"
 msgstr ""
 
 msgid "Undo"
@@ -116,6 +125,9 @@ msgstr ""
 msgid "Panels changed"
 msgstr ""
 
+msgid "Lock screen changed"
+msgstr ""
+
 msgid "Type to search"
 msgstr ""
 
@@ -123,6 +135,9 @@ msgid "No app matches"
 msgstr ""
 
 msgid "Password"
+msgstr ""
+
+msgid "{percent}%"
 msgstr ""
 
 msgid "Caps Lock is on"
@@ -156,6 +171,24 @@ msgid "Who is logging in?"
 msgstr ""
 
 msgid "User name"
+msgstr ""
+
+msgid "Clock"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Now playing"
+msgstr ""
+
+msgid "You (the person)"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Picture"
 msgstr ""
 
 msgid "Close notification"
@@ -305,9 +338,6 @@ msgstr ""
 msgid "Settings"
 msgstr ""
 
-msgid "{percent}%"
-msgstr ""
-
 msgid "charging"
 msgstr ""
 
@@ -363,9 +393,6 @@ msgid "Apps: {names}"
 msgstr ""
 
 msgid "Notifications, {count} unread"
-msgstr ""
-
-msgid "Clock"
 msgstr ""
 
 msgid "Keyboard layout"

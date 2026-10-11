@@ -25,8 +25,9 @@
 
 use std::time::{Duration, Instant};
 
-use edel::lock_screen::Placed;
+use edel::settings::LockScreen;
 use edel::tokens::Tokens;
+use edel::wallpapers::Wallpaper;
 use smithay_client_toolkit::reexports::calloop::channel;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay_client_toolkit::reexports::client::protocol::{
@@ -50,6 +51,7 @@ use crate::paint::{self, Text, fill};
 use crate::player::{self, PlayerView};
 use crate::popup::{Rect, icon_in};
 use crate::power;
+use crate::quick;
 use crate::quick_card;
 use crate::widgets::keyboard;
 
@@ -104,10 +106,13 @@ pub struct LockCard {
     ticking: bool,
     cover: Option<(String, Option<Pixmap>)>,
     player_at: PlayerAt,
-    /// The parts the person or the machine chose, read when the screen
-    /// locks (None for the classic arrangement), and the pictures they show.
-    parts: Option<Vec<Placed>>,
+    /// The lock settings the person or the machine chose, read when the
+    /// screen locks (`lock::lock_settings`), the wallpaper behind them in
+    /// the scheme in use, and the pictures and backgrounds they show.
+    lock: LockScreen,
+    wallpaper: Wallpaper,
     pictures: lock::Pictures,
+    backdrops: lock::Backdrops,
 }
 
 /// What the pointer is on, of the player card (M5.10c4): nothing of it, its
@@ -169,9 +174,12 @@ impl Shell {
                     .zip(self.player_tx.clone())
                     .map(|(connection, events)| mpris::follow(connection, events));
                 let (machine, person) = crate::settings_texts();
+                let dark = quick::is_dark(machine.as_deref(), person.as_deref());
                 self.lock = Some(LockCard {
-                    parts: lock::parts_of(machine.as_deref(), person.as_deref()),
+                    lock: lock::lock_settings(machine.as_deref(), person.as_deref()),
+                    wallpaper: lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark),
                     pictures: lock::Pictures::default(),
+                    backdrops: lock::Backdrops::default(),
                     _follow: follow,
                     page: 0,
                     pages: 0,
@@ -265,8 +273,20 @@ impl Shell {
             shake,
             go_hover: card.go_hover,
             when: Some(lock::When::of(&now)),
+            battery: self.battery_view(),
             ..View::new(time, date, card.user.clone())
         })
+    }
+
+    /// The battery as the lock shows it: its charge and whether it charges,
+    /// None on a machine without one (M5.10c5c), from the status area's
+    /// reading.
+    pub(crate) fn battery_view(&self) -> Option<(u8, bool)> {
+        self.live
+            .status
+            .battery
+            .as_ref()
+            .map(|b| (b.percent.min(100) as u8, b.charging))
     }
 
     /// What the lock's corner shows now: the short name of the layout in
@@ -331,6 +351,7 @@ impl Shell {
                     fh,
                     &self.tokens,
                     shown.lock.notices > 0,
+                    shown.lock.battery.is_some(),
                     &corner_at,
                     &mut self.text,
                 );
@@ -361,6 +382,8 @@ impl Shell {
                 &mut self.text,
                 Some(&mut self.icons),
                 &mut card.pictures,
+                &mut card.backdrops,
+                &card.wallpaper,
                 s as f32,
             );
             let fw = w as f32;
@@ -601,6 +624,7 @@ impl Shell {
         let Some(corner_now) = self.corner_view() else {
             return;
         };
+        let battery = self.battery_view().is_some();
         let Some(card) = &mut self.lock else {
             return;
         };
@@ -619,6 +643,7 @@ impl Shell {
             h as f32,
             &self.tokens,
             self.live.unread > 0,
+            battery,
             &corner_at,
             &mut self.text,
         );
@@ -801,14 +826,17 @@ impl LockCard {
 
     /// The card's parts on a screen `w` by `h`, while it shows.
     /// The layout of a screen `w` by `h` (M5.10c5): the parts the lock's
-    /// list says, the card's size while it shows (its width less the margins
-    /// on a Compact screen) and the corner's places kept clear.
+    /// settings say, the card's size while it shows (its width less the
+    /// margins on a Compact screen), the battery when there is one and the
+    /// corner's places kept clear.
+    #[allow(clippy::too_many_arguments)]
     fn layout_at(
         &self,
         w: f32,
         h: f32,
         tokens: &Tokens,
         notices: bool,
+        battery: bool,
         corner_at: &corner::Layout,
         text: &mut Text,
     ) -> lock::Layout {
@@ -822,15 +850,7 @@ impl LockCard {
             }
         });
         lock::screen_layout(
-            w,
-            h,
-            tokens,
-            notices,
-            self.parts.as_deref(),
-            player,
-            false,
-            corner_at,
-            text,
+            w, h, tokens, notices, &self.lock, player, false, battery, corner_at, text,
         )
     }
 
@@ -1118,8 +1138,9 @@ mod tests {
             h,
             &tokens,
             notices,
+            &LockScreen::default(),
             None,
-            None,
+            false,
             false,
             &corner::layout(w, h, &corner_view(true)),
             &mut text,
@@ -1141,8 +1162,9 @@ mod tests {
             h,
             tokens,
             notices,
-            None,
+            &LockScreen::default(),
             Some(size),
+            false,
             false,
             &corner::layout(w, h, &corner_view(true)),
             &mut text,
@@ -1226,8 +1248,9 @@ mod tests {
                 *h,
                 &tokens,
                 true,
-                None,
+                &LockScreen::default(),
                 Some(player::wide_size(2)),
+                false,
                 false,
                 &corner::layout(*w, *h, &corner_view(true)),
                 &mut text,

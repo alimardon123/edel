@@ -182,6 +182,17 @@ pub fn panel_not_changed(why: impl Display) -> String {
     format!("could not change the panels: {why}; they stay as they were")
 }
 
+/// The lock screen's edit mode cannot write its parts down: the edit stays
+/// open, so Done can be tried again (M5.10c6).
+pub fn lock_screen_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the lock screen: {why}; the edit stays open, so Done can be tried again"
+    )
+}
+
+/// There is no home folder to keep the lock screen's parts in (M5.10c6).
+pub const LOCK_SCREEN_NO_HOME: &str = "no home folder to keep the lock screen in; run edel settings set 'lock_screen.parts=[...]' with the parts as TOML instead";
+
 /// There is no home folder to keep the panels in.
 pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set panels.list='[...]' with the panels as TOML instead";
 
@@ -248,15 +259,9 @@ pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes wi
 /// (M5.10c5): its path and why, and what to do.
 pub fn picture_not_read(path: &str, why: impl Display) -> String {
     format!(
-        "could not read the picture {path:?}, so the lock screen leaves it out: {why}; check the path and that the file is a PNG"
+        "could not read the picture {path:?}, so the lock screen leaves it out: {why}; check the path and that the file is a PNG or JPEG picture"
     )
 }
-
-/// The reason for a picture that is not a PNG: this release reads PNG only.
-pub const PICTURE_NOT_PNG: &str = "only PNG pictures are read in this release";
-
-/// The reason for a picture when there is no memory to cut it to size.
-pub const PICTURE_NO_MEMORY: &str = "there is no memory to draw it";
 
 /// A power choice on the lock screen failed (M5.10c).
 pub fn power_failed(what: &str, why: impl Display) -> String {
@@ -452,9 +457,9 @@ mod tests {
             DARK_STYLE_NO_HOME.to_string(),
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
+            lock_screen_not_kept("x"),
+            LOCK_SCREEN_NO_HOME.to_string(),
             picture_not_read("/a.jpg", "x"),
-            PICTURE_NOT_PNG.to_string(),
-            PICTURE_NO_MEMORY.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

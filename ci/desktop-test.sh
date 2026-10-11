@@ -3447,8 +3447,8 @@ case_lock() {
 	# row is clicked. Then (M5.10c4) ci's test player, Night Drive by
 	# Lumen, shows its card once it plays, and the card's play button,
 	# read from the lock places line, pauses it, which the player prints.
-	# Kept as lock.png, lock-power.png, lock-parts.png, lock-player.png and
-	# lock-go.png.
+	# Kept as lock.png, lock-power.png, lock-parts.png, lock-minimal.png,
+	# lock-player.png and lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3508,6 +3508,46 @@ case_lock() {
 		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
 	guest 'lock parts reset'
 	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
+	# The lock's look (M5.10c5c): ci unlocks, `lock look` sets the minimal
+	# look over the blurred wallpaper, and the screen locks again: shell-ui
+	# logs a blurred backdrop, the last places line has no count (the look
+	# leaves it out) and the pixel at 640,790 is no longer the deep colour.
+	# Kept as lock-minimal.png. Then ci unlocks, `lock look reset` takes the
+	# look back, and the screen locks again for the player card below.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen before the lock's look"
+	guest 'lock look'
+	wait_for 'DESKTOP-TEST: ran lock look: 0' || fail "ci's lock look could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the look"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the look"
+	wait_for 'edel-shell-ui: lock backdrop [0-9]+x[0-9]+ blurred$' ||
+		fail "shell-ui made no blurred lock backdrop: $(tr -d '\r' <"$log" | grep -a 'lock backdrop' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	case "$places" in
+	*", count "*) fail "the minimal look still shows the count: $places" ;;
+	esac
+	shot lock-minimal 640 790 "!$deep" >/dev/null ||
+		fail "the minimal look's lock screen at 640,790 is still the lock's #$deep"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen after the lock's look"
+	guest 'lock look reset'
+	wait_for 'DESKTOP-TEST: ran lock look reset: 0' || fail "ci's lock look could not be reset"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen after the look was reset"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen after the look was reset"
 	# The player card (M5.10c4): the test player plays, the card shows once
 	# it does, and a click on its play button, read from the last lock
 	# places line, reaches the player, which pauses and prints it, as
@@ -3553,7 +3593,136 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
+	# Settings' Lock screen page (M5.10c5c): Magazine's card is clicked, which
+	# writes lock_screen.look = "magazine"; the next lock draws the
+	# wallpaper blurred behind its parts, as shell-ui logs it. Kept as
+	# lock-magazine.png, and the look is taken out again at the end.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	# The test image carries no wallpaper, so the test picture goes up
+	# for Magazine's blurred background; `lock magazine reset` takes it out.
+	pictured=$(count 'DESKTOP-TEST: ran wallpaper picture: 0')
+	guest 'wallpaper picture'
+	wait_more 'DESKTOP-TEST: ran wallpaper picture: 0' "$pictured" || fail "ci's wallpaper could not be set for Magazine"
+	guest 'settings lock'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on the Lock screen page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	card=none
+	i=0
+	while [ "$card" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the magazine card lies: $(value settings_lock_log)"
+		guest 'settings lock log'
+		text=$(value settings_lock_log)
+		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
+		# commas and the log's `;` line ends become spaces first.
+		card=$(echo "$text" | sed -n 's/.*lock_screen group places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "magazine") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$card" ] || card=none
+		[ "$card" = none ] && sleep 1
+	done
+	set -- $card
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	backdrop=$(count 'edel-shell-ui: lock backdrop .* blurred$')
+	python3 ci/qmp.py click "$cx" "$cy"
+	i=0
+	until guest 'settings file' && value settings_file | grep -q 'look = "magazine"'; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "a click on the magazine card did not write lock_screen.look: $(value settings_file)"
+		sleep 1
+	done
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with magazine's look"
+	wait_more 'edel-shell-ui: lock backdrop .* blurred$' "$backdrop" ||
+		fail "the lock did not draw magazine's background blurred: $(tr -d '\r' <"$log" | grep -a 'lock backdrop' | tail -n 1)"
+	shot lock-magazine 640 790 "$deep" >/dev/null || true
+	# Unlocked as above: ci's password typed, the go button clicked.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (magazine)"
+	set -- $go
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
+	guest 'lock magazine reset'
+	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+}
+
+case_lock_edit() {
+	# The lock screen's edit mode (M5.10c6b): ci's bus call, the one Settings'
+	# Edit lock screen makes, opens it over the desktop, live, with each part
+	# of the lock screen as a tile and a drawer of the parts not shown. The
+	# clock is dragged from its middle to the top right (shell-ui logs the
+	# anchor it snapped to), a message is dragged from the drawer to the
+	# bottom middle of the lock's picture (drawn smaller above the drawer,
+	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# into ci's file. The
+	# next lock must place the clock at the top right and show a message.
+	# Kept as lock-editor.png, and the list is reset at the end.
+	guest 'lock editor'
+	wait_for 'edel-shell-ui: lock editor shown' ||
+		fail "the lock screen's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
+	set -- $clock
+	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) $((1280 - 24 - $3 / 2)) $((24 + $4 / 2 + 40))
+	wait_for 'edel-shell-ui: lock editor moved clock to top_right' ||
+		fail "the clock did not move to the top right: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	message=$(echo "$places" | sed -n 's/.*, tile[0-9]* message \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$message" ] || fail "the drawer does not offer a message tile: $places"
+	set -- $message
+	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) 640 480
+	wait_for 'edel-shell-ui: lock editor added message' ||
+		fail "the message tile was not added: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-editor.png"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies: $places"
+	set -- $done_at
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_for 'edel-shell-ui: lock editor done, lock_screen.parts written' ||
+		fail "Done did not write lock_screen.parts: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
+	value settings_file | grep -q 'part = "message"' ||
+		fail "ci's settings file does not hold the message: $(value settings_file)"
+	# The next lock reads the file: the clock on the right, the message below.
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen after the edit"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen after the edit"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the lock after the edit has no clock: $places"
+	set -- $clock
+	[ "$1" -gt 640 ] || fail "the lock's clock at $1,$2 is not at the top right: $places"
+	echo "$places" | grep -q ', message0 ' || fail "the lock after the edit shows no message: $places"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (after the edit)"
+	set -- $go
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the edit"
+	# Done wrote ci's own file, so the line is taken out of it.
+	guest 'lock parts mine default'
+	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file"
 }
 
 case_scheme() {
