@@ -191,10 +191,13 @@ msgstr ""
 msgid "Date"
 msgstr ""
 
-msgid "Now playing"
+msgid "Notification count"
 msgstr ""
 
-msgid "You (the person)"
+msgid "Music player"
+msgstr ""
+
+msgid "Sign in"
 msgstr ""
 
 msgid "Message"
@@ -261,6 +264,9 @@ msgid "Navy"
 msgstr ""
 
 msgid "{look}'s own"
+msgstr ""
+
+msgid "Now playing"
 msgstr ""
 
 msgid "Music"

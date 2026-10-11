@@ -109,6 +109,10 @@ const DESKTOP_SHEET: f32 = 0.96;
 const GLASS_GLOW_DOWN: f32 = 0.35;
 const GLASS_GLOW_REACH: f32 = 0.75;
 const GLASS_GLOW: f32 = 1.0;
+/// Where the stage's lower shade starts (a share of the screen's height) and
+/// how strong it is at the foot (the shadow colour's alpha there).
+const SHADE_FROM: f32 = 0.45;
+const SHADE: f32 = 0.5;
 /// The corners of the glass picture, and of a glass side panel (M5.10c7f).
 const STAGE_RADIUS: f32 = 16.0;
 const SIDE_RADIUS: f32 = 18.0;
@@ -250,8 +254,42 @@ pub fn stage(
         let centre = (screen.w / 2.0 * s, screen.h * GLASS_GLOW_DOWN * s);
         let reach = (screen.w * GLASS_GLOW_REACH * s).max(1.0);
         lock::glow(pixmap, centre, reach, tokens.lock_edit_glow, GLASS_GLOW, ph);
+        shade_below(pixmap, screen, tokens, s);
     }
     lock::lift(pixmap, preview, picture_corner(style), s, tokens);
+}
+
+/// Darkens the stage's lower part, as the mockup's backdrop settles there
+/// (Alimardon, 2026-10-11): from `SHADE_FROM` of the screen's height down,
+/// the tokens' shadow colour grows to `SHADE` of its strength at the foot.
+/// The stage only: the picture is drawn over it afterwards.
+fn shade_below(pixmap: &mut Pixmap, screen: Rect, tokens: &Tokens, s: f32) {
+    let (w, h) = (screen.w * s, screen.h * s);
+    let ink = tokens.shadow;
+    let at = |a: f32| tiny_skia::Color::from_rgba(ink.r, ink.g, ink.b, a.clamp(0.0, 1.0));
+    let (Some(clear), Some(dark)) = (at(0.0), at(SHADE)) else {
+        return;
+    };
+    let stops = vec![
+        tiny_skia::GradientStop::new(0.0, clear),
+        tiny_skia::GradientStop::new(1.0, dark),
+    ];
+    if let (Some(shader), Some(rect)) = (
+        tiny_skia::LinearGradient::new(
+            tiny_skia::Point::from_xy(0.0, h * SHADE_FROM),
+            tiny_skia::Point::from_xy(0.0, h),
+            stops,
+            tiny_skia::SpreadMode::Pad,
+            Transform::identity(),
+        ),
+        tiny_skia::Rect::from_xywh(0.0, h * SHADE_FROM, w, h * (1.0 - SHADE_FROM)),
+    ) {
+        let paint = tiny_skia::Paint {
+            shader,
+            ..tiny_skia::Paint::default()
+        };
+        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+    }
 }
 
 /// The corners of the picture in `style` (logical pixels): `STAGE_RADIUS` on

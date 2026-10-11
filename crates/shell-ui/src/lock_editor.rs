@@ -288,9 +288,9 @@ pub fn part_title(part: Part) -> String {
     match part {
         Part::Clock => tr("Clock").into(),
         Part::Date => tr("Date").into(),
-        Part::Count => tr("Notifications").into(),
-        Part::Player => tr("Now playing").into(),
-        Part::Person => tr("You (the person)").into(),
+        Part::Count => tr("Notification count").into(),
+        Part::Player => tr("Music player").into(),
+        Part::Person => tr("Sign in").into(),
         Part::Message => tr("Message").into(),
         Part::Picture => tr("Picture").into(),
         Part::Battery => tr("Battery").into(),
