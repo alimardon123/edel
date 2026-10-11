@@ -998,6 +998,9 @@ mod tests {
             menu: false,
             restart_waiting: false,
             hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
         };
         let corner_at = crate::corner::layout(1280.0, 800.0, &corner);
         crate::corner::paint(&mut pixmap, &corner, &corner_at, &tokens, &mut text, 1.0);

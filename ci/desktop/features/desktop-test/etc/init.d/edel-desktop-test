@@ -677,6 +677,14 @@ commands() {
 			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
 			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
 			;;
+		# The session chip (M5.10c3b): the file ci-other's session left in
+		# ci's runtime directory, and the login screen's remembered choices.
+		'ci other')
+			say "ci_other $(cat "/run/user/$(id -u ci)/ci-other" 2>/dev/null)"
+			;;
+		'greeter sessions')
+			say "greeter_sessions $(cat "$greeter_sessions" 2>/dev/null | tr '\n' ' ')"
+			;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd
 			before=$(cut -d' ' -f1 /proc/uptime)
