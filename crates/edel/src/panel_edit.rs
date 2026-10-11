@@ -30,6 +30,10 @@ pub const SHELL_INTERFACE: &str = "org.edel.Shell1";
 /// The method that opens the panel editor, as the drawer's Edit panels
 /// row does (M5.31d).
 pub const EDIT_PANELS: &str = "EditPanels";
+/// The method that opens the lock screen's edit mode (M5.10c6), on the same
+/// interface as `EDIT_PANELS`. shell-ui serves it in M5.10c6 part b and
+/// Settings' Lock screen page calls it; nothing calls it yet.
+pub const EDIT_LOCK_SCREEN: &str = "EditLockScreen";
 
 /// The three groups of widgets a panel holds, from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
