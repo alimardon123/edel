@@ -115,7 +115,7 @@ fn watch_files(theme: &Rc<Theme>) -> Vec<gio::FileMonitor> {
 /// The image's tokens in the dark or the light scheme, as this machine's
 /// people see them (M5.12b1); what could not be read is said on standard
 /// error, and the built-in value is used.
-fn load(dark: bool) -> Tokens {
+pub fn load(dark: bool) -> Tokens {
     let scheme = if dark { Scheme::Dark } else { Scheme::Light };
     let (tokens, notes) = edel::tokens::on_this_machine(scheme);
     for note in notes {
@@ -169,6 +169,8 @@ pub fn css(t: &Tokens) -> String {
     let big = size + 1;
     let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
+    // A frame's corners outside its picture's: the window's radius plus its padding and border.
+    let rw_plus = rw + 4;
     format!(
         r#"/* Written from design/tokens.toml by edel-settings (style.rs), after the mockups' own CSS. */
 window.edel {{ background-color: {window}; color: {text}; font-family: "{font}"; font-size: {size}px; letter-spacing: -0.08px; }}
@@ -341,6 +343,33 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-menu-item {{ min-height: 26px; padding: 0 10px; border-radius: {rs}px; background: none; background-image: none;
   box-shadow: none; border: none; color: {text}; font-weight: 400; }}
 .edel-menu-item:hover {{ background-color: {accent}; color: {accent_text}; }}
+.edel-menu-item.edel-danger {{ color: {error}; }}
+/* The Appearance page's theme (M5.12b6b): the theme line, the three styles and the themes row. Radii are the window's and the small one's tokens. */
+.edel-theme-title {{ font-size: {name}px; font-weight: 700; letter-spacing: -0.4px; }}
+.edel-theme-tag {{ color: {muted}; font-size: {small}px; }}
+.edel-theme-changed {{ color: {secondary}; font-size: {small}px; }}
+.edel-changed-dot {{ min-width: 6px; min-height: 6px; border-radius: 999px; background-color: {accent}; }}
+.edel-pictures-link {{ min-height: 24px; padding: 0 4px; background: none; box-shadow: none; border: none; color: {secondary}; font-size: {small}px; }}
+.edel-pictures-link:hover {{ background-color: {fill}; }}
+.edel-theme-reset {{ min-height: 30px; padding: 0 12px; border-radius: 15px; background: none; background-image: none; box-shadow: none; border: none; color: {accent}; font-size: {current}px; }}
+.edel-theme-keep {{ min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: {accent}; background-image: none; box-shadow: none; border: none; color: {accent_text}; font-size: {current}px; font-weight: 600; }}
+.edel-theme-more {{ min-width: 30px; min-height: 30px; padding: 0; border-radius: 999px; background-image: none; box-shadow: none; border: 1px solid {line}; color: {text}; }}
+/* A style and a tile are toggles: the one chosen is :checked, and its frame's border is the ring (3 px out for a style, 2 px for a tile, as the mockup draws them). */
+.edel-style, .edel-tile {{ padding: 0; min-width: 0; min-height: 0; background: none; background-image: none; box-shadow: none; border: none; color: {text}; }}
+.edel-style:checked, .edel-tile:checked {{ background: none; background-image: none; box-shadow: none; }}
+.edel-style-frame {{ padding: 3px; border: 2px solid transparent; border-radius: {rw_plus}px; }}
+.edel-style:checked .edel-style-frame {{ border-color: {accent}; }}
+.edel-style-picture {{ border-radius: {rw}px; box-shadow: 0 1px 2px {shadow}, 0 10px 24px {shadow}; }}
+.edel-style-name {{ font-size: {size}px; }}
+.edel-style:checked .edel-style-name {{ font-weight: 700; }}
+.edel-tile-frame {{ padding: 2px; border: 2px solid transparent; border-radius: {rw_plus}px; }}
+.edel-tile:checked .edel-tile-frame {{ border-color: {accent}; }}
+.edel-tile-picture {{ border-radius: {rw}px; box-shadow: 0 4px 12px {shadow}; }}
+.edel-tile-name {{ font-size: {small}px; }}
+.edel-tile:checked .edel-tile-name {{ font-weight: 700; }}
+.edel-theme-built-in {{ background-color: alpha({deep}, 0.55); color: {deep_text}; font-size: {tiny}px; font-weight: 600; border-radius: 999px; padding: 1px 7px; }}
+.edel-theme-thumb {{ border-radius: {rs}px; box-shadow: 0 0 0 1.5px {window}; }}
+.edel-pictures-sheet {{ padding: 12px; }}
 "#
     )
 }

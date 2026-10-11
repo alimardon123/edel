@@ -251,6 +251,26 @@ pub fn title(key: &str) -> &'static str {
         .map_or("", |r| tr(r.title))
 }
 
+/// A key's row name in plain words, in lower case, for a sentence such as
+/// the theme line's "Changed: accent": the row of the key, or of its family
+/// (`appearance.colours.*` for `appearance.colours.panel`), else the key's
+/// last part with spaces for underscores.
+pub fn plain(key: &str) -> String {
+    let family = |row: &&Row| {
+        row.key
+            .strip_suffix(".*")
+            .is_some_and(|prefix| key.starts_with(&format!("{prefix}.")))
+    };
+    match ROWS
+        .iter()
+        .find(|r| r.key == key)
+        .or_else(|| ROWS.iter().find(family))
+    {
+        Some(row) => tr(row.title).to_lowercase(),
+        None => key.rsplit('.').next().unwrap_or(key).replace('_', " "),
+    }
+}
+
 /// The rows on the page for `section`, such as `layout`, which search
 /// looks through as well as the pages' titles.
 pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {

@@ -761,6 +761,193 @@ pub fn picture_card(title: &str, picture: &gtk::Widget) -> (gtk::ToggleButton, g
     (card, badge)
 }
 
+/// A small pill of an icon and a word: In use (a check, in the accent) after
+/// a look's or a theme's name, Built in (a lock, frosted) over a built-in
+/// one's picture.
+pub fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
+    let pill = gtk::Box::builder()
+        .spacing(4)
+        .valign(gtk::Align::Center)
+        .css_classes([class])
+        .build();
+    pill.append(&icon::image(icon_name, 10));
+    pill.append(&gtk::Label::new(Some(words)));
+    pill
+}
+
+/// A flat button of a popover menu (the More menus).
+pub fn menu_item(label: &str) -> gtk::Button {
+    gtk::Button::builder()
+        .label(label)
+        .halign(gtk::Align::Fill)
+        .css_classes(["edel-menu-item"])
+        .build()
+}
+
+/// The New card (M5.10c7b): a dashed outline `width` by `height` with a
+/// round plus, a hint under the plus when there is one, and the caption
+/// under the outline. The lock's looks and the Appearance page's themes
+/// both show it; the caller connects the click.
+pub fn new_card(width: i32, height: i32, hint: &str, caption: &str) -> gtk::Button {
+    let plus = gtk::Label::builder()
+        .label("+")
+        .hexpand(true)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-new-plus"])
+        .build();
+    let circle = gtk::Box::builder()
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-new-circle"])
+        .build();
+    circle.set_size_request(36, 36);
+    circle.append(&plus);
+    let area = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-new-look"])
+        .build();
+    area.set_size_request(width, height);
+    // The circle and the hint together, in the middle of the outline.
+    let middle = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .vexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    middle.append(&circle);
+    if !hint.is_empty() {
+        let hint = gtk::Label::builder()
+            .label(hint)
+            .wrap(true)
+            .css_classes(["edel-new-hint"])
+            .build();
+        middle.append(&hint);
+    }
+    area.append(&middle);
+    let words = gtk::Label::builder()
+        .label(caption)
+        .xalign(0.0)
+        .css_classes(["edel-preset-name"])
+        .build();
+    let inner = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .build();
+    inner.append(&area);
+    inner.append(&words);
+    let button = gtk::Button::builder()
+        .child(&inner)
+        .css_classes(["edel-new-card"])
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label(caption)]);
+    button
+}
+
+/// Asks for a name in a small dialog over `near`'s window: `text` above an
+/// entry holding `current`, Cancel and `action`. `check` gives the name's
+/// problem, shown under the entry, or Ok, when the dialog closes.
+pub fn ask_name(
+    near: &gtk::Widget,
+    title: &str,
+    text: &str,
+    current: &str,
+    placeholder: &str,
+    save_label: &str,
+    check: impl Fn(&str) -> Result<(), String> + 'static,
+) {
+    let window = gtk::Window::builder()
+        .title(title)
+        .modal(true)
+        .resizable(false)
+        .default_width(360)
+        .build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    let entry = gtk::Entry::builder()
+        .text(current)
+        .placeholder_text(placeholder)
+        .activates_default(true)
+        .build();
+    entry.update_property(&[gtk::accessible::Property::Label(title)]);
+    let error = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .visible(false)
+        .css_classes(["edel-error"])
+        .build();
+    let text = gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
+        .build();
+    let cancel = action(tr("Cancel"), false);
+    let save = action(save_label, true);
+    let buttons = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .build();
+    buttons.append(&cancel);
+    buttons.append(&save);
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    body.append(&text);
+    body.append(&entry);
+    body.append(&error);
+    body.append(&buttons);
+    window.set_child(Some(&body));
+
+    let close = window.clone();
+    cancel.connect_clicked(move |_| close.close());
+    let (typed, shown, dialog) = (entry.clone(), error.clone(), window.clone());
+    save.connect_clicked(move |_| match check(&typed.text()) {
+        Ok(()) => dialog.close(),
+        Err(why) => {
+            shown.set_label(&why);
+            shown.set_visible(true);
+        }
+    });
+    let save_again = save.clone();
+    entry.connect_activate(move |_| save_again.emit_clicked());
+    window.present();
+    entry.grab_focus();
+    entry.select_region(0, -1);
+}
+
+/// Asks whether to delete `message` (Delete), with Cancel as the default and
+/// the escape key, and runs `delete` on Delete.
+pub fn ask_delete(
+    near: &gtk::Widget,
+    message: &str,
+    detail: &str,
+    delete: &str,
+    done: impl FnOnce() + 'static,
+) {
+    let parent = near.root().and_downcast::<gtk::Window>();
+    let dialog = gtk::AlertDialog::builder()
+        .modal(true)
+        .message(message)
+        .detail(detail)
+        .buttons(vec![tr("Cancel"), delete])
+        .cancel_button(0)
+        .default_button(0)
+        .build();
+    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
+        if matches!(answer, Ok(1)) {
+            done();
+        }
+    });
+}
+
 /// Shows that `button` copied: its icon a check for a moment.
 pub fn copied(button: &gtk::Button) {
     button.set_child(Some(&icon::image("check", 12)));

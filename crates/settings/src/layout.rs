@@ -23,13 +23,13 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{colours, motion, panels, preview, rows, shape, text, tray, wallpaper, workspaces};
+use crate::{colours, motion, panels, preview, rows, shape, text, themes, tray, workspaces};
 
 const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
 const WORKSPACES_INTRO: &str = n_("Desktops of their own, to keep windows apart.");
 
-const APPEARANCE_INTRO: &str = n_("Colours, accent, shape and motion. Every change shows at once.");
+const APPEARANCE_INTRO: &str = n_("Your theme in light and dark, and how everything is drawn.");
 
 const INTRO: &str = n_("One preset sets up the whole desktop: its panels, windows and tiling.");
 
@@ -48,14 +48,6 @@ impl Control {
         let values = rows::values(key);
         let labels: Vec<String> = values.iter().map(|v| rows::label(v)).collect();
         Control::Choice(widgets::Choice::new(labels), values)
-    }
-
-    /// `key`'s values from the key table as buttons all in view, each
-    /// labelled as a row shows it (light or dark, M5.2q).
-    fn segments(key: &str) -> Control {
-        let values: Vec<String> = rows::values(key).iter().map(|v| v.to_string()).collect();
-        let labels: Vec<String> = values.iter().map(|v| rows::label(v)).collect();
-        Control::Segments(widgets::Segments::new(&labels), values)
     }
 
     /// The workspaces' numbers, 1 to the most there may be (M5.2n).
@@ -155,9 +147,9 @@ struct Ui {
     tray: Option<Rc<tray::Card>>,
     /// The Workspaces page's names and apps (M5.2n).
     names: Option<Rc<workspaces::Card>>,
-    /// The Appearance page's Wallpaper group, which follows the files too
-    /// (M5.10c4c).
-    wallpaper: Option<Rc<wallpaper::Card>>,
+    /// The Appearance page's theme card (M5.12b6b): the theme line, the
+    /// styles, the themes row and the pictures sheet, which follows the files.
+    theme_card: Option<Rc<themes::Card>>,
     /// The Appearance page's accent and colours, which follow the files too
     /// (M5.12b1c).
     colours: Option<Rc<colours::Group>>,
@@ -210,8 +202,8 @@ impl Ui {
         if let Some(names) = &self.names {
             names.show(&files, &now);
         }
-        if let Some(wallpaper) = &self.wallpaper {
-            wallpaper.show(&files);
+        if let Some(theme_card) = &self.theme_card {
+            theme_card.show(&files);
         }
         if let Some(colours) = &self.colours {
             colours.show(&files);
@@ -310,7 +302,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut settings = Vec::new();
     let mut bar = None;
     let (mut panels, mut tray, mut names) = (None, None, None);
-    let mut wallpaper = None;
+    let mut theme_card = None;
     let mut colour_group = None;
     let mut shape_group = None;
     let mut text_group = None;
@@ -462,25 +454,12 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             names = Some(workspaces::card(&spaces, &problem));
         }
         _ => {
-            // The wallpaper first (M5.10c4c), then light, dark or the
-            // release's choice (M5.5c), then the
-            // workspace switcher's look, shown count and ends (M5.2m).
-            wallpaper = Some(wallpaper::card(&content, &problem, theme));
-            let look = widgets::group(&content);
-            look.set_margin_top(20);
-            let style = setting(
-                &look,
-                "appearance.mode",
-                (
-                    tr("The colours of the panels, title bars and apps"),
-                    None,
-                    false,
-                ),
-                Control::segments("appearance.mode"),
-            );
-            log_places(&page, &look, &style, ("appearance", "style"));
-            settings.push(style);
-            // The accent and the colours after the Style row (M5.12b1c).
+            // The theme first (M5.12b6b): its line with the pictures sheet
+            // behind its button, the three styles, and the themes row. Then
+            // the accent and the colours (M5.12b1c), the text, the shape and
+            // the motion, then the workspace switcher's look, shown count and
+            // ends (M5.2m).
+            theme_card = Some(themes::card(&content, &problem, theme));
             colour_group = Some(colours::group(&content, theme, &problem));
             // The text after the colours (M5.12b5): the fonts and the size,
             // and the windows' shape after them (M5.12b2c): corners, gaps,
@@ -540,7 +519,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         tray: tray.clone(),
         panels: panels.clone(),
         names,
-        wallpaper: wallpaper.clone(),
+        theme_card: theme_card.clone(),
         colours: colour_group.clone(),
         shape: shape_group.clone(),
         text: text_group.clone(),
