@@ -80,3 +80,9 @@ lock_screen.looks
 appearance.colours.*
 appearance.colours.light.*
 appearance.colours.dark.*
+appearance.radius
+appearance.gaps
+appearance.gaps_outer
+appearance.border_width
+appearance.title_bar_height
+appearance.panel_opacity

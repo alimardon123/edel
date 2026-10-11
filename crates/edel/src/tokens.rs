@@ -10,7 +10,7 @@ use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
 use crate::i18n::{tr, trf};
-use crate::settings::{self, Colours, SettingsFile};
+use crate::settings::{self, Appearance, Colours, SettingsFile};
 #[cfg(feature = "pictures")]
 use crate::wallpapers::{self, Wallpaper};
 
@@ -137,19 +137,41 @@ pub fn load_from_files(
     person: Option<&str>,
     from_wallpaper: Option<Colour>,
 ) -> (Tokens, Vec<String>) {
-    let (machine, person) = (read_file(machine), read_file(person));
+    let ((machine, mut notes), (person, more)) = (read_file(machine), read_file(person));
+    notes.extend(more);
     let accent = accent_between(machine.as_ref(), person.as_ref());
     let colours = settings::colours_over(
         machine.as_ref().and_then(|f| f.appearance.colours.as_ref()),
         person.as_ref().and_then(|f| f.appearance.colours.as_ref()),
     );
-    load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper)
+    let (tokens, more) = load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper);
+    notes.extend(more);
+    let shape = Shape::between(machine.as_ref(), person.as_ref());
+    let (tokens, more) = tokens.with_shape(&shape);
+    notes.extend(more);
+    (tokens, notes)
 }
 
 /// A settings file's text read leniently; none when there is no text or
-/// the text is not a file this release reads (M5.12b1).
-fn read_file(text: Option<&str>) -> Option<SettingsFile> {
-    settings::read(text?).ok().map(|read| read.file)
+/// the text is not a file this release reads (M5.12b1). The notes are the
+/// windows' shape values the reader left out, which the file's own check
+/// names too (M5.12b2): a whole number out of its range is dropped there.
+fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
+    let Some(text) = text else {
+        return (None, Vec::new());
+    };
+    match settings::read(text) {
+        Ok(read) => {
+            let notes = read
+                .problems
+                .iter()
+                .filter(|p| settings::SHAPE_KEYS.contains(&p.key.as_str()))
+                .map(ToString::to_string)
+                .collect();
+            (Some(read.file), notes)
+        }
+        Err(_) => (None, Vec::new()),
+    }
 }
 
 /// The accent the person's file names, else the machine's (M5.12b1).
@@ -192,7 +214,7 @@ fn text_at(path: &std::path::Path) -> Option<String> {
 /// for no picture, which leaves the release's accent.
 #[cfg(feature = "pictures")]
 fn wallpaper_accent(scheme: Scheme, machine: Option<&str>, person: Option<&str>) -> Option<Colour> {
-    let (machine, person) = (read_file(machine), read_file(person));
+    let ((machine, _), (person, _)) = (read_file(machine), read_file(person));
     if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT) {
         return None;
     }
@@ -480,6 +502,9 @@ pub struct Tokens {
     pub title_text_size: u32,
     /// Between tiled windows and the screen's edges.
     pub gap: u32,
+    /// Between tiled windows and the screen's edge, when it differs from
+    /// `gap` (M5.12b2).
+    pub gap_outer: u32,
     /// shell-ui's panel (M5.1b) and the text and icons on it.
     pub panel: Colour,
     pub panel_text: Colour,
@@ -521,6 +546,12 @@ pub struct Tokens {
     pub accent_text: Colour,
     /// The hairline round windows and along the panels' inner edge.
     pub edge: Colour,
+    /// The windows' borders (M5.12b2): one without the keyboard, the
+    /// focused one, and the colour the focused border ends in when it is a
+    /// gradient from `window_border_focused`.
+    pub window_border: Colour,
+    pub window_border_focused: Colour,
+    pub window_border_focused_end: Colour,
     /// The overview's backdrop where there is no wallpaper (M5.2j-b): a
     /// gradient from `backdrop` at the top to `backdrop_deep` at the bottom.
     pub backdrop: Colour,
@@ -543,6 +574,10 @@ pub struct Tokens {
     /// its weight, 100 (thin) to 900 (black).
     pub lock_clock: u32,
     pub lock_clock_weight: u32,
+    /// The panels' opacity in percent (M5.12b2, `appearance.panel_opacity`):
+    /// only the bars and docks are drawn with it, never the cards and menus
+    /// that share the panel's colour.
+    pub panel_opacity: u32,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
@@ -584,7 +619,8 @@ macro_rules! colour_tokens {
 colour_tokens! {
     background, title_bar, title_bar_focused, title_text, title_text_unfocused,
     title_button_hover, title_close_hover, panel, panel_text, accent, shadow,
-    window, card, line, accent_text, edge, backdrop, backdrop_deep, backdrop_text,
+    window, card, line, accent_text, edge, window_border, window_border_focused,
+    window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
     lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
     lock_glow_second,
 }
@@ -919,6 +955,7 @@ impl Tokens {
                 "border" => (&mut self.border, 50),
                 "title_text" => (&mut self.title_text_size, 100),
                 "gap" => (&mut self.gap, 100),
+                "gap_outer" => (&mut self.gap_outer, 100),
                 "panel" => (&mut self.panel_height, 200),
                 "panel_small" => (&mut self.panel_small_height, 200),
                 "panel_large" => (&mut self.panel_large_height, 200),
@@ -936,6 +973,7 @@ impl Tokens {
                 "row" => (&mut self.row, 200),
                 "text" => (&mut self.text_size, 100),
                 "lock_clock" => (&mut self.lock_clock, 400),
+                "panel_opacity" => (&mut self.panel_opacity, 100),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -1006,6 +1044,8 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "shadow_blur",
                 "shadow_offset",
                 "lock_clock",
+                "gap_outer",
+                "panel_opacity",
             ][..],
         ),
         ("font", &["interface", "lock_clock_weight"][..]),
@@ -1046,6 +1086,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         border: 0,
         title_text_size: 0,
         gap: 0,
+        gap_outer: 0,
         panel: BLACK,
         panel_text: BLACK,
         accent: BLACK,
@@ -1067,6 +1108,9 @@ pub fn check(text: &str) -> Result<Tokens> {
         line: BLACK,
         accent_text: BLACK,
         edge: BLACK,
+        window_border: BLACK,
+        window_border_focused: BLACK,
+        window_border_focused_end: BLACK,
         backdrop: BLACK,
         backdrop_deep: BLACK,
         backdrop_text: BLACK,
@@ -1077,6 +1121,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         lock_glow: BLACK,
         lock_glow_second: BLACK,
         lock_clock: 0,
+        panel_opacity: 0,
         lock_clock_weight: 0,
         shadow_blur: 0,
         shadow_offset: 0,
@@ -1091,6 +1136,127 @@ pub fn check(text: &str) -> Result<Tokens> {
         bail!("{}", notes.join("; "));
     }
     Ok(tokens)
+}
+
+/// A person's shape (M5.12b2): each value the person's file's, else the
+/// machine's; none is the release's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Shape {
+    pub radius: Option<u32>,
+    pub gaps: Option<u32>,
+    pub gaps_outer: Option<u32>,
+    pub border_width: Option<u32>,
+    pub title_bar_height: Option<u32>,
+    pub panel_opacity: Option<u32>,
+}
+
+impl Shape {
+    /// Each value the person's settings file sets, else the machine's
+    /// (M5.12b2).
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Shape {
+        let over = |value: fn(&Appearance) -> Option<u32>| {
+            person
+                .and_then(|file| value(&file.appearance))
+                .or_else(|| machine.and_then(|file| value(&file.appearance)))
+        };
+        Shape {
+            radius: over(|a| a.radius),
+            gaps: over(|a| a.gaps),
+            gaps_outer: over(|a| a.gaps_outer),
+            border_width: over(|a| a.border_width),
+            title_bar_height: over(|a| a.title_bar_height),
+            panel_opacity: over(|a| a.panel_opacity),
+        }
+    }
+}
+
+/// `value` if it is in the range of the shape key `key` (M5.12b2), else a
+/// note that the release's value is used, in the words of
+/// `docs/MESSAGES.md`. A key with no range in the table takes any value.
+fn in_shape_range(key: &str, value: Option<u32>, notes: &mut Vec<String>) -> Option<u32> {
+    let value = value?;
+    let (least, most) = settings::whole_range(key).unwrap_or((i64::MIN, i64::MAX));
+    let shown = i64::from(value);
+    if shown > most {
+        notes.push(trf(
+            "{key} {value} is more than {most}; the release's is used",
+            &[
+                ("key", key),
+                ("value", &value.to_string()),
+                ("most", &most.to_string()),
+            ],
+        ));
+        None
+    } else if shown < least {
+        notes.push(trf(
+            "{key} {value} is less than {least}; the release's is used",
+            &[
+                ("key", key),
+                ("value", &value.to_string()),
+                ("least", &least.to_string()),
+            ],
+        ));
+        None
+    } else {
+        Some(value)
+    }
+}
+
+impl Tokens {
+    /// These tokens with a person's shape on top (M5.12b2): the radius
+    /// sets `radius_window` and scales `radius_menu`, `radius_control` and
+    /// `radius_small` by it (from the release's own `radius_window`; to
+    /// the radius itself when that is 0); the gaps set `gap` and
+    /// `gap_outer`, and `gaps_outer` alone sets `gap_outer`; the border,
+    /// the title bar's height and the panels' opacity follow.
+    /// Lenient (ADR-008): a value outside its key's range is noted and
+    /// skipped.
+    pub fn with_shape(mut self, shape: &Shape) -> (Tokens, Vec<String>) {
+        let mut notes = Vec::new();
+        if let Some(radius) = in_shape_range("appearance.radius", shape.radius, &mut notes) {
+            let base = self.radius_window;
+            // Rounded half up, so 12 at 20 over 10 is 24.
+            let scaled = |value: u32| {
+                if base == 0 {
+                    radius
+                } else {
+                    ((u64::from(value) * u64::from(radius) + u64::from(base) / 2) / u64::from(base))
+                        as u32
+                }
+            };
+            self.radius_menu = scaled(self.radius_menu);
+            self.radius_control = scaled(self.radius_control);
+            self.radius_small = scaled(self.radius_small);
+            self.radius_window = radius;
+        }
+        if let Some(gap) = in_shape_range("appearance.gaps", shape.gaps, &mut notes) {
+            self.gap = gap;
+            self.gap_outer = gap;
+        }
+        if let Some(gap_outer) =
+            in_shape_range("appearance.gaps_outer", shape.gaps_outer, &mut notes)
+        {
+            self.gap_outer = gap_outer;
+        }
+        if let Some(border) =
+            in_shape_range("appearance.border_width", shape.border_width, &mut notes)
+        {
+            self.border = border;
+        }
+        if let Some(height) = in_shape_range(
+            "appearance.title_bar_height",
+            shape.title_bar_height,
+            &mut notes,
+        ) {
+            self.title_bar_height = height;
+        }
+        if let Some(percent) =
+            in_shape_range("appearance.panel_opacity", shape.panel_opacity, &mut notes)
+        {
+            self.panel_opacity = percent;
+        }
+        (self, notes)
+    }
 }
 
 const BLACK: Colour = Colour {
@@ -1406,7 +1572,7 @@ mod tests {
     #[test]
     fn a_colour_token_is_read_and_named_by_one_list() {
         let tokens = Tokens::built_in();
-        assert_eq!(COLOUR_NAMES.len(), 25);
+        assert_eq!(COLOUR_NAMES.len(), 28);
         for name in COLOUR_NAMES {
             assert!(tokens.colour(name).is_some(), "{name}");
         }
@@ -1575,5 +1741,148 @@ mod tests {
         let (tokens, notes) = load_from_files(Scheme::Light, machine, Some("not = [toml"), None);
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(tokens.accent, accent_named("red", Scheme::Light).unwrap());
+    }
+
+    #[test]
+    fn a_radius_of_0_makes_every_corner_square_and_20_scales_them() {
+        let zero = Shape {
+            radius: Some(0),
+            ..Shape::default()
+        };
+        let (square, notes) = Tokens::built_in().with_shape(&zero);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(
+            (
+                square.radius_window,
+                square.radius_menu,
+                square.radius_control,
+                square.radius_small
+            ),
+            (0, 0, 0, 0)
+        );
+        let twenty = Shape {
+            radius: Some(20),
+            ..Shape::default()
+        };
+        let (round, _) = Tokens::built_in().with_shape(&twenty);
+        assert_eq!(
+            (
+                round.radius_window,
+                round.radius_menu,
+                round.radius_control,
+                round.radius_small
+            ),
+            (20, 24, 14, 10)
+        );
+    }
+
+    #[test]
+    fn gaps_set_the_gap_and_its_outer_edge_unless_gaps_outer_is_set() {
+        let alone = Shape {
+            gaps: Some(12),
+            ..Shape::default()
+        };
+        let (both, _) = Tokens::built_in().with_shape(&alone);
+        assert_eq!((both.gap, both.gap_outer), (12, 12));
+        let apart = Shape {
+            gaps: Some(12),
+            gaps_outer: Some(4),
+            ..Shape::default()
+        };
+        let (apart, _) = Tokens::built_in().with_shape(&apart);
+        assert_eq!((apart.gap, apart.gap_outer), (12, 4));
+    }
+
+    #[test]
+    fn panel_opacity_is_its_own_token_and_leaves_the_panel_colour() {
+        let half = Shape {
+            panel_opacity: Some(50),
+            ..Shape::default()
+        };
+        let release = Tokens::built_in();
+        assert_eq!(release.panel_opacity, 100);
+        let (tokens, notes) = Tokens::built_in().with_shape(&half);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.panel_opacity, 50);
+        assert_eq!(tokens.panel, release.panel);
+    }
+
+    #[test]
+    fn an_out_of_range_shape_value_is_noted_and_the_release_s_stays() {
+        let wide = Shape {
+            radius: Some(40),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&wide);
+        assert_eq!(tokens.radius_window, 10);
+        assert_eq!(
+            notes,
+            ["appearance.radius 40 is more than 24; the release's is used"]
+        );
+        let thin = Shape {
+            title_bar_height: Some(10),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&thin);
+        assert_eq!(tokens.title_bar_height, 28);
+        assert_eq!(
+            notes,
+            ["appearance.title_bar_height 10 is less than 24; the release's is used"]
+        );
+    }
+
+    #[test]
+    fn the_persons_shape_wins_over_the_machines_and_the_machines_is_used_alone() {
+        let read = |text: &str| settings::read(text).unwrap().file;
+        let machine = read("format = 1\n[appearance]\nradius = 6\ngaps = 4\n");
+        let person = read("format = 1\n[appearance]\ngaps = 12\n");
+        assert_eq!(
+            Shape::between(Some(&machine), Some(&person)),
+            Shape {
+                radius: Some(6),
+                gaps: Some(12),
+                ..Shape::default()
+            }
+        );
+        assert_eq!(Shape::between(Some(&machine), None).gaps, Some(4));
+        assert_eq!(Shape::between(None, None), Shape::default());
+    }
+
+    #[test]
+    fn load_from_files_gives_the_gap_the_border_and_the_red_focused_border() {
+        let person = "format = 1\n[appearance]\ngaps = 12\nborder_width = 3\n[appearance.colours]\nwindow_border_focused = \"#ff0000\"\n";
+        let (tokens, notes) = load_from_files(Scheme::Light, None, Some(person), None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((tokens.gap, tokens.border), (12, 3));
+        assert_eq!(tokens.window_border_focused.hex(), "#ff0000");
+    }
+
+    #[test]
+    fn an_out_of_range_value_in_a_file_is_a_note_and_the_release_s_stays() {
+        let file = "format = 1\n[appearance]\nradius = 40\n";
+        let (tokens, notes) = load_from_files(Scheme::Light, None, Some(file), None);
+        assert_eq!(tokens.radius_window, 10);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].starts_with("appearance.radius: "), "{notes:?}");
+    }
+
+    #[test]
+    fn the_window_borders_have_edge_s_value_in_each_scheme_in_the_file() {
+        let table: Table = BUILT_IN.parse().expect("checked by the tests");
+        let dark = table["colour"].as_table().expect("[colour]");
+        let light = dark["light"].as_table().expect("[colour.light]");
+        for name in [
+            "window_border",
+            "window_border_focused",
+            "window_border_focused_end",
+        ] {
+            assert_eq!(dark[name], dark["edge"], "{name} in [colour]");
+            assert_eq!(light[name], light["edge"], "{name} in [colour.light]");
+        }
+        assert_eq!(
+            Tokens::built_in().window_border,
+            Tokens::built_in().edge,
+            "the built-in dark border"
+        );
     }
 }

@@ -947,6 +947,12 @@ msgstr ""
 msgid "accent.{name}.{shade} needs a colour such as \"#2d6ae3\""
 msgstr ""
 
+msgid "{key} {value} is more than {most}; the release's is used"
+msgstr ""
+
+msgid "{key} {value} is less than {least}; the release's is used"
+msgstr ""
+
 msgid "could not read /proc/self/mountinfo"
 msgstr ""
 
