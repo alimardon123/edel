@@ -545,9 +545,9 @@ impl Ui {
                 .build();
             if lock_screen::is_built_in(name) {
                 let built_in = pill("lock", tr("Built in"), "edel-built-in");
-                built_in.set_halign(gtk::Align::Start);
+                built_in.set_halign(gtk::Align::End);
                 built_in.set_valign(gtk::Align::Start);
-                built_in.set_margin_start(8);
+                built_in.set_margin_end(8);
                 built_in.set_margin_top(8);
                 badges.add_overlay(&built_in);
             }
