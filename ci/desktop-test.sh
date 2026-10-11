@@ -3371,8 +3371,8 @@ case_lock() {
 	# row is clicked. Then (M5.10c4) ci's test player, Night Drive by
 	# Lumen, shows its card once it plays, and the card's play button,
 	# read from the lock places line, pauses it, which the player prints.
-	# Kept as lock.png, lock-power.png, lock-parts.png, lock-player.png and
-	# lock-go.png.
+	# Kept as lock.png, lock-power.png, lock-parts.png, lock-minimal.png,
+	# lock-player.png and lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3432,6 +3432,46 @@ case_lock() {
 		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
 	guest 'lock parts reset'
 	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
+	# The lock's look (M5.10c5c): ci unlocks, `lock look` sets the minimal
+	# look over the blurred wallpaper, and the screen locks again: shell-ui
+	# logs a blurred backdrop, the last places line has no count (the look
+	# leaves it out) and the pixel at 640,790 is no longer the deep colour.
+	# Kept as lock-minimal.png. Then ci unlocks, `lock look reset` takes the
+	# look back, and the screen locks again for the player card below.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen before the lock's look"
+	guest 'lock look'
+	wait_for 'DESKTOP-TEST: ran lock look: 0' || fail "ci's lock look could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the look"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the look"
+	wait_for 'edel-shell-ui: lock backdrop [0-9]+x[0-9]+ blurred$' ||
+		fail "shell-ui made no blurred lock backdrop: $(tr -d '\r' <"$log" | grep -a 'lock backdrop' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	case "$places" in
+	*", count "*) fail "the minimal look still shows the count: $places" ;;
+	esac
+	shot lock-minimal 640 790 "!$deep" >/dev/null ||
+		fail "the minimal look's lock screen at 640,790 is still the lock's #$deep"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen after the lock's look"
+	guest 'lock look reset'
+	wait_for 'DESKTOP-TEST: ran lock look reset: 0' || fail "ci's lock look could not be reset"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen after the look was reset"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen after the look was reset"
 	# The player card (M5.10c4): the test player plays, the card shows once
 	# it does, and a click on its play button, read from the last lock
 	# places line, reaches the player, which pauses and prints it, as
@@ -3477,7 +3517,7 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count"
 }
 
 case_scheme() {

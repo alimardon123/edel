@@ -625,7 +625,18 @@ mod tests {
             let tokens = Tokens::built_in();
             let mut text = Text::load(&tokens.font);
             let l = layout(w, h, &view(Some("EN"), false));
-            let at = lock::screen_layout(w, h, &tokens, true, None, None, false, &l, &mut text);
+            let at = lock::screen_layout(
+                w,
+                h,
+                &tokens,
+                true,
+                &Default::default(),
+                None,
+                false,
+                false,
+                &l,
+                &mut text,
+            );
             let f = at.field;
             for (_, r) in &l.buttons {
                 assert!(!overlaps(r, (f.x, f.y, f.w, f.h)), "{w}x{h} field");
@@ -669,8 +680,18 @@ mod tests {
                 lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
             screen.dots = 7;
             let below = layout(w, h, &view(None, false));
-            let at =
-                lock::screen_layout(w, h, &tokens, false, None, None, false, &below, &mut text);
+            let at = lock::screen_layout(
+                w,
+                h,
+                &tokens,
+                false,
+                &Default::default(),
+                None,
+                false,
+                false,
+                &below,
+                &mut text,
+            );
             lock::paint(
                 &mut pixmap,
                 &screen,
@@ -679,6 +700,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut lock::Pictures::default(),
+                &mut lock::Backdrops::default(),
+                &edel::wallpapers::Wallpaper::Background,
                 1.0,
             );
             paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
@@ -695,7 +718,18 @@ mod tests {
             };
             let l = layout(w, h, &shown);
             let mut pixmap = Pixmap::new(1280, 800).unwrap();
-            let at = lock::screen_layout(w, h, &tokens, false, None, None, false, &l, &mut text);
+            let at = lock::screen_layout(
+                w,
+                h,
+                &tokens,
+                false,
+                &Default::default(),
+                None,
+                false,
+                false,
+                &l,
+                &mut text,
+            );
             lock::paint(
                 &mut pixmap,
                 &screen,
@@ -704,6 +738,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut lock::Pictures::default(),
+                &mut lock::Backdrops::default(),
+                &edel::wallpapers::Wallpaper::Background,
                 1.0,
             );
             paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
