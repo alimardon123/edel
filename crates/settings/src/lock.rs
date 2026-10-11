@@ -10,11 +10,12 @@
 //! 800 screen, so a card shows where each part stands.
 
 use std::cell::{Cell, RefCell};
+use std::path::Path;
 use std::rc::Rc;
 
+use adw::prelude::*;
 use gtk::cairo::{Context, LinearGradient};
-use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gdk, gio, glib};
 
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{
@@ -23,15 +24,22 @@ use edel::lock_screen::{
 use edel::panel_edit::EDIT_LOCK_SCREEN;
 use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
+use edel::wallpapers::{self, Wallpaper};
 
 use crate::files::{self, Files};
 use crate::style::Theme;
-use crate::{panels, preview, rows, widgets};
+use crate::{icon, panels, preview, rows, widgets};
 
-/// The keys this page chooses.
+/// The keys this page chooses, and the one it reads for the wallpaper that
+/// the blurred and sharp tiles show (`wallpaper.rs` chooses it).
 const PARTS: &str = lock_screen::PARTS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
+const WALLPAPER: &str = "appearance.wallpaper";
+
+/// The background's tiles in the order people see them, by the names the
+/// log gives them (M5.32b).
+const TILE_NAMES: [&str; 6] = ["look", "navy", "blurred", "sharp", "colour", "picture"];
 
 /// The look that applies while none is chosen, and the notifications'
 /// values, as `edel::lock_screen` owns them.
@@ -49,8 +57,24 @@ const MARGIN: f32 = 24.0;
 const GAP: f32 = 16.0;
 
 /// A look's picture on its card in logical pixels: 16:10.
-const CARD_W: i32 = 200;
-const CARD_H: i32 = 125;
+const CARD_W: i32 = 160;
+const CARD_H: i32 = 100;
+/// The picture of what applies, at the top of the page: 16:10 (M5.32b).
+const HERO_W: i32 = 240;
+const HERO_H: i32 = 150;
+/// A background's tile in logical pixels: 16:10 too.
+const TILE_W: i32 = 96;
+const TILE_H: i32 = 60;
+/// The blur of a wallpaper behind the glass: shell-ui blurs a picture 320
+/// px wide with 12 px, so a 192 px picture gets 7 px.
+const BLUR_RADIUS: f32 = 7.0;
+/// The size a tile's picture is read at: twice the tile, so it stays sharp
+/// on a screen of twice the density.
+const TILE_READ: (u32, u32) = (192, 120);
+
+/// What a look's picture draws: its parts and whether its background is the
+/// navy scene. Shared with the picture, so a change is drawn in place.
+type LookShown = (Vec<Placed>, bool);
 
 /// Each part's size on the screen, width and height in logical pixels.
 const DATE_SIZE: (f32, f32) = (220.0, 25.0);
@@ -180,9 +204,33 @@ fn card_list(lock: &LockScreen) -> Vec<(String, Vec<Placed>)> {
     built_in.chain(own).collect()
 }
 
-/// The segment that shows what `background` chooses: none is the look's
-/// own (the first), then navy, the wallpaper blurred and sharp, a colour
-/// and a picture.
+/// The title of what applies now: the person's own arrangement while
+/// `lock_screen.parts` is set, else the look's name.
+fn current_title(lock: &LockScreen) -> String {
+    if lock.parts.is_some() {
+        tr("Your own arrangement").to_string()
+    } else {
+        look_title(lock.look.as_deref().unwrap_or(CLASSIC))
+    }
+}
+
+/// The title of a background tile, by its index in the order people see
+/// them: the look's own, navy, blurred, sharp, a colour and a picture.
+fn tile_title(index: usize) -> String {
+    let title = match index {
+        0 => tr("The look's own"),
+        1 => tr("Navy"),
+        2 => tr("Blurred"),
+        3 => tr("Sharp"),
+        4 => tr("Colour"),
+        _ => tr("Picture"),
+    };
+    title.to_string()
+}
+
+/// The tile that shows what `background` chooses: none is the look's own
+/// (the first), then navy, the wallpaper blurred and sharp, a colour and a
+/// picture. A value that is not one of them is the look's own too.
 fn choice_at(background: Option<&str>) -> usize {
     match background.and_then(lock_screen::parse_background) {
         None => 0,
@@ -286,18 +334,36 @@ struct LookCard {
     badge: gtk::Box,
 }
 
+/// A background's tile: its button and the check that shows it is chosen.
+struct Tile {
+    button: gtk::ToggleButton,
+    badge: gtk::Box,
+}
+
 /// The page's widgets, so every change shows everywhere on it.
 struct Ui {
     theme: Rc<Theme>,
+    /// The card at the top (M5.32b): its name, and what its picture draws,
+    /// redrawn in place when `current_view` is asked to.
+    current_title: gtk::Label,
+    current_shown: Rc<RefCell<LookShown>>,
+    current_view: gtk::DrawingArea,
+    /// The heading of the looks, which the page scrolls to when asked for.
+    looks_head: gtk::Widget,
     looks: gtk::FlowBox,
     cards: RefCell<Vec<LookCard>>,
     /// The cards' names and parts as they were built, so they are built
     /// again only when a look changes.
     shown: RefCell<Vec<(String, Vec<Placed>)>>,
     look_source: widgets::Source,
-    note: gtk::Label,
-    background: Rc<widgets::Segments>,
-    background_row: widgets::Row,
+    /// The heading of the background, the tiles' flow and the tiles.
+    background_head: gtk::Widget,
+    background_source: widgets::Source,
+    background_flow: gtk::FlowBox,
+    tiles: RefCell<Vec<Tile>>,
+    /// What the tiles draw, as it was built, so they are built again only
+    /// when it changes.
+    tiles_shown: RefCell<String>,
     face: Rc<widgets::Segments>,
     face_row: widgets::Row,
     hours: gtk::Switch,
@@ -315,40 +381,40 @@ struct Ui {
 }
 
 impl Ui {
-    /// Shows what the files say now: the cards, the background, the clock,
-    /// the date and the count, each with where its value comes from.
+    /// Shows what the files say now: the current look, the cards, the
+    /// background, the clock, the date and the count, each with where its
+    /// value comes from.
     fn update(self: &Rc<Self>) {
         let files = Files::here();
         let lock = files.lock();
         let applied = lock_screen::applied(&lock, false);
         self.quiet.set(true);
+        self.current_title.set_label(&current_title(&lock));
+        *self.current_shown.borrow_mut() = (
+            applied.parts.clone(),
+            applied.background == Background::Backdrop,
+        );
+        self.current_view.queue_draw();
         self.show_looks(&lock);
-        let parts_set = lock.parts.is_some();
-        self.note.set_visible(parts_set);
-        let (title, source) = if parts_set {
-            (tr("Your own arrangement").to_string(), files.source(PARTS))
+        let source = if lock.parts.is_some() {
+            files.source(PARTS)
         } else {
-            let look = lock.look.clone().unwrap_or_else(|| CLASSIC.to_string());
-            (look_title(&look), files.source(LOOK))
+            files.source(LOOK)
         };
         self.look_source
             .label
-            .set_label(&rows::describe(&source, &title));
+            .set_label(&rows::describe(&source, &current_title(&lock)));
         self.look_source.reset.set_visible(
             rows::resettable(&files.source(LOOK)) || rows::resettable(&files.source(PARTS)),
         );
 
-        self.background
-            .set_selected(choice_at(lock.background.as_deref()));
+        self.show_background(&lock);
         let background = files.source(BACKGROUND);
-        set_line(
-            &self.background_row,
-            &line(
-                tr("What lies behind the parts"),
-                rows::note(&background, false),
-            ),
-        );
-        self.background_row
+        let chosen = choice_at(lock.background.as_deref());
+        self.background_source
+            .label
+            .set_label(&rows::describe(&background, &tile_title(chosen)));
+        self.background_source
             .reset
             .set_visible(rows::resettable(&background));
 
@@ -420,7 +486,8 @@ impl Ui {
         let mut first: Option<gtk::ToggleButton> = None;
         for (name, parts) in list {
             let backdrop = lock_screen::look_background(name) == Background::Backdrop;
-            let picture = look_picture(&self.theme, parts.clone(), backdrop);
+            let shown = Rc::new(RefCell::new((parts.clone(), backdrop)));
+            let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H);
             let (button, badge) = widgets::picture_card(&look_title(name), &picture.upcast());
             match &first {
                 Some(first) => button.set_group(Some(first)),
@@ -455,6 +522,71 @@ impl Ui {
         *self.shown.borrow_mut() = list.to_vec();
     }
 
+    /// Shows the background's tiles (M5.32b): built again only when what
+    /// they draw changes (the look, the wallpaper that applies and the
+    /// background the file names), and the one that applies chosen.
+    fn show_background(self: &Rc<Self>, lock: &LockScreen) {
+        let look = lock.look.clone().unwrap_or_else(|| CLASSIC.to_string());
+        let dark = adw::StyleManager::default().is_dark();
+        let wallpaper =
+            match wallpapers::on_this_machine(Files::here().chosen(WALLPAPER).as_deref(), dark) {
+                Wallpaper::Picture(path) => Some(path),
+                _ => None,
+            };
+        let signature = format!(
+            "{:?}",
+            (
+                lock_screen::look_background(&look),
+                &wallpaper,
+                &lock.background,
+                dark
+            )
+        );
+        if *self.tiles_shown.borrow() != signature {
+            self.build_tiles(lock, &look, wallpaper.as_deref());
+            *self.tiles_shown.borrow_mut() = signature;
+        }
+        let chosen = choice_at(lock.background.as_deref());
+        for (index, tile) in self.tiles.borrow().iter().enumerate() {
+            tile.button.set_active(index == chosen);
+            tile.badge.set_visible(index == chosen);
+        }
+    }
+
+    /// Builds the six tiles in the flow, each wired to its choice.
+    fn build_tiles(self: &Rc<Self>, lock: &LockScreen, look: &str, wallpaper: Option<&Path>) {
+        while let Some(child) = self.background_flow.first_child() {
+            self.background_flow.remove(&child);
+        }
+        let backdrop = lock_screen::look_background(look) == Background::Backdrop;
+        let background = lock_screen::applied(lock, false).background;
+        let mut tiles = Vec::new();
+        let mut first: Option<gtk::ToggleButton> = None;
+        for index in 0..TILE_NAMES.len() {
+            let picture = background_tile(&self.theme, index, backdrop, wallpaper, &background);
+            let (button, badge) = widgets::picture_card(&tile_title(index), &picture);
+            match &first {
+                Some(first) => button.set_group(Some(first)),
+                None => first = Some(button.clone()),
+            }
+            self.background_flow.append(&button);
+            // The card takes the focus, not the box the flow wraps it in.
+            if let Some(child) = button.parent() {
+                child.set_focusable(false);
+            }
+            // A click always asks, so Colour and Picture open their dialogs
+            // again when they are the one chosen.
+            let weak = Rc::downgrade(self);
+            button.connect_clicked(move |_| {
+                if let Some(ui) = weak.upgrade() {
+                    ui.pick_background(index);
+                }
+            });
+            tiles.push(Tile { button, badge });
+        }
+        *self.tiles.borrow_mut() = tiles;
+    }
+
     /// Shows why a change was not written, or takes an old message away.
     fn report(&self, result: Result<(), String>) {
         match result {
@@ -487,7 +619,8 @@ impl Ui {
                     _ => self.theme.tokens().accent,
                 };
                 let weak = Rc::downgrade(self);
-                widgets::choose_colour(&self.background.widget(), start, move |picked| {
+                let near = self.background_flow.clone().upcast::<gtk::Widget>();
+                widgets::choose_colour(&near, start, move |picked| {
                     let Some(ui) = weak.upgrade() else {
                         return;
                     };
@@ -500,7 +633,8 @@ impl Ui {
             }
             _ => {
                 let weak = Rc::downgrade(self);
-                widgets::choose_pictures(&self.background.widget(), move |picked| {
+                let near = self.background_flow.clone().upcast::<gtk::Widget>();
+                widgets::choose_pictures(&near, move |picked| {
                     let Some(ui) = weak.upgrade() else {
                         return;
                     };
@@ -536,18 +670,28 @@ fn write_background(value: &str) -> Result<(), String> {
     files.choose_over(BACKGROUND, value, Some(&background_release(&files)))
 }
 
-/// A look's card picture: its parts on the screen, drawn as the lock draws
-/// them, over the navy scene for classic and the mid grey-blue for the rest
-/// (the wallpaper behind them, blurred), in the tokens' colours.
-fn look_picture(theme: &Rc<Theme>, parts: Vec<Placed>, backdrop: bool) -> gtk::DrawingArea {
+/// A look's picture of `w` by `h` logical pixels: its parts on the screen,
+/// drawn as the lock draws them, over the navy scene for classic and the
+/// mid grey-blue for the rest (the wallpaper behind them, blurred), in the
+/// tokens' colours. It draws `shown` as it is each time, so a change to it
+/// is drawn in place.
+fn look_picture(
+    theme: &Rc<Theme>,
+    shown: &Rc<RefCell<LookShown>>,
+    w: i32,
+    h: i32,
+) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::builder()
-        .content_width(CARD_W)
-        .content_height(CARD_H)
+        .content_width(w)
+        .content_height(h)
         .build();
     let drawn = theme.clone();
+    let shown = shown.clone();
     area.set_draw_func(move |_, cr, w, h| {
         let t = drawn.tokens();
-        draw_look(cr, f64::from(w), f64::from(h), &parts, backdrop, &t);
+        let guard = shown.borrow();
+        let (parts, backdrop) = &*guard;
+        draw_look(cr, f64::from(w), f64::from(h), parts, *backdrop, &t);
     });
     let weak = area.downgrade();
     theme.watch(move || {
@@ -564,30 +708,13 @@ fn look_picture(theme: &Rc<Theme>, parts: Vec<Placed>, backdrop: bool) -> gtk::D
 /// places, scaled to the card).
 fn draw_look(cr: &Context, w: f64, h: f64, parts: &[Placed], backdrop: bool, t: &Tokens) {
     let scale = w / f64::from(SCREEN.0);
-    preview::rounded(cr, 0.0, 0.0, w, h, f64::from(t.radius_window) * scale);
-    cr.clip();
+    clip(cr, w, h, f64::from(t.radius_window) * scale);
     if backdrop {
-        let gradient = LinearGradient::new(0.0, 0.0, 0.0, h);
-        let (top, deep) = (t.lock_backdrop, t.lock_backdrop_deep);
-        gradient.add_color_stop_rgba(
-            0.0,
-            f64::from(top.r),
-            f64::from(top.g),
-            f64::from(top.b),
-            1.0,
-        );
-        gradient.add_color_stop_rgba(
-            1.0,
-            f64::from(deep.r),
-            f64::from(deep.g),
-            f64::from(deep.b),
-            1.0,
-        );
-        let _ = cr.set_source(&gradient);
+        gradient(cr, h, t.lock_backdrop, t.lock_backdrop_deep);
     } else {
         preview::set(cr, t.backdrop);
+        let _ = cr.paint();
     }
-    let _ = cr.paint();
     for (part, rect) in parts.iter().zip(on_screen(parts)) {
         let Some(r) = rect else {
             continue;
@@ -615,9 +742,155 @@ fn draw_look(cr: &Context, w: f64, h: f64, parts: &[Placed], backdrop: bool, t: 
     }
 }
 
-/// The Lock screen page (M5.10c5c): the looks, the background, the clock
-/// and the date, and the count of notifications, each row with its Reset,
-/// Copy as command and where its value comes from.
+/// Clips `cr` to a `w` by `h` rectangle with corners of `radius`.
+fn clip(cr: &Context, w: f64, h: f64, radius: f64) {
+    preview::rounded(cr, 0.0, 0.0, w, h, radius);
+    cr.clip();
+}
+
+/// Paints the current clip with a gradient from `top` at the top edge to
+/// `deep` at the height `h`.
+fn gradient(cr: &Context, h: f64, top: Colour, deep: Colour) {
+    let gradient = LinearGradient::new(0.0, 0.0, 0.0, h);
+    gradient.add_color_stop_rgba(
+        0.0,
+        f64::from(top.r),
+        f64::from(top.g),
+        f64::from(top.b),
+        1.0,
+    );
+    gradient.add_color_stop_rgba(
+        1.0,
+        f64::from(deep.r),
+        f64::from(deep.g),
+        f64::from(deep.b),
+        1.0,
+    );
+    let _ = cr.set_source(&gradient);
+    let _ = cr.paint();
+}
+
+/// The tile of background `index` (M5.32b): the look's own and navy as the
+/// lock draws them; blurred and sharp show the wallpaper that applies, else
+/// the gradient; Colour the colour the file names, else the accent; Picture
+/// the picture the file names, else the picture icon on the card.
+fn background_tile(
+    theme: &Rc<Theme>,
+    index: usize,
+    backdrop: bool,
+    wallpaper: Option<&Path>,
+    background: &Background,
+) -> gtk::Widget {
+    match index {
+        0 => drawn_tile(theme, move |cr, w, h, t| {
+            draw_look(cr, w, h, &[], backdrop, t)
+        }),
+        1 => drawn_tile(theme, |cr, w, h, t| {
+            clip(cr, w, h, f64::from(t.radius_small));
+            gradient(cr, h, t.lock_backdrop, t.lock_backdrop_deep);
+        }),
+        2 | 3 => match wallpaper.and_then(|path| picture_texture(path, index == 2)) {
+            Some(texture) => texture_tile(&texture),
+            None => drawn_tile(theme, |cr, w, h, t| {
+                clip(cr, w, h, f64::from(t.radius_small));
+                gradient(cr, h, t.backdrop, t.backdrop_deep);
+            }),
+        },
+        4 => {
+            let named = match background {
+                Background::Colour(colour) => Some(*colour),
+                _ => None,
+            };
+            drawn_tile(theme, move |cr, w, h, t| {
+                clip(cr, w, h, f64::from(t.radius_small));
+                preview::set(cr, named.unwrap_or(t.accent));
+                let _ = cr.paint();
+            })
+        }
+        _ => match background {
+            Background::Picture(path) => match picture_texture(path, false) {
+                Some(texture) => texture_tile(&texture),
+                None => blank_tile(),
+            },
+            _ => blank_tile(),
+        },
+    }
+}
+
+/// A tile drawn by `draw` in the tokens' colours, drawn again when they
+/// change.
+fn drawn_tile(
+    theme: &Rc<Theme>,
+    draw: impl Fn(&Context, f64, f64, &Tokens) + 'static,
+) -> gtk::Widget {
+    let area = gtk::DrawingArea::builder()
+        .content_width(TILE_W)
+        .content_height(TILE_H)
+        .css_classes(["edel-wallpaper-thumb"])
+        .build();
+    let drawn = theme.clone();
+    area.set_draw_func(move |_, cr, w, h| {
+        let t = drawn.tokens();
+        draw(cr, f64::from(w), f64::from(h), &t);
+    });
+    let weak = area.downgrade();
+    theme.watch(move || {
+        if let Some(area) = weak.upgrade() {
+            area.queue_draw();
+        }
+    });
+    area.upcast()
+}
+
+/// A picture as a tile: the texture cropped to the tile's size.
+fn texture_tile(texture: &gdk::Texture) -> gtk::Widget {
+    let picture = gtk::Picture::for_paintable(texture);
+    picture.set_content_fit(gtk::ContentFit::Cover);
+    picture.set_can_shrink(false);
+    picture.set_size_request(TILE_W, TILE_H);
+    picture.set_overflow(gtk::Overflow::Hidden);
+    picture.add_css_class("edel-wallpaper-thumb");
+    picture.upcast()
+}
+
+/// The picture at `path` as a texture the tile's size, cropped to fill it,
+/// blurred when `blur` as the lock blurs its wallpaper. None when it cannot
+/// be read, and the tile then shows what it shows without a picture.
+fn picture_texture(path: &Path, blur: bool) -> Option<gdk::Texture> {
+    let mut pixmap = edel::pictures::load(path, TILE_READ).ok()?;
+    if blur {
+        edel::pictures::blur(&mut pixmap, BLUR_RADIUS);
+    }
+    let (w, h) = (pixmap.width(), pixmap.height());
+    let bytes = glib::Bytes::from(pixmap.data());
+    Some(
+        gdk::MemoryTexture::new(
+            w as i32,
+            h as i32,
+            gdk::MemoryFormat::R8g8b8a8Premultiplied,
+            &bytes,
+            w as usize * 4,
+        )
+        .upcast(),
+    )
+}
+
+/// A tile with no picture: the picture icon centred on the card's colour.
+fn blank_tile() -> gtk::Widget {
+    let tile = gtk::Box::builder()
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-tile-blank"])
+        .build();
+    tile.set_size_request(TILE_W, TILE_H);
+    tile.append(&icon::image("picture", 24));
+    tile.upcast()
+}
+
+/// The Lock screen page (M5.10c5c, M5.32b): what applies at the top, then
+/// the looks, the background, the clock and the date, and the count of
+/// notifications, each row with its Reset, Copy as command and where its
+/// value comes from.
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let files = Files::here();
     let (page, content, problem) = widgets::page(
@@ -627,7 +900,75 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         ),
     );
 
-    let look_source = widgets::section(&content, tr("Look"));
+    // What applies now (M5.32b): its picture, its name, a line, and Edit
+    // lock screen beside the quiet Save as. Narrow, the picture stacks on
+    // top at full width (the aspect frame keeps its 16:10 shape).
+    let shown: Rc<RefCell<LookShown>> = Rc::new(RefCell::new((Vec::new(), false)));
+    let picture = look_picture(theme, &shown, HERO_W, HERO_H);
+    let frame = gtk::AspectFrame::builder()
+        .ratio(16.0 / 10.0)
+        .obey_child(false)
+        .child(&picture)
+        .build();
+    let title = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-current-title"])
+        .build();
+    let line = gtk::Label::builder()
+        .label(tr(
+            "Edit it where it is: move, add or take away parts on the lock itself.",
+        ))
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-intro"])
+        .build();
+    let edit = widgets::action(tr("Edit lock screen"), true);
+    let save = widgets::action(tr("Save as"), false);
+    for button in [&edit, &save] {
+        button.add_css_class("edel-current-button");
+    }
+    let buttons = gtk::Box::builder()
+        .spacing(10)
+        .halign(gtk::Align::Start)
+        .margin_top(12)
+        .build();
+    buttons.append(&edit);
+    buttons.append(&save);
+    let words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(4)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    words.append(&title);
+    words.append(&line);
+    words.append(&buttons);
+    let current = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(20)
+        .hexpand(true)
+        .css_classes(["edel-group", "edel-current"])
+        .build();
+    current.append(&frame);
+    current.append(&words);
+    let bin = adw::BreakpointBin::builder()
+        .hexpand(true)
+        .child(&current)
+        .build();
+    // The page's narrow breakpoint, as the window's: the card is what it
+    // measures, and at that width it stacks.
+    if let Ok(condition) = adw::BreakpointCondition::parse(crate::NARROW) {
+        let narrow = adw::Breakpoint::new(condition);
+        narrow.add_setter(
+            &current,
+            "orientation",
+            Some(&gtk::Orientation::Vertical.to_value()),
+        );
+        bin.add_breakpoint(narrow);
+    }
+    content.append(&bin);
+
     let looks = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .homogeneous(true)
@@ -636,44 +977,26 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .column_spacing(12)
         .row_spacing(12)
         .build();
+    let look_source = widgets::section(&content, tr("Looks"));
+    let looks_head = content
+        .last_child()
+        .unwrap_or_else(|| looks.clone().upcast());
     content.append(&looks);
-    let note = gtk::Label::builder()
-        .label(tr("Your own arrangement; choose a look to replace it"))
-        .xalign(0.0)
-        .wrap(true)
-        .visible(false)
-        .css_classes(["edel-intro"])
-        .build();
-    content.append(&note);
-    // Save as and Edit lock screen side by side: the edit mode is shell-ui's,
-    // opened over the desktop, and writes only when Done is pressed there.
-    let save = widgets::action(tr("Save as"), false);
-    let edit = widgets::action(tr("Edit lock screen"), false);
-    let buttons = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .halign(gtk::Align::Start)
-        .margin_top(12)
-        .build();
-    buttons.append(&save);
-    buttons.append(&edit);
-    content.append(&buttons);
 
-    let background = widgets::Segments::new(&[
-        tr("Look's own").to_string(),
-        tr("Navy").to_string(),
-        tr("Wallpaper blurred").to_string(),
-        tr("Wallpaper sharp").to_string(),
-        tr("Colour").to_string(),
-        tr("Picture").to_string(),
-    ]);
-    let background_group = widgets::group(&content);
-    background_group.set_margin_top(20);
-    let background_row = widgets::row(
-        &background_group,
-        rows::title(BACKGROUND),
-        &background.widget(),
-    );
+    // The background's tiles (M5.32b): six pictures, wrapping to the width.
+    let tiles = gtk::FlowBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .homogeneous(true)
+        .min_children_per_line(1)
+        .max_children_per_line(6)
+        .column_spacing(12)
+        .row_spacing(12)
+        .build();
+    let background_source = widgets::section(&content, tr("Background"));
+    let background_head = content
+        .last_child()
+        .unwrap_or_else(|| tiles.clone().upcast());
+    content.append(&tiles);
 
     widgets::heading(&content, tr("Clock and date"));
     let clock_group = widgets::group(&content);
@@ -698,7 +1021,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let count = gtk::Switch::new();
     let count_row = widgets::row(
         &count_group,
-        tr("Show the count of unread notifications"),
+        tr("Unread notifications count"),
         &count.clone().upcast(),
     );
 
@@ -713,13 +1036,19 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     }
     let ui = Rc::new(Ui {
         theme: theme.clone(),
+        current_title: title,
+        current_shown: shown,
+        current_view: picture,
+        looks_head,
         looks: looks.clone(),
         cards: RefCell::new(Vec::new()),
         shown: RefCell::new(Vec::new()),
         look_source,
-        note,
-        background: background.clone(),
-        background_row,
+        background_head,
+        background_source,
+        background_flow: tiles.clone(),
+        tiles: RefCell::new(Vec::new()),
+        tiles_shown: RefCell::new(String::new()),
         face: face.clone(),
         face_row,
         hours: hours.clone(),
@@ -741,15 +1070,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             }
         });
     }
-    wire(
-        &ui,
-        (&save, &edit),
-        &background,
-        &face,
-        &date,
-        &hours,
-        &count,
-    );
+    wire(&ui, (&save, &edit), &face, &date, &hours, &count);
     log_places(&looks, &ui);
 
     // The page's state lives as long as the page does.
@@ -765,7 +1086,6 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
 fn wire(
     ui: &Rc<Ui>,
     (save, edit): (&gtk::Button, &gtk::Button),
-    background: &Rc<widgets::Segments>,
     face: &Rc<widgets::Segments>,
     date: &Rc<widgets::Segments>,
     hours: &gtk::Switch,
@@ -804,16 +1124,6 @@ fn wire(
         }
     });
 
-    let weak = Rc::downgrade(ui);
-    background.connect_changed(move || {
-        let Some(ui) = weak.upgrade() else {
-            return;
-        };
-        if !ui.quiet.get() {
-            let index = ui.background.selected();
-            ui.pick_background(index);
-        }
-    });
     let weak = Rc::downgrade(ui);
     face.connect_changed(move || {
         let Some(ui) = weak.upgrade() else {
@@ -872,7 +1182,7 @@ fn wire(
         }
     });
     let weak = Rc::downgrade(ui);
-    ui.background_row.reset.connect_clicked(move |_| {
+    ui.background_source.reset.connect_clicked(move |_| {
         if let Some(ui) = weak.upgrade() {
             ui.report(reset_person(&Files::here(), BACKGROUND));
             ui.update();
@@ -916,7 +1226,7 @@ fn wire(
             command_for(LOOK)
         }
     });
-    copy(&ui.background_row.copy, || command_for(BACKGROUND));
+    copy(&ui.background_source.copy, || command_for(BACKGROUND));
     for row in [&ui.face_row, &ui.hours_row, &ui.date_row] {
         copy(&row.copy, || command_for(PARTS));
     }
@@ -1009,13 +1319,18 @@ fn ask_name(ui: &Rc<Ui>, near: &gtk::Widget) {
     entry.grab_focus();
 }
 
-/// Logs where the looks' cards and the section's Reset lie in the window,
-/// once the page is laid out, for CI to click (logical pixels), as
-/// `edel-settings: lock_screen group places classic X+Y+WxH magazine
-/// X+Y+WxH minimal X+Y+WxH, reset X+Y+WxH`. It logs once two frames agree.
+/// Logs where the looks' cards and the section's Reset, and the background's
+/// tiles, lie in the window, once the page is laid out, for CI to click
+/// (logical pixels), as `edel-settings: lock_screen group places classic
+/// X+Y+WxH magazine X+Y+WxH minimal X+Y+WxH, reset X+Y+WxH` and `edel-settings:
+/// lock background places look X+Y+WxH navy X+Y+WxH ...`. Asked for by
+/// `lock_screen.look` or `lock_screen.background`, the page first scrolls that
+/// section to the top and gives the keyboard to its first card or the chosen
+/// tile (M5.32b). It logs once two frames agree, after the scroll.
 fn log_places(looks: &gtk::FlowBox, ui: &Rc<Ui>) {
     let weak = Rc::downgrade(ui);
     let last = RefCell::new(String::new());
+    let scrolled = Cell::new(false);
     looks.add_tick_callback(move |flow, _| {
         let Some(window) = flow.root().and_downcast::<gtk::Window>() else {
             return glib::ControlFlow::Continue;
@@ -1030,6 +1345,10 @@ fn log_places(looks: &gtk::FlowBox, ui: &Rc<Ui>) {
         if cards.is_empty() {
             return glib::ControlFlow::Continue;
         }
+        if !scrolled.replace(true) {
+            ask_for(&ui, &cards, flow.upcast_ref());
+            return glib::ControlFlow::Continue;
+        }
         let places: Vec<String> = cards
             .iter()
             .map(|card| {
@@ -1040,19 +1359,65 @@ fn log_places(looks: &gtk::FlowBox, ui: &Rc<Ui>) {
                 )
             })
             .collect();
-        let line = format!(
+        let looks_line = format!(
             "edel-settings: lock_screen group places {}, reset {}",
             places.join(" "),
             widgets::place(ui.look_source.reset.compute_bounds(&window)),
         );
+        let tiles = ui.tiles.borrow();
+        let tile_places: Vec<String> = tiles
+            .iter()
+            .zip(TILE_NAMES)
+            .map(|(tile, name)| {
+                format!(
+                    "{name} {}",
+                    widgets::place(tile.button.compute_bounds(&window))
+                )
+            })
+            .collect();
+        let background_line = format!(
+            "edel-settings: lock background places {}",
+            tile_places.join(" ")
+        );
+        let both = format!("{looks_line}\n{background_line}");
         // The view settles over a few frames, so the places are logged only
         // once two frames agree.
-        if last.replace(line.clone()) != line {
+        if last.replace(both.clone()) != both {
             return glib::ControlFlow::Continue;
         }
-        eprintln!("{line}");
+        eprintln!("{looks_line}");
+        eprintln!("{background_line}");
         glib::ControlFlow::Break
     });
+}
+
+/// Scrolls the section `--page` asked for to the top and gives the keyboard
+/// to its control, once the page is laid out (M5.32b); a page not asked for
+/// by one of these keys is left as it is.
+fn ask_for(ui: &Ui, cards: &[LookCard], flow: &gtk::Widget) {
+    // The page is the one asked for by name; a page opened from the sidebar
+    // has no such class and keeps the keyboard where it is.
+    let Some(page) = std::iter::successors(Some(flow.clone()), gtk::Widget::parent)
+        .find(|w| w.has_css_class(widgets::ASKED))
+    else {
+        return;
+    };
+    match widgets::asked_row() {
+        Some(LOOK) => {
+            widgets::scroll_to_top(&ui.looks_head);
+            if let Some(first) = cards.first() {
+                widgets::take_asked(&page, &first.button);
+            }
+        }
+        Some(BACKGROUND) => {
+            widgets::scroll_to_top(&ui.background_head);
+            let tiles = ui.tiles.borrow();
+            if let Some(chosen) = tiles.iter().find(|tile| tile.button.is_active()) {
+                widgets::take_asked(&page, &chosen.button);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -1207,5 +1572,60 @@ mod tests {
         assert_eq!(names, ["classic", "magazine", "minimal", "home"]);
         assert_eq!(look_title("magazine"), "Magazine");
         assert_eq!(look_title("home"), "Home");
+    }
+
+    #[test]
+    fn the_current_look_is_titled_by_its_name_or_as_the_persons_own() {
+        let by_name = LockScreen {
+            look: Some("magazine".to_string()),
+            ..LockScreen::default()
+        };
+        assert_eq!(current_title(&by_name), "Magazine");
+        assert_eq!(current_title(&LockScreen::default()), "Classic");
+        let own = LockScreen {
+            parts: Some(lock_screen::classic(false)),
+            look: Some("magazine".to_string()),
+            ..LockScreen::default()
+        };
+        assert_eq!(current_title(&own), "Your own arrangement");
+    }
+
+    #[test]
+    fn the_background_tiles_are_six_in_the_order_people_see_them() {
+        let titles: Vec<String> = (0..6).map(tile_title).collect();
+        assert_eq!(
+            titles,
+            [
+                "The look's own",
+                "Navy",
+                "Blurred",
+                "Sharp",
+                "Colour",
+                "Picture"
+            ]
+        );
+        assert_eq!(TILE_NAMES.len(), titles.len());
+    }
+
+    #[test]
+    fn the_tile_chosen_is_the_one_the_background_value_names() {
+        // Absent and a value that is no background are the look's own.
+        assert_eq!(choice_at(None), 0);
+        assert_eq!(choice_at(Some("look")), 0);
+        assert_eq!(choice_at(Some("backdrop")), 1, "navy is written backdrop");
+        assert_eq!(choice_at(Some("blurred")), 2);
+        assert_eq!(choice_at(Some("sharp")), 3);
+        assert_eq!(choice_at(Some("#336699")), 4);
+        assert_eq!(choice_at(Some("/home/you/lock.png")), 5);
+    }
+
+    #[test]
+    fn the_pictures_keep_the_shape_of_sixteen_to_ten() {
+        assert_eq!((HERO_W, HERO_H), (240, 150));
+        assert_eq!((CARD_W, CARD_H), (160, 100));
+        assert_eq!((TILE_W, TILE_H), (96, 60));
+        for (w, h) in [(HERO_W, HERO_H), (CARD_W, CARD_H), (TILE_W, TILE_H)] {
+            assert_eq!(w * 10, h * 16, "{w} by {h}");
+        }
     }
 }

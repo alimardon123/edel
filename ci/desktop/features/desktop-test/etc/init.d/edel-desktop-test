@@ -538,7 +538,7 @@ commands() {
 		# Settings' Lock screen page (M5.10c5c): opened by the name of the
 		# lock screen's section, its log says where each look's card lies.
 		'settings lock')
-			as_ci edel-settings --page lock_screen </dev/null >/tmp/settings-lock.log 2>&1 &
+			as_ci edel-settings --page lock_screen.look </dev/null >/tmp/settings-lock.log 2>&1 &
 			;;
 		'settings lock log') say "settings_lock_log $(tr '\n' ';' </tmp/settings-lock.log 2>/dev/null)" ;;
 		# Settings' Shape group (M5.12b2c): opened by the name of the gaps
