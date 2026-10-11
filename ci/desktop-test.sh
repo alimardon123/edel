@@ -3729,10 +3729,15 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	# The lock's places line, waited for whole (it ends with the power
+	# button), as the screen can be drawn before the line is logged.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}')
 	python3 ci/qmp.py key meta_l-l
 	wait_for 'edel-compositor: screen locked$' || fail "Super+L did not lock the screen"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up its lock screen"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}' "$placed" ||
+		fail "shell-ui did not log the lock's places: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
 	deep=$(token lock_backdrop_deep)
 	shot lock 640 790 "$deep" >/dev/null ||
 		fail "the locked screen at 640,790 is not the lock's #$deep but $(python3 ci/qmp.py pixel "$dir/lock.png" 640 790)"
