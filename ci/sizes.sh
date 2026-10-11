@@ -2,7 +2,8 @@
 # Checks the budgets in ci/budgets.toml (roadmap M3.2) and writes them, with
 # the image sizes, as Markdown tables to the run summary. Boot time, memory
 # in use and root size are the median of three boots of the VM image, read
-# from the line edel-boot-ok prints. Fails the job when a measurement is
+# from the line edel-boot-ok prints; the image sizes are the container's
+# and the desktop's update image. Fails the job when a measurement is
 # over its budget; CI runs it even after a failure, and then it only
 # reports what was built.
 set -eu
@@ -11,6 +12,7 @@ set -eu
 summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 container=out/edel-container-x86_64.tar.gz
 vm=out/edel-vm-x86_64.img
+desktop=out/edel-desktop-x86_64.ext4.gz
 
 # budget KEY: the number KEY has in ci/budgets.toml.
 budget() {
@@ -54,6 +56,11 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 		echo "$line" >>out/budgets.txt
 	done
 	check 'Container image (tar.gz)' "$(awk -v b="$(stat -c %s "$container")" 'BEGIN { printf "%.1f", b / 1048576 }')" container_mib MiB
+	# What a person downloads to update the desktop (M5.10c4c): its slot's
+	# image, compressed, the wallpapers and the fonts included.
+	if [ -e "$desktop" ]; then
+		check 'Desktop update image (ext4.gz)' "$(awk -v b="$(stat -c %s "$desktop")" 'BEGIN { printf "%.1f", b / 1048576 }')" desktop_image_mib MiB
+	fi
 	check 'VM root used' "$(cut -d' ' -f3 out/budgets.txt | median)" vm_root_mib MiB
 	check 'VM boot to confirmed slot' "$(cut -d' ' -f1 out/budgets.txt | median)" vm_boot_seconds s
 	check 'VM memory in use after boot' "$(cut -d' ' -f2 out/budgets.txt | median)" vm_memory_mib MiB
