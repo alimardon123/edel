@@ -27,7 +27,7 @@ use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
 
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::settings;
 
 use crate::files::Files;
@@ -162,8 +162,10 @@ struct Ui {
     monitors: RefCell<Vec<gio::FileMonitor>>,
 }
 
+const INTRO: &str = n_("Edel OS updates as a whole, and can always go back.");
+
 pub fn page() -> gtk::Widget {
-    let (page, content, problem) = widgets::page(tr("Updates"), "");
+    let (page, content, problem) = widgets::page(tr("Updates"), tr(INTRO));
 
     let hero = widgets::Hero::new(&content);
     let primary = widgets::big_button(tr("Check for updates"), true);
@@ -183,21 +185,9 @@ pub fn page() -> gtk::Widget {
     let group = widgets::group(&content);
     let holder = gtk::Box::builder().build();
     let channel_row = widgets::row(&group, rows::title("updates.channel"), holder.upcast_ref());
-    // Seam (ADR-008): `updates.automatic` and `updates.restart_window` are
-    // keys of the table that nothing follows yet (M7.5). Until then this
-    // row only says so; with M7.5 it becomes a row of the key, like Channel.
-    let switch = gtk::Switch::new();
-    switch.set_sensitive(false);
-    let automatic = widgets::row(
-        &group,
-        tr("Install updates automatically"),
-        switch.upcast_ref(),
-    );
-    automatic
-        .subtitle
-        .set_label(tr("Not available yet. For now, check for updates here."));
-    automatic.reset.set_visible(false);
-    automatic.copy.set_visible(false);
+    // The automatic updates row (`updates.automatic` and
+    // `updates.restart_window`) comes with M7.5, as a row of the key like
+    // Channel; until then nothing here claims it.
 
     // Details, closed: the slots, and the last command as it ran.
     let inner = gtk::Box::builder()

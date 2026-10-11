@@ -86,7 +86,17 @@ pub enum Over {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Undo {
     Panels(Vec<presets::Panel>),
-    LockScreen(Option<String>),
+    LockScreen(LockBefore),
+}
+
+/// The lines of the person's lock screen settings before Done wrote them
+/// (M5.10c6c3): the look, the parts and the background, each as its value,
+/// None for no line. Undo puts all three back.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LockBefore {
+    pub look: Option<String>,
+    pub parts: Option<String>,
+    pub background: Option<String>,
 }
 
 /// The words the Undo bar says for what it undoes (M5.10c6).
@@ -112,7 +122,7 @@ pub struct UndoBar {
 /// Marks each tile placed when a panel in `now` holds its widget.
 fn mark_placed(view: &mut View, now: &[presets::Panel]) {
     for tile in &mut view.tiles {
-        tile.placed = panel_edit::find(now, tile.name).is_some();
+        tile.placed = panel_edit::find(now, &tile.name).is_some();
     }
 }
 
@@ -259,14 +269,19 @@ impl Shell {
         let compact = width > 0 && width < quick::COMPACT_BELOW;
         let mut view = View {
             kind: Kind::Panels,
+            tabs: Vec::new(),
+            tab: 0,
+            tallest: 0,
             tiles: usable
                 .iter()
                 .map(|w| Tile {
                     icon: "",
-                    name: w.name,
+                    name: w.name.to_string(),
                     title: tr(w.title).to_string(),
                     shown: (w.shows)(&self.live),
                     placed: false,
+                    chosen: false,
+                    picture: None,
                 })
                 .collect(),
             compact,
@@ -487,7 +502,8 @@ impl Shell {
             Step::Act(Act::Undo) => self.undo_editor(),
             Step::Act(Act::Done) => self.close_editor(true),
             Step::Act(Act::Close) => self.close_editor(false),
-            Step::Nothing => {}
+            // The panels' drawer has no tabs (M5.10c6c3).
+            Step::Tab(_) | Step::Nothing => {}
         }
     }
 
@@ -528,7 +544,7 @@ impl Shell {
                 Some(Part::Undo) => self.undo_editor(),
                 Some(Part::Done) => self.close_editor(true),
                 Some(Part::Tile(tile)) => self.start_tile_drag(tile, at),
-                None => {}
+                Some(Part::Tab(_)) | None => {}
             },
             PointerEventKind::Release { button, .. } if *button == BTN_LEFT => self.end_drag(),
             _ => {}
@@ -702,7 +718,13 @@ impl Shell {
         if tile.placed {
             return;
         }
-        let name = tile.name;
+        let Some(name) = crate::widgets::TABLE
+            .iter()
+            .find(|w| w.name == tile.name)
+            .map(|w| w.name)
+        else {
+            return;
+        };
         self.begin_drag(Drag {
             name,
             from: None,
@@ -1008,7 +1030,7 @@ impl Shell {
                 }
             }
             Undo::LockScreen(before) => {
-                if let Some(what) = self.save_lock_parts(before.as_deref()) {
+                if let Some(what) = self.save_lock_lines(&before) {
                     eprintln!("edel-shell-ui: lock screen undone, {what}");
                 }
             }

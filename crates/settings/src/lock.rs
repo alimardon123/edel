@@ -16,8 +16,10 @@ use gtk::cairo::{Context, LinearGradient};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Background, DateStyle, Face, Item, Part, Placed, Rect};
+use edel::i18n::{n_, tr, trf};
+use edel::lock_screen::{
+    self, BACKGROUND, Background, DateStyle, Face, Item, LOOK, Part, Placed, Rect,
+};
 use edel::panel_edit::EDIT_LOCK_SCREEN;
 use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
@@ -26,9 +28,9 @@ use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::{panels, preview, rows, widgets};
 
+const INTRO: &str = n_("How the lock and login screens look.");
+
 /// The keys this page chooses.
-const LOOK: &str = "lock_screen.look";
-const BACKGROUND: &str = "lock_screen.background";
 const PARTS: &str = lock_screen::PARTS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
@@ -620,12 +622,7 @@ fn draw_look(cr: &Context, w: f64, h: f64, parts: &[Placed], backdrop: bool, t: 
 /// Copy as command and where its value comes from.
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let files = Files::here();
-    let (page, content, problem) = widgets::page(
-        tr("Lock screen"),
-        tr(
-            "How the lock and login screens look. Each choice here is also a line of your settings file and an edel settings set command.",
-        ),
-    );
+    let (page, content, problem) = widgets::page(tr("Lock screen"), tr(INTRO));
 
     let look_source = widgets::section(&content, tr("Look"));
     let looks = gtk::FlowBox::builder()
