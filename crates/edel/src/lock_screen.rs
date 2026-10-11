@@ -1175,6 +1175,12 @@ pub fn nudged(placed: &Placed, dx: i32, dy: i32) -> Placed {
 /// lock and login screens' edit mode and Settings' Lock screen page write it.
 pub const PARTS: &str = "lock_screen.parts";
 
+/// The settings key the look's name is written to (M5.10c5c, M5.10c6c3).
+pub const LOOK: &str = "lock_screen.look";
+
+/// The settings key the background is written to (M5.10c5c, M5.10c6c3).
+pub const BACKGROUND: &str = "lock_screen.background";
+
 /// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
 /// list of tables in one line, absent options left out (M5.10c6). Settings'
 /// Lock screen page and the edit mode both write the list this way, so the

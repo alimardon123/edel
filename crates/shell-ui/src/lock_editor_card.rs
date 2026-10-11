@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use edel::i18n::tr;
-use edel::lock_screen::{self, Background, Part, Placed};
+use edel::lock_screen::{self, BACKGROUND, Background, LOOK, Part, Placed};
 use edel::places;
 use edel::presets::Edge;
 use edel::settings::{self, LockScreen};
@@ -65,8 +65,6 @@ struct Saved {
 const NOTHING: &str = "nothing to write";
 /// The three settings keys the edit mode writes (M5.10c6c3): the look, the
 /// parts (`lock_screen::PARTS`) and the background.
-const LOOK: &str = "lock_screen.look";
-const BACKGROUND: &str = "lock_screen.background";
 /// The Settings page the part card's button opens (M5.10c6c2).
 const LOCK_PAGE: &str = "lock_screen";
 
@@ -1199,7 +1197,7 @@ impl Shell {
             }
         };
         let edits = [
-            (LOOK, lines.look, before.look.clone(), "lock_screen.look"),
+            (LOOK, lines.look, before.look.clone(), LOOK),
             (
                 lock_screen::PARTS,
                 lines.parts,
@@ -1210,7 +1208,7 @@ impl Shell {
                 BACKGROUND,
                 lines.background,
                 before.background.clone(),
-                "lock_screen.background",
+                BACKGROUND,
             ),
         ];
         let changed: Vec<_> = edits
@@ -1318,17 +1316,13 @@ impl Shell {
             return None;
         };
         let lines = [
-            (LOOK, before.look.as_deref(), "lock_screen.look"),
+            (LOOK, before.look.as_deref(), LOOK),
             (
                 lock_screen::PARTS,
                 before.parts.as_deref(),
                 "lock_screen.parts",
             ),
-            (
-                BACKGROUND,
-                before.background.as_deref(),
-                "lock_screen.background",
-            ),
+            (BACKGROUND, before.background.as_deref(), BACKGROUND),
         ];
         let mut words = Vec::new();
         for (key, value, word) in lines {
