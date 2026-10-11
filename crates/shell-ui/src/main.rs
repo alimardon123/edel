@@ -20,6 +20,7 @@ mod apps_drag;
 mod banner;
 mod calendar;
 mod centre;
+mod clock_face;
 mod corner;
 mod editor;
 mod editor_card;

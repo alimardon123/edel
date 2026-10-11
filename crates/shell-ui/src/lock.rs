@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use edel::app_icons::Icons;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, Item, Part, Placed};
+use edel::lock_screen::{self, Anchor, DatePart, DateStyle, Face as ClockFace, Item, Part, Placed};
 use edel::tokens::{Colour, Tokens};
 use tiny_skia::{
     FillRule, GradientStop, Paint, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient,
@@ -84,6 +84,38 @@ pub struct View {
     /// The row of people (M5.10c) that takes the disc and the name's place
     /// when there is one; None on the lock screen.
     pub people: Option<crate::people::Row>,
+    /// The time and the date as numbers, which the clock's faces and the
+    /// date's format are drawn from (M5.10c5b); None draws `time` and `date`
+    /// as they are written, as the tests do.
+    pub when: Option<When>,
+}
+
+/// The time to the minute and the date, as the clock and the date show
+/// them (M5.10c5b); the seconds are left out, so a view stays the same
+/// until the minute changes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct When {
+    pub hour: i8,
+    pub minute: i8,
+    /// 1 for Monday to 7 for Sunday.
+    pub weekday: i8,
+    pub day: i8,
+    pub month: i8,
+    pub year: i16,
+}
+
+impl When {
+    /// `now` to the minute.
+    pub fn of(now: &jiff::Zoned) -> When {
+        When {
+            hour: now.hour(),
+            minute: now.minute(),
+            weekday: now.weekday().to_monday_one_offset(),
+            day: now.day(),
+            month: now.month(),
+            year: now.year(),
+        }
+    }
 }
 
 impl View {
@@ -102,6 +134,7 @@ impl View {
             shake: 0,
             go_hover: false,
             people: None,
+            when: None,
         }
     }
 }
@@ -118,8 +151,15 @@ pub struct Layout {
     /// The date and the clock: each drawn centred across its rectangle.
     pub date: Option<Rect>,
     pub clock: Option<Rect>,
-    /// The clock's font size.
+    /// The clock's font size, its options' size share taken (M5.10c5b).
     pub clock_size: f32,
+    /// The clock's face, its hours (12 or 24) and its weight, and the
+    /// date's parts and style, from their parts' options (M5.10c5b).
+    pub clock_face: ClockFace,
+    pub clock_hours: u8,
+    pub clock_weight: u16,
+    pub date_show: Vec<DatePart>,
+    pub date_style: DateStyle,
     /// The notifications' count, drawn centred in its rectangle; None
     /// while nothing is unread.
     pub count: Option<Rect>,
@@ -180,11 +220,10 @@ const MESSAGE_LINES: usize = 3;
 const MESSAGE_TEXT: f32 = 17.0;
 /// A picture's side in logical pixels: it is cut to a square.
 const PICTURE: f32 = 112.0;
-/// The widest date and the widest time the date and the clock are sized
-/// for. Tabular figures make every time as wide as "88:88", and the widest
-/// English date is a Wednesday in September; a translated date that is
-/// wider is drawn in the same room, cut where it must be.
-const DATE_WIDEST: &str = "Wednesday 28 September";
+/// The widest time the digital clock is sized for: tabular figures make
+/// every time as wide as "88:88". The date is sized for a Wednesday in
+/// September in its own parts and style, the widest English date; a
+/// translated date that is wider is drawn in the same room.
 const CLOCK_WIDEST: &str = "88:88";
 /// The widest count the count is sized for, in its words' size.
 const COUNT_WIDEST: &str = "99 notifications";
@@ -283,7 +322,23 @@ fn place_all(
     text: &mut Text,
 ) -> (Layout, bool) {
     let compact = w < COMPACT_BELOW;
-    let mut clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0);
+    // The clock's and the date's options (M5.10c5b): the first clock and
+    // date of the list, as `check` lets each stand once.
+    let clock_part = parts.iter().find(|p| p.part == Part::Clock);
+    let date_part = parts.iter().find(|p| p.part == Part::Date);
+    let clock_kind = clock_part
+        .and_then(|p| p.face)
+        .unwrap_or(ClockFace::Digital);
+    let clock_hours = clock_part.and_then(|p| p.hours).unwrap_or(24);
+    let clock_weight = clock_part
+        .and_then(|p| p.weight)
+        .unwrap_or(tokens.lock_clock_weight.clamp(100, 900) as u16);
+    let mut clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0)
+        * crate::clock_face::size_share(clock_part.and_then(|p| p.size));
+    let date_show = date_part
+        .and_then(|p| p.show.clone())
+        .unwrap_or_else(|| vec![DatePart::Weekday, DatePart::Day, DatePart::Month]);
+    let date_style = date_part.and_then(|p| p.style).unwrap_or(DateStyle::Long);
     let field_w = FIELD_WIDE.min(w - 2.0 * MARGIN).max(120.0);
     let person_w = if look.people {
         w - 2.0 * MARGIN
@@ -294,15 +349,15 @@ fn place_all(
     // it, as tall as the note's last line (the note is part of the block, so
     // a part at the bottom keeps the note clear of the corner too).
     let person_h = 2.0 * AVATAR + 12.0 + NAME * 1.25 + 14.0 + FIELD_HIGH + 12.0 + NOTE * 1.25;
-    let clock_face = Face {
-        weight: tokens.lock_clock_weight.clamp(100, 900) as u16,
+    let figures = Face {
+        weight: clock_weight,
         tabular: true,
     };
     // The clock is never wider than the screen's room: a wider font (a
     // language's own, or the one a machine without the tokens' font falls
     // back to) shrinks it rather than leaving the time out.
     let room = w - 2.0 * MARGIN;
-    let wide = text.line_in(CLOCK_WIDEST, clock_size, clock_face).width;
+    let wide = text.line_in(CLOCK_WIDEST, clock_size, figures).width;
     if wide > room {
         clock_size *= room / wide;
     }
@@ -317,12 +372,22 @@ fn place_all(
         };
         match p.part {
             Part::Date => {
-                let width = text.line_in(DATE_WIDEST, DATE, Face::REGULAR).width;
+                // The widest date in the date's own parts and style.
+                let widest = crate::clock_face::date_text(3, 28, 9, 2026, &date_show, date_style);
+                let width = text.line_in(&widest, DATE, Face::REGULAR).width;
                 slots.push((Slot::Date, item(width, DATE * 1.25)));
             }
             Part::Clock => {
-                let width = text.line_in(CLOCK_WIDEST, clock_size, clock_face).width;
-                slots.push((Slot::Clock, item(width, clock_size * 1.2)));
+                // The digital face keeps its own measure, as the mockup sets
+                // it; the others take their faces' sizes.
+                let (cw, ch) = match clock_kind {
+                    ClockFace::Digital => (
+                        text.line_in(CLOCK_WIDEST, clock_size, figures).width,
+                        clock_size * 1.2,
+                    ),
+                    face => crate::clock_face::size(face, clock_size, text, clock_weight),
+                };
+                slots.push((Slot::Clock, item(cw, ch)));
             }
             Part::Count if notices => {
                 let words = text.line_in(COUNT_WIDEST, COUNT_TEXT, Face::SEMIBOLD).width;
@@ -426,6 +491,11 @@ fn place_all(
         date,
         clock,
         clock_size,
+        clock_face: clock_kind,
+        clock_hours,
+        clock_weight,
+        date_show,
+        date_style,
         count,
         person,
         avatar: (centre, avatar_y, AVATAR),
@@ -753,12 +823,25 @@ pub fn paint(
     let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
     if let Some(rect) = at.date {
         let centre = rect.x + rect.w / 2.0;
+        let date = view.when.map_or_else(
+            || view.date.clone(),
+            |n| {
+                crate::clock_face::date_text(
+                    n.weekday,
+                    n.day,
+                    n.month,
+                    n.year,
+                    &at.date_show,
+                    at.date_style,
+                )
+            },
+        );
         centred(
             pixmap,
             text,
             s,
             w,
-            &view.date,
+            &date,
             DATE,
             Face::REGULAR,
             (centre, rect.y),
@@ -767,21 +850,49 @@ pub fn paint(
     }
     if let Some(rect) = at.clock {
         let centre = rect.x + rect.w / 2.0;
-        let weight = tokens.lock_clock_weight.clamp(100, 900) as u16;
-        centred(
-            pixmap,
-            text,
-            s,
-            w,
-            &view.time,
-            at.clock_size,
-            Face {
-                weight,
-                tabular: true,
-            },
-            (centre, rect.y),
-            ink,
-        );
+        match (at.clock_face, view.when) {
+            // Another face, drawn by `clock_face` at the time it is (M5.10c5b).
+            (face, Some(n)) if face != ClockFace::Digital => crate::clock_face::draw(
+                pixmap,
+                rect,
+                (n.hour, n.minute, 0),
+                face,
+                at.clock_hours,
+                at.clock_size,
+                at.clock_weight,
+                ink,
+                text,
+                s,
+            ),
+            _ => {
+                let time = view.when.map_or_else(
+                    || view.time.clone(),
+                    |n| {
+                        crate::clock_face::time_lines(
+                            n.hour,
+                            n.minute,
+                            ClockFace::Digital,
+                            at.clock_hours,
+                        )
+                        .concat()
+                    },
+                );
+                centred(
+                    pixmap,
+                    text,
+                    s,
+                    w,
+                    &time,
+                    at.clock_size,
+                    Face {
+                        weight: at.clock_weight,
+                        tabular: true,
+                    },
+                    (centre, rect.y),
+                    ink,
+                );
+            }
+        }
     }
     for (rect, lines, anchor) in &at.messages {
         message(pixmap, text, s, *rect, lines, *anchor, ink);
@@ -1573,6 +1684,12 @@ mod tests {
                 y: 0.21,
                 text: None,
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
             Placed {
                 part: Part::Clock,
@@ -1581,6 +1698,12 @@ mod tests {
                 y: 0.0,
                 text: None,
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
             Placed {
                 part: Part::Message,
@@ -1589,6 +1712,12 @@ mod tests {
                 y: 0.0,
                 text: Some("If found, call 555 0100".into()),
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
         ];
         let corner_at = corner::layout(
@@ -1636,6 +1765,12 @@ mod tests {
                 y: 0.21,
                 text: None,
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
             Placed {
                 part: Part::Clock,
@@ -1644,6 +1779,12 @@ mod tests {
                 y: 0.0,
                 text: None,
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
             Placed {
                 part: Part::Message,
@@ -1652,6 +1793,12 @@ mod tests {
                 y: 0.0,
                 text: Some("If found, call 555 0100".into()),
                 path: None,
+                face: None,
+                hours: None,
+                size: None,
+                weight: None,
+                show: None,
+                style: None,
             },
         ];
         for (w, h) in [(1280.0, 800.0), (360.0, 740.0), (3840.0, 2160.0)] {
@@ -1928,6 +2075,12 @@ mod tests {
                     y: 0.21,
                     text: None,
                     path: None,
+                    face: None,
+                    hours: None,
+                    size: None,
+                    weight: None,
+                    show: None,
+                    style: None,
                 },
                 Placed {
                     part: Part::Clock,
@@ -1936,6 +2089,12 @@ mod tests {
                     y: 0.0,
                     text: None,
                     path: None,
+                    face: None,
+                    hours: None,
+                    size: None,
+                    weight: None,
+                    show: None,
+                    style: None,
                 },
                 Placed {
                     part: Part::Message,
@@ -1944,6 +2103,12 @@ mod tests {
                     y: 0.0,
                     text: Some("If found, call 555 0100".into()),
                     path: None,
+                    face: None,
+                    hours: None,
+                    size: None,
+                    weight: None,
+                    show: None,
+                    style: None,
                 },
             ];
             let corner_at = corner::layout(
@@ -1982,6 +2147,60 @@ mod tests {
                 1.0,
             );
             pixmap.save_png(format!("{dir}/lock-parts.png")).unwrap();
+            // The analog face over a short date with its year (M5.10c5b).
+            let faces: Vec<Placed> = edel::lock_screen::classic(false)
+                .into_iter()
+                .map(|mut p| {
+                    match p.part {
+                        Part::Clock => p.face = Some(ClockFace::Analog),
+                        Part::Date => {
+                            p.show = Some(vec![
+                                DatePart::Weekday,
+                                DatePart::Day,
+                                DatePart::Month,
+                                DatePart::Year,
+                            ]);
+                            p.style = Some(DateStyle::Short);
+                        }
+                        _ => {}
+                    }
+                    p
+                })
+                .collect();
+            let analog = screen_layout(
+                1280.0,
+                800.0,
+                &tokens,
+                false,
+                Some(&faces),
+                None,
+                false,
+                &corner_at,
+                &mut text,
+            );
+            let when = View {
+                when: Some(When {
+                    hour: 14,
+                    minute: 6,
+                    weekday: 6,
+                    day: 3,
+                    month: 10,
+                    year: 2026,
+                }),
+                ..view.clone()
+            };
+            let mut pixmap = Pixmap::new(1280, 800).unwrap();
+            paint(
+                &mut pixmap,
+                &when,
+                &analog,
+                &tokens,
+                &mut text,
+                None,
+                &mut pictures,
+                1.0,
+            );
+            pixmap.save_png(format!("{dir}/lock-analog.png")).unwrap();
         }
     }
     #[test]

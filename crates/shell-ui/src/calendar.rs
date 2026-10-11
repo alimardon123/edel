@@ -125,19 +125,25 @@ pub fn name(month: i8) -> &'static str {
     }
 }
 
+/// A weekday's name, 1 for Monday to 7 for Sunday (ISO, as `jiff` counts
+/// them), in the person's language.
+pub fn weekday(day: i8) -> &'static str {
+    match day {
+        1 => tr("Monday"),
+        2 => tr("Tuesday"),
+        3 => tr("Wednesday"),
+        4 => tr("Thursday"),
+        5 => tr("Friday"),
+        6 => tr("Saturday"),
+        _ => tr("Sunday"),
+    }
+}
+
 /// The letter a weekday's column is headed by, `i` 0 for Monday: the
 /// first letter of the weekday's name, so a translation of the names
 /// gives the letters.
 pub fn initial(i: usize) -> String {
-    let day = match i {
-        0 => tr("Monday"),
-        1 => tr("Tuesday"),
-        2 => tr("Wednesday"),
-        3 => tr("Thursday"),
-        4 => tr("Friday"),
-        5 => tr("Saturday"),
-        _ => tr("Sunday"),
-    };
+    let day = weekday(i as i8 + 1);
     day.chars().take(1).collect::<String>().to_uppercase()
 }
 

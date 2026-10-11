@@ -101,9 +101,102 @@ impl Anchor {
     }
 }
 
+/// How the clock is drawn (M5.10c5b). Absent is `digital`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Face {
+    /// One line of figures, `14:06`
+    Digital,
+    /// The hour over the minutes, each on a line of its own
+    Stacked,
+    /// A round dial with an hour hand and a minute hand
+    Analog,
+    /// One thin line, smaller than the others
+    Minimal,
+}
+
+impl Face {
+    /// The name the file writes the face by, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            Face::Digital => "digital",
+            Face::Stacked => "stacked",
+            Face::Analog => "analog",
+            Face::Minimal => "minimal",
+        }
+    }
+}
+
+/// How big the clock is (M5.10c5b). Absent is `large`, the token's size;
+/// `medium` is two thirds of it and `small` a half.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Size {
+    Small,
+    Medium,
+    Large,
+}
+
+impl Size {
+    /// The name the file writes the size by, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            Size::Small => "small",
+            Size::Medium => "medium",
+            Size::Large => "large",
+        }
+    }
+}
+
+/// A part of the date (M5.10c5b): the weekday, the day of the month, the
+/// month and the year.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatePart {
+    Weekday,
+    Day,
+    Month,
+    Year,
+}
+
+impl DatePart {
+    /// The name the file writes the part by, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            DatePart::Weekday => "weekday",
+            DatePart::Day => "day",
+            DatePart::Month => "month",
+            DatePart::Year => "year",
+        }
+    }
+}
+
+/// How the date is written (M5.10c5b). Absent is `long`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DateStyle {
+    /// `Saturday 3 October 2026`
+    Long,
+    /// `Sat 3 Oct 2026`
+    Short,
+    /// `Sat 03.10.2026`
+    Numeric,
+}
+
+impl DateStyle {
+    /// The name the file writes the style by, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            DateStyle::Long => "long",
+            DateStyle::Short => "short",
+            DateStyle::Numeric => "numeric",
+        }
+    }
+}
+
 /// One part in its place: its anchor and an offset from it, each a share of the
-/// screen's width (`x`) and height (`y`), from -1 to 1; a message's words and a
-/// picture's path.
+/// screen's width (`x`) and height (`y`), from -1 to 1; a message's words, a
+/// picture's path and the options of a clock or a date.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placed {
     /// Which part this is
@@ -122,6 +215,27 @@ pub struct Placed {
     /// A picture's file, an absolute path ending `.png`, `.jpg` or `.jpeg`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// A clock's face: `digital`, `stacked`, `analog` or `minimal`; absent is
+    /// `digital`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<Face>,
+    /// A clock's hours, 12 or 24; absent is 24
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hours: Option<u8>,
+    /// A clock's size: `small`, `medium` or `large`; absent is `large`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<Size>,
+    /// A clock's weight, from 100 (thin) to 900 (black) in steps of 100; absent
+    /// is the token `font.lock_clock_weight`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weight: Option<u16>,
+    /// The date's parts, each once; they show in the order weekday, day, month,
+    /// year whatever order is written. Absent is weekday, day and month.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show: Option<Vec<DatePart>>,
+    /// The date's style: `long`, `short` or `numeric`; absent is `long`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<DateStyle>,
 }
 
 /// Offsets are f64, as TOML's floats are, so a value read and written back
@@ -256,6 +370,87 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
             }
             _ => {}
         }
+        check_options(p)?;
+    }
+    Ok(())
+}
+
+/// The clock's and the date's options: each refused on the other part, and
+/// the clock's hours and weight and the date's `show` checked. The message
+/// names the part and says what to do.
+fn check_options(p: &Placed) -> Result<(), String> {
+    let part = p.part.name();
+    if p.part != Part::Clock {
+        if p.face.is_some() {
+            return Err(trf(
+                "the {part} has a face; only the clock has one, so take face out",
+                &[("part", part)],
+            ));
+        }
+        if p.hours.is_some() {
+            return Err(trf(
+                "the {part} has hours; only the clock has them, so take hours out",
+                &[("part", part)],
+            ));
+        }
+        if p.size.is_some() {
+            return Err(trf(
+                "the {part} has a size; only the clock has one, so take size out",
+                &[("part", part)],
+            ));
+        }
+        if p.weight.is_some() {
+            return Err(trf(
+                "the {part} has a weight; only the clock has one, so take weight out",
+                &[("part", part)],
+            ));
+        }
+    }
+    if p.part != Part::Date {
+        if p.show.is_some() {
+            return Err(trf(
+                "the {part} has show; only the date has it, so take show out",
+                &[("part", part)],
+            ));
+        }
+        if p.style.is_some() {
+            return Err(trf(
+                "the {part} has a style; only the date has one, so take style out",
+                &[("part", part)],
+            ));
+        }
+    }
+    if let Some(hours) = p.hours {
+        if hours != 12 && hours != 24 {
+            return Err(trf(
+                "the clock's hours is {hours}; use 12 or 24",
+                &[("hours", &hours.to_string())],
+            ));
+        }
+    }
+    if let Some(weight) = p.weight {
+        if !(100..=900).contains(&weight) || weight % 100 != 0 {
+            return Err(trf(
+                "the clock's weight is {weight}; use 100 to 900 in steps of 100, such as 300",
+                &[("weight", &weight.to_string())],
+            ));
+        }
+    }
+    if let Some(show) = &p.show {
+        if show.is_empty() {
+            return Err(tr(
+                "the date's show is empty; name at least one of weekday, day, month and year",
+            )
+            .into());
+        }
+        for (i, shown) in show.iter().enumerate() {
+            if show[..i].contains(shown) {
+                return Err(trf(
+                    "the date's show names the {part} twice; take one out",
+                    &[("part", shown.name())],
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -269,6 +464,12 @@ fn part_at(part: Part, at: Anchor, y: f64) -> Placed {
         y,
         text: None,
         path: None,
+        face: None,
+        hours: None,
+        size: None,
+        weight: None,
+        show: None,
+        style: None,
     }
 }
 
@@ -827,5 +1028,190 @@ mod tests {
         let out = arrange(screen, &[full, extra], &[], GAP, MARGIN);
         assert!(out[0].is_some());
         assert_eq!(out[1], None);
+    }
+
+    /// A settings file's lock screen, as the tables `[[lock_screen.parts]]`.
+    #[derive(Deserialize, Serialize)]
+    struct Doc {
+        parts: Vec<Placed>,
+    }
+
+    #[test]
+    fn option_names_are_the_serde_names() {
+        for face in [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal] {
+            let value = toml::Value::try_from(face).unwrap();
+            assert_eq!(value, toml::Value::String(face.name().into()));
+        }
+        for size in [Size::Small, Size::Medium, Size::Large] {
+            let value = toml::Value::try_from(size).unwrap();
+            assert_eq!(value, toml::Value::String(size.name().into()));
+        }
+        for part in [
+            DatePart::Weekday,
+            DatePart::Day,
+            DatePart::Month,
+            DatePart::Year,
+        ] {
+            let value = toml::Value::try_from(part).unwrap();
+            assert_eq!(value, toml::Value::String(part.name().into()));
+        }
+        for style in [DateStyle::Long, DateStyle::Short, DateStyle::Numeric] {
+            let value = toml::Value::try_from(style).unwrap();
+            assert_eq!(value, toml::Value::String(style.name().into()));
+        }
+    }
+
+    #[test]
+    fn clock_and_date_options_read_back_from_toml() {
+        let text = "[[parts]]\npart = \"person\"\nat = \"centre\"\n\n\
+            [[parts]]\npart = \"clock\"\nat = \"top\"\ny = 0.14\nface = \"analog\"\n\
+            hours = 12\nsize = \"medium\"\nweight = 300\n\n\
+            [[parts]]\npart = \"date\"\nat = \"top\"\nshow = [\"day\", \"month\"]\n\
+            style = \"numeric\"\n";
+        let doc: Doc = toml::from_str(text).unwrap();
+        check(&doc.parts).unwrap();
+        let clock = &doc.parts[1];
+        assert_eq!(clock.face, Some(Face::Analog));
+        assert_eq!(clock.hours, Some(12));
+        assert_eq!(clock.size, Some(Size::Medium));
+        assert_eq!(clock.weight, Some(300));
+        let date = &doc.parts[2];
+        assert_eq!(date.show, Some(vec![DatePart::Day, DatePart::Month]));
+        assert_eq!(date.style, Some(DateStyle::Numeric));
+        // Written back as they were read.
+        let again: Doc = toml::from_str(&toml::to_string(&doc).unwrap()).unwrap();
+        assert_eq!(again.parts, doc.parts);
+    }
+
+    #[test]
+    fn an_absent_option_is_never_written() {
+        let text = toml::to_string(&Doc {
+            parts: classic(false),
+        })
+        .unwrap();
+        for option in ["face", "hours", "size", "weight", "show", "style"] {
+            assert!(!text.contains(option), "{option} written: {text}");
+        }
+    }
+
+    #[test]
+    fn the_clock_and_date_options_are_checked() {
+        let person = person(false);
+        let cases: Vec<(Placed, &str)> = vec![
+            (
+                Placed {
+                    face: Some(Face::Analog),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date has a face; only the clock has one",
+            ),
+            (
+                Placed {
+                    hours: Some(24),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date has hours; only the clock has them",
+            ),
+            (
+                Placed {
+                    size: Some(Size::Small),
+                    text: Some("hi".into()),
+                    ..part_at(Part::Message, Anchor::Top, 0.0)
+                },
+                "the message has a size; only the clock has one",
+            ),
+            (
+                Placed {
+                    weight: Some(400),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date has a weight; only the clock has one",
+            ),
+            (
+                Placed {
+                    show: Some(vec![DatePart::Day]),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock has show; only the date has it",
+            ),
+            (
+                Placed {
+                    style: Some(DateStyle::Short),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock has a style; only the date has one",
+            ),
+            (
+                Placed {
+                    hours: Some(13),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock's hours is 13; use 12 or 24",
+            ),
+            (
+                Placed {
+                    weight: Some(150),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock's weight is 150; use 100 to 900 in steps of 100",
+            ),
+            (
+                Placed {
+                    weight: Some(1000),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock's weight is 1000",
+            ),
+            (
+                Placed {
+                    weight: Some(0),
+                    ..part_at(Part::Clock, Anchor::Top, 0.0)
+                },
+                "the clock's weight is 0",
+            ),
+            (
+                Placed {
+                    show: Some(vec![]),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date's show is empty",
+            ),
+            (
+                Placed {
+                    show: Some(vec![DatePart::Day, DatePart::Month, DatePart::Day]),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date's show names the day twice; take one out",
+            ),
+        ];
+        for (option, expected) in cases {
+            let parts = vec![person.clone(), option];
+            let error = check(&parts).expect_err(expected);
+            assert!(error.contains(expected), "{error}");
+        }
+        // Good values pass: each clock face, both hour counts, the weights at
+        // the ends and in between, and every date part in any order.
+        for face in [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal] {
+            let good = Placed {
+                face: Some(face),
+                ..part_at(Part::Clock, Anchor::Top, 0.0)
+            };
+            assert!(check(&[person.clone(), good]).is_ok(), "{face:?}");
+        }
+        for (hours, weight) in [(12, 100), (24, 900), (12, 300)] {
+            let good = Placed {
+                hours: Some(hours),
+                weight: Some(weight),
+                size: Some(Size::Small),
+                ..part_at(Part::Clock, Anchor::Top, 0.0)
+            };
+            assert!(check(&[person.clone(), good]).is_ok(), "{hours} {weight}");
+        }
+        let good = Placed {
+            show: Some(vec![DatePart::Year, DatePart::Weekday]),
+            style: Some(DateStyle::Short),
+            ..part_at(Part::Date, Anchor::Top, 0.0)
+        };
+        assert!(check(&[person.clone(), good]).is_ok());
     }
 }
