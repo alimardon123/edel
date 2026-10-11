@@ -112,10 +112,10 @@ pub struct Placed {
     pub at: Anchor,
     /// An offset across the screen, a share of its width, from -1 to 1
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub x: f32,
+    pub x: f64,
     /// An offset down the screen, a share of its height, from -1 to 1
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub y: f32,
+    pub y: f64,
     /// A message's words, 1 to 120 characters on one line
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -124,7 +124,9 @@ pub struct Placed {
     pub path: Option<String>,
 }
 
-fn is_zero(value: &f32) -> bool {
+/// Offsets are f64, as TOML's floats are, so a value read and written back
+/// stays as written (0.14, not 0.14000000059604645).
+fn is_zero(value: &f64) -> bool {
     *value == 0.0
 }
 
@@ -259,7 +261,7 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
 }
 
 /// A part at `at` with an offset down the screen of `y` (and none across).
-fn part_at(part: Part, at: Anchor, y: f32) -> Placed {
+fn part_at(part: Part, at: Anchor, y: f64) -> Placed {
     Placed {
         part,
         at,
@@ -566,8 +568,8 @@ mod tests {
                 };
                 Item {
                     at: p.at,
-                    x: p.x,
-                    y: p.y,
+                    x: p.x as f32,
+                    y: p.y as f32,
                     w: w * scale,
                     h: h * scale,
                 }

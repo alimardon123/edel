@@ -915,6 +915,7 @@ fn desktop_follows(key: &str) -> bool {
             "workspaces.",
             "displays.",
             "appearance.",
+            "lock_screen.",
             "shortcuts.",
         ]
         .iter()
