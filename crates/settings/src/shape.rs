@@ -740,20 +740,10 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         .hexpand(true)
         .build();
     lay_out(&grid, &sliders, false);
-    let bin = adw::BreakpointBin::builder()
-        .hexpand(true)
-        .child(&grid)
-        .build();
-    // The page's narrow breakpoint, as the window's: the card is narrower
-    // than the window there, so a window at the breakpoint folds the grid.
-    if let Ok(condition) = adw::BreakpointCondition::parse(crate::NARROW) {
-        let narrow = adw::Breakpoint::new(condition);
-        let (g, s) = (grid.clone(), sliders.clone());
-        narrow.connect_apply(move |_| lay_out(&g, &s, true));
-        let (g, s) = (grid.clone(), sliders.clone());
-        narrow.connect_unapply(move |_| lay_out(&g, &s, false));
-        bin.add_breakpoint(narrow);
-    }
+    // The page's narrow width, as the window's: the card is narrower than
+    // the window there, so a window at the breakpoint folds the grid.
+    let (g, s) = (grid.clone(), sliders.clone());
+    let bin = widgets::folding(&grid, move |narrow| lay_out(&g, &s, narrow));
     card.append(&bin);
     for slider in sliders.iter() {
         reveal_copy(slider);
