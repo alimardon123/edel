@@ -1746,13 +1746,24 @@ case_display() {
 	clamp=$((area < 704 ? area : 704))
 	left=$((x + 204 + (area - clamp) / 2 + 32))
 	right=$((left + clamp - 64))
-	# The first screen's Scale row, 314 px down the page; its 200% button
-	# 45 px in from the card's right edge, the chosen 100% button's left
-	# end 285 px in, and Reset 354 px in.
-	row=$((y + 314))
-	sleep 2
-	shot display $((right - 285)) "$row" "$(token accent)" >/dev/null ||
-		fail "the Displays page does not show Virtual-1's 100% scale chosen: $((right - 285)),$row is not the accent #$(token accent)"
+	# The first screen's Scale row: its 200% button 45 px in from the
+	# card's right edge, the chosen 100% button's left end 285 px in, and
+	# Reset 354 px in. The row's height on the page is found, not written:
+	# the first accent pixel down that column is the chosen 100% button's
+	# top, and the row's middle is 8 px under it (the page's intro, above
+	# it, changes length with its words).
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/display.png"
+		top=$(python3 ci/qmp.py find "$dir/display.png" $((right - 285)) $((y + 150)) $((y + 600)) "$(token accent)")
+		[ "$top" = none ] || break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	[ "$top" != none ] ||
+		fail "the Displays page does not show Virtual-1's 100% scale chosen: no accent #$(token accent) down x $((right - 285))"
+	row=$((top + 8))
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 2$')
 	python3 ci/qmp.py click $((right - 45)) "$row"
 	wait_more 'edel-compositor: output Virtual-1 scale 2$' "$scaled" ||
@@ -1767,7 +1778,7 @@ case_display() {
 	now=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$now" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$now" | sed 's/Settings@//; s/[,x]/ /g')
-	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + 314) * 2))
+	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + row - y) * 2))
 	python3 ci/qmp.py screendump "$dir/display-scale2.png"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	python3 ci/qmp.py click "$rx" "$ry"
@@ -1824,12 +1835,13 @@ case_updates() {
 		fail "the Updates page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
 	# The card at the top (crates/settings, M5.8d): the page's cards are
 	# at most 704 px wide with 32 px margins, centred beside the 204 px
-	# sidebar; 80 px down is inside the card, above its words.
+	# sidebar; 120 px down is inside the card, under the page's one-line
+	# intro and above the card's words.
 	area=$((w - 204))
 	clamp=$((area < 704 ? area : 704))
 	card_x=$((x + 204 + (area - clamp) / 2 + 32 + clamp - 64 - 40))
-	shot updates $card_x $((y + 80)) "$(token card)" >/dev/null ||
-		fail "the Updates page has no card at the top at $card_x,$((y + 80)) in the card token's #$(token card)"
+	shot updates $card_x $((y + 120)) "$(token card)" >/dev/null ||
+		fail "the Updates page has no card at the top at $card_x,$((y + 120)) in the card token's #$(token card)"
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: updates_log ')

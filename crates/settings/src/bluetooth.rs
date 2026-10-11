@@ -30,10 +30,7 @@ use edel::i18n::{n_, tr, trf};
 
 use crate::{card, widgets};
 
-const INTRO: &str = n_(
-    "Connect headphones, speakers, a mouse or a keyboard. Pairings are kept safely by this \
-     computer and never go in your settings file.",
-);
+const INTRO: &str = n_("Headphones, speakers, mice and keyboards. Pairings stay on this computer.");
 
 /// How often the page looks at Bluetooth while it is on screen.
 const FOLLOW: u32 = 4;

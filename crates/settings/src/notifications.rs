@@ -21,8 +21,7 @@ use edel::settings::{DO_NOT_DISTURB, NOTIFICATION_BADGE, NOTIFICATION_POSITION};
 use crate::files::Files;
 use crate::{rows, widgets};
 
-const INTRO: &str =
-    n_("Banners appear when an app has something to say, and the clock keeps them all.");
+const INTRO: &str = n_("Banners, do not disturb, and the list the clock keeps.");
 
 /// What the row's line says under its title.
 const WHAT: &str = n_("Banners stay away; notifications still collect in the list the clock opens");
