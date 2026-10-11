@@ -19,7 +19,7 @@ use std::rc::{Rc, Weak};
 
 use gtk::gdk_pixbuf::{Colorspace, Pixbuf};
 use gtk::prelude::*;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, glib};
 
 use edel::i18n::{tr, trf};
 use edel::places;
@@ -470,8 +470,7 @@ pub fn luminance(rgba: &[u8]) -> f32 {
 /// Asks for one picture or two and chooses them (M5.10c4d). A cancelled
 /// choice leaves the card as it was.
 fn pick_picture(card: Weak<Card>, near: gtk::Widget) {
-    glib::spawn_future_local(async move {
-        let picked = pick_pictures(&near).await;
+    widgets::choose_pictures(&near, move |picked| {
         let Some(card) = card.upgrade() else {
             return;
         };
@@ -487,24 +486,6 @@ fn pick_picture(card: Weak<Card>, near: gtk::Widget) {
             }
         }
     });
-}
-
-/// Asks for pictures, several at once, and gives their paths; None when
-/// the choice was cancelled.
-async fn pick_pictures(near: &gtk::Widget) -> Option<Vec<PathBuf>> {
-    let dialog = gtk::FileDialog::builder()
-        .title(tr("Choose a picture"))
-        .modal(true)
-        .build();
-    let window = near.root().and_downcast::<gtk::Window>();
-    let files = dialog.open_multiple_future(window.as_ref()).await.ok()?;
-    Some(
-        files
-            .iter::<gio::File>()
-            .filter_map(Result::ok)
-            .filter_map(|file| file.path())
-            .collect(),
-    )
 }
 
 /// The value a picture file chooses: its path, if it is a JPEG or PNG.
@@ -530,9 +511,8 @@ fn pick_colour(card: Weak<Card>, button: gtk::ToggleButton) {
         .colour_shown
         .get()
         .unwrap_or_else(|| now.theme.tokens().accent);
-    let initial = current.hex().parse::<gdk::RGBA>().ok();
     drop(now);
-    widgets::choose_colour(button.upcast_ref(), initial, move |picked| {
+    widgets::choose_colour(button.upcast_ref(), current, move |picked| {
         let Some(card) = card.upgrade() else {
             return;
         };

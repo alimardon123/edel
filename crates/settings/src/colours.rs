@@ -16,8 +16,8 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
+use gtk::glib;
 use gtk::prelude::*;
-use gtk::{gdk, glib};
 
 use edel::i18n::tr;
 use edel::places;
@@ -496,13 +496,10 @@ impl Group {
         let error = error_label();
         self.list.append(&error);
 
-        let (weak, now) = (self.me.clone(), value.clone());
+        let (weak, now, theme) = (self.me.clone(), value.clone(), self.theme.clone());
         let (key_for_pick, error_for_pick) = (key.clone(), error.clone());
         button.connect_clicked(move |button| {
-            let initial = now
-                .get()
-                .map(|c| c.hex())
-                .and_then(|hex| hex.parse::<gdk::RGBA>().ok());
+            let initial = now.get().unwrap_or_else(|| theme.tokens().accent);
             let (weak, key, error) = (weak.clone(), key_for_pick.clone(), error_for_pick.clone());
             widgets::choose_colour(button.upcast_ref(), initial, move |picked| {
                 let Some(hex) = picked else {
@@ -804,8 +801,7 @@ fn wire(group: &Rc<Group>) {
             .theme
             .tokens()
             .colour(token)
-            .map(|c| c.hex())
-            .and_then(|hex| hex.parse::<gdk::RGBA>().ok());
+            .unwrap_or_else(|| group.theme.tokens().accent);
         drop(group);
         let weak = add_weak.clone();
         widgets::choose_colour(button.upcast_ref(), initial, move |picked| {
@@ -833,9 +829,8 @@ fn pick_custom(group: Weak<Group>, button: gtk::ToggleButton) {
         .custom
         .get()
         .unwrap_or_else(|| now.theme.tokens().accent);
-    let initial = current.hex().parse::<gdk::RGBA>().ok();
     drop(now);
-    widgets::choose_colour(button.upcast_ref(), initial, move |picked| {
+    widgets::choose_colour(button.upcast_ref(), current, move |picked| {
         let Some(group) = group.upgrade() else {
             return;
         };

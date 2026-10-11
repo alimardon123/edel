@@ -386,6 +386,117 @@ msgstr ""
 msgid "What shows where more workspaces lie"
 msgstr ""
 
+msgid "Magazine"
+msgstr ""
+
+msgid "Minimal"
+msgstr ""
+
+msgid "Your own arrangement"
+msgstr ""
+
+msgid "What lies behind the parts"
+msgstr ""
+
+msgid "How the clock is drawn"
+msgstr ""
+
+msgid "Off shows the hours from 1 to 12"
+msgstr ""
+
+msgid "How the date is written"
+msgstr ""
+
+msgid "Off hides the number of notifications that wait"
+msgstr ""
+
+msgid "Choose one picture"
+msgstr ""
+
+msgid "How the lock and login screens look. Each choice here is also a line of your settings file and an edel settings set command."
+msgstr ""
+
+msgid "Look"
+msgstr ""
+
+msgid "Your own arrangement; choose a look to replace it"
+msgstr ""
+
+msgid "Save as"
+msgstr ""
+
+msgid "Edit lock screen"
+msgstr ""
+
+msgid "Look's own"
+msgstr ""
+
+msgid "Navy"
+msgstr ""
+
+msgid "Wallpaper blurred"
+msgstr ""
+
+msgid "Wallpaper sharp"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
+msgid "Clock and date"
+msgstr ""
+
+msgid "Digital"
+msgstr ""
+
+msgid "Stacked"
+msgstr ""
+
+msgid "Analog"
+msgstr ""
+
+msgid "Face"
+msgstr ""
+
+msgid "24-hour clock"
+msgstr ""
+
+msgid "Long"
+msgstr ""
+
+msgid "Short"
+msgstr ""
+
+msgid "Numeric"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Show the count of unread notifications"
+msgstr ""
+
+msgid "the call to the desktop stopped"
+msgstr ""
+
+msgid "The desktop's lock screen is not running, so it cannot be edited now:\n{why}"
+msgstr ""
+
+msgid "Name, such as home"
+msgstr ""
+
+msgid "Name of the look"
+msgstr ""
+
+msgid "Name this look. It keeps the parts you see now and shows in the cards above."
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
 msgid "--page needs the name of a page, such as --page displays"
 msgstr ""
 
@@ -530,9 +641,6 @@ msgstr ""
 msgid "Join"
 msgstr ""
 
-msgid "Cancel"
-msgstr ""
-
 msgid "{device} {what}"
 msgstr ""
 
@@ -579,9 +687,6 @@ msgid "Drag an app's icon on the panel to pin, move or unpin it"
 msgstr ""
 
 msgid "None"
-msgstr ""
-
-msgid "the call to the desktop stopped"
 msgstr ""
 
 msgid "The desktop's panels are not running, so they cannot be edited now:\n{why}"
@@ -741,6 +846,12 @@ msgid "Numbers shown"
 msgstr ""
 
 msgid "Switcher ends"
+msgstr ""
+
+msgid "Background"
+msgstr ""
+
+msgid "Unread count"
 msgstr ""
 
 msgid "Resolution"
@@ -1190,10 +1301,10 @@ msgstr ""
 msgid "could not read {path} as a picture: {why}"
 msgstr ""
 
-msgid "Choose a picture"
+msgid "Pick a JPEG or PNG picture"
 msgstr ""
 
-msgid "Pick a JPEG or PNG picture"
+msgid "Choose a picture"
 msgstr ""
 
 msgid "Your changes are live"

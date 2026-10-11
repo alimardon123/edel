@@ -24,7 +24,7 @@ use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, La
 use std::time::Duration;
 
 use crate::a11y;
-use crate::editor::{self, Act, DRAG_START, Landing, Part, Step, Tile, View};
+use crate::editor::{self, Act, DRAG_START, Kind, Landing, Part, Step, Tile, View};
 use crate::messages;
 use crate::paint;
 use crate::popup::Popup;
@@ -79,13 +79,31 @@ pub enum Over {
     Drawer,
 }
 
-/// The Undo bar after Done (M5.31b): its surface, what it shows, the
-/// panels as they were before the editor opened (`original`), the timer
-/// that ends it, the places last logged and what a screen reader reads.
+/// What the Undo bar puts back (M5.31b, M5.10c6): the panels as they were
+/// before the panel editor opened, or the person's `lock_screen.parts` line
+/// before the lock screen's edit mode wrote it (`None`: they had none, so
+/// Undo takes it out).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Undo {
+    Panels(Vec<presets::Panel>),
+    LockScreen(Option<String>),
+}
+
+/// The words the Undo bar says for what it undoes (M5.10c6).
+fn undo_words(undo: &Undo) -> &'static str {
+    match undo {
+        Undo::Panels(_) => tr("Panels changed"),
+        Undo::LockScreen(_) => tr("Lock screen changed"),
+    }
+}
+
+/// The Undo bar after Done (M5.31b): its surface, what it shows, what Undo
+/// puts back, the timer that ends it, the places last logged and what a
+/// screen reader reads.
 pub struct UndoBar {
     pub popup: Popup<undo_bar::View>,
     pub view: undo_bar::View,
-    pub original: Vec<presets::Panel>,
+    pub undo: Undo,
     pub timer: Option<RegistrationToken>,
     pub logged: String,
     pub reader: a11y::Reader,
@@ -239,6 +257,7 @@ impl Shell {
         let width = self.screen_width();
         let compact = width > 0 && width < quick::COMPACT_BELOW;
         let mut view = View {
+            kind: Kind::Panels,
             tiles: usable
                 .iter()
                 .map(|w| Tile {
@@ -383,7 +402,7 @@ impl Shell {
             if let Some(what) = self.save_panels(&now) {
                 eprintln!("edel-shell-ui: panel editor done, {what}");
                 if what != NOTHING {
-                    self.open_undo_bar(edge, above, scale, original);
+                    self.open_undo_bar(edge, above, scale, Undo::Panels(original));
                 }
             }
         } else {
@@ -866,18 +885,15 @@ impl Shell {
 
     // ---- The Undo bar ----
 
-    /// Opens the Undo bar where the drawer was, for `undo_bar::SECONDS`:
-    /// it puts `original` back when Undo is pressed.
-    pub(crate) fn open_undo_bar(
-        &mut self,
-        edge: Edge,
-        above: i32,
-        scale: u32,
-        original: Vec<presets::Panel>,
-    ) {
+    /// Opens the Undo bar `above` the edge, for `undo_bar::SECONDS`: it puts
+    /// back what `undo` holds when Undo is pressed. The bar says what it
+    /// undoes (M5.10c6).
+    pub(crate) fn open_undo_bar(&mut self, edge: Edge, above: i32, scale: u32, undo: Undo) {
+        let words = undo_words(&undo);
         let view = undo_bar::View {
             hover: false,
             width: self.screen_width(),
+            text: words.to_string(),
         };
         let layout = undo_bar::layout(&view);
         let room = paint::shadow_room(&self.tokens, !fillets());
@@ -894,10 +910,10 @@ impl Shell {
         self.undo_bar = Some(UndoBar {
             popup,
             view,
-            original,
+            undo,
             timer: None,
             logged: String::new(),
-            reader: a11y::Reader::new(tr("Panels changed")),
+            reader: a11y::Reader::new(words),
         });
         let timer = self.undo_timer();
         if let Some(bar) = &mut self.undo_bar {
@@ -966,20 +982,30 @@ impl Shell {
             bar.logged = places;
         }
         let size = (f64::from(layout.size.0), f64::from(layout.size.1));
-        bar.reader.update(size, undo_bar::nodes(&layout));
+        bar.reader
+            .update(size, undo_bar::nodes(&layout, &view.text));
     }
 
-    /// Undo on the bar: the panels' line is written back as it was before
-    /// the editor opened, through the same writer as Done, and the panels
-    /// show it; then the bar closes. Nothing changes when the line cannot
-    /// be written.
-    fn undo_panels(&mut self) {
-        let Some(original) = self.undo_bar.as_ref().map(|b| b.original.clone()) else {
+    /// Undo on the bar (M5.31b, M5.10c6): what the bar holds is written back
+    /// through the writer of its editor, and the panels show it when they are
+    /// the ones undone; then the bar closes. Nothing changes when the line
+    /// cannot be written.
+    fn undo_bar_undo(&mut self) {
+        let Some(undo) = self.undo_bar.as_ref().map(|b| b.undo.clone()) else {
             return;
         };
-        if let Some(what) = self.save_panels(&original) {
-            self.panels_changed(original);
-            eprintln!("edel-shell-ui: panels undone, {what}");
+        match undo {
+            Undo::Panels(original) => {
+                if let Some(what) = self.save_panels(&original) {
+                    self.panels_changed(original);
+                    eprintln!("edel-shell-ui: panels undone, {what}");
+                }
+            }
+            Undo::LockScreen(before) => {
+                if let Some(what) = self.save_lock_parts(before.as_deref()) {
+                    eprintln!("edel-shell-ui: lock screen undone, {what}");
+                }
+            }
         }
         self.hide_undo_bar();
     }
@@ -1026,7 +1052,7 @@ impl Shell {
                 self.draw_undo_bar();
             }
             PointerEventKind::Press { button, .. } if *button == BTN_LEFT && over => {
-                self.undo_panels();
+                self.undo_bar_undo();
             }
             _ => {}
         }

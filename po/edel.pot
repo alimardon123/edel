@@ -227,6 +227,9 @@ msgstr ""
 msgid "the look {name} does not check: {why}"
 msgstr ""
 
+msgid "Your message"
+msgstr ""
+
 msgid "could not replace {path}"
 msgstr ""
 

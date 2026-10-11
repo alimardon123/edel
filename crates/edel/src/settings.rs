@@ -405,7 +405,10 @@ pub const KEYS: &[Key] = &[
     // shows, and the person's own looks made by Save as.
     now("lock_screen.look", Kind::LockLook),
     now("lock_screen.background", Kind::LockBackground),
-    now("lock_screen.notifications", Kind::OneOf(&["count", "none"])),
+    now(
+        "lock_screen.notifications",
+        Kind::OneOf(crate::lock_screen::NOTIFICATIONS),
+    ),
     now("lock_screen.looks", Kind::LockLooks),
     now("shortcuts.*", Kind::Keys),
     later("default_apps.browser", Kind::Text),

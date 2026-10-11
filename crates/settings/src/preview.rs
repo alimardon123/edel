@@ -335,7 +335,7 @@ fn mix(a: Colour, b: Colour, amount: f32) -> Colour {
     }
 }
 
-/// Sets `c` as the source of the next drawing.
+/// Sets `c` as the source colour of `cr`, for the lock screen's card too.
 pub(crate) fn set(cr: &Context, c: Colour) {
     cr.set_source_rgba(
         f64::from(c.r),
@@ -351,7 +351,7 @@ fn fill(cr: &Context, c: Colour, x: f64, y: f64, w: f64, h: f64, r: f64) {
     let _ = cr.fill();
 }
 
-/// A rectangle with corners of radius `r`, as the path of the next drawing.
+/// A rounded rectangle as a path of `cr`, for the lock screen's card too.
 pub(crate) fn rounded(cr: &Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
     let quarter = std::f64::consts::FRAC_PI_2;

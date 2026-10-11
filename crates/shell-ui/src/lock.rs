@@ -20,14 +20,19 @@
 
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use edel::app_icons::Icons;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, DatePart, DateStyle, Face as ClockFace, Item, Part, Placed};
+use edel::lock_screen::{
+    self, Anchor, Background, DatePart, DateStyle, Face as ClockFace, Item, Part, Placed,
+};
+use edel::pictures;
+use edel::settings::LockScreen;
 use edel::tokens::{Colour, Tokens};
+use edel::wallpapers::{self, Wallpaper};
 use tiny_skia::{
     FillRule, GradientStop, Paint, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient,
     SpreadMode, Transform,
@@ -88,6 +93,9 @@ pub struct View {
     /// date's format are drawn from (M5.10c5b); None draws `time` and `date`
     /// as they are written, as the tests do.
     pub when: Option<When>,
+    /// The battery's charge in percent and whether it charges (M5.10c5c);
+    /// None on a machine without one, or where the screen does not know it.
+    pub battery: Option<(u8, bool)>,
 }
 
 /// The time to the minute and the date, as the clock and the date show
@@ -135,6 +143,7 @@ impl View {
             go_hover: false,
             people: None,
             when: None,
+            battery: None,
         }
     }
 }
@@ -179,6 +188,17 @@ pub struct Layout {
     pub messages: Vec<(Rect, Vec<String>, Anchor)>,
     /// Each picture: its rectangle and its path.
     pub pictures: Vec<(Rect, String)>,
+    /// The battery's rectangle: its icon, then its percent; None without a
+    /// battery in the list or on the machine (M5.10c5c).
+    pub battery: Option<Rect>,
+    /// What lies behind the parts (M5.10c5c); `paint` draws it through
+    /// `Backdrops`.
+    pub background: Background,
+    /// Each part of `Look::parts`, in the list's order: its rectangle, or None
+    /// when it is not drawn (a count with no notices, a player with no card,
+    /// a battery the machine lacks, a part `arrange` left out). The edit mode
+    /// finds where each part stands by it (M5.10c6).
+    pub placed: Vec<Option<Rect>>,
 }
 
 /// What the layout needs besides the screen: the parts a list says, the
@@ -196,6 +216,12 @@ pub struct Look<'a> {
     pub people: bool,
     /// Places no part may cover, with the gap kept round each.
     pub keep_out: Vec<lock_screen::Rect>,
+    /// Whether the screen's machine has a battery, so the battery part
+    /// takes its room (M5.10c5c); its charge is `View::battery`'s.
+    pub battery: bool,
+    /// What lies behind the parts (M5.10c5c), as the look or the person's
+    /// `background` says.
+    pub background: Background,
 }
 
 /// The screen's width below which it is Compact (M5.6c's size classes).
@@ -236,6 +262,21 @@ const COUNT_TEXT: f32 = 13.0;
 /// An app's tile in the count: a rounded square, as apps' icons are.
 const TILE_RADIUS: f32 = 7.0;
 pub const MOST_APPS: usize = 3;
+/// The battery part (M5.10c5c): the icon's side, the room between it and
+/// the percent, and the percent's words' size (the count's).
+const BATTERY_ICON: f32 = 22.0;
+const GAP_SMALL: f32 = 6.0;
+/// The width of the widest percent the battery is sized for.
+const BATTERY_WIDEST: &str = "100%";
+/// The backgrounds (M5.10c5c): a blurred picture is made at a quarter of
+/// the screen's size, blurred with `BLUR_RADIUS` in those pixels, and drawn
+/// up to the screen again.
+const BLUR_SHRINK: u32 = 4;
+const BLUR_RADIUS: f32 = 12.0;
+/// How much of the deep backdrop colour lies over a blurred or a coloured
+/// background, and over a sharp picture, so the white words stay readable.
+const DIM: f32 = 0.3;
+const DIM_SHARP: f32 = 0.4;
 
 /// The one function that places everything on a screen `w` by `h` (M5.10c5):
 /// each part of `look.parts` at its anchor and offset, sized as it is drawn
@@ -258,29 +299,34 @@ pub fn layout(
     place_all(w, h, tokens, notices, look, &classic, text).0
 }
 
-/// The layout of one screen from the list the person or the machine chose
-/// (`lock_screen::applying`, Compact by `w`), with `player` and `people`
-/// as `Look` says and the corner's places kept clear. What `layout` and
-/// both screens use.
+/// The layout of one screen from the lock settings (`lock_settings`, what
+/// `lock_screen::applied` gives for Compact by `w`), with `player` and
+/// `people` as `Look` says, `battery` as its field says and the corner's
+/// places kept clear. The count shows only with `notices` and when the
+/// look keeps it (`notifications`). What `layout` and every screen use.
 #[allow(clippy::too_many_arguments)]
 pub fn screen_layout(
     w: f32,
     h: f32,
     tokens: &Tokens,
     notices: bool,
-    list: Option<&[Placed]>,
+    lock: &LockScreen,
     player: Option<(f32, f32)>,
     people: bool,
+    battery: bool,
     corner_at: &corner::Layout,
     text: &mut Text,
 ) -> Layout {
-    let parts = lock_screen::applying(list, w < COMPACT_BELOW);
+    let applied = lock_screen::applied(lock, w < COMPACT_BELOW);
     let look = Look {
-        parts: &parts,
+        parts: &applied.parts,
         player,
         people,
         keep_out: keep_out(corner_at),
+        battery,
+        background: applied.background,
     };
+    let notices = notices && applied.notifications;
     layout(w, h, tokens, notices, &look, text)
 }
 
@@ -307,6 +353,7 @@ enum Slot {
     Player,
     Message(Vec<String>, Anchor),
     Picture(String),
+    Battery,
 }
 
 /// One arrangement of `parts` on a screen: the layout, and whether the
@@ -362,7 +409,9 @@ fn place_all(
         clock_size *= room / wide;
     }
     let mut slots: Vec<(Slot, Item)> = Vec::new();
-    for p in parts {
+    // The part each slot stands for, by its index in `parts` (M5.10c6).
+    let mut origin: Vec<usize> = Vec::new();
+    for (index, p) in parts.iter().enumerate() {
         let item = |w: f32, h: f32| Item {
             at: p.at,
             x: p.x as f32,
@@ -394,6 +443,13 @@ fn place_all(
                 let width = count_width(MOST_APPS, words);
                 slots.push((Slot::Count, item(width, COUNT_HIGH)));
             }
+            Part::Battery if look.battery => {
+                let words = text
+                    .line_in(BATTERY_WIDEST, COUNT_TEXT, Face::SEMIBOLD)
+                    .width;
+                let width = BATTERY_ICON + GAP_SMALL + words;
+                slots.push((Slot::Battery, item(width, COUNT_HIGH)));
+            }
             Part::Person => slots.push((Slot::Person, item(person_w, person_h))),
             Part::Player => {
                 if let Some((pw, ph)) = look.player {
@@ -409,10 +465,12 @@ fn place_all(
                 let path = p.path.clone().unwrap_or_default();
                 slots.push((Slot::Picture(path), item(PICTURE, PICTURE)));
             }
-            // Not yet: the battery's charge joins in M5.10c5c, and until then
-            // it is not drawn. Count with no unread notification is skipped
-            // too.
+            // Count with no unread notification, and a battery the screen
+            // does not have, are skipped.
             Part::Count | Part::Battery => {}
+        }
+        while origin.len() < slots.len() {
+            origin.push(index);
         }
     }
     let items: Vec<Item> = slots.iter().map(|(_, item)| *item).collect();
@@ -445,8 +503,12 @@ fn place_all(
     let mut player = None;
     let mut messages = Vec::new();
     let mut pictures = Vec::new();
-    for ((slot, _), rect) in slots.into_iter().zip(rects) {
-        let Some(rect) = rect.map(|r| Rect::new(r.x, r.y, r.w, r.h)) else {
+    let mut battery = None;
+    let mut placed: Vec<Option<Rect>> = vec![None; parts.len()];
+    for (((slot, _), rect), &index) in slots.into_iter().zip(rects).zip(origin.iter()) {
+        let rect = rect.map(|r| Rect::new(r.x, r.y, r.w, r.h));
+        placed[index] = rect;
+        let Some(rect) = rect else {
             continue;
         };
         match slot {
@@ -457,6 +519,7 @@ fn place_all(
             Slot::Player => player = Some(rect),
             Slot::Message(lines, anchor) => messages.push((rect, lines, anchor)),
             Slot::Picture(path) => pictures.push((rect, path)),
+            Slot::Battery => battery = Some(rect),
         }
     }
     // Where the list fits only by moving the parts round the person, a count
@@ -466,6 +529,9 @@ fn place_all(
         if let (Some(c), Some(k)) = (count, clock) {
             if c.y < k.y + k.h {
                 count = None;
+                if let Some(i) = parts.iter().position(|p| p.part == Part::Count) {
+                    placed[i] = None;
+                }
             }
         }
     }
@@ -511,6 +577,9 @@ fn place_all(
         player,
         messages,
         pictures,
+        battery,
+        background: look.background.clone(),
+        placed,
     };
     (layout, clear)
 }
@@ -598,18 +667,53 @@ pub fn places(at: &Layout) -> String {
     for (i, (rect, _)) in at.pictures.iter().enumerate() {
         line.push_str(&format!(", picture{i} {}", r(*rect)));
     }
+    if let Some(battery) = at.battery {
+        line.push_str(&format!(", battery {}", r(battery)));
+    }
     line
 }
 
-/// The parts the lock and login screens show, as the settings files say
-/// them (M5.10c5): the person's `lock_screen.parts` over the machine's, None
-/// when neither has a list (the classic arrangement).
-pub fn parts_of(machine: Option<&str>, person: Option<&str>) -> Option<Vec<Placed>> {
+/// The lock screen's settings as the files say them (M5.10c5c): each field
+/// of `[lock_screen]` the person's when set, else the machine's, and the
+/// person's own looks added to the machine's, name by name, so a look of
+/// the machine's is reachable from the person's `look`. A file that does not
+/// read counts as absent (lenient, as `edel::settings::read` is).
+pub fn lock_settings(machine: Option<&str>, person: Option<&str>) -> LockScreen {
     let read = |text: Option<&str>| {
         text.and_then(|t| edel::settings::read(t).ok())
-            .and_then(|read| read.file.lock_screen.parts)
+            .map(|read| read.file.lock_screen)
+            .unwrap_or_default()
     };
-    read(person).or_else(|| read(machine))
+    let (machine, person) = (read(machine), read(person));
+    let looks = match (machine.looks, person.looks) {
+        (None, None) => None,
+        (machine, person) => {
+            let mut all = machine.unwrap_or_default();
+            all.extend(person.unwrap_or_default());
+            Some(all)
+        }
+    };
+    LockScreen {
+        parts: person.parts.or(machine.parts),
+        look: person.look.or(machine.look),
+        background: person.background.or(machine.background),
+        notifications: person.notifications.or(machine.notifications),
+        looks,
+    }
+}
+
+/// The wallpaper the lock and login screens show in the scheme `dark`
+/// names (M5.10c5c): `appearance.wallpaper`, or `appearance.wallpaper_dark`
+/// in dark mode, each the person's over the machine's, as the desktop
+/// reads them. `person` None is the login screen's, which has the machine's
+/// alone.
+pub fn wallpaper_of(machine: Option<&str>, person: Option<&str>, dark: bool) -> Wallpaper {
+    let light = edel::settings::chosen("appearance.wallpaper", machine, person);
+    let night = edel::settings::chosen("appearance.wallpaper_dark", machine, person);
+    wallpapers::on_this_machine(
+        wallpapers::value_for(light.as_deref(), night.as_deref(), dark),
+        dark,
+    )
 }
 
 /// The pictures of the lock screen (M5.10c5), each read once for each
@@ -637,31 +741,143 @@ impl Pictures {
     }
 }
 
-/// Reads the PNG at `path` and cuts it to a square of `side` pixels, its
-/// shorter side fitted and the rest cut from both ends. JPEG pictures wait
-/// for `edel::pictures`, which this release does not have.
+/// Reads the PNG or JPEG at `path` and cuts it to a square of `side`
+/// pixels, covering it as `edel::pictures::load` fits a screen.
 fn load_cover(path: &str, side: u32) -> Result<Pixmap, String> {
-    if !path.ends_with(".png") {
-        return Err(messages::PICTURE_NOT_PNG.to_string());
+    pictures::load(Path::new(path), (side, side))
+}
+
+/// The lock screen's backgrounds (M5.10c5c), each made once for a screen's
+/// device size and kept: the wallpaper blurred or sharp, a colour, or a
+/// picture, dimmed so the white words stay readable; the navy backdrop when
+/// the background is `Backdrop` or a picture cannot be read.
+#[derive(Default)]
+pub struct Backdrops {
+    made: HashMap<(String, u32, u32), Option<Pixmap>>,
+}
+
+impl Backdrops {
+    /// The background as a pixmap of `size` device pixels, or None for the
+    /// navy backdrop, which `paint` then draws as it always has. Made on the
+    /// first call for each background, wallpaper and size, and logged then.
+    pub fn get(
+        &mut self,
+        background: &Background,
+        wallpaper: &Wallpaper,
+        size: (u32, u32),
+        tokens: &Tokens,
+    ) -> Option<&Pixmap> {
+        if *background == Background::Backdrop {
+            return None;
+        }
+        let key = (backdrop_key(background, wallpaper), size.0, size.1);
+        self.made
+            .entry(key)
+            .or_insert_with(|| make_backdrop(background, wallpaper, size, tokens))
+            .as_ref()
     }
-    let source = Pixmap::load_png(path).map_err(|e| e.to_string())?;
-    let mut out = Pixmap::new(side, side).ok_or_else(|| messages::PICTURE_NO_MEMORY.to_string())?;
-    let (sw, sh) = (source.width() as f32, source.height() as f32);
-    let k = side as f32 / sw.min(sh);
+}
+
+/// What a made background is kept under: the background's own text, and for
+/// a blurred or a sharp one the wallpaper behind it (a picture's path or a
+/// colour), so a changed wallpaper makes a new one.
+fn backdrop_key(background: &Background, wallpaper: &Wallpaper) -> String {
+    let behind = match wallpaper {
+        Wallpaper::Background => String::new(),
+        Wallpaper::Colour(colour) => colour.hex(),
+        Wallpaper::Picture(path) => path.display().to_string(),
+    };
+    match background {
+        Background::Blurred | Background::Sharp => {
+            format!("{}|{behind}", lock_screen::background_value(background))
+        }
+        _ => lock_screen::background_value(background),
+    }
+}
+
+/// Makes the background of `size` device pixels (`Backdrops::get`): the
+/// wallpaper blurred or sharp, or a colour or a picture, dimmed. None for
+/// the navy backdrop, for a blurred or sharp background with no wallpaper
+/// (`Wallpaper::Background`), or for a picture that cannot be read, which is
+/// logged once.
+fn make_backdrop(
+    background: &Background,
+    wallpaper: &Wallpaper,
+    size: (u32, u32),
+    tokens: &Tokens,
+) -> Option<Pixmap> {
+    let (mut made, name, dim) = match (background, wallpaper) {
+        (Background::Backdrop, _)
+        | (Background::Blurred | Background::Sharp, Wallpaper::Background) => return None,
+        // A blurred or sharp background with no picture shows the colour.
+        (Background::Blurred | Background::Sharp, Wallpaper::Colour(colour))
+        | (Background::Colour(colour), _) => (solid(size, *colour)?, "colour", DIM),
+        (Background::Blurred, Wallpaper::Picture(path)) => (blurred(path, size)?, "blurred", DIM),
+        (Background::Sharp, Wallpaper::Picture(path)) => (sharp(path, size)?, "sharp", DIM_SHARP),
+        (Background::Picture(path), _) => (sharp(path, size)?, "picture", DIM_SHARP),
+    };
+    let (w, h) = size;
+    fill(
+        &mut made,
+        0.0,
+        0.0,
+        w as f32,
+        h as f32,
+        0.0,
+        Colour {
+            a: dim,
+            ..tokens.lock_backdrop_deep
+        },
+    );
+    eprintln!("edel-shell-ui: lock backdrop {w}x{h} {name}");
+    Some(made)
+}
+
+/// A pixmap of `size` device pixels filled with `colour`.
+fn solid(size: (u32, u32), colour: Colour) -> Option<Pixmap> {
+    let mut pixmap = Pixmap::new(size.0, size.1)?;
+    pixmap.fill(tiny_skia::Color::from_rgba(
+        colour.r, colour.g, colour.b, 1.0,
+    )?);
+    Some(pixmap)
+}
+
+/// The picture at `path` covering `size`, or None when it cannot be read,
+/// which is logged.
+fn sharp(path: &Path, size: (u32, u32)) -> Option<Pixmap> {
+    pictures::load(path, size)
+        .inspect_err(|why| picture_failed(path, why))
+        .ok()
+}
+
+/// The picture at `path` blurred for glass: made at a quarter of `size`,
+/// blurred with `BLUR_RADIUS` in those pixels, then drawn up to `size` with
+/// smooth edges. None when it cannot be read, which is logged.
+fn blurred(path: &Path, size: (u32, u32)) -> Option<Pixmap> {
+    let small = ((size.0 / BLUR_SHRINK).max(1), (size.1 / BLUR_SHRINK).max(1));
+    let mut low = pictures::load(path, small)
+        .inspect_err(|why| picture_failed(path, why))
+        .ok()?;
+    pictures::blur(&mut low, BLUR_RADIUS);
+    let mut out = Pixmap::new(size.0, size.1)?;
     let smooth = PixmapPaint {
-        quality: tiny_skia::FilterQuality::Bicubic,
+        quality: tiny_skia::FilterQuality::Bilinear,
         ..PixmapPaint::default()
     };
-    let at = Transform::from_row(
-        k,
-        0.0,
-        0.0,
-        k,
-        (side as f32 - sw * k) / 2.0,
-        (side as f32 - sh * k) / 2.0,
+    let up = Transform::from_scale(
+        size.0 as f32 / small.0 as f32,
+        size.1 as f32 / small.1 as f32,
     );
-    out.draw_pixmap(0, 0, source.as_ref(), &smooth, at, None);
-    Ok(out)
+    out.draw_pixmap(0, 0, low.as_ref(), &smooth, up, None);
+    Some(out)
+}
+
+/// Logs a picture of the lock screen's background that cannot be read.
+fn picture_failed(path: &Path, why: &str) {
+    eprintln!(
+        "edel-shell-ui: {}",
+        messages::picture_not_read(&path.display().to_string(), why)
+    );
 }
 
 /// Whether a point lies on the go button, the shake left aside.
@@ -813,11 +1029,26 @@ pub fn paint(
     text: &mut Text,
     icons: Option<&mut Icons>,
     pictures: &mut Pictures,
+    backdrops: &mut Backdrops,
+    wallpaper: &Wallpaper,
     scale: f32,
 ) {
     let s = scale;
     let w = pixmap.width() as f32 / s;
-    backdrop(pixmap, tokens);
+    // What lies behind: the made background, else the navy backdrop, so the
+    // screen always has one (Reliable).
+    let size = (pixmap.width(), pixmap.height());
+    match backdrops.get(&at.background, wallpaper, size, tokens) {
+        Some(made) => pixmap.draw_pixmap(
+            0,
+            0,
+            made.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        ),
+        None => backdrop(pixmap, tokens),
+    }
     let ink = tokens.backdrop_text;
     let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
     let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
@@ -914,6 +1145,9 @@ pub fn paint(
     }
     if let Some(rect) = at.count {
         count(pixmap, view, tokens, text, icons, s, w, rect);
+    }
+    if let (Some(rect), Some(charge)) = (at.battery, view.battery) {
+        battery_part(pixmap, rect, charge, ink, text, s);
     }
     match &view.people {
         Some(row) => {
@@ -1025,6 +1259,40 @@ pub fn paint(
             colour,
         );
     }
+}
+
+/// The battery part (M5.10c5c): its icon in the backdrop's text colour, then
+/// the percent beside it, both centred down the rectangle `rect` (logical
+/// pixels).
+fn battery_part(
+    pixmap: &mut Pixmap,
+    rect: Rect,
+    (percent, charging): (u8, bool),
+    ink: Colour,
+    text: &mut Text,
+    s: f32,
+) {
+    let halo = s.round().max(1.0) as i32;
+    let icon_top = rect.y + (rect.h - BATTERY_ICON) / 2.0;
+    paint::battery(
+        pixmap,
+        (BATTERY_ICON * s).round(),
+        (rect.x * s, icon_top * s),
+        (u32::from(percent), charging),
+        ink,
+        halo,
+    );
+    let left = (rect.x + BATTERY_ICON + GAP_SMALL) * s;
+    let right = (rect.x + rect.w) * s;
+    let words = trf("{percent}%", &[("percent", &percent.to_string())]);
+    let mut line = text.fit_in(
+        &words,
+        COUNT_TEXT * s,
+        (right - left).max(0.0),
+        Face::SEMIBOLD,
+    );
+    let top = (rect.y + (rect.h - COUNT_TEXT * 1.25) / 2.0) * s;
+    text.draw(pixmap, &mut line, left, top, ink);
 }
 
 /// The words under the field, if any (M5.10c): Caps Lock's mark while it
@@ -1526,6 +1794,15 @@ pub fn time_and_date(now: &jiff::Zoned) -> (String, String) {
     )
 }
 
+/// A lock screen whose parts are `parts` (tests only).
+#[cfg(test)]
+pub(crate) fn with_parts(parts: Option<&[Placed]>) -> LockScreen {
+    LockScreen {
+        parts: parts.map(<[Placed]>::to_vec),
+        ..LockScreen::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1558,12 +1835,28 @@ mod tests {
             h,
             &Tokens::built_in(),
             notices,
-            None,
+            &Default::default(),
             Some(card),
+            false,
             false,
             &corner_at,
             text,
         )
+    }
+
+    /// Each part of the look's list has its rectangle in `placed`, in the
+    /// list's order, and each is the named rectangle (M5.10c6).
+    #[test]
+    fn the_classic_layout_places_every_part_in_the_list_order() {
+        let mut text = Text::load(&Tokens::built_in().font);
+        let at = classic_at(1280.0, 800.0, true, &mut text);
+        assert_eq!(at.placed.len(), 5, "date, clock, count, person, player");
+        assert!(at.placed.iter().all(Option::is_some), "{:?}", at.placed);
+        assert_eq!(at.placed[0], at.date);
+        assert_eq!(at.placed[1], at.clock);
+        assert_eq!(at.placed[2], at.count);
+        assert_eq!(at.placed[3], Some(at.person));
+        assert_eq!(at.placed[4], at.player);
     }
 
     /// Whether two rectangles overlap; touching edges do not.
@@ -1738,8 +2031,9 @@ mod tests {
             800.0,
             &tokens,
             false,
-            Some(&parts),
+            &with_parts(Some(&parts)),
             None,
+            false,
             false,
             &corner_at,
             &mut text,
@@ -1821,8 +2115,9 @@ mod tests {
                 h,
                 &tokens,
                 true,
-                Some(&list),
+                &with_parts(Some(&list)),
                 Some((400.0, 100.0)),
+                false,
                 false,
                 &corner_at,
                 &mut text,
@@ -1893,6 +2188,8 @@ mod tests {
             player: None,
             people: false,
             keep_out: keep_out(&corner_at),
+            battery: false,
+            background: Background::Backdrop,
         };
         let fallback = layout(360.0, 740.0, &tokens, false, &broken, &mut text);
         assert_eq!(fallback.field, at.field);
@@ -1975,6 +2272,318 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// The corner's view with its layout button, as the tests lay a lock out.
+    fn corner_with_layouts() -> corner::Layout {
+        corner::layout(
+            1280.0,
+            800.0,
+            &corner::View {
+                layout: Some("EN".into()),
+                menu: false,
+                restart_waiting: false,
+                hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
+            },
+        )
+    }
+
+    /// One screen laid out from `lock` at 1280 by 800, with a player card of
+    /// 400 by 100 and battery `battery`.
+    fn at_with(lock: &LockScreen, notices: bool, battery: bool, text: &mut Text) -> Layout {
+        screen_layout(
+            1280.0,
+            800.0,
+            &Tokens::built_in(),
+            notices,
+            lock,
+            Some((400.0, 100.0)),
+            false,
+            battery,
+            &corner_with_layouts(),
+            text,
+        )
+    }
+
+    /// A 64 by 48 PNG, left half red and right half blue, in a temp folder of
+    /// its own named `name`; the caller removes the folder.
+    fn red_and_blue(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("edel-lock-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut pixmap = Pixmap::new(64, 48).unwrap();
+        pixmap.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        let mut blue = Paint::default();
+        blue.set_color_rgba8(0, 0, 255, 255);
+        let right = tiny_skia::Rect::from_xywh(32.0, 0.0, 32.0, 48.0).unwrap();
+        pixmap.fill_rect(right, &blue, Transform::identity(), None);
+        let path = dir.join("split.png");
+        pixmap.save_png(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn the_persons_lock_settings_go_over_the_machines() {
+        let machine = "format = 1\n[lock_screen]\nlook = \"magazine\"\nbackground = \"#101820\"\nnotifications = \"none\"\n";
+        let person = "format = 1\n[lock_screen]\nlook = \"minimal\"\n";
+        let lock = lock_settings(Some(machine), Some(person));
+        assert_eq!(lock.look.as_deref(), Some("minimal"));
+        // The person has no background, so the machine's applies.
+        assert_eq!(lock.background.as_deref(), Some("#101820"));
+        assert_eq!(lock.notifications.as_deref(), Some("none"));
+        assert!(lock.parts.is_none());
+        // A file that does not read counts as absent.
+        let broken = lock_settings(Some("not toml ="), None);
+        assert_eq!(broken, LockScreen::default());
+    }
+
+    #[test]
+    fn a_machines_own_look_is_reachable_from_the_persons_look() {
+        let machine = "format = 1\n[lock_screen.looks.home]\nparts = [{ part = \"person\", at = \"centre\", y = 0.3 }]\n";
+        let person = "format = 1\n[lock_screen]\nlook = \"home\"\n\n[lock_screen.looks.mine]\nparts = [{ part = \"person\", at = \"centre\" }]\n";
+        let lock = lock_settings(Some(machine), Some(person));
+        let own = lock.looks.as_ref().expect("both looks are kept");
+        assert!(own.contains_key("home") && own.contains_key("mine"));
+        let applied = lock_screen::applied(&lock, false);
+        assert!(
+            applied
+                .parts
+                .iter()
+                .any(|p| p.part == Part::Person && (p.y - 0.3).abs() < 1e-9),
+            "{:?}",
+            applied.parts
+        );
+        assert_eq!(applied.background, Background::Blurred);
+    }
+
+    #[test]
+    fn a_blurred_backdrop_mixes_the_halves_and_is_made_once() {
+        let tokens = Tokens::built_in();
+        let picture = red_and_blue("blurred");
+        let wallpaper = Wallpaper::Picture(picture.clone());
+        let mut backdrops = Backdrops::default();
+        let first = backdrops
+            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .map(|p| p as *const Pixmap);
+        let again = backdrops
+            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .map(|p| p as *const Pixmap);
+        assert!(first.is_some());
+        assert_eq!(first, again);
+        assert_eq!(backdrops.made.len(), 1);
+        let made = backdrops
+            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .unwrap();
+        let mid = made.pixel(64, 48).unwrap();
+        assert!(mid.red() > 40 && mid.blue() > 40, "{mid:?}");
+        std::fs::remove_dir_all(picture.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn a_sharp_backdrop_keeps_the_left_red() {
+        let tokens = Tokens::built_in();
+        let picture = red_and_blue("sharp");
+        let wallpaper = Wallpaper::Picture(picture.clone());
+        let made = Backdrops::default()
+            .get(&Background::Sharp, &wallpaper, (128, 96), &tokens)
+            .map(|p| p.pixel(2, 48).unwrap())
+            .expect("the sharp picture is made");
+        assert!(made.red() > made.blue() + 60, "{made:?}");
+        std::fs::remove_dir_all(picture.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn a_colour_backdrop_is_the_colour_dimmed() {
+        let tokens = Tokens::built_in();
+        let red = Colour::parse("#ff0000").unwrap();
+        let made = Backdrops::default()
+            .get(
+                &Background::Colour(red),
+                &Wallpaper::Background,
+                (64, 48),
+                &tokens,
+            )
+            .map(|p| p.pixel(10, 10).unwrap())
+            .expect("the colour is made");
+        // Red under the deep colour at 30 percent.
+        let want = 1.0 * (1.0 - DIM) + DIM * tokens.lock_backdrop_deep.r;
+        assert!((made.red() as f32 / 255.0 - want).abs() < 0.02, "{made:?}");
+    }
+
+    #[test]
+    fn the_navy_backdrop_and_a_picture_not_read_give_none() {
+        let tokens = Tokens::built_in();
+        let mut backdrops = Backdrops::default();
+        let size = (128, 96);
+        assert!(
+            backdrops
+                .get(&Background::Backdrop, &Wallpaper::Background, size, &tokens)
+                .is_none()
+        );
+        let missing = Background::Picture(PathBuf::from("/nonexistent/edel-lock-test.png"));
+        assert!(
+            backdrops
+                .get(&missing, &Wallpaper::Background, size, &tokens)
+                .is_none()
+        );
+        let gone = Wallpaper::Picture(PathBuf::from("/nonexistent/edel-lock-test.jpg"));
+        assert!(
+            backdrops
+                .get(&Background::Sharp, &gone, size, &tokens)
+                .is_none()
+        );
+        assert!(
+            backdrops
+                .get(&Background::Blurred, &Wallpaper::Background, size, &tokens)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_minimal_look_has_no_count_and_none_hides_it() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        assert!(
+            at_with(&LockScreen::default(), true, false, &mut text)
+                .count
+                .is_some()
+        );
+        let minimal = LockScreen {
+            look: Some("minimal".into()),
+            ..LockScreen::default()
+        };
+        assert!(at_with(&minimal, true, false, &mut text).count.is_none());
+        let none = LockScreen {
+            notifications: Some("none".into()),
+            ..LockScreen::default()
+        };
+        assert!(at_with(&none, true, false, &mut text).count.is_none());
+    }
+
+    #[test]
+    fn a_battery_gets_its_own_room_clear_of_the_other_parts() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let mut parts = lock_screen::classic(false);
+        parts.push(Placed {
+            part: Part::Battery,
+            at: Anchor::TopRight,
+            x: 0.0,
+            y: 0.0,
+            text: None,
+            path: None,
+            face: None,
+            hours: None,
+            size: None,
+            weight: None,
+            show: None,
+            style: None,
+        });
+        let lock = LockScreen {
+            parts: Some(parts),
+            ..LockScreen::default()
+        };
+        let at = at_with(&lock, true, true, &mut text);
+        let battery = at.battery.expect("the battery stands");
+        assert!(battery.w > BATTERY_ICON, "{battery:?}");
+        for (name, r) in rects_of(&at) {
+            assert!(!overlap(r, battery), "{name} meets the battery {battery:?}");
+        }
+        // A screen with no battery leaves its room out.
+        assert!(at_with(&lock, true, false, &mut text).battery.is_none());
+    }
+
+    #[test]
+    fn the_backgrounds_and_looks_save_pictures_when_asked() {
+        let Ok(dir) = std::env::var("EDEL_LOCK_PNG") else {
+            return;
+        };
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let picture = red_and_blue("pictures");
+        let wallpaper = Wallpaper::Picture(picture.clone());
+        // The time as numbers too, so the minimal look draws its own face.
+        let view = View {
+            when: Some(When {
+                hour: 14,
+                minute: 6,
+                weekday: 6,
+                day: 3,
+                month: 10,
+                year: 2026,
+            }),
+            ..View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into())
+        };
+        let mut pictures = Pictures::default();
+        let mut backdrops = Backdrops::default();
+        // The classic parts over the blurred picture.
+        let mut blurred = classic_at(1280.0, 800.0, true, &mut text);
+        blurred.background = Background::Blurred;
+        let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        paint(
+            &mut pixmap,
+            &view,
+            &blurred,
+            &tokens,
+            &mut text,
+            None,
+            &mut pictures,
+            &mut backdrops,
+            &wallpaper,
+            1.0,
+        );
+        pixmap.save_png(format!("{dir}/lock-blurred.png")).unwrap();
+        // The minimal look, which is blurred too.
+        let minimal = LockScreen {
+            look: Some("minimal".into()),
+            ..LockScreen::default()
+        };
+        let at = at_with(&minimal, true, false, &mut text);
+        let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        paint(
+            &mut pixmap,
+            &view,
+            &at,
+            &tokens,
+            &mut text,
+            None,
+            &mut pictures,
+            &mut backdrops,
+            &wallpaper,
+            1.0,
+        );
+        pixmap.save_png(format!("{dir}/lock-minimal.png")).unwrap();
+        // Each look over the dark Hills wallpaper, as people will see it.
+        let hills = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../features/wallpapers/usr/share/edel/wallpapers/hills-dark.jpg");
+        let hills = Wallpaper::Picture(hills);
+        for look in lock_screen::LOOKS {
+            let lock = LockScreen {
+                look: Some((*look).into()),
+                background: Some("blurred".into()),
+                ..LockScreen::default()
+            };
+            let at = at_with(&lock, true, false, &mut text);
+            let mut pixmap = Pixmap::new(1280, 800).unwrap();
+            paint(
+                &mut pixmap,
+                &view,
+                &at,
+                &tokens,
+                &mut text,
+                None,
+                &mut pictures,
+                &mut backdrops,
+                &hills,
+                1.0,
+            );
+            pixmap
+                .save_png(format!("{dir}/lock-{look}-hills.png"))
+                .unwrap();
+        }
+        std::fs::remove_dir_all(picture.parent().unwrap()).ok();
+    }
+
     #[test]
     fn the_screen_draws_with_its_field_and_note() {
         let tokens = Tokens::built_in();
@@ -1998,6 +2607,8 @@ mod tests {
             &mut text,
             None,
             &mut pictures,
+            &mut Backdrops::default(),
+            &Wallpaper::Background,
             1.0,
         );
         // The bottom is the backdrop's deep colour all the way across, the
@@ -2031,6 +2642,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut pictures,
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
                 2.0,
             );
             phone.save_png(format!("{dir}/lock-phone.png")).unwrap();
@@ -2049,6 +2662,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut pictures,
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
                 1.0,
             );
             pixmap.save_png(format!("{dir}/lock-wrong.png")).unwrap();
@@ -2063,6 +2678,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut pictures,
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
                 1.0,
             );
             pixmap.save_png(format!("{dir}/greeter-name.png")).unwrap();
@@ -2129,8 +2746,9 @@ mod tests {
                 800.0,
                 &tokens,
                 true,
-                Some(&parts),
+                &with_parts(Some(&parts)),
                 Some((400.0, 100.0)),
+                false,
                 false,
                 &corner_at,
                 &mut text,
@@ -2144,6 +2762,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut pictures,
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
                 1.0,
             );
             pixmap.save_png(format!("{dir}/lock-parts.png")).unwrap();
@@ -2172,8 +2792,9 @@ mod tests {
                 800.0,
                 &tokens,
                 false,
-                Some(&faces),
+                &with_parts(Some(&faces)),
                 None,
+                false,
                 false,
                 &corner_at,
                 &mut text,
@@ -2198,6 +2819,8 @@ mod tests {
                 &mut text,
                 None,
                 &mut pictures,
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
                 1.0,
             );
             pixmap.save_png(format!("{dir}/lock-analog.png")).unwrap();
@@ -2251,6 +2874,8 @@ mod tests {
             &mut text,
             None,
             &mut Pictures::default(),
+            &mut Backdrops::default(),
+            &Wallpaper::Background,
             1.0,
         );
         if let Ok(dir) = std::env::var("EDEL_LOCK_PNG") {

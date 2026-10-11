@@ -79,9 +79,22 @@ pub struct Tile {
     pub placed: bool,
 }
 
+/// Which editor the drawer serves (M5.10c6): the panels' (its tiles are the
+/// widgets, each drawn as it is on a panel) or the lock screen's (its tiles
+/// are the parts, each named by its title alone). The words differ, and the
+/// rest of the drawer is the same code.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Kind {
+    #[default]
+    Panels,
+    LockScreen,
+}
+
 /// What the drawer shows and where the pointer and the keyboard are.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct View {
+    /// Which editor the drawer serves (M5.10c6); `Panels` by default.
+    pub kind: Kind,
     pub tiles: Vec<Tile>,
     /// A Compact screen: touch sizes, three tiles across.
     pub compact: bool,
@@ -447,16 +460,23 @@ pub fn paint(
     let heading = tokens.panel_text_size as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
     if let Some(text) = text.as_deref_mut() {
-        let mut line = text.line_in(tr("Edit panels"), heading, Face::SEMIBOLD);
+        let heading_words = match view.kind {
+            Kind::Panels => tr("Edit panels"),
+            Kind::LockScreen => tr("Edit lock screen"),
+        };
+        let mut line = text.line_in(heading_words, heading, Face::SEMIBOLD);
         let y = popup::middle(PAD, HEADING, heading, s);
         text.draw(pixmap, &mut line, PAD * s, y, tokens.panel_text);
         let room = (l.card.w - 2.0 * PAD) * s;
-        let hint = if view.taking {
-            tr("Drop here to take it off the panel")
-        } else {
-            tr(
+        let hint = match (view.kind, view.taking) {
+            (Kind::Panels, true) => tr("Drop here to take it off the panel"),
+            (Kind::Panels, false) => tr(
                 "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
-            )
+            ),
+            (Kind::LockScreen, true) => tr("Drop here to take it away"),
+            (Kind::LockScreen, false) => {
+                tr("Drag a part anywhere, from here to add it, or here to take it away")
+            }
         };
         let lines = wrap(hint, hint_lines(view), room, |t| text.line(t, small).width);
         for (i, words) in lines.iter().enumerate() {
@@ -478,7 +498,9 @@ pub fn paint(
         if view.hover == Some(part) || view.focus == Some(part) {
             fill(&mut layer, 0.0, 0.0, lw, lh, radius, veil(tokens, 0.06));
         }
-        if let Some(widget) = widget_of(tile.name) {
+        // A panel's tile shows the widget as it is on a panel; a lock
+        // screen's tile has no picture, only its title (M5.10c6).
+        if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(tile.name)) {
             picture(
                 &mut layer,
                 widget,
@@ -490,10 +512,19 @@ pub fn paint(
             );
         }
         if let Some(text) = text.as_deref_mut() {
-            let mut words = text.fit(&tile.title, small, lw - 2.0 * popup::PAD * s);
-            let y = popup::middle(TITLE_TOP, TITLE_LINE, small, s);
-            let at = ((lw - words.width) / 2.0).round();
-            text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
+            if view.kind == Kind::LockScreen {
+                // The title alone, centred in the tile in the panel text's size.
+                let size = tokens.panel_text_size as f32 * s;
+                let mut words = text.fit(&tile.title, size, lw - 2.0 * popup::PAD * s);
+                let y = popup::middle(0.0, TILE.1, size, s);
+                let at = ((lw - words.width) / 2.0).round();
+                text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
+            } else {
+                let mut words = text.fit(&tile.title, small, lw - 2.0 * popup::PAD * s);
+                let y = popup::middle(TITLE_TOP, TITLE_LINE, small, s);
+                let at = ((lw - words.width) / 2.0).round();
+                text.draw(&mut layer, &mut words, at, y, tokens.panel_text);
+            }
         }
         let opacity = if view.lifted == Some(i) {
             LIFTED
@@ -600,6 +631,7 @@ mod tests {
 
     fn view(n: usize, width: u32, compact: bool) -> View {
         View {
+            kind: Kind::Panels,
             tiles: (0..n)
                 .map(|i| Tile {
                     name: "clock",
@@ -839,6 +871,7 @@ mod tests {
                 })
                 .collect();
             let v = View {
+                kind: Kind::Panels,
                 tiles,
                 compact: false,
                 width: 1280,
@@ -866,6 +899,61 @@ mod tests {
                     .save_png(dir.join(format!("editor-{mode}.png")))
                     .unwrap();
             }
+        }
+    }
+
+    /// The lock screen's drawer (M5.10c6): its heading and hint are the lock
+    /// screen's, each tile is its title alone (no picture), and it lays out
+    /// and paints like the panels' drawer. Written as `editor-lock.png` with
+    /// `EDEL_EDITOR_PNG`.
+    #[test]
+    fn the_lock_screens_drawer_lays_out_and_paints_its_titles() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let tiles = vec![
+            Tile {
+                name: "message",
+                title: "Message".into(),
+                shown: String::new(),
+                placed: false,
+            },
+            Tile {
+                name: "battery",
+                title: "Battery".into(),
+                shown: String::new(),
+                placed: false,
+            },
+        ];
+        let v = View {
+            kind: Kind::LockScreen,
+            tiles,
+            compact: false,
+            width: 1280,
+            hover: None,
+            focus: Some(Part::Tile(0)),
+            lifted: None,
+            taking: false,
+        };
+        let l = layout(&v);
+        let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
+        paint(&mut pixmap, &v, &l, &tokens, None, Some(&mut text), 2.0);
+        let t = l.tiles[0];
+        let alpha = |x: f32, y: f32| {
+            pixmap
+                .pixel((x * 2.0) as u32, (y * 2.0) as u32)
+                .unwrap()
+                .alpha()
+        };
+        assert_ne!(alpha(t.x + 3.0, t.y + 3.0), 0, "the first tile");
+        assert!(
+            places(&l, &v).contains(", tile message "),
+            "the places name each tile by its part: {}",
+            places(&l, &v)
+        );
+        if let Some(dir) = std::env::var_os("EDEL_EDITOR_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            pixmap.save_png(dir.join("editor-lock.png")).unwrap();
         }
     }
 }
