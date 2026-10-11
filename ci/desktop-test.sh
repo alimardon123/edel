@@ -186,7 +186,7 @@
 #               (M5.2e)
 #   settings-tour  Settings opened on each page edel settings lists (the page
 #               list is read from the tool), each maximized and drawn,
-#               scrolled with the wheel and drawn again, and each again at 366 px,
+#               and each again at 366 px,
 #               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
 #               and named in the PASS line
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
@@ -1658,10 +1658,11 @@ case_settings_tour() {
 	# (`settings pages`), never written here. Each page opens by
 	# `edel-settings --page NAME` (the service's `settings tour`) and is
 	# maximized (Super+M), so a picture holds as much of the page as the
-	# screen does, and drawn (settings-tour-NAME-1.png); ten notches of the
-	# wheel over the page scroll it (-2.png), and ten more (-3.png) only
-	# when -2.png differs from -1.png (Page_Down, tried first, moved the
-	# sidebar's selection instead, which held the keyboard). A page this machine's Settings does
+	# screen does, and drawn (settings-tour-NAME-1.png). Pages are not
+	# scrolled: Page_Down moved the sidebar's selection, which held the
+	# keyboard, the tablet's wheel never reached the page, and QMP sends a
+	# button to no input device of our choosing (its device names a
+	# display), so the maximized picture is what the tour shows. A page this machine's Settings does
 	# not show yet is skipped: edel settings lists pages the Settings app
 	# has not built (region, shortcuts, default apps, startup, apps,
 	# add-ons and services, as the Settings app stood on 2026-10-11), and Settings refuses each one
@@ -1686,14 +1687,6 @@ case_settings_tour() {
 		python3 ci/qmp.py key meta_l-m
 		sleep 2
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
-		python3 ci/qmp.py wheel 760 400 10
-		sleep 1
-		python3 ci/qmp.py screendump "$dir/settings-tour-$page-2.png"
-		if ! same_file "$dir/settings-tour-$page-1.png" "$dir/settings-tour-$page-2.png"; then
-			python3 ci/qmp.py wheel 760 400 10
-			sleep 1
-			python3 ci/qmp.py screendump "$dir/settings-tour-$page-3.png"
-		fi
 		tour_close
 	done
 	# Compact, as the power case makes it: 366 logical px wide, Settings
@@ -1721,7 +1714,7 @@ case_settings_tour() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
 	python3 ci/qmp.py key meta_l-1
 	set -- $shown
-	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, with -2.png after ten notches of the wheel and -3.png when -2.png moved, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {
@@ -5191,7 +5184,7 @@ fi
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
-	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci,id=mouse \
+	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
 	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
