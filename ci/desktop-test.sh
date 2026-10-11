@@ -23,6 +23,10 @@
 #   tiling      edel settings set layout.tiling=true, sent to the VM, tiles
 #               foot and one side by side with their bars; Super+T puts
 #               them back where they floated, overlapping
+#   shape       appearance.gaps=12 and border_width=3 with a red focused
+#               border, sent to the VM, tiles foot and one 12 px apart as
+#               frames, with one's red border; tiling off and shape default
+#               put the release's shape back (M5.12b2b)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -1525,6 +1529,63 @@ case_settings_accent() {
 	shot settings-accent-default $((place + 29)) 780 "$(token accent)" >/dev/null ||
 		fail "the switcher's shown pill at $((place + 29)),780 is not the light accent #$(token accent) after reset"
 	echo "PASS: Settings' accent swatches put the red one at $cx,$cy; a click wrote appearance.accent = \"red\" to ci's file and the compositor took #d0363f, the switcher's pill red (settings-accent.png), and colours default brought the light accent back"
+}
+
+# shape_logged PATTERN: asks the test service for Settings' log (its
+# stderr, which the serial console does not carry) and tells whether it
+# holds PATTERN.
+shape_logged() {
+	guest 'settings shape log'
+	value settings_shape_log | grep -q "$1"
+}
+
+case_settings_shape() {
+	# Settings' Shape group (M5.12b2c): Settings opened on its Appearance
+	# page by the name of the gaps row logs where the group's sliders lie.
+	# The gaps slider has the keyboard then: End takes it to 64 and sixteen
+	# presses of Left to 48, so Settings writes appearance.gaps = 48 to ci's
+	# file, and the compositor lays its windows 48 apart (`shape gaps
+	# 48/48`). Super+Q closes Settings, and `shape mine default` takes the
+	# six keys out of ci's file, the compositor back at `shape gaps 8/8`.
+	# Kept as settings-shape.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings shape'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Appearance page by the gaps row: $(value windows)"
+	i=0
+	until shape_logged 'shape group places'; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the Shape group lies: $(value settings_shape_log)"
+		sleep 1
+	done
+	said=$(count 'edel-compositor: shape gaps 48/48')
+	python3 ci/qmp.py key end
+	i=0
+	while [ "$i" -lt 16 ]; do
+		python3 ci/qmp.py key left
+		i=$((i + 1))
+	done
+	i=0
+	until shape_logged 'shape appearance.gaps 48 written'; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not write appearance.gaps = 48: $(value settings_shape_log)"
+		sleep 1
+	done
+	wait_more 'edel-compositor: shape gaps 48/48' "$said" 60 ||
+		fail "the compositor did not lay its windows 48 apart after appearance.gaps = 48"
+	python3 ci/qmp.py screendump "$dir/settings-shape.png"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'gaps = 48' ||
+		fail "ci's settings file is not what the gaps slider writes: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	reset=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
+	guest 'shape mine default'
+	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$reset" ||
+		fail "the compositor did not go back to shape gaps 8/8 after the six keys were taken out"
+	echo "PASS: Settings' Shape group took the gaps slider to 48 from the keyboard and wrote appearance.gaps = 48 to ci's file and the compositor laid its windows 48 apart (settings-shape.png), and shape mine default brought the gaps back to 8"
 }
 
 case_display() {
@@ -4257,6 +4318,66 @@ case_tiling() {
 	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+}
+
+case_shape() {
+	# The shape (M5.12b2b), through the settings file as Settings writes it:
+	# gaps of 12 between tiles and at the edges, a 3 px border and a red
+	# focused border. Tiled, a frame is its window grown by 3 px at the sides
+	# and bottom and by 30 px on top (the bar's 28 px and the border's top),
+	# so foot and one are 12 px apart as frames, and one, the one with the
+	# keyboard, has red on its left border, halfway down.
+	bar=$(token title_bar)
+	focused=$(token title_bar_focused)
+	guest 'shape on'
+	wait_for 'DESKTOP-TEST: ran shape on: 0' ||
+		fail "edel settings set appearance.gaps=12 and the border did not run in the VM"
+	wait_for 'edel-compositor: shape gaps 12/12, border 3, title bar 28' ||
+		fail "the compositor did not follow the shape: appearance.gaps and border_width"
+	# Super+T tiles this workspace whatever layout.tiling says (the tiling
+	# case leaves the file at true with the workspace floated by Super+T).
+	tiling=$(count 'edel-compositor: windows now tiling')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now tiling' "$tiling" ||
+		fail "Super+T did not tile the workspace for the shape"
+	wait_for 'DESKTOP-TEST: windows 2 foot@15,42,[0-9]+x[0-9]+ one@649,42,616x703' ||
+		fail "foot and one are not tiled inside 12 px gaps and a 3 px border: $(value windows)"
+	tiled=$(value windows)
+	geometry=$(python3 - "$tiled" <<-'EOF'
+		import re, sys
+		win = {n: tuple(map(int, rest)) for n, *rest in re.findall(r"(\w+)@(\d+),(\d+),(\d+)x(\d+)", sys.argv[1])}
+		frames = sorted((x - 3, y - 30, x + w + 3, y + h + 3) for x, y, w, h in win.values())
+		(_, _, a_right, _), (b_left, _, _, _) = frames[0], frames[1]
+		gap = b_left - a_right
+		assert gap == 12, "the frames are %d px apart, not 12: %s" % (gap, frames)
+		one = frames[1]
+		print((a_right + b_left) // 2, one[0] + 1, (one[1] + one[3]) // 2)
+	EOF
+	) || fail "the tiled frames are not 12 px apart with the 3 px border: $tiled"
+	set -- $geometry
+	gap_x=$1 edge_x=$2 edge_y=$3
+	# The gap shows the background, not either window or its bar.
+	gap=$(shot shape "$gap_x" 300 "!$foot") ||
+		fail "the gap between foot and one at $gap_x,300 is #$gap, not the background"
+	case "$gap" in
+	"$bar" | "$focused" | cc3333) fail "the gap between foot and one at $gap_x,300 is #$gap, a window's own colour" ;;
+	esac
+	# One has the keyboard: its left border, 1 px inside its frame, is red.
+	edge=$(shot shape "$edge_x" "$edge_y" ff0000) ||
+		fail "one's focused border at $edge_x,$edge_y is #$edge, not ff0000 (appearance.colours.window_border_focused)"
+	# Back to the release's shape: 8 px gaps, 1 px border, the release's
+	# border colours, and floating again.
+	floated=$(count 'edel-compositor: windows now floating')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now floating' "$floated" ||
+		fail "Super+T did not float the windows again after the shape"
+	shaped=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
+	guest 'shape default'
+	wait_for 'DESKTOP-TEST: ran shape default: 0' ||
+		fail "edel settings reset of the shape did not run in the VM"
+	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$shaped" ||
+		fail "the compositor did not go back to shape gaps 8/8, border 1 after shape default"
+	echo "PASS: appearance.gaps 12 and border_width 3 put foot and one 12 px apart as frames with a 3 px border, one's red focused border at $edge_x,$edge_y, and shape default gave the release's shape back"
 }
 
 case_styles() {

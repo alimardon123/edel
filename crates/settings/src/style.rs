@@ -210,6 +210,10 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
   border-radius: {rs}px; background-color: {fill}; border: 1px solid {line}; border-bottom-width: 2px; }}
 .edel-value {{ color: {secondary}; }}
 .edel-preview-row {{ padding: 18px 14px; }}
+.edel-shape-line {{ background-color: {line}; min-height: 1px; }}
+.edel-shape-actions .edel-copy {{ opacity: 0; }}
+.edel-shape-actions.edel-hover .edel-copy {{ opacity: 0.45; }}
+.edel-shape-actions .edel-copy:hover, .edel-shape-actions .edel-copy:focus-visible {{ opacity: 1; }}
 .edel-mini-window {{ background-color: {window}; border: 1px solid {line}; border-radius: {rw}px;
   box-shadow: 0 1px 2px alpha({shadow}, 0.15), 0 8px 18px -10px alpha({shadow}, 0.35); }}
 .edel-bar {{ min-height: 28px; padding: 0 5px; background-color: {bar}; border-bottom: 1px solid {line};

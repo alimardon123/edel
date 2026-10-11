@@ -9,11 +9,55 @@ use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use crate::tiling::{Style, Tiling};
 
+/// The space tiled windows keep (M5.12b2b): `inner` between two windows,
+/// `outer` between a window and the area's edge. Both come from the
+/// tokens' `gap` and `gap_outer`; the release's are 8 and 8.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Gaps {
+    pub inner: i32,
+    pub outer: i32,
+}
+
+impl Gaps {
+    /// Each gap as the area allows: a gap is dropped where it would leave
+    /// no room, that is where the area is not more than four times the
+    /// gap on both sides.
+    pub fn within(self, area: Rectangle<i32, Logical>) -> Gaps {
+        let keep = |gap: i32| {
+            if area.size.w > 4 * gap && area.size.h > 4 * gap {
+                gap
+            } else {
+                0
+            }
+        };
+        Gaps {
+            inner: keep(self.inner),
+            outer: keep(self.outer),
+        }
+    }
+
+    /// The gaps the tokens give (`appearance.gaps` and `gaps_outer`).
+    pub fn from_tokens(tokens: &edel::tokens::Tokens) -> Gaps {
+        Gaps {
+            inner: tokens.gap as i32,
+            outer: tokens.gap_outer as i32,
+        }
+    }
+
+    /// The same gap between windows and at the edge, `px` pixels.
+    pub fn uniform(px: u32) -> Gaps {
+        Gaps {
+            inner: px as i32,
+            outer: px as i32,
+        }
+    }
+}
+
 /// Every policy, the default first: what `layout.tiling` and Super+T choose
 /// between. Their names are what people see (ADR-008), never the
 /// algorithm's, so a later tiling algorithm keeps everyone's setting.
-pub fn policies<W: Clone + PartialEq + 'static>(gap: u32) -> Vec<Box<dyn WindowPolicy<W>>> {
-    vec![Box::new(Floating::default()), Box::new(Tiling::new(gap))]
+pub fn policies<W: Clone + PartialEq + 'static>(gaps: Gaps) -> Vec<Box<dyn WindowPolicy<W>>> {
+    vec![Box::new(Floating::default()), Box::new(Tiling::new(gaps))]
 }
 
 /// Where windows go on one workspace.
@@ -70,6 +114,10 @@ pub trait WindowPolicy<W> {
 
     /// The tiling style (M5.16); floating has none.
     fn set_style(&mut self, _style: Style) {}
+
+    /// The gaps between and round tiled windows (M5.12b2b); floating has
+    /// none.
+    fn set_gaps(&mut self, _gaps: Gaps) {}
 }
 
 /// The areas windows lie in, one per screen, by the screen's name: each
@@ -82,7 +130,7 @@ pub type Areas = [(String, Rectangle<i32, Logical>)];
 /// Switching re-lays the windows out at once (ADR-002), and back in
 /// floating they are where they were.
 pub struct Workspace<W> {
-    gap: u32,
+    gaps: Gaps,
     /// The tiling style new screens' tiling starts in.
     style: Style,
     /// Each policy's name and whether it rearranges, in [`policies`]'
@@ -103,11 +151,11 @@ struct Screen<W> {
 
 impl<W: Clone + PartialEq + 'static> Workspace<W> {
     /// A floating workspace with every policy of [`policies`].
-    pub fn new(gap: u32) -> Workspace<W> {
+    pub fn new(gaps: Gaps) -> Workspace<W> {
         Workspace {
-            gap,
+            gaps,
             style: Style::default(),
-            kinds: policies::<W>(gap)
+            kinds: policies::<W>(gaps)
                 .iter()
                 .map(|p| (p.name(), p.rearranges()))
                 .collect(),
@@ -169,7 +217,7 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         let i = match self.screens.iter().position(|s| s.name == screen) {
             Some(i) => i,
             None => {
-                let mut policies = policies(self.gap);
+                let mut policies = policies(self.gaps);
                 for policy in &mut policies {
                     policy.set_style(self.style);
                 }
@@ -312,6 +360,17 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         for screen in &mut self.screens {
             for policy in &mut screen.policies {
                 policy.set_style(style);
+            }
+        }
+    }
+
+    /// Every screen's tiling keeps `gaps` from now on, and the screens
+    /// that come later (M5.12b2b).
+    pub fn set_gaps(&mut self, gaps: Gaps) {
+        self.gaps = gaps;
+        for screen in &mut self.screens {
+            for policy in &mut screen.policies {
+                policy.set_gaps(gaps);
             }
         }
     }
@@ -802,7 +861,7 @@ mod tests {
 
     #[test]
     fn a_workspace_switches_policies_and_floating_keeps_its_places() {
-        let mut workspace = Workspace::new(8);
+        let mut workspace = Workspace::new(Gaps::uniform(8));
         assert_eq!(workspace.name(), "floating");
         assert_eq!(workspace.next(), "tiling");
         let one = workspace.open(1, (300, 200).into(), "one", screen());
@@ -838,7 +897,7 @@ mod tests {
         let left = screen();
         let right = Rectangle::new((1280, 0).into(), (1024, 768).into());
         let both = vec![("one".to_string(), left), ("two".to_string(), right)];
-        let mut workspace = Workspace::new(8);
+        let mut workspace = Workspace::new(Gaps::uniform(8));
         // Each opens centred on its own screen.
         let a = workspace.open(1, (300, 200).into(), "one", left);
         let b = workspace.open(2, (300, 200).into(), "two", right);
@@ -914,5 +973,21 @@ mod tests {
         let smaller = Rectangle::from_size((1024, 768).into());
         assert_eq!(policy.arrange(smaller), [(2, smaller)]);
         assert_eq!(policy.name(), "fill");
+    }
+
+    #[test]
+    fn a_gap_is_dropped_only_where_it_leaves_no_room() {
+        let gaps = Gaps {
+            inner: 12,
+            outer: 4,
+        };
+        let small = Rectangle::from_size((40, 40).into());
+        assert_eq!(gaps.within(small), Gaps { inner: 0, outer: 4 });
+        let screen = Rectangle::from_size((1280, 800).into());
+        assert_eq!(gaps.within(screen), gaps);
+        assert_eq!(
+            Gaps::from_tokens(&edel::tokens::Tokens::built_in()),
+            Gaps::uniform(8)
+        );
     }
 }

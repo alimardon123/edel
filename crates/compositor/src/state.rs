@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use edel_compositor::layout::Direction;
+use edel_compositor::layout::{Direction, Gaps};
 use smithay::desktop::{PopupManager, Space, Window, find_popup_root_surface};
 use smithay::input::pointer::{CursorImageStatus, Focus};
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -62,7 +62,7 @@ use smithay::{
 use toml::{Table, Value};
 
 use edel_compositor::desks::Desks;
-use edel_compositor::frame::{Button, Text};
+use edel_compositor::frame::{Button, Insets, Text};
 use edel_compositor::settings::{self, Settings};
 use edel_compositor::telemetry::Telemetry;
 use edel_compositor::tokens::Tokens;
@@ -309,7 +309,7 @@ impl Edel {
             program: None,
             socket: String::new(),
             bindings: crate::shortcuts::bind(&Default::default()).0,
-            desks: Desks::new(Settings::default().workspaces(), tokens.gap),
+            desks: Desks::new(Settings::default().workspaces(), Gaps::from_tokens(&tokens)),
             ext_workspaces: Default::default(),
             toplevels: Default::default(),
             links: Default::default(),
@@ -571,8 +571,17 @@ impl Edel {
         let colours_changed = old.accent != new.accent
             || old.colours != new.colours
             || old.wallpaper != new.wallpaper
-            || old.wallpaper_dark != new.wallpaper_dark;
+            || old.wallpaper_dark != new.wallpaper_dark
+            || old.shape != new.shape;
         let mut tokens_changed = false;
+        // The shape (M5.12b2b) is read with the tokens, and the windows'
+        // frames are measured before the tokens change.
+        let old_sizes = sizes_of(&self.tokens);
+        let old_insets: Vec<(Window, Insets)> = self
+            .space
+            .elements()
+            .map(|window| (window.clone(), self.insets(window)))
+            .collect();
         if old.color_scheme != new.color_scheme || colours_changed {
             let (tokens, notes) = edel::tokens::on_this_machine(new.color_scheme);
             for note in notes {
@@ -590,6 +599,9 @@ impl Edel {
             if old.color_scheme != new.color_scheme {
                 eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
             }
+        }
+        if sizes_of(&self.tokens) != old_sizes {
+            self.shape_changed(old_insets);
         }
         // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
         // dark wallpaper's picture) changes, or the dark one (M5.10c4d).
@@ -637,6 +649,34 @@ impl Edel {
         }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();
+    }
+
+    /// The shape changed (M5.12b2b): the gaps go to every workspace, and
+    /// each window's frame takes its new bar and border. A floating window
+    /// keeps its size and place, a saved frame (the one before maximized or
+    /// fullscreen) keeps its window's size too, and then every window is
+    /// laid out again, tiles with the new gaps.
+    fn shape_changed(&mut self, old_insets: Vec<(Window, Insets)>) {
+        let (gaps, _, _) = sizes_of(&self.tokens);
+        log_shape(&self.tokens);
+        self.desks.set_gaps(gaps);
+        for (window, was) in old_insets {
+            let insets = self.insets(&window);
+            if insets == was {
+                continue;
+            }
+            let mut frame = data(&window).borrow_mut();
+            frame.restore = frame.restore.map(|r| insets.frame(was.window(r)));
+            frame.before_fullscreen = frame.before_fullscreen.map(|r| insets.frame(was.window(r)));
+            drop(frame);
+            if self.is_maximized(&window) || self.is_fullscreen(&window) {
+                continue;
+            }
+            if let Some(place) = self.space.element_geometry(&window) {
+                self.placed(&window, place);
+            }
+        }
+        self.relayout();
     }
 
     /// Whether the compositor draws title bars round `window` under its
@@ -1304,6 +1344,26 @@ delegate_kde_decoration!(Edel);
 delegate_fractional_scale!(Edel);
 delegate_viewporter!(Edel);
 delegate_tablet_manager!(Edel);
+/// The sizes a shape sets (M5.12b2b): the gaps between and at the edge of
+/// tiles, the border's width and the title bar's height.
+fn sizes_of(tokens: &Tokens) -> (Gaps, u32, u32) {
+    (
+        Gaps::from_tokens(tokens),
+        tokens.border,
+        tokens.title_bar_height,
+    )
+}
+
+/// Logs the shape the desktop draws with, at start and on each change
+/// (M5.12b2b), for CI's desktop test.
+pub fn log_shape(tokens: &Tokens) {
+    let (gaps, border, title_bar) = sizes_of(tokens);
+    eprintln!(
+        "edel-compositor: shape gaps {}/{}, border {border}, title bar {title_bar}",
+        gaps.inner, gaps.outer
+    );
+}
+
 delegate_cursor_shape!(Edel);
 delegate_seat!(Edel);
 delegate_data_device!(Edel);

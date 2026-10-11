@@ -54,8 +54,11 @@ pub struct Closing {
     pub parts: Vec<(Id, Part)>,
     /// Its title bar's last pixels.
     pub bar: Option<Bar>,
-    /// Its border, left, right and bottom.
+    /// Its border, left, right and bottom; two when the bottom is a
+    /// gradient, drawn as `strip` (M5.12b2b).
     pub borders: Vec<(SolidColorBuffer, Rectangle<i32, Logical>)>,
+    /// The bottom strip of a gradient border, its last pixels and place.
+    pub strip: Option<Bar>,
     /// How far it slides when its workspace is left; none when it closed.
     pub leave: Option<Point<i32, Logical>>,
 }
@@ -326,12 +329,22 @@ impl Edel {
                 pixels,
                 place: Rectangle::new(frame.loc, (frame.size.w, insets.top).into()),
             });
+        let strip = frame_data
+            .last_strip()
+            .filter(|(_, _, border)| border.start != border.end)
+            .map(|(buffer, pixels, _)| Bar {
+                buffer,
+                pixels,
+                place: crate::render::border_places(frame, insets)[2],
+            });
+        let sides = if strip.is_some() { 2 } else { 3 };
         let borders = if insets.top > 0 && (insets.side > 0 || insets.bottom > 0) {
             frame_data
                 .borders
                 .iter()
                 .cloned()
                 .zip(crate::render::border_places(frame, insets))
+                .take(sides)
                 .collect()
         } else {
             Vec::new()
@@ -350,6 +363,7 @@ impl Edel {
             parts,
             bar,
             borders,
+            strip,
             leave,
         });
         self.dirty = true;
