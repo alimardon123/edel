@@ -875,22 +875,29 @@ case_animations() {
 		runs=$(count "speed $speed %")
 		guest "motion speed $speed"
 		wait_more "speed $speed %" "$runs" || fail "appearance.animation_speed = $speed did not show in the animations' log"
-		windows=$(value windows)
-		runs=$(count 'DESKTOP-TEST: open_ten_tier ')
-		guest 'open ten'
-		wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows at speed $speed"
-		speed_p99=$(value open_ten_p99_ms)
-		speed_frames=$(value open_ten_frames)
-		speed_added=$(awk -v m="$speed_p99" -v o="$p99_off" 'BEGIN { if (m != "" && o != "") printf "%.1f", m - o }')
-		i=0
-		while [ "$(value windows)" != "$windows" ]; do
-			i=$((i + 1))
-			[ "$i" -lt 100 ] || fail "the ten windows did not all close at speed $speed: $(value windows)"
-			sleep 0.2
+		# Up to two runs, as the pairs above take the better of two: a
+		# moment the runner was busy lifts one run (1.6 ms against 1.5 at
+		# speed 50 on 2026-10-11), while a real cost lifts both.
+		for try in 1 2; do
+			windows=$(value windows)
+			runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+			guest 'open ten'
+			wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows at speed $speed"
+			speed_p99=$(value open_ten_p99_ms)
+			speed_frames=$(value open_ten_frames)
+			speed_added=$(awk -v m="$speed_p99" -v o="$p99_off" 'BEGIN { if (m != "" && o != "") printf "%.1f", m - o }')
+			i=0
+			while [ "$(value windows)" != "$windows" ]; do
+				i=$((i + 1))
+				[ "$i" -lt 100 ] || fail "the ten windows did not all close at speed $speed: $(value windows)"
+				sleep 0.2
+			done
+			[ "${speed_frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${speed_frames:-no} frames with ten windows at speed $speed"
+			awk -v a="$speed_added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' && break
+			echo "ten windows at speed $speed, run $try: $speed_added ms added, over the budget of $limit ms"
+			[ "$try" = 1 ] ||
+				fail "at speed $speed, ten windows added ${speed_added:-?} ms to the frames at p99 over motion off (${p99_off:-?} ms) in both runs, over the budget of $limit ms"
 		done
-		[ "${speed_frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${speed_frames:-no} frames with ten windows at speed $speed"
-		awk -v a="$speed_added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' ||
-			fail "at speed $speed, ten windows added ${speed_added:-?} ms to the frames at p99 over motion off (${p99_off:-?} ms), over the budget of $limit ms"
 		echo "ten windows at speed $speed: frames p99 $speed_p99 ms, $speed_added ms more than motion off over $speed_frames frames"
 		speeds="$speeds speed $speed: p99 $speed_p99 ms, $speed_added ms added;"
 	done
