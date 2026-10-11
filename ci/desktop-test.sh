@@ -3404,7 +3404,8 @@ case_lock() {
 	# below 100) and a message at the bottom, its bottom 24 px above the
 	# screen's edge (800 - 24). Kept as lock-parts.png. The list is reset
 	# (`lock parts reset`) while this lock holds; the player card below runs
-	# in it, as the classic arrangement is read at each lock.
+	# in it, so the list holds the player too: a list leaves out what it
+	# does not name, and the parts are read when the screen locks.
 	python3 ci/qmp.py type 'edel-desktop-test\n'
 	wait_for 'edel-compositor: screen unlocked$' ||
 		fail "ci's password did not unlock the screen before the lock's parts"
