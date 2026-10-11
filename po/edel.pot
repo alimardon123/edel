@@ -182,6 +182,36 @@ msgstr ""
 msgid "the {part} has a path; only a picture has one, so take path out"
 msgstr ""
 
+msgid "the {part} has a face; only the clock has one, so take face out"
+msgstr ""
+
+msgid "the {part} has hours; only the clock has them, so take hours out"
+msgstr ""
+
+msgid "the {part} has a size; only the clock has one, so take size out"
+msgstr ""
+
+msgid "the {part} has a weight; only the clock has one, so take weight out"
+msgstr ""
+
+msgid "the {part} has show; only the date has it, so take show out"
+msgstr ""
+
+msgid "the {part} has a style; only the date has one, so take style out"
+msgstr ""
+
+msgid "the clock's hours is {hours}; use 12 or 24"
+msgstr ""
+
+msgid "the clock's weight is {weight}; use 100 to 900 in steps of 100, such as 300"
+msgstr ""
+
+msgid "the date's show is empty; name at least one of weekday, day, month and year"
+msgstr ""
+
+msgid "the date's show names the {part} twice; take one out"
+msgstr ""
+
 msgid "could not replace {path}"
 msgstr ""
 
