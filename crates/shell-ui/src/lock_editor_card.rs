@@ -124,7 +124,7 @@ pub struct LockEditor {
 /// shown, the looks or the backgrounds. The drawer keeps the height of its
 /// tallest tab, so the tabs never make it jump.
 fn refresh_tiles(le: &mut LockEditor) {
-    let parts = lock_editor::drawer_tiles(&le.view.parts, le.battery);
+    let parts = lock_editor::drawer_tiles();
     le.view.drawer.tallest = parts.len().max(lock_editor::background_choices().len());
     le.view.drawer.tiles = match le.view.drawer.tab {
         1 => lock_editor::background_tiles(&le.view.background),
@@ -256,10 +256,26 @@ fn add(le: &mut LockEditor, part: Part) {
     eprintln!("edel-shell-ui: lock editor {words}");
 }
 
+/// Chooses the look's first part of `part`'s kind, a kind the look already
+/// holds as many of (M5.10c7g): the focus goes to it and its card opens when
+/// the part has one (`open_card`), logging `lock editor: KIND is on the lock,
+/// chosen`. A kind with no card (now playing, battery) only gets the focus.
+fn choose_full(le: &mut LockEditor, part: Part, from_keys: bool) {
+    let Some(index) = le.view.parts.iter().position(|p| p.part == part) else {
+        return;
+    };
+    eprintln!(
+        "edel-shell-ui: lock editor: {} is on the lock, chosen",
+        part.name()
+    );
+    focus_to(le, Some(Focus::Part(index)));
+    open_card(le, index, from_keys);
+}
+
 /// Opens the card of the part at `index` beside it (M5.10c6c2), logging
 /// `lock editor card NAME shown`. Nothing for a part with no card, or while a
-/// card is open.
-fn open_card(le: &mut LockEditor, index: usize) {
+/// card is open. `from_keys` (Return) focuses the card's first line.
+fn open_card(le: &mut LockEditor, index: usize, from_keys: bool) {
     let Some(placed) = le.view.parts.get(index).cloned() else {
         return;
     };
@@ -283,6 +299,11 @@ fn open_card(le: &mut LockEditor, index: usize) {
         .filter(|p| p.part == placed.part)
         .count();
     card.number = (before > 0).then_some(before + 1);
+    // Opened with Return the card's first line takes the keyboard (M5.10c7g);
+    // a click opens it with no focus, so no ring shows on the card.
+    if from_keys {
+        part_card::set_focus(&mut card, part_card::ring(placed.part).first().copied());
+    }
     le.view.card = Some(card);
 }
 
@@ -333,10 +354,12 @@ fn card_focus(le: &mut LockEditor, line: Option<part_card::Line>) {
     }
 }
 
-/// Lights the card's line under the pointer, `None` for none.
-fn card_hover(le: &mut LockEditor, line: Option<part_card::Line>) {
+/// Lights the card's line under the pointer, `None` for none, and its Remove
+/// when the pointer is on it (M5.10c7g).
+fn card_hover(le: &mut LockEditor, line: Option<part_card::Line>, remove: bool) {
     if let Some(card) = le.view.card.as_mut() {
         card.hover = line;
+        card.remove_hover = remove;
     }
 }
 
@@ -884,11 +907,11 @@ impl Shell {
     /// file is chosen; a kind the look already holds as many of is logged and
     /// not added; else it is added at the screen's middle (`add`).
     fn add_from_drawer(&mut self, le: &mut LockEditor, part: Part) {
-        if part == Part::Picture {
+        if lock_editor::full(&le.view.parts, le.battery, part) {
+            choose_full(le, part, true);
+        } else if part == Part::Picture {
             self.open_lock_page();
             eprintln!("edel-shell-ui: lock editor picture in settings");
-        } else if lock_editor::full(&le.view.parts, le.battery, part) {
-            eprintln!("edel-shell-ui: lock editor: no more {}", part.name());
         } else {
             add(le, part);
         }
@@ -1041,14 +1064,21 @@ impl Shell {
                 self.paint_lock_editor(le);
             }
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
-                let line = part_card::hit(&l, sx, sy).and_then(part_card::Hit::line);
-                if le.view.card.as_ref().is_some_and(|c| c.hover != line) {
-                    card_hover(le, line);
+                let hit = part_card::hit(&l, sx, sy);
+                let line = hit.and_then(part_card::Hit::line);
+                let remove = hit == Some(part_card::Hit::Remove);
+                if le
+                    .view
+                    .card
+                    .as_ref()
+                    .is_some_and(|c| c.hover != line || c.remove_hover != remove)
+                {
+                    card_hover(le, line, remove);
                     self.paint_lock_editor(le);
                 }
             }
             PointerEventKind::Leave { .. } => {
-                card_hover(le, None);
+                card_hover(le, None, false);
                 self.paint_lock_editor(le);
             }
             _ => {}
@@ -1138,7 +1168,7 @@ impl Shell {
                     }
                     Step::Background(i) => self.choose_background(&mut le, i),
                     Step::Undo => self.undo_lock_editor(&mut le),
-                    Step::Open(i) => open_card(&mut le, i),
+                    Step::Open(i) => open_card(&mut le, i, true),
                     Step::Preview => self.start_preview(&mut le),
                     Step::Back => self.end_preview(&mut le),
                     Step::Done | Step::Close | Step::Nothing => {}
@@ -1267,15 +1297,15 @@ impl Shell {
                         Some(editor::Part::Tile(i)) => {
                             let tile = le.view.drawer.tiles.get(i);
                             let part = tile.and_then(|t| lock_editor::part_named(&t.name));
-                            match (part, tile.is_some_and(|t| t.placed)) {
-                                // A kind the look holds as many of is not dragged.
-                                (Some(part), true) => {
-                                    eprintln!(
-                                        "edel-shell-ui: lock editor: no more {}",
-                                        part.name()
-                                    );
+                            match part {
+                                // A kind the look holds as many of is not
+                                // dragged: its press chooses the look's part.
+                                Some(part)
+                                    if lock_editor::full(&le.view.parts, le.battery, part) =>
+                                {
+                                    choose_full(le, part, false);
                                 }
-                                (Some(part), false) => {
+                                Some(part) => {
                                     le.view.drag = Some(Drag {
                                         from: From::Drawer(part),
                                         start: (x, y),
@@ -1284,7 +1314,7 @@ impl Shell {
                                         over_drawer: false,
                                     });
                                 }
-                                (None, _) => {}
+                                None => {}
                             }
                         }
                         None => {}
@@ -1365,7 +1395,7 @@ impl Shell {
         }
         if let (false, From::Part(i)) = (drag.moving, drag.from) {
             // A press and release that did not move open the part's card.
-            open_card(le, i);
+            open_card(le, i, false);
         }
         le.view.drag = None;
         le.view.guides.clear();

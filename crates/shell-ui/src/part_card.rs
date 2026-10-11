@@ -109,9 +109,12 @@ pub struct View {
     /// Whether the card is docked in the right panel (M5.10c7f): its
     /// disclosure rows show their controls only while they are open.
     pub docked: bool,
-    /// The clock's number among the clocks, from 2, for its heading
-    /// (M5.10c7f: `CLOCK 2`), None for the first or the only one.
+    /// The clock's number among the clocks, from 2, for its heading's badge
+    /// (M5.10c7f), None for the first or the only one.
     pub number: Option<usize>,
+    /// Whether the pointer is on the docked card's Remove (M5.10c7g), so it
+    /// is lit.
+    pub remove_hover: bool,
 }
 
 /// Where a press lands on a card: a segment of a segmented row, a date
@@ -171,21 +174,37 @@ pub struct Row {
     pub label: Option<Rect>,
 }
 
-/// The room between two stacked lines of a docked card, logical pixels
-/// (M5.10c7e).
-const DOCK_GAP: f32 = 4.0;
-/// The docked card's heading line and the room under it, logical pixels, and
-/// the Remove button's width (M5.10c7f). Its words are 12 px.
-const HEAD_H: f32 = 20.0;
-const HEAD_GAP: f32 = 8.0;
-const REMOVE_W: f32 = 60.0;
-const REMOVE_TEXT: f32 = 12.0;
-/// A clock's face tile in the docked grid, logical pixels: 72 by 44, two
-/// across, with `FACE_TILE_GAP` between and the corners `FACE_RADIUS`.
-const FACE_TILE: (f32, f32) = (72.0, 44.0);
+/// The docked card (M5.10c7g): its room round the edge, logical pixels, and
+/// the room a section keeps from the next, as the heading and Remove keep.
+const DOCK_PAD: f32 = 16.0;
+const SECTION_GAP: f32 = 16.0;
+/// Between a plain line and the line before it (a picture's file and button).
+const PLAIN_GAP: f32 = 12.0;
+/// The heading row (24 px high), its title (15 px semibold) and the round
+/// badge that numbers a second clock (20 px across, its figure 11 px
+/// semibold), `BADGE_GAP` after the title's last letter.
+const HEAD_H: f32 = 24.0;
+const TITLE_SIZE: f32 = 15.0;
+const BADGE: f32 = 20.0;
+const BADGE_SIZE: f32 = 11.0;
+const BADGE_GAP: f32 = 8.0;
+/// The group of rows: its corners, a row's height, the room its labels and
+/// values keep from its edges, and the room an open control keeps inside it.
+const GROUP_RADIUS: f32 = 12.0;
+const ROW_H: f32 = 40.0;
+const GROUP_INSET: f32 = 12.0;
+const OPEN_INSET: f32 = 8.0;
+/// A value's space before its chevron, and the chevron's size.
+const VALUE_GAP: f32 = 6.0;
+const CHEVRON: f32 = 12.0;
+/// Remove's pill: 36 px high, its ends round.
+const REMOVE_H: f32 = 36.0;
+/// A clock's face tile in the docked grid: two across, 56 high, with
+/// `FACE_TILE_GAP` between and the corners `FACE_RADIUS`.
+const FACE_TILE_H: f32 = 56.0;
 const FACE_TILE_GAP: f32 = 8.0;
-const FACE_RADIUS: f32 = 10.0;
-/// The faces are drawn at 9:41 in this weight, as the mockup's previews.
+const FACE_RADIUS: f32 = 12.0;
+/// The faces are drawn at 9:41 in this weight, as the mockups' previews.
 const SAMPLE_TIME: (i8, i8, i8) = (9, 41, 0);
 const FACE_WEIGHT: u16 = 400;
 /// A switch, logical pixels across and high.
@@ -200,6 +219,9 @@ pub struct Layout {
     pub docked: bool,
     pub heading: Option<Rect>,
     pub remove: Option<Rect>,
+    /// Docked (M5.10c7g): the rounded group that holds the switch and
+    /// disclosure rows, None when it has none.
+    pub group: Option<Rect>,
 }
 
 /// The card's view of `index`'s part, nothing focused.
@@ -214,6 +236,7 @@ pub fn open(index: usize, placed: Placed) -> View {
         open: None,
         docked: false,
         number: None,
+        remove_hover: false,
     }
 }
 
@@ -267,10 +290,16 @@ fn value_of(view: &View, line: Line) -> String {
 /// The card's heading (M5.10c7f): the part's title in capitals, with its
 /// number when it is the second or later clock.
 fn heading_of(view: &View) -> String {
-    let title = lock_editor::part_title(view.placed.part).to_uppercase();
+    lock_editor::part_title(view.placed.part)
+}
+
+/// The docked card's group name for a screen reader (M5.10c7g): the title,
+/// with the number of a second clock (`Clock 2`).
+fn group_name(view: &View, docked: bool) -> String {
+    let title = heading_of(view);
     match view.number {
-        Some(n) => format!("{title} {n}"),
-        None => title,
+        Some(n) if docked => format!("{title} {n}"),
+        _ => title,
     }
 }
 
@@ -307,7 +336,7 @@ pub fn lines(part: Part) -> Vec<Line> {
 }
 
 /// The lines the keyboard's Tab goes round: every line but the file's name.
-fn ring(part: Part) -> Vec<Line> {
+pub fn ring(part: Part) -> Vec<Line> {
     lines(part)
         .into_iter()
         .filter(|line| *line != Line::File)
@@ -741,7 +770,12 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Hit> {
             .position(|s| s.contains(x, y))
             .map(|j| Hit::Segment(row.line, j))
     };
-    let on_head = row.label.is_some_and(|r| r.contains(x, y));
+    // A docked row's head is its top row (M5.10c7g), whatever its label is.
+    let on_head = if l.docked {
+        head_of(row).contains(x, y)
+    } else {
+        row.label.is_some_and(|r| r.contains(x, y))
+    };
     match row.line {
         Line::Face => segment(),
         Line::Hours if l.docked => Some(Hit::Toggle(row.line)),
@@ -875,40 +909,100 @@ fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Lay
         docked: false,
         heading: None,
         remove: None,
+        group: None,
     }
 }
 
-/// The card docked in the right panel (`layout`, M5.10c7e): the panel's width,
-/// at its top left, each line stacked under the last with `DOCK_GAP` between
-/// them. A segmented line's segments share the control's width equally; a
-/// date part keeps its check box at the right of its one row.
+/// The parts of a docked card in the order they stack (M5.10c7g): the faces
+/// grid, the one rounded group of rows, and the plain lines (a picture's file
+/// and button).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Section {
+    Grid,
+    Group,
+    Plain,
+}
+
+fn section(line: Line) -> Section {
+    match line {
+        Line::Face => Section::Grid,
+        Line::Hours
+        | Line::Size
+        | Line::Style
+        | Line::Show(_)
+        | Line::Field
+        | Line::Zone
+        | Line::Label => Section::Group,
+        Line::File | Line::Button => Section::Plain,
+    }
+}
+
+/// The room before a section: none between two rows of the group, `PLAIN_GAP`
+/// before a plain line that follows a plain line or the group, `SECTION_GAP`
+/// else (under the heading, the grid, or the group).
+fn gap(prev: Option<Section>, next: Section) -> f32 {
+    match (prev, next) {
+        (Some(Section::Group), Section::Group) => 0.0,
+        (Some(Section::Group | Section::Plain), Section::Plain) => PLAIN_GAP,
+        _ => SECTION_GAP,
+    }
+}
+
+/// Whether a line is a row of the docked group (M5.10c7g): only ever on a
+/// docked card.
+fn grouped(l: &Layout, line: Line) -> bool {
+    l.docked && section(line) == Section::Group
+}
+
+/// A docked row's head: its top `ROW_H` across the row's width.
+fn head_of(row: &Row) -> Rect {
+    Rect::new(row.rect.x, row.rect.y, row.rect.w, ROW_H)
+}
+
+/// The rectangle the keyboard's ring goes round on a docked card (M5.10c7g):
+/// a control (the faces, the button, an open row's control), else a group
+/// row's head.
+fn docked_target(row: &Row) -> Option<Rect> {
+    match row.line {
+        Line::File => None,
+        Line::Face | Line::Button => row.control,
+        line if disclosure(line) && row.control.is_some() => row.control,
+        _ => Some(head_of(row)),
+    }
+}
+
+/// The card docked in the right panel (`layout`, M5.10c7e, M5.10c7g): the
+/// panel's width, from its top left. Under the heading come the faces grid
+/// (a clock), then one rounded group of rows with hairlines between them, then
+/// any plain lines (a picture's file and button), and Remove at the foot,
+/// `SECTION_GAP` under the last of them.
 fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
-    let row_h = tokens.row as f32;
     let control_h = tokens.panel_control as f32;
-    let inner_x = panel.x + PAD;
-    let inner_w = panel.w - 2.0 * PAD;
-    let heading = Rect::new(inner_x, panel.y + PAD, inner_w, HEAD_H);
-    let remove = Rect::new(heading.right() - REMOVE_W, heading.y, REMOVE_W, HEAD_H);
-    let mut y = heading.y + heading.h + HEAD_GAP;
+    let row_h = tokens.row as f32;
+    let inner_x = panel.x + DOCK_PAD;
+    let inner_w = panel.w - 2.0 * DOCK_PAD;
+    let heading = Rect::new(inner_x, panel.y + DOCK_PAD, inner_w, HEAD_H);
+    let mut y = heading.y + heading.h;
+    let mut prev: Option<Section> = None;
     let mut rows = Vec::new();
-    for (i, line) in lines(view.placed.part).into_iter().enumerate() {
-        if i > 0 {
-            y += DOCK_GAP;
-        }
+    for line in lines(view.placed.part) {
+        let next = section(line);
+        y += gap(prev, next);
+        prev = Some(next);
         let (row, used) = match line {
             Line::Face => {
-                let (w, h) = FACE_TILE;
+                let tile_w = (inner_w - FACE_TILE_GAP) / 2.0;
                 let cells: Vec<Rect> = (0..4)
                     .map(|j| {
                         Rect::new(
-                            inner_x + (j % 2) as f32 * (w + FACE_TILE_GAP),
-                            y + (j / 2) as f32 * (h + FACE_TILE_GAP),
-                            w,
-                            h,
+                            inner_x + (j % 2) as f32 * (tile_w + FACE_TILE_GAP),
+                            y + (j / 2) as f32 * (FACE_TILE_H + FACE_TILE_GAP),
+                            tile_w,
+                            FACE_TILE_H,
                         )
                     })
                     .collect();
-                let grid = Rect::new(inner_x, y, 2.0 * w + FACE_TILE_GAP, 2.0 * h + FACE_TILE_GAP);
+                let grid = Rect::new(inner_x, y, inner_w, 2.0 * FACE_TILE_H + FACE_TILE_GAP);
                 let row = Row {
                     line,
                     rect: grid,
@@ -920,18 +1014,18 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
             }
             // A switch at the right of its row: the 24-hour one and a date part.
             Line::Hours | Line::Show(_) => {
-                let rect = Rect::new(inner_x, y, inner_w, row_h);
+                let rect = Rect::new(inner_x, y, inner_w, ROW_H);
                 let switch = Rect::new(
-                    rect.right() - INSET - SWITCH.0,
-                    rect.y + (row_h - SWITCH.1) / 2.0,
+                    rect.right() - GROUP_INSET - SWITCH.0,
+                    rect.y + (ROW_H - SWITCH.1) / 2.0,
                     SWITCH.0,
                     SWITCH.1,
                 );
                 let label = Rect::new(
-                    rect.x + INSET,
+                    rect.x + GROUP_INSET,
                     rect.y,
-                    switch.x - 8.0 - (rect.x + INSET),
-                    row_h,
+                    switch.x - 8.0 - (rect.x + GROUP_INSET),
+                    ROW_H,
                 );
                 let row = Row {
                     line,
@@ -940,7 +1034,39 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
                     segments: Vec::new(),
                     label: Some(label),
                 };
-                (row, row_h)
+                (row, ROW_H)
+            }
+            // A disclosure row: its value at the right of its head, and its
+            // control under the head only while it is open.
+            Line::Size | Line::Style | Line::Field | Line::Zone | Line::Label => {
+                let control = shows(view, line).then(|| {
+                    Rect::new(
+                        inner_x + OPEN_INSET,
+                        y + ROW_H + OPEN_INSET,
+                        inner_w - 2.0 * OPEN_INSET,
+                        control_h,
+                    )
+                });
+                let segments = match (control, line) {
+                    (Some(c), Line::Size | Line::Style) => {
+                        let n = segments(line).len().max(1);
+                        let cell = c.w / n as f32;
+                        (0..n)
+                            .map(|j| Rect::new(c.x + j as f32 * cell, c.y, cell, c.h))
+                            .collect()
+                    }
+                    _ => Vec::new(),
+                };
+                let used = control.map_or(ROW_H, |c| c.y + c.h + OPEN_INSET - y);
+                let label = Rect::new(inner_x + GROUP_INSET, y, inner_w - 2.0 * GROUP_INSET, ROW_H);
+                let row = Row {
+                    line,
+                    rect: Rect::new(inner_x, y, inner_w, used),
+                    control,
+                    segments,
+                    label: Some(label),
+                };
+                (row, used)
             }
             Line::Button => {
                 let control = Rect::new(inner_x, y, inner_w, control_h);
@@ -964,45 +1090,37 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
                 };
                 (row, row_h)
             }
-            // A disclosure row: its value at the right of its head, and its
-            // control under the head only while it is open.
-            Line::Size | Line::Style | Line::Field | Line::Zone | Line::Label => {
-                let head = Rect::new(inner_x, y, inner_w, row_h);
-                let control = shows(view, line)
-                    .then(|| Rect::new(inner_x, y + row_h + DOCK_GAP, inner_w, control_h));
-                let segments = match (control, line) {
-                    (Some(c), Line::Size | Line::Style) => {
-                        let n = segments(line).len().max(1);
-                        let cell = c.w / n as f32;
-                        (0..n)
-                            .map(|j| Rect::new(c.x + j as f32 * cell, c.y, cell, c.h))
-                            .collect()
-                    }
-                    _ => Vec::new(),
-                };
-                let used = control.map_or(row_h, |c| c.y + c.h - y);
-                let row = Row {
-                    line,
-                    rect: Rect::new(inner_x, y, inner_w, used),
-                    control,
-                    segments,
-                    label: Some(head),
-                };
-                (row, used)
-            }
         };
         y += used;
         rows.push(row);
     }
-    let card = Rect::new(panel.x, panel.y, panel.w, y - panel.y + PAD);
+    let group = match (
+        rows.iter().find(|r| section(r.line) == Section::Group),
+        rows.iter()
+            .rev()
+            .find(|r| section(r.line) == Section::Group),
+    ) {
+        (Some(first), Some(last)) => Some(Rect::new(
+            inner_x,
+            first.rect.y,
+            inner_w,
+            last.rect.y + last.rect.h - first.rect.y,
+        )),
+        _ => None,
+    };
+    let remove = Rect::new(inner_x, y + SECTION_GAP, inner_w, REMOVE_H);
+    let bottom = remove.y + remove.h + DOCK_PAD;
+    let card = Rect::new(panel.x, panel.y, panel.w, bottom - panel.y);
     Layout {
         card,
         rows,
         docked: true,
         heading: Some(heading),
         remove: Some(remove),
+        group,
     }
 }
+
 /// The name of the picture's file, as the card shows it.
 fn file_name(placed: &Placed) -> String {
     placed
@@ -1034,8 +1152,9 @@ fn draw_label(
     text.draw(pixmap, &mut line, at.x * s, y, colour);
 }
 
-/// Draws a docked disclosure row's value at the right of its head, the
-/// value's words and the `›` that says the row opens (M5.10c7f).
+/// Draws a docked disclosure row's value at the right of its head (M5.10c7g):
+/// its words in `dim`, then a chevron 6 px after them, the chevron's right
+/// edge `GROUP_INSET` from the group's.
 fn draw_value(
     pixmap: &mut Pixmap,
     text: &mut Text,
@@ -1043,15 +1162,21 @@ fn draw_value(
     words: &str,
     size: f32,
     s: f32,
-    colour: edel::tokens::Colour,
+    dim: edel::tokens::Colour,
 ) {
-    let Some(at) = row.label else {
-        return;
-    };
-    let mut line = text.fit(&format!("{words} ›"), size, at.w * s);
-    let x = (at.right() - INSET) * s - line.width;
-    let y = popup::middle(at.y, at.h, size, s);
-    text.draw(pixmap, &mut line, x, y, colour);
+    let head = head_of(row);
+    let chevron = Rect::new(
+        head.right() - GROUP_INSET - CHEVRON,
+        head.y + (ROW_H - CHEVRON) / 2.0,
+        CHEVRON,
+        CHEVRON,
+    );
+    let room = (chevron.x - VALUE_GAP - (head.x + GROUP_INSET)) * s;
+    let mut line = text.fit(words, size, room);
+    let x = chevron.x * s - VALUE_GAP * s - line.width;
+    let y = popup::middle(head.y, ROW_H, size, s);
+    text.draw(pixmap, &mut line, x, y, dim);
+    popup::icon_in(pixmap, "chevron-right", CHEVRON, chevron, s, dim);
 }
 
 /// Draws a docked switch (M5.10c7f) at `switch`: a pill in the accent when on,
@@ -1126,36 +1251,47 @@ fn draw_faces(
     }
 }
 
-/// Draws the docked card's heading (M5.10c7f): the part's title in capitals
-/// at the left and, at the right, the red Remove button's words.
-#[allow(clippy::too_many_arguments)]
+/// Draws the docked card's heading (M5.10c7g): the part's title in sentence
+/// case, 15 px semibold in the text's ink, and for a second clock its number
+/// in a round badge `BADGE_GAP` after the title.
 fn draw_heading(
     pixmap: &mut Pixmap,
     view: &View,
     heading: Rect,
-    remove: Option<Rect>,
-    tokens: &Tokens,
     ink: &edit_kit::Inks,
     text: &mut Text,
     s: f32,
 ) {
-    let size = tokens.panel_text_small_size as f32 * s;
+    let size = TITLE_SIZE * s;
     let mut title = text.fit_in(
         &heading_of(view),
         size,
         heading.w * s,
         crate::paint::Face::SEMIBOLD,
     );
+    let x = heading.x * s;
     let y = popup::middle(heading.y, heading.h, size, s);
-    text.draw(pixmap, &mut title, heading.x * s, y, ink.dim);
-    let Some(remove) = remove else {
+    let width = title.width;
+    text.draw(pixmap, &mut title, x, y, ink.text);
+    let Some(n) = view.number else {
         return;
     };
-    let size = REMOVE_TEXT * s;
-    let mut words = text.line_in(tr("Remove"), size, crate::paint::Face::MEDIUM);
-    let x = remove.right() * s - words.width;
-    let y = popup::middle(remove.y, remove.h, size, s);
-    text.draw(pixmap, &mut words, x, y, tokens.title_close_hover);
+    let top = heading.y + (heading.h - BADGE) / 2.0;
+    let badge_x = x + width + BADGE_GAP * s;
+    fill(
+        pixmap,
+        badge_x,
+        top * s,
+        BADGE * s,
+        BADGE * s,
+        BADGE / 2.0 * s,
+        ink.raised,
+    );
+    let size = BADGE_SIZE * s;
+    let mut figure = text.line_in(&n.to_string(), size, crate::paint::Face::SEMIBOLD);
+    let fx = badge_x + (BADGE * s - figure.width) / 2.0;
+    let fy = popup::middle(top, BADGE, size, s);
+    text.draw(pixmap, &mut figure, fx, fy, ink.text);
 }
 
 /// Draws the card at scale `s` over what is under it (the lock and the
@@ -1179,13 +1315,55 @@ pub fn paint(
     edit_kit::sheet(pixmap, l.card, tokens, Style::GLASS, s);
     let size = tokens.panel_text_size as f32 * s;
     let radius = tokens.radius_control as f32 * s;
+    // A faint ink: the group's hairlines and the controls drawn in the group.
+    let faint = edel::tokens::Colour {
+        a: 0.10,
+        ..ink.text
+    };
     if let Some(heading) = l.heading {
-        draw_heading(pixmap, view, heading, l.remove, tokens, &ink, text, s);
+        draw_heading(pixmap, view, heading, &ink, text, s);
     }
-    for row in &l.rows {
+    if let Some(group) = l.group {
+        let (x, y, w, h) = group.device(s);
+        fill(pixmap, x, y, w, h, GROUP_RADIUS * s, ink.raised);
+    }
+    let first = l.rows.iter().position(|r| grouped(l, r.line));
+    let last = l.rows.iter().rposition(|r| grouped(l, r.line));
+    for (i, row) in l.rows.iter().enumerate() {
+        let in_group = grouped(l, row.line);
         if view.hover == Some(row.line) {
             let (x, y, w, h) = row.rect.device(s);
-            fill(pixmap, x, y, w, h, radius, ink.lit);
+            if !in_group {
+                fill(pixmap, x, y, w, h, radius, ink.lit);
+            } else {
+                // The group's first and last rows take its corners, the lit
+                // row never sticks out of the group.
+                let r = GROUP_RADIUS * s;
+                let (top, bottom) = (Some(i) == first, Some(i) == last);
+                if top && bottom {
+                    fill(pixmap, x, y, w, h, r, ink.lit);
+                } else if top {
+                    fill(pixmap, x, y, w, h, r, ink.lit);
+                    fill(pixmap, x, y + r, w, h - r, 0.0, ink.lit);
+                } else if bottom {
+                    fill(pixmap, x, y, w, h, r, ink.lit);
+                    fill(pixmap, x, y, w, h - r, 0.0, ink.lit);
+                } else {
+                    fill(pixmap, x, y, w, h, 0.0, ink.lit);
+                }
+            }
+        }
+        if in_group && Some(i) != first {
+            if let Some(group) = l.group {
+                let rule = Rect::new(
+                    group.x + GROUP_INSET,
+                    row.rect.y,
+                    group.w - GROUP_INSET,
+                    1.0,
+                );
+                let (x, y, w, h) = rule.device(s);
+                fill(pixmap, x, y, w, h, 0.0, faint);
+            }
         }
         match row.line {
             Line::Face if l.docked => draw_faces(pixmap, view, row, &ink, text, s),
@@ -1207,13 +1385,18 @@ pub fn paint(
             Line::Face | Line::Hours | Line::Size | Line::Style => {
                 if let Some(control) = row.control {
                     let words: Vec<&str> = segments(row.line).iter().map(|(w, _)| *w).collect();
+                    let track = if l.docked {
+                        (faint, ink.text)
+                    } else {
+                        (ink.raised, ink.text)
+                    };
                     popup::segmented_with(
                         pixmap,
                         Some(&mut *text),
                         (control, &row.segments),
                         &words,
                         chosen(&view.placed, row.line),
-                        (ink.raised, ink.text),
+                        track,
                         tokens,
                         s,
                     );
@@ -1221,7 +1404,7 @@ pub fn paint(
                 draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
                 if l.docked {
                     let words = value_of(view, row.line);
-                    draw_value(pixmap, text, row, &words, size, s, ink.text);
+                    draw_value(pixmap, text, row, &words, size, s, ink.dim);
                 }
             }
             Line::Show(part) if l.docked => {
@@ -1250,7 +1433,8 @@ pub fn paint(
             Line::Field | Line::Zone | Line::Label => {
                 if let Some(field) = row.control {
                     let (x, y, w, h) = field.device(s);
-                    fill(pixmap, x, y, w, h, radius, ink.raised);
+                    let track = if l.docked { faint } else { ink.raised };
+                    fill(pixmap, x, y, w, h, radius, track);
                     let words = text_of(view, row.line);
                     let room = (field.w - 2.0 * PAD) * s;
                     let mut line = text.fit(&words, size, room);
@@ -1275,7 +1459,7 @@ pub fn paint(
                 draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
                 if l.docked {
                     let words = value_of(view, row.line);
-                    draw_value(pixmap, text, row, &words, size, s, ink.text);
+                    draw_value(pixmap, text, row, &words, size, s, ink.dim);
                 }
             }
             Line::File => {
@@ -1299,11 +1483,32 @@ pub fn paint(
         }
         if view.focus == Some(row.line) {
             // The ring goes round the control, or the head of a closed row.
-            let target = row.control.or(if l.docked { row.label } else { None });
+            let target = if l.docked {
+                docked_target(row)
+            } else {
+                row.control
+            };
             if let Some(target) = target {
                 popup::focus_ring(pixmap, target, tokens.radius_control as f32, s, tokens);
             }
         }
+    }
+    if let Some(remove) = l.remove {
+        // Remove's pill: red words on the raised colour, lit under the pointer.
+        let (x, y, w, h) = remove.device(s);
+        fill(pixmap, x, y, w, h, REMOVE_H / 2.0 * s, ink.raised);
+        if view.remove_hover {
+            fill(pixmap, x, y, w, h, REMOVE_H / 2.0 * s, ink.lit);
+        }
+        let words_size = tokens.panel_text_size as f32 * s;
+        let mut words = text.line_in(
+            tr("Remove from lock screen"),
+            words_size,
+            crate::paint::Face::MEDIUM,
+        );
+        let x0 = (remove.x + remove.w / 2.0) * s - words.width / 2.0;
+        let y0 = popup::middle(remove.y, remove.h, words_size, s);
+        text.draw(pixmap, &mut words, x0, y0, tokens.title_close_hover);
     }
 }
 
@@ -1419,7 +1624,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
     }
     vec![item(
         Role::Group,
-        lock_editor::part_title(view.placed.part),
+        group_name(view, l.docked),
         at(l.card),
         None,
         children,
@@ -1881,31 +2086,44 @@ mod tests {
     #[test]
     fn docked_the_card_fills_the_panel_width_and_stacks_its_lines() {
         let t = tokens();
-        let l = layout(
-            &open(0, clock(None)),
-            near_left(),
-            (1280.0, 800.0),
-            &t,
-            Some(dock()),
-        );
+        let mut v = open(0, clock(None));
+        v.docked = true;
+        let l = layout(&v, near_left(), (1280.0, 800.0), &t, Some(dock()));
         assert_eq!(
             (l.card.x, l.card.y, l.card.w),
             (1048.0, 76.0, 208.0),
             "the panel's width, at its top left"
         );
         assert!(l.card.h <= dock().h, "the rows fit the panel: {:?}", l.card);
-        // The faces are a 2 by 2 grid of 72 by 44 tiles, 8 px apart (M5.10c7f).
+        // The faces are a 2 by 2 grid filling the inner width (208 less 16 at
+        // each side) in two columns 8 px apart, each 56 high (M5.10c7g).
         let face = &l.rows[0];
         assert_eq!(face.segments.len(), 4);
         assert!(
             face.segments
                 .iter()
-                .all(|c| (c.w - 72.0).abs() < 0.01 && (c.h - 44.0).abs() < 0.01)
+                .all(|c| (c.w - 84.0).abs() < 0.01 && (c.h - 56.0).abs() < 0.01)
         );
-        assert_eq!(face.segments[0].x, l.card.x + PAD);
-        assert!((face.segments[1].x - (face.segments[0].x + 80.0)).abs() < 0.01);
-        assert!((face.segments[2].y - (face.segments[0].y + 52.0)).abs() < 0.01);
+        assert_eq!(face.segments[0].x, l.card.x + 16.0);
+        assert!((face.segments[1].x - (face.segments[0].x + 92.0)).abs() < 0.01);
+        assert!((face.segments[2].y - (face.segments[0].y + 64.0)).abs() < 0.01);
         assert!((face.segments[3].x - face.segments[1].x).abs() < 0.01);
+        // The heading sits 16 px under the panel's top, and the group under the grid.
+        let heading = l.heading.expect("docked cards have a heading");
+        assert!((heading.y - (l.card.y + 16.0)).abs() < 0.01);
+        let group = l
+            .group
+            .expect("the clock's switch and disclosure rows are grouped");
+        assert!((group.y - (face.rect.y + face.rect.h + 16.0)).abs() < 0.01);
+        assert!((group.w - (208.0 - 32.0)).abs() < 0.01);
+        // Four rows of 40 px, closed (Hours, Size, Zone, Label).
+        assert!((group.h - 160.0).abs() < 0.01, "{group:?}");
+        // Remove is the card's last line, 16 px under the group, and the card
+        // ends 16 px under it.
+        let remove = l.remove.expect("docked cards have Remove");
+        assert!((remove.y - (group.y + group.h + 16.0)).abs() < 0.01);
+        assert!((remove.h - 36.0).abs() < 0.01);
+        assert!((l.card.y + l.card.h - (remove.y + remove.h + 16.0)).abs() < 0.01);
         assert!(face.label.is_none(), "the grid has no label of its own");
         for pair in l.rows.windows(2) {
             assert!(
@@ -1942,8 +2160,12 @@ mod tests {
         let mut m = plain(Part::Message, Anchor::Bottom);
         m.text = Some(String::new());
         let m = layout(&open(0, m), near_left(), (1280.0, 800.0), &t, Some(dock()));
+        // The field sits in the group's open row, 8 px in from its sides.
         let field = m.rows[0].control.expect("the field");
-        assert!((field.w - (208.0 - 2.0 * PAD)).abs() < 0.01, "{field:?}");
+        assert!(
+            (field.w - (208.0 - 2.0 * 16.0 - 2.0 * 8.0)).abs() < 0.01,
+            "{field:?}"
+        );
     }
 
     #[test]

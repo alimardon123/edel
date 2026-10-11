@@ -416,11 +416,13 @@ pub fn full(parts: &[Placed], battery: bool, part: Part) -> bool {
     !lock_screen::missing(parts, battery).contains(&part)
 }
 
-/// The strip's tiles (M5.10c6b, M5.10c7f): one for each `STRIP` part, in its
-/// order, its name the part's, and `placed` when the look already holds as
-/// many as it allows (drawn at half strength). Their live previews come from
-/// `preview_picture`, which the caller attaches.
-pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
+/// The strip's tiles (M5.10c6b, M5.10c7f, M5.10c7g): one for each `STRIP` part,
+/// in its order, its name the part's. Every tile is at full strength, `placed`
+/// is never set, so a kind the look already holds as many of is still drawn
+/// whole: a press or Return on it chooses the look's part of that kind
+/// (`full` says which). Their live previews come from `preview_picture`,
+/// which the caller attaches.
+pub fn drawer_tiles() -> Vec<Tile> {
     STRIP
         .into_iter()
         .map(|part| Tile {
@@ -428,7 +430,7 @@ pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
             icon: "",
             title: part_title(part),
             shown: String::new(),
-            placed: full(parts, battery, part),
+            placed: false,
             chosen: false,
             picture: None,
         })
@@ -1717,7 +1719,7 @@ mod tests {
             tabs: Vec::new(),
             tab: 0,
             tallest: 0,
-            tiles: drawer_tiles(&parts, true),
+            tiles: drawer_tiles(),
             compact: false,
             width: 1280,
             hover: None,
@@ -1766,9 +1768,9 @@ mod tests {
     }
 
     #[test]
-    fn the_strip_shows_every_widget_kind_in_order_and_a_full_kind_is_marked() {
+    fn the_strip_shows_every_widget_kind_in_order_at_full_strength() {
         let classic = lock_screen::classic(false);
-        let tiles = drawer_tiles(&classic, true);
+        let tiles = drawer_tiles();
         let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
         // The six kinds in the mockup's order; the person and the count are not offered.
         assert_eq!(
@@ -1776,19 +1778,13 @@ mod tests {
             ["clock", "date", "player", "battery", "message", "picture"]
         );
         assert!(!names.contains(&"person"));
-        // Classic holds one date, one now playing bar and one clock, so those
-        // are as many as a kind may stand: they are drawn at half strength.
-        let full: Vec<bool> = tiles.iter().map(|t| t.placed).collect();
-        assert_eq!(full, [false, true, true, false, false, false]);
-        let tiles = drawer_tiles(&classic, false);
-        // A battery the machine lacks cannot be added, so its tile is marked too.
-        assert!(tiles[3].placed);
-        let no_battery: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(
-            no_battery,
-            ["clock", "date", "player", "battery", "message", "picture"],
-            "a machine without one keeps the same strip"
-        );
+        // Every tile is at full strength, the kinds the look already holds too
+        // (Classic's date, now playing bar and clock): a press chooses them.
+        assert!(tiles.iter().all(|t| !t.placed));
+        assert!(full(&classic, true, Part::Date));
+        assert!(!full(&classic, true, Part::Message));
+        // A battery the machine lacks counts as full, though its tile is whole.
+        assert!(full(&classic, false, Part::Battery));
     }
 
     #[test]
@@ -2797,11 +2793,23 @@ mod tests {
         let drawer = editor::layout(&view.drawer);
         let shown = preview(screen, &drawer);
         let wallpaper = edel::wallpapers::Wallpaper::Background;
+        // The corner as the live lock draws it, with its Power and layout
+        // buttons at the bottom right (M5.10c7g), kept clear of the parts.
+        let corner_view = corner::View {
+            layout: Some("EN".into()),
+            menu: false,
+            restart_waiting: false,
+            hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
+        };
+        let corner_at = corner::layout(screen.0, screen.1, &corner_view);
         let look = lock::Look {
             parts: &view.parts,
             player: Some(player::wide_size(1)),
             people: false,
-            keep_out: Vec::new(),
+            keep_out: lock::keep_out(&corner_at),
             battery: false,
             background: view.background.clone(),
         };
@@ -2810,6 +2818,12 @@ mod tests {
             lock::View::new("9:41".into(), "Sunday 11 October".into(), "Ali".into());
         lock_view.when = Some(*when);
         lock_view.zoned = vec![("Asia/Tokyo".to_string(), *when)];
+        // Two notifications from two apps, so the count shows, as `render` does.
+        lock_view.notices = 2;
+        lock_view.apps = vec![
+            ("Mail".into(), "mail".into()),
+            ("Calendar".into(), "calendar".into()),
+        ];
         let mut lock_pixmap = Pixmap::new(1280, 800).unwrap();
         lock::paint(
             &mut lock_pixmap,
@@ -2821,6 +2835,14 @@ mod tests {
             &mut lock::Pictures::default(),
             &mut lock::Backdrops::default(),
             &wallpaper,
+            1.0,
+        );
+        corner::paint(
+            &mut lock_pixmap,
+            &corner_view,
+            &corner_at,
+            tokens,
+            text,
             1.0,
         );
         draw_placeholders(&mut lock_pixmap, view, &at, tokens, text, 1.0);
@@ -2913,12 +2935,12 @@ mod tests {
         let mut view = bare_view_of(parts.clone());
         view.drawer.heading = Some("Classic".into());
         view.drawer.subtitle = Some("Built in · Done saves a new look");
-        view.drawer.tiles = drawer_tiles(&parts, true);
+        view.drawer.tiles = drawer_tiles();
         attach_previews(&mut view, &when, &tokens, &mut text);
         let mut card = part_card::open(second, parts[second].clone());
         card.docked = true;
         card.number = Some(2);
-        part_card::set_focus(&mut card, Some(part_card::Line::Face));
+        // A card opened by a click has no keyboard focus, so no ring shows.
         view.card = Some(card);
         let stage = stage_picture(&view, &when, &tokens, &mut text);
         // The bar's Done is white and the strip has its six tiles drawn.
@@ -2974,7 +2996,7 @@ mod tests {
 
         // The preview: the lock over the whole screen with its pill.
         view.drawer.tab = 0;
-        view.drawer.tiles = drawer_tiles(&parts, true);
+        view.drawer.tiles = drawer_tiles();
         attach_previews(&mut view, &when, &tokens, &mut text);
         view.previewing = true;
         let preview_pixmap = stage_picture(&view, &when, &tokens, &mut text);

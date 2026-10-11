@@ -425,7 +425,7 @@ msgstr ""
 msgid "No picture"
 msgstr ""
 
-msgid "Remove"
+msgid "Remove from lock screen"
 msgstr ""
 
 msgid "Words: {words}"
@@ -435,6 +435,9 @@ msgid "Time zone: {words}"
 msgstr ""
 
 msgid "Label: {words}"
+msgstr ""
+
+msgid "Remove"
 msgstr ""
 
 msgid "Other"
