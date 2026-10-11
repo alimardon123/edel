@@ -528,6 +528,27 @@ case_respawn() {
 	# `person0 X+Y+WxH ci,` on that line: the box of ci's disc.
 	box=$(printf '%s\n' "$places" | sed -n 's/.*person[0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) ci,.*/\1 \2 \3 \4/p')
 	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
+	# The session chip (M5.10c3b): its `session X+Y+WxH Edel OS` place
+	# on the same line. A click opens the sessions' menu, whose row
+	# `session1 X+Y+WxH CI other` is clicked, so ci logs in with it.
+	chip=$(printf '%s\n' "$places" | sed -n 's/.*session \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) Edel OS.*/\1 \2 \3 \4/p')
+	[ -n "$chip" ] || fail "the greeter has no session chip for Edel OS: \"$places\""
+	read -r cx cy cw ch <<-EOF
+		$chip
+	EOF
+	python3 ci/qmp.py click $((cx + cw / 2)) $((cy + ch / 2))
+	sleep 1
+	guest 'greeter places'
+	wait_for 'DESKTOP-TEST: greeter.log .*session1 [0-9]' 10 ||
+		fail "the session chip's menu has no CI other row: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greeter.log ' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	row=$(printf '%s\n' "$places" | sed -n 's/.*session1 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) CI other.*/\1 \2 \3 \4/p')
+	[ -n "$row" ] || fail "no session1 row named CI other on the greeter's places line: \"$places\""
+	read -r rx ry rw rh <<-EOF
+		$row
+	EOF
+	python3 ci/qmp.py click $((rx + rw / 2)) $((ry + rh / 2))
+	sleep 1
 	read -r bx by bw bh <<-EOF
 		$box
 	EOF
@@ -552,8 +573,23 @@ case_respawn() {
 		fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
 	case "$(value greeter_said)" in
-	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*) ;;
-	*) fail "the greeter did not refuse the wrong password and then start ci's session: $(value greeter_said)" ;;
+	*"greeter: wrong user name or password|"*"greeter: session started for ci|greeter: desktop ci-other|"*) ;;
+	*) fail "the greeter did not refuse the wrong password and then start ci's CI other session: $(value greeter_said)" ;;
+	esac
+	# The session the chip chose (M5.10c3b): CI other's own session left
+	# its file in ci's runtime directory, and the login screen wrote the
+	# choice down for ci in the greeter's sessions file.
+	guest 'ci other'
+	wait_for 'DESKTOP-TEST: ci_other ' 10 ||
+		fail "no word from the test service about CI other's session"
+	[ "$(value ci_other)" = "ci-other ci" ] ||
+		fail "CI other's session did not start for ci: \"$(value ci_other)\""
+	guest 'greeter sessions'
+	wait_for 'DESKTOP-TEST: greeter_sessions ' 10 ||
+		fail "no word from the test service about the greeter's sessions file"
+	case "$(value greeter_sessions)" in
+	*'ci = "ci-other"'*) ;;
+	*) fail "the greeter's sessions file does not remember CI other for ci: \"$(value greeter_sessions)\"" ;;
 	esac
 	# The session's log (M5.28a), ci's ~/.local/state/edel/session.log:
 	# the new session warns that the one before ended without closing,
@@ -570,7 +606,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
 }
 
 case_layers() {

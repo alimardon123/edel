@@ -46,6 +46,7 @@ mod portal;
 mod power;
 mod quick;
 mod quick_card;
+mod sessions;
 mod shell_bus;
 mod status;
 mod styles;
