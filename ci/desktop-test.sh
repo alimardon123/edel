@@ -971,8 +971,10 @@ case_settings() {
 		echo "Settings (M5.6a): $settings_own MiB of its own while open (budget ${settings_limit:-none yet}), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	# Narrow (M5.6b): tiled alone on a screen 512 px wide (scale 2.5),
-	# Settings folds its sidebar away and shows the pages' list across
-	# the window, in the sidebar's colour where the page was.
+	# Settings folds its sidebar away. Opened on the Layout page by name
+	# (M5.32b, as Appearance now comes first), it shows that page across
+	# the whole window with a way back to the list, so the page's colour
+	# lies where the sidebar was at full width.
 	tiled=$(count 'edel-compositor: windows now tiling')
 	guest 'tiling on'
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile Settings"
@@ -990,8 +992,14 @@ case_settings() {
 	[ "$right" -le 512 ] || right=512
 	[ "$bottom" -le 320 ] || bottom=320
 	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
-	shot settings-narrow "$nx" "$ny" "$side" >/dev/null ||
-		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$side"
+	page=$(token window)
+	shot settings-narrow "$nx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the page's #$page"
+	# The window's left side, where the sidebar was: 24 px in, at the same
+	# height, is the page's colour too, so the sidebar is gone.
+	lx=$((($1 + 24) * 5 / 2))
+	shot settings-narrow "$lx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen still shows its sidebar: $lx,$ny is not the page's #$page"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	guest 'scale default'
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
