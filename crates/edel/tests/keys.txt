@@ -26,6 +26,7 @@ displays.*.refresh_rate
 displays.*.enabled
 displays.*.rotation
 appearance.wallpaper
+appearance.wallpaper_dark
 appearance.mode
 appearance.accent
 appearance.font
