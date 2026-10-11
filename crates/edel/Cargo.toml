@@ -25,6 +25,11 @@ cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "d
 # PNGs tiny-skia reads; the same tiny-skia resvg draws with.
 icons = ["dep:resvg", "dep:tiny-skia"]
 
+# Draws an SVG into a PNG for design/wallpapers/make.py (M5.10c4b).
+[[example]]
+name = "render-svg"
+required-features = ["icons"]
+
 [dependencies]
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"], optional = true }

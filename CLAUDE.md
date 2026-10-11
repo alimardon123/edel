@@ -109,7 +109,7 @@ When docs disagree, the newer ADR wins.
 | `crates/testclient/` | `edel-testclient` (M4.3): a window of a given size, colour and title for CI's pixel checks; only CI's images ship it |
 | `po/` | The words shell-ui, Settings and `edel` show, `PART.pot`, gathered from their source (and `edel`'s help) by tests in `crates/edel` (M5.24a, M5.24b); a word two parts show is in `edel.pot` only; a language's translation is `LANG/PART.po` |
 | `presets/` | The layout presets, one file each, built into `edel::presets` (M5.1c): Classic, Mac-like, Windows-like and Hive (M5.4); Zen (M5.18), Tablet and Phone come later |
-| `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it), and `icons/`, the shell's own icons as SVG files (M5.5d) |
+| `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it), `icons/`, the shell's own icons as SVG files (M5.5d), and `wallpapers/make.py`, which makes the `wallpapers` feature's pictures, ours from the tokens and NASA's Earth (M5.10c4b) |
 | `images/` | Image definitions (`container.toml`, `vm.toml`, `desktop.toml`; the laptop image was dropped on 2026-10-06), format 2: each lists its features and holds image facts |
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |

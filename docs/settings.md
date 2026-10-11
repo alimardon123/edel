@@ -105,7 +105,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 
 | Key | Value | From |
 |---|---|---|
-| `appearance.wallpaper` | text, a file path | M5.12 |
+| `appearance.wallpaper` | a wallpaper's name (`"hills"`, the light or dark picture as the colour scheme says), a picture's path, a colour `"#rrggbb"` or `"none"`; absent is Hills where the `wallpapers` feature carries it, else the background colour | M5.10c4b |
 | `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, dark in this one, and missing is `auto`. A change takes effect at once | M5.5c |
 | `appearance.accent` | text, a token accent name or a hex colour | M5.12 |
 | `appearance.font` | text, a font family | M5.12 |
