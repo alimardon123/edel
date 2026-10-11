@@ -94,6 +94,47 @@ lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
 lock_glow_second = "#454079"
 
+# The accents a person picks from (M5.12b1, appearance.accent): each name
+# has the light scheme's shade and the dark scheme's. `blue` is the
+# release's accent, the `accent` of [colour] and [colour.light] above (a
+# test holds them together). The text on each is chosen by contrast, so
+# each reads at 4.5 to 1 and each mark at 3 to 1 on the panel and windows.
+[accent.blue]
+light = "#2d6ae3"
+dark = "#5b8ef5"
+
+[accent.purple]
+light = "#7a4fd6"
+dark = "#a487f0"
+
+[accent.pink]
+light = "#c43c86"
+dark = "#f07ab8"
+
+[accent.red]
+light = "#d0363f"
+dark = "#f2707a"
+
+[accent.orange]
+light = "#b8520f"
+dark = "#f59a4b"
+
+[accent.yellow]
+light = "#8f6a00"
+dark = "#f2c94c"
+
+[accent.green]
+light = "#267f39"
+dark = "#5cc777"
+
+[accent.teal]
+light = "#0f7f86"
+dark = "#4cc3c9"
+
+[accent.graphite]
+light = "#5a6270"
+dark = "#a3abb8"
+
 [size]
 # In logical pixels.
 title_bar = 28

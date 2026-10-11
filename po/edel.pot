@@ -707,6 +707,12 @@ msgstr ""
 msgid "the file is format {format}, and this release reads format {current}"
 msgstr ""
 
+msgid "{name} is not a colour; did you mean {near}?"
+msgstr ""
+
+msgid "{name} is not a colour; try a colour such as {names}, or see edel settings get appearance"
+msgstr ""
+
 msgid "{path} is not valid TOML; nothing is applied"
 msgstr ""
 
@@ -735,6 +741,9 @@ msgid "{table} is not a table in the file; change it by hand"
 msgstr ""
 
 msgid "{key}: {name} is not a user name"
+msgstr ""
+
+msgid "{key} is a table of colours; set one colour in it, such as {key}.panel"
 msgstr ""
 
 msgid "unknown key; did you mean {near}?"
@@ -866,6 +875,18 @@ msgstr ""
 msgid "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }"
 msgstr ""
 
+msgid "{value} is not an accent; choose {choices} or a colour such as \"#d0363f\""
+msgstr ""
+
+msgid "an accent's name or a colour in quotes, such as \"blue\""
+msgstr ""
+
+msgid "{value} is not a colour; use #rrggbb or #rrggbbaa, such as \"#1e1e2e\""
+msgstr ""
+
+msgid "a colour in quotes, such as \"#1e1e2e\""
+msgstr ""
+
 msgid "{others} or {last}"
 msgstr ""
 
@@ -897,6 +918,30 @@ msgid "could not shut down: {program} exited with {status}"
 msgstr ""
 
 msgid "could not suspend: {program} exited with {status}"
+msgstr ""
+
+msgid "accent {name} is not an accent or a colour; the release's is used"
+msgstr ""
+
+msgid "colour {name} is not a colour token; it is ignored"
+msgstr ""
+
+msgid "colour {name} = {value} is not #rrggbb or #rrggbbaa; the release's is used"
+msgstr ""
+
+msgid "text"
+msgstr ""
+
+msgid "an icon or mark"
+msgstr ""
+
+msgid "{name} {fg} on {surface} {bg} reads at {reads}:1; {what} needs {need}:1, such as {fix}"
+msgstr ""
+
+msgid "accent.{name} is not a table of light and dark colours"
+msgstr ""
+
+msgid "accent.{name}.{shade} needs a colour such as \"#2d6ae3\""
 msgstr ""
 
 msgid "could not read /proc/self/mountinfo"
