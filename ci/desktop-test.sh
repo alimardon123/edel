@@ -3862,6 +3862,22 @@ case_lock() {
 	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
+# editor_places: the lock screen's edit mode's last whole places line,
+# one that ends with Done's place; a line still being written when the
+# log is read ends early, so the read is tried again for up to 3 s.
+editor_places() {
+	i=0
+	while :; do
+		line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+		case "$line" in
+		*", done "*x[0-9]*) echo "$line"; return ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || { echo "$line"; return; }
+		sleep 0.3
+	done
+}
+
 case_lock_edit() {
 	# The lock screen's edit mode (M5.10c6b): ci's bus call, the one Settings'
 	# Edit lock screen makes, opens it over the desktop, live, with each part
@@ -3879,14 +3895,14 @@ case_lock_edit() {
 	guest 'lock editor'
 	wait_for 'edel-shell-ui: lock editor shown' ||
 		fail "the lock screen's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
 	set -- $clock
 	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) $((1280 - 24 - $3 / 2)) $((24 + $4 / 2 + 40))
 	wait_for 'edel-shell-ui: lock editor moved clock to top_right' ||
 		fail "the clock did not move to the top right: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	message=$(echo "$places" | sed -n 's/.*, tile[0-9]* message \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$message" ] || fail "the drawer does not offer a message tile: $places"
 	set -- $message
@@ -3894,7 +3910,7 @@ case_lock_edit() {
 	wait_for 'edel-shell-ui: lock editor added message' ||
 		fail "the message tile was not added: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	python3 ci/qmp.py screendump "$dir/lock-editor.png"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies: $places"
 	set -- $done_at
@@ -3967,7 +3983,7 @@ case_lock_edit() {
 	guest 'lock editor'
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
 		fail "the edit mode did not open for the clock's card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
 	set -- $clock
@@ -3988,7 +4004,7 @@ case_lock_edit() {
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: lock editor card hidden' "$hidden" ||
 		fail "Escape did not close the card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies after the card: $places"
 	set -- $done_at
@@ -4027,7 +4043,7 @@ case_lock_edit() {
 		fail "ci's password did not ask for the edit after unlock: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
 		fail "the edit mode did not open after the password: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	tab=$(echo "$places" | sed -n 's/.*, tab1 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$tab" ] || fail "the edit mode does not say where the Looks tab lies: $places"
 	set -- $tab
@@ -4035,7 +4051,7 @@ case_lock_edit() {
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
 	wait_more 'edel-shell-ui: lock editor tab looks' "$tabbed" ||
 		fail "a click on the Looks tab did not show it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	magazine=$(echo "$places" | sed -n 's/.*, tile[0-9]* magazine \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$magazine" ] || fail "the Looks tab does not offer Magazine: $places"
 	set -- $magazine
@@ -4044,7 +4060,7 @@ case_lock_edit() {
 	wait_more 'edel-shell-ui: lock editor look magazine' "$chose" ||
 		fail "a click on Magazine did not choose it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	python3 ci/qmp.py screendump "$dir/lock-editor-looks.png"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies for the look: $places"
 	set -- $done_at
