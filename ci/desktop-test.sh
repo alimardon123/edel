@@ -4314,10 +4314,15 @@ if [ "$*" = live ]; then
 		fi
 	done
 	# The whole screen drawn, not only what changed: the framebuffer
-	# driver the stick may run on shows only the areas a frame names.
+	# driver the stick may run on shows only the areas a frame names, and
+	# leaves the rest black. Since M5.10c4b the stick shows the default
+	# wallpaper there (Hills), not the background's one colour, so the
+	# middle must be neither black nor the background.
 	background=$(token background)
-	shot live $((w / 2)) $((h / 2)) "$background" >/dev/null ||
-		fail "$((w / 2)),$((h / 2)) is not the background's #$background: the screen was drawn only in part"
+	middle=$(shot live $((w / 2)) $((h / 2)) '!000000') ||
+		fail "$((w / 2)),$((h / 2)) is black: the screen was drawn only in part"
+	[ "$middle" != "$background" ] ||
+		fail "$((w / 2)),$((h / 2)) is the background's #$background: the default wallpaper did not show"
 	# What boot-test checked on the laptop stick until the desktop took
 	# its place (2026-10-06): linux-lts from USB, /data, the version, the
 	# guard on the hardware watchdog, the report on the EFI system
