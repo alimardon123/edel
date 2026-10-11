@@ -1,0 +1,7 @@
+# The built-in theme Edel: the release's own look, with no values of its own, so it changes
+# nothing on screen. Its pictures are the wallpapers feature's. Read by edel::themes (M5.12b6a),
+# which the built-in theme list and tests read; shown by edel theme list.
+title = "Edel"
+pictures = ["hills"]
+
+[appearance]

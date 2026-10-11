@@ -141,12 +141,14 @@ impl Files {
         }
     }
 
-    /// One file read leniently as the desktop reads it (ADR-008); nothing
-    /// for a file that is missing or not TOML.
+    /// One file read leniently as the desktop reads it (ADR-008), with the
+    /// theme in use applied (M5.12b6a); nothing for a file that is missing or
+    /// not TOML. Writers read through `file_of` too, so this is only for
+    /// what is shown: a writer never saves a theme's values.
     fn read(path: Option<&PathBuf>) -> Option<settings::SettingsFile> {
         path.and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|text| settings::read(&text).ok())
-            .map(|read| read.file)
+            .map(|read| edel::themes::themed(&read.file))
     }
 
     /// One file as the desktop reads it, empty when there is no file.
