@@ -77,3 +77,6 @@ lock_screen.look
 lock_screen.background
 lock_screen.notifications
 lock_screen.looks
+appearance.colours.*
+appearance.colours.light.*
+appearance.colours.dark.*

@@ -700,7 +700,7 @@ fn make_panel(
 /// The image's tokens in `scheme` if it has them, else the built-in ones;
 /// anything skipped is reported, never fatal (ADR-008).
 fn load_tokens(scheme: Scheme) -> Tokens {
-    let (tokens, notes) = tokens::load(scheme);
+    let (tokens, notes) = tokens::on_this_machine(scheme);
     for note in notes {
         eprintln!("edel-shell-ui: {}: {note}", tokens::PATH);
     }
