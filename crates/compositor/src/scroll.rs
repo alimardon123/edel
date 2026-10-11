@@ -8,6 +8,8 @@
 
 use smithay::utils::{Logical, Rectangle};
 
+use crate::layout::Gaps;
+
 /// The widths a column steps through, as parts of the screen's width; a
 /// new column takes the second.
 pub const WIDTHS: [f32; 3] = [1.0 / 3.0, 0.5, 2.0 / 3.0];
@@ -69,16 +71,18 @@ impl<W: Clone + PartialEq> Strip<W> {
     }
 
     /// Each column's left end and width on the strip, from the strip's
-    /// left end, for an area `area_w` wide with `gap` round and between.
-    fn spans(&self, area_w: i32, gap: i32) -> Vec<(i32, i32)> {
-        let room = (area_w - 2 * gap).max(1);
-        let mut left = gap;
+    /// left end, for an area `area_w` wide with `gaps.outer` at its ends
+    /// and `gaps.inner` between columns.
+    fn spans(&self, area_w: i32, gaps: Gaps) -> Vec<(i32, i32)> {
+        let Gaps { inner, outer } = gaps;
+        let room = (area_w - 2 * outer).max(1);
+        let mut left = outer;
         self.columns
             .iter()
             .map(|(_, width)| {
-                let w = ((room as f32 * WIDTHS[*width]) as i32 - gap / 2).max(1);
+                let w = ((room as f32 * WIDTHS[*width]) as i32 - inner / 2).max(1);
                 let span = (left, w);
-                left += w + gap;
+                left += w + inner;
                 span
             })
             .collect()
@@ -87,16 +91,17 @@ impl<W: Clone + PartialEq> Strip<W> {
     /// Scrolls the strip as little as it takes for `focused`'s column to
     /// be whole in an area `area_w` wide, and no further than its ends;
     /// whether it moved.
-    pub fn reveal(&mut self, focused: Option<&W>, area_w: i32, gap: i32) -> bool {
-        let spans = self.spans(area_w, gap);
-        let total = spans.last().map_or(0, |(l, w)| l + w + gap);
+    pub fn reveal(&mut self, focused: Option<&W>, area_w: i32, gaps: Gaps) -> bool {
+        let outer = gaps.outer;
+        let spans = self.spans(area_w, gaps);
+        let total = spans.last().map_or(0, |(l, w)| l + w + outer);
         let before = self.view;
         if let Some(i) = focused.and_then(|f| self.columns.iter().position(|(w, _)| w == f)) {
             let (left, width) = spans[i];
-            if left - gap < self.view {
-                self.view = left - gap;
-            } else if left + width + gap > self.view + area_w {
-                self.view = left + width + gap - area_w;
+            if left - outer < self.view {
+                self.view = left - outer;
+            } else if left + width + outer > self.view + area_w {
+                self.view = left + width + outer - area_w;
             }
         }
         self.view = self.view.clamp(0, (total - area_w).max(0));
@@ -108,22 +113,19 @@ impl<W: Clone + PartialEq> Strip<W> {
     pub fn places(
         &self,
         area: Rectangle<i32, Logical>,
-        gap: i32,
+        gaps: Gaps,
     ) -> Vec<(W, Rectangle<i32, Logical>)> {
-        let gap = if area.size.w > 4 * gap && area.size.h > 4 * gap {
-            gap
-        } else {
-            0
-        };
-        let h = (area.size.h - 2 * gap).max(1);
+        let gaps = gaps.within(area);
+        let outer = gaps.outer;
+        let h = (area.size.h - 2 * outer).max(1);
         self.columns
             .iter()
-            .zip(self.spans(area.size.w, gap))
+            .zip(self.spans(area.size.w, gaps))
             .map(|((w, _), (left, width))| {
                 let x = area.loc.x + left - self.view;
                 (
                     w.clone(),
-                    Rectangle::new((x, area.loc.y + gap).into(), (width, h).into()),
+                    Rectangle::new((x, area.loc.y + outer).into(), (width, h).into()),
                 )
             })
             .collect()
@@ -144,14 +146,14 @@ mod tests {
         let mut strip = Strip::default();
         for w in 1..=n {
             strip.insert(w, (w > 1).then_some(&(w - 1)));
-            strip.reveal(Some(&w), screen().size.w, 8);
+            strip.reveal(Some(&w), screen().size.w, Gaps::uniform(8));
         }
         strip
     }
 
     fn place(strip: &Strip<u32>, w: u32) -> Rectangle<i32, Logical> {
         strip
-            .places(screen(), 8)
+            .places(screen(), Gaps::uniform(8))
             .into_iter()
             .find(|(x, _)| *x == w)
             .unwrap()
@@ -166,7 +168,7 @@ mod tests {
     fn columns_keep_their_width_and_the_newest_is_whole() {
         for n in 1..=6 {
             let strip = opened(n);
-            let places = strip.places(screen(), 8);
+            let places = strip.places(screen(), Gaps::uniform(8));
             assert_eq!(places.len(), n as usize);
             // Every column half the screen less the gaps, as tall as it.
             for (_, r) in &places {
@@ -187,15 +189,18 @@ mod tests {
     #[test]
     fn focusing_a_column_scrolls_it_whole_and_no_further() {
         let mut strip = opened(4);
-        assert!(strip.reveal(Some(&1), 1280, 8));
+        assert!(strip.reveal(Some(&1), 1280, Gaps::uniform(8)));
         assert!(whole(place(&strip, 1)));
         assert_eq!(
             place(&strip, 1).loc.x,
             8,
             "the strip's left end, not past it"
         );
-        assert!(!strip.reveal(Some(&2), 1280, 8), "2 is already whole");
-        assert!(strip.reveal(Some(&4), 1280, 8));
+        assert!(
+            !strip.reveal(Some(&2), 1280, Gaps::uniform(8)),
+            "2 is already whole"
+        );
+        assert!(strip.reveal(Some(&4), 1280, Gaps::uniform(8)));
         assert_eq!(
             place(&strip, 4).loc.x + 628 + 8,
             1280,
@@ -207,10 +212,18 @@ mod tests {
     fn a_new_column_opens_right_of_the_focused_one() {
         let mut strip = opened(3);
         strip.insert(9, Some(&1));
-        let order: Vec<u32> = strip.places(screen(), 8).iter().map(|(w, _)| *w).collect();
+        let order: Vec<u32> = strip
+            .places(screen(), Gaps::uniform(8))
+            .iter()
+            .map(|(w, _)| *w)
+            .collect();
         assert_eq!(order, [1, 9, 2, 3]);
         strip.swap(&9, &3);
-        let order: Vec<u32> = strip.places(screen(), 8).iter().map(|(w, _)| *w).collect();
+        let order: Vec<u32> = strip
+            .places(screen(), Gaps::uniform(8))
+            .iter()
+            .map(|(w, _)| *w)
+            .collect();
         assert_eq!(order, [1, 3, 2, 9]);
     }
 
@@ -219,8 +232,8 @@ mod tests {
         for gone in 1..=6 {
             let mut strip = opened(6);
             strip.remove(&gone);
-            strip.reveal(None, 1280, 8);
-            let places = strip.places(screen(), 8);
+            strip.reveal(None, 1280, Gaps::uniform(8));
+            let places = strip.places(screen(), Gaps::uniform(8));
             assert_eq!(places.len(), 5);
             for pair in places.windows(2) {
                 assert_eq!(
@@ -242,5 +255,25 @@ mod tests {
         assert!(strip.widen(&1));
         assert_eq!(width(&strip), 417);
         assert!(!strip.widen(&7));
+    }
+
+    #[test]
+    fn the_inner_and_outer_gaps_are_their_own_on_the_strip() {
+        let gaps = Gaps {
+            inner: 12,
+            outer: 4,
+        };
+        let rect = |x, y, w, h| Rectangle::new((x, y).into(), (w, h).into());
+        let mut strip: Strip<u32> = Strip::default();
+        strip.insert(1, None);
+        strip.insert(2, Some(&1));
+        strip.reveal(Some(&2), 1280, gaps);
+        assert_eq!(
+            strip.places(screen(), gaps),
+            [
+                (1, rect(4, 4, 630, 792) as Rectangle<i32, Logical>),
+                (2, rect(646, 4, 630, 792)),
+            ]
+        );
     }
 }

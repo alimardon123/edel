@@ -29,7 +29,7 @@ use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorati
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
 
-use edel_compositor::frame::{Insets, Look, Text, paint};
+use edel_compositor::frame::{Border, Insets, Look, Text, paint};
 use edel_compositor::tokens::Tokens;
 
 use crate::state::Edel;
@@ -39,8 +39,12 @@ use crate::state::Edel;
 pub struct FrameData {
     /// The bar's pixels and what they show.
     bar: Option<(MemoryRenderBuffer, Look)>,
-    /// Left, right and bottom.
+    /// Left, right and bottom: plain colours, the bottom one unused while
+    /// the border is a gradient (M5.12b2b).
     pub borders: [SolidColorBuffer; 3],
+    /// The bottom strip of a gradient border: its pixels, their size and
+    /// the border they show (M5.12b2b).
+    pub strip: Option<(MemoryRenderBuffer, (i32, i32), Border)>,
     /// The frame before the window was maximized; set while it is.
     pub restore: Option<Rectangle<i32, Logical>>,
     /// It asked to be maximized before it was shown.
@@ -94,6 +98,46 @@ impl FrameData {
         self.bar
             .as_ref()
             .map(|(buffer, look)| (buffer.clone(), (look.width, look.height)))
+    }
+
+    /// The bottom strip of a gradient border, `px` pixels by the strip's
+    /// size, drawn again only when its size or its colours change
+    /// (M5.12b2b).
+    pub fn gradient(&mut self, px: (i32, i32), border: Border) -> &MemoryRenderBuffer {
+        let stale = self
+            .strip
+            .as_ref()
+            .is_none_or(|(_, drawn, colours)| *drawn != px || *colours != border);
+        if stale {
+            let size = (px.0.max(1), px.1.max(1));
+            let full = Rectangle::from_size(size.into());
+            let mut buffer = match self.strip.take() {
+                Some((buffer, _, _)) => buffer,
+                None => MemoryRenderBuffer::new(Fourcc::Argb8888, size, 1, Transform::Normal, None),
+            };
+            {
+                let mut context = buffer.render();
+                context.resize(size);
+                let bytes = border.strip(size.0 as usize, size.1 as usize);
+                let drawn: Result<(), std::convert::Infallible> = context.draw(|pixels| {
+                    let n = bytes.len().min(pixels.len());
+                    pixels[..n].copy_from_slice(&bytes[..n]);
+                    Ok(vec![full])
+                });
+                let _ = drawn;
+                context.update_opaque_regions(Some(vec![full]));
+            }
+            self.strip = Some((buffer, px, border));
+        }
+        &self.strip.as_ref().expect("drawn above").0
+    }
+
+    /// The gradient strip's last pixels, its size and its border, for a
+    /// closing window (M5.12b2b).
+    pub fn last_strip(&self) -> Option<(MemoryRenderBuffer, (i32, i32), Border)> {
+        self.strip
+            .as_ref()
+            .map(|(buffer, px, border)| (buffer.clone(), *px, *border))
     }
 }
 

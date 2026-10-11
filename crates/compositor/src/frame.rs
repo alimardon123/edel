@@ -37,21 +37,29 @@ pub const FONTS: [&str; 2] = [
 /// What a frame adds round a window, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Insets {
-    /// The title bar.
+    /// The title bar and the border's top, B rows above the bar's own
+    /// rows (M5.12b2b): the bar's height, plus B - 1.
     pub top: i32,
     /// The border, left and right.
     pub side: i32,
     pub bottom: i32,
+    /// The title bar's own height: its buttons, title and hairline sit in
+    /// its bottom rows, so the buttons' size is this, not `top`.
+    pub bar: i32,
 }
 
 impl Insets {
-    /// A server-side frame: the bar on top, the border on the other sides.
+    /// A server-side frame: the bar on top, the border on the other sides,
+    /// B logical pixels wide (`appearance.border_width`, M5.12b2b). With
+    /// B 1 the bar is the title bar's height, as before.
     pub fn server_side(tokens: &Tokens) -> Insets {
         let border = tokens.border as i32;
+        let bar = tokens.title_bar_height as i32;
         Insets {
-            top: tokens.title_bar_height as i32,
+            top: if border >= 1 { bar + border - 1 } else { bar },
             side: border,
             bottom: border,
+            bar,
         }
     }
 
@@ -178,12 +186,13 @@ pub fn hit(
     let side = f64::from(insets.side);
     let top = f64::from(insets.top);
     let bottom = f64::from(insets.bottom);
+    let bar = f64::from(insets.bar.max(1));
     if x >= 0.0 && x < w && y >= 0.0 && y < top {
         // Close is 0, the square at the bar's end on that side; then
         // inwards.
         let from_end = match buttons_side {
-            Side::Right => ((w - x) / top).ceil() as usize - 1,
-            Side::Left => (x / top).floor() as usize,
+            Side::Right => ((w - x) / bar).ceil() as usize - 1,
+            Side::Left => (x / bar).floor() as usize,
         };
         return Some(
             buttons(buttons_side, shown)
@@ -218,8 +227,64 @@ pub fn hit(
     }))
 }
 
+/// A window's border colours (M5.12b2b): `start` at the left and the top,
+/// `end` at the right; the same colour twice is a plain border.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Border {
+    pub start: Colour,
+    pub end: Colour,
+}
+
+impl Border {
+    /// The border of a window, focused or not: `window_border` without the
+    /// keyboard; the focused one's two colours with it.
+    pub fn of(tokens: &Tokens, focused: bool) -> Border {
+        if focused {
+            Border {
+                start: tokens.window_border_focused,
+                end: tokens.window_border_focused_end,
+            }
+        } else {
+            Border {
+                start: tokens.window_border,
+                end: tokens.window_border,
+            }
+        }
+    }
+
+    /// The colour at column `x` of a border `width` columns wide: the mix
+    /// of the two colours by the column's place across it.
+    pub fn at(self, x: usize, width: usize) -> Colour {
+        if self.start == self.end || width <= 1 {
+            return self.start;
+        }
+        let t = (x as f32 / (width - 1) as f32).clamp(0.0, 1.0);
+        let mix = |a: f32, b: f32| a + (b - a) * t;
+        Colour {
+            r: mix(self.start.r, self.end.r),
+            g: mix(self.start.g, self.end.g),
+            b: mix(self.start.b, self.end.b),
+            a: mix(self.start.a, self.end.a),
+        }
+    }
+
+    /// The border as ARGB8888 rows `width` by `height` pixels, the colour
+    /// of each column across it, for a bottom strip that is a gradient
+    /// (M5.12b2b), in memory order like the bar's pixels.
+    pub fn strip(self, width: usize, height: usize) -> Vec<u8> {
+        let mut pixels = Vec::with_capacity(width * height * 4);
+        for _ in 0..height {
+            for x in 0..width {
+                let [r, g, b, a] = self.at(x, width).bytes();
+                pixels.extend_from_slice(&[b, g, r, a]);
+            }
+        }
+        pixels
+    }
+}
+
 /// Everything a bar shows; when it changes, the bar is drawn again.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Look {
     /// In pixels on the screen: the logical size times the scale, so the
     /// bar is sharp at any scale (M4.6).
@@ -242,6 +307,9 @@ pub struct Look {
     pub icon: Option<String>,
     /// Light or dark (M5.5c): a new scheme draws the bar again.
     pub scheme: crate::tokens::Scheme,
+    /// The window's border (M5.12b2b): its edge along the bar's top and
+    /// sides, drawn in the colours it names.
+    pub border: Border,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
@@ -259,18 +327,22 @@ pub fn paint(
     }
     let scale = look.scale_120.max(120) as f32 / 120.0;
     let mut canvas = Canvas { pixels, width: w };
+    // The title bar fills the bottom rows of the frame's bar; the rows above
+    // are the border's top (M5.12b2b), and at a border of 1 there are none.
+    let band = ((tokens.title_bar_height as f32 * scale).round() as usize).clamp(1, h);
+    let top = h - band;
     let bar = if look.focused {
         tokens.title_bar_focused
     } else {
         tokens.title_bar
     };
-    canvas.fill(0, 0, w, h, bar);
+    canvas.fill(0, top, w, band, bar);
     let ink = if look.focused {
         tokens.title_text
     } else {
         tokens.title_text_unfocused
     };
-    let size = h;
+    let size = band;
     let set: Vec<Button> = buttons(look.side, look.shown).collect();
     for (i, button) in set.iter().enumerate() {
         if (i + 1) * size > w {
@@ -286,26 +358,36 @@ pub fn paint(
                 Button::Close => tokens.title_close_hover,
                 Button::Maximize | Button::Minimize => tokens.title_button_hover,
             };
-            canvas.fill(x, 0, size, h, hover);
+            canvas.fill(x, top, size, band, hover);
             icon = tokens.title_text;
         }
-        canvas.icon(*button, look.maximized, x, size, icon);
+        canvas.icon(*button, look.maximized, x, top, size, icon);
     }
-    // A hairline under the bar, and the window's edge along its top and
-    // sides, as the mockups draw them; a maximized window has no edge.
+    // A hairline under the bar, and the window's border along its top and
+    // sides, B pixels wide, as the mockups draw them; a maximized window or
+    // a border of 0 has none.
     let line = tokens.line;
     for col in 0..w {
         canvas.blend(col as i64, h as i64 - 1, line, line.a);
     }
-    if !look.maximized {
-        let edge = tokens.edge;
-        let opaque = Colour { a: 1.0, ..edge };
+    let edge = (tokens.border as f32 * scale).round() as usize;
+    if !look.maximized && edge > 0 {
+        let edge = edge.min(w / 2).min(h);
         for col in 0..w {
-            canvas.blend(col as i64, 0, opaque, edge.a);
+            let colour = look.border.at(col, w);
+            let opaque = Colour { a: 1.0, ..colour };
+            for row in 0..edge {
+                canvas.blend(col as i64, row as i64, opaque, colour.a);
+            }
         }
-        for row in 1..h {
-            canvas.blend(0, row as i64, opaque, edge.a);
-            canvas.blend(w as i64 - 1, row as i64, opaque, edge.a);
+        for row in edge..h {
+            for col in 0..edge {
+                let left = look.border.at(0, w);
+                canvas.blend(col as i64, row as i64, Colour { a: 1.0, ..left }, left.a);
+                let right = look.border.at(w - 1, w);
+                let x = (w - 1 - col) as i64;
+                canvas.blend(x, row as i64, Colour { a: 1.0, ..right }, right.a);
+            }
         }
     }
     let Some(text) = text else {
@@ -313,7 +395,7 @@ pub fn paint(
     };
     // The title is centred on the bar, moved aside if it would reach the
     // buttons, and cut short with an ellipsis if it is still too long.
-    let pad = (h / 2) as f32;
+    let pad = (size / 2) as f32;
     let used = (set.len() * size) as f32;
     let (left, right) = match look.side {
         Side::Right => (pad, w as f32 - used - pad),
@@ -326,7 +408,7 @@ pub fn paint(
     text.set_size(tokens.title_text_size as f32 * scale);
     // The app's icon, when it has one, sits left of the title, and the
     // two are centred together (M5.6a).
-    let icon = icon.filter(|p| p.height() as f32 <= h as f32);
+    let icon = icon.filter(|p| p.height() as f32 <= band as f32);
     let (icon_w, gap) = match icon {
         Some(p) => (p.width() as f32, (7.0 * scale).round()),
         None => (0.0, 0.0),
@@ -335,10 +417,10 @@ pub fn paint(
     let width = text.width(&title) + icon_w + gap;
     let x = ((w as f32 - width) / 2.0).min(right - width).max(left);
     if let Some(picture) = icon {
-        let top = (h as f32 - picture.height() as f32) / 2.0;
-        canvas.picture(picture, x.round() as i64, top.round() as i64);
+        let at = top as f32 + (band as f32 - picture.height() as f32) / 2.0;
+        canvas.picture(picture, x.round() as i64, at.round() as i64);
     }
-    let baseline = ((h as f32 + text.ascent + text.descent) / 2.0).round();
+    let baseline = (top as f32 + (band as f32 + text.ascent + text.descent) / 2.0).round();
     text.draw(&mut canvas, &title, x + icon_w + gap, baseline, ink, right);
 }
 
@@ -402,7 +484,15 @@ impl Canvas<'_> {
     /// A button's icon from `design/icons/` (M5.5d), half the square at
     /// `x` wide and in its middle: close, maximize, restore for a
     /// maximized window, minimize.
-    fn icon(&mut self, button: Button, maximized: bool, x: usize, size: usize, colour: Colour) {
+    fn icon(
+        &mut self,
+        button: Button,
+        maximized: bool,
+        x: usize,
+        top: usize,
+        size: usize,
+        colour: Colour,
+    ) {
         let name = match button {
             Button::Close => "close",
             Button::Maximize if maximized => "restore",
@@ -413,7 +503,7 @@ impl Canvas<'_> {
         let Some(mask) = edel::icons::mask(name, px as u32) else {
             return;
         };
-        let (x0, y0) = ((x + (size - px) / 2) as i64, ((size - px) / 2) as i64);
+        let (x0, y0) = ((x + (size - px) / 2) as i64, (top + (size - px) / 2) as i64);
         for (i, pixel) in mask.data().chunks_exact(4).enumerate() {
             let (dx, dy) = ((i % px) as i64, (i / px) as i64);
             self.blend(x0 + dx, y0 + dy, colour, f32::from(pixel[3]) / 255.0);
@@ -890,6 +980,7 @@ mod tests {
             shown: Shown::default(),
             icon: None,
             scheme: crate::tokens::Scheme::Dark,
+            border: Border::of(&tokens(), focused),
         }
     }
 
@@ -1046,5 +1137,97 @@ mod tests {
         let mut pixels = vec![0; 30 * 28 * 4];
         paint(&mut pixels, &look(30, true), &tokens(), None, None);
         paint(&mut [], &look(30, true), &tokens(), None, None);
+    }
+
+    #[test]
+    fn a_border_of_three_adds_its_width_above_the_bar_and_the_bar_keeps_its_height() {
+        let mut t = tokens();
+        t.border = 3;
+        let i = Insets::server_side(&t);
+        assert_eq!((i.top, i.side, i.bottom, i.bar), (30, 3, 3, 28));
+        let window = rect(100, 100, 300, 200);
+        assert_eq!(i.window(i.frame(window)), window);
+        // Buttons are the bar's height, so a click on the close button's
+        // square is found from the bar's right end, not from the frame's.
+        let shown = Shown::default();
+        let close = hit(
+            (306, 233).into(),
+            i,
+            (290.0, 14.0).into(),
+            true,
+            Side::Right,
+            shown,
+        );
+        assert_eq!(close, Some(Hit::Button(Button::Close)));
+    }
+
+    #[test]
+    fn a_border_of_three_is_drawn_round_the_bar_in_its_colours() {
+        let mut t = tokens();
+        t.border = 3;
+        let red = Colour {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Colour {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        let mut l = look(302, true);
+        l.height = 30;
+        l.border = Border {
+            start: red,
+            end: blue,
+        };
+        let mut pixels = vec![0; 302 * 30 * 4];
+        paint(&mut pixels, &l, &t, None, None);
+        // The top rows and the sides run from one colour to the other.
+        assert_eq!(pixel(&pixels, 302, 0, 0), [255, 0, 0]);
+        assert_eq!(pixel(&pixels, 302, 301, 0), [0, 0, 255]);
+        assert_eq!(pixel(&pixels, 302, 1, 20), [255, 0, 0]);
+        assert_eq!(pixel(&pixels, 302, 300, 20), [0, 0, 255]);
+        // The title bar fills the rows below the border's three.
+        let bar = t.title_bar_focused.bytes();
+        assert_eq!(pixel(&pixels, 302, 150, 15), [bar[0], bar[1], bar[2]]);
+        assert_eq!(pixel(&pixels, 302, 150, 3), [bar[0], bar[1], bar[2]]);
+    }
+
+    #[test]
+    fn a_gradient_border_mixes_its_two_colours_across_its_width() {
+        let red = Colour {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let blue = Colour {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        let border = Border {
+            start: red,
+            end: blue,
+        };
+        assert_eq!(border.at(0, 100), red);
+        assert_eq!(border.at(99, 100), blue);
+        let middle = border.at(50, 101);
+        assert!((middle.r - 0.5).abs() < 1e-6 && (middle.b - 0.5).abs() < 1e-6);
+        // A plain border is one colour everywhere.
+        let plain = Border {
+            start: red,
+            end: red,
+        };
+        assert_eq!(plain.at(50, 101), red);
+        // The strip is one row of ARGB pixels per row, colour by column.
+        let strip = border.strip(4, 2);
+        assert_eq!(strip.len(), 4 * 2 * 4);
+        assert_eq!(&strip[0..4], &[0, 0, 255, 255]);
+        assert_eq!(&strip[12..16], &[255, 0, 0, 255]);
     }
 }

@@ -90,6 +90,10 @@ pub struct Settings {
     /// `appearance.colours` (M5.12b1), the person's over the machine's name
     /// by name; the tokens follow it, read by `edel::tokens::on_this_machine`.
     pub colours: Option<edel::settings::Colours>,
+    /// The shape keys (M5.12b2a, `appearance.gaps`, `border_width` and the
+    /// rest), the person's over the machine's, read by the tokens too;
+    /// the desktop follows them live (M5.12b2b).
+    pub shape: edel::tokens::Shape,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -109,7 +113,10 @@ pub struct OutputSettings {
 impl Settings {
     /// The machine's file, then the person's over it.
     pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
-        let mut settings = Settings::default();
+        let mut settings = Settings {
+            shape: edel::tokens::Shape::between(machine, person),
+            ..Settings::default()
+        };
         for file in [machine, person].into_iter().flatten() {
             if file.layout.tiling.is_some() {
                 settings.tiling = file.layout.tiling;

@@ -7,6 +7,8 @@
 
 use smithay::utils::{Logical, Rectangle};
 
+use crate::layout::Gaps;
+
 #[derive(Debug, Clone)]
 enum Node<W> {
     Window(W),
@@ -56,26 +58,21 @@ impl<W: Clone + PartialEq> Tree<W> {
         }
     }
 
-    /// Every window's place in `area`, with `gap` between windows and
-    /// round them, oldest first.
+    /// Every window's place in `area`, with `gaps.inner` between windows
+    /// and `gaps.outer` round them, oldest first.
     pub fn places(
         &self,
         area: Rectangle<i32, Logical>,
-        gap: i32,
+        gaps: Gaps,
     ) -> Vec<(W, Rectangle<i32, Logical>)> {
         let mut out = Vec::new();
         let Some(root) = &self.root else {
             return out;
         };
-        // The gap is dropped where it would leave no room.
-        let gap = if area.size.w > 4 * gap && area.size.h > 4 * gap {
-            gap
-        } else {
-            0
-        };
+        let Gaps { inner: gap, outer } = gaps.within(area);
         let inner = Rectangle::new(
-            (area.loc.x + gap, area.loc.y + gap).into(),
-            (area.size.w - 2 * gap, area.size.h - 2 * gap).into(),
+            (area.loc.x + outer, area.loc.y + outer).into(),
+            (area.size.w - 2 * outer, area.size.h - 2 * outer).into(),
         );
         root.place(inner, gap, &mut out);
         out
@@ -194,7 +191,7 @@ mod tests {
     }
 
     fn place_of(tree: &Tree<u32>, w: u32) -> Rectangle<i32, Logical> {
-        tree.places(screen(), 8)
+        tree.places(screen(), Gaps::uniform(8))
             .into_iter()
             .find(|(x, _)| *x == w)
             .unwrap()
@@ -203,9 +200,12 @@ mod tests {
 
     #[test]
     fn each_new_window_halves_the_last_ones_space_across_its_longer_side() {
-        assert_eq!(opened(1).places(screen(), 8), [(1, rect(8, 8, 1264, 784))]);
         assert_eq!(
-            opened(2).places(screen(), 8),
+            opened(1).places(screen(), Gaps::uniform(8)),
+            [(1, rect(8, 8, 1264, 784))]
+        );
+        assert_eq!(
+            opened(2).places(screen(), Gaps::uniform(8)),
             [(1, rect(8, 8, 628, 784)), (2, rect(644, 8, 628, 784))]
         );
         // The third halves the second's tall space: top and bottom.
@@ -226,7 +226,7 @@ mod tests {
     fn up_to_six_windows_split_without_overlap() {
         for area in [screen(), rect(100, 50, 1366, 740), rect(0, 0, 1080, 1920)] {
             for n in 1..=6 {
-                let places = opened(n).places(area, 8);
+                let places = opened(n).places(area, Gaps::uniform(8));
                 assert_eq!(places.len(), n as usize);
                 for (i, (_, a)) in places.iter().enumerate() {
                     assert!(a.size.w > 0 && a.size.h > 0, "{n}: {a:?}");
@@ -245,10 +245,10 @@ mod tests {
     #[test]
     fn a_closed_window_gives_its_space_to_its_neighbour() {
         for gone in 1..=6 {
-            let before = opened(6).places(screen(), 8);
+            let before = opened(6).places(screen(), Gaps::uniform(8));
             let mut tree = opened(6);
             tree.remove(&gone);
-            let after = tree.places(screen(), 8);
+            let after = tree.places(screen(), Gaps::uniform(8));
             assert_eq!(after.len(), 5);
             let freed = before.iter().find(|(w, _)| *w == gone).unwrap().1;
             let middle =
@@ -280,11 +280,26 @@ mod tests {
         assert_eq!(place_of(&tree, 2), rect(8, 8, 628, 388));
         // A window not in the tree opens beside the newest.
         tree.insert(4, Some(&99));
-        assert_eq!(tree.places(screen(), 8).len(), 4);
+        assert_eq!(tree.places(screen(), Gaps::uniform(8)).len(), 4);
         tree.remove(&1);
         tree.remove(&2);
         tree.remove(&3);
         tree.remove(&4);
-        assert!(tree.places(screen(), 8).is_empty());
+        assert!(tree.places(screen(), Gaps::uniform(8)).is_empty());
+    }
+
+    #[test]
+    fn the_inner_and_outer_gaps_are_their_own_in_the_split_tree() {
+        let gaps = Gaps {
+            inner: 12,
+            outer: 4,
+        };
+        let mut tree: Tree<u32> = Tree::default();
+        tree.insert(1, None);
+        tree.insert(2, Some(&1));
+        assert_eq!(
+            tree.places(screen(), gaps),
+            [(1, rect(4, 4, 630, 792)), (2, rect(646, 4, 630, 792))]
+        );
     }
 }
