@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{icon, panels, preview, rows, tray, workspaces};
+use crate::{panels, preview, rows, tray, wallpaper, workspaces};
 
 const PANELS_INTRO: &str = n_(
     "The panels and docks along the screen's edges and what they hold. Each \
@@ -170,6 +170,9 @@ struct Ui {
     tray: Option<Rc<tray::Card>>,
     /// The Workspaces page's names and apps (M5.2n).
     names: Option<Rc<workspaces::Card>>,
+    /// The Appearance page's Wallpaper group, which follows the files too
+    /// (M5.10c4c).
+    wallpaper: Option<Rc<wallpaper::Card>>,
 }
 
 impl Ui {
@@ -209,6 +212,9 @@ impl Ui {
         }
         if let Some(names) = &self.names {
             names.show(&files, &now);
+        }
+        if let Some(wallpaper) = &self.wallpaper {
+            wallpaper.show(&files);
         }
         let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
@@ -295,6 +301,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut settings = Vec::new();
     let mut bar = None;
     let (mut panels, mut tray, mut names) = (None, None, None);
+    let mut wallpaper = None;
     match section {
         "layout" => {
             let source = widgets::section(&content, rows::title("layout.preset"));
@@ -442,9 +449,12 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             names = Some(workspaces::card(&spaces, &problem));
         }
         _ => {
-            // Light, dark or the release's choice (M5.5c), then the
+            // The wallpaper first (M5.10c4c), then light, dark or the
+            // release's choice (M5.5c), then the
             // workspace switcher's look, shown count and ends (M5.2m).
+            wallpaper = Some(wallpaper::card(&content, &problem, theme));
             let look = widgets::group(&content);
+            look.set_margin_top(20);
             let style = setting(
                 &look,
                 "appearance.mode",
@@ -507,6 +517,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         tray: tray.clone(),
         panels: panels.clone(),
         names,
+        wallpaper: wallpaper.clone(),
     });
     ui.update();
     if let Some(tray) = &tray {
@@ -592,37 +603,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
 /// A preset's card: its picture, its name and, when chosen, a check.
 fn card(name: &str, theme: &Rc<Theme>) -> (gtk::ToggleButton, gtk::Box) {
     let title = edel::presets::title(name);
-    let label = gtk::Label::builder()
-        .label(&title)
-        .xalign(0.0)
-        .hexpand(true)
-        .css_classes(["edel-preset-name"])
-        .build();
-    let check = icon::image("check", 12);
-    check.set_hexpand(true);
-    check.set_halign(gtk::Align::Center);
-    let badge = gtk::Box::builder()
-        .valign(gtk::Align::Center)
-        .halign(gtk::Align::End)
-        .hexpand(false)
-        .css_classes(["edel-badge"])
-        .build();
-    badge.append(&check);
-    let name_row = gtk::Box::builder().spacing(6).build();
-    name_row.append(&label);
-    name_row.append(&badge);
-    let inner = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .build();
-    inner.append(&preview::area(name, theme));
-    inner.append(&name_row);
-    let card = gtk::ToggleButton::builder()
-        .child(&inner)
-        .css_classes(["edel-preset"])
-        .build();
-    card.update_property(&[gtk::accessible::Property::Label(&title)]);
-    (card, badge)
+    widgets::picture_card(&title, &preview::area(name, theme).upcast())
 }
 
 /// Appends a row for `key` to `group`: what it does, the shortcut action
