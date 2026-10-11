@@ -6,7 +6,7 @@
 :root, .coal, .navy, .ayu {
   --edel-page: #1a1c22;
   --edel-sidebar: #1a1d23;
-  --edel-raised: #24272e;
+  --edel-raised: #212329;
   --edel-hover: #2b2e36;
   --edel-border: #3a3e48;
   --edel-text: #eceef1;
@@ -18,7 +18,7 @@
 .light, .rust {
   --edel-page: #f6f7f9;
   --edel-sidebar: #dfe3ea;
-  --edel-raised: #f1f2f4;
+  --edel-raised: #eceef1;
   --edel-hover: #f7f8f9;
   --edel-border: #e3e5e9;
   --edel-text: #1c1e22;
