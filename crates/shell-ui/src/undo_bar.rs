@@ -10,8 +10,9 @@ use edel::tokens::Tokens;
 use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
-use crate::paint::{Text, fill};
-use crate::popup::{self, Card, Rect, raised, veil};
+use crate::edit_kit::{self, ButtonKind, State, Style};
+use crate::paint::Text;
+use crate::popup::{self, Card, Rect};
 use crate::quick;
 
 /// How long the bar stays after Done, in seconds.
@@ -37,6 +38,9 @@ pub struct View {
     pub hover: bool,
     pub width: u32,
     pub text: String,
+    /// The look of the editor that opened the bar (`editor::style`): the
+    /// lock screen's glass, or the desktop's colours.
+    pub style: Style,
 }
 
 /// Where the bar's parts lie, logical pixels from its top left corner.
@@ -67,10 +71,10 @@ pub fn layout(view: &View) -> Layout {
 }
 
 /// The card, with the menus' corners.
-pub fn cards(l: &Layout, tokens: &Tokens) -> Vec<Card> {
+pub fn cards(l: &Layout, _tokens: &Tokens) -> Vec<Card> {
     vec![Card {
         rect: l.card,
-        radius: tokens.radius_menu as f32,
+        radius: edit_kit::SHEET_RADIUS,
     }]
 }
 
@@ -111,30 +115,37 @@ pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
 }
 
 /// Draws `view` at `s` into `pixmap`, which is the bar's size times it: the
-/// card, the text in the panel's text colour, and the pill raised with its
-/// word, veiled a little under the pointer. Without `text`, the shapes only.
+/// sheet (`edit_kit::sheet`, in the view's style), the text in the style's
+/// text colour, and the Undo pill as the kit's quiet button, lit a little
+/// under the pointer. Without `text`, the shapes only.
 pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: Option<&mut Text>, s: f32) {
     let l = layout(view);
-    popup::cards(pixmap, tokens, s, &cards(&l, tokens));
+    pixmap.fill(tiny_skia::Color::TRANSPARENT);
+    edit_kit::sheet(pixmap, l.card, tokens, view.style, s);
     let size = tokens.panel_text_size as f32 * s;
     let mut text = text;
     if let Some(text) = text.as_deref_mut() {
         let mut line = text.fit(&view.text, size, l.text.w * s);
         let y = popup::middle(l.text.y, l.text.h, size, s);
-        text.draw(pixmap, &mut line, l.text.x * s, y, tokens.panel_text);
+        let ink = edit_kit::inks(view.style, tokens).text;
+        text.draw(pixmap, &mut line, l.text.x * s, y, ink);
     }
-    let (x, y, w, h) = l.undo.device(s);
-    let radius = tokens.radius_control as f32 * s;
-    fill(pixmap, x, y, w, h, radius, raised(tokens));
-    if view.hover {
-        fill(pixmap, x, y, w, h, radius, veil(tokens, 0.06));
-    }
-    if let Some(text) = text {
-        let mut line = text.line(tr("Undo"), size);
-        let at = x + ((w - line.width) / 2.0).round();
-        let baseline = popup::middle(l.undo.y, l.undo.h, size, s);
-        text.draw(pixmap, &mut line, at, baseline, tokens.panel_text);
-    }
+    let state = if view.hover {
+        State::Hover
+    } else {
+        State::Rest
+    };
+    edit_kit::button(
+        pixmap,
+        l.undo,
+        tr("Undo"),
+        ButtonKind::Quiet,
+        state,
+        tokens,
+        text,
+        view.style,
+        s,
+    );
 }
 
 #[cfg(test)]
@@ -147,6 +158,7 @@ mod tests {
             hover: false,
             width,
             text: "Panels changed".into(),
+            style: Style::DESKTOP,
         }
     }
 
@@ -211,6 +223,7 @@ mod tests {
                 hover: true,
                 width: 1280,
                 text: "Panels changed".into(),
+                style: Style::DESKTOP,
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();

@@ -262,6 +262,7 @@ impl Shell {
             tiles: usable
                 .iter()
                 .map(|w| Tile {
+                    icon: "",
                     name: w.name,
                     title: tr(w.title).to_string(),
                     shown: (w.shows)(&self.live),
@@ -895,6 +896,10 @@ impl Shell {
             hover: false,
             width: self.screen_width(),
             text: words.to_string(),
+            style: editor::style(match undo {
+                Undo::Panels(_) => Kind::Panels,
+                Undo::LockScreen(_) => Kind::LockScreen,
+            }),
         };
         let layout = undo_bar::layout(&view);
         let room = paint::shadow_room(&self.tokens, !fillets());

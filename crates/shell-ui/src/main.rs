@@ -22,6 +22,7 @@ mod calendar;
 mod centre;
 mod clock_face;
 mod corner;
+mod edit_kit;
 mod editor;
 mod editor_card;
 mod greetd;

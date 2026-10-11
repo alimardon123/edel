@@ -36,6 +36,7 @@ use tiny_skia::Pixmap;
 
 use crate::a11y;
 use crate::corner;
+use crate::edit_kit::{self, Style};
 use crate::editor::{self, DRAG_START, Kind};
 use crate::editor_card::{self, Undo};
 use crate::lock::{self, Backdrops, Pictures};
@@ -425,7 +426,13 @@ impl Shell {
         let now = jiff::Zoned::now();
         let (time, date) = lock::time_and_date(&now);
         let mut view = lock::View::new(time, date, lock::user());
+        // Two notices from two apps, so the count shows both its words and
+        // its apps' tiles as it does with notifications waiting.
         view.notices = 2;
+        view.apps = vec![
+            ("Mail".into(), "mail".into()),
+            ("Calendar".into(), "calendar".into()),
+        ];
         view.when = Some(lock::When::of(&now));
         view.battery = self.battery_view();
         view
@@ -475,14 +482,6 @@ impl Shell {
             &le.wallpaper,
             s as f32,
         );
-        lock_editor::paint(
-            &mut pixmap,
-            &le.view,
-            &at,
-            &self.tokens,
-            &mut self.text,
-            s as f32,
-        );
         corner::paint(
             &mut pixmap,
             &corner_view,
@@ -491,11 +490,47 @@ impl Shell {
             &mut self.text,
             s as f32,
         );
+        lock_editor::draw_placeholders(
+            &mut pixmap,
+            &le.view,
+            &at,
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
+        // The lock laid smaller on the stage, then the edit's marks drawn in
+        // the screen's own size over it, so their words and lines stay sharp.
         let lock = pixmap;
         let Some(mut pixmap) = Pixmap::new(pw, ph) else {
             return;
         };
-        lock_editor::compose(&mut pixmap, &lock, preview, &self.tokens, s as f32);
+        let picture = lock_editor::picture_rect(screen, preview);
+        let whole = crate::popup::Rect::new(0.0, 0.0, screen.0, screen.1);
+        edit_kit::stage(
+            &mut pixmap,
+            whole,
+            picture,
+            &self.tokens,
+            Style::GLASS,
+            s as f32,
+        );
+        edit_kit::stage_frame(
+            &mut pixmap,
+            &lock,
+            picture,
+            &self.tokens,
+            Style::GLASS,
+            s as f32,
+        );
+        lock_editor::paint(
+            &mut pixmap,
+            &le.view,
+            &at,
+            preview,
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
         lock_editor::paint_drawer(
             &mut pixmap,
             &le.view,

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Now playing on the lock screen, as a part in the edit mode (M5.10c6c): a pair of quavers. -->
+  <path d="M9 17.5V6l10-2v11.5"/>
+  <circle cx="6.75" cy="17.5" r="2.25"/>
+  <circle cx="16.75" cy="15.5" r="2.25"/>
+</svg>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The lock screen's clock, as a part in the edit mode (M5.10c6c): a dial at ten past ten. -->
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="M12 7.25V12l3.25 2"/>
+</svg>

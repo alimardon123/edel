@@ -17,9 +17,10 @@ use edel::tokens::Tokens;
 use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
+use crate::edit_kit::{self, ButtonKind, State, Style};
 use crate::lock;
 use crate::lock_editor;
-use crate::paint::{Text, fill, lit};
+use crate::paint::{Text, fill};
 use crate::popup::{self, INSET, PAD, Rect};
 use crate::trayview::Key;
 
@@ -606,11 +607,12 @@ fn file_name(placed: &Placed) -> String {
 }
 
 /// Draws the card at scale `s` over what is under it (the lock and the
-/// corner; it clears nothing): the panel's colour in the menus' corners, a
-/// lit row under the pointer, each line's label, its segmented control with
-/// the chosen segment, each date part's check box, the field's words (and
-/// its caret while it takes letters), the picture's name and the button,
-/// the keyboard's ring round the focused control.
+/// corner; it clears nothing) as the lock's edit mode dresses its drawer
+/// (M5.10c6c3, `edit_kit`): the glass sheet with its shadow, a lit row under
+/// the pointer, each line's label, its segmented control with the chosen
+/// segment, each date part's check box, the field's words (and its caret
+/// while it takes letters), the picture's name and the button, the
+/// keyboard's ring round the focused control.
 pub fn paint(
     pixmap: &mut Pixmap,
     view: &View,
@@ -619,34 +621,28 @@ pub fn paint(
     text: &mut Text,
     s: f32,
 ) {
-    let (x, y, w, h) = l.card.device(s);
-    fill(
-        pixmap,
-        x,
-        y,
-        w,
-        h,
-        tokens.radius_menu as f32 * s,
-        tokens.panel,
-    );
+    let ink = edit_kit::inks(Style::GLASS, tokens);
+    lock::lift(pixmap, l.card, edit_kit::SHEET_RADIUS, s, tokens);
+    edit_kit::sheet(pixmap, l.card, tokens, Style::GLASS, s);
     let size = tokens.panel_text_size as f32 * s;
     let radius = tokens.radius_control as f32 * s;
     for row in &l.rows {
         if view.hover == Some(row.line) {
             let (x, y, w, h) = row.rect.device(s);
-            fill(pixmap, x, y, w, h, radius, lit(tokens));
+            fill(pixmap, x, y, w, h, radius, ink.lit);
         }
         let left = (row.rect.x + INSET) * s;
         match row.line {
             Line::Face | Line::Hours | Line::Size | Line::Style => {
                 if let Some(control) = row.control {
                     let words: Vec<&str> = segments(row.line).iter().map(|(w, _)| *w).collect();
-                    popup::segmented(
+                    popup::segmented_with(
                         pixmap,
                         Some(&mut *text),
                         (control, &row.segments),
                         &words,
                         chosen(&view.placed, row.line),
+                        (ink.raised, ink.text),
                         tokens,
                         s,
                     );
@@ -654,12 +650,12 @@ pub fn paint(
                 let right = row.control.map_or(row.rect.right(), |c| c.x) - 8.0;
                 let mut line = text.fit(label(row.line), size, (right * s) - left);
                 let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+                text.draw(pixmap, &mut line, left, y, ink.text);
             }
             Line::Show(part) => {
                 let Some(box_) = row.control else { continue };
                 let (x, y, w, h) = box_.device(s);
-                fill(pixmap, x, y, w, h, radius, popup::raised(tokens));
+                fill(pixmap, x, y, w, h, radius, ink.raised);
                 if shown(&view.placed).contains(&part) {
                     popup::icon_in(
                         pixmap,
@@ -667,24 +663,24 @@ pub fn paint(
                         tokens.panel_glyph as f32,
                         box_,
                         s,
-                        tokens.accent,
+                        ink.accent,
                     );
                 }
                 let right = box_.x - 8.0;
                 let mut line = text.fit(label(row.line), size, (right * s) - left);
                 let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+                text.draw(pixmap, &mut line, left, y, ink.text);
             }
             Line::Field => {
                 let Some(field) = row.control else { continue };
                 let (x, y, w, h) = field.device(s);
-                fill(pixmap, x, y, w, h, radius, popup::raised(tokens));
+                fill(pixmap, x, y, w, h, radius, ink.raised);
                 let words = words_of(&view.placed);
                 let room = (field.w - 2.0 * PAD) * s;
                 let mut line = text.fit(words, size, room);
                 let x0 = (field.x + PAD) * s;
                 let y0 = popup::middle(field.y, field.h, size, s);
-                text.draw(pixmap, &mut line, x0, y0, tokens.panel_text);
+                text.draw(pixmap, &mut line, x0, y0, ink.text);
                 if view.typing && view.focus == Some(Line::Field) {
                     let caret_x = (x0 + line.width).round();
                     let (top, bottom) = (field.y + field.h * 0.2, field.y + field.h * 0.8);
@@ -695,7 +691,7 @@ pub fn paint(
                         2.0 * s,
                         (bottom - top) * s,
                         0.0,
-                        tokens.accent,
+                        ink.accent,
                     );
                 }
             }
@@ -704,17 +700,21 @@ pub fn paint(
                 let room = (row.rect.w - 2.0 * INSET) * s;
                 let mut line = text.fit(&name, size, room);
                 let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+                text.draw(pixmap, &mut line, left, y, ink.text);
             }
             Line::Button => {
                 let Some(button) = row.control else { continue };
-                let (x, y, w, h) = button.device(s);
-                fill(pixmap, x, y, w, h, radius, tokens.accent);
-                let room = button.w * s;
-                let mut line = text.fit(label(row.line), size, room);
-                let x0 = (button.x * s) + ((room - line.width) / 2.0).round();
-                let y0 = popup::middle(button.y, button.h, size, s);
-                text.draw(pixmap, &mut line, x0, y0, tokens.accent_text);
+                edit_kit::button(
+                    pixmap,
+                    button,
+                    label(row.line),
+                    ButtonKind::Accent,
+                    State::Rest,
+                    tokens,
+                    Some(&mut *text),
+                    Style::GLASS,
+                    s,
+                );
             }
         }
         if view.focus == Some(row.line) {

@@ -616,6 +616,33 @@ pub fn segmented(
     tokens: &Tokens,
     s: f32,
 ) {
+    segmented_with(
+        pixmap,
+        text,
+        (control, segments),
+        words,
+        chosen,
+        (raised(tokens), tokens.panel_text),
+        tokens,
+        s,
+    );
+}
+
+/// `segmented` in the colours given (M5.10c6c3): the control's raised
+/// surface and the words' ink for the segments not chosen. The lock screen's
+/// part cards draw theirs on the glass this way; the chosen segment is the
+/// accent with its own text either way.
+#[allow(clippy::too_many_arguments)]
+pub fn segmented_with(
+    pixmap: &mut Pixmap,
+    text: Option<&mut Text>,
+    (control, segments): (Rect, &[Rect]),
+    words: &[&str],
+    chosen: Option<usize>,
+    (raised_fill, ink): (Colour, Colour),
+    tokens: &Tokens,
+    s: f32,
+) {
     let (x, y, w, h) = control.device(s);
     fill(
         pixmap,
@@ -624,7 +651,7 @@ pub fn segmented(
         w,
         h,
         tokens.radius_control as f32 * s,
-        raised(tokens),
+        raised_fill,
     );
     if let Some(seg) = chosen.and_then(|j| segments.get(j)) {
         let (x, y, w, h) = seg.device(s);
@@ -643,15 +670,15 @@ pub fn segmented(
     };
     let size = tokens.panel_text_small_size as f32 * s;
     for (j, (word, seg)) in words.iter().zip(segments).enumerate() {
-        let ink = if Some(j) == chosen {
+        let words_ink = if Some(j) == chosen {
             tokens.accent_text
         } else {
-            tokens.panel_text
+            ink
         };
         let mut line = text.fit(word, size, seg.w * s);
         let x = seg.x * s + ((seg.w * s - line.width) / 2.0).round();
         let y = middle(seg.y, seg.h, size, s);
-        text.draw(pixmap, &mut line, x, y, ink);
+        text.draw(pixmap, &mut line, x, y, words_ink);
     }
 }
 
