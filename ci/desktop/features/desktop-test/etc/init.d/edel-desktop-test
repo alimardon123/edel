@@ -186,7 +186,7 @@ commands() {
 		# title font changed and taken back, through the machine's file.
 		'text size '*) edel settings set "appearance.text_size=${command#text size }" ;;
 		'text font '*) edel settings set "appearance.font=${command#text font }" ;;
-		'text default') edel settings reset appearance.font appearance.monospace_font appearance.text_size ;;
+		'text default') edel settings reset appearance.font appearance.text_size ;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# layout.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.
