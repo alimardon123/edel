@@ -317,7 +317,21 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-current {{ padding: 16px; }}
 .edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
 .edel-current-button {{ min-height: 34px; padding: 0 16px; }}
-.edel-tile-blank {{ background-color: {card}; color: {muted}; border: 1px solid {line}; border-radius: {rs}px; }}
+.edel-tag {{ color: {muted}; font-size: {tiny}px; }}
+.edel-tag-accent {{ background-color: alpha({accent}, 0.14); color: {accent}; font-size: {tiny}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 8px; }}
+.edel-new-card {{ padding: 7px; border-radius: {rw}px; background: none; background-image: none; box-shadow: none; border: none; }}
+.edel-new-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
+.edel-new-look {{ border: 1.5px dashed {line}; border-radius: {rw}px; }}
+.edel-new-card:hover .edel-new-look {{ border-color: alpha({accent}, 0.5); }}
+.edel-new-circle {{ min-width: 36px; min-height: 36px; border-radius: 999px; background-color: alpha({accent}, 0.14); }}
+.edel-new-plus {{ color: {accent}; font-size: {hero}px; font-weight: 300; }}
+.edel-new-hint {{ color: {muted}; font-size: {small}px; }}
+.edel-more {{ min-width: 34px; min-height: 34px; padding: 0; border-radius: 999px; background-image: none;
+  background-color: {card}; border: 1px solid {line}; box-shadow: none; color: {text}; }}
+.edel-menu-item {{ min-height: 26px; padding: 0 10px; border-radius: {rs}px; background: none; background-image: none;
+  box-shadow: none; border: none; color: {text}; font-weight: 400; }}
+.edel-menu-item:hover {{ background-color: {accent}; color: {accent_text}; }}
 "#
     )
 }
