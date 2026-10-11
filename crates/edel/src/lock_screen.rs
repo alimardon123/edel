@@ -239,6 +239,14 @@ pub struct Placed {
     /// The date's style: `long`, `short` or `numeric`; absent is `long`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<DateStyle>,
+    /// A clock's time zone, an IANA name such as `Asia/Tokyo`; absent is this
+    /// machine's time (M5.10c7d)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub zone: Option<String>,
+    /// A clock's label, drawn under it: 1 to 24 characters on one line; absent
+    /// with a zone is the zone's city, absent without one there is none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// Offsets are f64, as TOML's floats are, so a value read and written back
@@ -252,6 +260,49 @@ const MOST_EACH: usize = 3;
 
 /// The most characters a message's words may have.
 const MOST_TEXT: usize = 120;
+
+/// The most characters a clock's label may have (M5.10c7d).
+pub const MOST_LABEL: usize = 24;
+
+/// The most characters a time zone's name may have (M5.10c7d).
+pub const MOST_ZONE: usize = 64;
+
+/// Whether `label` is a clock's label: 1 to [`MOST_LABEL`] characters on one
+/// line (M5.10c7d). The checker and the edit mode both ask it.
+pub fn is_label(label: &str) -> bool {
+    (1..=MOST_LABEL).contains(&label.chars().count()) && !label.contains(['\n', '\r'])
+}
+
+/// Whether `name` looks like an IANA time zone's name, such as `Asia/Tokyo`
+/// or `UTC`: 1 to 64 characters of ASCII letters, digits, `/`, `_`, `-` and
+/// `+`, not starting or ending with `/`, with no `//`. Whether the machine has
+/// the zone is not asked here (M5.10c7d): the checker runs without the zone
+/// files, and the lock falls back to this machine's time.
+pub fn is_zone_name(name: &str) -> bool {
+    let length = name.chars().count();
+    (1..=MOST_ZONE).contains(&length)
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/_-+".contains(c))
+        && !name.starts_with('/')
+        && !name.ends_with('/')
+        && !name.contains("//")
+}
+
+/// The city a zone's name ends in, for a clock's label (M5.10c7d): the part
+/// after the last `/` with `_` as a space, so `America/New_York` reads
+/// `New York`.
+pub fn zone_city(zone: &str) -> String {
+    zone.rsplit('/').next().unwrap_or(zone).replace('_', " ")
+}
+
+/// The words under a clock (M5.10c7d): its label, else the zone's city when
+/// it has a zone, else none.
+pub fn clock_label(part: &Placed) -> Option<String> {
+    part.label
+        .clone()
+        .or_else(|| part.zone.as_deref().map(zone_city))
+}
 
 /// Whether a picture's path is an absolute path to a picture file this
 /// release shows.
@@ -278,13 +329,13 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
         1 => {}
         _ => return Err(tr("the person stands once; take out the second").into()),
     }
-    for part in [
-        Part::Clock,
-        Part::Date,
-        Part::Count,
-        Part::Player,
-        Part::Battery,
-    ] {
+    if count(Part::Clock) > MOST_EACH {
+        return Err(trf(
+            "at most {most} clocks; take one out",
+            &[("most", &MOST_EACH.to_string())],
+        ));
+    }
+    for part in [Part::Date, Part::Count, Part::Player, Part::Battery] {
         if count(part) > 1 {
             return Err(trf(
                 "the {part} stands once; take out the second",
@@ -408,6 +459,18 @@ fn check_options(p: &Placed) -> Result<(), String> {
                 &[("part", part)],
             ));
         }
+        if p.zone.is_some() {
+            return Err(trf(
+                "the {part} has a time zone; only the clock has one, so take zone out",
+                &[("part", part)],
+            ));
+        }
+        if p.label.is_some() {
+            return Err(trf(
+                "the {part} has a label; only the clock has one, so take label out",
+                &[("part", part)],
+            ));
+        }
     }
     if p.part != Part::Date {
         if p.show.is_some() {
@@ -437,6 +500,19 @@ fn check_options(p: &Placed) -> Result<(), String> {
                 "the clock's weight is {weight}; use 100 to 900 in steps of 100, such as 300",
                 &[("weight", &weight.to_string())],
             ));
+        }
+    }
+    if let Some(zone) = &p.zone {
+        if !is_zone_name(zone) {
+            return Err(trf(
+                "the clock's time zone {zone} is not a time zone's name; use one such as \"Asia/Tokyo\"",
+                &[("zone", &format!("{zone:?}"))],
+            ));
+        }
+    }
+    if let Some(label) = &p.label {
+        if !is_label(label) {
+            return Err(tr("a clock's label is 1 to 24 characters on one line").into());
         }
     }
     if let Some(show) = &p.show {
@@ -473,6 +549,8 @@ fn part_at(part: Part, at: Anchor, y: f64) -> Placed {
         weight: None,
         show: None,
         style: None,
+        zone: None,
+        label: None,
     }
 }
 
@@ -1187,7 +1265,7 @@ pub fn missing(parts: &[Placed], battery: bool) -> Vec<Part> {
     ]
     .into_iter()
     .filter(|part| match part {
-        Part::Message | Part::Picture => count(*part) < MOST_EACH,
+        Part::Clock | Part::Message | Part::Picture => count(*part) < MOST_EACH,
         Part::Battery => battery && count(*part) == 0,
         _ => count(*part) == 0,
     })
@@ -1448,8 +1526,10 @@ mod tests {
                     person.clone(),
                     part_at(Part::Clock, Anchor::Top, 0.0),
                     part_at(Part::Clock, Anchor::Top, 0.1),
+                    part_at(Part::Clock, Anchor::Top, 0.2),
+                    part_at(Part::Clock, Anchor::Top, 0.3),
                 ],
-                "the clock stands once",
+                "at most 3 clocks; take one out",
             ),
             (
                 vec![
@@ -1705,9 +1785,135 @@ mod tests {
             parts: classic(false),
         })
         .unwrap();
-        for option in ["face", "hours", "size", "weight", "show", "style"] {
+        for option in [
+            "face", "hours", "size", "weight", "show", "style", "zone", "label",
+        ] {
             assert!(!text.contains(option), "{option} written: {text}");
         }
+    }
+
+    /// A lock holds up to three clocks, each with its own zone and label; a
+    /// fourth is refused (M5.10c7d).
+    #[test]
+    fn a_lock_holds_up_to_three_clocks() {
+        let person = person(false);
+        let clock = |y: f64| part_at(Part::Clock, Anchor::Top, y);
+        for count in 1..=3 {
+            let mut parts = vec![person.clone()];
+            parts.extend((0..count).map(|i| clock(0.1 * i as f64)));
+            assert!(check(&parts).is_ok(), "{count} clocks");
+        }
+        let four = [vec![person.clone()], vec![clock(0.0); 4]].concat();
+        assert_eq!(check(&four), Err("at most 3 clocks; take one out".into()));
+        // The drawer keeps offering one while fewer than three stand.
+        assert!(missing(&[person.clone(), clock(0.0), clock(0.1)], false).contains(&Part::Clock));
+        assert!(!missing(&four, false).contains(&Part::Clock));
+    }
+
+    #[test]
+    fn zone_names_are_checked_by_their_shape_only() {
+        for good in [
+            "UTC",
+            "Asia/Tokyo",
+            "America/New_York",
+            "Etc/GMT+5",
+            "Europe/Kyiv",
+        ] {
+            assert!(is_zone_name(good), "{good}");
+        }
+        for bad in [
+            "",
+            "/Asia",
+            "Asia/",
+            "Asia//Tokyo",
+            "Asia Tokyo",
+            "Asia/Tokyo.x",
+            "é",
+        ] {
+            assert!(!is_zone_name(bad), "{bad:?}");
+        }
+        let longest = "a".repeat(64);
+        assert!(is_zone_name(&longest));
+        assert!(!is_zone_name(&format!("{longest}a")));
+    }
+
+    #[test]
+    fn a_zones_city_is_its_last_name_with_spaces() {
+        assert_eq!(zone_city("America/New_York"), "New York");
+        assert_eq!(zone_city("Asia/Tokyo"), "Tokyo");
+        assert_eq!(zone_city("UTC"), "UTC");
+        let zoned = Placed {
+            zone: Some("Asia/Tokyo".into()),
+            ..part_at(Part::Clock, Anchor::Top, 0.0)
+        };
+        assert_eq!(clock_label(&zoned), Some("Tokyo".into()));
+        let labelled = Placed {
+            label: Some("Office".into()),
+            ..zoned.clone()
+        };
+        assert_eq!(clock_label(&labelled), Some("Office".into()));
+        assert_eq!(clock_label(&part_at(Part::Clock, Anchor::Top, 0.0)), None);
+    }
+
+    #[test]
+    fn a_clocks_zone_and_label_are_checked_and_read_back() {
+        let person = person(false);
+        let clock = |zone: Option<&str>, label: Option<&str>| Placed {
+            zone: zone.map(Into::into),
+            label: label.map(Into::into),
+            ..part_at(Part::Clock, Anchor::TopRight, 0.0)
+        };
+        let good = clock(Some("Asia/Tokyo"), Some("Tokyo office"));
+        assert!(check(&[person.clone(), good.clone()]).is_ok());
+        let text = toml::to_string(&Doc {
+            parts: vec![person.clone(), good.clone()],
+        })
+        .unwrap();
+        assert!(text.contains("zone = \"Asia/Tokyo\""), "{text}");
+        let again: Doc = toml::from_str(&text).unwrap();
+        assert_eq!(again.parts[1], good);
+        let cases = [
+            (
+                clock(Some("Asia Tokyo"), None),
+                "the clock's time zone \"Asia Tokyo\" is not a time zone's name",
+            ),
+            (
+                clock(Some("Asia/"), None),
+                "the clock's time zone \"Asia/\" is not a time zone's name",
+            ),
+            (
+                clock(None, Some("")),
+                "a clock's label is 1 to 24 characters on one line",
+            ),
+            (
+                clock(None, Some("x".repeat(25).as_str())),
+                "a clock's label is 1 to 24 characters on one line",
+            ),
+            (
+                clock(None, Some("two\nlines")),
+                "a clock's label is 1 to 24 characters on one line",
+            ),
+            (
+                Placed {
+                    zone: Some("UTC".into()),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date has a time zone; only the clock has one",
+            ),
+            (
+                Placed {
+                    label: Some("hi".into()),
+                    ..part_at(Part::Date, Anchor::Top, 0.0)
+                },
+                "the date has a label; only the clock has one",
+            ),
+        ];
+        for (part, expected) in cases {
+            let error = check(&[person.clone(), part]).expect_err(expected);
+            assert!(error.contains(expected), "{error}");
+        }
+        // A label of 24 characters, and a zone with no label, pass.
+        assert!(check(&[person, clock(Some("UTC"), Some("x".repeat(24).as_str()))]).is_ok());
     }
 
     #[test]
@@ -2328,13 +2534,14 @@ mod tests {
 
     #[test]
     fn the_drawer_offers_what_a_lock_screen_lacks() {
+        // A clock is offered while fewer than three stand, as a message is.
         assert_eq!(
             missing(&classic(false), false),
-            vec![Part::Message, Part::Picture]
+            vec![Part::Clock, Part::Message, Part::Picture]
         );
         assert_eq!(
             missing(&classic(false), true),
-            vec![Part::Message, Part::Picture, Part::Battery]
+            vec![Part::Clock, Part::Message, Part::Picture, Part::Battery]
         );
         let all = missing(&[], true);
         assert_eq!(
@@ -2411,10 +2618,10 @@ mod tests {
             with_added(&base, Part::Person, rect, screen, MARGIN, "x", true),
             base
         );
-        assert_eq!(
-            with_added(&base, Part::Clock, rect, screen, MARGIN, "x", true),
-            base
-        );
+        // A second clock is offered while fewer than three stand (M5.10c7d).
+        let two = with_added(&base, Part::Clock, rect, screen, MARGIN, "x", true);
+        assert_eq!(two.len(), base.len() + 1);
+        assert!(check(&two).is_ok());
         assert_eq!(
             with_added(&base, Part::Picture, rect, screen, MARGIN, "x", true),
             base

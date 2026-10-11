@@ -149,6 +149,9 @@ msgstr ""
 msgid "the person stands once; take out the second"
 msgstr ""
 
+msgid "at most {most} clocks; take one out"
+msgstr ""
+
 msgid "the {part} stands once; take out the second"
 msgstr ""
 
@@ -194,6 +197,12 @@ msgstr ""
 msgid "the {part} has a weight; only the clock has one, so take weight out"
 msgstr ""
 
+msgid "the {part} has a time zone; only the clock has one, so take zone out"
+msgstr ""
+
+msgid "the {part} has a label; only the clock has one, so take label out"
+msgstr ""
+
 msgid "the {part} has show; only the date has it, so take show out"
 msgstr ""
 
@@ -204,6 +213,12 @@ msgid "the clock's hours is {hours}; use 12 or 24"
 msgstr ""
 
 msgid "the clock's weight is {weight}; use 100 to 900 in steps of 100, such as 300"
+msgstr ""
+
+msgid "the clock's time zone {zone} is not a time zone's name; use one such as \"Asia/Tokyo\""
+msgstr ""
+
+msgid "a clock's label is 1 to 24 characters on one line"
 msgstr ""
 
 msgid "the date's show is empty; name at least one of weekday, day, month and year"

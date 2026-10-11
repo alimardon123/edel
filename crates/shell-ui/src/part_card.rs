@@ -31,6 +31,8 @@ pub const WIDTH: f32 = 300.0;
 const SEGMENT: f32 = 48.0;
 /// The room between a card and its part, logical pixels.
 const GAP: f32 = 8.0;
+/// Where a clock's zone and label fields start, as a share of the row's width.
+const FIELD_AT: f32 = 0.4;
 /// The date's parts in the order they show, whatever order the file gives.
 const ORDER: [DatePart; 4] = [
     DatePart::Weekday,
@@ -64,11 +66,15 @@ pub enum Line {
     Style,
     Show(DatePart),
     Field,
+    /// A clock's time zone and label, two fields of their own (M5.10c7d).
+    Zone,
+    Label,
     File,
     Button,
 }
 
-/// What a control chooses: one option of a part, or the message's words.
+/// What a control chooses: one option of a part, or the message's or a
+/// clock's words.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Choice {
     Face(Face),
@@ -77,12 +83,18 @@ pub enum Choice {
     Style(DateStyle),
     Show(DatePart),
     Words(String),
+    /// A clock's time zone, its name; empty is this machine's time.
+    Zone(String),
+    /// A clock's label; empty is none.
+    Label(String),
 }
 
 /// What the card shows (M5.10c6c2): the part it changes, by its index in the
 /// lock screen's parts, the part as it stands now, the control the keyboard
-/// holds, the one the pointer is over, and whether the field takes typed
-/// letters (it does while the field holds the keyboard).
+/// holds, the one the pointer is over, and whether a field takes typed
+/// letters (it does while a field holds the keyboard). `draft` is the text a
+/// clock's zone or label field holds while what was typed does not apply
+/// yet, such as a zone name that is not finished (M5.10c7d).
 #[derive(Clone, Debug, PartialEq)]
 pub struct View {
     pub index: usize,
@@ -90,15 +102,16 @@ pub struct View {
     pub focus: Option<Line>,
     pub hover: Option<Line>,
     pub typing: bool,
+    pub draft: Option<(Line, String)>,
 }
 
 /// Where a press lands on a card: a segment of a segmented row, a date
-/// part's row, the field or the button.
+/// part's row, a field or the button.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hit {
     Segment(Line, usize),
     Toggle(Line),
-    Field,
+    Field(Line),
     Button,
 }
 
@@ -106,11 +119,15 @@ impl Hit {
     /// The line the press was on, which takes the keyboard's focus.
     pub fn line(self) -> Line {
         match self {
-            Hit::Segment(line, _) | Hit::Toggle(line) => line,
-            Hit::Field => Line::Field,
+            Hit::Segment(line, _) | Hit::Toggle(line) | Hit::Field(line) => line,
             Hit::Button => Line::Button,
         }
     }
+}
+
+/// Whether a line is a field, which takes typed letters.
+fn is_field(line: Line) -> bool {
+    matches!(line, Line::Field | Line::Zone | Line::Label)
 }
 
 /// What a key or a press asks for: move the focus, choose an option, open
@@ -150,13 +167,14 @@ pub fn open(index: usize, placed: Placed) -> View {
         focus: None,
         hover: None,
         typing: false,
+        draft: None,
     }
 }
 
 /// The lines a part's card has, in the order the keyboard goes round them.
 pub fn lines(part: Part) -> Vec<Line> {
     match part {
-        Part::Clock => vec![Line::Face, Line::Hours, Line::Size],
+        Part::Clock => vec![Line::Face, Line::Hours, Line::Size, Line::Zone, Line::Label],
         Part::Date => {
             let mut lines = vec![Line::Style];
             lines.extend(ORDER.map(Line::Show));
@@ -242,6 +260,8 @@ fn label(line: Line) -> &'static str {
         Line::Style => tr("Style"),
         Line::Show(part) => show_word(part),
         Line::Field => tr("Words"),
+        Line::Zone => tr("Time zone"),
+        Line::Label => tr("Label"),
         Line::File => tr("Picture"),
         Line::Button => tr("Choose in Settings"),
     }
@@ -256,6 +276,8 @@ fn prefix(line: Line) -> &'static str {
         Line::Style => "style",
         Line::Show(_) => "show",
         Line::Field => "text",
+        Line::Zone => "zone",
+        Line::Label => "label",
         Line::File => "file",
         Line::Button => "settings",
     }
@@ -269,7 +291,7 @@ fn key_of(choice: &Choice) -> String {
         Choice::Size(s) => s.name().into(),
         Choice::Style(s) => s.name().into(),
         Choice::Show(p) => p.name().into(),
-        Choice::Words(_) => String::new(),
+        Choice::Words(_) | Choice::Zone(_) | Choice::Label(_) => String::new(),
     }
 }
 
@@ -282,6 +304,40 @@ fn shown(placed: &Placed) -> Vec<DatePart> {
 /// The message's words, empty when it has none.
 fn words_of(placed: &Placed) -> &str {
     placed.text.as_deref().unwrap_or("")
+}
+
+/// The text a field shows and types on: the draft when the field holds it,
+/// else the part's own words, zone or label (empty when it has none).
+fn text_of(view: &View, line: Line) -> String {
+    match &view.draft {
+        Some((drafting, text)) if *drafting == line => text.clone(),
+        _ => match line {
+            Line::Zone => view.placed.zone.clone(),
+            Line::Label => view.placed.label.clone(),
+            _ => view.placed.text.clone(),
+        }
+        .unwrap_or_default(),
+    }
+}
+
+/// The text a field keeps when what was typed does not apply, as a zone
+/// name that is not finished or a label too long (M5.10c7d): the field keeps
+/// it so typing shows what was typed. None once it applies, and for the
+/// other choices.
+pub fn draft_of(choice: &Choice, applied: &Placed) -> Option<(Line, String)> {
+    match choice {
+        Choice::Zone(text)
+            if !text.is_empty() && applied.zone.as_deref() != Some(text.as_str()) =>
+        {
+            Some((Line::Zone, text.clone()))
+        }
+        Choice::Label(text)
+            if !text.is_empty() && applied.label.as_deref() != Some(text.as_str()) =>
+        {
+            Some((Line::Label, text.clone()))
+        }
+        _ => None,
+    }
 }
 
 /// A part with no options, at `at`, as the check's probe and a default
@@ -300,6 +356,8 @@ fn plain(part: Part, at: Anchor) -> Placed {
         weight: None,
         show: None,
         style: None,
+        zone: None,
+        label: None,
     }
 }
 
@@ -362,6 +420,26 @@ pub fn apply(placed: &Placed, choice: &Choice) -> Placed {
         (Part::Message, Choice::Words(words)) => {
             next.text = Some(words.chars().take(most_letters()).collect());
         }
+        // A zone is applied when it is a zone name (`lock_screen::is_zone_name`),
+        // a label when it is one (`lock_screen::is_label`); else nothing changes.
+        (Part::Clock, Choice::Zone(zone)) => {
+            if zone.is_empty() {
+                next.zone = None;
+            } else if lock_screen::is_zone_name(zone) {
+                next.zone = Some(zone.clone());
+            } else {
+                return placed.clone();
+            }
+        }
+        (Part::Clock, Choice::Label(label)) => {
+            if label.is_empty() {
+                next.label = None;
+            } else if lock_screen::is_label(label) {
+                next.label = Some(label.clone());
+            } else {
+                return placed.clone();
+            }
+        }
         _ => {}
     }
     next
@@ -397,14 +475,19 @@ pub fn said(choice: &Choice, placed: &Placed) -> String {
                 .join(",")
         ),
         Choice::Words(_) => format!("message words {} letters", words_of(placed).chars().count()),
+        Choice::Zone(_) => format!(
+            "clock zone {}",
+            placed.zone.as_deref().unwrap_or("this machine")
+        ),
+        Choice::Label(_) => format!("clock label {}", placed.label.as_deref().unwrap_or("none")),
     }
 }
 
-/// Sets the keyboard's focus to `line`, the field taking typed letters
-/// while it has it.
+/// Sets the keyboard's focus to `line`, a field taking typed letters while
+/// it has it.
 pub fn set_focus(view: &mut View, line: Option<Line>) {
     view.focus = line;
-    view.typing = line == Some(Line::Field);
+    view.typing = line.is_some_and(is_field);
 }
 
 /// The next line of the ring after the focused one, backwards or forwards,
@@ -443,6 +526,15 @@ fn segment_step(view: &View, line: Line, backwards: bool) -> Step {
     }
 }
 
+/// The choice a field's text makes, for the field's line (`text_of`'s words).
+fn choice_of(line: Line, words: String) -> Choice {
+    match line {
+        Line::Zone => Choice::Zone(words),
+        Line::Label => Choice::Label(words),
+        _ => Choice::Words(words),
+    }
+}
+
 /// What a key does on the card (M5.10c6c2): Escape closes it; Tab and
 /// Shift+Tab step the ring; while the field takes letters, a typed letter
 /// is added (at most `most_letters`) and Backspace takes one back; Left and
@@ -456,17 +548,22 @@ pub fn key(view: &View, key: Option<Key>, shift: bool, typed: Option<char>) -> S
         Some(Key::Tab) => return Step::Focus(step(view, shift)),
         _ => {}
     }
-    if view.typing && view.focus == Some(Line::Field) {
-        let mut words = words_of(&view.placed).to_string();
+    if let Some(line) = view.focus.filter(|line| view.typing && is_field(*line)) {
+        let mut words = text_of(view, line);
+        let most = match line {
+            Line::Zone => lock_screen::MOST_ZONE,
+            Line::Label => lock_screen::MOST_LABEL,
+            _ => most_letters(),
+        };
         if let Some(c) = typed.filter(|c| !c.is_control()) {
-            if words.chars().count() >= most_letters() {
+            if words.chars().count() >= most {
                 return Step::Nothing;
             }
             words.push(c);
-            return Step::Choose(Choice::Words(words));
+            return Step::Choose(choice_of(line, words));
         }
         if key == Some(Key::Delete) && words.pop().is_some() {
-            return Step::Choose(Choice::Words(words));
+            return Step::Choose(choice_of(line, words));
         }
         return Step::Nothing;
     }
@@ -496,7 +593,7 @@ pub fn press(l: &Layout, x: f32, y: f32) -> Step {
             .map_or(Step::Nothing, |(_, choice)| Step::Choose(choice)),
         Some(Hit::Toggle(Line::Show(part))) => Step::Choose(Choice::Show(part)),
         Some(Hit::Toggle(_)) => Step::Nothing,
-        Some(Hit::Field) => Step::Focus(Some(Line::Field)),
+        Some(Hit::Field(line)) => Step::Focus(Some(line)),
         Some(Hit::Button) => Step::Settings,
         None => Step::Nothing,
     }
@@ -513,7 +610,7 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Hit> {
             .position(|s| s.contains(x, y))
             .map(|j| Hit::Segment(row.line, j)),
         Line::Show(_) => Some(Hit::Toggle(row.line)),
-        Line::Field => Some(Hit::Field),
+        Line::Field | Line::Zone | Line::Label => Some(Hit::Field(row.line)),
         Line::Button => Some(Hit::Button),
         Line::File => None,
     }
@@ -581,6 +678,20 @@ pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> L
                     )),
                     Vec::new(),
                 ),
+                // A clock's zone and label: the row's name at the left, the
+                // field for the words at the right, from `FIELD_AT` across.
+                Line::Zone | Line::Label => {
+                    let x = rect.x + rect.w * FIELD_AT;
+                    (
+                        Some(Rect::new(
+                            x,
+                            rect.y + (rect.h - panel_control) / 2.0,
+                            right - x,
+                            panel_control,
+                        )),
+                        Vec::new(),
+                    )
+                }
                 Line::File => (None, Vec::new()),
             };
             Row {
@@ -671,17 +782,24 @@ pub fn paint(
                 let y = popup::middle(row.rect.y, row.rect.h, size, s);
                 text.draw(pixmap, &mut line, left, y, ink.text);
             }
-            Line::Field => {
+            Line::Field | Line::Zone | Line::Label => {
                 let Some(field) = row.control else { continue };
                 let (x, y, w, h) = field.device(s);
                 fill(pixmap, x, y, w, h, radius, ink.raised);
-                let words = words_of(&view.placed);
+                let words = text_of(view, row.line);
                 let room = (field.w - 2.0 * PAD) * s;
-                let mut line = text.fit(words, size, room);
+                let mut line = text.fit(&words, size, room);
                 let x0 = (field.x + PAD) * s;
                 let y0 = popup::middle(field.y, field.h, size, s);
                 text.draw(pixmap, &mut line, x0, y0, ink.text);
-                if view.typing && view.focus == Some(Line::Field) {
+                // A clock's zone and label name their field at its left.
+                if matches!(row.line, Line::Zone | Line::Label) {
+                    let right = field.x - 8.0;
+                    let mut name = text.fit(label(row.line), size, (right * s) - left);
+                    let y = popup::middle(row.rect.y, row.rect.h, size, s);
+                    text.draw(pixmap, &mut name, left, y, ink.text);
+                }
+                if view.typing && view.focus == Some(row.line) {
                     let caret_x = (x0 + line.width).round();
                     let (top, bottom) = (field.y + field.h * 0.2, field.y + field.h * 0.8);
                     fill(
@@ -783,13 +901,30 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
                     Some(shown(&view.placed).contains(&part)),
                     Vec::new(),
                 )),
-                Line::Field => Some(item(
-                    Role::TextInput,
-                    trf("Words: {words}", &[("words", words_of(&view.placed))]),
-                    at(row.control?),
-                    None,
-                    Vec::new(),
-                )),
+                Line::Field => {
+                    let words = text_of(view, row.line);
+                    Some(item(
+                        Role::TextInput,
+                        trf("Words: {words}", &[("words", words.as_str())]),
+                        at(row.control?),
+                        None,
+                        Vec::new(),
+                    ))
+                }
+                Line::Zone | Line::Label => {
+                    let words = text_of(view, row.line);
+                    let name = match row.line {
+                        Line::Zone => trf("Time zone: {words}", &[("words", words.as_str())]),
+                        _ => trf("Label: {words}", &[("words", words.as_str())]),
+                    };
+                    Some(item(
+                        Role::TextInput,
+                        name,
+                        at(row.control?),
+                        None,
+                        Vec::new(),
+                    ))
+                }
                 Line::File => Some(item(
                     Role::Label,
                     file_name(&view.placed),
@@ -844,9 +979,9 @@ pub fn places(l: &Layout) -> String {
                     out.push_str(&format!(", show_{} {}", part.name(), at(control)));
                 }
             }
-            Line::Field => {
+            Line::Field | Line::Zone | Line::Label => {
                 if let Some(control) = row.control {
-                    out.push_str(&format!(", text {}", at(control)));
+                    out.push_str(&format!(", {} {}", prefix(row.line), at(control)));
                 }
             }
             Line::Button => {
@@ -1105,6 +1240,12 @@ mod tests {
         set_focus(&mut v, Some(Line::Size));
         assert_eq!(
             key(&v, Some(Key::Tab), false, None),
+            Step::Focus(Some(Line::Zone)),
+            "Tab goes on to the time zone"
+        );
+        set_focus(&mut v, Some(Line::Label));
+        assert_eq!(
+            key(&v, Some(Key::Tab), false, None),
             Step::Focus(Some(Line::Face)),
             "Tab wraps"
         );
@@ -1143,6 +1284,101 @@ mod tests {
             Step::Nothing,
             "a control is no letter"
         );
+    }
+
+    /// A clock's zone and label are two fields after its three rows (M5.10c7d):
+    /// they take letters, a zone or label applies when it is one, else the
+    /// field keeps what was typed as the draft, and each names its field.
+    #[test]
+    fn a_clocks_zone_and_label_are_fields_that_take_letters() {
+        assert_eq!(
+            lines(Part::Clock),
+            vec![Line::Face, Line::Hours, Line::Size, Line::Zone, Line::Label]
+        );
+        let mut v = open(0, clock(None));
+        set_focus(&mut v, Some(Line::Zone));
+        assert!(v.typing, "the zone field takes letters");
+        let Step::Choose(Choice::Zone(one)) = key(&v, None, false, Some('U')) else {
+            panic!("a letter goes to the zone");
+        };
+        assert_eq!(one, "U");
+        set_focus(&mut v, Some(Line::Label));
+        let Step::Choose(Choice::Label(label)) = key(&v, None, false, Some('x')) else {
+            panic!("a letter goes to the label");
+        };
+        assert_eq!(label, "x");
+        v.placed.label = Some("x".repeat(lock_screen::MOST_LABEL));
+        assert_eq!(
+            key(&v, None, false, Some('y')),
+            Step::Nothing,
+            "24 letters at most"
+        );
+        assert_eq!(
+            key(&v, Some(Key::Delete), false, None),
+            Step::Choose(Choice::Label("x".repeat(23)))
+        );
+        // A zone that is a name applies; one that is not keeps the field's text.
+        let placed = clock(None);
+        let tokyo = apply(&placed, &Choice::Zone("Asia/Tokyo".into()));
+        assert_eq!(tokyo.zone.as_deref(), Some("Asia/Tokyo"));
+        assert_eq!(draft_of(&Choice::Zone("Asia/Tokyo".into()), &tokyo), None);
+        let typed = Choice::Zone("Asia Tokyo".into());
+        let unchanged = apply(&placed, &typed);
+        assert_eq!(unchanged.zone, None);
+        assert_eq!(
+            draft_of(&typed, &unchanged),
+            Some((Line::Zone, "Asia Tokyo".into()))
+        );
+        assert_eq!(apply(&tokyo, &Choice::Zone(String::new())).zone, None);
+        // A label applies within 24 characters; a longer one is kept as a draft.
+        let long = Choice::Label("x".repeat(25));
+        assert_eq!(apply(&placed, &long).label, None);
+        assert_eq!(
+            draft_of(&long, &apply(&placed, &long)),
+            Some((Line::Label, "x".repeat(25)))
+        );
+        let office = apply(&placed, &Choice::Label("Office".into()));
+        assert_eq!(office.label.as_deref(), Some("Office"));
+        assert_eq!(
+            said(&Choice::Zone("Asia/Tokyo".into()), &tokyo),
+            "clock zone Asia/Tokyo"
+        );
+        assert_eq!(
+            said(&Choice::Label("Office".into()), &office),
+            "clock label Office"
+        );
+        // The draft shows only in its own field.
+        v.draft = Some((Line::Zone, "Asia Tok".into()));
+        assert_eq!(text_of(&v, Line::Zone), "Asia Tok");
+        assert_eq!(
+            text_of(&v, Line::Label),
+            "x".repeat(lock_screen::MOST_LABEL)
+        );
+    }
+
+    /// The zone and label fields lie on the card's rows, each with its
+    /// control, and `places` names them `zone` and `label` (M5.10c7d).
+    #[test]
+    fn the_zone_and_label_fields_have_their_controls_and_places() {
+        let t = tokens();
+        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let zone = l
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Zone)
+            .and_then(|r| r.control)
+            .expect("a zone field");
+        assert_eq!(
+            hit(&l, zone.x + 1.0, zone.y + 1.0),
+            Some(Hit::Field(Line::Zone))
+        );
+        assert_eq!(
+            press(&l, zone.x + 1.0, zone.y + 1.0),
+            Step::Focus(Some(Line::Zone))
+        );
+        let log = places(&l);
+        assert!(log.contains(", zone ") && log.contains(", label "), "{log}");
+        assert!(l.card.h > 2.0 * PAD + 3.0 * t.row as f32, "five rows");
     }
 
     #[test]
@@ -1218,7 +1454,11 @@ mod tests {
         let items = nodes(&v, &l);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].role, Role::Group);
-        assert_eq!(items[0].children.len(), 3, "face, hours and size");
+        assert_eq!(
+            items[0].children.len(),
+            5,
+            "face, hours, size, time zone and label"
+        );
         let face = &items[0].children[0];
         assert_eq!(face.role, Role::RadioGroup);
         assert_eq!(
