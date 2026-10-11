@@ -22,6 +22,7 @@ pub mod icons;
 pub mod install;
 pub mod keep;
 pub mod keyboard;
+pub mod lock_screen;
 pub mod network;
 pub mod panel_edit;
 pub mod places;
