@@ -212,12 +212,6 @@ msgstr ""
 msgid "Colour"
 msgstr ""
 
-msgid "Magazine"
-msgstr ""
-
-msgid "Minimal"
-msgstr ""
-
 msgid "top left"
 msgstr ""
 

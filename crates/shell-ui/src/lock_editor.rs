@@ -189,17 +189,6 @@ pub fn background_choices() -> Vec<(&'static str, String, Option<Background>)> {
     ]
 }
 
-/// The title of a built-in look as people read it, or a person's own look's
-/// name as it is.
-fn look_title(name: &str) -> String {
-    match name {
-        "classic" => tr("Classic").into(),
-        "magazine" => tr("Magazine").into(),
-        "minimal" => tr("Minimal").into(),
-        own => own.into(),
-    }
-}
-
 /// The Looks tab's tiles (M5.10c6c3): one for each look, the built-in ones
 /// and then the person's own, each with its name, and the one `chosen` is
 /// the look in use. Their pictures come from `thumbnail`.
@@ -209,7 +198,7 @@ pub fn look_tiles(looks: &[(String, Vec<Placed>)], chosen: Option<&str>) -> Vec<
         .map(|(name, _)| Tile {
             name: name.clone(),
             icon: "",
-            title: look_title(name),
+            title: lock_screen::look_title(name),
             shown: String::new(),
             placed: false,
             chosen: chosen == Some(name.as_str()),
