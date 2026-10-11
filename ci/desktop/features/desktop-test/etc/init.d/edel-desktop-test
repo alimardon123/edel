@@ -178,6 +178,10 @@ commands() {
 		case "$command" in
 		'tiling on') edel settings set layout.tiling=true ;;
 		'tiling off') edel settings set layout.tiling=false ;;
+		# The shape (M5.12b2b): gaps of 12 and a 3 px border, the focused
+		# border red, through the machine's file as Settings writes it.
+		'shape on') edel settings set appearance.gaps=12 appearance.border_width=3 'appearance.colours.window_border_focused=#ff0000' 'appearance.colours.window_border_focused_end=#ff0000' ;;
+		'shape default') edel settings reset appearance.gaps appearance.border_width appearance.colours.window_border_focused appearance.colours.window_border_focused_end ;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# layout.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.

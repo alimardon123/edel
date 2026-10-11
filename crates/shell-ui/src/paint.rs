@@ -809,7 +809,14 @@ pub fn paint(
     let panel_h = h - strip;
     let top = panel_top(look.edge, look.style, look.floating, tokens) as f32 * s;
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
-    let panel = paint_of(tokens.panel);
+    // A bar's and a dock's fill is the panel colour at the person's panel
+    // opacity (M5.12b2b); the edge and the widgets are not faded.
+    let opacity = tokens.panel_opacity.min(100) as f32 / 100.0;
+    let faded = Colour {
+        a: tokens.panel.a * opacity,
+        ..tokens.panel
+    };
+    let panel = paint_of(faded);
     // A dock and a floating bar are cards; only a dock is `dock` for its
     // widgets, which may draw bigger there.
     let dock = look.style == Style::Dock;
@@ -826,7 +833,7 @@ pub fn paint(
             w - 2.0 * s,
             panel_h - 2.0 * s,
             r - s,
-            tokens.panel,
+            faded,
         );
     } else if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
         pixmap.fill_rect(rect, &panel, Transform::identity(), None);
@@ -1026,7 +1033,13 @@ mod tests {
 
     /// A panel along `edge`, drawn without fonts.
     fn drawn(edge: Edge, fillets: bool, row: &Row) -> (Pixmap, Tokens) {
-        let tokens = Tokens::built_in();
+        drawn_at(edge, fillets, row, 100)
+    }
+
+    /// A panel along `edge` at a panel opacity of `opacity` percent.
+    fn drawn_at(edge: Edge, fillets: bool, row: &Row, opacity: u32) -> (Pixmap, Tokens) {
+        let mut tokens = Tokens::built_in();
+        tokens.panel_opacity = opacity;
         let look = Look {
             width: 1280,
             height: tokens.panel_height + fillet_height(&tokens),
@@ -1044,6 +1057,22 @@ mod tests {
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
         paint(&mut pixmap, &look, &tokens, None, None, row);
         (pixmap, tokens)
+    }
+
+    /// With the panel opacity at 50 the bar is half as opaque, the colour
+    /// the same; the edge and the widgets are not faded (M5.12b2b).
+    #[test]
+    fn the_panel_opacity_fades_the_bar_and_nothing_else() {
+        let (full, tokens) = drawn_at(Edge::Bottom, true, &classic(), 100);
+        let (half, _) = drawn_at(Edge::Bottom, true, &classic(), 50);
+        let strip = fillet_height(&tokens);
+        let at = (640, strip + 20);
+        assert_eq!(pixel(&full, at.0, at.1)[3], 255);
+        let alpha = pixel(&half, at.0, at.1)[3];
+        assert!(
+            (i32::from(alpha) - 128).abs() <= 1,
+            "half of 255, got {alpha}"
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@
 
 use smithay::utils::{Logical, Rectangle, Size};
 
-use crate::layout::WindowPolicy;
+use crate::layout::{Gaps, WindowPolicy};
 use crate::scroll::Strip;
 use crate::split::Tree;
 
@@ -55,20 +55,23 @@ pub struct Tiling<W> {
     strip: Strip<W>,
     /// The window with the keyboard, which a new window halves in `split`.
     focused: Option<W>,
-    gap: i32,
+    gaps: Gaps,
     area: Rectangle<i32, Logical>,
 }
 
 impl<W> Tiling<W> {
-    /// Tiling with `gap` logical pixels between tiles and round them.
-    pub fn new(gap: u32) -> Tiling<W> {
+    /// Tiling with `gaps` logical pixels between tiles and round them.
+    pub fn new(gaps: Gaps) -> Tiling<W> {
         Tiling {
             style: Style::default(),
             windows: Vec::new(),
             tree: Tree::default(),
             strip: Strip::default(),
             focused: None,
-            gap: gap.min(100) as i32,
+            gaps: Gaps {
+                inner: gaps.inner.min(100),
+                outer: gaps.outer.min(100),
+            },
             area: Rectangle::default(),
         }
     }
@@ -78,20 +81,15 @@ impl<W> Tiling<W> {
 pub fn tiles(
     count: usize,
     area: Rectangle<i32, Logical>,
-    gap: i32,
+    gaps: Gaps,
 ) -> Vec<Rectangle<i32, Logical>> {
     if count == 0 {
         return Vec::new();
     }
-    // The gap is dropped where it would leave no room.
-    let gap = if area.size.w > 4 * gap && area.size.h > 4 * gap {
-        gap
-    } else {
-        0
-    };
+    let Gaps { inner: gap, outer } = gaps.within(area);
     let inner = Rectangle::new(
-        (area.loc.x + gap, area.loc.y + gap).into(),
-        (area.size.w - 2 * gap, area.size.h - 2 * gap).into(),
+        (area.loc.x + outer, area.loc.y + outer).into(),
+        (area.size.w - 2 * outer, area.size.h - 2 * outer).into(),
     );
     if count == 1 {
         return vec![inner];
@@ -128,10 +126,10 @@ impl<W: Clone + PartialEq> Tiling<W> {
                 .windows
                 .iter()
                 .cloned()
-                .zip(tiles(self.windows.len(), area, self.gap))
+                .zip(tiles(self.windows.len(), area, self.gaps))
                 .collect(),
-            Style::Split => self.tree.places(area, self.gap),
-            Style::Scroll => self.strip.places(area, self.gap),
+            Style::Split => self.tree.places(area, self.gaps),
+            Style::Scroll => self.strip.places(area, self.gaps),
         }
     }
 
@@ -179,7 +177,7 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         self.style == Style::Scroll
             && self
                 .strip
-                .reveal(self.focused.as_ref(), self.area.size.w, self.gap)
+                .reveal(self.focused.as_ref(), self.area.size.w, self.gaps)
     }
 
     fn widen(&mut self, window: &W) -> bool {
@@ -203,6 +201,10 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         self.style = style;
     }
 
+    fn set_gaps(&mut self, gaps: Gaps) {
+        self.gaps = gaps;
+    }
+
     fn moved(&mut self, window: &W, to: Rectangle<i32, Logical>) -> Rectangle<i32, Logical> {
         self.tile_of(window).unwrap_or(to)
     }
@@ -211,7 +213,7 @@ impl<W: Clone + PartialEq> WindowPolicy<W> for Tiling<W> {
         self.area = area;
         if self.style == Style::Scroll {
             self.strip
-                .reveal(self.focused.as_ref(), area.size.w, self.gap);
+                .reveal(self.focused.as_ref(), area.size.w, self.gaps);
         }
         self.places(area)
     }
@@ -235,14 +237,17 @@ mod tests {
 
     #[test]
     fn one_window_fills_the_area_inside_the_gap() {
-        assert_eq!(tiles(1, screen(), 8), [rect(8, 8, 1264, 784)]);
-        assert_eq!(tiles(0, screen(), 8), []);
+        assert_eq!(
+            tiles(1, screen(), Gaps::uniform(8)),
+            [rect(8, 8, 1264, 784)]
+        );
+        assert_eq!(tiles(0, screen(), Gaps::uniform(8)), []);
     }
 
     #[test]
     fn two_windows_share_the_area_side_by_side() {
         assert_eq!(
-            tiles(2, screen(), 8),
+            tiles(2, screen(), Gaps::uniform(8)),
             [rect(8, 8, 628, 784), rect(644, 8, 628, 784)]
         );
     }
@@ -253,7 +258,7 @@ mod tests {
     fn up_to_six_windows_tile_without_overlap() {
         for area in [screen(), rect(100, 50, 1366, 740), rect(0, 0, 1920, 1080)] {
             for n in 1..=6 {
-                let t = tiles(n, area, 8);
+                let t = tiles(n, area, Gaps::uniform(8));
                 assert_eq!(t.len(), n);
                 for (i, a) in t.iter().enumerate() {
                     assert!(a.size.w > 0 && a.size.h > 0, "{n}: {a:?}");
@@ -280,12 +285,15 @@ mod tests {
 
     #[test]
     fn a_tiny_area_drops_the_gap() {
-        assert_eq!(tiles(1, rect(0, 0, 20, 20), 8), [rect(0, 0, 20, 20)]);
+        assert_eq!(
+            tiles(1, rect(0, 0, 20, 20), Gaps::uniform(8)),
+            [rect(0, 0, 20, 20)]
+        );
     }
 
     #[test]
     fn new_windows_join_the_stack_and_the_stack_fills_a_closed_master() {
-        let mut tiling = Tiling::new(8);
+        let mut tiling = Tiling::new(Gaps::uniform(8));
         assert_eq!(
             tiling.open(1, Size::default(), screen()),
             rect(8, 8, 1264, 784)
@@ -308,7 +316,7 @@ mod tests {
 
     #[test]
     fn the_style_changes_the_places_and_keeps_the_windows() {
-        let mut tiling = Tiling::new(8);
+        let mut tiling = Tiling::new(Gaps::uniform(8));
         for w in 1..=4 {
             tiling.open(w, Size::default(), screen());
             tiling.focused(&w);
@@ -327,5 +335,25 @@ mod tests {
         assert_eq!(Style::parse("split"), Some(Style::Split));
         assert_eq!(Style::parse("scroll"), Some(Style::Scroll));
         assert_eq!(Style::parse("spiral"), None);
+    }
+
+    /// The inner and outer gaps are their own: 4 from the edges, 12 between.
+    #[test]
+    fn the_inner_and_outer_gaps_are_their_own() {
+        let gaps = Gaps {
+            inner: 12,
+            outer: 4,
+        };
+        assert_eq!(
+            tiles(2, screen(), gaps),
+            [rect(4, 4, 630, 792), rect(646, 4, 630, 792)]
+        );
+        let mut tiling = Tiling::new(gaps);
+        tiling.open(1, Size::default(), screen());
+        tiling.open(2, Size::default(), screen());
+        assert_eq!(tiling.arrange(screen())[1], (2, rect(646, 4, 630, 792)));
+        // Live: new gaps lay the tiles out again.
+        tiling.set_gaps(Gaps::uniform(8));
+        assert_eq!(tiling.arrange(screen())[1], (2, rect(644, 8, 628, 784)));
     }
 }

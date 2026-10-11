@@ -21,7 +21,7 @@ use smithay::input::pointer::CursorImageStatus;
 use smithay::output::Output;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 
-use edel_compositor::frame::{Insets, Look};
+use edel_compositor::frame::{Border, Insets, Look};
 
 use crate::animate::{Closing, Look as Seen};
 use crate::decoration::{data, title};
@@ -287,6 +287,22 @@ impl Edel {
                 Kind::Unspecified,
             )));
         }
+        if let Some(strip) = &closed.strip {
+            match MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                at(strip.place.loc),
+                &strip.buffer,
+                Some(look.alpha),
+                Some(Rectangle::from_size(
+                    (f64::from(strip.pixels.0), f64::from(strip.pixels.1)).into(),
+                )),
+                Some(strip.place.size),
+                Kind::Unspecified,
+            ) {
+                Ok(element) => parts.push(Element::Bar(element)),
+                Err(e) => eprintln!("edel-compositor: drawing a window's border failed: {e}"),
+            }
+        }
         parts
             .into_iter()
             .map(|e| zoomed(e, centre, look.zoom))
@@ -310,6 +326,7 @@ impl Edel {
         if insets.top == 0 {
             return parts;
         }
+        let border = Border::of(&self.tokens, is_focused);
         let outer = insets.frame(place);
         let shift = seen.offset.to_physical(scale);
         let at = |p: Point<i32, Logical>| (p - screen).to_f64().to_physical(scale) + shift;
@@ -338,6 +355,7 @@ impl Edel {
             side: self.settings.button_side(),
             shown: self.settings.buttons,
             scheme: self.settings.color_scheme,
+            border,
         };
         let mut frame = data(window).borrow_mut();
         let icon = icon_name.and_then(|name| self.app_icons.picture(&name, icon_px));
@@ -359,10 +377,14 @@ impl Edel {
         if insets.side == 0 && insets.bottom == 0 {
             return parts;
         }
-        // The hairline round the window, as the mockups draw it; the bar
-        // draws its own part of it.
-        let colour = self.tokens.edge;
-        for (buffer, place) in frame.borders.iter_mut().zip(border_places(outer, insets)) {
+        // The border round the window, as the mockups draw it (M5.12b2b):
+        // its left and right sides in the colours of its two ends, its
+        // bottom in one colour, or a gradient of the two as a texture. The
+        // bar draws its own part of it.
+        let [left, right, bottom] = border_places(outer, insets);
+        for (side, place) in [(0, left), (1, right)] {
+            let colour = if side == 0 { border.start } else { border.end };
+            let buffer = &mut frame.borders[side];
             buffer.update(place.size, colour.rgba());
             parts.push(Element::Border(SolidColorRenderElement::from_buffer(
                 buffer,
@@ -371,6 +393,39 @@ impl Edel {
                 seen.alpha,
                 Kind::Unspecified,
             )));
+        }
+        if border.start == border.end {
+            let buffer = &mut frame.borders[2];
+            buffer.update(bottom.size, border.start.rgba());
+            parts.push(Element::Border(SolidColorRenderElement::from_buffer(
+                buffer,
+                at(bottom.loc).to_i32_round(),
+                scale,
+                seen.alpha,
+                Kind::Unspecified,
+            )));
+        } else {
+            let px = bottom
+                .size
+                .to_f64()
+                .to_physical(scale)
+                .to_i32_round::<i32>();
+            let strip = frame.gradient((px.w, px.h), border);
+            let bottom_at = at(bottom.loc).to_i32_round::<i32>().to_f64();
+            match MemoryRenderBufferRenderElement::from_buffer(
+                renderer,
+                bottom_at,
+                strip,
+                Some(seen.alpha),
+                Some(Rectangle::from_size(
+                    (f64::from(px.w), f64::from(px.h)).into(),
+                )),
+                Some(bottom.size),
+                Kind::Unspecified,
+            ) {
+                Ok(element) => parts.push(Element::Bar(element)),
+                Err(e) => eprintln!("edel-compositor: drawing a window's border failed: {e}"),
+            }
         }
         parts
     }

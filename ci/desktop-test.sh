@@ -23,6 +23,10 @@
 #   tiling      edel settings set layout.tiling=true, sent to the VM, tiles
 #               foot and one side by side with their bars; Super+T puts
 #               them back where they floated, overlapping
+#   shape       appearance.gaps=12 and border_width=3 with a red focused
+#               border, sent to the VM, tiles foot and one 12 px apart as
+#               frames, with one's red border; tiling off and shape default
+#               put the release's shape back (M5.12b2b)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -3955,6 +3959,63 @@ case_tiling() {
 	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+}
+
+case_shape() {
+	# The shape (M5.12b2b), through the settings file as Settings writes it:
+	# gaps of 12 between tiles and at the edges, a 3 px border and a red
+	# focused border. Tiled, a frame is its window grown by 3 px at the sides
+	# and bottom and by 30 px on top (the bar's 28 px and the border's top),
+	# so foot and one are 12 px apart as frames, and one, the one with the
+	# keyboard, has red on its left border, halfway down.
+	bar=$(token title_bar)
+	focused=$(token title_bar_focused)
+	guest 'shape on'
+	wait_for 'DESKTOP-TEST: ran shape on: 0' ||
+		fail "edel settings set appearance.gaps=12 and the border did not run in the VM"
+	wait_for 'edel-compositor: shape gaps 12/12, border 3, title bar 28' ||
+		fail "the compositor did not follow the shape: appearance.gaps and border_width"
+	guest 'tiling on'
+	wait_for 'DESKTOP-TEST: ran tiling on: 0' ||
+		fail "edel settings set layout.tiling=true did not run in the VM"
+	wait_for 'DESKTOP-TEST: windows 2 foot@15,42,[0-9]+x[0-9]+ one@649,42,616x703' ||
+		fail "foot and one are not tiled inside 12 px gaps and a 3 px border: $(value windows)"
+	tiled=$(value windows)
+	geometry=$(python3 - "$tiled" <<-'EOF'
+		import re, sys
+		win = {n: tuple(map(int, rest)) for n, *rest in re.findall(r"(\w+)@(\d+),(\d+),(\d+)x(\d+)", sys.argv[1])}
+		frames = sorted((x - 3, y - 30, x + w + 3, y + h + 3) for x, y, w, h in win.values())
+		(_, _, a_right, _), (b_left, _, _, _) = frames[0], frames[1]
+		gap = b_left - a_right
+		assert gap == 12, "the frames are %d px apart, not 12: %s" % (gap, frames)
+		one = frames[1]
+		print((a_right + b_left) // 2, one[0] + 1, (one[1] + one[3]) // 2)
+	EOF
+	) || fail "the tiled frames are not 12 px apart with the 3 px border: $tiled"
+	set -- $geometry
+	gap_x=$1 edge_x=$2 edge_y=$3
+	# The gap shows the background, not either window or its bar.
+	gap=$(shot shape "$gap_x" 300 "!$foot") ||
+		fail "the gap between foot and one at $gap_x,300 is #$gap, not the background"
+	case "$gap" in
+	"$bar" | "$focused" | cc3333) fail "the gap between foot and one at $gap_x,300 is #$gap, a window's own colour" ;;
+	esac
+	# One has the keyboard: its left border, 1 px inside its frame, is red.
+	edge=$(shot shape "$edge_x" "$edge_y" ff0000) ||
+		fail "one's focused border at $edge_x,$edge_y is #$edge, not ff0000 (appearance.colours.window_border_focused)"
+	# Back to the release's shape: 8 px gaps, 1 px border, the release's
+	# border colours, and floating again.
+	floated=$(count 'edel-compositor: windows now floating')
+	guest 'tiling off'
+	wait_more 'edel-compositor: windows now floating' "$floated" ||
+		fail "layout.tiling = false did not float the windows again"
+	shaped=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
+	guest 'shape default'
+	wait_for 'DESKTOP-TEST: ran shape default: 0' ||
+		fail "edel settings reset of the shape did not run in the VM"
+	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$shaped" ||
+		fail "the compositor did not go back to shape gaps 8/8, border 1 after shape default"
+	echo "PASS: appearance.gaps 12 and border_width 3 put foot and one 12 px apart as frames with a 3 px border, one's red focused border at $edge_x,$edge_y, and shape default gave the release's shape back"
 }
 
 case_styles() {

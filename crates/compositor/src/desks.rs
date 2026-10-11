@@ -18,7 +18,7 @@
 
 use smithay::utils::{Logical, Rectangle, Size};
 
-use crate::layout::{Areas, Workspace};
+use crate::layout::{Areas, Gaps, Workspace};
 use crate::tiling::Style;
 
 /// The most workspaces a preset can ask for.
@@ -112,7 +112,8 @@ pub struct Desks<W> {
     /// The workspace in use: shown on every screen, or, with workspaces on
     /// each screen, on the one in use (`here`).
     active: usize,
-    gap: u32,
+    /// The gaps every workspace's tiling keeps (M5.12b2b).
+    gaps: Gaps,
     /// The tiling style every workspace's tiling uses (M5.16).
     style: Style,
     /// Whether each screen shows its own workspace (M5.2k).
@@ -125,12 +126,14 @@ pub struct Desks<W> {
 
 impl<W: Clone + PartialEq + 'static> Desks<W> {
     /// `count` floating workspaces (1 to [`MOST`]), the first shown.
-    pub fn new(count: usize, gap: u32) -> Desks<W> {
+    pub fn new(count: usize, gaps: Gaps) -> Desks<W> {
         let count = count.clamp(1, MOST);
         Desks {
-            desks: (0..count).map(|_| Desk::new(Workspace::new(gap))).collect(),
+            desks: (0..count)
+                .map(|_| Desk::new(Workspace::new(gaps)))
+                .collect(),
             active: 0,
-            gap,
+            gaps,
             style: Style::default(),
             per_screen: false,
             screens: Vec::new(),
@@ -140,6 +143,14 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
 
     /// Every workspace's tiling lays windows out in `style`, now and when
     /// workspaces are added.
+    /// Every workspace's tiling keeps `gaps` from now on (M5.12b2b).
+    pub fn set_gaps(&mut self, gaps: Gaps) {
+        self.gaps = gaps;
+        for desk in &mut self.desks {
+            desk.layout.set_gaps(gaps);
+        }
+    }
+
     pub fn set_style(&mut self, style: Style) {
         self.style = style;
         for desk in &mut self.desks {
@@ -209,7 +220,7 @@ impl<W: Clone + PartialEq + 'static> Desks<W> {
     /// Adds an empty workspace at the end, floating or tiling as `policy`
     /// says, with the tiling style every workspace has.
     pub fn add(&mut self, policy: &str) {
-        let mut layout = Workspace::new(self.gap);
+        let mut layout = Workspace::new(self.gaps);
         layout.switch(policy);
         layout.set_style(self.style);
         self.desks.push(Desk::new(layout));
@@ -804,7 +815,7 @@ mod tests {
 
     #[test]
     fn switching_hides_the_shown_windows_and_brings_back_the_others() {
-        let mut desks: Desks<u32> = Desks::new(4, 8);
+        let mut desks: Desks<u32> = Desks::new(4, Gaps::uniform(8));
         assert_eq!((desks.count(), desks.active()), (4, 0));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         desks.layout_mut().open(2, (300, 200).into(), "one", area());
@@ -831,7 +842,7 @@ mod tests {
 
     #[test]
     fn a_window_sent_away_waits_on_top_of_its_new_workspace() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         let place = desks.send(1, 2, (300, 200).into(), &areas()).unwrap();
         assert_eq!(desks.hidden_on(&1), Some(2));
@@ -850,7 +861,7 @@ mod tests {
 
     #[test]
     fn a_window_carried_shows_only_where_its_screen_shows_its_new_workspace() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         // Shown to the third: it waits there, hidden.
         let (_, shows) = desks
@@ -888,7 +899,7 @@ mod tests {
 
     #[test]
     fn a_window_carried_onto_another_screen_moves_there() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         let two = Rectangle::new((1280, 0).into(), (1280, 800).into());
         let areas = vec![("one".into(), area()), ("two".into(), two)];
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
@@ -916,7 +927,7 @@ mod tests {
 
     #[test]
     fn a_minimized_window_waits_on_its_workspace_until_it_comes_back() {
-        let mut desks: Desks<u32> = Desks::new(2, 8);
+        let mut desks: Desks<u32> = Desks::new(2, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         desks.layout_mut().open(2, (300, 200).into(), "one", area());
         desks.minimize(1, at(40));
@@ -949,7 +960,7 @@ mod tests {
 
     #[test]
     fn fewer_workspaces_with_no_screen_keep_their_windows() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         let there = desks.send(1, 2, (300, 200).into(), &areas()).unwrap();
         // Every screen gone: the window joins workspace 2, hidden, where
@@ -971,7 +982,7 @@ mod tests {
     fn a_window_keeps_its_screen_when_sent_minimized_or_joined() {
         let right = Rectangle::new((1280, 0).into(), (1024, 768).into());
         let both = vec![("one".to_string(), area()), ("two".to_string(), right)];
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "two", right);
         desks.layout_mut().open(2, (300, 200).into(), "two", right);
         // Sent to the second workspace, it lands on the same screen.
@@ -1001,7 +1012,7 @@ mod tests {
 
     #[test]
     fn each_workspace_keeps_its_own_policy() {
-        let mut desks: Desks<u32> = Desks::new(2, 8);
+        let mut desks: Desks<u32> = Desks::new(2, Gaps::uniform(8));
         assert!(desks.layout_mut().switch("tiling"));
         desks.switch(1, Vec::new());
         assert_eq!(desks.layout().name(), "floating");
@@ -1014,7 +1025,7 @@ mod tests {
 
     #[test]
     fn fewer_workspaces_move_their_windows_to_the_last_one_left() {
-        let mut desks: Desks<u32> = Desks::new(4, 8);
+        let mut desks: Desks<u32> = Desks::new(4, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         desks.layout_mut().open(2, (300, 200).into(), "one", area());
         desks.send(1, 3, (300, 200).into(), &areas());
@@ -1029,7 +1040,7 @@ mod tests {
         assert_eq!((desks.count(), desks.active()), (2, 1));
         assert_eq!(joined.iter().map(|(w, _)| *w).collect::<Vec<_>>(), [2, 1]);
         // Shown on the first, the windows of the third go to the second.
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(3, (300, 200).into(), "one", area());
         desks.send(3, 2, (300, 200).into(), &areas());
         assert_eq!(desks.set_count(2, &areas(), "floating"), Some(Vec::new()));
@@ -1051,7 +1062,7 @@ mod tests {
         assert_eq!(desks.count(), MOST);
         desks.switch(8, Vec::new());
         assert_eq!(desks.layout().name(), "tiling");
-        assert_eq!(Desks::<u32>::new(0, 8).count(), 1);
+        assert_eq!(Desks::<u32>::new(0, Gaps::uniform(8)).count(), 1);
     }
 
     #[test]
@@ -1114,7 +1125,7 @@ mod tests {
 
     #[test]
     fn an_empty_workspace_before_the_shown_one_closes_and_the_shown_one_stays_shown() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.switch(2, Vec::new());
         assert!(!desks.remove(2), "the shown one");
         assert!(desks.remove(0));
@@ -1126,7 +1137,7 @@ mod tests {
 
     #[test]
     fn a_workspace_with_windows_does_not_close() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
         desks.send(1, 1, (300, 200).into(), &areas());
         assert!(!desks.is_empty(1));
@@ -1143,7 +1154,7 @@ mod tests {
 
     #[test]
     fn names_stay_with_their_workspace_and_the_others_show_their_number() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.set_names(&["Mail".to_string()]);
         assert_eq!(desks.labels(), ["Mail", "2", "3"]);
         assert!(desks.named(0));
@@ -1173,7 +1184,7 @@ mod tests {
 
     #[test]
     fn each_screen_switches_on_its_own_and_together_again() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.set_per_screen(true);
         assert!(desks.settle_screens(&[], &two()).is_empty());
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
@@ -1218,7 +1229,7 @@ mod tests {
 
     #[test]
     fn a_window_put_on_another_screen_joins_the_workspace_shown_there() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.set_per_screen(true);
         desks.settle_screens(&[], &two());
         desks.use_screen("two");
@@ -1242,7 +1253,7 @@ mod tests {
 
     #[test]
     fn a_screen_that_goes_brings_its_windows_to_the_first() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.set_per_screen(true);
         desks.settle_screens(&[], &two());
         desks
@@ -1267,7 +1278,7 @@ mod tests {
 
     #[test]
     fn a_workspace_moves_with_its_windows_name_and_policy() {
-        let mut desks: Desks<u32> = Desks::new(4, 8);
+        let mut desks: Desks<u32> = Desks::new(4, Gaps::uniform(8));
         desks.set_names(&["Mail".to_string()]);
         desks.layout_mut().switch("tiling");
         desks.layout_mut().open(1, (300, 200).into(), "one", area());
@@ -1301,7 +1312,7 @@ mod tests {
         assert_eq!(step(2, 3, true), None, "the last does not wrap");
         assert_eq!(step(1, 3, false), Some(0));
         assert_eq!(step(0, 3, false), None, "the first does not wrap");
-        let mut desks: Desks<u32> = Desks::new(2, 8);
+        let mut desks: Desks<u32> = Desks::new(2, Gaps::uniform(8));
         assert_eq!(desks.neighbour(true), Some(1));
         assert_eq!(desks.neighbour(false), None);
         desks.switch(1, Vec::new());
@@ -1310,7 +1321,7 @@ mod tests {
 
     #[test]
     fn an_app_rule_opens_a_window_on_its_workspace_and_hides_it_unless_shown() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         // Shown: workspace 1 is the one in use, so the window shows.
         let (place, shows) = desks
             .open_on(0, 1, (300, 200).into(), "one", area())
@@ -1343,7 +1354,7 @@ mod tests {
 
     #[test]
     fn with_workspaces_on_each_screen_a_window_shows_where_its_screen_shows_its_workspace() {
-        let mut desks: Desks<u32> = Desks::new(3, 8);
+        let mut desks: Desks<u32> = Desks::new(3, Gaps::uniform(8));
         desks.set_per_screen(true);
         let two_areas = vec![("one".to_string(), area()), ("two".to_string(), area())];
         desks.use_screen("one");
