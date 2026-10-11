@@ -226,6 +226,16 @@ pub enum Kind {
     /// path, a colour `"#rrggbb"` or `"none"` ([`crate::wallpapers`],
     /// M5.10c4b)
     Wallpaper,
+    /// A lock screen's look: a built-in look's name or one of the file's
+    /// own `[lock_screen.looks]`, checked against the file by [`check`] and
+    /// [`set`] (M5.10c5c)
+    LockLook,
+    /// A lock screen's background, as [`crate::lock_screen::parse_background`]
+    /// reads it (M5.10c5c)
+    LockBackground,
+    /// The person's own looks, as `[lock_screen.looks.NAME]` tables
+    /// ([`crate::lock_screen::check_looks`], M5.10c5c)
+    LockLooks,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -371,6 +381,13 @@ pub const KEYS: &[Key] = &[
     // The lock and login screens' parts, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
     now("lock_screen.parts", Kind::LockParts),
+    // The look that picks every part and the background at once (M5.10c5c),
+    // the background behind them, whether the count of unread notifications
+    // shows, and the person's own looks made by Save as.
+    now("lock_screen.look", Kind::LockLook),
+    now("lock_screen.background", Kind::LockBackground),
+    now("lock_screen.notifications", Kind::OneOf(&["count", "none"])),
+    now("lock_screen.looks", Kind::LockLooks),
     now("shortcuts.*", Kind::Keys),
     later("default_apps.browser", Kind::Text),
     later("default_apps.files", Kind::Text),
@@ -704,6 +721,28 @@ pub struct LockScreen {
     /// and offset ([`crate::lock_screen::check`]); absent is the classic one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parts: Option<Vec<crate::lock_screen::Placed>>,
+    /// A look: `classic`, `magazine`, `minimal` or one of `looks` (M5.10c5c);
+    /// absent is `classic`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub look: Option<String>,
+    /// What lies behind the parts: `backdrop`, `blurred`, `sharp`, a colour
+    /// `#rrggbb` or a picture's full path ([`crate::lock_screen::parse_background`]);
+    /// absent is the look's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    /// `count`, the unread notifications' number, or `none`; absent is `count`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notifications: Option<String>,
+    /// The person's own looks, each a `[lock_screen.looks.NAME]` table
+    /// (M5.10c5c), made by Save as on the Lock screen page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub looks: Option<BTreeMap<String, OwnLook>>,
+}
+
+/// One of the person's own looks: the parts it places ([`LockScreen::looks`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OwnLook {
+    pub parts: Vec<crate::lock_screen::Placed>,
 }
 
 /// The Default apps page.
@@ -845,7 +884,16 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     );
     // Across keys: unknown actions, two on one key, a way out unbound.
     lines.extend(crate::shortcuts::check(&read.file.shortcuts));
+    // Across keys: a look that is neither built in nor the file's own (M5.10c5c).
+    lines.extend(look_problem(&read.file).map(|m| format!("lock_screen.look: {m}")));
     Ok(lines)
+}
+
+/// Why the file's `lock_screen.look` names no look (M5.10c5c), if it does
+/// not: a built-in one, or one of its own `[lock_screen.looks]`.
+fn look_problem(file: &SettingsFile) -> Option<String> {
+    let look = file.lock_screen.look.as_deref()?;
+    crate::lock_screen::check_look(look, file.lock_screen.looks.as_ref()).err()
 }
 
 /// Reads the machine's settings file the way an unattended reader must
@@ -1147,6 +1195,12 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
         let lines = crate::shortcuts::check(&read(&text)?.file.shortcuts);
         if !lines.is_empty() {
             bail!("{}", lines.join("; "));
+        }
+    }
+    // A look names a built-in look or one of the file's own (M5.10c5c).
+    if key == "lock_screen.look" {
+        if let Some(message) = look_problem(&read(&text)?.file) {
+            bail!("{key}: {message}");
         }
     }
     Ok(text)
@@ -1517,6 +1571,40 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::LockParts, _) => fail(tr(
             "a list of parts, such as [{ part = \"person\", at = \"centre\" }]",
         )),
+        (Kind::LockLook, Value::String(s)) if crate::lock_screen::is_look_name(s) => {
+            Ok(value.clone())
+        }
+        (Kind::LockLook, Value::String(s)) => Err(trf(
+            "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::LockLook, _) => fail(tr("a look's name in quotes, such as \"minimal\"")),
+        (Kind::LockBackground, Value::String(s))
+            if crate::lock_screen::parse_background(s).is_some() =>
+        {
+            Ok(value.clone())
+        }
+        (Kind::LockBackground, Value::String(s)) => Err(trf(
+            "{value} is not a background; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::LockBackground, _) => fail(tr(
+            "a background in quotes, such as \"blurred\" or \"#1f2b48\"",
+        )),
+        (Kind::LockLooks, Value::Table(_)) => {
+            let looks: BTreeMap<String, OwnLook> =
+                value.clone().try_into().map_err(|e: toml::de::Error| {
+                    trf(
+                        "expected looks as the lock screen writes them: {why}",
+                        &[("why", e.message())],
+                    )
+                })?;
+            crate::lock_screen::check_looks(&looks)?;
+            Ok(value.clone())
+        }
+        (Kind::LockLooks, _) => fail(tr(
+            "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }",
+        )),
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
         (Kind::Resolution, _) => fail(tr("a resolution such as \"1920x1080\"")),
         (Kind::Keyboard, Value::String(s)) => {
@@ -1684,7 +1772,7 @@ pub fn is_user_name(name: &str) -> bool {
 }
 
 /// "light, dark or auto"
-fn or_list(items: &[&str]) -> String {
+pub(crate) fn or_list(items: &[&str]) -> String {
     match items.split_last() {
         Some((last, [])) => (*last).to_string(),
         Some((last, rest)) => trf(
@@ -1748,6 +1836,11 @@ mod tests {
             Kind::Channel => Value::String("stable".into()),
             Kind::Wallpaper => Value::String("hills".into()),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
+            Kind::LockLook => Value::String("minimal".into()),
+            Kind::LockBackground => Value::String("blurred".into()),
+            Kind::LockLooks => {
+                value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
+            }
         }
     }
 
@@ -1973,6 +2066,92 @@ font_size = 11
             assert_eq!(read.file.lock_screen.parts, None, "{bad}");
             assert_eq!(read.problems[0].key, "lock_screen.parts");
         }
+    }
+
+    /// The lock screen's looks, background and count (M5.10c5c) are set and
+    /// read back, and a bad value is refused by set with its message and
+    /// left out by a lenient read.
+    #[test]
+    fn lock_looks_are_set_read_back_and_checked() {
+        let set_then_read = |text: &str, key: &str, value: &str| {
+            let text = set(text, key, value).unwrap();
+            assert!(check(&text).unwrap().is_empty(), "{text}");
+            read(&text).unwrap().file.lock_screen
+        };
+        let look = set_then_read("format = 1\n", "lock_screen.look", "\"minimal\"");
+        assert_eq!(look.look.as_deref(), Some("minimal"));
+        let background = set_then_read("format = 1\n", "lock_screen.background", "\"#1f2b48\"");
+        assert_eq!(background.background.as_deref(), Some("#1f2b48"));
+        let picture = set_then_read(
+            "format = 1\n",
+            "lock_screen.background",
+            "\"/home/you/lock.jpg\"",
+        );
+        assert_eq!(picture.background.as_deref(), Some("/home/you/lock.jpg"));
+        let count = set_then_read("format = 1\n", "lock_screen.notifications", "none");
+        assert_eq!(count.notifications.as_deref(), Some("none"));
+        let own = set_then_read(
+            "format = 1\n",
+            "lock_screen.looks",
+            r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#,
+        );
+        assert_eq!(own.looks.unwrap().len(), 1);
+        // A look of the file's own is set, once the file has it.
+        let file = "format = 1\n[lock_screen.looks.home]\nparts = [{ part = \"person\", at = \"centre\" }]\n";
+        let chosen = set(file, "lock_screen.look", "\"home\"").unwrap();
+        assert_eq!(
+            read(&chosen).unwrap().file.lock_screen.look.as_deref(),
+            Some("home")
+        );
+        // Refused by set, with its message.
+        for (key, bad, why) in [
+            ("lock_screen.look", "\"my look\"", "is not a look's name"),
+            (
+                "lock_screen.look",
+                "\"gallery\"",
+                "\"gallery\" is not a look; choose classic, magazine or minimal",
+            ),
+            ("lock_screen.look", "\"home\"", "\"home\" is not a look"),
+            (
+                "lock_screen.background",
+                "lock.png",
+                "lock.png\" is not a background",
+            ),
+            (
+                "lock_screen.background",
+                "\"navy\"",
+                "\"navy\" is not a background",
+            ),
+            (
+                "lock_screen.notifications",
+                "some",
+                "unknown value \"some\"",
+            ),
+            (
+                "lock_screen.looks",
+                r#"{ home = { parts = [{ part = "clock", at = "top" }] } }"#,
+                "the lock screen needs the person",
+            ),
+            (
+                "lock_screen.looks",
+                r#"{ minimal = { parts = [{ part = "person", at = "centre" }] } }"#,
+                "\"minimal\" is a built-in look",
+            ),
+            ("lock_screen.looks", "\"home\"", "looks as tables"),
+        ] {
+            let error = set("format = 1\n", key, bad).unwrap_err();
+            assert!(error.to_string().contains(why), "{key} {bad}: {error}");
+        }
+        // A look the file does not have is reported by check, and a lenient
+        // read keeps no bad background.
+        let lines = check("format = 1\n[lock_screen]\nlook = \"gallery\"\n").unwrap();
+        assert_eq!(
+            lines,
+            ["lock_screen.look: \"gallery\" is not a look; choose classic, magazine or minimal"]
+        );
+        let read = read("format = 1\n[lock_screen]\nbackground = \"lock.png\"\n").unwrap();
+        assert_eq!(read.file.lock_screen.background, None);
+        assert_eq!(read.problems[0].key, "lock_screen.background");
     }
 
     #[test]

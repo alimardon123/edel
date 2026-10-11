@@ -6,6 +6,9 @@
 //! middle of the screen, with an offset from it, so one arrangement fits a
 //! phone, a laptop and a 4K screen.
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::{tr, trf};
@@ -522,6 +525,232 @@ pub fn applying(parts: Option<&[Placed]>, compact: bool) -> Vec<Placed> {
         list
     } else {
         classic(compact)
+    }
+}
+
+/// The built-in looks, in the order people see them (M5.10c5c).
+pub const LOOKS: &[&str] = &["classic", "magazine", "minimal"];
+
+/// The look that applies while none is chosen, and the one an unknown name
+/// falls back to.
+const CLASSIC: &str = "classic";
+
+/// The most characters a look's name may have.
+const MOST_LOOK: usize = 32;
+
+/// What lies behind the lock screen's parts (M5.10c5c).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Background {
+    /// The mockup's navy scene (`lock.rs`'s `backdrop`).
+    Backdrop,
+    /// The wallpaper that applies, blurred for glass.
+    Blurred,
+    /// The wallpaper that applies, sharp.
+    Sharp,
+    /// One colour, `#rrggbb`.
+    Colour(crate::tokens::Colour),
+    /// A picture of the person's, an absolute path to a PNG or JPEG.
+    Picture(PathBuf),
+}
+
+/// A part at `at` with an offset across the screen of `x` and down it of `y`.
+fn offset(part: Part, at: Anchor, x: f64, y: f64) -> Placed {
+    Placed {
+        x,
+        ..part_at(part, at, y)
+    }
+}
+
+/// The parts of a built-in look (M5.10c5c), or None for a name that is not
+/// one. `classic` is [`classic`]; `magazine` a large clock at the left with
+/// the date under it and the person at the right; `minimal` the time alone.
+/// Compact (under 600 px) each is laid out for a phone.
+pub fn look_parts(name: &str, compact: bool) -> Option<Vec<Placed>> {
+    Some(match (name, compact) {
+        ("classic", _) => classic(compact),
+        ("magazine", true) => classic(true)
+            .into_iter()
+            .map(|p| match p.part {
+                Part::Clock => Placed {
+                    weight: Some(200),
+                    ..p
+                },
+                _ => p,
+            })
+            .collect(),
+        ("magazine", false) => vec![
+            Placed {
+                size: Some(Size::Large),
+                weight: Some(200),
+                ..offset(Part::Clock, Anchor::TopLeft, 0.06, 0.12)
+            },
+            offset(Part::Date, Anchor::TopLeft, 0.06, 0.12),
+            offset(Part::Count, Anchor::TopLeft, 0.06, 0.12),
+            offset(Part::Person, Anchor::Right, -0.08, 0.0),
+            offset(Part::Player, Anchor::BottomLeft, 0.06, 0.0),
+        ],
+        ("minimal", true) => vec![
+            Placed {
+                face: Some(Face::Minimal),
+                ..part_at(Part::Clock, Anchor::Top, 0.12)
+            },
+            part_at(Part::Player, Anchor::Top, 0.12),
+            part_at(Part::Person, Anchor::Bottom, -0.06),
+        ],
+        ("minimal", false) => vec![
+            Placed {
+                face: Some(Face::Minimal),
+                ..part_at(Part::Clock, Anchor::Centre, -0.18)
+            },
+            part_at(Part::Person, Anchor::Centre, 0.16),
+            part_at(Part::Player, Anchor::Bottom, 0.0),
+        ],
+        _ => return None,
+    })
+}
+
+/// What lies behind a look (M5.10c5c): classic's navy scene, and the
+/// wallpaper blurred for every other look, built-in or a person's own.
+pub fn look_background(name: &str) -> Background {
+    if name == CLASSIC {
+        Background::Backdrop
+    } else {
+        Background::Blurred
+    }
+}
+
+/// Reads a background (M5.10c5c): `backdrop`, `blurred`, `sharp`, a colour
+/// `#rrggbb` (as [`crate::tokens::Colour::parse`] takes it) or an absolute
+/// path ending `.png`, `.jpg` or `.jpeg`. Anything else is None.
+pub fn parse_background(value: &str) -> Option<Background> {
+    match value {
+        "backdrop" => Some(Background::Backdrop),
+        "blurred" => Some(Background::Blurred),
+        "sharp" => Some(Background::Sharp),
+        _ if value.starts_with('#') => crate::tokens::Colour::parse(value).map(Background::Colour),
+        _ if is_picture_path(value) => Some(Background::Picture(PathBuf::from(value))),
+        _ => None,
+    }
+}
+
+/// The text a background is written as, the inverse of [`parse_background`].
+pub fn background_value(background: &Background) -> String {
+    match background {
+        Background::Backdrop => "backdrop".into(),
+        Background::Blurred => "blurred".into(),
+        Background::Sharp => "sharp".into(),
+        Background::Colour(colour) => colour.hex(),
+        Background::Picture(path) => path.display().to_string(),
+    }
+}
+
+/// Whether a look's name is letters, digits and hyphens, not starting with a
+/// hyphen, up to 32 characters (M5.10c5c).
+pub fn is_look_name(name: &str) -> bool {
+    (1..=MOST_LOOK).contains(&name.len())
+        && !name.starts_with('-')
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+}
+
+/// Checks that `look` names a built-in look or one of the file's own
+/// (`own`, the `[lock_screen.looks]` tables). The message names the looks.
+pub fn check_look(
+    look: &str,
+    own: Option<&BTreeMap<String, crate::settings::OwnLook>>,
+) -> Result<(), String> {
+    if LOOKS.contains(&look) || own.is_some_and(|own| own.contains_key(look)) {
+        return Ok(());
+    }
+    let look = format!("{look:?}");
+    match own.filter(|own| !own.is_empty()) {
+        None => Err(trf(
+            "{look} is not a look; choose {choices}",
+            &[
+                ("look", &look),
+                ("choices", &crate::settings::or_list(LOOKS)),
+            ],
+        )),
+        Some(own) => {
+            let names: Vec<&str> = own.keys().map(String::as_str).collect();
+            Err(trf(
+                "{look} is not a look; choose {builtins}, or one of yours ({own})",
+                &[
+                    ("look", &look),
+                    ("builtins", &LOOKS.join(", ")),
+                    ("own", &crate::settings::or_list(&names)),
+                ],
+            ))
+        }
+    }
+}
+
+/// Checks a person's own looks (M5.10c5c): each name is letters, digits and
+/// hyphens and not a built-in look's, and each look's parts pass [`check`]
+/// (so each has the person, as a look must). The message names the look.
+pub fn check_looks(looks: &BTreeMap<String, crate::settings::OwnLook>) -> Result<(), String> {
+    for (name, look) in looks {
+        let shown = format!("{name:?}");
+        if !is_look_name(name) {
+            return Err(trf(
+                "{name} is not a look's name; use letters, digits and hyphens, such as \"home\"",
+                &[("name", &shown)],
+            ));
+        }
+        if LOOKS.contains(&name.as_str()) {
+            return Err(trf(
+                "{name} is a built-in look; name yours another way, such as \"home\"",
+                &[("name", &shown)],
+            ));
+        }
+        check(&look.parts).map_err(|why| {
+            trf(
+                "the look {name} does not check: {why}",
+                &[("name", &shown), ("why", &why)],
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// What the lock screen shows (M5.10c5c), from [`applied`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct Applied {
+    pub parts: Vec<Placed>,
+    pub background: Background,
+    /// Whether the unread notifications' count shows
+    pub notifications: bool,
+}
+
+/// What applies from `[lock_screen]` (the person's over the machine's, merged
+/// by the caller), leniently (M5.10c5c). `parts` when set wins over the look,
+/// and a list that fails [`check`] is classic's, as [`applying`] does; else
+/// the look named by `look`, a built-in one or a person's own, else classic.
+/// The background is `background` when it parses, else the look's: classic's
+/// navy scene, or the blurred wallpaper for every other look. `notifications
+/// = "none"` hides the count.
+pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
+    let name = lock.look.as_deref().unwrap_or(CLASSIC);
+    let list = look_parts(name, compact).or_else(|| {
+        lock.looks
+            .as_ref()
+            .and_then(|own| own.get(name))
+            .map(|own| own.parts.clone())
+    });
+    // A look this file does not have is classic, so its background too.
+    let look = if list.is_some() { name } else { CLASSIC };
+    let parts = match (&lock.parts, list) {
+        (Some(parts), _) => applying(Some(parts), compact),
+        (None, Some(list)) => applying(Some(&list), compact),
+        (None, None) => classic(compact),
+    };
+    Applied {
+        parts,
+        background: lock
+            .background
+            .as_deref()
+            .and_then(parse_background)
+            .unwrap_or_else(|| look_background(look)),
+        notifications: lock.notifications.as_deref() != Some("none"),
     }
 }
 
@@ -1213,5 +1442,156 @@ mod tests {
             ..part_at(Part::Date, Anchor::Top, 0.0)
         };
         assert!(check(&[person.clone(), good]).is_ok());
+    }
+
+    /// Every built-in look passes the check and lays out with every part placed
+    /// at the sizes the classic test uses (M5.10c5c).
+    #[test]
+    fn every_built_in_look_passes_the_check_and_stands_clear() {
+        for name in LOOKS {
+            for screen in [(1280.0, 800.0), (1920.0, 1080.0), (360.0, 740.0)] {
+                let compact = screen.0 < 600.0;
+                let parts = look_parts(name, compact).expect(name);
+                assert!(
+                    check(&parts).is_ok(),
+                    "{name} {screen:?}: {:?}",
+                    check(&parts)
+                );
+                let keep_out = [corner(screen)];
+                let items = lock_items(screen, &parts);
+                let out = arrange(screen, &items, &keep_out, GAP, MARGIN);
+                check_layout(screen, &keep_out, &out);
+                assert!(
+                    out.iter().all(Option::is_some),
+                    "{name} {screen:?}: {out:?}"
+                );
+            }
+        }
+        assert!(look_parts("gallery", false).is_none());
+    }
+
+    #[test]
+    fn a_look_background_is_classic_backdrop_and_blurred_for_the_rest() {
+        assert_eq!(look_background("classic"), Background::Backdrop);
+        assert_eq!(look_background("magazine"), Background::Blurred);
+        assert_eq!(look_background("home"), Background::Blurred);
+    }
+
+    #[test]
+    fn backgrounds_read_and_write_back() {
+        for (text, background) in [
+            ("backdrop", Background::Backdrop),
+            ("blurred", Background::Blurred),
+            ("sharp", Background::Sharp),
+            (
+                "#1f2b48",
+                Background::Colour(crate::tokens::Colour::parse("#1f2b48").unwrap()),
+            ),
+            (
+                "/home/you/lock.png",
+                Background::Picture("/home/you/lock.png".into()),
+            ),
+        ] {
+            assert_eq!(parse_background(text), Some(background.clone()), "{text}");
+            assert_eq!(background_value(&background), text);
+        }
+        for bad in ["lock.png", "/lock.gif", "navy", "#12", "Blurred", ""] {
+            assert_eq!(parse_background(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn look_names_are_letters_digits_and_hyphens() {
+        assert!(is_look_name("home"));
+        assert!(is_look_name("my-look-2"));
+        assert!(!is_look_name(""));
+        assert!(!is_look_name("my look"));
+        assert!(!is_look_name("-home"));
+        assert!(!is_look_name(&"x".repeat(33)));
+    }
+
+    #[test]
+    fn applied_is_classic_with_the_backdrop_and_the_count_when_absent() {
+        let lock = crate::settings::LockScreen::default();
+        for compact in [false, true] {
+            let applied = applied(&lock, compact);
+            assert_eq!(applied.parts, classic(compact));
+            assert_eq!(applied.background, Background::Backdrop);
+            assert!(applied.notifications);
+        }
+    }
+
+    #[test]
+    fn applied_takes_the_look_then_the_parts_background_and_count_over_it() {
+        let mut lock = crate::settings::LockScreen {
+            look: Some("minimal".into()),
+            ..Default::default()
+        };
+        let minimal = applied(&lock, false);
+        assert_eq!(minimal.parts, look_parts("minimal", false).unwrap());
+        assert_eq!(minimal.background, Background::Blurred);
+        // A background set wins over the look's.
+        lock.background = Some("sharp".into());
+        assert_eq!(applied(&lock, false).background, Background::Sharp);
+        // A background that does not parse is the look's.
+        lock.background = Some("lock.png".into());
+        assert_eq!(applied(&lock, false).background, Background::Blurred);
+        // A list of parts wins over the look's.
+        lock.background = None;
+        let list = vec![part_at(Part::Clock, Anchor::TopRight, 0.0), person(false)];
+        lock.parts = Some(list.clone());
+        assert_eq!(applied(&lock, false).parts, list);
+        // A list that fails the check is classic's.
+        lock.parts = Some(vec![person(false), person(true)]);
+        assert_eq!(applied(&lock, false).parts, classic(false));
+        // The count hides with notifications = "none".
+        lock.notifications = Some("none".into());
+        assert!(!applied(&lock, false).notifications);
+        lock.notifications = Some("count".into());
+        assert!(applied(&lock, false).notifications);
+    }
+
+    #[test]
+    fn applied_uses_a_persons_own_look_and_falls_back_to_classic() {
+        let own = crate::settings::OwnLook {
+            parts: vec![part_at(Part::Clock, Anchor::Top, 0.2), person(false)],
+        };
+        let lock = crate::settings::LockScreen {
+            look: Some("home".into()),
+            looks: Some([("home".to_string(), own.clone())].into_iter().collect()),
+            ..Default::default()
+        };
+        let home = applied(&lock, false);
+        assert_eq!(home.parts, own.parts);
+        assert_eq!(home.background, Background::Blurred);
+        // An unknown look is classic, with its backdrop.
+        let unknown = crate::settings::LockScreen {
+            look: Some("gallery".into()),
+            ..Default::default()
+        };
+        assert_eq!(applied(&unknown, true).parts, classic(true));
+        assert_eq!(applied(&unknown, true).background, Background::Backdrop);
+    }
+
+    #[test]
+    fn check_look_names_the_looks_it_takes() {
+        assert!(check_look("magazine", None).is_ok());
+        assert_eq!(
+            check_look("gallery", None).unwrap_err(),
+            "\"gallery\" is not a look; choose classic, magazine or minimal"
+        );
+        let own: BTreeMap<String, crate::settings::OwnLook> = [(
+            "home".to_string(),
+            crate::settings::OwnLook {
+                parts: classic(false),
+            },
+        )]
+        .into_iter()
+        .collect();
+        assert!(check_look("home", Some(&own)).is_ok());
+        assert_eq!(
+            check_look("gallery", Some(&own)).unwrap_err(),
+            "\"gallery\" is not a look; choose classic, magazine, minimal, or one of yours (home)"
+        );
     }
 }
