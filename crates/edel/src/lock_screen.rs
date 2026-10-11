@@ -1171,6 +1171,20 @@ pub fn nudged(placed: &Placed, dx: i32, dy: i32) -> Placed {
     }
 }
 
+/// The settings key the list of parts is written to (M5.10c5, M5.10c6): the
+/// lock and login screens' edit mode and Settings' Lock screen page write it.
+pub const PARTS: &str = "lock_screen.parts";
+
+/// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
+/// list of tables in one line, absent options left out (M5.10c6). Settings'
+/// Lock screen page and the edit mode both write the list this way, so the
+/// one function is here (ADR-010).
+pub fn parts_value(parts: &[Placed]) -> Result<String, String> {
+    toml::Value::try_from(parts)
+        .map(|value| value.to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

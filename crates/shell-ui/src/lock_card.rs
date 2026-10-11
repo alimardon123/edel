@@ -281,7 +281,7 @@ impl Shell {
     /// The battery as the lock shows it: its charge and whether it charges,
     /// None on a machine without one (M5.10c5c), from the status area's
     /// reading.
-    fn battery_view(&self) -> Option<(u8, bool)> {
+    pub(crate) fn battery_view(&self) -> Option<(u8, bool)> {
         self.live
             .status
             .battery

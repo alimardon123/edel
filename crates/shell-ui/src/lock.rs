@@ -194,6 +194,11 @@ pub struct Layout {
     /// What lies behind the parts (M5.10c5c); `paint` draws it through
     /// `Backdrops`.
     pub background: Background,
+    /// Each part of `Look::parts`, in the list's order: its rectangle, or None
+    /// when it is not drawn (a count with no notices, a player with no card,
+    /// a battery the machine lacks, a part `arrange` left out). The edit mode
+    /// finds where each part stands by it (M5.10c6).
+    pub placed: Vec<Option<Rect>>,
 }
 
 /// What the layout needs besides the screen: the parts a list says, the
@@ -404,7 +409,9 @@ fn place_all(
         clock_size *= room / wide;
     }
     let mut slots: Vec<(Slot, Item)> = Vec::new();
-    for p in parts {
+    // The part each slot stands for, by its index in `parts` (M5.10c6).
+    let mut origin: Vec<usize> = Vec::new();
+    for (index, p) in parts.iter().enumerate() {
         let item = |w: f32, h: f32| Item {
             at: p.at,
             x: p.x as f32,
@@ -462,6 +469,9 @@ fn place_all(
             // does not have, are skipped.
             Part::Count | Part::Battery => {}
         }
+        while origin.len() < slots.len() {
+            origin.push(index);
+        }
     }
     let items: Vec<Item> = slots.iter().map(|(_, item)| *item).collect();
     let mut rects = lock_screen::arrange((w, h), &items, &look.keep_out, GAP, MARGIN);
@@ -494,8 +504,11 @@ fn place_all(
     let mut messages = Vec::new();
     let mut pictures = Vec::new();
     let mut battery = None;
-    for ((slot, _), rect) in slots.into_iter().zip(rects) {
-        let Some(rect) = rect.map(|r| Rect::new(r.x, r.y, r.w, r.h)) else {
+    let mut placed: Vec<Option<Rect>> = vec![None; parts.len()];
+    for (((slot, _), rect), &index) in slots.into_iter().zip(rects).zip(origin.iter()) {
+        let rect = rect.map(|r| Rect::new(r.x, r.y, r.w, r.h));
+        placed[index] = rect;
+        let Some(rect) = rect else {
             continue;
         };
         match slot {
@@ -516,6 +529,9 @@ fn place_all(
         if let (Some(c), Some(k)) = (count, clock) {
             if c.y < k.y + k.h {
                 count = None;
+                if let Some(i) = parts.iter().position(|p| p.part == Part::Count) {
+                    placed[i] = None;
+                }
             }
         }
     }
@@ -563,6 +579,7 @@ fn place_all(
         pictures,
         battery,
         background: look.background.clone(),
+        placed,
     };
     (layout, clear)
 }
@@ -1825,6 +1842,21 @@ mod tests {
             &corner_at,
             text,
         )
+    }
+
+    /// Each part of the look's list has its rectangle in `placed`, in the
+    /// list's order, and each is the named rectangle (M5.10c6).
+    #[test]
+    fn the_classic_layout_places_every_part_in_the_list_order() {
+        let mut text = Text::load(&Tokens::built_in().font);
+        let at = classic_at(1280.0, 800.0, true, &mut text);
+        assert_eq!(at.placed.len(), 5, "date, clock, count, person, player");
+        assert!(at.placed.iter().all(Option::is_some), "{:?}", at.placed);
+        assert_eq!(at.placed[0], at.date);
+        assert_eq!(at.placed[1], at.clock);
+        assert_eq!(at.placed[2], at.count);
+        assert_eq!(at.placed[3], Some(at.person));
+        assert_eq!(at.placed[4], at.player);
     }
 
     /// Whether two rectangles overlap; touching edges do not.

@@ -182,6 +182,17 @@ pub fn panel_not_changed(why: impl Display) -> String {
     format!("could not change the panels: {why}; they stay as they were")
 }
 
+/// The lock screen's edit mode cannot write its parts down: the edit stays
+/// open, so Done can be tried again (M5.10c6).
+pub fn lock_screen_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the lock screen: {why}; the edit stays open, so Done can be tried again"
+    )
+}
+
+/// There is no home folder to keep the lock screen's parts in (M5.10c6).
+pub const LOCK_SCREEN_NO_HOME: &str = "no home folder to keep the lock screen in; run edel settings set 'lock_screen.parts=[...]' with the parts as TOML instead";
+
 /// There is no home folder to keep the panels in.
 pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set panels.list='[...]' with the panels as TOML instead";
 
@@ -446,6 +457,8 @@ mod tests {
             DARK_STYLE_NO_HOME.to_string(),
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
+            lock_screen_not_kept("x"),
+            LOCK_SCREEN_NO_HOME.to_string(),
             picture_not_read("/a.jpg", "x"),
         ];
         for text in all {
