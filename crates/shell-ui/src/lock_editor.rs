@@ -12,7 +12,7 @@
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{self, Anchor, Background, Guide, Part, Placed, SNAP};
-use edel::settings::LockScreen;
+use edel::settings::{LockScreen, OwnLook};
 use edel::tokens::Tokens;
 use edel::wallpapers::Wallpaper;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
@@ -52,9 +52,14 @@ const BATTERY_NEW: (f32, f32) = (80.0, 22.0);
 pub struct View {
     /// The lock screen's parts, in the list's order: what Done writes.
     pub parts: Vec<Placed>,
-    /// The look the parts came from, while no part has been moved since
-    /// (M5.10c6c3); None once one has, as the parts are then the person's.
-    pub look: Option<String>,
+    /// The look the edit is inside (M5.10c7a): the one that applies when the
+    /// edit opens, or the one chosen in the Looks tab. Done saves into it, as
+    /// a new look of the person's when it is a built-in one.
+    pub editing: String,
+    /// Whether anything changed since the edit opened or a look was chosen:
+    /// a part moved, added, taken away or changed, or a background chosen.
+    /// Done saves a look only then (M5.10c7a).
+    pub changed: bool,
     /// What lies behind the parts (M5.10c6c3): what Done writes, and the
     /// backgrounds' tiles show which one is in use.
     pub background: Background,
@@ -977,62 +982,125 @@ pub fn paint_drawer(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mu
     }
 }
 
-/// Chooses the look at `i` of `looks` (M5.10c6c3): the edit's parts become
-/// its parts and its background its background, and the look is in use until
-/// a part moves. Returns its name, or None for no such look.
-pub fn choose_look(view: &mut View, looks: &[(String, Vec<Placed>)], i: usize) -> Option<String> {
-    let (name, parts) = looks.get(i)?.clone();
-    view.background = lock_screen::look_background(&name);
-    view.parts = parts;
-    view.look = Some(name.clone());
+/// Chooses the look at `i` of `looks` (M5.10c6c3, M5.10c7a): the edit's parts
+/// and background are those `lock_screen::applied` gives that look, with the
+/// person's own looks of `lock`, so an own look brings its own background.
+/// The edit is then inside that look, unchanged. `compact` is the screen's
+/// size class. Returns its name, or None for no such look.
+pub fn choose_look(
+    view: &mut View,
+    lock: &LockScreen,
+    looks: &[(String, Vec<Placed>)],
+    compact: bool,
+    i: usize,
+) -> Option<String> {
+    let (name, _) = looks.get(i)?.clone();
+    let chosen = LockScreen {
+        look: Some(name.clone()),
+        looks: lock.looks.clone(),
+        ..LockScreen::default()
+    };
+    let applied = lock_screen::applied(&chosen, compact);
+    view.parts = applied.parts;
+    view.background = applied.background;
+    view.editing = name.clone();
+    view.changed = false;
     Some(name)
 }
 
-/// A part was moved, added or taken away: the parts are the person's own, so
-/// no look is in use any more (M5.10c6c3).
+/// A part was moved, added, taken away or changed: the edit now saves a look
+/// when Done is pressed (M5.10c7a).
 pub fn parts_moved(view: &mut View) {
-    view.look = None;
+    view.changed = true;
 }
 
-/// The three lines Done writes (M5.10c6c3): each one's value, None taking
-/// the person's line out, as a default is never written.
+/// A background was chosen in the Background tab (M5.10c7a): the edit saves a
+/// look when Done is pressed, as a part change does.
+pub fn background_chosen(view: &mut View, background: Background) {
+    view.background = background;
+    view.changed = true;
+}
+
+/// The words the drawer's heading and hint say (M5.10c7a): the look's title,
+/// and on the Parts and Background tabs what Done does to this look, a new
+/// look for a built-in one. The Looks tab keeps its own hint (None).
+pub fn drawer_words(view: &View) -> (String, Option<&'static str>) {
+    let title = lock_screen::look_title(&view.editing);
+    if view.drawer.tab == 1 {
+        return (title, None);
+    }
+    let subtitle = if lock_screen::is_built_in(&view.editing) {
+        tr("Built in: Done saves your changes as a new look.")
+    } else {
+        tr("Done saves your changes in this look.")
+    };
+    (title, Some(subtitle))
+}
+
+/// The lines Done writes (M5.10c6c3, M5.10c7a). `looks` and `look` are each
+/// None to leave the person's line as it is, `Some(None)` to take it out and
+/// `Some(Some(value))` to write it. `parts` and `background` are never written:
+/// Done saves them into a look, so their lines are taken out (None).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lines {
-    pub look: Option<String>,
-    pub parts: Option<String>,
-    pub background: Option<String>,
+    pub looks: Option<Option<String>>,
+    pub look: Option<Option<String>>,
+    /// The person's `lock_screen.parts` and `background` lines, changes over
+    /// the look from the command line: None leaves them, `Some(None)` takes
+    /// them out, as a look Done saves or switches to brings its own.
+    pub parts: Option<Option<String>>,
+    pub background: Option<Option<String>>,
 }
 
-/// What Done writes for the edit `view` (M5.10c6c3), with `lock` the person's
-/// lock settings over the machine's. The look is written while it is in use
-/// and is not the release's. The parts are written unless a look is in use
-/// (it brings its own) or what applies without a parts line, under that look,
-/// is what the edit shows. The background is written only when it differs
-/// from what the look gives (the release's for none). Fails with the parts'
-/// own message when they do not write as a list.
-pub fn written(view: &View, lock: &LockScreen, compact: bool) -> Result<Lines, String> {
-    let look = view
-        .look
-        .clone()
-        .filter(|name| name != lock_screen::CLASSIC);
-    let base = LockScreen {
-        parts: None,
-        look: look.clone(),
-        ..lock.clone()
-    };
-    let without_parts = lock_screen::applied(&base, compact).parts;
-    let parts = if view.look.is_some() || view.parts == without_parts {
-        None
+/// The `lock_screen.look` line for the look `name` (classic is none): None
+/// when the lock already applies it, so the line is left as it is.
+fn look_line(name: &str, lock: &LockScreen) -> Option<Option<String>> {
+    let target = (name != lock_screen::CLASSIC).then(|| name.to_string());
+    (target.as_deref() != lock.look.as_deref()).then_some(target)
+}
+
+/// What Done writes for the edit `view` (M5.10c6c3, M5.10c7a), with `lock` the
+/// person's lock settings over the machine's. Nothing changed writes only the
+/// look chosen in the Looks tab. Something changed saves a look: a built-in
+/// one never changes, so the edit makes a new look of the person's, named
+/// from it (`classic-2`, `magazine-2`); one of the person's own is rewritten.
+/// Its background is kept only when it is not the blurred wallpaper, which a
+/// look without one gets. Fails with the message when the looks do not write
+/// as TOML.
+pub fn written(view: &View, lock: &LockScreen) -> Result<Lines, String> {
+    if !view.changed {
+        // Nothing changed: the same look keeps the changes over it, and
+        // another look chosen brings its own.
+        let look = look_line(&view.editing, lock);
+        let over = look.is_some().then_some(None);
+        return Ok(Lines {
+            looks: None,
+            look,
+            parts: over.clone(),
+            background: over,
+        });
+    }
+    let own = lock.looks.as_ref();
+    let name = if lock_screen::is_built_in(&view.editing) {
+        lock_screen::new_look_name(&view.editing, |n| {
+            own.is_some_and(|own| own.contains_key(n))
+        })
     } else {
-        Some(lock_screen::parts_value(&view.parts).map_err(|e| format!("{e:#}"))?)
+        view.editing.clone()
     };
-    let gives = lock_screen::look_background(look.as_deref().unwrap_or(lock_screen::CLASSIC));
-    let background =
-        (view.background != gives).then(|| lock_screen::background_value(&view.background));
-    Ok(Lines {
-        look,
-        parts,
+    let background = (view.background != Background::Blurred)
+        .then(|| lock_screen::background_value(&view.background));
+    let look = OwnLook {
+        parts: view.parts.clone(),
         background,
+    };
+    let looks = lock_screen::looks_value(own, &name, Some(look))
+        .ok_or_else(|| tr("the looks do not write as TOML").to_string())?;
+    Ok(Lines {
+        looks: Some(Some(looks)),
+        look: look_line(&name, lock),
+        parts: Some(None),
+        background: Some(None),
     })
 }
 
@@ -1042,6 +1110,7 @@ mod tests {
     use crate::corner;
     use crate::editor::Kind;
     use edel::lock_screen::{Anchor, Background};
+    use edel::settings;
     use edel::tokens::Tokens;
 
     /// The classic arrangement on a 1280 by 800 screen, laid out as the lock
@@ -1088,10 +1157,13 @@ mod tests {
             focus: None,
             lifted: None,
             taking: false,
+            heading: None,
+            subtitle: None,
         };
         View {
             parts,
-            look: None,
+            editing: lock_screen::CLASSIC.into(),
+            changed: false,
             background: Background::Backdrop,
             screen: (1280.0, 800.0),
             card: None,
@@ -1696,16 +1768,26 @@ mod tests {
     }
 
     #[test]
-    fn choosing_a_look_sets_its_parts_and_background_and_a_moved_part_clears_it() {
+    fn choosing_a_look_sets_its_parts_and_background_and_a_moved_part_marks_it_changed() {
         let mut view = view_of(lock_screen::classic(false));
         let looks = looks_of();
-        assert_eq!(choose_look(&mut view, &looks, 1), Some("magazine".into()));
-        assert_eq!(view.look.as_deref(), Some("magazine"));
+        let lock = LockScreen::default();
+        assert_eq!(
+            choose_look(&mut view, &lock, &looks, false, 1),
+            Some("magazine".into())
+        );
+        assert_eq!(view.editing, "magazine");
+        assert!(!view.changed);
         assert_eq!(view.parts, looks[1].1);
         assert_eq!(view.background, Background::Blurred);
-        assert_eq!(choose_look(&mut view, &looks, 9), None, "no such look");
+        assert_eq!(
+            choose_look(&mut view, &lock, &looks, false, 9),
+            None,
+            "no such look"
+        );
         parts_moved(&mut view);
-        assert_eq!(view.look, None, "the parts are the person's own now");
+        assert!(view.changed, "the edit is changed now");
+        assert_eq!(view.editing, "magazine", "the look it is inside stays");
     }
 
     #[test]
@@ -1739,15 +1821,41 @@ mod tests {
 
     /// The lines Done writes for `view` with the person's settings empty.
     fn written_for(view: &View) -> Lines {
-        written(view, &LockScreen::default(), false).unwrap()
+        written(view, &LockScreen::default()).unwrap()
+    }
+
+    /// A person's lock settings with `looks` as their own and `look` in use.
+    fn lock_with(looks: &[(&str, OwnLook)], look: Option<&str>) -> LockScreen {
+        LockScreen {
+            look: look.map(str::to_string),
+            looks: Some(
+                looks
+                    .iter()
+                    .map(|(name, own)| (name.to_string(), own.clone()))
+                    .collect(),
+            ),
+            ..LockScreen::default()
+        }
+    }
+
+    /// The clock of `view` moved to the top right, as a drag would leave it.
+    fn clock_top_right(view: &mut View) {
+        let i = index_of(&view.parts, "clock");
+        view.parts[i] = Placed {
+            at: Anchor::TopRight,
+            x: 0.0,
+            y: 0.0,
+            ..view.parts[i].clone()
+        };
     }
 
     #[test]
-    fn done_writes_nothing_for_the_releases_own_look() {
+    fn nothing_changed_writes_nothing_for_classic() {
         let view = view_of(lock_screen::classic(false));
         assert_eq!(
             written_for(&view),
             Lines {
+                looks: None,
                 look: None,
                 parts: None,
                 background: None
@@ -1756,51 +1864,124 @@ mod tests {
     }
 
     #[test]
-    fn done_writes_magazine_as_the_look_and_takes_its_parts_out() {
-        let mut view = view_of(lock_screen::look_parts("magazine", false).unwrap());
-        view.look = Some("magazine".into());
-        view.background = Background::Blurred;
+    fn nothing_changed_but_a_look_chosen_writes_only_the_look() {
+        let mut view = view_of(lock_screen::classic(false));
+        let looks = looks_of();
+        choose_look(&mut view, &LockScreen::default(), &looks, false, 1);
         assert_eq!(
             written_for(&view),
             Lines {
-                look: Some("magazine".into()),
-                parts: None,
-                background: None
-            },
-            "the look brings its parts, and its own background"
+                looks: None,
+                look: Some(Some("magazine".into())),
+                parts: Some(None),
+                background: Some(None)
+            }
+        );
+        let lock = LockScreen {
+            look: Some("magazine".into()),
+            ..LockScreen::default()
+        };
+        assert_eq!(
+            written(&view, &lock).unwrap().look,
+            None,
+            "a look the lock already applies is left as it is"
         );
     }
 
     #[test]
-    fn done_after_a_moved_part_takes_the_look_out_and_writes_the_parts() {
-        let mut view = view_of(lock_screen::look_parts("magazine", false).unwrap());
-        view.look = Some("magazine".into());
+    fn a_moved_part_on_classic_saves_a_look_of_its_own_as_classic_2() {
+        let mut view = view_of(lock_screen::classic(false));
+        clock_top_right(&mut view);
+        parts_moved(&mut view);
+        let lines = written_for(&view);
+        assert_eq!(lines.look, Some(Some("classic-2".into())));
+        assert_eq!(lines.parts, Some(None), "the parts are the look's now");
+        assert_eq!(lines.background, Some(None));
+        let text = lines.looks.flatten().expect("the look is written");
+        assert!(text.contains("classic-2"), "{text}");
+        assert!(
+            text.contains(r#"background = "backdrop""#),
+            "classic's navy backdrop is kept, as only blurred is left out: {text}"
+        );
+        assert!(text.contains(r#"part = "clock""#), "{text}");
+    }
+
+    #[test]
+    fn a_look_saved_by_done_reads_back_in_the_settings_file() {
+        let mut view = view_of(lock_screen::classic(false));
+        clock_top_right(&mut view);
+        parts_moved(&mut view);
+        let text = written_for(&view).looks.flatten().unwrap();
+        let file = settings::set("format = 1\n", "lock_screen.looks", &text).unwrap();
+        assert!(
+            file.contains(r#"at = "top_right", part = "clock""#),
+            "{file}"
+        );
+        assert!(settings::check(&file).unwrap().is_empty(), "{file}");
+    }
+
+    #[test]
+    fn a_moved_part_on_an_own_look_rewrites_it_and_writes_no_look_when_it_applies() {
+        let home = OwnLook {
+            parts: lock_screen::classic(false),
+            background: None,
+        };
+        let lock = lock_with(&[("home", home)], Some("home"));
+        let mut view = view_of(lock_screen::classic(false));
+        view.editing = "home".into();
         view.background = Background::Blurred;
         parts_moved(&mut view);
-        let i = index_of(&view.parts, "date");
-        view.parts[i] = lock_screen::nudged(&view.parts[i], 3, 0);
-        let lines = written_for(&view);
-        assert_eq!(lines.look, None);
-        assert!(lines.parts.is_some(), "the moved list is written");
-        assert_eq!(
-            lines.background.as_deref(),
-            Some("blurred"),
-            "classic gives the navy scene"
-        );
+        let lines = written(&view, &lock).unwrap();
+        assert_eq!(lines.look, None, "home already applies");
+        let text = lines.looks.flatten().expect("home is rewritten");
+        assert!(text.contains("home"), "{text}");
+        assert!(!text.contains("classic-2"), "no copy is made: {text}");
     }
 
     #[test]
-    fn a_background_the_look_does_not_give_is_written_and_the_looks_own_is_not() {
+    fn a_built_in_look_changed_saves_as_the_next_free_name() {
+        let own = OwnLook {
+            parts: lock_screen::classic(false),
+            background: None,
+        };
+        let lock = lock_with(&[("classic-2", own)], None);
         let mut view = view_of(lock_screen::classic(false));
-        view.background = Background::Sharp;
-        assert_eq!(written_for(&view).background.as_deref(), Some("sharp"));
-        view.look = Some("magazine".into());
-        view.background = Background::Blurred;
+        parts_moved(&mut view);
+        let lines = written(&view, &lock).unwrap();
         assert_eq!(
-            written_for(&view).background,
-            None,
-            "magazine gives the blurred wallpaper"
+            lines.look,
+            Some(Some("classic-3".into())),
+            "classic-2 is taken"
         );
+        let text = lines.looks.flatten().unwrap();
+        assert!(text.contains("classic-3"), "{text}");
+    }
+
+    #[test]
+    fn a_chosen_background_marks_the_edit_changed_and_is_saved() {
+        let mut view = view_of(lock_screen::classic(false));
+        background_chosen(&mut view, Background::Sharp);
+        assert!(view.changed);
+        let text = written_for(&view).looks.flatten().unwrap();
+        assert!(text.contains(r#"background = "sharp""#), "{text}");
+    }
+
+    #[test]
+    fn choosing_a_look_resets_changed_and_brings_its_own_background() {
+        let own = OwnLook {
+            parts: lock_screen::classic(false),
+            background: Some("#336699".into()),
+        };
+        let lock = lock_with(&[("home", own.clone())], None);
+        let looks = vec![("home".to_string(), own.parts)];
+        let mut view = view_of(lock_screen::classic(false));
+        parts_moved(&mut view);
+        assert_eq!(
+            choose_look(&mut view, &lock, &looks, false, 0),
+            Some("home".into())
+        );
+        assert!(!view.changed, "a chosen look is unchanged");
+        assert_eq!(lock_screen::background_value(&view.background), "#336699");
     }
 
     /// The Looks and the Background tabs (M5.10c6c3) with their tiles' own
@@ -1825,7 +2006,7 @@ mod tests {
         let at = at_classic(&classic);
         let looks = looks_of();
         let mut view = view_of(classic.clone());
-        view.look = Some("magazine".into());
+        view.editing = "magazine".into();
         view.drawer.tabs = vec!["Parts", "Looks", "Background"];
         view.drawer.tab = 1;
         view.drawer.tallest = 3;

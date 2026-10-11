@@ -2,9 +2,10 @@
 //! Edit lock screen, or the session bus's `EditLockScreen`, puts the lock
 //! screen up live over the whole main screen, on the overlay layer with the
 //! keyboard exclusive. `lock_editor.rs` says what is drawn and where a drop
-//! lands; this holds the surface, the pointer and the keyboard, and writes
-//! `lock_screen.parts` in the person's file when Done is pressed (never a
-//! default, as the panel editor's writes). Escape leaves without writing.
+//! lands; this holds the surface, the pointer and the keyboard, and saves
+//! what Done is pressed with into a look (M5.10c7a: a built-in look never
+//! changes, so a change makes a new look of the person's; never a default, as
+//! the panel editor's writes). Escape leaves without writing.
 //! Done opens the Undo bar (`editor_card.rs`), which puts the person's line
 //! back for ten seconds. Logs `lock editor shown, N parts, M in the drawer`,
 //! `lock editor places ...`, `lock editor drag NAME`, `lock editor WORDS`,
@@ -63,8 +64,9 @@ struct Saved {
 
 /// The log words of what Done did when nothing changed.
 const NOTHING: &str = "nothing to write";
-/// The three settings keys the edit mode writes (M5.10c6c3): the look, the
-/// parts (`lock_screen::PARTS`) and the background.
+/// The settings key of the person's own looks (M5.10c5c), which Done writes
+/// first, as the look must exist before the look line names it.
+const LOOKS: &str = "lock_screen.looks";
 /// The Settings page the part card's button opens (M5.10c6c2).
 const LOCK_PAGE: &str = "lock_screen";
 
@@ -83,8 +85,11 @@ pub struct LockEditor {
     waiting: bool,
     shown: bool,
     original: Vec<Placed>,
-    original_look: Option<String>,
+    original_editing: String,
     original_background: Background,
+    /// The person's lock settings over the machine's, as they were at open:
+    /// what a look chosen in the Looks tab brings (`lock_editor::choose_look`).
+    lock: LockScreen,
     view: lock_editor::View,
     battery: bool,
     compact: bool,
@@ -117,10 +122,13 @@ fn refresh_tiles(le: &mut LockEditor) {
         .max(le.looks.len())
         .max(lock_editor::background_choices().len());
     le.view.drawer.tiles = match le.view.drawer.tab {
-        1 => lock_editor::look_tiles(&le.looks, le.view.look.as_deref()),
+        1 => lock_editor::look_tiles(&le.looks, Some(le.view.editing.as_str())),
         2 => lock_editor::background_tiles(&le.view.background),
         _ => parts,
     };
+    let (heading, subtitle) = lock_editor::drawer_words(&le.view);
+    le.view.drawer.heading = Some(heading);
+    le.view.drawer.subtitle = subtitle;
 }
 
 /// The parts were moved, added to or taken away from (or changed by a card):
@@ -150,7 +158,8 @@ fn set_tab(le: &mut LockEditor, tab: usize) {
 /// become its parts and its background its background, and the look is in
 /// use until a part moves. Logs `lock editor look NAME`.
 fn choose_look(le: &mut LockEditor, i: usize) {
-    let Some(name) = lock_editor::choose_look(&mut le.view, &le.looks, i) else {
+    let Some(name) = lock_editor::choose_look(&mut le.view, &le.lock, &le.looks, le.compact, i)
+    else {
         return;
     };
     refresh_tiles(le);
@@ -358,14 +367,18 @@ impl Shell {
                     .map(|(name, look)| (name.clone(), look.parts.clone())),
             );
         }
-        let look = lock_settings
+        // The edit starts inside the look that applies: the file's, when it
+        // has one, else classic (M5.10c7a).
+        let editing = lock_settings
             .look
             .clone()
-            .filter(|name| lock_settings.parts.is_none() && looks.iter().any(|(n, _)| n == name));
+            .filter(|name| looks.iter().any(|(n, _)| n == name))
+            .unwrap_or_else(|| lock_screen::CLASSIC.to_string());
         let view = lock_editor::View {
             card: None,
             parts: original.clone(),
-            look: look.clone(),
+            editing: editing.clone(),
+            changed: false,
             background: applied.background.clone(),
             screen,
             drag: None,
@@ -384,6 +397,8 @@ impl Shell {
                 focus: None,
                 lifted: None,
                 taking: false,
+                heading: None,
+                subtitle: None,
             },
         };
         let surface = self.compositor.create_surface(&self.qh);
@@ -421,9 +436,10 @@ impl Shell {
             ready: false,
             waiting: false,
             shown: false,
-            original_look: look,
+            original_editing: editing,
             original_background: view.background.clone(),
             original,
+            lock: lock_settings,
             view,
             battery,
             compact,
@@ -771,7 +787,7 @@ impl Shell {
                     "edel-shell-ui: lock editor background {}",
                     lock_screen::background_value(&background)
                 );
-                le.view.background = background;
+                lock_editor::background_chosen(&mut le.view, background);
                 refresh_tiles(le);
             }
             None => {
@@ -1159,7 +1175,8 @@ impl Shell {
     fn undo_lock_editor(&mut self, le: &mut LockEditor) {
         end_card(le);
         le.view.parts = le.original.clone();
-        le.view.look = le.original_look.clone();
+        le.view.editing = le.original_editing.clone();
+        le.view.changed = false;
         le.view.background = le.original_background.clone();
         refresh_tiles(le);
         le.view.drag = None;
@@ -1181,6 +1198,11 @@ impl Shell {
             .map(|read| read.file.lock_screen)
             .unwrap_or_default();
         let before = LockBefore {
+            looks: person_lock
+                .looks
+                .as_ref()
+                .and_then(|own| toml::Value::try_from(own).ok())
+                .map(|value| value.to_string()),
             look: person_lock.look.clone(),
             parts: person_lock
                 .parts
@@ -1189,24 +1211,39 @@ impl Shell {
             background: person_lock.background.clone(),
         };
         let lock = lock::lock_settings(machine.as_deref(), person.as_deref());
-        let lines = match lock_editor::written(&le.view, &lock, le.compact) {
+        let lines = match lock_editor::written(&le.view, &lock) {
             Ok(lines) => lines,
             Err(e) => {
                 eprintln!("edel-shell-ui: {}", messages::lock_screen_not_kept(e));
                 return None;
             }
         };
+        // A line `written` leaves alone keeps its value; the looks go first,
+        // as the look line names one of them.
         let edits = [
-            (LOOK, lines.look, before.look.clone(), LOOK),
+            (
+                LOOKS,
+                lines.looks.unwrap_or_else(|| before.looks.clone()),
+                before.looks.clone(),
+                LOOKS,
+            ),
+            (
+                LOOK,
+                lines.look.unwrap_or_else(|| before.look.clone()),
+                before.look.clone(),
+                LOOK,
+            ),
             (
                 lock_screen::PARTS,
-                lines.parts,
+                lines.parts.unwrap_or_else(|| before.parts.clone()),
                 before.parts.clone(),
                 "lock_screen.parts",
             ),
             (
                 BACKGROUND,
-                lines.background,
+                lines
+                    .background
+                    .unwrap_or_else(|| before.background.clone()),
                 before.background.clone(),
                 BACKGROUND,
             ),
@@ -1316,6 +1353,7 @@ impl Shell {
             return None;
         };
         let lines = [
+            (LOOKS, before.looks.as_deref(), LOOKS),
             (LOOK, before.look.as_deref(), LOOK),
             (
                 lock_screen::PARTS,

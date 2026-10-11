@@ -3920,9 +3920,11 @@ case_lock_edit() {
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies: $places"
 	set -- $done_at
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_for 'edel-shell-ui: lock editor done, lock_screen.parts written' ||
-		fail "Done did not write lock_screen.parts: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	wait_for 'edel-shell-ui: lock editor done, lock_screen.looks written; lock_screen.look written' ||
+		fail "Done did not save a look of its own: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
+	value settings_file | grep -q 'look = "classic-2"' ||
+		fail "ci's settings file does not use the look classic-2: $(value settings_file)"
 	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
 	value settings_file | grep -q 'part = "message"' ||
@@ -3957,8 +3959,8 @@ case_lock_edit() {
 	# Right nudges it three times, and Escape leaves without writing, so
 	# ci's file keeps the line Done wrote.
 	guest 'settings file'
-	parts_before=$(value settings_file | grep -o 'parts = [^;]*')
-	[ -n "$parts_before" ] || fail "ci's settings file holds no lock_screen.parts line: $(value settings_file)"
+	looks_before=$(value settings_file | grep -o 'looks = .*')
+	[ -n "$looks_before" ] || fail "ci's settings file holds no lock_screen.looks line: $(value settings_file)"
 	opened=$(count 'edel-shell-ui: lock editor shown')
 	guest 'lock editor'
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
@@ -3978,8 +3980,8 @@ case_lock_edit() {
 	wait_more 'edel-shell-ui: lock editor undone' "$undone" ||
 		fail "Escape did not leave the edit mode: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
-	[ "$(value settings_file | grep -o 'parts = [^;]*')" = "$parts_before" ] ||
-		fail "Escape changed ci's lock_screen.parts line: $(value settings_file)"
+	[ "$(value settings_file | grep -o 'looks = .*')" = "$looks_before" ] ||
+		fail "Escape changed ci's lock_screen.looks line: $(value settings_file)"
 	# The part card (M5.10c6c2): a click on the clock opens its card beside it,
 	# a click on Analog's segment makes the clock analog (lock-card.png is kept
 	# with the card over the lock), Escape closes the card and the edit mode
@@ -4013,9 +4015,9 @@ case_lock_edit() {
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies after the card: $places"
 	set -- $done_at
-	written=$(count 'edel-shell-ui: lock editor done, lock_screen.parts written')
+	written=$(count 'edel-shell-ui: lock editor done, lock_screen.looks written')
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_more 'edel-shell-ui: lock editor done, lock_screen.parts written' "$written" ||
+	wait_more 'edel-shell-ui: lock editor done, lock_screen.looks written' "$written" ||
 		fail "Done did not write the clock's face: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
 	value settings_file | grep -q 'face = "analog"' ||
@@ -4069,19 +4071,19 @@ case_lock_edit() {
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies for the look: $places"
 	set -- $done_at
-	looked=$(count 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out')
+	looked=$(count 'edel-shell-ui: lock editor done, lock_screen.look written')
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_more 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out' "$looked" ||
-		fail "Done did not write the look and take the parts out: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	wait_more 'edel-shell-ui: lock editor done, lock_screen.look written' "$looked" ||
+		fail "Done did not write the look: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
-	value settings_file | grep -q 'parts = ' &&
+	value settings_file | grep -q '^parts = ' &&
 		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog; a right click on the lock asked for the edit, ci's password opened it, the Looks tab chose Magazine and Done wrote look = magazine with no parts line"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, which Done saved as the look classic-2, used by the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done saved face = analog into classic-2; a right click on the lock asked for the edit, ci's password opened it, the Looks tab chose Magazine and Done wrote look = magazine with no parts line"
 }
 
 case_scheme() {
