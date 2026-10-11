@@ -706,6 +706,11 @@ fn load_tokens(scheme: Scheme) -> Tokens {
     for note in notes {
         eprintln!("edel-shell-ui: {}: {note}", tokens::PATH);
     }
+    // The text the panel draws with (M5.12b5), for CI's desktop test.
+    eprintln!(
+        "edel-shell-ui: text {} at {} px",
+        tokens.font, tokens.panel_text_size
+    );
     tokens
 }
 

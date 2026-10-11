@@ -27,6 +27,10 @@
 #               border, sent to the VM, tiles foot and one 12 px apart as
 #               frames, with one's red border; tiling off and shape default
 #               put the release's shape back (M5.12b2b)
+#   text        appearance.text_size = 150 scales the title bars' and the
+#               panel's text by half, rounded half up, the title font is
+#               changed to Noto Sans and then to a font this system lacks
+#               (kept), and text default brings the release's back (M5.12b5)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -287,6 +291,14 @@ token() {
 	title_bar_focused) focused_bar "${2:-colour.light}" ;;
 	*) raw_token "$@" ;;
 	esac
+}
+
+# size_token NAME: the size NAME as design/tokens.toml's [size] table writes it.
+size_token() {
+	awk -v key="$1" '
+		/^\[/ { here = ($1 == "[size]"); next }
+		here && $1 == key { print $3; exit }
+	' design/tokens.toml
 }
 
 # raw_token NAME [TABLE]: the token NAME as design/tokens.toml writes it.
@@ -4347,6 +4359,40 @@ case_shape() {
 	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$shaped" ||
 		fail "the compositor did not go back to shape gaps 8/8, border 1 after shape default"
 	echo "PASS: appearance.gaps 12 and border_width 3 put foot and one 12 px apart as frames with a 3 px border, one's red focused border at $edge_x,$edge_y, and shape default gave the release's shape back"
+}
+
+case_text() {
+	# The text (M5.12b5), through the machine's settings file as Settings
+	# writes it: appearance.text_size = 150 scales every size of letters by
+	# half, rounded half up, so the title font and shell-ui's panel text are
+	# drawn at the sizes the tokens give at 150 percent (computed here from
+	# design/tokens.toml, not written). The title font then changes to Noto
+	# Sans; a family this system lacks (Nonesuch) keeps Noto Sans, logged;
+	# text default brings the release's font and size back.
+	title=$(size_token title_text)
+	panel=$(size_token panel_text)
+	wanted_title=$(((title * 150 + 50) / 100))
+	wanted_panel=$(((panel * 150 + 50) / 100))
+	guest 'text size 150'
+	wait_for 'DESKTOP-TEST: ran text size 150: 0' ||
+		fail "edel settings set appearance.text_size=150 did not run in the VM"
+	wait_for "edel-compositor: text Inter Variable at $wanted_title px" ||
+		fail "the compositor did not draw its title bars at $wanted_title px after text size 150: $(count 'edel-compositor: text')"
+	wait_for "edel-shell-ui: text Inter Variable at $wanted_panel px" ||
+		fail "shell-ui did not draw its panel text at $wanted_panel px after text size 150"
+	python3 ci/qmp.py screendump "$dir/text-150.png"
+	guest 'text font Noto Sans'
+	wait_for 'edel-compositor: text Noto Sans at' ||
+		fail "the compositor did not load Noto Sans for the title bars: $(count 'edel-compositor: no font')"
+	guest 'text font Nonesuch'
+	wait_for 'no font called "Nonesuch"' ||
+		fail "the compositor did not say it has no font called Nonesuch"
+	wait_for 'title bars keep "Noto Sans"' ||
+		fail "the title bars did not keep Noto Sans after Nonesuch"
+	guest 'text default'
+	wait_for "edel-compositor: text Inter Variable at $title px" ||
+		fail "text default did not bring the release's title font and size back"
+	echo "PASS: text size 150 drew the title bars at $wanted_title px and shell-ui's panel text at $wanted_panel px (text-150.png), text font Noto Sans took the title font, Nonesuch kept Noto Sans, and text default gave Inter Variable at $title px back"
 }
 
 case_styles() {
