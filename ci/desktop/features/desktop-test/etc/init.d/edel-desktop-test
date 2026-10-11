@@ -299,6 +299,9 @@ commands() {
 		# The mode the panel's Dark style tile wrote to ci's own file
 		# (M5.9a), taken out again.
 		'scheme mine default') as_ci "sed -i '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The wallpaper the Wallpaper group's card wrote to ci's own file
+		# (M5.10c4c), taken out again.
+		'wallpaper mine default') as_ci "sed -i '/^wallpaper = /d' /home/ci/.config/edel/$settings_name" ;;
 		# The sound system's volume (M5.9a): the default output at 20
 		# percent, for the quick settings slider to start from.
 		'volume 20') as_ci wpctl set-volume @DEFAULT_AUDIO_SINK@ 20% ;;
@@ -502,6 +505,12 @@ commands() {
 			as_ci edel-settings --page appearance.mode </dev/null >/tmp/settings-appearance.log 2>&1 &
 			;;
 		'settings appearance log') say "settings_appearance_log $(tr '\n' ';' </tmp/settings-appearance.log 2>/dev/null)" ;;
+		# Settings' Wallpaper group (M5.10c4c): opened by the name of the
+		# wallpaper row's page, its log says where each card lies.
+		'settings wallpaper')
+			as_ci edel-settings --page appearance.wallpaper </dev/null >/tmp/settings-wallpaper.log 2>&1 &
+			;;
+		'settings wallpaper log') say "settings_wallpaper_log $(tr '\n' ';' </tmp/settings-wallpaper.log 2>/dev/null)" ;;
 		'settings workspaces log') say "settings_workspaces_log $(tr '\n' ';' </tmp/settings-workspaces.log 2>/dev/null)" ;;
 		# The apps widget's pins (M5.31d): ci's own file with one dock along
 		# the bottom holding the apps widget, and two pins, terminal and
