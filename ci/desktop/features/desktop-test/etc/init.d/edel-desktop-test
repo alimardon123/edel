@@ -302,6 +302,11 @@ commands() {
 		'wallpaper pair') edel settings set "appearance.wallpaper=${share_dir}/wallpapers/ci-light.png" "appearance.wallpaper_dark=${share_dir}/wallpapers/ci-dark.png" appearance.mode=dark ;;
 		'wallpaper pair light') edel settings set appearance.mode=light ;;
 		'wallpaper pair reset') edel settings reset appearance.wallpaper_dark appearance.mode ;;
+		# The accent and the colours (M5.12b1): red for the accent, a light
+		# panel colour, and both taken out again, the whole table with them.
+		'accent red') edel settings set appearance.accent=#ff0000 ;;
+		'panel colour') edel settings set appearance.colours.light.panel=#d8e0f0 ;;
+		'colours default') edel settings reset appearance.accent appearance.colours ;;
 		# The mode the panel's Dark style tile wrote to ci's own file
 		# (M5.9a), taken out again.
 		'scheme mine default') as_ci "sed -i '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;

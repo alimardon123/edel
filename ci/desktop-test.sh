@@ -3544,6 +3544,55 @@ case_scheme() {
 	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default"
 }
 
+case_accent() {
+	# The accent and the colours (M5.12b1): appearance.accent=#ff0000
+	# turns the switcher's shown pill and the portal's accent red, and
+	# appearance.colours.light.panel the panel's colour, at once; reset
+	# takes both back. Kept as accent-red.png, panel-colour.png and
+	# colours-default.png.
+	# Super+1 shows the first workspace, whose pill lies at x + 29.
+	python3 ci/qmp.py key meta_l-1
+	# Counted before the change, so a line logged at once is not missed.
+	said=$(count 'edel-compositor: accent #ff0000')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	placed=$(count 'edel-shell-ui: panel places')
+	guest 'accent red'
+	wait_more 'edel-compositor: accent #ff0000' "$said" ||
+		fail "appearance.accent=#ff0000 did not reach the compositor's log"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for the new accent"
+	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: panel places' "$placed" ||
+		fail "shell-ui did not lay its panel out again after the restart"
+	place=$(panel_places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	[ -n "$place" ] || fail "shell-ui did not say where the workspace switcher lies"
+	shot accent-red $((place + 29)) 780 ff0000 >/dev/null ||
+		fail "the switcher's shown pill at $((place + 29)),780 is not red after appearance.accent=#ff0000"
+	asked=$(count 'DESKTOP-TEST: portal accent-color ')
+	guest 'portal read'
+	wait_more 'DESKTOP-TEST: portal accent-color ' "$asked" 60 || fail "the service did not hear back from the portal"
+	accent=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: portal accent-color //p' | tail -n 1)
+	case "$accent" in
+	*"(1.0, 0.0, 0.0)"*) ;;
+	*) fail "the portal's accent is not red after appearance.accent=#ff0000: $accent" ;;
+	esac
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'panel colour'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for the panel colour"
+	shot panel-colour 640 790 d8e0f0 >/dev/null ||
+		fail "the panel at 640,790 is not d8e0f0 after appearance.colours.light.panel"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'colours default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui after the colours were taken out"
+	shot colours-default 640 790 "$(token panel)" >/dev/null ||
+		fail "the panel at 640,790 is not the light panel #$(token panel) after reset"
+	shot colours-default-accent $((place + 29)) 780 "$(token accent)" >/dev/null ||
+		fail "the switcher's shown pill is not the light accent #$(token accent) after reset"
+	echo "PASS: appearance.accent=#ff0000 turned the workspace pill and the portal's accent red and appearance.colours.light.panel the panel's colour, at once; reset brought both back"
+}
+
 case_wallpaper() {
 	# The wallpaper (M5.10c4b): appearance.wallpaper set to the test
 	# picture (160x100, its left half #c0563a, its right half #3a8fc0)

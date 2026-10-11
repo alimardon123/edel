@@ -10,7 +10,9 @@ use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
 use crate::i18n::{tr, trf};
-use crate::settings::Colours;
+use crate::settings::{self, Colours, SettingsFile};
+#[cfg(feature = "pictures")]
+use crate::wallpapers::{self, Wallpaper};
 
 /// Where a machine may keep tokens of its own, which take the built-in
 /// ones' place; no image ships one yet, so the parts draw with these.
@@ -122,6 +124,105 @@ pub fn load_with(
     let (tokens, more) = tokens.with_appearance(accent, colours, scheme, from_wallpaper);
     notes.extend(more);
     (tokens, notes)
+}
+
+/// The tokens of `scheme` with the person's appearance from two settings
+/// files' texts (M5.12b1): the accent the person's file names, else the
+/// machine's; the colours laid over by [`settings::colours_over`]. A file
+/// that does not read counts as absent, and what is wrong in the tokens
+/// comes back as notes, as [`load_with`] gives them.
+pub fn load_from_files(
+    scheme: Scheme,
+    machine: Option<&str>,
+    person: Option<&str>,
+    from_wallpaper: Option<Colour>,
+) -> (Tokens, Vec<String>) {
+    let (machine, person) = (read_file(machine), read_file(person));
+    let accent = accent_between(machine.as_ref(), person.as_ref());
+    let colours = settings::colours_over(
+        machine.as_ref().and_then(|f| f.appearance.colours.as_ref()),
+        person.as_ref().and_then(|f| f.appearance.colours.as_ref()),
+    );
+    load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper)
+}
+
+/// A settings file's text read leniently; none when there is no text or
+/// the text is not a file this release reads (M5.12b1).
+fn read_file(text: Option<&str>) -> Option<SettingsFile> {
+    settings::read(text?).ok().map(|read| read.file)
+}
+
+/// The accent the person's file names, else the machine's (M5.12b1).
+fn accent_between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Option<String> {
+    person
+        .and_then(|file| file.appearance.accent.clone())
+        .or_else(|| machine.and_then(|file| file.appearance.accent.clone()))
+}
+
+/// The tokens of `scheme` as this machine's people see them (M5.12b1): the
+/// machine's and the person's settings files, found through
+/// [`crate::places`], and, when the accent is `wallpaper`, the colour of
+/// the wallpaper in that scheme. Every reader on a machine calls this one
+/// function, so the compositor, shell-ui and Settings show the same colours.
+pub fn on_this_machine(scheme: Scheme) -> (Tokens, Vec<String>) {
+    let machine = text_at(&crate::places::machine_settings());
+    let person = crate::places::person_settings().and_then(|path| text_at(&path));
+    #[cfg(feature = "pictures")]
+    let from_wallpaper = wallpaper_accent(scheme, machine.as_deref(), person.as_deref());
+    #[cfg(not(feature = "pictures"))]
+    let from_wallpaper = None;
+    load_from_files(
+        scheme,
+        machine.as_deref(),
+        person.as_deref(),
+        from_wallpaper,
+    )
+}
+
+/// The text of the settings file at `path`, or of the former name it had,
+/// when one reads (M5.12b1).
+fn text_at(path: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(crate::places::found(path)).ok()
+}
+
+/// The accent a wallpaper gives in `scheme` (M5.12b1), when the accent is
+/// `wallpaper`: the colour of the picture the wallpaper names there, read
+/// by [`crate::pictures::accent_of`] and fitted to read as an accent by
+/// [`accent_for`]; a colour wallpaper's colour, fitted the same way; none
+/// for no picture, which leaves the release's accent.
+#[cfg(feature = "pictures")]
+fn wallpaper_accent(scheme: Scheme, machine: Option<&str>, person: Option<&str>) -> Option<Colour> {
+    let (machine, person) = (read_file(machine), read_file(person));
+    if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT) {
+        return None;
+    }
+    let over = |key: fn(&SettingsFile) -> Option<&String>| {
+        person
+            .as_ref()
+            .and_then(key)
+            .or_else(|| machine.as_ref().and_then(key))
+            .map(String::as_str)
+    };
+    let dark = scheme == Scheme::Dark;
+    let value = wallpapers::value_for(
+        over(|f| f.appearance.wallpaper.as_ref()),
+        over(|f| f.appearance.wallpaper_dark.as_ref()),
+        dark,
+    );
+    let panel = load(scheme).0;
+    let colour = match wallpapers::on_this_machine(value, dark) {
+        Wallpaper::Background => None,
+        Wallpaper::Colour(colour) => Some(colour),
+        Wallpaper::Picture(path) => crate::pictures::accent_of(&path),
+    };
+    colour.map(|colour| accent_for(colour, &panel))
+}
+
+/// A colour fitted to read as an accent on the panel: [`nearest_passing`]
+/// of it against the panel at [`MARK_CONTRAST`], so a wallpaper's colour
+/// always reads as an accent (M5.12b1).
+pub fn accent_for(colour: Colour, tokens: &Tokens) -> Colour {
+    nearest_passing(colour, tokens.panel, MARK_CONTRAST)
 }
 
 /// The accent a file names to take the wallpaper's colour (M5.12b1).
@@ -276,7 +377,7 @@ pub fn nearest_passing(colour: Colour, on: Colour, ratio: f32) -> Colour {
 }
 
 /// A colour as hue (0 to 1), saturation and lightness (each 0 to 1).
-fn to_hsl(colour: Colour) -> (f32, f32, f32) {
+pub(crate) fn to_hsl(colour: Colour) -> (f32, f32, f32) {
     let max = colour.r.max(colour.g).max(colour.b);
     let min = colour.r.min(colour.g).min(colour.b);
     let lightness = (max + min) / 2.0;
@@ -1444,5 +1545,35 @@ mod tests {
         let (tokens, notes) = load_with(Scheme::Light, Some("red"), None, None);
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(tokens.accent.hex(), "#d0363f");
+    }
+
+    #[test]
+    fn the_persons_accent_wins_over_the_machines() {
+        let machine = Some("format = 1\n[appearance]\naccent = \"red\"\n");
+        let person = Some("format = 1\n[appearance]\naccent = \"green\"\n");
+        let (both, _) = load_from_files(Scheme::Light, machine, person, None);
+        assert_eq!(both.accent, accent_named("green", Scheme::Light).unwrap());
+        let (only, _) = load_from_files(Scheme::Light, machine, None, None);
+        assert_eq!(only.accent, accent_named("red", Scheme::Light).unwrap());
+    }
+
+    #[test]
+    fn colours_are_merged_name_by_name_across_the_two_files() {
+        let machine = Some(
+            "format = 1\n[appearance.colours]\npanel = \"#112233\"\n[appearance.colours.dark]\npanel = \"#000001\"\n",
+        );
+        let person = Some("format = 1\n[appearance.colours]\nwindow = \"#445566\"\n");
+        let (tokens, notes) = load_from_files(Scheme::Light, machine, person, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.panel.hex(), "#112233");
+        assert_eq!(tokens.window.hex(), "#445566");
+    }
+
+    #[test]
+    fn a_broken_persons_file_reads_as_absent() {
+        let machine = Some("format = 1\n[appearance]\naccent = \"red\"\n");
+        let (tokens, notes) = load_from_files(Scheme::Light, machine, Some("not = [toml"), None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.accent, accent_named("red", Scheme::Light).unwrap());
     }
 }

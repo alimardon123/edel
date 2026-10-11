@@ -84,6 +84,12 @@ pub struct Settings {
     /// `appearance.wallpaper_dark` (M5.10c4d): what lies behind the windows
     /// in dark mode, when it differs; `edel::wallpapers::value_for` picks.
     pub wallpaper_dark: Option<String>,
+    /// `appearance.accent` (M5.12b1), the person's over the machine's; the
+    /// tokens follow it, read by `edel::tokens::on_this_machine`.
+    pub accent: Option<String>,
+    /// `appearance.colours` (M5.12b1), the person's over the machine's name
+    /// by name; the tokens follow it, read by `edel::tokens::on_this_machine`.
+    pub colours: Option<edel::settings::Colours>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -179,6 +185,13 @@ impl Settings {
                     .wallpaper_dark
                     .clone_from(&file.appearance.wallpaper_dark);
             }
+            if file.appearance.accent.is_some() {
+                settings.accent.clone_from(&file.appearance.accent);
+            }
+            settings.colours = edel::settings::colours_over(
+                settings.colours.as_ref(),
+                file.appearance.colours.as_ref(),
+            );
             settings.shortcuts.extend(file.shortcuts.clone());
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);

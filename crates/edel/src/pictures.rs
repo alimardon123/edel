@@ -9,6 +9,8 @@ use std::path::Path;
 
 use tiny_skia::{FilterQuality, IntSize, Pixmap, PixmapPaint};
 
+use crate::tokens::{Colour, to_hsl};
+
 /// The scale and the x and y offsets, in pixels of the screen, that make a
 /// picture of `src` pixels fill `screen` keeping its proportions, centred
 /// and cropping the excess (CSS `object-fit: cover`).
@@ -146,6 +148,53 @@ pub fn box_blur(values: &mut [f32], w: usize, h: usize, radius: usize) {
     pass(values, h, w, &|col, row| row * w + col);
 }
 
+/// The side, in pixels, a picture is read at to find its accent (M5.12b1):
+/// small enough to be quick, large enough that a stripe of colour shows.
+pub const ACCENT_SIDE: u32 = 64;
+
+/// The share of a picture's pixels, the most saturated ones, whose mean is
+/// its accent: a fifth (M5.12b1).
+pub const ACCENT_SHARE: f32 = 0.2;
+
+/// The saturation under which a mean reads as grey, so the picture has no
+/// accent (M5.12b1).
+pub const ACCENT_GREY: f32 = 0.15;
+
+/// The accent of the picture at `path` (M5.12b1): the mean colour of its
+/// most saturated fifth of pixels, read at [`ACCENT_SIDE`] square through
+/// [`load`]. None when the picture does not read or that mean is grey
+/// (saturation under [`ACCENT_GREY`]). The caller fits it with
+/// [`crate::tokens::accent_for`].
+pub fn accent_of(path: &Path) -> Option<Colour> {
+    let picture = load(path, (ACCENT_SIDE, ACCENT_SIDE)).ok()?;
+    let mut ranked: Vec<(f32, Colour)> = picture
+        .pixels()
+        .iter()
+        .map(|p| {
+            let colour = Colour {
+                r: f32::from(p.red()) / 255.0,
+                g: f32::from(p.green()) / 255.0,
+                b: f32::from(p.blue()) / 255.0,
+                a: 1.0,
+            };
+            (to_hsl(colour).1, colour)
+        })
+        .collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let taken = ((ranked.len() as f32 * ACCENT_SHARE).ceil() as usize).max(1);
+    let count = taken as f32;
+    let (r, g, b) = ranked[..taken].iter().fold((0.0, 0.0, 0.0), |sum, (_, c)| {
+        (sum.0 + c.r, sum.1 + c.g, sum.2 + c.b)
+    });
+    let mean = Colour {
+        r: r / count,
+        g: g / count,
+        b: b / count,
+        a: 1.0,
+    };
+    (to_hsl(mean).1 >= ACCENT_GREY).then_some(mean)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,6 +239,44 @@ mod tests {
         let right = pixel(17, 10);
         assert!(left[0] > 200 && left[2] < 60, "left is red: {left:?}");
         assert!(right[2] > 200 && right[0] < 60, "right is blue: {right:?}");
+    }
+
+    #[test]
+    fn a_picture_half_saturated_red_has_a_red_accent() {
+        let path = std::env::temp_dir().join(format!("edel-accent-red-{}.png", std::process::id()));
+        let (w, h) = (40u32, 40u32);
+        let mut picture = Pixmap::new(w, h).unwrap();
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y * w + x) * 4) as usize;
+                let rgba = if y < 20 {
+                    [255, 0, 0, 255]
+                } else {
+                    [128, 128, 128, 255]
+                };
+                picture.data_mut()[i..i + 4].copy_from_slice(&rgba);
+            }
+        }
+        picture.save_png(&path).unwrap();
+        let accent = accent_of(&path);
+        let _ = std::fs::remove_file(&path);
+        let accent = accent.expect("a half red picture has an accent");
+        assert!(
+            accent.r > 0.9 && accent.g < 0.1 && accent.b < 0.1,
+            "{accent:?}"
+        );
+    }
+
+    #[test]
+    fn an_all_grey_picture_has_no_accent() {
+        let path =
+            std::env::temp_dir().join(format!("edel-accent-grey-{}.png", std::process::id()));
+        let mut picture = Pixmap::new(20, 20).unwrap();
+        picture.fill(tiny_skia::Color::from_rgba8(120, 120, 120, 255));
+        picture.save_png(&path).unwrap();
+        let accent = accent_of(&path);
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(accent, None);
     }
 
     #[test]
