@@ -5,7 +5,9 @@
 //! own, the look is `style.rs`'s from the tokens, and another toolkit
 //! would be these few functions again (ADR-004).
 
+use std::cell::Cell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib, graphene};
@@ -980,6 +982,41 @@ impl Choice {
 
 /// The space left above a group the page scrolls to, in logical pixels.
 const SCROLL_MARGIN: f64 = 24.0;
+
+/// `child` in a box that tells `fold` whether it is narrower than the
+/// window's breakpoint (`crate::NARROW_SP`), once at the start and again
+/// each time that changes, so a group can lay itself out for the width it
+/// is given. Not an `adw::BreakpointBin`: that has no height of its own,
+/// so on a page taller than the window GTK gave it none and the group did
+/// not show (the Shape sliders and the Lock screen's card, 2026-10-11).
+/// The width is read by a drawing area over the child that draws nothing
+/// and takes no clicks; a change is laid out after the frame that saw it.
+pub fn folding(child: &impl IsA<gtk::Widget>, fold: impl Fn(bool) + 'static) -> gtk::Overlay {
+    let overlay = gtk::Overlay::builder().hexpand(true).child(child).build();
+    let sensor = gtk::DrawingArea::builder()
+        .can_target(false)
+        .can_focus(false)
+        .build();
+    overlay.add_overlay(&sensor);
+    overlay.set_measure_overlay(&sensor, false);
+    let narrow: Rc<Cell<Option<bool>>> = Rc::new(Cell::new(None));
+    let fold = Rc::new(fold);
+    sensor.connect_resize(move |area, width, _| {
+        // sp follows the text size the person chose, as the window's does.
+        let dpi = area.settings().gtk_xft_dpi();
+        let scale = if dpi > 0 {
+            f64::from(dpi) / (96.0 * 1024.0)
+        } else {
+            1.0
+        };
+        let now = f64::from(width) < crate::NARROW_SP * scale;
+        if narrow.replace(Some(now)) != Some(now) {
+            let fold = fold.clone();
+            glib::idle_add_local_once(move || fold(now));
+        }
+    });
+    overlay
+}
 
 /// Scrolls the page so `widget` lies near the top of its view (M5.31d, M5.2n):
 /// a group asked for by name is shown whole, its heading first, even on a
