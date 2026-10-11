@@ -365,8 +365,16 @@ commands() {
 		# The speed (M5.12b4) and the feel, as a percent and a curve name.
 		'motion speed '*) edel settings set "appearance.animation_speed=${command#motion speed }" ;;
 		'motion curve '*) edel settings set "appearance.animation_curve=${command#motion curve }" ;;
+		# Each key the case may have set is taken out on its own: reset
+		# refuses a key that is not in the file ("nothing to reset"),
+		# which here only means it was never set.
 		'motion default')
-			edel settings reset appearance.animations appearance.animation_speed appearance.animation_curve
+			for key in appearance.animations appearance.animation_speed appearance.animation_curve; do
+				said=$(edel settings reset "$key" 2>&1) || case "$said" in
+					*'nothing to reset'*) ;;
+					*) echo "$said" >&2; false ;;
+				esac
+			done
 			;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
