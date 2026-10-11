@@ -55,8 +55,9 @@ use crate::style::Theme;
 /// holds them together).
 pub const APP_ID: &str = "io.github.alimardon123.edel.Settings";
 
-/// Below this width the sidebar folds away.
-pub(crate) const NARROW: &str = "max-width: 600sp";
+/// Below this width, in sp, the sidebar folds away, and a group that lays
+/// itself out narrow folds too (`widgets::folding`).
+pub(crate) const NARROW_SP: f64 = 600.0;
 
 /// The sidebar's width, in logical pixels, as the mockups draw it.
 const SIDEBAR: f64 = 204.0;
@@ -604,7 +605,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         .height_request(300)
         .child(&split)
         .build();
-    if let Ok(condition) = adw::BreakpointCondition::parse(NARROW) {
+    if let Ok(condition) = adw::BreakpointCondition::parse(&format!("max-width: {NARROW_SP}sp")) {
         let narrow = adw::Breakpoint::new(condition);
         narrow.add_setter(&split, "collapsed", Some(&true.to_value()));
         bin.add_breakpoint(narrow);

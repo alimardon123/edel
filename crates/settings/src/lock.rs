@@ -935,21 +935,16 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .build();
     current.append(&frame);
     current.append(&words);
-    let bin = adw::BreakpointBin::builder()
-        .hexpand(true)
-        .child(&current)
-        .build();
-    // The page's narrow breakpoint, as the window's: the card is what it
+    // The page's narrow width, as the window's: the card is what it
     // measures, and at that width it stacks.
-    if let Ok(condition) = adw::BreakpointCondition::parse(crate::NARROW) {
-        let narrow = adw::Breakpoint::new(condition);
-        narrow.add_setter(
-            &current,
-            "orientation",
-            Some(&gtk::Orientation::Vertical.to_value()),
-        );
-        bin.add_breakpoint(narrow);
-    }
+    let card = current.clone();
+    let bin = widgets::folding(&current, move |narrow| {
+        card.set_orientation(if narrow {
+            gtk::Orientation::Vertical
+        } else {
+            gtk::Orientation::Horizontal
+        });
+    });
     content.append(&bin);
 
     let looks = gtk::FlowBox::builder()
