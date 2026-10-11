@@ -129,7 +129,7 @@ fn session_log() {
 }
 
 fn load_tokens() -> Tokens {
-    let (tokens, notes) = tokens::load(tokens::Scheme::default());
+    let (tokens, notes) = tokens::on_this_machine(tokens::Scheme::default());
     for note in notes {
         eprintln!("edel-compositor: {}: {note}", tokens::PATH);
     }

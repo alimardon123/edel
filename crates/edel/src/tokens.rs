@@ -7,6 +7,12 @@
 
 use anyhow::{Context, Result, bail};
 use toml::{Table, Value};
+use toml_edit::DocumentMut;
+
+use crate::i18n::{tr, trf};
+use crate::settings::{self, Colours, SettingsFile};
+#[cfg(feature = "pictures")]
+use crate::wallpapers::{self, Wallpaper};
 
 /// Where a machine may keep tokens of its own, which take the built-in
 /// ones' place; no image ships one yet, so the parts draw with these.
@@ -106,6 +112,353 @@ pub fn load(scheme: Scheme) -> (Tokens, Vec<String>) {
     }
 }
 
+/// [`load`], then a person's appearance on top ([`Tokens::with_appearance`],
+/// M5.12b1); the notes of both.
+pub fn load_with(
+    scheme: Scheme,
+    accent: Option<&str>,
+    colours: Option<&Colours>,
+    from_wallpaper: Option<Colour>,
+) -> (Tokens, Vec<String>) {
+    let (tokens, mut notes) = load(scheme);
+    let (tokens, more) = tokens.with_appearance(accent, colours, scheme, from_wallpaper);
+    notes.extend(more);
+    (tokens, notes)
+}
+
+/// The tokens of `scheme` with the person's appearance from two settings
+/// files' texts (M5.12b1): the accent the person's file names, else the
+/// machine's; the colours laid over by [`settings::colours_over`]. A file
+/// that does not read counts as absent, and what is wrong in the tokens
+/// comes back as notes, as [`load_with`] gives them.
+pub fn load_from_files(
+    scheme: Scheme,
+    machine: Option<&str>,
+    person: Option<&str>,
+    from_wallpaper: Option<Colour>,
+) -> (Tokens, Vec<String>) {
+    let (machine, person) = (read_file(machine), read_file(person));
+    let accent = accent_between(machine.as_ref(), person.as_ref());
+    let colours = settings::colours_over(
+        machine.as_ref().and_then(|f| f.appearance.colours.as_ref()),
+        person.as_ref().and_then(|f| f.appearance.colours.as_ref()),
+    );
+    load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper)
+}
+
+/// A settings file's text read leniently; none when there is no text or
+/// the text is not a file this release reads (M5.12b1).
+fn read_file(text: Option<&str>) -> Option<SettingsFile> {
+    settings::read(text?).ok().map(|read| read.file)
+}
+
+/// The accent the person's file names, else the machine's (M5.12b1).
+fn accent_between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Option<String> {
+    person
+        .and_then(|file| file.appearance.accent.clone())
+        .or_else(|| machine.and_then(|file| file.appearance.accent.clone()))
+}
+
+/// The tokens of `scheme` as this machine's people see them (M5.12b1): the
+/// machine's and the person's settings files, found through
+/// [`crate::places`], and, when the accent is `wallpaper`, the colour of
+/// the wallpaper in that scheme. Every reader on a machine calls this one
+/// function, so the compositor, shell-ui and Settings show the same colours.
+pub fn on_this_machine(scheme: Scheme) -> (Tokens, Vec<String>) {
+    let machine = text_at(&crate::places::machine_settings());
+    let person = crate::places::person_settings().and_then(|path| text_at(&path));
+    #[cfg(feature = "pictures")]
+    let from_wallpaper = wallpaper_accent(scheme, machine.as_deref(), person.as_deref());
+    #[cfg(not(feature = "pictures"))]
+    let from_wallpaper = None;
+    load_from_files(
+        scheme,
+        machine.as_deref(),
+        person.as_deref(),
+        from_wallpaper,
+    )
+}
+
+/// The text of the settings file at `path`, or of the former name it had,
+/// when one reads (M5.12b1).
+fn text_at(path: &std::path::Path) -> Option<String> {
+    std::fs::read_to_string(crate::places::found(path)).ok()
+}
+
+/// The accent a wallpaper gives in `scheme` (M5.12b1), when the accent is
+/// `wallpaper`: the colour of the picture the wallpaper names there, read
+/// by [`crate::pictures::accent_of`] and fitted to read as an accent by
+/// [`accent_for`]; a colour wallpaper's colour, fitted the same way; none
+/// for no picture, which leaves the release's accent.
+#[cfg(feature = "pictures")]
+fn wallpaper_accent(scheme: Scheme, machine: Option<&str>, person: Option<&str>) -> Option<Colour> {
+    let (machine, person) = (read_file(machine), read_file(person));
+    if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT) {
+        return None;
+    }
+    let over = |key: fn(&SettingsFile) -> Option<&String>| {
+        person
+            .as_ref()
+            .and_then(key)
+            .or_else(|| machine.as_ref().and_then(key))
+            .map(String::as_str)
+    };
+    let dark = scheme == Scheme::Dark;
+    let value = wallpapers::value_for(
+        over(|f| f.appearance.wallpaper.as_ref()),
+        over(|f| f.appearance.wallpaper_dark.as_ref()),
+        dark,
+    );
+    let panel = load(scheme).0;
+    let colour = match wallpapers::on_this_machine(value, dark) {
+        Wallpaper::Background => None,
+        Wallpaper::Colour(colour) => Some(colour),
+        Wallpaper::Picture(path) => crate::pictures::accent_of(&path),
+    };
+    colour.map(|colour| accent_for(colour, &panel))
+}
+
+/// A colour fitted to read as an accent on the panel: [`nearest_passing`]
+/// of it against the panel at [`MARK_CONTRAST`], so a wallpaper's colour
+/// always reads as an accent (M5.12b1).
+pub fn accent_for(colour: Colour, tokens: &Tokens) -> Colour {
+    nearest_passing(colour, tokens.panel, MARK_CONTRAST)
+}
+
+/// The accent a file names to take the wallpaper's colour (M5.12b1).
+pub const WALLPAPER_ACCENT: &str = "wallpaper";
+
+/// `#rrggbb` as an opaque colour; none for anything else, as an accent is
+/// opaque (M5.12b1).
+fn opaque_colour(text: &str) -> Option<Colour> {
+    (text.len() == SIX_DIGIT_LEN)
+        .then(|| Colour::parse(text))
+        .flatten()
+}
+
+/// The length of `#rrggbb`, with its `#`.
+const SIX_DIGIT_LEN: usize = 7;
+
+/// The accents named in `design/tokens.toml`'s `[accent]` table, in the
+/// file's order, each with its light and its dark shade (M5.12b1). They
+/// are the release's: the names a person may pick are the built-in file's.
+pub fn accents() -> Vec<(String, Colour, Colour)> {
+    let doc: DocumentMut = BUILT_IN.parse().expect("checked by the tests");
+    let Some(table) = doc.get("accent").and_then(|item| item.as_table()) else {
+        return Vec::new();
+    };
+    table
+        .iter()
+        .filter_map(|(name, item)| {
+            let shade = |key: &str| item.as_table()?.get(key)?.as_str().and_then(Colour::parse);
+            Some((name.to_string(), shade("light")?, shade("dark")?))
+        })
+        .collect()
+}
+
+/// The shade of accent `name` in `scheme`, from [`accents`]; none when the
+/// release names no such accent (M5.12b1).
+pub fn accent_named(name: &str, scheme: Scheme) -> Option<Colour> {
+    accents()
+        .into_iter()
+        .find(|(accent, _, _)| accent == name)
+        .map(|(_, light, dark)| match scheme {
+            Scheme::Light => light,
+            Scheme::Dark => dark,
+        })
+}
+
+/// Whether `value` is an accent a person may choose: a name from
+/// [`accents`], `wallpaper` or `#rrggbb` (M5.12b1).
+pub fn is_accent(value: &str) -> bool {
+    value == WALLPAPER_ACCENT
+        || accents().iter().any(|(name, _, _)| name == value)
+        || opaque_colour(value).is_some()
+}
+
+/// WCAG 2's relative luminance weights for red, green and blue (M5.12b1).
+const RED_WEIGHT: f32 = 0.2126;
+const GREEN_WEIGHT: f32 = 0.7152;
+const BLUE_WEIGHT: f32 = 0.0722;
+/// WCAG 2's curve from an sRGB channel to linear light: a straight line
+/// below the cutoff, a power above it.
+const LINEAR_CUTOFF: f32 = 0.03928;
+const LINEAR_SLOPE: f32 = 12.92;
+const LINEAR_OFFSET: f32 = 0.055;
+const LINEAR_SCALE: f32 = 1.055;
+const LINEAR_GAMMA: f32 = 2.4;
+/// The amount WCAG 2 adds to both luminances before their ratio.
+const CONTRAST_FLARE: f32 = 0.05;
+
+/// Text needs this much contrast on its surface, WCAG 2's AA (M5.12b1).
+pub const TEXT_CONTRAST: f32 = 4.5;
+/// An icon, a focus ring or a filled control needs this much (M5.12b1).
+pub const MARK_CONTRAST: f32 = 3.0;
+
+/// The pairs the release holds to a contrast: (foreground token, surface
+/// token, ratio) (M5.12b1). The dimmed text of windows without the keyboard
+/// is left out on purpose, as WCAG leaves out inactive parts; the overview's
+/// light top is left out until M5.12b3's glass.
+pub const PAIRS: &[(&str, &str, f32)] = &[
+    ("panel_text", "panel", TEXT_CONTRAST),
+    ("title_text", "title_bar_focused", TEXT_CONTRAST),
+    ("title_text", "title_bar", TEXT_CONTRAST),
+    ("accent_text", "accent", TEXT_CONTRAST),
+    ("backdrop_text", "backdrop_deep", TEXT_CONTRAST),
+    ("backdrop_text", "lock_backdrop", TEXT_CONTRAST),
+    ("backdrop_text", "lock_backdrop_deep", TEXT_CONTRAST),
+    ("accent", "panel", MARK_CONTRAST),
+    ("accent", "window", MARK_CONTRAST),
+    ("accent", "card", MARK_CONTRAST),
+];
+
+/// How far apart two colours read, WCAG 2's contrast ratio, from 1 to 21;
+/// alpha is ignored (M5.12b1).
+pub fn contrast(a: Colour, b: Colour) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    let (light, dark) = if la >= lb { (la, lb) } else { (lb, la) };
+    (light + CONTRAST_FLARE) / (dark + CONTRAST_FLARE)
+}
+
+/// Tenths of a ratio, which a problem line shows: a ratio is rounded down,
+/// so a pair that fails never reads better than it is (M5.12b1).
+const TENTHS: f32 = 10.0;
+
+/// `ratio` rounded down to a tenth.
+fn shown_down(ratio: f32) -> f32 {
+    (ratio * TENTHS).floor() / TENTHS
+}
+
+/// A colour's relative luminance, from 0 (black) to 1 (white), WCAG 2's
+/// formula (M5.12b1).
+fn luminance(colour: Colour) -> f32 {
+    let linear = |channel: f32| {
+        if channel <= LINEAR_CUTOFF {
+            channel / LINEAR_SLOPE
+        } else {
+            ((channel + LINEAR_OFFSET) / LINEAR_SCALE).powf(LINEAR_GAMMA)
+        }
+    };
+    RED_WEIGHT * linear(colour.r) + GREEN_WEIGHT * linear(colour.g) + BLUE_WEIGHT * linear(colour.b)
+}
+
+/// How much one step changes a colour's lightness, and how many steps
+/// [`nearest_passing`] tries each way (M5.12b1): 1 percent, to 100 steps.
+const LIGHTNESS_STEP: f32 = 0.01;
+const MOST_LIGHTNESS_STEPS: u32 = 100;
+/// The six sectors of the colour wheel, and the hue of each sector's edge.
+const HUE_SECTORS: f32 = 6.0;
+
+/// `colour` made lighter or darker, whichever reaches `ratio` against `on`
+/// with the smaller change, in steps of 1 percent of lightness; `colour`
+/// itself when it already does (M5.12b1).
+pub fn nearest_passing(colour: Colour, on: Colour, ratio: f32) -> Colour {
+    if contrast(colour, on) >= ratio {
+        return colour;
+    }
+    let (hue, saturation, lightness) = to_hsl(colour);
+    for step in 1..=MOST_LIGHTNESS_STEPS {
+        let change = step as f32 * LIGHTNESS_STEP;
+        for target in [lightness - change, lightness + change] {
+            let candidate = from_hsl(hue, saturation, target.clamp(0.0, 1.0), colour.a);
+            if contrast(candidate, on) >= ratio {
+                return candidate;
+            }
+        }
+    }
+    // No colour in the steps reaches the ratio: the nearer of black and white.
+    let black = from_hsl(0.0, 0.0, 0.0, colour.a);
+    let white = from_hsl(0.0, 0.0, 1.0, colour.a);
+    if contrast(black, on) >= contrast(white, on) {
+        black
+    } else {
+        white
+    }
+}
+
+/// A colour as hue (0 to 1), saturation and lightness (each 0 to 1).
+pub(crate) fn to_hsl(colour: Colour) -> (f32, f32, f32) {
+    let max = colour.r.max(colour.g).max(colour.b);
+    let min = colour.r.min(colour.g).min(colour.b);
+    let lightness = (max + min) / 2.0;
+    let chroma = max - min;
+    if chroma == 0.0 {
+        return (0.0, 0.0, lightness);
+    }
+    let saturation = if lightness > 0.5 {
+        chroma / (2.0 - max - min)
+    } else {
+        chroma / (max + min)
+    };
+    let sector = if max == colour.r {
+        (colour.g - colour.b) / chroma
+            + if colour.g < colour.b {
+                HUE_SECTORS
+            } else {
+                0.0
+            }
+    } else if max == colour.g {
+        (colour.b - colour.r) / chroma + 2.0
+    } else {
+        (colour.r - colour.g) / chroma + 4.0
+    };
+    (sector / HUE_SECTORS, saturation, lightness)
+}
+
+/// The colour with a hue, saturation and lightness, and `alpha` (M5.12b1).
+fn from_hsl(hue: f32, saturation: f32, lightness: f32, alpha: f32) -> Colour {
+    if saturation == 0.0 {
+        return Colour {
+            r: lightness,
+            g: lightness,
+            b: lightness,
+            a: alpha,
+        };
+    }
+    let q = if lightness < 0.5 {
+        lightness * (1.0 + saturation)
+    } else {
+        lightness + saturation - lightness * saturation
+    };
+    let p = 2.0 * lightness - q;
+    let channel = |t: f32| {
+        let t = t.rem_euclid(1.0);
+        if t < 1.0 / HUE_SECTORS {
+            p + (q - p) * HUE_SECTORS * t
+        } else if t < 3.0 / HUE_SECTORS {
+            q
+        } else if t < 4.0 / HUE_SECTORS {
+            p + (q - p) * (4.0 / HUE_SECTORS - t) * HUE_SECTORS
+        } else {
+            p
+        }
+    };
+    Colour {
+        r: channel(hue + 2.0 / HUE_SECTORS),
+        g: channel(hue),
+        b: channel(hue - 2.0 / HUE_SECTORS),
+        a: alpha,
+    }
+}
+
+/// The text on an accent: whichever of the two schemes' `accent_text`
+/// reads better on it (M5.12b1).
+fn text_on(accent: Colour) -> Colour {
+    [
+        Tokens::built_in_scheme(Scheme::Light).accent_text,
+        Tokens::built_in().accent_text,
+    ]
+    .into_iter()
+    .reduce(|best, text| {
+        if contrast(text, accent) > contrast(best, accent) {
+            text
+        } else {
+            best
+        }
+    })
+    .unwrap_or(BLACK)
+}
+
 /// Where images keep GTK's colours from the tokens (M5.5b), which each
 /// person's `~/.config/gtk-4.0/gtk.css` imports.
 pub const GTK_CSS: &str = crate::places::GTK_CSS;
@@ -198,6 +551,176 @@ pub struct Tokens {
     pub text_size: u32,
     /// The interface font's family.
     pub font: String,
+}
+
+/// Every colour token by its name in `design/tokens.toml` (M5.12b1): one
+/// line here names each colour, and [`Tokens::colour`], `apply_colours` and
+/// `check` all read this one list, so a new colour token is one line.
+macro_rules! colour_tokens {
+    ($($name:ident),* $(,)?) => {
+        /// The names of the colour tokens, in the order the file lists them.
+        pub const COLOUR_NAMES: &[&str] = &[$(stringify!($name)),*];
+
+        impl Tokens {
+            /// The colour token called `name`; none for a name that is not one.
+            pub fn colour(&self, name: &str) -> Option<Colour> {
+                match name {
+                    $(stringify!($name) => Some(self.$name),)*
+                    _ => None,
+                }
+            }
+
+            /// The colour token called `name`, to change it.
+            fn slot(&mut self, name: &str) -> Option<&mut Colour> {
+                match name {
+                    $(stringify!($name) => Some(&mut self.$name),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+colour_tokens! {
+    background, title_bar, title_bar_focused, title_text, title_text_unfocused,
+    title_button_hover, title_close_hover, panel, panel_text, accent, shadow,
+    window, card, line, accent_text, edge, backdrop, backdrop_deep, backdrop_text,
+    lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
+    lock_glow_second,
+}
+
+impl Tokens {
+    /// These tokens with a person's appearance on top (M5.12b1): `accent`,
+    /// a named accent, a colour `#rrggbb`, or `wallpaper`, which takes
+    /// `from_wallpaper` when given and else keeps the release's; then
+    /// `colours`, any colour token by name, the shared ones first and the
+    /// scheme's own (`light` or `dark`) over them. The text on a changed
+    /// accent is whichever scheme's `accent_text` reads better on it.
+    /// Lenient (ADR-008): an unknown name or a bad value is noted and
+    /// skipped.
+    pub fn with_appearance(
+        mut self,
+        accent: Option<&str>,
+        colours: Option<&Colours>,
+        scheme: Scheme,
+        from_wallpaper: Option<Colour>,
+    ) -> (Tokens, Vec<String>) {
+        let mut notes = Vec::new();
+        if let Some(name) = accent {
+            let chosen = match name {
+                WALLPAPER_ACCENT => from_wallpaper,
+                _ => accent_named(name, scheme).or_else(|| opaque_colour(name)),
+            };
+            match chosen {
+                Some(colour) => {
+                    self.accent = colour;
+                    self.accent_text = text_on(colour);
+                }
+                None if name != WALLPAPER_ACCENT => notes.push(trf(
+                    "accent {name} is not an accent or a colour; the release's is used",
+                    &[("name", &format!("{name:?}"))],
+                )),
+                None => {}
+            }
+        }
+        if let Some(colours) = colours {
+            for (name, value) in &colours.both {
+                self.set_from_text(name, value, &mut notes);
+            }
+            let own = match scheme {
+                Scheme::Light => colours.light.as_ref(),
+                Scheme::Dark => colours.dark.as_ref(),
+            };
+            for (name, value) in own.into_iter().flatten() {
+                self.set_from_text(name, value, &mut notes);
+            }
+        }
+        (self, notes)
+    }
+
+    /// Sets the colour token `name` to the colour `value` reads as, or notes
+    /// why it cannot (M5.12b1).
+    fn set_from_text(&mut self, name: &str, value: &str, notes: &mut Vec<String>) {
+        let Some(slot) = self.slot(name) else {
+            notes.push(trf(
+                "colour {name} is not a colour token; it is ignored",
+                &[("name", &format!("{name:?}"))],
+            ));
+            return;
+        };
+        match Colour::parse(value) {
+            Some(colour) => *slot = colour,
+            None => notes.push(trf(
+                "colour {name} = {value} is not #rrggbb or #rrggbbaa; the release's is used",
+                &[
+                    ("name", &format!("{name:?}")),
+                    ("value", &format!("{value:?}")),
+                ],
+            )),
+        }
+    }
+
+    /// What the release's pairs fail to hold (M5.12b1), one line each, under
+    /// the ratio a pair needs: `panel_text #777777 on panel #888888 reads at
+    /// 1.2:1; text needs 4.5:1, such as #1a1a1a`, the suggestion being
+    /// [`nearest_passing`] of the foreground. Empty when every pair holds.
+    pub fn contrast_problems(&self) -> Vec<String> {
+        PAIRS
+            .iter()
+            .filter_map(|&(text, surface, ratio)| {
+                let foreground = self.colour(text)?;
+                let background = self.colour(surface)?;
+                let reads = contrast(foreground, background);
+                (reads < ratio).then(|| {
+                    let fix = nearest_passing(foreground, background, ratio);
+                    let what = if ratio >= TEXT_CONTRAST {
+                        tr("text")
+                    } else {
+                        tr("an icon or mark")
+                    };
+                    trf(
+                        "{name} {fg} on {surface} {bg} reads at {reads}:1; {what} needs {need}:1, such as {fix}",
+                        &[
+                            ("name", text),
+                            ("fg", &foreground.hex()),
+                            ("surface", surface),
+                            ("bg", &background.hex()),
+                            ("reads", &format!("{:.1}", shown_down(reads))),
+                            ("what", what),
+                            ("need", &format!("{ratio:.1}")),
+                            ("fix", &fix.hex()),
+                        ],
+                    )
+                })
+            })
+            .collect()
+    }
+}
+
+/// Each `[accent.NAME]` of the file has a `light` and a `dark` colour
+/// (M5.12b1); what is wrong is noted, and [`check`] refuses it.
+fn check_accents(accents: &Table, notes: &mut Vec<String>) {
+    for (name, shades) in accents {
+        let Some(shades) = shades.as_table() else {
+            notes.push(trf(
+                "accent.{name} is not a table of light and dark colours",
+                &[("name", name)],
+            ));
+            continue;
+        };
+        for shade in ["light", "dark"] {
+            let colour = shades
+                .get(shade)
+                .and_then(Value::as_str)
+                .and_then(Colour::parse);
+            if colour.is_none() {
+                notes.push(trf(
+                    "accent.{name}.{shade} needs a colour such as \"#2d6ae3\"",
+                    &[("name", name), ("shade", shade)],
+                ));
+            }
+        }
+    }
 }
 
 impl Tokens {
@@ -364,6 +887,7 @@ impl Tokens {
                 ("colour", Value::Table(colours)) => self.apply_colours(colours, notes),
                 ("size", Value::Table(sizes)) => self.apply_sizes(sizes, notes),
                 ("font", Value::Table(fonts)) => self.apply_fonts(fonts, notes),
+                ("accent", Value::Table(accents)) => check_accents(accents, notes),
                 (key, _) => notes.push(format!("unknown key {key} ignored")),
             }
         }
@@ -371,38 +895,13 @@ impl Tokens {
 
     fn apply_colours(&mut self, colours: &Table, notes: &mut Vec<String>) {
         for (key, value) in colours {
-            let slot = match key.as_str() {
-                // The light scheme's colours, read by `apply_light`.
-                "light" if value.is_table() => continue,
-                "background" => &mut self.background,
-                "title_bar" => &mut self.title_bar,
-                "title_bar_focused" => &mut self.title_bar_focused,
-                "title_text" => &mut self.title_text,
-                "title_text_unfocused" => &mut self.title_text_unfocused,
-                "title_button_hover" => &mut self.title_button_hover,
-                "title_close_hover" => &mut self.title_close_hover,
-                "panel" => &mut self.panel,
-                "panel_text" => &mut self.panel_text,
-                "accent" => &mut self.accent,
-                "shadow" => &mut self.shadow,
-                "window" => &mut self.window,
-                "card" => &mut self.card,
-                "line" => &mut self.line,
-                "accent_text" => &mut self.accent_text,
-                "edge" => &mut self.edge,
-                "backdrop" => &mut self.backdrop,
-                "backdrop_deep" => &mut self.backdrop_deep,
-                "backdrop_text" => &mut self.backdrop_text,
-                "lock_glass" => &mut self.lock_glass,
-                "lock_glass_edge" => &mut self.lock_glass_edge,
-                "lock_backdrop" => &mut self.lock_backdrop,
-                "lock_backdrop_deep" => &mut self.lock_backdrop_deep,
-                "lock_glow" => &mut self.lock_glow,
-                "lock_glow_second" => &mut self.lock_glow_second,
-                _ => {
-                    notes.push(format!("unknown key colour.{key} ignored"));
-                    continue;
-                }
+            // The light scheme's colours, read by `apply_light`.
+            if key == "light" && value.is_table() {
+                continue;
+            }
+            let Some(slot) = self.slot(key) else {
+                notes.push(format!("unknown key colour.{key} ignored"));
+                continue;
             };
             match value.as_str().and_then(Colour::parse) {
                 Some(colour) => *slot = colour,
@@ -482,36 +981,7 @@ impl Tokens {
 pub fn check(text: &str) -> Result<Tokens> {
     let table: Table = text.parse().context("parsing the tokens")?;
     for (section, keys) in [
-        (
-            "colour",
-            &[
-                "background",
-                "title_bar",
-                "title_bar_focused",
-                "title_text",
-                "title_text_unfocused",
-                "title_button_hover",
-                "title_close_hover",
-                "panel",
-                "panel_text",
-                "accent",
-                "shadow",
-                "window",
-                "card",
-                "line",
-                "accent_text",
-                "edge",
-                "backdrop",
-                "backdrop_deep",
-                "backdrop_text",
-                "lock_glass",
-                "lock_glass_edge",
-                "lock_backdrop",
-                "lock_backdrop_deep",
-                "lock_glow",
-                "lock_glow_second",
-            ][..],
-        ),
+        ("colour", COLOUR_NAMES),
         (
             "size",
             &[
@@ -852,5 +1322,258 @@ mod tests {
             err.to_string().contains("colour.title_text is missing"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn the_built_in_tokens_hold_every_pair_in_both_schemes() {
+        assert_eq!(Tokens::built_in().contrast_problems(), Vec::<String>::new());
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        assert_eq!(light.contrast_problems(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn every_named_accent_with_its_text_holds_every_pair_in_both_schemes() {
+        for (name, _, _) in accents() {
+            for scheme in [Scheme::Light, Scheme::Dark] {
+                let built = Tokens::built_in_scheme(scheme);
+                let (tokens, notes) = built.with_appearance(Some(&name), None, scheme, None);
+                assert!(notes.is_empty(), "{name}: {notes:?}");
+                assert_eq!(
+                    tokens.contrast_problems(),
+                    Vec::<String>::new(),
+                    "{name} in {scheme:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_pale_accent_fails_its_text_and_the_suggestion_passes() {
+        let mut tokens = Tokens::built_in_scheme(Scheme::Light);
+        tokens.accent = Colour::parse("#c0d0ff").unwrap();
+        let problems = tokens.contrast_problems();
+        let line = problems
+            .iter()
+            .find(|p| p.starts_with("accent_text "))
+            .expect("the pale accent fails its text");
+        let fix = nearest_passing(tokens.accent_text, tokens.accent, TEXT_CONTRAST);
+        assert!(
+            line.ends_with(&format!("text needs 4.5:1, such as {}", fix.hex())),
+            "{line}"
+        );
+        assert!(contrast(fix, tokens.accent) >= TEXT_CONTRAST);
+    }
+
+    #[test]
+    fn a_problem_names_both_colours_the_ratio_and_a_colour_that_passes() {
+        let mut tokens = Tokens::built_in_scheme(Scheme::Light);
+        tokens.panel_text = Colour::parse("#777777").unwrap();
+        tokens.panel = Colour::parse("#888888").unwrap();
+        let problems = tokens.contrast_problems();
+        let line = problems
+            .iter()
+            .find(|p| p.starts_with("panel_text "))
+            .expect("the grey text fails");
+        assert!(
+            line.starts_with(
+                "panel_text #777777 on panel #888888 reads at 1.2:1; text needs 4.5:1, such as #"
+            ),
+            "{line}"
+        );
+    }
+
+    #[test]
+    fn contrast_is_21_for_black_and_white_and_1_for_a_colour_with_itself() {
+        let black = Colour::parse("#000000").unwrap();
+        let white = Colour::parse("#ffffff").unwrap();
+        let panel = Colour::parse("#1a1c22").unwrap();
+        assert!((contrast(black, white) - 21.0).abs() < 1e-3);
+        assert!((contrast(white, black) - 21.0).abs() < 1e-3);
+        assert!((contrast(panel, panel) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn nearest_passing_keeps_a_colour_that_passes_and_darkens_one_that_does_not() {
+        let black = Colour::parse("#000000").unwrap();
+        let grey = Colour::parse("#888888").unwrap();
+        let text = Colour::parse("#777777").unwrap();
+        assert_eq!(nearest_passing(text, black, TEXT_CONTRAST), text);
+        let fixed = nearest_passing(text, grey, TEXT_CONTRAST);
+        assert!(contrast(fixed, grey) >= TEXT_CONTRAST, "{}", fixed.hex());
+        assert!(luminance(fixed) < luminance(text), "{}", fixed.hex());
+    }
+
+    #[test]
+    fn a_colour_token_is_read_and_named_by_one_list() {
+        let tokens = Tokens::built_in();
+        assert_eq!(COLOUR_NAMES.len(), 25);
+        for name in COLOUR_NAMES {
+            assert!(tokens.colour(name).is_some(), "{name}");
+        }
+        assert_eq!(tokens.colour("panel"), Some(tokens.panel));
+        assert_eq!(tokens.colour("panl"), None);
+    }
+
+    #[test]
+    fn the_accents_are_in_the_files_order_and_blue_is_the_release_accent() {
+        let names: Vec<String> = accents().into_iter().map(|(name, _, _)| name).collect();
+        assert_eq!(
+            names,
+            [
+                "blue", "purple", "pink", "red", "orange", "yellow", "green", "teal", "graphite"
+            ]
+        );
+        let (_, light, dark) = accents().remove(0);
+        assert_eq!(light, Tokens::built_in_scheme(Scheme::Light).accent);
+        assert_eq!(dark, Tokens::built_in().accent);
+    }
+
+    #[test]
+    fn a_named_accent_is_its_shade_in_each_scheme() {
+        assert_eq!(accent_named("red", Scheme::Light).unwrap().hex(), "#d0363f");
+        assert_eq!(accent_named("red", Scheme::Dark).unwrap().hex(), "#f2707a");
+        assert_eq!(accent_named("crimson", Scheme::Light), None);
+        assert!(is_accent("red") && is_accent("wallpaper") && is_accent("#ff0000"));
+        assert!(!is_accent("#ff000080") && !is_accent("crimson") && !is_accent("#ff00"));
+    }
+
+    #[test]
+    fn a_named_accent_takes_its_text_and_a_colour_takes_its_own() {
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        let (red, notes) = light
+            .clone()
+            .with_appearance(Some("red"), None, Scheme::Light, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(red.accent.hex(), "#d0363f");
+        assert_eq!(red.accent_text.hex(), "#ffffff");
+        let (hex, _) = light.with_appearance(Some("#ff0000"), None, Scheme::Light, None);
+        assert_eq!(hex.accent.hex(), "#ff0000");
+        let (dark, _) = Tokens::built_in().with_appearance(Some("red"), None, Scheme::Dark, None);
+        assert_eq!(dark.accent.hex(), "#f2707a");
+        assert_eq!(dark.accent_text.hex(), "#0b1220");
+    }
+
+    #[test]
+    fn the_wallpaper_accent_takes_the_pictures_colour_or_keeps_the_release_s() {
+        let built = Tokens::built_in_scheme(Scheme::Light);
+        let picture = Colour::parse("#336699").unwrap();
+        let (taken, _) =
+            built
+                .clone()
+                .with_appearance(Some("wallpaper"), None, Scheme::Light, Some(picture));
+        assert_eq!(taken.accent, picture);
+        let (kept, notes) =
+            built
+                .clone()
+                .with_appearance(Some("wallpaper"), None, Scheme::Light, None);
+        assert_eq!(kept.accent, built.accent);
+        assert!(notes.is_empty(), "{notes:?}");
+        let (_, notes) = built.with_appearance(Some("crimson"), None, Scheme::Light, None);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+    }
+
+    #[test]
+    fn colours_change_a_token_in_both_schemes_or_only_its_own() {
+        let shared = Colours {
+            both: std::collections::BTreeMap::from([("panel".into(), "#102030".into())]),
+            light: None,
+            dark: None,
+        };
+        let (light, notes) = Tokens::built_in_scheme(Scheme::Light).with_appearance(
+            None,
+            Some(&shared),
+            Scheme::Light,
+            None,
+        );
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(light.panel.hex(), "#102030");
+        let (dark, _) = Tokens::built_in().with_appearance(None, Some(&shared), Scheme::Dark, None);
+        assert_eq!(dark.panel.hex(), "#102030");
+        let own = Colours {
+            both: std::collections::BTreeMap::from([("panel".into(), "#102030".into())]),
+            light: None,
+            dark: Some(std::collections::BTreeMap::from([(
+                "panel".into(),
+                "#000000".into(),
+            )])),
+        };
+        let (dark, _) = Tokens::built_in().with_appearance(None, Some(&own), Scheme::Dark, None);
+        assert_eq!(dark.panel.hex(), "#000000");
+        let (light, _) = Tokens::built_in_scheme(Scheme::Light).with_appearance(
+            None,
+            Some(&own),
+            Scheme::Light,
+            None,
+        );
+        assert_eq!(light.panel.hex(), "#102030");
+    }
+
+    #[test]
+    fn an_unknown_colour_name_or_value_is_noted_and_skipped() {
+        let bad = Colours {
+            both: std::collections::BTreeMap::from([
+                ("panl".into(), "#ffffff".into()),
+                ("panel".into(), "red".into()),
+            ]),
+            light: None,
+            dark: None,
+        };
+        let (tokens, notes) =
+            Tokens::built_in().with_appearance(None, Some(&bad), Scheme::Dark, None);
+        assert_eq!(tokens, Tokens::built_in());
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes.iter().any(|n| n.contains("\"panl\"")), "{notes:?}");
+    }
+
+    #[test]
+    fn the_accent_table_wants_both_shades_as_colours() {
+        let without = BUILT_IN.replace(
+            "light = \"#2d6ae3\"\ndark = \"#5b8ef5\"",
+            "dark = \"#5b8ef5\"",
+        );
+        let err = format!("{:#}", check(&without).unwrap_err());
+        assert!(err.contains("accent.blue.light needs a colour"), "{err}");
+        let (_, notes) = Tokens::read(&BUILT_IN.replace("dark = \"#f2c94c\"", "dark = \"yellow\""));
+        assert!(
+            notes.iter().any(|n| n.contains("accent.yellow.dark")),
+            "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn load_with_gives_the_appearance_over_the_release() {
+        let (tokens, notes) = load_with(Scheme::Light, Some("red"), None, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.accent.hex(), "#d0363f");
+    }
+
+    #[test]
+    fn the_persons_accent_wins_over_the_machines() {
+        let machine = Some("format = 1\n[appearance]\naccent = \"red\"\n");
+        let person = Some("format = 1\n[appearance]\naccent = \"green\"\n");
+        let (both, _) = load_from_files(Scheme::Light, machine, person, None);
+        assert_eq!(both.accent, accent_named("green", Scheme::Light).unwrap());
+        let (only, _) = load_from_files(Scheme::Light, machine, None, None);
+        assert_eq!(only.accent, accent_named("red", Scheme::Light).unwrap());
+    }
+
+    #[test]
+    fn colours_are_merged_name_by_name_across_the_two_files() {
+        let machine = Some(
+            "format = 1\n[appearance.colours]\npanel = \"#112233\"\n[appearance.colours.dark]\npanel = \"#000001\"\n",
+        );
+        let person = Some("format = 1\n[appearance.colours]\nwindow = \"#445566\"\n");
+        let (tokens, notes) = load_from_files(Scheme::Light, machine, person, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.panel.hex(), "#112233");
+        assert_eq!(tokens.window.hex(), "#445566");
+    }
+
+    #[test]
+    fn a_broken_persons_file_reads_as_absent() {
+        let machine = Some("format = 1\n[appearance]\naccent = \"red\"\n");
+        let (tokens, notes) = load_from_files(Scheme::Light, machine, Some("not = [toml"), None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.accent, accent_named("red", Scheme::Light).unwrap());
     }
 }
