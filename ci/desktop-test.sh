@@ -3591,7 +3591,10 @@ case_lock_edit() {
 	# so 640,480 is its bottom third), and Done writes lock_screen.parts
 	# into ci's file. The
 	# next lock must place the clock at the top right and show a message.
-	# Kept as lock-editor.png, and the list is reset at the end.
+	# Kept as lock-editor.png, and the list is reset at the end. The part card
+	# (M5.10c6c2) is the last part: a click on the clock opens its card, a click
+	# on Analog makes the clock analog, Escape closes the card and Done writes
+	# it (lock-card.png is kept over the lock).
 	guest 'lock editor'
 	wait_for 'edel-shell-ui: lock editor shown' ||
 		fail "the lock screen's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
@@ -3670,10 +3673,50 @@ case_lock_edit() {
 	guest 'settings file'
 	[ "$(value settings_file | grep -o 'parts = [^;]*')" = "$parts_before" ] ||
 		fail "Escape changed ci's lock_screen.parts line: $(value settings_file)"
+	# The part card (M5.10c6c2): a click on the clock opens its card beside it,
+	# a click on Analog's segment makes the clock analog (lock-card.png is kept
+	# with the card over the lock), Escape closes the card and the edit mode
+	# stays open, and Done writes the face into ci's file.
+	opened=$(count 'edel-shell-ui: lock editor shown')
+	guest 'lock editor'
+	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
+		fail "the edit mode did not open for the clock's card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
+	set -- $clock
+	shown=$(count 'edel-shell-ui: lock editor card clock shown')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor card clock shown' "$shown" ||
+		fail "a click on the clock did not open its card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor card places ' | tail -n 1)
+	analog=$(echo "$places" | sed -n 's/.*, face_analog \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$analog" ] || fail "the clock's card does not say where Analog lies: $places"
+	set -- $analog
+	made=$(count 'edel-shell-ui: lock editor clock face analog')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor clock face analog' "$made" ||
+		fail "Analog did not make the clock analog: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-card.png"
+	hidden=$(count 'edel-shell-ui: lock editor card hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: lock editor card hidden' "$hidden" ||
+		fail "Escape did not close the card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies after the card: $places"
+	set -- $done_at
+	written=$(count 'edel-shell-ui: lock editor done, lock_screen.parts written')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor done, lock_screen.parts written' "$written" ||
+		fail "Done did not write the clock's face: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'face = "analog"' ||
+		fail "ci's settings file does not hold the clock's analog face: $(value settings_file)"
 	# Done wrote ci's own file, so the line is taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog"
 }
 
 case_scheme() {

@@ -42,6 +42,7 @@ use crate::lock::{self, Backdrops, Pictures};
 use crate::lock_editor::{self, Drag, Focus, From, Step};
 use crate::messages;
 use crate::paint;
+use crate::part_card;
 use crate::player;
 use crate::quick;
 use crate::trayview::Key;
@@ -61,6 +62,8 @@ struct Saved {
 const WRITTEN: &str = "lock_screen.parts written";
 const TAKEN: &str = "lock_screen.parts taken out";
 const NOTHING: &str = "nothing to write";
+/// The Settings page the part card's button opens (M5.10c6c2).
+const LOCK_PAGE: &str = "lock_screen";
 
 /// The lock screen's edit mode while it is open: its surface and keyboard,
 /// the parts it started from (`original`), what it shows now (`view`, which
@@ -86,6 +89,10 @@ pub struct LockEditor {
     backdrops: Backdrops,
     drawn: Option<(lock_editor::View, u32)>,
     logged: String,
+    /// The part card open beside a part (M5.10c6c2): the message's words as
+    /// they were when it opened, and the card's places as last logged.
+    card_before: Option<Placed>,
+    card_logged: String,
     /// What a screen reader reads of the edit mode, updated at each drawing
     /// (M5.10c6c).
     reader: a11y::Reader,
@@ -189,6 +196,74 @@ fn add(le: &mut LockEditor, part: Part) {
     eprintln!("edel-shell-ui: lock editor {words}");
 }
 
+/// Opens the card of the part at `index` beside it (M5.10c6c2), logging
+/// `lock editor card NAME shown`. Nothing for a part with no card, or while a
+/// card is open.
+fn open_card(le: &mut LockEditor, index: usize) {
+    let Some(placed) = le.view.parts.get(index).cloned() else {
+        return;
+    };
+    if le.view.card.is_some() || !part_card::card_for(placed.part) {
+        return;
+    }
+    eprintln!(
+        "edel-shell-ui: lock editor card {} shown",
+        placed.part.name()
+    );
+    le.card_before = Some(placed.clone());
+    le.view.card = Some(part_card::open(index, placed));
+}
+
+/// Closes the open card (M5.10c6c2), logging `lock editor card hidden`. A
+/// message whose words were all taken away keeps the words it had when the
+/// card opened (`part_card::settled`). Nothing when no card is open.
+fn end_card(le: &mut LockEditor) {
+    let Some(card) = le.view.card.take() else {
+        return;
+    };
+    if let (Some(before), Some(part)) = (le.card_before.take(), le.view.parts.get_mut(card.index)) {
+        *part = part_card::settled(part.clone(), &before);
+    }
+    le.card_logged.clear();
+    eprintln!("edel-shell-ui: lock editor card hidden");
+}
+
+/// Applies a card's choice to the part it changes (`part_card::apply`),
+/// logging what the part is now (`lock editor WORDS`) and showing it at once.
+/// A choice that changes nothing is no change and logs nothing.
+fn choose(le: &mut LockEditor, choice: part_card::Choice) {
+    let Some(card) = le.view.card.as_mut() else {
+        return;
+    };
+    let Some(part) = le.view.parts.get_mut(card.index) else {
+        return;
+    };
+    let next = part_card::apply(part, &choice);
+    if next == *part {
+        return;
+    }
+    eprintln!(
+        "edel-shell-ui: lock editor {}",
+        part_card::said(&choice, &next)
+    );
+    *part = next.clone();
+    card.placed = next;
+}
+
+/// Moves the keyboard's focus on the open card to `line`.
+fn card_focus(le: &mut LockEditor, line: Option<part_card::Line>) {
+    if let Some(card) = le.view.card.as_mut() {
+        part_card::set_focus(card, line);
+    }
+}
+
+/// Lights the card's line under the pointer, `None` for none.
+fn card_hover(le: &mut LockEditor, line: Option<part_card::Line>) {
+    if let Some(card) = le.view.card.as_mut() {
+        card.hover = line;
+    }
+}
+
 impl Shell {
     /// Opens the lock screen's edit mode (M5.10c6b): nothing while the lock
     /// is up, the panel editor is open or this is open. It starts from the
@@ -208,6 +283,7 @@ impl Shell {
         let original = applied.parts;
         let battery = self.live.status.battery.is_some();
         let view = lock_editor::View {
+            card: None,
             parts: original.clone(),
             screen,
             drag: None,
@@ -270,6 +346,8 @@ impl Shell {
             backdrops: Backdrops::default(),
             drawn: None,
             logged: String::new(),
+            card_before: None,
+            card_logged: String::new(),
             reader: a11y::Reader::new(tr("Edit lock screen")),
         });
     }
@@ -425,13 +503,30 @@ impl Shell {
             &mut self.text,
             s as f32,
         );
+        let card = self.card_layout(le, &at, preview);
+        if let (Some(view), Some(l)) = (le.view.card.as_ref(), card.as_ref()) {
+            part_card::paint(&mut pixmap, view, l, &self.tokens, &mut self.text, s as f32);
+        }
         let places = lock_editor::places(&le.view, &at, preview, place, &drawer);
         if places != le.logged {
             eprintln!("edel-shell-ui: lock editor places {places}");
             le.logged = places;
         }
-        let items = lock_editor::nodes(&le.view, &at, preview, place, &drawer);
-        let focus = lock_editor::focus_node(&le.view, &at);
+        if let Some(l) = card.as_ref() {
+            let log = part_card::places(l);
+            if log != le.card_logged {
+                eprintln!("edel-shell-ui: lock editor card places {log}");
+                le.card_logged = log;
+            }
+        }
+        let mut items = lock_editor::nodes(&le.view, &at, preview, place, &drawer);
+        let mut focus = lock_editor::focus_node(&le.view, &at);
+        if let (Some(view), Some(l)) = (le.view.card.as_ref(), card.as_ref()) {
+            if view.focus.is_some() {
+                focus = Some(items.len());
+            }
+            items.extend(part_card::nodes(view, l));
+        }
         le.reader
             .update_focused((f64::from(screen.0), f64::from(screen.1)), items, focus);
         let bytes = (pw * ph * 4) as usize;
@@ -478,6 +573,104 @@ impl Shell {
         }
     }
 
+    /// The open card's layout beside its part on this screen (M5.10c6c2), from
+    /// the lock's layout and the drawing's preview. None without an open card,
+    /// or when its part is not drawn.
+    fn card_layout(
+        &self,
+        le: &LockEditor,
+        at: &lock::Layout,
+        shown: lock_editor::Preview,
+    ) -> Option<part_card::Layout> {
+        let card = le.view.card.as_ref()?;
+        let near = (*at.placed.get(card.index)?)?;
+        Some(part_card::layout(
+            card,
+            shown.to_screen(near),
+            le.view.screen,
+            &self.tokens,
+        ))
+    }
+
+    /// A key while a part's card is open (M5.10c6c2): `part_card::key` says
+    /// what it does, and the card's step is done by `card_step`.
+    fn lock_card_key(&mut self, key: Option<Key>, shift: bool, typed: Option<char>) {
+        let Some(mut le) = self.lock_editor.take() else {
+            return;
+        };
+        let step = match le.view.card.as_ref() {
+            Some(card) => part_card::key(card, key, shift, typed),
+            None => part_card::Step::Nothing,
+        };
+        self.card_step(&mut le, step);
+        self.paint_lock_editor(&mut le);
+        self.lock_editor = Some(le);
+    }
+
+    /// What a card's step does (M5.10c6c2): moves the focus, changes the part,
+    /// closes the card, or opens Settings' Lock screen page through the
+    /// launcher, as quick settings' pages open.
+    fn card_step(&mut self, le: &mut LockEditor, step: part_card::Step) {
+        match step {
+            part_card::Step::Focus(line) => card_focus(le, line),
+            part_card::Step::Choose(choice) => choose(le, choice),
+            part_card::Step::Settings => {
+                let argv = [
+                    crate::SETTINGS.to_string(),
+                    "--page".to_string(),
+                    LOCK_PAGE.to_string(),
+                ];
+                self.launcher.spawn(&argv, "Settings");
+            }
+            part_card::Step::Close => end_card(le),
+            part_card::Step::Nothing => {}
+        }
+    }
+
+    /// The pointer while a part's card is open (M5.10c6c2): a press on the
+    /// card is its control's; a press away from it closes the card and does
+    /// nothing else, and no drag starts. A motion lights the line it is over.
+    fn lock_card_pointer(
+        &mut self,
+        le: &mut LockEditor,
+        event: &PointerEvent,
+        at: &lock::Layout,
+        shown: lock_editor::Preview,
+        (sx, sy): (f32, f32),
+    ) {
+        let Some(l) = self.card_layout(le, at, shown) else {
+            end_card(le);
+            self.paint_lock_editor(le);
+            return;
+        };
+        match &event.kind {
+            PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                if l.card.contains(sx, sy) {
+                    if let Some(hit) = part_card::hit(&l, sx, sy) {
+                        card_focus(le, Some(hit.line()));
+                    }
+                    let step = part_card::press(&l, sx, sy);
+                    self.card_step(le, step);
+                } else {
+                    end_card(le);
+                }
+                self.paint_lock_editor(le);
+            }
+            PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
+                let line = part_card::hit(&l, sx, sy).map(part_card::Hit::line);
+                if le.view.card.as_ref().is_some_and(|c| c.hover != line) {
+                    card_hover(le, line);
+                    self.paint_lock_editor(le);
+                }
+            }
+            PointerEventKind::Leave { .. } => {
+                card_hover(le, None);
+                self.paint_lock_editor(le);
+            }
+            _ => {}
+        }
+    }
+
     /// The layout the edit mode's pointer hits, with the drawer's place.
     fn lock_editor_geometry(
         &mut self,
@@ -519,6 +712,12 @@ impl Shell {
         } else {
             editor_card::key_of(sym)
         };
+        if le.view.card.is_some() {
+            // The open card takes the keys first (M5.10c6c2), letters too.
+            let typed = event.utf8.as_deref().and_then(|text| text.chars().next());
+            self.lock_card_key(key, self.shift || shift_tab, typed);
+            return;
+        }
         let Some(key) = key else {
             return;
         };
@@ -541,6 +740,7 @@ impl Shell {
                     Step::Remove(i) => take_away(&mut le, i),
                     Step::Add(part) => add(&mut le, part),
                     Step::Undo => self.undo_lock_editor(&mut le),
+                    Step::Open(i) => open_card(&mut le, i),
                     Step::Done | Step::Close | Step::Nothing => {}
                 }
                 self.paint_lock_editor(&mut le);
@@ -570,6 +770,10 @@ impl Shell {
         let (sx, sy) = (event.position.0 as f32, event.position.1 as f32);
         let (at, drawer, place, shown) = self.lock_editor_geometry(le);
         let (x, y) = shown.to_lock((sx, sy));
+        if le.view.card.is_some() {
+            self.lock_card_pointer(le, event, &at, shown, (sx, sy));
+            return false;
+        }
         let inside = place.contains(sx, sy);
         let on_drawer = if inside {
             editor::hit(&drawer, sx - place.x, sy - place.y)
@@ -707,6 +911,10 @@ impl Shell {
                 }
             }
         }
+        if let (false, From::Part(i)) = (drag.moving, drag.from) {
+            // A press and release that did not move open the part's card.
+            open_card(le, i);
+        }
         le.view.drag = None;
         le.view.guides.clear();
         le.view.drawer.lifted = None;
@@ -716,6 +924,7 @@ impl Shell {
 
     /// Undo in the drawer: the parts the edit mode started from, again.
     fn undo_lock_editor(&mut self, le: &mut LockEditor) {
+        end_card(le);
         le.view.parts = le.original.clone();
         le.view.drawer.tiles = lock_editor::drawer_tiles(&le.view.parts, le.battery);
         le.view.drag = None;
@@ -798,6 +1007,9 @@ impl Shell {
     /// mode open. Without it (Escape, the keyboard leaving) nothing is
     /// written. Does nothing while the edit mode is not open.
     pub fn close_lock_editor(&mut self, write: bool) {
+        if let Some(le) = self.lock_editor.as_mut() {
+            end_card(le);
+        }
         let Some(le) = self.lock_editor.as_ref() else {
             return;
         };

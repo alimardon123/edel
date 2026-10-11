@@ -42,6 +42,7 @@ mod osd_card;
 mod paint;
 mod panel_menu;
 mod panel_menu_card;
+mod part_card;
 mod people;
 mod player;
 mod popup;

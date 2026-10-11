@@ -1,0 +1,1325 @@
+//! The lock screen's part cards (M5.10c6c2): the small card the edit mode
+//! opens beside a clock, a date, a message or a picture, to change that
+//! part's options live. Plain data and drawing, tested without a display.
+//! `lock_editor_card.rs` owns the surface, the pointer and the keyboard, puts
+//! each `apply` result into `view.parts` and writes Done as it writes
+//! everything. The segmented rows are `popup::segmented`, the panel menu's
+//! too (one copy, ADR-010); the check boxes, the field and the button are
+//! drawn here. Options are the settings file's own (`edel::lock_screen`), so
+//! a choice of a default writes nothing.
+
+use std::sync::OnceLock;
+
+use accesskit::Role;
+use edel::i18n::{tr, trf};
+use edel::lock_screen::{self, Anchor, DatePart, DateStyle, Face, Part, Placed, Size};
+use edel::tokens::Tokens;
+use tiny_skia::Pixmap;
+
+use crate::a11y::Item;
+use crate::lock;
+use crate::lock_editor;
+use crate::paint::{Text, fill, lit};
+use crate::popup::{self, INSET, PAD, Rect};
+use crate::trayview::Key;
+
+/// The card's width, logical pixels: the panel's menu's.
+pub const WIDTH: f32 = 300.0;
+/// A segment of a segmented row, logical pixels across: four fit beside a
+/// row's label on the card.
+const SEGMENT: f32 = 48.0;
+/// The room between a card and its part, logical pixels.
+const GAP: f32 = 8.0;
+/// The date's parts in the order they show, whatever order the file gives.
+const ORDER: [DatePart; 4] = [
+    DatePart::Weekday,
+    DatePart::Day,
+    DatePart::Month,
+    DatePart::Year,
+];
+/// The date's parts when the file says nothing: weekday, day and month.
+const DEFAULT_SHOW: [DatePart; 3] = [DatePart::Weekday, DatePart::Day, DatePart::Month];
+const FACES: [Face; 4] = [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal];
+const HOURS: [u8; 2] = [24, 12];
+const SIZES: [Size; 3] = [Size::Small, Size::Medium, Size::Large];
+const STYLES: [DateStyle; 3] = [DateStyle::Long, DateStyle::Short, DateStyle::Numeric];
+
+/// Whether a part has a card (the clock, the date, the message and the
+/// picture); the count, the player and the person have none.
+pub fn card_for(part: Part) -> bool {
+    matches!(
+        part,
+        Part::Clock | Part::Date | Part::Message | Part::Picture
+    )
+}
+
+/// A line of a card (M5.10c6c2): a segmented row, a date part's check box,
+/// the message's field, a picture's file name or its button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Line {
+    Face,
+    Hours,
+    Size,
+    Style,
+    Show(DatePart),
+    Field,
+    File,
+    Button,
+}
+
+/// What a control chooses: one option of a part, or the message's words.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Choice {
+    Face(Face),
+    Hours(u8),
+    Size(Size),
+    Style(DateStyle),
+    Show(DatePart),
+    Words(String),
+}
+
+/// What the card shows (M5.10c6c2): the part it changes, by its index in the
+/// lock screen's parts, the part as it stands now, the control the keyboard
+/// holds, the one the pointer is over, and whether the field takes typed
+/// letters (it does while the field holds the keyboard).
+#[derive(Clone, Debug, PartialEq)]
+pub struct View {
+    pub index: usize,
+    pub placed: Placed,
+    pub focus: Option<Line>,
+    pub hover: Option<Line>,
+    pub typing: bool,
+}
+
+/// Where a press lands on a card: a segment of a segmented row, a date
+/// part's row, the field or the button.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit {
+    Segment(Line, usize),
+    Toggle(Line),
+    Field,
+    Button,
+}
+
+impl Hit {
+    /// The line the press was on, which takes the keyboard's focus.
+    pub fn line(self) -> Line {
+        match self {
+            Hit::Segment(line, _) | Hit::Toggle(line) => line,
+            Hit::Field => Line::Field,
+            Hit::Button => Line::Button,
+        }
+    }
+}
+
+/// What a key or a press asks for: move the focus, choose an option, open
+/// Settings' Lock screen page, close the card, or nothing.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Step {
+    Focus(Option<Line>),
+    Choose(Choice),
+    Settings,
+    Close,
+    Nothing,
+}
+
+/// Where one line lies: its row, its control (the segmented control, the
+/// check box, the field or the button; none for the file's name) and each
+/// segment of a segmented row, logical pixels in the screen.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Row {
+    pub line: Line,
+    pub rect: Rect,
+    pub control: Option<Rect>,
+    pub segments: Vec<Rect>,
+}
+
+/// Where everything on the card lies: the card's rectangle and its rows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Layout {
+    pub card: Rect,
+    pub rows: Vec<Row>,
+}
+
+/// The card's view of `index`'s part, nothing focused.
+pub fn open(index: usize, placed: Placed) -> View {
+    View {
+        index,
+        placed,
+        focus: None,
+        hover: None,
+        typing: false,
+    }
+}
+
+/// The lines a part's card has, in the order the keyboard goes round them.
+pub fn lines(part: Part) -> Vec<Line> {
+    match part {
+        Part::Clock => vec![Line::Face, Line::Hours, Line::Size],
+        Part::Date => {
+            let mut lines = vec![Line::Style];
+            lines.extend(ORDER.map(Line::Show));
+            lines
+        }
+        Part::Message => vec![Line::Field],
+        Part::Picture => vec![Line::File, Line::Button],
+        _ => Vec::new(),
+    }
+}
+
+/// The lines the keyboard's Tab goes round: every line but the file's name.
+fn ring(part: Part) -> Vec<Line> {
+    lines(part)
+        .into_iter()
+        .filter(|line| *line != Line::File)
+        .collect()
+}
+
+fn face_word(face: Face) -> &'static str {
+    match face {
+        Face::Digital => tr("Digital"),
+        Face::Stacked => tr("Stacked"),
+        Face::Analog => tr("Analog"),
+        Face::Minimal => tr("Minimal"),
+    }
+}
+
+fn size_word(size: Size) -> &'static str {
+    match size {
+        Size::Small => tr("Small"),
+        Size::Medium => tr("Medium"),
+        Size::Large => tr("Large"),
+    }
+}
+
+fn style_word(style: DateStyle) -> &'static str {
+    match style {
+        DateStyle::Long => tr("Long"),
+        DateStyle::Short => tr("Short"),
+        DateStyle::Numeric => tr("Numeric"),
+    }
+}
+
+fn show_word(part: DatePart) -> &'static str {
+    match part {
+        DatePart::Weekday => tr("Weekday"),
+        DatePart::Day => tr("Day"),
+        DatePart::Month => tr("Month"),
+        DatePart::Year => tr("Year"),
+    }
+}
+
+/// The words of a segmented line's segments, each with what choosing it is.
+fn segments(line: Line) -> Vec<(&'static str, Choice)> {
+    match line {
+        Line::Face => FACES
+            .iter()
+            .map(|&f| (face_word(f), Choice::Face(f)))
+            .collect(),
+        Line::Hours => HOURS
+            .iter()
+            .map(|&h| (if h == 12 { "12" } else { "24" }, Choice::Hours(h)))
+            .collect(),
+        Line::Size => SIZES
+            .iter()
+            .map(|&s| (size_word(s), Choice::Size(s)))
+            .collect(),
+        Line::Style => STYLES
+            .iter()
+            .map(|&s| (style_word(s), Choice::Style(s)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The label a line's row shows, and the words a screen reader hears for it.
+fn label(line: Line) -> &'static str {
+    match line {
+        Line::Face => tr("Face"),
+        Line::Hours => tr("Hours"),
+        Line::Size => tr("Size"),
+        Line::Style => tr("Style"),
+        Line::Show(part) => show_word(part),
+        Line::Field => tr("Words"),
+        Line::File => tr("Picture"),
+        Line::Button => tr("Choose in Settings"),
+    }
+}
+
+/// The name a line's places are logged by: the settings file's word for it.
+fn prefix(line: Line) -> &'static str {
+    match line {
+        Line::Face => "face",
+        Line::Hours => "hours",
+        Line::Size => "size",
+        Line::Style => "style",
+        Line::Show(_) => "show",
+        Line::Field => "text",
+        Line::File => "file",
+        Line::Button => "settings",
+    }
+}
+
+/// The settings file's word for a choice, as the places name it.
+fn key_of(choice: &Choice) -> String {
+    match choice {
+        Choice::Face(f) => f.name().into(),
+        Choice::Hours(h) => h.to_string(),
+        Choice::Size(s) => s.name().into(),
+        Choice::Style(s) => s.name().into(),
+        Choice::Show(p) => p.name().into(),
+        Choice::Words(_) => String::new(),
+    }
+}
+
+/// The date's parts that show, in their order.
+fn shown(placed: &Placed) -> Vec<DatePart> {
+    let list = placed.show.clone().unwrap_or_else(|| DEFAULT_SHOW.to_vec());
+    ORDER.into_iter().filter(|p| list.contains(p)).collect()
+}
+
+/// The message's words, empty when it has none.
+fn words_of(placed: &Placed) -> &str {
+    placed.text.as_deref().unwrap_or("")
+}
+
+/// A part with no options, at `at`, as the check's probe and a default
+/// arrangement start from.
+fn plain(part: Part, at: Anchor) -> Placed {
+    Placed {
+        part,
+        at,
+        x: 0.0,
+        y: 0.0,
+        text: None,
+        path: None,
+        face: None,
+        hours: None,
+        size: None,
+        weight: None,
+        show: None,
+        style: None,
+    }
+}
+
+/// The most characters a message's words may have: `lock_screen::check`'s
+/// own limit, found by asking it, so the number stays in one place (ADR-010).
+pub fn most_letters() -> usize {
+    static MOST: OnceLock<usize> = OnceLock::new();
+    *MOST.get_or_init(|| {
+        let fits = |n: usize| {
+            let mut message = plain(Part::Message, Anchor::Centre);
+            message.text = Some("a".repeat(n));
+            lock_screen::check(&[plain(Part::Person, Anchor::Centre), message]).is_ok()
+        };
+        (1..=4096).take_while(|&n| fits(n)).last().unwrap_or(0)
+    })
+}
+
+/// The option `placed` has now for a segmented line, as an index into its
+/// segments; None for the other lines.
+fn chosen(placed: &Placed, line: Line) -> Option<usize> {
+    let now = match line {
+        Line::Face => Choice::Face(placed.face.unwrap_or(Face::Digital)),
+        Line::Hours => Choice::Hours(placed.hours.unwrap_or(24)),
+        Line::Size => Choice::Size(placed.size.unwrap_or(Size::Large)),
+        Line::Style => Choice::Style(placed.style.unwrap_or(DateStyle::Long)),
+        _ => return None,
+    };
+    segments(line).iter().position(|(_, choice)| *choice == now)
+}
+
+/// The change a choice makes to `placed`: the one function that changes a
+/// part's options. A default writes `None`, as the settings file never
+/// writes one (Digital, 24 hours, Large, Long, the weekday, day and month
+/// shown). The last date part on cannot be turned off, and a choice for
+/// another part changes nothing. Words stop at `most_letters`.
+pub fn apply(placed: &Placed, choice: &Choice) -> Placed {
+    let mut next = placed.clone();
+    match (placed.part, choice) {
+        (Part::Clock, Choice::Face(f)) => next.face = (*f != Face::Digital).then_some(*f),
+        (Part::Clock, Choice::Hours(h)) => next.hours = (*h != 24).then_some(*h),
+        (Part::Clock, Choice::Size(s)) => next.size = (*s != Size::Large).then_some(*s),
+        (Part::Date, Choice::Style(s)) => next.style = (*s != DateStyle::Long).then_some(*s),
+        (Part::Date, Choice::Show(part)) => {
+            let mut list = shown(placed);
+            if let Some(i) = list.iter().position(|p| p == part) {
+                if list.len() == 1 {
+                    return placed.clone();
+                }
+                list.remove(i);
+            } else {
+                list.push(*part);
+            }
+            let list: Vec<DatePart> = ORDER.into_iter().filter(|p| list.contains(p)).collect();
+            next.show = if list == DEFAULT_SHOW {
+                None
+            } else {
+                Some(list)
+            };
+        }
+        (Part::Message, Choice::Words(words)) => {
+            next.text = Some(words.chars().take(most_letters()).collect());
+        }
+        _ => {}
+    }
+    next
+}
+
+/// The message after an edit ends (Undo, Escape, a press away): when its
+/// words were taken all away, it keeps the words it had when its card
+/// opened (`before`), since an empty message is never written.
+pub fn settled(placed: Placed, before: &Placed) -> Placed {
+    let mut placed = placed;
+    if placed.part == Part::Message && placed.text.as_deref().is_none_or(str::is_empty) {
+        placed.text = before.text.clone();
+    }
+    placed
+}
+
+/// The log words of a change (`lock editor WORDS`), for the placed part after
+/// `choice` was applied: `clock face analog`, `clock hours 12`, `clock size
+/// small`, `date style short`, `date show weekday,day`, `message words N
+/// letters`.
+pub fn said(choice: &Choice, placed: &Placed) -> String {
+    match choice {
+        Choice::Face(f) => format!("clock face {}", f.name()),
+        Choice::Hours(h) => format!("clock hours {h}"),
+        Choice::Size(s) => format!("clock size {}", s.name()),
+        Choice::Style(s) => format!("date style {}", s.name()),
+        Choice::Show(_) => format!(
+            "date show {}",
+            shown(placed)
+                .iter()
+                .map(|p| p.name())
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        Choice::Words(_) => format!("message words {} letters", words_of(placed).chars().count()),
+    }
+}
+
+/// Sets the keyboard's focus to `line`, the field taking typed letters
+/// while it has it.
+pub fn set_focus(view: &mut View, line: Option<Line>) {
+    view.focus = line;
+    view.typing = line == Some(Line::Field);
+}
+
+/// The next line of the ring after the focused one, backwards or forwards,
+/// wrapping; from no focus, the first or the last (Tab, Shift+Tab).
+fn step(view: &View, backwards: bool) -> Option<Line> {
+    let ring = ring(view.placed.part);
+    let n = ring.len();
+    if n == 0 {
+        return None;
+    }
+    let at = view.focus.and_then(|f| ring.iter().position(|r| *r == f));
+    let next = match (at, backwards) {
+        (None, false) => 0,
+        (None, true) => n - 1,
+        (Some(i), false) => (i + 1) % n,
+        (Some(i), true) => (i + n - 1) % n,
+    };
+    ring.get(next).copied()
+}
+
+/// Left and Right on the focused segmented line: the segment beside the
+/// chosen one, when there is one.
+fn segment_step(view: &View, line: Line, backwards: bool) -> Step {
+    let Some(now) = chosen(&view.placed, line) else {
+        return Step::Nothing;
+    };
+    let options = segments(line);
+    let next = if backwards {
+        now.checked_sub(1)
+    } else {
+        Some(now + 1).filter(|j| *j < options.len())
+    };
+    match next.and_then(|j| options.into_iter().nth(j)) {
+        Some((_, choice)) => Step::Choose(choice),
+        None => Step::Nothing,
+    }
+}
+
+/// What a key does on the card (M5.10c6c2): Escape closes it; Tab and
+/// Shift+Tab step the ring; while the field takes letters, a typed letter
+/// is added (at most `most_letters`) and Backspace takes one back; Left and
+/// Right choose the neighbouring segment of the focused segmented line; Return
+/// and Space choose a focused date part or press the focused button. `key`
+/// is None for keys the card does not use, and `typed` is the letter a key
+/// types, if any.
+pub fn key(view: &View, key: Option<Key>, shift: bool, typed: Option<char>) -> Step {
+    match key {
+        Some(Key::Escape) => return Step::Close,
+        Some(Key::Tab) => return Step::Focus(step(view, shift)),
+        _ => {}
+    }
+    if view.typing && view.focus == Some(Line::Field) {
+        let mut words = words_of(&view.placed).to_string();
+        if let Some(c) = typed.filter(|c| !c.is_control()) {
+            if words.chars().count() >= most_letters() {
+                return Step::Nothing;
+            }
+            words.push(c);
+            return Step::Choose(Choice::Words(words));
+        }
+        if key == Some(Key::Delete) && words.pop().is_some() {
+            return Step::Choose(Choice::Words(words));
+        }
+        return Step::Nothing;
+    }
+    let Some(line) = view.focus else {
+        return Step::Nothing;
+    };
+    match (key, line) {
+        (Some(Key::Left), _) if chosen(&view.placed, line).is_some() => {
+            segment_step(view, line, true)
+        }
+        (Some(Key::Right), _) if chosen(&view.placed, line).is_some() => {
+            segment_step(view, line, false)
+        }
+        (Some(Key::Activate), Line::Show(part)) => Step::Choose(Choice::Show(part)),
+        (Some(Key::Activate), Line::Button) => Step::Settings,
+        _ => Step::Nothing,
+    }
+}
+
+/// Where a press lands on the card: the choice it makes, the button's page,
+/// or nothing (inside the card, on no control).
+pub fn press(l: &Layout, x: f32, y: f32) -> Step {
+    match hit(l, x, y) {
+        Some(Hit::Segment(line, j)) => segments(line)
+            .into_iter()
+            .nth(j)
+            .map_or(Step::Nothing, |(_, choice)| Step::Choose(choice)),
+        Some(Hit::Toggle(Line::Show(part))) => Step::Choose(Choice::Show(part)),
+        Some(Hit::Toggle(_)) => Step::Nothing,
+        Some(Hit::Field) => Step::Focus(Some(Line::Field)),
+        Some(Hit::Button) => Step::Settings,
+        None => Step::Nothing,
+    }
+}
+
+/// Where a point lies on the card, if on a control (M5.10c6c2): a segment
+/// of a segmented row, a date part's row, the field or the button.
+pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Hit> {
+    let row = l.rows.iter().find(|row| row.rect.contains(x, y))?;
+    match row.line {
+        Line::Face | Line::Hours | Line::Size | Line::Style => row
+            .segments
+            .iter()
+            .position(|s| s.contains(x, y))
+            .map(|j| Hit::Segment(row.line, j)),
+        Line::Show(_) => Some(Hit::Toggle(row.line)),
+        Line::Field => Some(Hit::Field),
+        Line::Button => Some(Hit::Button),
+        Line::File => None,
+    }
+}
+
+/// Where the card goes and where everything on it lies (M5.10c6c2): the one
+/// function that places the card and every control. It stands to the right
+/// of `near` (the part, in the screen's logical pixels) when there is room
+/// on the screen, else to its left, kept inside the screen with the lock's
+/// margin, and its top lies level with the part's, kept inside it too.
+pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Layout {
+    let lines = lines(view.placed.part);
+    let row_h = tokens.row as f32;
+    let height = 2.0 * PAD + lines.len() as f32 * row_h;
+    let margin = lock::MARGIN;
+    let right_x = near.right() + GAP;
+    let x = if right_x + WIDTH <= screen.0 - margin {
+        right_x
+    } else {
+        (near.x - GAP - WIDTH).clamp(margin, (screen.0 - margin - WIDTH).max(margin))
+    };
+    let y = near
+        .y
+        .clamp(margin, (screen.1 - margin - height).max(margin));
+    let card = Rect::new(x, y, WIDTH, height);
+    let panel_control = tokens.panel_control as f32;
+    let glyph = tokens.panel_glyph as f32;
+    let rows = lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let rect = Rect::new(
+                card.x + PAD,
+                card.y + PAD + i as f32 * row_h,
+                WIDTH - 2.0 * PAD,
+                row_h,
+            );
+            let right = rect.right() - INSET;
+            let (control, cells) = match line {
+                Line::Face | Line::Hours | Line::Size | Line::Style => {
+                    let (control, cells) = popup::segments_at(
+                        rect,
+                        right,
+                        segments(line).len(),
+                        SEGMENT,
+                        panel_control,
+                    );
+                    (Some(control), cells)
+                }
+                Line::Show(_) => (
+                    Some(Rect::new(
+                        right - glyph,
+                        rect.y + (rect.h - glyph) / 2.0,
+                        glyph,
+                        glyph,
+                    )),
+                    Vec::new(),
+                ),
+                Line::Field | Line::Button => (
+                    Some(Rect::new(
+                        rect.x + INSET,
+                        rect.y + (rect.h - panel_control) / 2.0,
+                        rect.w - 2.0 * INSET,
+                        panel_control,
+                    )),
+                    Vec::new(),
+                ),
+                Line::File => (None, Vec::new()),
+            };
+            Row {
+                line,
+                rect,
+                control,
+                segments: cells,
+            }
+        })
+        .collect();
+    Layout { card, rows }
+}
+
+/// The name of the picture's file, as the card shows it.
+fn file_name(placed: &Placed) -> String {
+    placed
+        .path
+        .as_deref()
+        .and_then(|path| std::path::Path::new(path).file_name())
+        .map_or_else(
+            || tr("No picture").to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        )
+}
+
+/// Draws the card at scale `s` over what is under it (the lock and the
+/// corner; it clears nothing): the panel's colour in the menus' corners, a
+/// lit row under the pointer, each line's label, its segmented control with
+/// the chosen segment, each date part's check box, the field's words (and
+/// its caret while it takes letters), the picture's name and the button,
+/// the keyboard's ring round the focused control.
+pub fn paint(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+) {
+    let (x, y, w, h) = l.card.device(s);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        tokens.radius_menu as f32 * s,
+        tokens.panel,
+    );
+    let size = tokens.panel_text_size as f32 * s;
+    let radius = tokens.radius_control as f32 * s;
+    for row in &l.rows {
+        if view.hover == Some(row.line) {
+            let (x, y, w, h) = row.rect.device(s);
+            fill(pixmap, x, y, w, h, radius, lit(tokens));
+        }
+        let left = (row.rect.x + INSET) * s;
+        match row.line {
+            Line::Face | Line::Hours | Line::Size | Line::Style => {
+                if let Some(control) = row.control {
+                    let words: Vec<&str> = segments(row.line).iter().map(|(w, _)| *w).collect();
+                    popup::segmented(
+                        pixmap,
+                        Some(&mut *text),
+                        (control, &row.segments),
+                        &words,
+                        chosen(&view.placed, row.line),
+                        tokens,
+                        s,
+                    );
+                }
+                let right = row.control.map_or(row.rect.right(), |c| c.x) - 8.0;
+                let mut line = text.fit(label(row.line), size, (right * s) - left);
+                let y = popup::middle(row.rect.y, row.rect.h, size, s);
+                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+            }
+            Line::Show(part) => {
+                let Some(box_) = row.control else { continue };
+                let (x, y, w, h) = box_.device(s);
+                fill(pixmap, x, y, w, h, radius, popup::raised(tokens));
+                if shown(&view.placed).contains(&part) {
+                    popup::icon_in(
+                        pixmap,
+                        "check",
+                        tokens.panel_glyph as f32,
+                        box_,
+                        s,
+                        tokens.accent,
+                    );
+                }
+                let right = box_.x - 8.0;
+                let mut line = text.fit(label(row.line), size, (right * s) - left);
+                let y = popup::middle(row.rect.y, row.rect.h, size, s);
+                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+            }
+            Line::Field => {
+                let Some(field) = row.control else { continue };
+                let (x, y, w, h) = field.device(s);
+                fill(pixmap, x, y, w, h, radius, popup::raised(tokens));
+                let words = words_of(&view.placed);
+                let room = (field.w - 2.0 * PAD) * s;
+                let mut line = text.fit(words, size, room);
+                let x0 = (field.x + PAD) * s;
+                let y0 = popup::middle(field.y, field.h, size, s);
+                text.draw(pixmap, &mut line, x0, y0, tokens.panel_text);
+                if view.typing && view.focus == Some(Line::Field) {
+                    let caret_x = (x0 + line.width).round();
+                    let (top, bottom) = (field.y + field.h * 0.2, field.y + field.h * 0.8);
+                    fill(
+                        pixmap,
+                        caret_x,
+                        top * s,
+                        2.0 * s,
+                        (bottom - top) * s,
+                        0.0,
+                        tokens.accent,
+                    );
+                }
+            }
+            Line::File => {
+                let name = file_name(&view.placed);
+                let room = (row.rect.w - 2.0 * INSET) * s;
+                let mut line = text.fit(&name, size, room);
+                let y = popup::middle(row.rect.y, row.rect.h, size, s);
+                text.draw(pixmap, &mut line, left, y, tokens.panel_text);
+            }
+            Line::Button => {
+                let Some(button) = row.control else { continue };
+                let (x, y, w, h) = button.device(s);
+                fill(pixmap, x, y, w, h, radius, tokens.accent);
+                let room = button.w * s;
+                let mut line = text.fit(label(row.line), size, room);
+                let x0 = (button.x * s) + ((room - line.width) / 2.0).round();
+                let y0 = popup::middle(button.y, button.h, size, s);
+                text.draw(pixmap, &mut line, x0, y0, tokens.accent_text);
+            }
+        }
+        if view.focus == Some(row.line) {
+            if let Some(control) = row.control {
+                popup::focus_ring(pixmap, control, tokens.radius_control as f32, s, tokens);
+            }
+        }
+    }
+}
+
+/// The card's place in the screen reader's tree (M5.10c6c2): a group named
+/// after the part, holding a radio group for each segmented line (its
+/// segments as radio buttons, the chosen one on), a check box for each date
+/// part (on or off), the field as a text input holding its words and the
+/// button, as a button.
+pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
+    let at = |r: Rect| {
+        accesskit::Rect::new(
+            f64::from(r.x),
+            f64::from(r.y),
+            f64::from(r.right()),
+            f64::from(r.y + r.h),
+        )
+    };
+    let item = |role: Role, label: String, bounds, toggled, children| Item {
+        role,
+        label,
+        bounds,
+        children,
+        toggled,
+        value: None,
+    };
+    let children = l
+        .rows
+        .iter()
+        .filter_map(|row| {
+            let bounds = at(row.rect);
+            match row.line {
+                Line::Face | Line::Hours | Line::Size | Line::Style => {
+                    let now = chosen(&view.placed, row.line);
+                    let buttons = segments(row.line)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(j, (word, _))| {
+                            item(
+                                Role::RadioButton,
+                                word.into(),
+                                at(row.segments[j]),
+                                Some(now == Some(j)),
+                                Vec::new(),
+                            )
+                        })
+                        .collect();
+                    Some(item(
+                        Role::RadioGroup,
+                        label(row.line).into(),
+                        bounds,
+                        None,
+                        buttons,
+                    ))
+                }
+                Line::Show(part) => Some(item(
+                    Role::CheckBox,
+                    show_word(part).into(),
+                    bounds,
+                    Some(shown(&view.placed).contains(&part)),
+                    Vec::new(),
+                )),
+                Line::Field => Some(item(
+                    Role::TextInput,
+                    trf("Words: {words}", &[("words", words_of(&view.placed))]),
+                    at(row.control?),
+                    None,
+                    Vec::new(),
+                )),
+                Line::File => Some(item(
+                    Role::Label,
+                    file_name(&view.placed),
+                    bounds,
+                    None,
+                    Vec::new(),
+                )),
+                Line::Button => Some(item(
+                    Role::Button,
+                    label(row.line).into(),
+                    at(row.control?),
+                    None,
+                    Vec::new(),
+                )),
+            }
+        })
+        .collect();
+    vec![item(
+        Role::Group,
+        lock_editor::part_title(view.placed.part),
+        at(l.card),
+        None,
+        children,
+    )]
+}
+
+/// Where the card and its controls lie, the log line CI reads (M5.10c6c2),
+/// in the screen's logical pixels: `card WxH at X+Y`, then each control that
+/// the card has: `face_digital X+Y+WxH` (each segment of a segmented line,
+/// by its settings word), `show_weekday X+Y+WxH` (a date part's check box),
+/// `text X+Y+WxH` (the field) and `settings X+Y+WxH` (the button).
+pub fn places(l: &Layout) -> String {
+    let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
+    let mut out = format!(
+        "card {:.0}x{:.0} at {:.0}+{:.0}",
+        l.card.w, l.card.h, l.card.x, l.card.y
+    );
+    for row in &l.rows {
+        match row.line {
+            Line::Face | Line::Hours | Line::Size | Line::Style => {
+                for (j, (_, choice)) in segments(row.line).iter().enumerate() {
+                    out.push_str(&format!(
+                        ", {}_{} {}",
+                        prefix(row.line),
+                        key_of(choice),
+                        at(row.segments[j])
+                    ));
+                }
+            }
+            Line::Show(part) => {
+                if let Some(control) = row.control {
+                    out.push_str(&format!(", show_{} {}", part.name(), at(control)));
+                }
+            }
+            Line::Field => {
+                if let Some(control) = row.control {
+                    out.push_str(&format!(", text {}", at(control)));
+                }
+            }
+            Line::Button => {
+                if let Some(control) = row.control {
+                    out.push_str(&format!(", settings {}", at(control)));
+                }
+            }
+            Line::File => {}
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::corner;
+
+    fn clock(placed: Option<Face>) -> Placed {
+        let mut p = plain(Part::Clock, Anchor::TopRight);
+        p.face = placed;
+        p
+    }
+
+    fn date() -> Placed {
+        plain(Part::Date, Anchor::Bottom)
+    }
+
+    fn tokens() -> Tokens {
+        Tokens::built_in()
+    }
+
+    /// The card over a clock on the left half at 1280 by 800, its part's
+    /// rectangle `near`.
+    fn near_left() -> Rect {
+        Rect::new(40.0, 300.0, 240.0, 120.0)
+    }
+
+    #[test]
+    fn card_for_is_true_for_the_clock_the_date_the_message_and_the_picture_only() {
+        for part in [Part::Clock, Part::Date, Part::Message, Part::Picture] {
+            assert!(card_for(part), "{part:?} has a card");
+        }
+        for part in [Part::Count, Part::Player, Part::Person, Part::Battery] {
+            assert!(!card_for(part), "{part:?} has no card");
+        }
+    }
+
+    #[test]
+    fn apply_chooses_each_clock_option_and_the_default_writes_none() {
+        let p = plain(Part::Clock, Anchor::TopRight);
+        let analog = apply(&p, &Choice::Face(Face::Analog));
+        assert_eq!(analog.face, Some(Face::Analog));
+        assert_eq!(apply(&analog, &Choice::Face(Face::Digital)).face, None);
+        let twelve = apply(&p, &Choice::Hours(12));
+        assert_eq!(twelve.hours, Some(12));
+        assert_eq!(apply(&twelve, &Choice::Hours(24)).hours, None);
+        let small = apply(&p, &Choice::Size(Size::Small));
+        assert_eq!(small.size, Some(Size::Small));
+        assert_eq!(apply(&small, &Choice::Size(Size::Large)).size, None);
+    }
+
+    #[test]
+    fn apply_chooses_the_date_style_and_each_part_and_the_default_writes_none() {
+        let p = plain(Part::Date, Anchor::Bottom);
+        let short = apply(&p, &Choice::Style(DateStyle::Short));
+        assert_eq!(short.style, Some(DateStyle::Short));
+        assert_eq!(apply(&short, &Choice::Style(DateStyle::Long)).style, None);
+        let with_year = apply(&p, &Choice::Show(DatePart::Year));
+        assert_eq!(
+            with_year.show,
+            Some(vec![
+                DatePart::Weekday,
+                DatePart::Day,
+                DatePart::Month,
+                DatePart::Year
+            ])
+        );
+        let back = apply(&with_year, &Choice::Show(DatePart::Year));
+        assert_eq!(back.show, None, "the default shows writes no list");
+        let weekday_day = apply(
+            &apply(&p, &Choice::Show(DatePart::Month)),
+            &Choice::Show(DatePart::Weekday),
+        );
+        assert_eq!(
+            weekday_day.show,
+            Some(vec![DatePart::Day]),
+            "a list in the order the date shows it"
+        );
+    }
+
+    #[test]
+    fn the_last_date_part_on_cannot_be_turned_off() {
+        let mut p = date();
+        p.show = Some(vec![DatePart::Year]);
+        assert_eq!(apply(&p, &Choice::Show(DatePart::Year)), p);
+        let two = apply(&p, &Choice::Show(DatePart::Weekday));
+        assert_eq!(two.show, Some(vec![DatePart::Weekday, DatePart::Year]));
+        assert_eq!(
+            apply(&two, &Choice::Show(DatePart::Weekday)).show,
+            Some(vec![DatePart::Year])
+        );
+    }
+
+    #[test]
+    fn apply_sets_the_message_words_and_stops_them_at_the_most() {
+        let mut m = plain(Part::Message, Anchor::Bottom);
+        m.text = Some("old".into());
+        assert_eq!(
+            apply(&m, &Choice::Words("new".into())).text.as_deref(),
+            Some("new")
+        );
+        let long = "x".repeat(most_letters() + 40);
+        let kept = apply(&m, &Choice::Words(long)).text.unwrap_or_default();
+        assert_eq!(kept.chars().count(), most_letters());
+        assert_eq!(most_letters(), 120, "lock_screen's most characters");
+    }
+
+    #[test]
+    fn an_empty_message_keeps_its_words_when_the_edit_settles() {
+        let mut before = plain(Part::Message, Anchor::Bottom);
+        before.text = Some("hello".into());
+        let mut emptied = before.clone();
+        emptied.text = Some(String::new());
+        assert_eq!(settled(emptied, &before).text.as_deref(), Some("hello"));
+        let mut typed = before.clone();
+        typed.text = Some("bye".into());
+        assert_eq!(settled(typed, &before).text.as_deref(), Some("bye"));
+    }
+
+    #[test]
+    fn a_choice_is_logged_as_the_edit_mode_says_it() {
+        let p = plain(Part::Clock, Anchor::TopRight);
+        let analog = apply(&p, &Choice::Face(Face::Analog));
+        assert_eq!(
+            said(&Choice::Face(Face::Analog), &analog),
+            "clock face analog"
+        );
+        let twelve = apply(&p, &Choice::Hours(12));
+        assert_eq!(said(&Choice::Hours(12), &twelve), "clock hours 12");
+        let small = apply(&p, &Choice::Size(Size::Small));
+        assert_eq!(said(&Choice::Size(Size::Small), &small), "clock size small");
+        let mut d = plain(Part::Date, Anchor::Bottom);
+        d.style = Some(DateStyle::Short);
+        assert_eq!(
+            said(&Choice::Style(DateStyle::Short), &d),
+            "date style short"
+        );
+        let shows = apply(&date(), &Choice::Show(DatePart::Year));
+        assert_eq!(
+            said(&Choice::Show(DatePart::Year), &shows),
+            "date show weekday,day,month,year"
+        );
+        let mut m = plain(Part::Message, Anchor::Bottom);
+        m.text = Some("four".into());
+        assert_eq!(
+            said(&Choice::Words("four".into()), &m),
+            "message words 4 letters"
+        );
+    }
+
+    #[test]
+    fn layout_puts_the_card_right_of_a_part_on_the_left_half_and_left_of_one_at_the_edge() {
+        let t = tokens();
+        let screen = (1280.0, 800.0);
+        let v = open(0, clock(None));
+        let l = layout(&v, near_left(), screen, &t);
+        assert!(l.card.x >= near_left().right(), "right of the part");
+        assert!(l.card.right() <= screen.0 - lock::MARGIN);
+        assert!(l.card.y >= lock::MARGIN && l.card.y + l.card.h <= screen.1 - lock::MARGIN);
+
+        let at_edge = Rect::new(1280.0 - 24.0 - 240.0, 300.0, 240.0, 120.0);
+        let l = layout(&v, at_edge, screen, &t);
+        assert!(
+            l.card.right() <= at_edge.x,
+            "left of the part at the right edge"
+        );
+        assert!(l.card.x >= lock::MARGIN);
+    }
+
+    #[test]
+    fn layout_keeps_the_card_inside_a_phone_screen_too() {
+        let t = tokens();
+        let screen = (360.0, 740.0);
+        let v = open(0, clock(None));
+        let near = Rect::new(20.0, 200.0, 200.0, 100.0);
+        let l = layout(&v, near, screen, &t);
+        assert!(l.card.x >= lock::MARGIN, "inside the margin");
+        assert!(l.card.right() <= screen.0 - lock::MARGIN);
+        assert!(l.card.y >= lock::MARGIN && l.card.y + l.card.h <= screen.1 - lock::MARGIN);
+        let date_near = Rect::new(120.0, 600.0, 220.0, 40.0);
+        let l = layout(&open(0, date()), date_near, screen, &t);
+        assert!(l.card.right() <= screen.0 - lock::MARGIN && l.card.x >= lock::MARGIN);
+        assert!(l.card.y + l.card.h <= screen.1 - lock::MARGIN);
+    }
+
+    #[test]
+    fn hit_finds_each_segment_and_each_check_box_and_nothing_in_a_label() {
+        let t = tokens();
+        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let face = l.rows[0].clone();
+        for (j, seg) in face.segments.iter().enumerate() {
+            let (cx, cy) = (seg.x + seg.w / 2.0, seg.y + seg.h / 2.0);
+            assert_eq!(hit(&l, cx, cy), Some(Hit::Segment(Line::Face, j)));
+        }
+        assert_eq!(
+            hit(&l, face.rect.x + 2.0, face.rect.y + 2.0),
+            None,
+            "the label"
+        );
+        let d = layout(&open(0, date()), near_left(), (1280.0, 800.0), &t);
+        let year = d
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Show(DatePart::Year))
+            .expect("year");
+        let c = year.control.expect("a check box");
+        assert_eq!(
+            hit(&d, c.x + 1.0, c.y + 1.0),
+            Some(Hit::Toggle(Line::Show(DatePart::Year)))
+        );
+    }
+
+    #[test]
+    fn keys_step_left_and_right_on_a_segmented_row_and_stop_at_its_ends() {
+        let mut v = open(0, clock(None));
+        set_focus(&mut v, Some(Line::Face));
+        assert_eq!(
+            key(&v, Some(Key::Right), false, None),
+            Step::Choose(Choice::Face(Face::Stacked))
+        );
+        assert_eq!(
+            key(&v, Some(Key::Left), false, None),
+            Step::Nothing,
+            "digital is the first"
+        );
+        v.placed.face = Some(Face::Minimal);
+        assert_eq!(
+            key(&v, Some(Key::Right), false, None),
+            Step::Nothing,
+            "minimal is the last"
+        );
+        assert_eq!(
+            key(&v, Some(Key::Left), false, None),
+            Step::Choose(Choice::Face(Face::Analog))
+        );
+    }
+
+    #[test]
+    fn tab_steps_round_the_controls_and_escape_closes_the_card() {
+        let mut v = open(0, clock(None));
+        assert_eq!(
+            key(&v, Some(Key::Tab), false, None),
+            Step::Focus(Some(Line::Face))
+        );
+        set_focus(&mut v, Some(Line::Size));
+        assert_eq!(
+            key(&v, Some(Key::Tab), false, None),
+            Step::Focus(Some(Line::Face)),
+            "Tab wraps"
+        );
+        assert_eq!(key(&v, Some(Key::Escape), false, None), Step::Close);
+    }
+
+    #[test]
+    fn the_message_field_takes_letters_and_backspace_and_stops_at_the_most() {
+        let mut m = plain(Part::Message, Anchor::Bottom);
+        m.text = Some(String::new());
+        let mut v = open(0, m);
+        set_focus(&mut v, Some(Line::Field));
+        assert!(v.typing, "the field takes letters once it has the keyboard");
+        let Step::Choose(Choice::Words(one)) = key(&v, None, false, Some('h')) else {
+            panic!("a typed letter goes to the field");
+        };
+        assert_eq!(one, "h");
+        v.placed = apply(&v.placed, &Choice::Words(one));
+        let Step::Choose(Choice::Words(two)) = key(&v, None, false, Some('i')) else {
+            panic!("a second letter goes to the field");
+        };
+        v.placed = apply(&v.placed, &Choice::Words(two));
+        assert_eq!(words_of(&v.placed), "hi");
+        assert_eq!(
+            key(&v, Some(Key::Delete), false, None),
+            Step::Choose(Choice::Words("h".into()))
+        );
+        v.placed.text = Some("x".repeat(most_letters()));
+        assert_eq!(
+            key(&v, None, false, Some('y')),
+            Step::Nothing,
+            "at the most, no more letters"
+        );
+        assert_eq!(
+            key(&v, None, false, Some('\u{1b}')),
+            Step::Nothing,
+            "a control is no letter"
+        );
+    }
+
+    #[test]
+    fn return_and_space_choose_a_date_part_and_press_the_button() {
+        let mut v = open(0, date());
+        set_focus(&mut v, Some(Line::Show(DatePart::Day)));
+        assert_eq!(
+            key(&v, Some(Key::Activate), false, Some(' ')),
+            Step::Choose(Choice::Show(DatePart::Day))
+        );
+        let mut p = plain(Part::Picture, Anchor::Bottom);
+        p.path = Some("/a/b.png".into());
+        let mut picture = open(0, p);
+        set_focus(&mut picture, Some(Line::Button));
+        assert_eq!(
+            key(&picture, Some(Key::Activate), false, None),
+            Step::Settings
+        );
+    }
+
+    #[test]
+    fn a_press_on_a_segment_chooses_it_and_a_press_on_the_field_focuses_it() {
+        let t = tokens();
+        let v = open(0, clock(None));
+        let l = layout(&v, near_left(), (1280.0, 800.0), &t);
+        let seg = l.rows[1].segments[0];
+        assert_eq!(
+            press(&l, seg.x + 1.0, seg.y + 1.0),
+            Step::Choose(Choice::Hours(24))
+        );
+        let text = open(0, plain(Part::Message, Anchor::Bottom));
+        let m = layout(&text, near_left(), (1280.0, 800.0), &t);
+        let field = m.rows[0].control.expect("the field");
+        assert_eq!(
+            press(&m, field.x + 1.0, field.y + 1.0),
+            Step::Focus(Some(Line::Field))
+        );
+    }
+
+    #[test]
+    fn the_places_name_each_control_the_card_has() {
+        let t = tokens();
+        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let log = places(&l);
+        assert!(log.starts_with("card 300x"), "{log}");
+        for name in [
+            "face_digital",
+            "face_stacked",
+            "face_analog",
+            "face_minimal",
+            "hours_24",
+            "hours_12",
+            "size_small",
+            "size_medium",
+            "size_large",
+        ] {
+            assert!(log.contains(&format!(", {name} ")), "{name} in {log}");
+        }
+        assert!(!log.contains("show_"), "a clock has no date parts: {log}");
+        assert!(!log.contains("text "), "a clock has no field: {log}");
+    }
+
+    #[test]
+    fn the_nodes_are_a_group_named_after_the_part_with_its_controls() {
+        let t = tokens();
+        let l = layout(
+            &open(0, clock(Some(Face::Analog))),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+        );
+        let v = open(0, clock(Some(Face::Analog)));
+        let items = nodes(&v, &l);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].role, Role::Group);
+        assert_eq!(items[0].children.len(), 3, "face, hours and size");
+        let face = &items[0].children[0];
+        assert_eq!(face.role, Role::RadioGroup);
+        assert_eq!(
+            face.children
+                .iter()
+                .filter(|c| c.toggled == Some(true))
+                .count(),
+            1
+        );
+        assert_eq!(face.children[2].toggled, Some(true), "analog is chosen");
+    }
+
+    #[test]
+    fn each_card_draws_over_the_lock_inside_the_screen_and_writes_its_pngs_when_asked() {
+        let t = tokens();
+        let mut text = Text::load(&t.font);
+        let screen = (1280.0, 800.0);
+        let corner_at = corner::layout(
+            screen.0,
+            screen.1,
+            &corner::View {
+                layout: Some("EN".into()),
+                menu: false,
+                restart_waiting: false,
+                hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
+            },
+        );
+        let parts = lock_screen::classic(false);
+        let look = lock::Look {
+            parts: &parts,
+            player: None,
+            people: false,
+            keep_out: lock::keep_out(&corner_at),
+            battery: false,
+            background: lock_screen::Background::Backdrop,
+        };
+        let at = lock::layout(screen.0, screen.1, &t, true, &look, &mut text);
+        let lock_view = lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        let mut clock = parts
+            .iter()
+            .find(|p| p.part == Part::Clock)
+            .expect("the classic lock has a clock")
+            .clone();
+        clock.face = Some(Face::Analog);
+        let mut date_part = parts
+            .iter()
+            .find(|p| p.part == Part::Date)
+            .expect("the classic lock has a date")
+            .clone();
+        date_part.show = Some(vec![
+            DatePart::Weekday,
+            DatePart::Day,
+            DatePart::Month,
+            DatePart::Year,
+        ]);
+        for (file, placed) in [
+            ("lock-card-clock.png", clock),
+            ("lock-card-date.png", date_part),
+        ] {
+            let index = parts
+                .iter()
+                .position(|p| p.part == placed.part)
+                .expect("the part is on the lock");
+            let near = at.placed[index].expect("the part is drawn");
+            let focus = match placed.part {
+                Part::Date => Line::Show(DatePart::Year),
+                _ => Line::Face,
+            };
+            let mut card = open(index, placed);
+            set_focus(&mut card, Some(focus));
+            let l = layout(&card, near, screen, &t);
+            assert!(
+                l.card.right() <= screen.0 - lock::MARGIN,
+                "{file}: inside the screen"
+            );
+            assert!(
+                l.card.y + l.card.h <= screen.1 - lock::MARGIN,
+                "{file}: inside the screen"
+            );
+            let mut pixmap = Pixmap::new(1280, 800).expect("a pixmap");
+            lock::paint(
+                &mut pixmap,
+                &lock_view,
+                &at,
+                &t,
+                &mut text,
+                None,
+                &mut lock::Pictures::default(),
+                &mut lock::Backdrops::default(),
+                &edel::wallpapers::Wallpaper::Background,
+                1.0,
+            );
+            paint(&mut pixmap, &card, &l, &t, &mut text, 1.0);
+            if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+                let dir = std::path::PathBuf::from(dir);
+                std::fs::create_dir_all(&dir).expect("the PNG folder");
+                pixmap.save_png(dir.join(file)).expect("the PNG");
+            }
+        }
+    }
+}
