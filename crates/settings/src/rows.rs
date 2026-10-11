@@ -110,6 +110,32 @@ pub const ROWS: &[Row] = &[
         key: "appearance.colours.*",
         title: n_("Colours"),
     },
+    // The Shape group (M5.12b2c): the corners, the gaps, the border, the
+    // title bar's height and the panels' opacity, each a slider.
+    Row {
+        key: "appearance.radius",
+        title: n_("Corners"),
+    },
+    Row {
+        key: "appearance.gaps",
+        title: n_("Gaps"),
+    },
+    Row {
+        key: "appearance.gaps_outer",
+        title: n_("Gaps at the edge"),
+    },
+    Row {
+        key: "appearance.border_width",
+        title: n_("Border"),
+    },
+    Row {
+        key: "appearance.title_bar_height",
+        title: n_("Title bar height"),
+    },
+    Row {
+        key: "appearance.panel_opacity",
+        title: n_("Panels' opacity"),
+    },
     Row {
         key: "appearance.switcher_look",
         title: n_("Switcher look"),
@@ -338,7 +364,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 7);
+        assert_eq!(on_page("appearance").count(), 13);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

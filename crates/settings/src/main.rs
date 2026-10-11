@@ -26,6 +26,7 @@ mod power;
 mod preview;
 mod rows;
 mod screens;
+mod shape;
 mod sound;
 mod status;
 mod style;
