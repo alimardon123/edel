@@ -3975,9 +3975,12 @@ case_shape() {
 		fail "edel settings set appearance.gaps=12 and the border did not run in the VM"
 	wait_for 'edel-compositor: shape gaps 12/12, border 3, title bar 28' ||
 		fail "the compositor did not follow the shape: appearance.gaps and border_width"
-	guest 'tiling on'
-	wait_for 'DESKTOP-TEST: ran tiling on: 0' ||
-		fail "edel settings set layout.tiling=true did not run in the VM"
+	# Super+T tiles this workspace whatever layout.tiling says (the tiling
+	# case leaves the file at true with the workspace floated by Super+T).
+	tiling=$(count 'edel-compositor: windows now tiling')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: windows now tiling' "$tiling" ||
+		fail "Super+T did not tile the workspace for the shape"
 	wait_for 'DESKTOP-TEST: windows 2 foot@15,42,[0-9]+x[0-9]+ one@649,42,616x703' ||
 		fail "foot and one are not tiled inside 12 px gaps and a 3 px border: $(value windows)"
 	tiled=$(value windows)
@@ -4006,9 +4009,9 @@ case_shape() {
 	# Back to the release's shape: 8 px gaps, 1 px border, the release's
 	# border colours, and floating again.
 	floated=$(count 'edel-compositor: windows now floating')
-	guest 'tiling off'
+	python3 ci/qmp.py key meta_l-t
 	wait_more 'edel-compositor: windows now floating' "$floated" ||
-		fail "layout.tiling = false did not float the windows again"
+		fail "Super+T did not float the windows again after the shape"
 	shaped=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
 	guest 'shape default'
 	wait_for 'DESKTOP-TEST: ran shape default: 0' ||
