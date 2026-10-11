@@ -126,6 +126,7 @@ pub fn key_of(sym: Keysym) -> Option<Key> {
         Keysym::Tab => Key::Tab,
         Keysym::Return | Keysym::KP_Enter | Keysym::space => Key::Activate,
         Keysym::Escape => Key::Escape,
+        Keysym::Delete | Keysym::BackSpace => Key::Delete,
         _ => return None,
     })
 }

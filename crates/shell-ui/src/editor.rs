@@ -320,6 +320,9 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
     if key == Key::Escape {
         return Step::Act(Act::Close);
     }
+    if key == Key::Delete {
+        return Step::Nothing;
+    }
     let ring = ring(view);
     if key == Key::Tab {
         let next = match focus.and_then(|f| ring.iter().position(|p| *p == f)) {
