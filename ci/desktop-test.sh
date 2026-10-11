@@ -2718,7 +2718,9 @@ case_notify() {
 		fail "shell-ui did not log the notification it was sent"
 	shot notify 1200 745 "$panel" >/dev/null || fail "the banner is not drawn at 1200,745 in the panel's colour"
 	i=0
-	until value layers | grep -q 'edel-notification@'; do
+	# Listed with its size: the state file may name it before its first
+	# commit gives it one, as 0x0.
+	until value layers | grep -q 'edel-notification@[0-9]*,[0-9]*,[1-9]'; do
 		i=$((i + 1))
 		[ "$i" -lt 50 ] || fail "the state file lists no notification surface: $(value layers)"
 		sleep 0.2
@@ -2736,7 +2738,9 @@ case_notify() {
 	python3 ci/qmp.py click "$clock_x" 780
 	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the clock at $clock_x,780 did not open the notification centre"
 	i=0
-	until value layers | grep -q 'edel-centre@'; do
+	# Listed with its size: the state file may name it before its first
+	# commit gives it one, as 0x0.
+	until value layers | grep -q 'edel-centre@[0-9]*,[0-9]*,[1-9]'; do
 		i=$((i + 1))
 		[ "$i" -lt 50 ] || fail "the state file lists no notification centre: $(value layers)"
 		sleep 0.2
