@@ -985,13 +985,13 @@ case_settings() {
 	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
-	# A point low in the part of the window on screen, below the pages'
-	# list: Settings keeps at least 360 by 300, so it may reach past the
-	# screen's 512 by 320.
-	right=$(($1 + $3)) bottom=$(($2 + $4))
-	[ "$right" -le 512 ] || right=512
+	# A point low in the window's page margin, 24 px in from its left
+	# edge, where the pages' list stands at full width and the page's
+	# cards never reach: Settings keeps at least 360 by 300, so it may
+	# reach past the screen's 320 px height.
+	bottom=$(($2 + $4))
 	[ "$bottom" -le 320 ] || bottom=320
-	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
+	nx=$((($1 + 24) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
 	page=$(token window)
 	shot settings-narrow "$nx" "$ny" "$page" >/dev/null ||
 		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the page's #$page"
