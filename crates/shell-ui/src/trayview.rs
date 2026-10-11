@@ -108,6 +108,9 @@ pub enum Key {
     Activate,
     Menu,
     Escape,
+    /// Delete or Backspace: takes a part away in the lock screen's edit mode
+    /// (M5.10c6c); no other editor uses it.
+    Delete,
 }
 
 /// What a key does: move the focus, act on a part, close the grid, or
@@ -261,7 +264,7 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
         // From the gear, the arrows go back to the last icon.
         (Key::Left | Key::Up, Some(Part::Gear)) if n > 0 => Step::Focus(Part::Icon(n - 1)),
         (_, Some(Part::Gear)) => Step::Nothing,
-        (Key::Tab | Key::Escape, _) => Step::Nothing,
+        (Key::Tab | Key::Escape | Key::Delete, _) => Step::Nothing,
     }
 }
 
