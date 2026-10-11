@@ -215,7 +215,7 @@ impl Shell {
         };
         let room = paint::shadow_room(&self.tokens, !fillets());
         let above = self.above_panel(bar.style, bar.size, bar.floating, room);
-        self.open_undo_bar(bar.edge, above, scale, original);
+        self.open_undo_bar(bar.edge, above, scale, editor_card::Undo::Panels(original));
     }
 
     /// A key while the panel menu is open, as `panel_menu::key` says it acts.

@@ -529,11 +529,19 @@ pub fn applying(parts: Option<&[Placed]>, compact: bool) -> Vec<Placed> {
 }
 
 /// The built-in looks, in the order people see them (M5.10c5c).
-pub const LOOKS: &[&str] = &["classic", "magazine", "minimal"];
+pub const LOOKS: &[&str] = &[CLASSIC, "magazine", "minimal"];
 
 /// The look that applies while none is chosen, and the one an unknown name
 /// falls back to.
-const CLASSIC: &str = "classic";
+pub const CLASSIC: &str = "classic";
+
+/// What `lock_screen.notifications` takes: the count shown (absent is
+/// this) or hidden (M5.10c5c).
+pub const NOTIFICATIONS: &[&str] = &[COUNT_SHOWN, COUNT_HIDDEN];
+/// The unread notifications' count shows.
+pub const COUNT_SHOWN: &str = "count";
+/// The unread notifications' count is hidden.
+pub const COUNT_HIDDEN: &str = "none";
 
 /// The most characters a look's name may have.
 const MOST_LOOK: usize = 32;
@@ -750,7 +758,7 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
             .as_deref()
             .and_then(parse_background)
             .unwrap_or_else(|| look_background(look)),
-        notifications: lock.notifications.as_deref() != Some("none"),
+        notifications: lock.notifications.as_deref() != Some(COUNT_HIDDEN),
     }
 }
 
@@ -898,6 +906,283 @@ fn slide(
         }
     }
     None
+}
+
+/// The reach, in logical pixels, within which a dragged part snaps to a
+/// guide (M5.10c6).
+pub const SNAP: f32 = 8.0;
+
+/// The step, as a share of the screen, one press of an arrow key moves a part
+/// by in the edit mode (M5.10c6): a hundredth.
+pub const NUDGE: f64 = 0.01;
+
+/// Offsets are written to 4 decimals, so a dragged part's file line reads
+/// well and a nudge does not leave float noise behind (M5.10c6). Three
+/// decimals would leave a part up to 2 px off on a 4K screen, past the 1 px
+/// the round trip allows; four leave at most 0.4 px.
+const DECIMALS: f64 = 10000.0;
+
+/// Rounds an offset to [`DECIMALS`] and keeps it within -1 to 1.
+fn round_offset(value: f64) -> f64 {
+    ((value * DECIMALS).round() / DECIMALS).clamp(-1.0, 1.0)
+}
+
+/// The anchor at a side across and a side down the screen.
+fn anchor_at(across: Side, down: Side) -> Anchor {
+    match (down, across) {
+        (Side::Start, Side::Start) => Anchor::TopLeft,
+        (Side::Start, Side::Middle) => Anchor::Top,
+        (Side::Start, Side::End) => Anchor::TopRight,
+        (Side::Middle, Side::Start) => Anchor::Left,
+        (Side::Middle, Side::Middle) => Anchor::Centre,
+        (Side::Middle, Side::End) => Anchor::Right,
+        (Side::End, Side::Start) => Anchor::BottomLeft,
+        (Side::End, Side::Middle) => Anchor::Bottom,
+        (Side::End, Side::End) => Anchor::BottomRight,
+    }
+}
+
+/// The anchor and offset that put a part of size `rect.w` by `rect.h` at
+/// `rect` on `screen`, as `arrange` places a part alone (M5.10c6): the anchor
+/// is the one of the nine whose third of the screen holds `rect`'s middle,
+/// and the offsets are what `place` needs to put the rectangle exactly there,
+/// as shares of the screen, rounded to 4 decimals and kept within -1 to 1.
+/// The inverse of `place`'s point maths, so a dragged part lands where it was
+/// dropped.
+pub fn placed_at(rect: Rect, screen: (f32, f32), margin: f32) -> (Anchor, f64, f64) {
+    let (sw, sh) = (f64::from(screen.0), f64::from(screen.1));
+    let (x, y) = (f64::from(rect.x), f64::from(rect.y));
+    let (w, h) = (f64::from(rect.w), f64::from(rect.h));
+    let margin = f64::from(margin);
+    let third = |middle: f64, size: f64| {
+        if middle < size / 3.0 {
+            Side::Start
+        } else if middle < size * 2.0 / 3.0 {
+            Side::Middle
+        } else {
+            Side::End
+        }
+    };
+    let across = third(x + w / 2.0, sw);
+    let down = third(y + h / 2.0, sh);
+    let ox = match across {
+        Side::Start => (x - margin) / sw,
+        Side::Middle => (x + w / 2.0 - sw / 2.0) / sw,
+        Side::End => (x + w - (sw - margin)) / sw,
+    };
+    let oy = match down {
+        Side::Start => (y - margin) / sh,
+        Side::Middle => (y + h / 2.0 - sh / 2.0) / sh,
+        Side::End => (y + h - (sh - margin)) / sh,
+    };
+    (anchor_at(across, down), round_offset(ox), round_offset(oy))
+}
+
+/// The same part as `placed`, with its options, text and path kept, standing
+/// at `rect` on `screen` (M5.10c6; see [`placed_at`]).
+pub fn moved(placed: &Placed, rect: Rect, screen: (f32, f32), margin: f32) -> Placed {
+    let (at, x, y) = placed_at(rect, screen, margin);
+    Placed {
+        at,
+        x,
+        y,
+        ..placed.clone()
+    }
+}
+
+/// A line a dragged part snaps to (M5.10c6): across (`vertical` false, at a
+/// y) or down (`vertical` true, at an x), in logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Guide {
+    pub vertical: bool,
+    pub at: f32,
+}
+
+/// The nearest line within `reach` of any of `edges`, as the shift that
+/// moves that edge onto it and the line itself. None when nothing is in reach.
+fn nearest(edges: &[f32], lines: &[f32], reach: f32) -> Option<(f32, f32)> {
+    let mut best: Option<(f32, f32, f32)> = None; // (distance, shift, line)
+    for edge in edges {
+        for line in lines {
+            let distance = (line - edge).abs();
+            if distance <= reach && best.is_none_or(|(d, _, _)| distance < d) {
+                best = Some((distance, line - edge, *line));
+            }
+        }
+    }
+    best.map(|(_, shift, line)| (shift, line))
+}
+
+/// `rect` moved onto the nearest guides within `reach` logical pixels, one
+/// across and one down at most, and the guides it now lies on (M5.10c6).
+/// Down lines: the margin at each side, the screen's middle, and each of
+/// `others`' left edge, middle and right edge; across lines: the margin at
+/// the top and bottom, the screen's middle, and each of `others`' top, middle
+/// and bottom. A rectangle's left edge, middle and right edge each snap to a
+/// down line (the nearest of the three pairs wins), its top, middle and bottom
+/// to an across line. The result is clamped inside the margin, and a guide
+/// the clamp moves the rectangle off is dropped. Nothing within reach: `rect`
+/// unchanged and no guides.
+pub fn snap(
+    rect: Rect,
+    others: &[Rect],
+    screen: (f32, f32),
+    margin: f32,
+    reach: f32,
+) -> (Rect, Vec<Guide>) {
+    let (sw, sh) = screen;
+    let mut down = vec![margin, sw - margin, sw / 2.0];
+    let mut across = vec![margin, sh - margin, sh / 2.0];
+    for other in others {
+        down.extend([other.x, other.x + other.w / 2.0, other.x + other.w]);
+        across.extend([other.y, other.y + other.h / 2.0, other.y + other.h]);
+    }
+    let x_edges = [rect.x, rect.x + rect.w / 2.0, rect.x + rect.w];
+    let y_edges = [rect.y, rect.y + rect.h / 2.0, rect.y + rect.h];
+    let snapped_x = nearest(&x_edges, &down, reach);
+    let snapped_y = nearest(&y_edges, &across, reach);
+    let mut out = rect;
+    if let Some((shift, _)) = snapped_x {
+        out.x += shift;
+    }
+    if let Some((shift, _)) = snapped_y {
+        out.y += shift;
+    }
+    // The margin last, so a rectangle larger than the screen sits at it.
+    out.x = out.x.min(sw - margin - out.w).max(margin);
+    out.y = out.y.min(sh - margin - out.h).max(margin);
+    let on = |edges: [f32; 3], line: f32| edges.iter().any(|e| (e - line).abs() < 0.5);
+    let mut guides = Vec::new();
+    if let Some((_, line)) = snapped_x {
+        let edges = [out.x, out.x + out.w / 2.0, out.x + out.w];
+        if on(edges, line) {
+            guides.push(Guide {
+                vertical: true,
+                at: line,
+            });
+        }
+    }
+    if let Some((_, line)) = snapped_y {
+        let edges = [out.y, out.y + out.h / 2.0, out.y + out.h];
+        if on(edges, line) {
+            guides.push(Guide {
+                vertical: false,
+                at: line,
+            });
+        }
+    }
+    (out, guides)
+}
+
+/// The parts the edit mode's drawer offers to add to `parts` (M5.10c6), in
+/// `Part`'s order: each part `parts` lacks, and a message and a picture while
+/// fewer than [`MOST_EACH`] stand. The person is never offered (it always
+/// stands) and nor is the battery on a machine without one (`battery` false).
+pub fn missing(parts: &[Placed], battery: bool) -> Vec<Part> {
+    let count = |part: Part| parts.iter().filter(|p| p.part == part).count();
+    [
+        Part::Clock,
+        Part::Date,
+        Part::Count,
+        Part::Player,
+        Part::Message,
+        Part::Picture,
+        Part::Battery,
+    ]
+    .into_iter()
+    .filter(|part| match part {
+        Part::Message | Part::Picture => count(*part) < MOST_EACH,
+        Part::Battery => battery && count(*part) == 0,
+        _ => count(*part) == 0,
+    })
+    .collect()
+}
+
+/// The words a new message starts with, until the person writes their own
+/// (M5.10c6).
+pub fn message_placeholder() -> String {
+    tr("Your message").into()
+}
+
+/// `parts` with `part` added at `rect`'s place (`placed_at`), or the same list
+/// when it may not be added (`missing` does not offer it, a battery only
+/// where the machine has one, `battery`) or when
+/// the result would not pass [`check`], such as empty `words`. A message gets
+/// `words`; a picture is not added here (it needs a file; the edit mode's card
+/// chooses one, part c), so `Part::Picture` returns the list unchanged.
+pub fn with_added(
+    parts: &[Placed],
+    part: Part,
+    rect: Rect,
+    screen: (f32, f32),
+    margin: f32,
+    words: &str,
+    battery: bool,
+) -> Vec<Placed> {
+    if part == Part::Picture || !missing(parts, battery).contains(&part) {
+        return parts.to_vec();
+    }
+    let (at, x, y) = placed_at(rect, screen, margin);
+    let text = (part == Part::Message).then(|| words.to_string());
+    let mut list = parts.to_vec();
+    list.push(Placed {
+        x,
+        text,
+        ..part_at(part, at, y)
+    });
+    if check(&list).is_ok() {
+        list
+    } else {
+        parts.to_vec()
+    }
+}
+
+/// Whether the part at `index` may be taken away: every part but the person
+/// (M5.10c6).
+pub fn removable(parts: &[Placed], index: usize) -> bool {
+    parts.get(index).is_some_and(|p| p.part != Part::Person)
+}
+
+/// `parts` without the part at `index`, or the same list when that is the
+/// person (nobody is ever locked out) or `index` is out of range (M5.10c6).
+pub fn without(parts: &[Placed], index: usize) -> Vec<Placed> {
+    let mut list = parts.to_vec();
+    if removable(parts, index) {
+        list.remove(index);
+    }
+    list
+}
+
+/// The part moved by `dx`, `dy` steps of [`NUDGE`] by the arrow keys in the
+/// edit mode (M5.10c6), its anchor kept, each offset kept within -1 to 1. An
+/// axis with no step keeps its offset as it is.
+pub fn nudged(placed: &Placed, dx: i32, dy: i32) -> Placed {
+    let step = |value: f64, n: i32| {
+        if n == 0 {
+            value
+        } else {
+            round_offset(value + f64::from(n) * NUDGE)
+        }
+    };
+    Placed {
+        x: step(placed.x, dx),
+        y: step(placed.y, dy),
+        ..placed.clone()
+    }
+}
+
+/// The settings key the list of parts is written to (M5.10c5, M5.10c6): the
+/// lock and login screens' edit mode and Settings' Lock screen page write it.
+pub const PARTS: &str = "lock_screen.parts";
+
+/// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
+/// list of tables in one line, absent options left out (M5.10c6). Settings'
+/// Lock screen page and the edit mode both write the list this way, so the
+/// one function is here (ADR-010).
+pub fn parts_value(parts: &[Placed]) -> Result<String, String> {
+    toml::Value::try_from(parts)
+        .map(|value| value.to_string())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -1593,5 +1878,487 @@ mod tests {
             check_look("gallery", Some(&own)).unwrap_err(),
             "\"gallery\" is not a look; choose classic, magazine, minimal, or one of yours (home)"
         );
+    }
+
+    /// The rectangles of the round trip: sizes 120 by 40, 300 by 200 and 420
+    /// by 180, each at every tenth of the screen across and down that fits
+    /// inside the margin.
+    fn grid(screen: (f32, f32)) -> Vec<Rect> {
+        let mut rects = Vec::new();
+        for (w, h) in [(120.0, 40.0), (300.0, 200.0), (420.0, 180.0)] {
+            for i in 0..10 {
+                for j in 0..10 {
+                    let x = screen.0 * i as f32 / 10.0;
+                    let y = screen.1 * j as f32 / 10.0;
+                    let fits = x >= MARGIN
+                        && y >= MARGIN
+                        && x + w <= screen.0 - MARGIN
+                        && y + h <= screen.1 - MARGIN;
+                    if fits {
+                        rects.push(Rect { x, y, w, h });
+                    }
+                }
+            }
+        }
+        rects
+    }
+
+    #[test]
+    fn a_placed_rectangle_comes_back_from_arrange() {
+        let template = part_at(Part::Clock, Anchor::Centre, 0.0);
+        let mut cases = 0;
+        for screen in SCREENS {
+            for rect in grid(screen) {
+                let placed = moved(&template, rect, screen, MARGIN);
+                // Through `arrange`, as the lock screen places it.
+                let item = Item {
+                    at: placed.at,
+                    x: placed.x as f32,
+                    y: placed.y as f32,
+                    w: rect.w,
+                    h: rect.h,
+                };
+                let out = arrange(screen, &[item], &[], GAP, MARGIN);
+                let got = out[0].expect("the part stands");
+                assert!(
+                    (got.x - rect.x).abs() <= 1.0 && (got.y - rect.y).abs() <= 1.0,
+                    "{rect:?} came back as {got:?} on {screen:?} ({placed:?})"
+                );
+                assert_eq!((got.w, got.h), (rect.w, rect.h));
+                // The anchor follows the third the middle is in.
+                let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+                let across = if cx < screen.0 / 3.0 {
+                    0
+                } else if cx < 2.0 * screen.0 / 3.0 {
+                    1
+                } else {
+                    2
+                };
+                let down = if cy < screen.1 / 3.0 {
+                    0
+                } else if cy < 2.0 * screen.1 / 3.0 {
+                    1
+                } else {
+                    2
+                };
+                let want = [
+                    [Anchor::TopLeft, Anchor::Top, Anchor::TopRight],
+                    [Anchor::Left, Anchor::Centre, Anchor::Right],
+                    [Anchor::BottomLeft, Anchor::Bottom, Anchor::BottomRight],
+                ][down][across];
+                assert_eq!(placed.at, want, "{rect:?} on {screen:?}");
+                cases += 1;
+            }
+        }
+        assert!(cases > 100, "the grid has {cases} rectangles");
+    }
+
+    #[test]
+    fn the_corners_of_the_grid_name_their_anchors() {
+        let screen = (1920.0, 1080.0);
+        let at = |x: f32, y: f32| {
+            placed_at(
+                Rect {
+                    x,
+                    y,
+                    w: 120.0,
+                    h: 40.0,
+                },
+                screen,
+                MARGIN,
+            )
+            .0
+        };
+        assert_eq!(at(MARGIN, MARGIN), Anchor::TopLeft);
+        assert_eq!(at(960.0 - 60.0, 540.0 - 20.0), Anchor::Centre);
+        assert_eq!(
+            at(1920.0 - MARGIN - 120.0, 1080.0 - MARGIN - 40.0),
+            Anchor::BottomRight
+        );
+    }
+
+    #[test]
+    fn moving_keeps_the_options_text_and_path() {
+        let clock = Placed {
+            face: Some(Face::Analog),
+            hours: Some(12),
+            size: Some(Size::Small),
+            weight: Some(300),
+            ..part_at(Part::Clock, Anchor::Top, 0.0)
+        };
+        let rect = Rect {
+            x: 100.0,
+            y: 200.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let moved_clock = moved(&clock, rect, (1280.0, 800.0), MARGIN);
+        assert_eq!(
+            Placed {
+                at: clock.at,
+                x: clock.x,
+                y: clock.y,
+                ..moved_clock.clone()
+            },
+            clock
+        );
+        assert_ne!(moved_clock.at, clock.at);
+        let message = Placed {
+            text: Some("Hello".into()),
+            ..part_at(Part::Message, Anchor::Top, 0.0)
+        };
+        assert_eq!(
+            moved(&message, rect, (1280.0, 800.0), MARGIN)
+                .text
+                .as_deref(),
+            Some("Hello")
+        );
+    }
+
+    #[test]
+    fn a_rectangle_snaps_onto_the_screens_middle() {
+        let screen = (800.0, 1280.0);
+        // Its middle, 345 + 60, is 5 px right of the screen's middle, 400.
+        let rect = Rect {
+            x: 345.0,
+            y: 100.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let (out, guides) = snap(rect, &[], screen, MARGIN, SNAP);
+        assert_eq!(out.x, 340.0);
+        assert_eq!(out.y, 100.0);
+        assert_eq!(
+            guides,
+            vec![Guide {
+                vertical: true,
+                at: 400.0
+            }]
+        );
+    }
+
+    #[test]
+    fn a_left_edge_snaps_onto_another_parts_right_edge() {
+        let screen = (800.0, 1280.0);
+        let other = Rect {
+            x: 100.0,
+            y: 600.0,
+            w: 200.0,
+            h: 50.0,
+        };
+        // Its left edge is 5 px right of the other's right edge, 300.
+        let rect = Rect {
+            x: 305.0,
+            y: 300.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let (out, guides) = snap(rect, &[other], screen, MARGIN, SNAP);
+        assert_eq!(out.x, 300.0);
+        assert_eq!(
+            guides,
+            vec![Guide {
+                vertical: true,
+                at: 300.0
+            }]
+        );
+    }
+
+    #[test]
+    fn a_rectangle_20_px_from_every_line_stays_put() {
+        let screen = (800.0, 1280.0);
+        let other = Rect {
+            x: 500.0,
+            y: 700.0,
+            w: 100.0,
+            h: 100.0,
+        };
+        // Its left edge is 20 px from the margin and nothing is nearer.
+        let rect = Rect {
+            x: 44.0,
+            y: 200.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        assert_eq!(snap(rect, &[other], screen, MARGIN, SNAP), (rect, vec![]));
+    }
+
+    #[test]
+    fn a_rectangle_near_two_lines_picks_the_nearer() {
+        let screen = (800.0, 1280.0);
+        // Its left edge is 2 px from the margin, 24, and 4 px from another
+        // part's left edge, 30; the margin wins.
+        let other = Rect {
+            x: 30.0,
+            y: 600.0,
+            w: 50.0,
+            h: 50.0,
+        };
+        let rect = Rect {
+            x: 26.0,
+            y: 300.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let (out, guides) = snap(rect, &[other], screen, MARGIN, SNAP);
+        assert_eq!(out.x, 24.0);
+        assert_eq!(
+            guides,
+            vec![Guide {
+                vertical: true,
+                at: 24.0
+            }]
+        );
+    }
+
+    #[test]
+    fn a_rectangle_takes_at_most_one_guide_per_direction_and_stays_inside() {
+        let screen = (800.0, 1280.0);
+        let others = [
+            Rect {
+                x: 390.0,
+                y: 630.0,
+                w: 20.0,
+                h: 20.0,
+            },
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                w: 780.0,
+                h: 60.0,
+            },
+        ];
+        let mut snapped = 0;
+        for x in (0..800).step_by(3) {
+            for y in (0..1280).step_by(7) {
+                let rect = Rect {
+                    x: x as f32,
+                    y: y as f32,
+                    w: 120.0,
+                    h: 40.0,
+                };
+                let (out, guides) = snap(rect, &others, screen, MARGIN, SNAP);
+                assert!(guides.iter().filter(|g| g.vertical).count() <= 1);
+                assert!(guides.iter().filter(|g| !g.vertical).count() <= 1);
+                assert!(out.x >= MARGIN && out.x + out.w <= screen.0 - MARGIN);
+                assert!(out.y >= MARGIN && out.y + out.h <= screen.1 - MARGIN);
+                if !guides.is_empty() {
+                    snapped += 1;
+                }
+            }
+        }
+        assert!(snapped > 0);
+        // A rectangle that is too big for the screen is clamped to the margin.
+        let huge = Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 2000.0,
+            h: 2000.0,
+        };
+        let (out, _) = snap(huge, &[], screen, MARGIN, SNAP);
+        assert_eq!((out.x, out.y), (MARGIN, MARGIN));
+    }
+
+    #[test]
+    fn the_drawer_offers_what_a_lock_screen_lacks() {
+        assert_eq!(
+            missing(&classic(false), false),
+            vec![Part::Message, Part::Picture]
+        );
+        assert_eq!(
+            missing(&classic(false), true),
+            vec![Part::Message, Part::Picture, Part::Battery]
+        );
+        let all = missing(&[], true);
+        assert_eq!(
+            all,
+            vec![
+                Part::Clock,
+                Part::Date,
+                Part::Count,
+                Part::Player,
+                Part::Message,
+                Part::Picture,
+                Part::Battery,
+            ]
+        );
+        assert!(!all.contains(&Part::Person));
+    }
+
+    #[test]
+    fn messages_and_pictures_stop_being_offered_at_three() {
+        let message = Placed {
+            text: Some("hi".into()),
+            ..part_at(Part::Message, Anchor::Top, 0.0)
+        };
+        let picture = Placed {
+            path: Some("/a.png".into()),
+            ..part_at(Part::Picture, Anchor::Top, 0.0)
+        };
+        let two = vec![
+            message.clone(),
+            message.clone(),
+            picture.clone(),
+            picture.clone(),
+        ];
+        assert!(missing(&two, false).contains(&Part::Message));
+        assert!(missing(&two, false).contains(&Part::Picture));
+        let three = [two.clone(), vec![message.clone()]].concat();
+        assert!(!missing(&three, false).contains(&Part::Message));
+        let three_pictures = [two.clone(), vec![picture]].concat();
+        assert!(!missing(&three_pictures, false).contains(&Part::Picture));
+    }
+
+    #[test]
+    fn adding_a_message_places_it_where_the_rectangle_is() {
+        let screen = (1280.0, 800.0);
+        let rect = Rect {
+            x: 900.0,
+            y: 600.0,
+            w: 300.0,
+            h: 40.0,
+        };
+        let base = classic(false);
+        let list = with_added(&base, Part::Message, rect, screen, MARGIN, "Call me", true);
+        assert_eq!(list.len(), base.len() + 1);
+        let added = list.last().expect("the message is last");
+        let (at, x, y) = placed_at(rect, screen, MARGIN);
+        assert_eq!(added.part, Part::Message);
+        assert_eq!((added.at, added.x, added.y), (at, x, y));
+        assert_eq!(added.text.as_deref(), Some("Call me"));
+        assert!(check(&list).is_ok());
+    }
+
+    #[test]
+    fn adding_refuses_what_missing_does_not_offer_and_empty_words() {
+        let screen = (1280.0, 800.0);
+        let rect = Rect {
+            x: 100.0,
+            y: 100.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let base = classic(false);
+        // The person, a part already shown, and a picture (it needs a file).
+        assert_eq!(
+            with_added(&base, Part::Person, rect, screen, MARGIN, "x", true),
+            base
+        );
+        assert_eq!(
+            with_added(&base, Part::Clock, rect, screen, MARGIN, "x", true),
+            base
+        );
+        assert_eq!(
+            with_added(&base, Part::Picture, rect, screen, MARGIN, "x", true),
+            base
+        );
+        // Words that fail the check leave the list as it was.
+        assert_eq!(
+            with_added(&base, Part::Message, rect, screen, MARGIN, "", true),
+            base
+        );
+        // A battery is added only on a machine that has one.
+        assert_eq!(
+            with_added(&base, Part::Battery, rect, screen, MARGIN, "x", false),
+            base
+        );
+        assert_eq!(
+            with_added(&base, Part::Battery, rect, screen, MARGIN, "x", true).len(),
+            base.len() + 1
+        );
+    }
+
+    #[test]
+    fn the_placeholder_is_a_message_the_check_takes() {
+        let words = message_placeholder();
+        assert_eq!(words, "Your message");
+        let rect = Rect {
+            x: 100.0,
+            y: 100.0,
+            w: 120.0,
+            h: 40.0,
+        };
+        let list = with_added(
+            &classic(true),
+            Part::Message,
+            rect,
+            (360.0, 740.0),
+            MARGIN,
+            &words,
+            true,
+        );
+        assert_eq!(list.len(), classic(true).len() + 1);
+    }
+
+    #[test]
+    fn every_list_the_editor_returns_passes_the_check() {
+        let mut lists: Vec<Vec<Placed>> = vec![classic(false), classic(true)];
+        for name in LOOKS {
+            for compact in [false, true] {
+                lists.push(look_parts(name, compact).expect("a built-in look"));
+            }
+        }
+        let rect = Rect {
+            x: 100.0,
+            y: 300.0,
+            w: 200.0,
+            h: 60.0,
+        };
+        let words = message_placeholder();
+        for base in &lists {
+            assert!(check(base).is_ok());
+            for part in missing(base, true) {
+                let list = with_added(base, part, rect, (1280.0, 800.0), MARGIN, &words, true);
+                assert!(check(&list).is_ok(), "adding {part:?} to {base:?}");
+            }
+            for index in 0..base.len() {
+                let list = without(base, index);
+                if removable(base, index) {
+                    assert_eq!(list.len(), base.len() - 1);
+                    assert!(check(&list).is_ok(), "removing {index} from {base:?}");
+                } else {
+                    assert_eq!(&list, base);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nobody_is_locked_out_of_the_lock_screen() {
+        let list = classic(false);
+        let person_at = list
+            .iter()
+            .position(|p| p.part == Part::Person)
+            .expect("the person");
+        assert!(!removable(&list, person_at));
+        assert_eq!(without(&list, person_at), list);
+        assert!(!removable(&list, 99));
+        assert_eq!(without(&list, 99), list);
+        assert!(removable(&list, 0));
+        assert_eq!(without(&list, 0).len(), list.len() - 1);
+    }
+
+    #[test]
+    fn two_steps_right_add_a_hundredth_each() {
+        let placed = part_at(Part::Clock, Anchor::Top, 0.25);
+        let nudged_right = nudged(&placed, 2, 0);
+        assert!((nudged_right.x - 0.02).abs() < 1e-9);
+        assert_eq!(nudged_right.y, 0.25);
+        assert_eq!(nudged_right.at, Anchor::Top);
+        let down = nudged(&placed, 0, -3);
+        assert!((down.y - 0.22).abs() < 1e-9);
+        assert_eq!(down.x, 0.0);
+    }
+
+    #[test]
+    fn a_nudge_stays_within_the_screen() {
+        let placed = Placed {
+            x: 0.995,
+            ..part_at(Part::Clock, Anchor::Top, -1.0)
+        };
+        assert_eq!(nudged(&placed, 1, 0).x, 1.0);
+        assert_eq!(nudged(&placed, 1, -1).y, -1.0);
+        assert_eq!(nudged(&placed, 0, 0), placed);
+        assert_eq!(NUDGE, 0.01);
     }
 }

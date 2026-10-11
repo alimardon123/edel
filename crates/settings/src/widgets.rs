@@ -5,10 +5,13 @@
 //! own, the look is `style.rs`'s from the tokens, and another toolkit
 //! would be these few functions again (ADR-004).
 
-use gtk::graphene;
+use std::path::PathBuf;
+
 use gtk::prelude::*;
+use gtk::{gdk, gio, glib, graphene};
 
 use edel::i18n::{tr, trf};
+use edel::tokens::Colour;
 
 use crate::icon;
 
@@ -633,6 +636,61 @@ pub async fn pick_file(
     file.ok()?.path()
 }
 
+/// Asks for pictures, several at once, in the system's file chooser
+/// (M5.10c4c, M5.10c5c): `done` gets their paths, or None when the person
+/// cancels. Wallpaper's Your picture and the lock screen's Picture share it.
+pub fn choose_pictures(near: &gtk::Widget, done: impl FnOnce(Option<Vec<PathBuf>>) + 'static) {
+    let near = near.clone();
+    glib::spawn_future_local(async move {
+        let dialog = gtk::FileDialog::builder()
+            .title(tr("Choose a picture"))
+            .modal(true)
+            .build();
+        let window = near.root().and_downcast::<gtk::Window>();
+        let picked = dialog
+            .open_multiple_future(window.as_ref())
+            .await
+            .ok()
+            .map(|files| {
+                files
+                    .iter::<gio::File>()
+                    .filter_map(Result::ok)
+                    .filter_map(|file| file.path())
+                    .collect::<Vec<PathBuf>>()
+            });
+        done(picked);
+    });
+}
+
+/// Asks for a colour in the system's dialog, starting from `start`, and
+/// gives it as `#rrggbb` (M5.10c4c, M5.10c5c): `done` gets None when the
+/// person cancels. The Wallpaper card and the lock screen's Colour share it.
+pub fn choose_colour(
+    near: &gtk::Widget,
+    start: Colour,
+    done: impl FnOnce(Option<String>) + 'static,
+) {
+    let initial = start.hex().parse::<gdk::RGBA>().ok();
+    let window = near.root().and_downcast::<gtk::Window>();
+    gtk::ColorDialog::new().choose_rgba(
+        window.as_ref(),
+        initial.as_ref(),
+        None::<&gio::Cancellable>,
+        move |picked| done(picked.ok().map(|rgba| hex_of(&rgba))),
+    );
+}
+
+/// A colour as `#rrggbb`, lowercase, each channel rounded to 0 to 255.
+fn hex_of(c: &gdk::RGBA) -> String {
+    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        channel(c.red()),
+        channel(c.green()),
+        channel(c.blue())
+    )
+}
+
 /// A row in `group` that opens to show `text` in a read-only box, in a
 /// fixed-width font and scrolled to its end, as About's session log is:
 /// the newest line is the one people need.
@@ -710,35 +768,6 @@ pub fn copied(button: &gtk::Button) {
             button.set_child(Some(&icon::image("copy", 12)));
         }
     });
-}
-
-/// Asks for a colour in the system's dialog, starting from `initial`, and
-/// gives `done` the colour as `#rrggbb`, or none when the choice was
-/// cancelled (M5.12b1c; the Wallpaper group's Colour card and the
-/// Appearance page's colours share it).
-pub fn choose_colour(
-    near: &gtk::Widget,
-    initial: Option<gtk::gdk::RGBA>,
-    done: impl FnOnce(Option<String>) + 'static,
-) {
-    let window = near.root().and_downcast::<gtk::Window>();
-    gtk::ColorDialog::new().choose_rgba(
-        window.as_ref(),
-        initial.as_ref(),
-        None::<&gtk::gio::Cancellable>,
-        move |picked| done(picked.ok().map(|rgba| hex_of(&rgba))),
-    );
-}
-
-/// A colour as `#rrggbb`, lowercase, each channel rounded to 0 to 255.
-pub fn hex_of(c: &gtk::gdk::RGBA) -> String {
-    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!(
-        "#{:02x}{:02x}{:02x}",
-        channel(c.red()),
-        channel(c.green()),
-        channel(c.blue())
-    )
 }
 
 /// A title bar drawn as the compositor draws every window's, in a small

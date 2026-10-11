@@ -1,0 +1,758 @@
+//! The shell's side of the lock screen's edit mode (M5.10c6b): Settings'
+//! Edit lock screen, or the session bus's `EditLockScreen`, puts the lock
+//! screen up live over the whole main screen, on the overlay layer with the
+//! keyboard exclusive. `lock_editor.rs` says what is drawn and where a drop
+//! lands; this holds the surface, the pointer and the keyboard, and writes
+//! `lock_screen.parts` in the person's file when Done is pressed (never a
+//! default, as the panel editor's writes). Escape leaves without writing.
+//! Done opens the Undo bar (`editor_card.rs`), which puts the person's line
+//! back for ten seconds. Logs `lock editor shown, N parts, M in the drawer`,
+//! `lock editor places ...`, `lock editor drag NAME`, `lock editor WORDS`,
+//! `lock editor undo`, `lock editor done, WHAT`, `lock editor undone` and
+//! `lock editor hidden`.
+
+use edel::lock_screen::{self, Background, Placed};
+use edel::places;
+use edel::presets::Edge;
+use edel::settings::{self, LockScreen};
+use edel::tokens::Tokens;
+use edel::wallpapers::Wallpaper;
+use smithay_client_toolkit::compositor::FrameCallbackData;
+use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
+use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_shm};
+use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
+use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::wlr_layer::{
+    Anchor, KeyboardInteractivity, Layer, LayerSurface,
+};
+use smithay_client_toolkit::shm::slot::SlotPool;
+use tiny_skia::Pixmap;
+
+use crate::corner;
+use crate::editor::{self, DRAG_START, Kind};
+use crate::editor_card::Undo;
+use crate::lock::{self, Backdrops, Pictures};
+use crate::lock_editor::{self, Drag, From};
+use crate::messages;
+use crate::paint;
+use crate::player;
+use crate::quick;
+use crate::widgets::keyboard;
+use crate::{LOCK_EDITOR, Shell, fillets, settings_texts};
+
+/// What Done wrote, for its log line and for Undo (M5.10c6b): the words
+/// the log says, and the person's `lock_screen.parts` line before the write,
+/// as a value Undo can put back.
+#[derive(Debug)]
+struct Saved {
+    what: &'static str,
+    before: Option<String>,
+}
+
+/// The log words of what Done did.
+const WRITTEN: &str = "lock_screen.parts written";
+const TAKEN: &str = "lock_screen.parts taken out";
+const NOTHING: &str = "nothing to write";
+
+/// The lock screen's edit mode while it is open: its surface and keyboard,
+/// the parts it started from (`original`), what it shows now (`view`, which
+/// holds the parts being edited), whether the machine has a battery and the
+/// screen is Compact, the background and wallpaper the parts stand on, and
+/// what was drawn last. `ready` is set at the first configure and `waiting`
+/// while the compositor has not shown the last drawing.
+pub struct LockEditor {
+    surface: LayerSurface,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    pool: Option<SlotPool>,
+    scale: u32,
+    ready: bool,
+    waiting: bool,
+    shown: bool,
+    original: Vec<Placed>,
+    view: lock_editor::View,
+    battery: bool,
+    compact: bool,
+    background: Background,
+    wallpaper: Wallpaper,
+    pictures: Pictures,
+    backdrops: Backdrops,
+    drawn: Option<(lock_editor::View, u32)>,
+    logged: String,
+}
+
+/// The lock screen's layout of `parts` on a screen `screen` logical pixels
+/// big, as the lock draws it: the player's card at its one-page size, the
+/// corner's buttons kept clear (`corner_view`, with no menu), the count shown
+/// (two notifications, so the count is a part to move), the battery when the
+/// machine has one, and `background` behind. Returns the layout and the
+/// corner's layout.
+fn layout_of(
+    text: &mut paint::Text,
+    tokens: &Tokens,
+    screen: (f32, f32),
+    parts: &[Placed],
+    battery: bool,
+    background: &Background,
+    corner_view: &corner::View,
+) -> (lock::Layout, corner::Layout) {
+    let corner_at = corner::layout(screen.0, screen.1, corner_view);
+    let look = lock::Look {
+        parts,
+        player: Some(player::wide_size(1)),
+        people: false,
+        keep_out: lock::keep_out(&corner_at),
+        battery,
+        background: background.clone(),
+    };
+    let at = lock::layout(screen.0, screen.1, tokens, true, &look, text);
+    (at, corner_at)
+}
+
+/// Whether a drag has gone far enough to be a drag (`DRAG_START`).
+fn far(drag: &Drag) -> bool {
+    (drag.now.0 - drag.start.0).hypot(drag.now.1 - drag.start.1) >= DRAG_START
+}
+
+/// The name a drag's start shows in its log line: the part's, or the
+/// drawer tile's.
+fn name_of(view: &lock_editor::View, from: From) -> &'static str {
+    match from {
+        From::Part(i) => view.parts.get(i).map_or("part", |p| p.part.name()),
+        From::Drawer(part) => part.name(),
+    }
+}
+
+impl Shell {
+    /// Opens the lock screen's edit mode (M5.10c6b): nothing while the lock
+    /// is up, the panel editor is open or this is open. It starts from the
+    /// parts the lock shows now (`lock_screen::applied` of the person's
+    /// settings over the machine's), with the wallpaper those settings name.
+    pub fn open_lock_editor(&mut self) {
+        if self.lock.is_some() || self.editor.is_some() || self.lock_editor.is_some() {
+            return;
+        }
+        self.close_popups();
+        let (machine, person) = settings_texts();
+        let screen = self.screen_size();
+        let compact = screen.0 > 0.0 && screen.0 < lock::COMPACT_BELOW;
+        let dark = quick::is_dark(machine.as_deref(), person.as_deref());
+        let lock_settings = lock::lock_settings(machine.as_deref(), person.as_deref());
+        let applied = lock_screen::applied(&lock_settings, compact);
+        let original = applied.parts;
+        let battery = self.live.status.battery.is_some();
+        let view = lock_editor::View {
+            parts: original.clone(),
+            screen,
+            drag: None,
+            guides: Vec::new(),
+            hover: None,
+            drawer: editor::View {
+                kind: Kind::LockScreen,
+                tiles: lock_editor::drawer_tiles(&original, battery),
+                compact,
+                width: screen.0 as u32,
+                hover: None,
+                focus: None,
+                lifted: None,
+                taking: false,
+            },
+        };
+        let surface = self.compositor.create_surface(&self.qh);
+        let surface = self.layers.create_layer_surface(
+            &self.qh,
+            surface,
+            Layer::Overlay,
+            Some(LOCK_EDITOR),
+            None,
+        );
+        // Over every panel, on the whole screen: the exclusive zone -1 keeps
+        // the panels where they are, and the keyboard is the editor's alone.
+        surface.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, 0);
+        surface.set_exclusive_zone(-1);
+        surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
+        surface.commit();
+        let keyboard = self.seat.seats().next().and_then(|seat| {
+            self.seat
+                .get_keyboard_with_repeat(
+                    &self.qh,
+                    &seat,
+                    None,
+                    self.handle.clone(),
+                    Box::new(|shell: &mut Shell, _, event| shell.lock_editor_key(event)),
+                )
+                .inspect_err(|e| eprintln!("edel-shell-ui: no keyboard for the lock editor: {e}"))
+                .ok()
+        });
+        self.lock_editor = Some(LockEditor {
+            surface,
+            keyboard,
+            pool: None,
+            scale: 1,
+            ready: false,
+            waiting: false,
+            shown: false,
+            original,
+            view,
+            battery,
+            compact,
+            background: applied.background,
+            wallpaper: lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark),
+            pictures: Pictures::default(),
+            backdrops: Backdrops::default(),
+            drawn: None,
+            logged: String::new(),
+        });
+    }
+
+    /// The screen's first configure: the surface's size is the screen's, and
+    /// the edit mode may draw.
+    pub fn lock_editor_configured(&mut self, size: (u32, u32)) {
+        let Some(le) = self.lock_editor.as_mut() else {
+            return;
+        };
+        le.view.screen = (size.0 as f32, size.1 as f32);
+        le.view.drawer.width = size.0;
+        le.view.drawer.compact = (size.0 as f32) < lock::COMPACT_BELOW;
+        le.ready = true;
+        self.draw_lock_editor();
+    }
+
+    /// The compositor showed the last drawing: the next may go.
+    pub fn lock_editor_framed(&mut self) {
+        if let Some(le) = self.lock_editor.as_mut() {
+            le.waiting = false;
+        }
+        self.draw_lock_editor();
+    }
+
+    /// The screen's scale changed.
+    pub fn lock_editor_scaled(&mut self, factor: i32) {
+        if let Some(le) = self.lock_editor.as_mut() {
+            le.scale = factor.clamp(1, 4) as u32;
+        }
+        self.draw_lock_editor();
+    }
+
+    /// Whether `surface` is the open edit mode's.
+    pub fn is_lock_editor(&self, surface: &WlSurface) -> bool {
+        self.lock_editor
+            .as_ref()
+            .is_some_and(|le| le.surface.wl_surface() == surface)
+    }
+
+    /// Draws the edit mode if what it shows changed and the compositor has
+    /// shown the last drawing.
+    pub fn draw_lock_editor(&mut self) {
+        let Some(mut le) = self.lock_editor.take() else {
+            return;
+        };
+        self.paint_lock_editor(&mut le);
+        self.lock_editor = Some(le);
+    }
+
+    /// The corner's buttons as the lock shows them, with the keyboard
+    /// layout's short name when there are two or more, and no menu.
+    fn lock_editor_corner(&self) -> corner::View {
+        let (layouts, active) = &self.live.keyboard;
+        let layout = if layouts.len() >= 2 {
+            layouts.get(*active).map(|name| keyboard::short(name))
+        } else {
+            None
+        };
+        corner::View {
+            layout,
+            menu: false,
+            restart_waiting: false,
+            hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
+        }
+    }
+
+    /// The lock's view as the edit mode shows it: the time and date now, the
+    /// person, the field ready and empty, two unread notifications with no
+    /// apps (so the count is a tile), and the battery the status area reads.
+    fn lock_editor_look(&self) -> lock::View {
+        let now = jiff::Zoned::now();
+        let (time, date) = lock::time_and_date(&now);
+        let mut view = lock::View::new(time, date, lock::user());
+        view.notices = 2;
+        view.when = Some(lock::When::of(&now));
+        view.battery = self.battery_view();
+        view
+    }
+
+    /// Paints `le` if it may draw and what it shows changed: the lock as it
+    /// stands, the parts' outlines and drags, the corner, then the drawer.
+    fn paint_lock_editor(&mut self, le: &mut LockEditor) {
+        if !le.ready || le.waiting {
+            return;
+        }
+        let s = le.scale;
+        let screen = le.view.screen;
+        let shown = (le.view.clone(), s);
+        if le.drawn.as_ref() == Some(&shown) {
+            return;
+        }
+        let corner_view = self.lock_editor_corner();
+        let (at, corner_at) = layout_of(
+            &mut self.text,
+            &self.tokens,
+            screen,
+            &le.view.parts,
+            le.battery,
+            &le.background,
+            &corner_view,
+        );
+        let drawer = editor::layout(&le.view.drawer);
+        let place = lock_editor::drawer_rect(screen, &drawer);
+        let preview = lock_editor::preview(screen, &drawer);
+        let (pw, ph) = (screen.0 as u32 * s, screen.1 as u32 * s);
+        // The lock as the whole screen shows it, then laid smaller above
+        // the drawer, so the drawer never covers a part.
+        let Some(mut pixmap) = Pixmap::new(pw, ph) else {
+            return;
+        };
+        let lock_view = self.lock_editor_look();
+        lock::paint(
+            &mut pixmap,
+            &lock_view,
+            &at,
+            &self.tokens,
+            &mut self.text,
+            Some(&mut self.icons),
+            &mut le.pictures,
+            &mut le.backdrops,
+            &le.wallpaper,
+            s as f32,
+        );
+        lock_editor::paint(
+            &mut pixmap,
+            &le.view,
+            &at,
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
+        corner::paint(
+            &mut pixmap,
+            &corner_view,
+            &corner_at,
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
+        let lock = pixmap;
+        let Some(mut pixmap) = Pixmap::new(pw, ph) else {
+            return;
+        };
+        lock_editor::compose(&mut pixmap, &lock, preview, &self.tokens, s as f32);
+        lock_editor::paint_drawer(
+            &mut pixmap,
+            &le.view,
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
+        let places = lock_editor::places(&le.view, &at, preview, place, &drawer);
+        if places != le.logged {
+            eprintln!("edel-shell-ui: lock editor places {places}");
+            le.logged = places;
+        }
+        let bytes = (pw * ph * 4) as usize;
+        if le.pool.is_none() {
+            // Two buffers' room, as each drawing replaces the last.
+            le.pool = SlotPool::new(2 * bytes, &self.shm)
+                .inspect_err(|e| eprintln!("edel-shell-ui: no memory for the lock editor: {e}"))
+                .ok();
+        }
+        let Some(pool) = le.pool.as_mut() else {
+            return;
+        };
+        let (buffer, canvas) = match pool.create_buffer(
+            pw as i32,
+            ph as i32,
+            pw as i32 * 4,
+            wl_shm::Format::Argb8888,
+        ) {
+            Ok(made) => made,
+            Err(e) => {
+                eprintln!("edel-shell-ui: drawing the lock editor failed: {e}");
+                return;
+            }
+        };
+        paint::to_argb(&pixmap, canvas);
+        let surface = le.surface.wl_surface().clone();
+        surface.set_buffer_scale(s as i32);
+        surface.damage_buffer(0, 0, pw as i32, ph as i32);
+        if let Err(e) = buffer.attach_to(&surface) {
+            eprintln!("edel-shell-ui: drawing the lock editor failed: {e}");
+            return;
+        }
+        surface.frame(&self.qh, FrameCallbackData(surface.clone()));
+        le.surface.commit();
+        le.waiting = true;
+        le.drawn = Some(shown);
+        if !le.shown {
+            le.shown = true;
+            eprintln!(
+                "edel-shell-ui: lock editor shown, {} parts, {} in the drawer",
+                le.view.parts.len(),
+                le.view.drawer.tiles.len()
+            );
+        }
+    }
+
+    /// The layout the edit mode's pointer hits, with the drawer's place.
+    fn lock_editor_geometry(
+        &mut self,
+        le: &LockEditor,
+    ) -> (
+        lock::Layout,
+        editor::Layout,
+        crate::popup::Rect,
+        lock_editor::Preview,
+    ) {
+        let corner_view = self.lock_editor_corner();
+        let (at, _) = layout_of(
+            &mut self.text,
+            &self.tokens,
+            le.view.screen,
+            &le.view.parts,
+            le.battery,
+            &le.background,
+            &corner_view,
+        );
+        let drawer = editor::layout(&le.view.drawer);
+        let place = lock_editor::drawer_rect(le.view.screen, &drawer);
+        let shown = lock_editor::preview(le.view.screen, &drawer);
+        (at, drawer, place, shown)
+    }
+
+    /// A key while the edit mode is open: Escape leaves without writing,
+    /// Return is Done.
+    pub fn lock_editor_key(&mut self, event: KeyEvent) {
+        if self.lock_editor.is_none() {
+            return;
+        }
+        match event.keysym {
+            Keysym::Escape => self.close_lock_editor(false),
+            Keysym::Return | Keysym::KP_Enter => self.close_lock_editor(true),
+            _ => {}
+        }
+    }
+
+    /// The pointer on the edit mode: a press on a part or a drawer tile
+    /// starts a drag, a drag's motion says what it is over, its release
+    /// drops it, and Undo and Done in the drawer act on a press.
+    pub fn lock_editor_pointer(&mut self, event: &PointerEvent) {
+        let Some(mut le) = self.lock_editor.take() else {
+            return;
+        };
+        let done = self.lock_editor_on_pointer(&mut le, event);
+        self.lock_editor = Some(le);
+        if done {
+            self.close_lock_editor(true);
+        }
+    }
+
+    /// The pointer's event on `le`; true when Done was pressed.
+    fn lock_editor_on_pointer(&mut self, le: &mut LockEditor, event: &PointerEvent) -> bool {
+        // The pointer on the screen (the drawer's) and on the lock screen
+        // being edited, drawn smaller above it (the parts', the drags').
+        let (sx, sy) = (event.position.0 as f32, event.position.1 as f32);
+        let (at, drawer, place, shown) = self.lock_editor_geometry(le);
+        let (x, y) = shown.to_lock((sx, sy));
+        let inside = place.contains(sx, sy);
+        let on_drawer = if inside {
+            editor::hit(&drawer, sx - place.x, sy - place.y)
+        } else {
+            None
+        };
+        let on_part = at
+            .placed
+            .iter()
+            .position(|r| r.is_some_and(|r| r.contains(x, y)));
+        match &event.kind {
+            PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
+                let mut started = None;
+                if let Some(drag) = le.view.drag.as_mut() {
+                    drag.now = (x, y);
+                    drag.over_drawer = inside;
+                    if !drag.moving && far(drag) {
+                        drag.moving = true;
+                        started = Some(drag.from);
+                    }
+                }
+                if let Some(from) = started {
+                    eprintln!(
+                        "edel-shell-ui: lock editor drag {}",
+                        name_of(&le.view, from)
+                    );
+                }
+                le.view.hover = on_part;
+                le.view.drawer.hover = on_drawer;
+                self.lock_editor_show_drag(le, &at);
+            }
+            PointerEventKind::Leave { .. } => {
+                le.view.drag = None;
+                le.view.hover = None;
+                le.view.drawer.hover = None;
+                le.view.guides.clear();
+                le.view.drawer.lifted = None;
+                le.view.drawer.taking = false;
+                self.paint_lock_editor(le);
+            }
+            PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                if inside {
+                    match on_drawer {
+                        Some(editor::Part::Undo) => self.undo_lock_editor(le),
+                        Some(editor::Part::Done) => return true,
+                        Some(editor::Part::Tile(i)) => {
+                            let part = le
+                                .view
+                                .drawer
+                                .tiles
+                                .get(i)
+                                .and_then(|tile| lock_editor::part_named(tile.name));
+                            if let Some(part) = part {
+                                le.view.drag = Some(Drag {
+                                    from: From::Drawer(part),
+                                    start: (x, y),
+                                    now: (x, y),
+                                    moving: false,
+                                    over_drawer: false,
+                                });
+                            }
+                        }
+                        None => {}
+                    }
+                } else if let Some(i) = on_part {
+                    le.view.drag = Some(Drag {
+                        from: From::Part(i),
+                        start: (x, y),
+                        now: (x, y),
+                        moving: false,
+                        over_drawer: false,
+                    });
+                }
+            }
+            PointerEventKind::Release { button, .. } if *button == BTN_LEFT => {
+                self.lock_editor_release(le, &at);
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Shows a drag as it is: the guides it snaps to, the drawer's tile
+    /// lifted or its outline when a part is over the drawer, then paints.
+    fn lock_editor_show_drag(&mut self, le: &mut LockEditor, at: &lock::Layout) {
+        let moving = le.view.drag.filter(|d| d.moving);
+        match moving {
+            Some(drag) => {
+                lock_editor::dragged_rect(&mut le.view, at);
+                le.view.drawer.lifted = match drag.from {
+                    From::Drawer(part) => le
+                        .view
+                        .drawer
+                        .tiles
+                        .iter()
+                        .position(|tile| tile.name == part.name()),
+                    From::Part(_) => None,
+                };
+                le.view.drawer.taking = matches!(drag.from, From::Part(_)) && drag.over_drawer;
+            }
+            None => {
+                le.view.guides.clear();
+                le.view.drawer.lifted = None;
+                le.view.drawer.taking = false;
+            }
+        }
+        self.paint_lock_editor(le);
+    }
+
+    /// The pointer let go: a drag that moved is dropped where it is (its
+    /// words logged, the parts changed, the drawer's tiles made again), a
+    /// person dragged onto the drawer is refused and the log says so, and a
+    /// press that did not move was a click.
+    fn lock_editor_release(&mut self, le: &mut LockEditor, at: &lock::Layout) {
+        let Some(drag) = le.view.drag else {
+            return;
+        };
+        if drag.moving {
+            match lock_editor::drop(&le.view, at) {
+                Some((parts, words)) => {
+                    le.view.parts = parts;
+                    eprintln!("edel-shell-ui: lock editor {words}");
+                    le.view.drawer.tiles = lock_editor::drawer_tiles(&le.view.parts, le.battery);
+                }
+                None => {
+                    if let From::Part(i) = drag.from {
+                        if drag.over_drawer && !lock_screen::removable(&le.view.parts, i) {
+                            eprintln!("edel-shell-ui: lock editor: the person stays");
+                        }
+                    }
+                }
+            }
+        }
+        le.view.drag = None;
+        le.view.guides.clear();
+        le.view.drawer.lifted = None;
+        le.view.drawer.taking = false;
+        self.paint_lock_editor(le);
+    }
+
+    /// Undo in the drawer: the parts the edit mode started from, again.
+    fn undo_lock_editor(&mut self, le: &mut LockEditor) {
+        le.view.parts = le.original.clone();
+        le.view.drawer.tiles = lock_editor::drawer_tiles(&le.view.parts, le.battery);
+        le.view.drag = None;
+        le.view.guides.clear();
+        eprintln!("edel-shell-ui: lock editor undo");
+        self.paint_lock_editor(le);
+    }
+
+    /// Writes the parts Done asks for, as the person's `lock_screen.parts`:
+    /// the list as `lock_screen::parts_value` writes it, or the person's line
+    /// taken out when what applies without it is what the edit shows (a
+    /// default is never written), or nothing when nothing changed. None when
+    /// the write fails, which is logged: the edit mode stays open.
+    fn write_lock_editor(&self, le: &LockEditor) -> Option<Saved> {
+        let (machine, person) = settings_texts();
+        let person_parts = person
+            .as_deref()
+            .and_then(|text| settings::read(text).ok())
+            .and_then(|read| read.file.lock_screen.parts);
+        let before = person_parts
+            .as_deref()
+            .and_then(|parts| lock_screen::parts_value(parts).ok());
+        let lock = lock::lock_settings(machine.as_deref(), person.as_deref());
+        let without_person = lock_screen::applied(
+            &LockScreen {
+                parts: None,
+                ..lock
+            },
+            le.compact,
+        )
+        .parts;
+        let parts = &le.view.parts;
+        let value = if *parts == le.original {
+            return Some(Saved {
+                what: NOTHING,
+                before,
+            });
+        } else if *parts == without_person {
+            if before.is_none() {
+                return Some(Saved {
+                    what: NOTHING,
+                    before,
+                });
+            }
+            None
+        } else {
+            match lock_screen::parts_value(parts) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    eprintln!(
+                        "edel-shell-ui: {}",
+                        messages::lock_screen_not_kept(format!("{e:#}"))
+                    );
+                    return None;
+                }
+            }
+        };
+        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
+            eprintln!("edel-shell-ui: {}", messages::LOCK_SCREEN_NO_HOME);
+            return None;
+        };
+        match settings::write(&path, lock_screen::PARTS, value.as_deref()) {
+            Ok(()) => Some(Saved {
+                what: if value.is_some() { WRITTEN } else { TAKEN },
+                before,
+            }),
+            Err(e) => {
+                eprintln!(
+                    "edel-shell-ui: {}",
+                    messages::lock_screen_not_kept(format!("{e:#}"))
+                );
+                None
+            }
+        }
+    }
+
+    /// Closes the edit mode (M5.10c6b). With `write` (Done) the parts are
+    /// written and, when that changed the file, the Undo bar opens where the
+    /// drawer was, at the bottom of the screen; a failed write keeps the edit
+    /// mode open. Without it (Escape, the keyboard leaving) nothing is
+    /// written. Does nothing while the edit mode is not open.
+    pub fn close_lock_editor(&mut self, write: bool) {
+        let Some(le) = self.lock_editor.as_ref() else {
+            return;
+        };
+        if write {
+            let Some(saved) = self.write_lock_editor(le) else {
+                return;
+            };
+            eprintln!("edel-shell-ui: lock editor done, {}", saved.what);
+            let scale = le.scale;
+            let changed = saved.what != NOTHING;
+            self.drop_lock_editor();
+            if changed {
+                let above = self.lock_bar_above();
+                self.open_undo_bar(Edge::Bottom, above, scale, Undo::LockScreen(saved.before));
+            }
+        } else {
+            if le.view.parts != le.original {
+                eprintln!("edel-shell-ui: lock editor undone");
+            }
+            self.drop_lock_editor();
+        }
+    }
+
+    /// Lets go of the edit mode's surface and keyboard, and logs it hidden.
+    fn drop_lock_editor(&mut self) {
+        let Some(le) = self.lock_editor.take() else {
+            return;
+        };
+        if let Some(keyboard) = &le.keyboard {
+            keyboard.release();
+        }
+        drop(le);
+        eprintln!("edel-shell-ui: lock editor hidden");
+    }
+
+    /// How far above the bottom edge the Undo bar after Done starts: above the
+    /// bottom panel as the panel editor's bar does, else at the edge.
+    fn lock_bar_above(&self) -> i32 {
+        let room = crate::paint::shadow_room(&self.tokens, !fillets());
+        self.panels
+            .iter()
+            .find(|p| p.edge == Edge::Bottom)
+            .map_or(0, |p| self.above_panel(p.style, p.size, p.floating, room))
+    }
+
+    /// Writes the person's `lock_screen.parts` as `value` (the list as
+    /// `lock_screen::parts_value` writes it), or takes the line out for None,
+    /// for Undo on the Undo bar (M5.10c6b). Returns what it did, or None after
+    /// logging why it could not.
+    pub(crate) fn save_lock_parts(&self, value: Option<&str>) -> Option<&'static str> {
+        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
+            eprintln!("edel-shell-ui: {}", messages::LOCK_SCREEN_NO_HOME);
+            return None;
+        };
+        match settings::write(&path, lock_screen::PARTS, value) {
+            Ok(()) => Some(if value.is_some() { WRITTEN } else { TAKEN }),
+            Err(e) => {
+                eprintln!(
+                    "edel-shell-ui: {}",
+                    messages::lock_screen_not_kept(format!("{e:#}"))
+                );
+                None
+            }
+        }
+    }
+}
