@@ -44,6 +44,13 @@ pub fn login_failed(why: impl Display) -> String {
     format!("could not log in: {why}; the greeter asks again, and Ctrl+Alt+F2 gives a text login")
 }
 
+/// The login screen could not write down the desktop a person chose (M5.10c3b).
+pub fn session_not_kept(why: impl Display) -> String {
+    format!(
+        "could not remember the desktop for this login: {why}; the login went on, and the next login starts the default unless the choice is made again"
+    )
+}
+
 /// shell-ui stops with an error.
 pub fn stopped(why: impl Display) -> String {
     format!("could not run: {why}; the compositor starts it again unless it keeps failing")
@@ -247,6 +254,15 @@ pub fn power_failed(what: &str, why: impl Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_choice_that_is_not_kept_says_the_login_went_on() {
+        let text = session_not_kept("Permission denied (os error 13)");
+        assert!(
+            text.starts_with("could not remember the desktop for this login: Permission denied")
+        );
+        assert!(text.contains("the login went on"));
+    }
 
     #[test]
     fn a_power_choice_that_fails_says_what_to_check() {

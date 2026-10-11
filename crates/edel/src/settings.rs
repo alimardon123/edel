@@ -65,6 +65,11 @@ pub const PAGES: &[Page] = &[
         about: n_("light or dark, the accent, fonts, animations and the workspace switcher"),
     },
     Page {
+        section: "lock_screen",
+        title: n_("Lock screen"),
+        about: n_("the clock, the parts and where they stand"),
+    },
+    Page {
         section: "displays",
         title: n_("Displays"),
         about: n_("each screen's place, scale and resolution"),
@@ -201,6 +206,9 @@ pub enum Kind {
     /// Panels, as a preset's `[[panels]]` (M5.4e,
     /// [`crate::presets::check_panels`])
     Panels,
+    /// The lock screen's parts, as `[[lock_screen.parts]]` tables
+    /// ([`crate::lock_screen::check`], M5.10c5)
+    LockParts,
     /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
     Resolution,
     /// Keyboard layouts as xkb names them, such as `"us,ru"` or
@@ -360,6 +368,9 @@ pub const KEYS: &[Key] = &[
         "appearance.animations",
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
+    // The lock and login screens' parts, each placed by an anchor and an
+    // offset (M5.10c5); absent is the classic arrangement.
+    now("lock_screen.parts", Kind::LockParts),
     now("shortcuts.*", Kind::Keys),
     later("default_apps.browser", Kind::Text),
     later("default_apps.files", Kind::Text),
@@ -429,6 +440,8 @@ pub struct SettingsFile {
     pub displays: BTreeMap<String, Display>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub appearance: Appearance,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub lock_screen: LockScreen,
     /// Action name to keys, such as `close_window = "Super+Q"`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
@@ -469,6 +482,7 @@ impl Default for SettingsFile {
             workspaces: Workspaces::default(),
             displays: BTreeMap::new(),
             appearance: Appearance::default(),
+            lock_screen: LockScreen::default(),
             shortcuts: BTreeMap::new(),
             region: Region::default(),
             users: BTreeMap::new(),
@@ -680,6 +694,16 @@ pub struct Appearance {
     /// `arrows` or `counts` (M5.2m); absent is [`SWITCHER_ENDS_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub switcher_ends: Option<String>,
+}
+
+/// The Lock screen page (M5.10c5): the parts the lock and login screens
+/// show and where each stands.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LockScreen {
+    /// The parts in place of the classic arrangement, each with its anchor
+    /// and offset ([`crate::lock_screen::check`]); absent is the classic one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<crate::lock_screen::Placed>>,
 }
 
 /// The Default apps page.
@@ -1479,6 +1503,20 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             crate::presets::check_panels(&panels).map_err(|e| e.to_string())?;
             Ok(value.clone())
         }
+        (Kind::LockParts, Value::Array(_)) => {
+            let parts: Vec<crate::lock_screen::Placed> =
+                value.clone().try_into().map_err(|e: toml::de::Error| {
+                    trf(
+                        "expected parts as the lock screen writes them: {why}",
+                        &[("why", e.message())],
+                    )
+                })?;
+            crate::lock_screen::check(&parts)?;
+            Ok(value.clone())
+        }
+        (Kind::LockParts, _) => fail(tr(
+            "a list of parts, such as [{ part = \"person\", at = \"centre\" }]",
+        )),
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
         (Kind::Resolution, _) => fail(tr("a resolution such as \"1920x1080\"")),
         (Kind::Keyboard, Value::String(s)) => {
@@ -1703,6 +1741,7 @@ mod tests {
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+X".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
+            Kind::LockParts => value_from_arg(r#"[{ part = "person", at = "centre" }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
@@ -1877,6 +1916,62 @@ font_size = 11
             let read = read(&file).unwrap();
             assert_eq!(read.file.panels.list, None, "{bad}");
             assert_eq!(read.problems[0].key, "panels.list");
+        }
+    }
+
+    /// The lock screen's parts (M5.10c5) are checked like the panels: a good
+    /// list is set and read back as tables, and a bad one is refused by set
+    /// and left out, with its message, by a lenient read.
+    #[test]
+    fn lock_parts_are_checked_and_read_as_tables_or_inline() {
+        let set_one = set(
+            "format = 1\n",
+            "lock_screen.parts",
+            r#"[{ part = "person", at = "centre" }]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            set_one,
+            "format = 1\n\n[lock_screen]\nparts = [{ at = \"centre\", part = \"person\" }]\n"
+        );
+        let tables = "format = 1\n[[lock_screen.parts]]\npart = \"clock\"\nat = \"top\"\ny = 0.14\n\n[[lock_screen.parts]]\npart = \"person\"\nat = \"centre\"\ny = 0.21\n\n[[lock_screen.parts]]\npart = \"message\"\nat = \"bottom_right\"\ntext = \"Hello\"\n";
+        assert!(check(tables).unwrap().is_empty());
+        let parts = read(tables).unwrap().file.lock_screen.parts.unwrap();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].part, crate::lock_screen::Part::Clock);
+        assert_eq!(parts[2].text.as_deref(), Some("Hello"));
+        // No person, two persons, an offset past the screen, a message with
+        // no words, a picture with a relative path: each refused by set with
+        // its message, and left out by a lenient read.
+        for (bad, why) in [
+            (
+                r#"[{ part = "clock", at = "top" }]"#,
+                "the lock screen needs the person",
+            ),
+            (
+                r#"[{ part = "person", at = "centre" }, { part = "person", at = "bottom" }]"#,
+                "the person stands once; take out the second",
+            ),
+            (
+                r#"[{ part = "person", at = "centre", x = 2 }]"#,
+                "the person's offset x is 2",
+            ),
+            (
+                r#"[{ part = "message", at = "bottom" }, { part = "person", at = "centre" }]"#,
+                "the message needs text",
+            ),
+            (
+                r#"[{ part = "person", at = "centre" }, { part = "picture", at = "top", path = "lock.png" }]"#,
+                "\"lock.png\" is not a picture path",
+            ),
+            (r#""clock""#, "expected a list of parts"),
+        ] {
+            let error = set("format = 1\n", "lock_screen.parts", bad).unwrap_err();
+            assert!(error.to_string().contains(why), "{bad}: {error}");
+            let file = format!("format = 1\n[lock_screen]\nparts = {bad}\n");
+            let read = read(&file).unwrap();
+            assert_eq!(read.file.lock_screen.parts, None, "{bad}");
+            assert_eq!(read.problems[0].key, "lock_screen.parts");
         }
     }
 

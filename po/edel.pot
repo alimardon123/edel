@@ -143,6 +143,45 @@ msgstr ""
 msgid "done; restart from {disk} to use it"
 msgstr ""
 
+msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
+msgstr ""
+
+msgid "the person stands once; take out the second"
+msgstr ""
+
+msgid "the {part} stands once; take out the second"
+msgstr ""
+
+msgid "at most {most} messages; take one out"
+msgstr ""
+
+msgid "at most {most} pictures; take one out"
+msgstr ""
+
+msgid "the {part}'s offset {axis} is {value}; an offset is a share of the screen from -1 to 1, such as 0.1"
+msgstr ""
+
+msgid "the message needs text; add text = \"...\", with 1 to {most} characters"
+msgstr ""
+
+msgid "the message's text has a line break; use one line"
+msgstr ""
+
+msgid "the message's text is {count} characters; use 1 to {most}"
+msgstr ""
+
+msgid "the {part} has text; only a message has words, so take text out"
+msgstr ""
+
+msgid "the picture needs path, the whole path of a .png, .jpg or .jpeg file, such as \"/home/you/lock.png\""
+msgstr ""
+
+msgid "{path} is not a picture path; give the whole path, starting with / and ending in .png, .jpg or .jpeg"
+msgstr ""
+
+msgid "the {part} has a path; only a picture has one, so take path out"
+msgstr ""
+
 msgid "could not replace {path}"
 msgstr ""
 
@@ -515,6 +554,12 @@ msgstr ""
 msgid "light or dark, the accent, fonts, animations and the workspace switcher"
 msgstr ""
 
+msgid "Lock screen"
+msgstr ""
+
+msgid "the clock, the parts and where they stand"
+msgstr ""
+
 msgid "Displays"
 msgstr ""
 
@@ -711,6 +756,12 @@ msgid "keys in quotes, such as \"Super+Q\""
 msgstr ""
 
 msgid "expected panels as a preset writes them: {why}"
+msgstr ""
+
+msgid "expected parts as the lock screen writes them: {why}"
+msgstr ""
+
+msgid "a list of parts, such as [{ part = \"person\", at = \"centre\" }]"
 msgstr ""
 
 msgid "a resolution such as \"1920x1080\""

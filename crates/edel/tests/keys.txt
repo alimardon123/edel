@@ -72,3 +72,4 @@ workspaces.overview_strip
 appearance.switcher_look
 appearance.switcher_shown
 appearance.switcher_ends
+lock_screen.parts
