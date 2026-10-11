@@ -283,7 +283,7 @@ fn place_all(
     text: &mut Text,
 ) -> (Layout, bool) {
     let compact = w < COMPACT_BELOW;
-    let clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0);
+    let mut clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0);
     let field_w = FIELD_WIDE.min(w - 2.0 * MARGIN).max(120.0);
     let person_w = if look.people {
         w - 2.0 * MARGIN
@@ -298,6 +298,14 @@ fn place_all(
         weight: tokens.lock_clock_weight.clamp(100, 900) as u16,
         tabular: true,
     };
+    // The clock is never wider than the screen's room: a wider font (a
+    // language's own, or the one a machine without the tokens' font falls
+    // back to) shrinks it rather than leaving the time out.
+    let room = w - 2.0 * MARGIN;
+    let wide = text.line_in(CLOCK_WIDEST, clock_size, clock_face).width;
+    if wide > room {
+        clock_size *= room / wide;
+    }
     let mut slots: Vec<(Slot, Item)> = Vec::new();
     for p in parts {
         let item = |w: f32, h: f32| Item {
