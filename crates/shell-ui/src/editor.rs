@@ -6,6 +6,8 @@
 //! tested without a display; `editor_card.rs` owns the surface and the
 //! panels. The sizes are the drawer's own: the mockups have none for it.
 
+use std::rc::Rc;
+
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::panel_edit::Group;
@@ -65,12 +67,27 @@ const BUTTON_TOUCH: f32 = edit_kit::BUTTON_TOUCH;
 const COLUMNS_COMPACT: usize = 3;
 /// Where a tile's picture starts from the tile's top, logical pixels.
 const PICTURE_TOP: f32 = 10.0;
+/// The share of a tile's height its icon or picture takes, the rest going to
+/// its title (`edit_kit::tile`'s `ICON_SHARE`).
+const PICTURE_SHARE: f32 = 0.6;
 
-/// One widget in the drawer.
+/// A picture drawn once and kept (M5.10c6c3), such as a look's thumbnail. It
+/// is shared, so two views holding the same one are equal and a change to
+/// the view is only what really changed.
+#[derive(Clone, Debug)]
+pub struct Picture(pub Rc<Pixmap>);
+
+impl PartialEq for Picture {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// One widget in the drawer, or (M5.10c6c3) a look or a background.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tile {
-    /// Its name in the widget table, which its picture is drawn from.
-    pub name: &'static str,
+    /// Its name: a widget's in the widget table, a part's, or a look's.
+    pub name: String,
     /// The icon its tile shows in place of a picture (the lock screen's
     /// parts), empty for a widget's picture.
     pub icon: &'static str,
@@ -80,6 +97,12 @@ pub struct Tile {
     pub shown: String,
     /// Whether a panel holds it already, so it is drawn dimmed.
     pub placed: bool,
+    /// Whether it is the one in use: a look or a background the lock screen
+    /// has now, drawn with the accent's ring (M5.10c6c3).
+    pub chosen: bool,
+    /// The picture drawn in the tile's top part, in place of a widget's
+    /// (a look's thumbnail).
+    pub picture: Option<Picture>,
 }
 
 /// Which editor the drawer serves (M5.10c6): the panels' (its tiles are the
@@ -99,6 +122,14 @@ pub struct View {
     /// Which editor the drawer serves (M5.10c6); `Panels` by default.
     pub kind: Kind,
     pub tiles: Vec<Tile>,
+    /// The tabs' words, a segmented row under the heading (M5.10c6c3); none
+    /// for the panels' drawer.
+    pub tabs: Vec<&'static str>,
+    /// The tab shown, an index into `tabs`.
+    pub tab: usize,
+    /// The most tiles any tab holds, so the drawer keeps one height as the
+    /// tabs change; 0 for a drawer with no tabs.
+    pub tallest: usize,
     /// A Compact screen: touch sizes, three tiles across.
     pub compact: bool,
     /// The screen's width in logical pixels, 0 when unknown.
@@ -185,9 +216,15 @@ pub fn landing(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Part {
     Tile(usize),
+    /// A tab of the drawer, by its index (M5.10c6c3).
+    Tab(usize),
     Undo,
     Done,
 }
+
+/// The gap inside a tabs' row at each end, logical pixels: the segmented
+/// control's inset (`popup`'s).
+const TAB_INNER: f32 = 2.0;
 
 /// Where everything lies, logical pixels from the card's top left corner.
 #[derive(Debug, Clone, PartialEq)]
@@ -197,6 +234,10 @@ pub struct Layout {
     pub tiles: Vec<Rect>,
     pub undo: Rect,
     pub done: Rect,
+    /// The tabs' row and each tab's segment (M5.10c6c3); empty for a drawer
+    /// with no tabs.
+    pub tabs_row: Rect,
+    pub tabs: Vec<Rect>,
 }
 
 /// What a key asks for: Undo or Done as if pressed, or closing the drawer.
@@ -211,6 +252,8 @@ pub enum Act {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
     Focus(Part),
+    /// Shows tab `i` of the drawer (Left or Right on a focused tab).
+    Tab(usize),
     Act(Act),
     Nothing,
 }
@@ -251,12 +294,30 @@ pub fn layout(view: &View) -> Layout {
     } else {
         TILE.0
     };
-    let rows = view.tiles.len().max(1).div_ceil(columns);
-    let top = PAD + HEADING + HINT_GAP + hint_lines(view) as f32 * HINT_LINE + SPACE;
+    // The drawer keeps the height of its tallest tab, so changing tabs never
+    // makes it jump (M5.10c6c3).
+    let counted = view.tiles.len().max(view.tallest);
+    let rows = counted.max(1).div_ceil(columns);
+    let hint_bottom = PAD + HEADING + HINT_GAP + hint_lines(view) as f32 * HINT_LINE;
+    let button = if view.compact { BUTTON_TOUCH } else { BUTTON };
+    // The tabs' row sits under the hint, one segment each across the card.
+    let inner = width - 2.0 * PAD;
+    let (tabs_row, tabs) = if view.tabs.is_empty() {
+        (Rect::new(0.0, 0.0, 0.0, 0.0), Vec::new())
+    } else {
+        let row = Rect::new(PAD, hint_bottom + SPACE, inner, button);
+        let segment = (inner - 2.0 * TAB_INNER) / view.tabs.len() as f32;
+        popup::segments_at(row, PAD + inner, view.tabs.len(), segment, button)
+    };
+    let top = if view.tabs.is_empty() {
+        hint_bottom + SPACE
+    } else {
+        tabs_row.y + button + SPACE
+    };
     // Each row's tiles are centred across the card on their own, so a short
     // row (the last one) sits in the middle too.
     let row_left = |row: usize| {
-        let n = (view.tiles.len() - row * columns).min(columns) as f32;
+        let n = (counted - row * columns).min(columns) as f32;
         let used = n * tile_w + (n - 1.0) * TILE_GAP;
         ((width - used) / 2.0).round()
     };
@@ -274,7 +335,6 @@ pub fn layout(view: &View) -> Layout {
     let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
     // The footer holds the buttons, with the card's padding under them.
     let footer_top = tiles_bottom + SPACE;
-    let button = if view.compact { BUTTON_TOUCH } else { BUTTON };
     let height = footer_top + button + PAD;
     let y = footer_top;
     let done = Rect::new(width - PAD - BUTTON_WIDTH, y, BUTTON_WIDTH, button);
@@ -285,6 +345,8 @@ pub fn layout(view: &View) -> Layout {
         tiles,
         undo,
         done,
+        tabs_row,
+        tabs,
     }
 }
 
@@ -315,15 +377,19 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Part> {
     if l.done.contains(x, y) {
         return Some(Part::Done);
     }
+    if let Some(i) = l.tabs.iter().position(|t| t.contains(x, y)) {
+        return Some(Part::Tab(i));
+    }
     l.tiles
         .iter()
         .position(|t| t.contains(x, y))
         .map(Part::Tile)
 }
 
-/// The parts in the keyboard's order: the tiles, then Undo and Done.
+/// The parts in the keyboard's order: the tabs, the tiles, then Undo and Done.
 pub fn ring(view: &View) -> Vec<Part> {
-    let mut out: Vec<Part> = (0..view.tiles.len()).map(Part::Tile).collect();
+    let mut out: Vec<Part> = (0..view.tabs.len()).map(Part::Tab).collect();
+    out.extend((0..view.tiles.len()).map(Part::Tile));
     out.push(Part::Undo);
     out.push(Part::Done);
     out
@@ -351,10 +417,14 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
     }
     let n = view.tiles.len();
     let columns = columns(view);
+    let tabs = view.tabs.len();
     match (key, focus) {
         (Key::Activate, Some(Part::Undo)) => Step::Act(Act::Undo),
         (Key::Activate, Some(Part::Done)) => Step::Act(Act::Done),
         (_, None) => ring.first().map_or(Step::Nothing, |p| Step::Focus(*p)),
+        (Key::Left, Some(Part::Tab(i))) => Step::Tab(i.saturating_sub(1)),
+        (Key::Right, Some(Part::Tab(i))) => Step::Tab((i + 1).min(tabs.saturating_sub(1))),
+        (Key::Down, Some(Part::Tab(_))) if n > 0 => Step::Focus(Part::Tile(0)),
         (Key::Left, Some(Part::Tile(i))) => Step::Focus(Part::Tile(i.saturating_sub(1))),
         (Key::Right, Some(Part::Tile(i))) => {
             Step::Focus(Part::Tile((i + 1).min(n.saturating_sub(1))))
@@ -375,6 +445,9 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
 pub fn places(l: &Layout, view: &View) -> String {
     let at = |r: Rect| format!("{:.0}+{:.0}+{:.0}x{:.0}", r.x, r.y, r.w, r.h);
     let mut out = format!("card {}x{}", l.size.0, l.size.1);
+    for (i, (tab, rect)) in view.tabs.iter().zip(&l.tabs).enumerate() {
+        out.push_str(&format!(", tab{i} {} {}", tab.to_lowercase(), at(*rect)));
+    }
     for (tile, rect) in view.tiles.iter().zip(&l.tiles) {
         out.push_str(&format!(", tile {} {}", tile.name, at(*rect)));
     }
@@ -449,6 +522,54 @@ fn picture(
     );
 }
 
+/// A look's picture (M5.10c6c3) laid into a tile's picture area: scaled down
+/// to fit it, centred, never up, so the tile never spills. `layer` is the
+/// tile's own pixmap and `w`, `h` its size in logical pixels.
+fn thumbnail(layer: &mut Pixmap, picture: &Pixmap, w: f32, h: f32, s: f32) {
+    let top = PICTURE_TOP * s;
+    let room_w = w * s - 2.0 * EDIT_PAD * s;
+    let room_h = h * PICTURE_SHARE * s - top - 4.0 * s;
+    let fit = (room_w / picture.width() as f32).min(room_h / picture.height() as f32);
+    if fit <= 0.0 {
+        return;
+    }
+    let x = ((w * s - picture.width() as f32 * fit) / 2.0).round();
+    let y = top + ((room_h - picture.height() as f32 * fit) / 2.0).round();
+    let paint = PixmapPaint {
+        quality: FilterQuality::Bilinear,
+        ..PixmapPaint::default()
+    };
+    layer.draw_pixmap(
+        0,
+        0,
+        picture.as_ref(),
+        &paint,
+        Transform::from_row(fit, 0.0, 0.0, fit, x, y),
+        None,
+    );
+}
+
+/// The words a drawer's hint says (`paint`): the panels' and the lock
+/// screen's, and on the lock screen's tabs what their tiles do.
+fn hint_words(view: &View) -> &'static str {
+    match (view.kind, view.taking) {
+        (Kind::Panels, true) => tr("Drop here to take it off the panel"),
+        (Kind::Panels, false) => tr(
+            "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
+        ),
+        (Kind::LockScreen, true) => tr("Drop here to take it away"),
+        (Kind::LockScreen, false) if view.tab == 1 => {
+            tr("Choose a look, which brings its parts and its background")
+        }
+        (Kind::LockScreen, false) if view.tab == 2 => {
+            tr("Choose what lies behind the lock screen's parts")
+        }
+        (Kind::LockScreen, false) => {
+            tr("Drag a part anywhere, from here to add it, or here to take it away")
+        }
+    }
+}
+
 /// Draws `view` at `s` into `pixmap`, which is the card's size times it: the
 /// sheet (`edit_kit::sheet`, glass or desktop by `style`), outlined when a
 /// panel's widget is dragged over it, the heading and its hint (at most two
@@ -491,16 +612,7 @@ pub fn paint(
         let ink = edit_kit::inks(style, tokens).text;
         text.draw(pixmap, &mut line, PAD * s, y, ink);
     }
-    let hint_words = match (view.kind, view.taking) {
-        (Kind::Panels, true) => tr("Drop here to take it off the panel"),
-        (Kind::Panels, false) => tr(
-            "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
-        ),
-        (Kind::LockScreen, true) => tr("Drop here to take it away"),
-        (Kind::LockScreen, false) => {
-            tr("Drag a part anywhere, from here to add it, or here to take it away")
-        }
-    };
+    let hint_words = hint_words(view);
     let room = l.card.w - 2.0 * PAD;
     let lines = match text.as_deref_mut() {
         Some(text) => wrap(hint_words, hint_lines(view), room * s, |t| {
@@ -512,6 +624,24 @@ pub fn paint(
         let top = PAD + HEADING + HINT_GAP + i as f32 * HINT_LINE;
         let rect = Rect::new(PAD, top, room, HINT_LINE);
         edit_kit::hint(pixmap, words, rect, tokens, text.as_deref_mut(), style, s);
+    }
+    if !view.tabs.is_empty() {
+        let ink = edit_kit::inks(style, tokens);
+        popup::segmented_with(
+            pixmap,
+            text.as_deref_mut(),
+            (l.tabs_row, &l.tabs),
+            &view.tabs,
+            Some(view.tab),
+            (ink.raised, ink.text),
+            tokens,
+            s,
+        );
+        if let Some(Part::Tab(i)) = view.focus {
+            if let Some(segment) = l.tabs.get(i) {
+                popup::focus_ring(pixmap, *segment, tokens.radius_small as f32, s, tokens);
+            }
+        }
     }
     for (i, (tile, rect)) in view.tiles.iter().zip(&l.tiles).enumerate() {
         let (x, y, w, h) = rect.device(s);
@@ -542,7 +672,10 @@ pub fn paint(
         );
         // A panel's tile shows the widget as it is on a panel; a lock
         // screen's tile has its icon and title only.
-        if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(tile.name)) {
+        if let Some(Picture(picture)) = &tile.picture {
+            thumbnail(&mut layer, picture, rect.w, rect.h, s);
+        }
+        if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(&tile.name)) {
             picture(
                 &mut layer,
                 widget,
@@ -572,7 +705,7 @@ pub fn paint(
             Transform::identity(),
             None,
         );
-        if focused {
+        if focused || tile.chosen {
             popup::focus_ring(pixmap, *rect, edit_kit::TILE_RADIUS, s, tokens);
         }
     }
@@ -620,19 +753,31 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         toggled: None,
         value: None,
     };
-    let mut out: Vec<Node> = view
-        .tiles
+    // The tabs first, each with its words, then the tiles.
+    let tabs: Vec<Node> = view
+        .tabs
         .iter()
-        .zip(&l.tiles)
-        .map(|(tile, rect)| {
-            let label = if tile.placed {
-                trf("{title}, on a panel", &[("title", &tile.title)])
-            } else {
-                trf("Add {title}", &[("title", &tile.title)])
-            };
-            button(label, at(*rect))
+        .zip(&l.tabs)
+        .map(|(tab, rect)| Node {
+            role: Role::Tab,
+            label: tab.to_string(),
+            bounds: at(*rect),
+            children: Vec::new(),
+            toggled: None,
+            value: None,
         })
         .collect();
+    let mut out: Vec<Node> = tabs;
+    out.extend(view.tiles.iter().zip(&l.tiles).map(|(tile, rect)| {
+        let label = if tile.placed {
+            trf("{title}, on a panel", &[("title", &tile.title)])
+        } else if tile.chosen {
+            trf("{title}, in use", &[("title", &tile.title)])
+        } else {
+            trf("Add {title}", &[("title", &tile.title)])
+        };
+        button(label, at(*rect))
+    }));
     out.push(button(tr("Undo").into(), at(l.undo)));
     out.push(button(tr("Done").into(), at(l.done)));
     out
@@ -646,13 +791,18 @@ mod tests {
     fn view(n: usize, width: u32, compact: bool) -> View {
         View {
             kind: Kind::Panels,
+            tabs: Vec::new(),
+            tab: 0,
+            tallest: 0,
             tiles: (0..n)
                 .map(|i| Tile {
                     icon: "",
-                    name: "clock",
+                    name: "clock".into(),
                     title: format!("Widget {i}"),
                     shown: String::new(),
                     placed: i == 0,
+                    chosen: false,
+                    picture: None,
                 })
                 .collect(),
             compact,
@@ -884,14 +1034,19 @@ mod tests {
                 .filter(|w| w.name != "apps" && w.name != "search")
                 .map(|w| Tile {
                     icon: "",
-                    name: w.name,
+                    name: w.name.into(),
                     title: tr(w.title).to_string(),
                     shown: (w.shows)(&live),
                     placed: placed.iter().any(|p| p.as_str() == w.name),
+                    chosen: false,
+                    picture: None,
                 })
                 .collect();
             let v = View {
                 kind: Kind::Panels,
+                tabs: Vec::new(),
+                tab: 0,
+                tallest: 0,
                 tiles,
                 compact: false,
                 width: 1280,
@@ -933,21 +1088,28 @@ mod tests {
         let tiles = vec![
             Tile {
                 icon: "",
-                name: "message",
+                name: "message".into(),
                 title: "Message".into(),
                 shown: String::new(),
                 placed: false,
+                chosen: false,
+                picture: None,
             },
             Tile {
                 icon: "",
-                name: "battery",
+                name: "battery".into(),
                 title: "Battery".into(),
                 shown: String::new(),
                 placed: false,
+                chosen: false,
+                picture: None,
             },
         ];
         let v = View {
             kind: Kind::LockScreen,
+            tabs: Vec::new(),
+            tab: 0,
+            tallest: 0,
             tiles,
             compact: false,
             width: 1280,
@@ -977,5 +1139,86 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             pixmap.save_png(dir.join("editor-lock.png")).unwrap();
         }
+    }
+
+    /// A lock screen drawer of `tiles` tiles, its tabs and the tab shown.
+    fn lock_drawer(tiles: usize, tab: usize, tallest: usize) -> View {
+        View {
+            kind: Kind::LockScreen,
+            tiles: (0..tiles)
+                .map(|i| Tile {
+                    name: format!("tile{i}"),
+                    icon: "",
+                    title: format!("Tile {i}"),
+                    shown: String::new(),
+                    placed: false,
+                    chosen: false,
+                    picture: None,
+                })
+                .collect(),
+            tabs: vec!["Parts", "Looks", "Background"],
+            tab,
+            tallest,
+            compact: false,
+            width: 1280,
+            hover: None,
+            focus: None,
+            lifted: None,
+            taking: false,
+        }
+    }
+
+    #[test]
+    fn the_lock_screen_drawer_has_tabs_and_the_panels_drawer_none() {
+        let lock = lock_drawer(2, 0, 0);
+        let l = layout(&lock);
+        assert_eq!(l.tabs.len(), 3, "one segment for each tab");
+        let middle = l.tabs[1];
+        assert_eq!(
+            hit(&l, middle.x + middle.w / 2.0, middle.y + middle.h / 2.0),
+            Some(Part::Tab(1))
+        );
+        assert_eq!(ring(&lock)[..3], [Part::Tab(0), Part::Tab(1), Part::Tab(2)]);
+        assert!(
+            layout(&view(2, 1280, false)).tabs.is_empty(),
+            "the panels have none"
+        );
+        assert!(
+            places(&l, &lock).contains(", tab1 looks "),
+            "{}",
+            places(&l, &lock)
+        );
+    }
+
+    #[test]
+    fn left_and_right_step_the_tab_and_the_tabs_come_first_in_the_ring() {
+        let lock = lock_drawer(2, 0, 0);
+        assert_eq!(key(&lock, Some(Part::Tab(0)), Key::Right), Step::Tab(1));
+        assert_eq!(
+            key(&lock, Some(Part::Tab(2)), Key::Right),
+            Step::Tab(2),
+            "no wrap"
+        );
+        assert_eq!(
+            key(&lock, Some(Part::Tab(0)), Key::Left),
+            Step::Tab(0),
+            "no wrap"
+        );
+        assert_eq!(key(&lock, Some(Part::Tab(1)), Key::Left), Step::Tab(0));
+        assert_eq!(key(&lock, None, Key::Tab), Step::Focus(Part::Tab(0)));
+        assert_eq!(
+            key(&lock, Some(Part::Tab(2)), Key::Down),
+            Step::Focus(Part::Tile(0))
+        );
+    }
+
+    #[test]
+    fn the_drawer_keeps_the_height_of_its_tallest_tab_on_every_tab() {
+        let parts = layout(&lock_drawer(2, 0, 8));
+        let looks = layout(&lock_drawer(4, 1, 8));
+        let background = layout(&lock_drawer(8, 2, 0));
+        assert_eq!(parts.size, looks.size);
+        assert_eq!(parts.size, background.size);
+        assert!(parts.size.1 > layout(&lock_drawer(2, 0, 0)).size.1);
     }
 }
