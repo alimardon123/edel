@@ -308,6 +308,9 @@ fn choose(le: &mut LockEditor, choice: part_card::Choice) {
         return;
     };
     let next = part_card::apply(part, &choice);
+    // What a zone or label field typed and the part does not take yet stays in
+    // the field, so typing shows it (M5.10c7d).
+    card.draft = part_card::draft_of(&choice, &next);
     if next == *part {
         return;
     }

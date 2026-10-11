@@ -24,6 +24,7 @@
 //! session menu logs `greeter: session menu shown, N sessions`, `greeter:
 //! session menu hidden` and `greeter: session NAME chosen`.
 
+use std::cell::RefCell;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -124,6 +125,9 @@ struct Greeter {
     wallpaper: Wallpaper,
     pictures: lock::Pictures,
     backdrops: lock::Backdrops,
+    /// The time zones a clock named that this machine lacks, logged once
+    /// each (M5.10c7d).
+    zones_warned: RefCell<Vec<String>>,
 }
 
 /// One screen's surface.
@@ -184,6 +188,7 @@ pub fn run(cmd: String) -> Result<()> {
         wallpaper,
         pictures: lock::Pictures::default(),
         backdrops: lock::Backdrops::default(),
+        zones_warned: RefCell::new(Vec::new()),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -288,6 +293,7 @@ impl Greeter {
             caps: self.caps,
             people: self.people_shown().then(|| self.row.clone()),
             when: Some(lock::When::of(&now)),
+            zoned: lock::zoned_times(&self.lock, &now, &self.zones_warned),
             ..View::new(time, date, self.name.clone())
         }
     }

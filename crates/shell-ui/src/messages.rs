@@ -263,6 +263,14 @@ pub fn picture_not_read(path: &str, why: impl Display) -> String {
     )
 }
 
+/// A clock's time zone has no zone file on this machine, so the clock shows
+/// this machine's time (M5.10c7d): the zone's name and what happens.
+pub fn clock_zone_missing(zone: &str) -> String {
+    format!(
+        "lock: the clock's time zone {zone} is not on this machine; it shows this machine's time"
+    )
+}
+
 /// A power choice on the lock screen failed (M5.10c).
 pub fn power_failed(what: &str, why: impl Display) -> String {
     format!(
@@ -281,6 +289,14 @@ mod tests {
             text.starts_with("could not remember the desktop for this login: Permission denied")
         );
         assert!(text.contains("the login went on"));
+    }
+
+    #[test]
+    fn a_clock_zone_this_machine_lacks_says_what_it_shows() {
+        assert_eq!(
+            clock_zone_missing("Asia/Tokyo"),
+            "lock: the clock's time zone Asia/Tokyo is not on this machine; it shows this machine's time"
+        );
     }
 
     #[test]

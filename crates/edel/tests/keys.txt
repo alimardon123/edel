@@ -33,6 +33,8 @@ appearance.font
 appearance.cursor_size
 appearance.icon_size
 appearance.animations
+appearance.animation_speed
+appearance.animation_curve
 shortcuts.*
 default_apps.browser
 default_apps.files

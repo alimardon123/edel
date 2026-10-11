@@ -1201,11 +1201,16 @@ mod tests {
         let classic = lock_screen::classic(false);
         let tiles = drawer_tiles(&classic, true);
         let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["message", "battery"]);
+        // A second clock is offered while fewer than three stand (M5.10c7d).
+        assert_eq!(names, ["clock", "message", "battery"]);
         assert!(!names.contains(&"person"));
         let tiles = drawer_tiles(&classic, false);
         let no_battery: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(no_battery, ["message"], "a machine without one offers none");
+        assert_eq!(
+            no_battery,
+            ["clock", "message"],
+            "a machine without one offers none"
+        );
     }
 
     #[test]
@@ -1314,8 +1319,9 @@ mod tests {
         }
         assert!(line.contains(", drawer "), "{line}");
         assert!(line.contains(", tab1 looks "), "{line}");
-        assert!(line.contains(", tile0 message "), "{line}");
-        assert!(line.contains(", tile1 battery "), "{line}");
+        assert!(line.contains(", tile0 clock "), "{line}");
+        assert!(line.contains(", tile1 message "), "{line}");
+        assert!(line.contains(", tile2 battery "), "{line}");
         assert!(
             line.contains(", undo ") && line.contains(", done "),
             "{line}"
@@ -1632,7 +1638,7 @@ mod tests {
     fn return_adds_a_drawer_tile_acts_on_undo_and_done_and_done_with_no_focus() {
         let mut view = view_of(lock_screen::classic(false));
         set_focus(&mut view, Some(Focus::Drawer(editor::Part::Tile(0))));
-        assert_eq!(key(&view, Key::Activate, false), Step::Add(Part::Message));
+        assert_eq!(key(&view, Key::Activate, false), Step::Add(Part::Clock));
         set_focus(&mut view, Some(Focus::Drawer(editor::Part::Done)));
         assert_eq!(key(&view, Key::Activate, false), Step::Done);
         set_focus(&mut view, Some(Focus::Drawer(editor::Part::Undo)));
@@ -1682,7 +1688,7 @@ mod tests {
         assert_eq!(focus_name(&view, Focus::Part(clock)), "clock");
         assert_eq!(
             focus_name(&view, Focus::Drawer(editor::Part::Tile(0))),
-            "tile message"
+            "tile clock"
         );
         assert_eq!(focus_name(&view, Focus::Drawer(editor::Part::Undo)), "undo");
         assert_eq!(focus_name(&view, Focus::Drawer(editor::Part::Done)), "done");

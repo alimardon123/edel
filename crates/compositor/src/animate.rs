@@ -19,10 +19,11 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{CommitCounter, RendererSurfaceStateUserData};
 use smithay::backend::renderer::{ContextId, Renderer};
 use smithay::desktop::Window;
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
 
-use edel_compositor::animation::{Anim, Motion, Slide, Style, closing, opening, style};
+use edel_compositor::animation::{Anim, Curve, Motion, Slide, Style, closing, opening, style};
 use edel_compositor::effects::Tier;
 
 use crate::decoration::data;
@@ -37,8 +38,15 @@ pub struct Animations {
     pub closing: Vec<Closing>,
     /// The renderer whose textures a closed window's picture is made of.
     context: Option<ContextId<GlesTexture>>,
-    /// The tier and motion last logged.
-    logged: Option<(Tier, Motion)>,
+    /// The overlay surfaces that popped up, each with when it did (M5.12b4),
+    /// kept until the surface hides or is destroyed.
+    popups: HashMap<WlSurface, Anim>,
+    /// The popups' namespaces already logged (M5.12b4): each is said once
+    /// a session, as its line, written while shell-ui writes its own to the
+    /// same log, could otherwise cut into shell-ui's lines CI reads.
+    popups_said: std::collections::HashSet<String>,
+    /// The tier, motion, speed and curve last logged.
+    logged: Option<(Tier, Motion, u32, Curve)>,
 }
 
 /// A closed window's last picture, fading out, or a window's picture
@@ -105,6 +113,8 @@ impl Animations {
             slides: HashMap::new(),
             closing: Vec::new(),
             context: None,
+            popups: HashMap::new(),
+            popups_said: std::collections::HashSet::new(),
             logged: None,
         }
     }
@@ -123,7 +133,11 @@ impl Animations {
 
     /// Whether anything still animates, so another frame is wanted.
     pub fn running(&self) -> bool {
-        !(self.opening.is_empty() && self.slides.is_empty() && self.closing.is_empty())
+        let now = self.now();
+        !(self.opening.is_empty()
+            && self.slides.is_empty()
+            && self.closing.is_empty()
+            && self.popups.values().all(|anim| anim.done(now)))
     }
 
     /// `window` was shown for the first time.
@@ -141,7 +155,14 @@ impl Animations {
             return;
         }
         let now = self.now();
-        match Slide::start(self.slides.get(window), from, to, now, self.style.slide) {
+        match Slide::start(
+            self.slides.get(window),
+            from,
+            to,
+            now,
+            self.style.slide,
+            self.style.curve,
+        ) {
             Some(slide) => self.slides.insert(window.clone(), slide),
             None => self.slides.remove(window),
         };
@@ -160,10 +181,9 @@ impl Animations {
 
     /// How `window` is drawn at `now`.
     pub fn look(&self, window: &Window, now: Duration) -> Look {
-        let (alpha, zoom) = self
-            .opening
-            .get(window)
-            .map_or((1.0, 1.0), |anim| opening(&self.style, anim.eased(now)));
+        let (alpha, zoom) = self.opening.get(window).map_or((1.0, 1.0), |anim| {
+            opening(&self.style, anim.eased(now, self.style.curve))
+        });
         let offset = self
             .slides
             .get(window)
@@ -175,9 +195,17 @@ impl Animations {
         }
     }
 
+    /// How an overlay surface that popped up is drawn at `now`: its alpha
+    /// and its size as a share of its own; none when it did not pop up.
+    pub fn popup_look(&self, surface: &WlSurface, now: Duration) -> Option<(f32, f64)> {
+        self.popups
+            .get(surface)
+            .map(|anim| opening(&self.style, anim.eased(now, self.style.curve)))
+    }
+
     /// How a closed or leaving window is drawn at `now`.
     pub fn closing_look(&self, closed: &Closing, now: Duration) -> Look {
-        let progress = closed.anim.eased(now);
+        let progress = closed.anim.eased(now, self.style.curve);
         if let Some(by) = closed.leave {
             return Look {
                 alpha: 1.0,
@@ -209,20 +237,53 @@ impl Edel {
     pub fn restyle(&mut self) {
         let tier = self.deadline.tier();
         let motion = self.settings.motion;
-        let new = style(tier, motion);
+        let speed = self
+            .settings
+            .animation_speed
+            .unwrap_or(edel::settings::ANIMATION_SPEED_DEFAULT);
+        let curve = self.settings.animation_curve;
+        let new = style(tier, motion, speed, curve);
         // Said once the renderer, and so the tier, is known, then on change.
         let known = self.animations.context.is_some();
-        if known && self.animations.logged != Some((tier, motion)) {
-            self.animations.logged = Some((tier, motion));
+        if known && self.animations.logged != Some((tier, motion, speed, curve)) {
+            self.animations.logged = Some((tier, motion, speed, curve));
             eprintln!(
-                "edel-compositor: animations at tier {tier}, motion {}: open {} ms, close {} ms, slide {} ms",
+                "edel-compositor: animations at tier {tier}, motion {}: open {} ms, close {} ms, slide {} ms, speed {speed} %, curve {}",
                 motion.name(),
                 new.open.as_millis(),
                 new.close.as_millis(),
-                new.slide.as_millis()
+                new.slide.as_millis(),
+                curve.name()
             );
         }
         self.animations.style = new;
+    }
+
+    /// An overlay surface, such as a popup, shows a picture for the first
+    /// time: it pops up, fading in and growing over the style's open length
+    /// (M5.12b4). Said once per popup; with no open length nothing happens.
+    pub fn popup_mapped(&mut self, surface: &WlSurface, namespace: &str) {
+        let open = self.animations.style.open;
+        if open.is_zero() || self.animations.popups.contains_key(surface) {
+            return;
+        }
+        let now = self.animations.now();
+        self.animations
+            .popups
+            .insert(surface.clone(), Anim::new(now, open));
+        if self.animations.popups_said.insert(namespace.to_string()) {
+            eprintln!(
+                "edel-compositor: popup {namespace} opens over {} ms",
+                open.as_millis()
+            );
+        }
+        self.dirty = true;
+    }
+
+    /// An overlay surface hid or was destroyed: its next showing pops up
+    /// again.
+    pub fn popup_gone(&mut self, surface: &WlSurface) {
+        self.animations.popups.remove(surface);
     }
 
     /// Keeps the textures `window`'s surfaces showed in the frame just
