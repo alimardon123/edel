@@ -548,6 +548,26 @@ commands() {
 			as_ci edel-settings --page appearance.gaps </dev/null >/tmp/settings-shape.log 2>&1 &
 			;;
 		'settings shape log') say "settings_shape_log $(tr '\n' ';' </tmp/settings-shape.log 2>/dev/null)" ;;
+		# The pages `edel settings` lists, one word each, in the order the
+		# tool prints them (the tour's page list, read from the tool itself).
+		'settings pages') say "settings_pages $(edel settings | awk '/^  [a-z_]+  / { print $1 }' | tr '\n' ' ')" ;;
+		# Settings on one page for the tour (settings-tour), as ci, after
+		# any Settings still open is closed. Settings refuses a page it
+		# does not have before it draws anything, so its log is read after
+		# three seconds: "refused" when it says there is no such page.
+		'settings tour '*)
+			section=${command#settings tour }
+			pkill -x edel-settings
+			sleep 1
+			rm -f /tmp/settings-tour.log
+			as_ci edel-settings --page "$section" </dev/null >/tmp/settings-tour.log 2>&1 &
+			sleep 3
+			if grep -q 'there is no page' /tmp/settings-tour.log; then
+				say "settings_tour $section refused"
+			else
+				say "settings_tour $section started"
+			fi
+			;;
 		# The six shape keys ci's own file holds (Settings writes ci's file,
 		# not the machine's), taken out again.
 		'shape mine default') as_ci "sed -i -E '/^(radius|gaps|gaps_outer|border_width|title_bar_height|panel_opacity) = /d' /home/ci/.config/edel/$settings_name" ;;
