@@ -3387,7 +3387,7 @@ case_lock() {
 	# The power button (M5.10c): its place is read from the last lock places
 	# line, a click on its middle opens the menu, whose three rows are
 	# logged on that line, and Escape closes the menu again.
-	power=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, power \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	power=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1 | sed -n 's/.*, power \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$power" ] || fail "shell-ui did not say where the lock's power button lies"
 	set -- $power
 	shown=$(count 'edel-shell-ui: power menu shown, 3 rows')
@@ -3418,7 +3418,7 @@ case_lock() {
 		fail "Super+L did not lock the screen with the parts"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up the lock screen with the parts"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
 	set -- $clock
@@ -3453,7 +3453,7 @@ case_lock() {
 		fail "shell-ui did not put up the lock screen with the look"
 	wait_for 'edel-shell-ui: lock backdrop [0-9]+x[0-9]+ blurred$' ||
 		fail "shell-ui made no blurred lock backdrop: $(tr -d '\r' <"$log" | grep -a 'lock backdrop' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	case "$places" in
 	*", count "*) fail "the minimal look still shows the count: $places" ;;
 	esac
@@ -3479,7 +3479,7 @@ case_lock() {
 	guest mpris
 	wait_for 'edel-shell-ui: lock player shown, Night Drive by Lumen$' ||
 		fail "the lock screen did not show the test player: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
-	play=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.* play \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	play=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1 | sed -n 's/.* play \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$play" ] || fail "shell-ui did not say where the lock's play button lies: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
 	set -- $play
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
@@ -3507,7 +3507,7 @@ case_lock() {
 	# the tokens' accent (8 px left of the middle, clear of the arrow).
 	sleep 3
 	python3 ci/qmp.py type 'edel-desktop-test'
-	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies"
 	set -- $go
 	shot lock-go $(($1 + $3 / 2 - 8)) $(($2 + $4 / 2)) "$(token accent)" >/dev/null ||
@@ -3571,7 +3571,7 @@ case_lock() {
 	# Unlocked as above: ci's password typed, the go button clicked.
 	unlocked=$(count 'edel-compositor: screen unlocked$')
 	python3 ci/qmp.py type 'edel-desktop-test'
-	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (magazine)"
 	set -- $go
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
@@ -3626,6 +3626,9 @@ case_lock_edit() {
 	value settings_file | grep -q 'part = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
 	# The next lock reads the file: the clock on the right, the message below.
+	# Its places line is waited for whole (it ends with the corner's power
+	# button), as the log can be read while a line is still arriving.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}')
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
 	compositor_locked=$(count 'edel-compositor: screen locked$')
 	python3 ci/qmp.py key meta_l-l
@@ -3633,7 +3636,9 @@ case_lock_edit() {
 		fail "Super+L did not lock the screen after the edit"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up the lock screen after the edit"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}' "$placed" ||
+		fail "the lock after the edit did not say where its parts lie"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "the lock after the edit has no clock: $places"
 	set -- $clock
@@ -3641,7 +3646,7 @@ case_lock_edit() {
 	echo "$places" | grep -q ', message0 ' || fail "the lock after the edit shows no message: $places"
 	unlocked=$(count 'edel-compositor: screen unlocked$')
 	python3 ci/qmp.py type 'edel-desktop-test'
-	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (after the edit)"
 	set -- $go
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
