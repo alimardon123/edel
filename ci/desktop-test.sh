@@ -3481,8 +3481,9 @@ case_wallpaper() {
 	# #3a8fc0; set to a colour, that colour; reset, the default, which
 	# the test image has no picture for (no wallpapers feature), so the
 	# background colour. The compositor logs what it shows, `wallpaper
-	# WHAT`, and the first picture on each screen. Kept as
-	# wallpaper-picture.png, wallpaper-colour.png and wallpaper-gone.png.
+	# WHAT`, and the first picture on each screen; the overview's backdrop
+	# is the picture too (M5.10c4c). Kept as wallpaper-picture.png,
+	# wallpaper-colour.png, wallpaper-gone.png and wallpaper-backdrop.png.
 	logged=$(count 'edel-compositor: wallpaper /')
 	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
 	guest 'wallpaper picture'
@@ -3492,6 +3493,22 @@ case_wallpaper() {
 		fail "the wallpaper's top left at 4,4 is not #c0563a (wallpaper-picture.png)"
 	shot wallpaper-picture-right 1276 4 3a8fc0 >/dev/null ||
 		fail "the wallpaper's top right at 1276,4 is not #3a8fc0 (wallpaper-picture-right.png)"
+	# The overview over the picture (M5.10c4c): its backdrop is the picture,
+	# blurred on the Full and Balanced tiers and sharp on Lite, which CI's
+	# llvmpipe runs at; dimmed in both. The top right corner lies far from
+	# the strip and the frames, so it shows the picture's blue, dimmed.
+	shown=$(count 'edel-compositor: overview shown$')
+	backdrops=$(count 'edel-compositor: overview backdrop on Virtual-1 ')
+	hidden=$(count 'edel-compositor: overview hidden$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview over the wallpaper"
+	wait_more 'edel-compositor: overview backdrop on Virtual-1 ' "$backdrops" || fail "the overview did not make its backdrop from the wallpaper picture"
+	tier=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview backdrop on Virtual-1 ' | tail -n 1 | sed 's/.* //')
+	backdrop=$(shot wallpaper-backdrop 1276 4 "!$(token background)") ||
+		fail "the overview's backdrop at 1276,4 is the background colour, not the picture (wallpaper-backdrop.png)"
+	[ "$backdrop" != 000000 ] || fail "the overview's backdrop at 1276,4 is black (wallpaper-backdrop.png)"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview over the wallpaper"
 	logged=$(count 'edel-compositor: wallpaper colour #336699')
 	guest 'wallpaper colour'
 	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"
@@ -3502,7 +3519,7 @@ case_wallpaper() {
 	wait_more 'edel-compositor: wallpaper none' "$logged" || fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
 	shot wallpaper-gone 4 4 "$(token background)" >/dev/null ||
 		fail "with no wallpaper the background at 4,4 is not #$(token background) (wallpaper-gone.png)"
-	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour"
+	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour; the overview's backdrop was the picture, $tier, and its top right corner at 1276,4 was $backdrop, neither the background nor black (wallpaper-backdrop.png)"
 }
 
 case_buttons() {
