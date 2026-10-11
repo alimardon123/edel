@@ -497,9 +497,9 @@ pub fn classic(compact: bool) -> Vec<Placed> {
         ]
     } else {
         vec![
-            part_at(Part::Date, Anchor::Top, 0.14),
-            part_at(Part::Clock, Anchor::Top, 0.14),
-            part_at(Part::Count, Anchor::Top, 0.14),
+            part_at(Part::Date, Anchor::Top, 0.11),
+            part_at(Part::Clock, Anchor::Top, 0.11),
+            part_at(Part::Count, Anchor::Top, 0.11),
             person(false),
             part_at(Part::Player, Anchor::BottomLeft, 0.0),
         ]

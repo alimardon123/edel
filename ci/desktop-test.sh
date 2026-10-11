@@ -528,6 +528,27 @@ case_respawn() {
 	# `person0 X+Y+WxH ci,` on that line: the box of ci's disc.
 	box=$(printf '%s\n' "$places" | sed -n 's/.*person[0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) ci,.*/\1 \2 \3 \4/p')
 	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
+	# The session chip (M5.10c3b): its `session X+Y+WxH Edel OS` place
+	# on the same line. A click opens the sessions' menu, whose row
+	# `sessionN X+Y+WxH CI other` is clicked, so ci logs in with it.
+	chip=$(printf '%s\n' "$places" | sed -n 's/.*session \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) Edel OS.*/\1 \2 \3 \4/p')
+	[ -n "$chip" ] || fail "the greeter has no session chip for Edel OS: \"$places\""
+	read -r cx cy cw ch <<-EOF
+		$chip
+	EOF
+	python3 ci/qmp.py click $((cx + cw / 2)) $((cy + ch / 2))
+	sleep 1
+	guest 'greeter places'
+	wait_for 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* CI other' 10 ||
+		fail "the session chip's menu has no CI other row: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greeter.log ' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	row=$(printf '%s\n' "$places" | sed -n 's/.*session[0-9][0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) CI other.*/\1 \2 \3 \4/p')
+	[ -n "$row" ] || fail "no row named CI other on the greeter's places line: \"$places\""
+	read -r rx ry rw rh <<-EOF
+		$row
+	EOF
+	python3 ci/qmp.py click $((rx + rw / 2)) $((ry + rh / 2))
+	sleep 1
 	read -r bx by bw bh <<-EOF
 		$box
 	EOF
@@ -552,8 +573,23 @@ case_respawn() {
 		fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
 	case "$(value greeter_said)" in
-	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*) ;;
-	*) fail "the greeter did not refuse the wrong password and then start ci's session: $(value greeter_said)" ;;
+	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
+	*) fail "the greeter did not refuse the wrong password and then start ci's CI other session: $(value greeter_said)" ;;
+	esac
+	# The session the chip chose (M5.10c3b): CI other's own session left
+	# its file in ci's runtime directory, and the login screen wrote the
+	# choice down for ci in the greeter's sessions file.
+	guest 'ci other'
+	wait_for 'DESKTOP-TEST: ci_other ' 10 ||
+		fail "no word from the test service about CI other's session"
+	[ "$(value ci_other)" = "ci-other ci" ] ||
+		fail "CI other's session did not start for ci: \"$(value ci_other)\""
+	guest 'greeter sessions'
+	wait_for 'DESKTOP-TEST: greeter_sessions ' 10 ||
+		fail "no word from the test service about the greeter's sessions file"
+	case "$(value greeter_sessions)" in
+	*'ci = "ci-other"'*) ;;
+	*) fail "the greeter's sessions file does not remember CI other for ci: \"$(value greeter_sessions)\"" ;;
 	esac
 	# The session's log (M5.28a), ci's ~/.local/state/edel/session.log:
 	# the new session warns that the one before ended without closing,
@@ -570,7 +606,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, and logging in there started ci's compositor again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
 }
 
 case_layers() {
@@ -608,6 +644,20 @@ case_layers() {
 # count PATTERN: how many serial lines match PATTERN so far.
 count() {
 	tr -d '\r' <"$log" | grep -cE "$1" || true
+}
+
+# panel_places: shell-ui's last `panel places` line once the panel has
+# kept it for a second (up to 5 s), so a click is not aimed at a place a
+# widget growing late (the status area's icons) is about to move.
+panel_places() {
+	last= i=0
+	while :; do
+		now=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1)
+		{ [ -n "$now" ] && [ "$now" = "$last" ]; } || [ "$i" -ge 5 ] && break
+		last=$now i=$((i + 1))
+		sleep 1
+	done
+	printf '%s\n' "$now"
 }
 
 # wait_more PATTERN N [SECONDS]: waits up to SECONDS (20) for more than N
@@ -648,7 +698,7 @@ case_panel() {
 	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
 	# wide after 2 px of room, with the accent; another switches it back.
 	# The checked pixel is left of where the cursor lies after a click.
-	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
+	toggle=$(panel_places | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
 	[ -n "$toggle" ] || fail "shell-ui did not say where its layout toggle lies"
 	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle at $((toggle + 6)),780 is filled while the windows float"
 	tiled=$(count 'edel-compositor: windows now tiling')
@@ -1577,7 +1627,7 @@ case_keyboard() {
 	# then goes back to German, as the rest of the case expects.
 	wait_for 'edel-shell-ui: panel places .*keyboard [0-9]+\+[1-9][0-9]*' 5 ||
 		fail "the panel shows no keyboard indicator with two layouts: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
-	kbd=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	kbd=$(panel_places | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	set -- $kbd
 	at=$(($1 + $2 / 2))
 	switched=$(count 'edel-compositor: keyboard layout now English')
@@ -2068,7 +2118,7 @@ case_overview() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more 'edel-compositor: workspace 1$' "$back" || fail "Super+1 did not show workspace 1 after the overview"
 	# A click on the panel switcher's lit workspace, 1, opens it too.
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*workspaces \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its switcher lies"
 	lit=$(($1 + 29))
@@ -2555,7 +2605,7 @@ case_player() {
 	# as it plays, and a click on the second dot shows Radio's Morning
 	# Walk. Kept as player-pages.png.
 	guest mpris
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
 	pill_x=$(($1 + $2 / 2))
@@ -3321,7 +3371,8 @@ case_lock() {
 	# row is clicked. Then (M5.10c4) ci's test player, Night Drive by
 	# Lumen, shows its card once it plays, and the card's play button,
 	# read from the lock places line, pauses it, which the player prints.
-	# Kept as lock.png, lock-power.png, lock-player.png and lock-go.png.
+	# Kept as lock.png, lock-power.png, lock-parts.png, lock-player.png and
+	# lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3347,6 +3398,39 @@ case_lock() {
 	shot lock-power 640 790 "$deep" >/dev/null || true
 	python3 ci/qmp.py key esc
 	wait_for 'edel-shell-ui: power menu hidden$' || fail "Escape did not close the power menu"
+	# The lock's parts (M5.10c5): a list in the settings file is read when
+	# the screen locks, so ci unlocks, sets the list (`lock parts`), locks
+	# again and reads the last places line: the clock at the top left (x
+	# below 100) and a message at the bottom, its bottom 24 px above the
+	# screen's edge (800 - 24). Kept as lock-parts.png. The list is reset
+	# (`lock parts reset`) while this lock holds; the player card below runs
+	# in it, as the classic arrangement is read at each lock.
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_for 'edel-compositor: screen unlocked$' ||
+		fail "ci's password did not unlock the screen before the lock's parts"
+	guest 'lock parts'
+	wait_for 'DESKTOP-TEST: ran lock parts: 0' || fail "ci's lock parts could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the parts"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the parts"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
+	set -- $clock
+	[ "$1" -lt 100 ] || fail "the lock's clock at $1,$2 is not at the top left: $places"
+	message=$(echo "$places" | sed -n 's/.*, message0 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$message" ] || fail "shell-ui did not say where the lock's message lies: $places"
+	set -- $message
+	[ $(($2 + $4)) -le $((800 - 24)) ] ||
+		fail "the lock's message at $1,$2 ${3}x$4 reaches the screen's bottom: $places"
+	shot lock-parts 640 790 "$deep" >/dev/null ||
+		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
+	guest 'lock parts reset'
+	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
 	# The player card (M5.10c4): the test player plays, the card shows once
 	# it does, and a click on its play button, read from the last lock
 	# places line, reaches the player, which pauses and prints it, as
@@ -3392,7 +3476,7 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
 }
 
 case_scheme() {
@@ -3467,8 +3551,9 @@ case_wallpaper() {
 	# #3a8fc0; set to a colour, that colour; reset, the default, which
 	# the test image has no picture for (no wallpapers feature), so the
 	# background colour. The compositor logs what it shows, `wallpaper
-	# WHAT`, and the first picture on each screen. Kept as
-	# wallpaper-picture.png, wallpaper-colour.png and wallpaper-gone.png.
+	# WHAT`, and the first picture on each screen; the overview's backdrop
+	# is the picture too (M5.10c4c). Kept as wallpaper-picture.png,
+	# wallpaper-colour.png, wallpaper-gone.png and wallpaper-backdrop.png.
 	logged=$(count 'edel-compositor: wallpaper /')
 	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
 	guest 'wallpaper picture'
@@ -3478,6 +3563,22 @@ case_wallpaper() {
 		fail "the wallpaper's top left at 4,4 is not #c0563a (wallpaper-picture.png)"
 	shot wallpaper-picture-right 1276 4 3a8fc0 >/dev/null ||
 		fail "the wallpaper's top right at 1276,4 is not #3a8fc0 (wallpaper-picture-right.png)"
+	# The overview over the picture (M5.10c4c): its backdrop is the picture,
+	# blurred on the Full and Balanced tiers and sharp on Lite, which CI's
+	# llvmpipe runs at; dimmed in both. The top right corner lies far from
+	# the strip and the frames, so it shows the picture's blue, dimmed.
+	shown=$(count 'edel-compositor: overview shown$')
+	backdrops=$(count 'edel-compositor: overview backdrop on Virtual-1 ')
+	hidden=$(count 'edel-compositor: overview hidden$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview over the wallpaper"
+	wait_more 'edel-compositor: overview backdrop on Virtual-1 ' "$backdrops" || fail "the overview did not make its backdrop from the wallpaper picture"
+	tier=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview backdrop on Virtual-1 ' | tail -n 1 | sed 's/.* //')
+	backdrop=$(shot wallpaper-backdrop 1276 4 "!$(token background)") ||
+		fail "the overview's backdrop at 1276,4 is the background colour, not the picture (wallpaper-backdrop.png)"
+	[ "$backdrop" != 000000 ] || fail "the overview's backdrop at 1276,4 is black (wallpaper-backdrop.png)"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview over the wallpaper"
 	logged=$(count 'edel-compositor: wallpaper colour #336699')
 	guest 'wallpaper colour'
 	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"
@@ -3488,7 +3589,7 @@ case_wallpaper() {
 	wait_more 'edel-compositor: wallpaper none' "$logged" || fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
 	shot wallpaper-gone 4 4 "$(token background)" >/dev/null ||
 		fail "with no wallpaper the background at 4,4 is not #$(token background) (wallpaper-gone.png)"
-	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour"
+	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour; the overview's backdrop was the picture, $tier, and its top right corner at 1276,4 was $backdrop, neither the background nor black (wallpaper-backdrop.png)"
 }
 
 case_buttons() {

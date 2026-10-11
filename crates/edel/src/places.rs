@@ -49,6 +49,13 @@ pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
 /// once (M1.1, M5.9).
 pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
+/// The login screen's own directory, made at boot owned by greetd by the
+/// login feature's `edel-live` (M5.10c3b).
+pub const GREETER_DIR: &str = data!("/edel/greeter");
+/// Each person's desktop for their login, written by the login screen
+/// (M5.10c3b): `[people]` with a login name and the desktop file's id, the
+/// file name without `.desktop`. A default is never written.
+pub const GREETER_SESSIONS: &str = data!("/edel/greeter/sessions.toml");
 
 /// Edel OS's directory for this boot only.
 pub const RUN_DIR: &str = run!("");
@@ -127,6 +134,10 @@ pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
 /// a seed settings file.
 pub const ESP_DIR: &str = "/EFI/edel";
 
+/// The desktop sessions installed, one `.desktop` file each, which the
+/// login screen offers (M5.10c3b). The standard place, not Edel OS's.
+pub const WAYLAND_SESSIONS: &str = "/usr/share/wayland-sessions";
+
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
@@ -148,6 +159,8 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
+        ("greeter_dir", GREETER_DIR.to_string()),
+        ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
         // Inside a person's home (M5.28a).

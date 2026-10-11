@@ -8,6 +8,10 @@
 # The container image, out/edel-container-x86_64.tar.gz, in MiB.
 container_mib = 7.8
 
+# What a person downloads to update the desktop, out/edel-desktop-x86_64.ext4.gz,
+# in MiB (M5.10c4c): 583.0 measured in CI on 2026-10-11, plus 20 percent.
+desktop_image_mib = 700
+
 # Used space on the VM's root (`df -Pm /` in the guest), in MiB.
 vm_root_mib = 110
 

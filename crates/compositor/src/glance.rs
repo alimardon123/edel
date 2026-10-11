@@ -33,7 +33,8 @@ use smithay::output::Output;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 
 use edel::i18n::tr;
-use edel::tokens::Colour;
+use edel::tokens::{Colour, Tokens};
+use edel::wallpapers::Wallpaper;
 use edel_compositor::effects::Tier;
 use edel_compositor::overview::{Plan, Side, frame_at, in_view, plan, spread};
 
@@ -117,6 +118,57 @@ pub struct Kept {
 
 /// How much smaller than the screen the backdrop is painted.
 const BACKDROP_SHRINK: f64 = 4.0;
+/// The blur over a wallpaper's picture on the Full and Balanced tiers, in the
+/// backdrop's own pixels (a quarter of the screen's): frosted glass (M5.10c4c).
+const BACKDROP_BLUR: f32 = 12.0;
+/// How much of the backdrop's dark colour covers the wallpaper on the Full and
+/// Balanced tiers, so the frames and names read over it (M5.10c4c).
+const BACKDROP_DIM: f32 = 0.35;
+/// The same on Lite, where the picture is not blurred and recedes further.
+const BACKDROP_DIM_LITE: f32 = 0.5;
+
+/// The overview's backdrop for the wallpaper `what`, painted at `pixels`
+/// (M5.10c4c): a picture read and fitted to the screen, blurred when
+/// `blurred`, and dimmed; a colour dimmed the same way; the background's
+/// gradient when there is no wallpaper, or when a picture cannot be read.
+fn backdrop_of(
+    what: &Wallpaper,
+    pixels: (u32, u32),
+    blurred: bool,
+    name: &str,
+    tokens: &Tokens,
+) -> Option<tiny_skia::Pixmap> {
+    let dim = if blurred {
+        BACKDROP_DIM
+    } else {
+        BACKDROP_DIM_LITE
+    };
+    match what {
+        Wallpaper::Background => glance_look::backdrop(pixels.0, pixels.1, tokens),
+        Wallpaper::Colour(colour) => {
+            let mut pixmap = tiny_skia::Pixmap::new(pixels.0.max(1), pixels.1.max(1))?;
+            glance_look::veil(&mut pixmap, *colour, 1.0);
+            glance_look::veil(&mut pixmap, tokens.backdrop_deep, dim);
+            Some(pixmap)
+        }
+        Wallpaper::Picture(path) => {
+            let Ok(mut pixmap) = edel::pictures::load(path, pixels) else {
+                return glance_look::backdrop(pixels.0, pixels.1, tokens);
+            };
+            if blurred {
+                edel::pictures::blur(&mut pixmap, BACKDROP_BLUR);
+            }
+            glance_look::veil(&mut pixmap, tokens.backdrop_deep, dim);
+            eprintln!(
+                "edel-compositor: overview backdrop on {name} {}x{} {}",
+                pixels.0,
+                pixels.1,
+                if blurred { "blurred" } else { "sharp" }
+            );
+            Some(pixmap)
+        }
+    }
+}
 
 /// A painted picture, what it shows (to paint it again only when that
 /// changes) and its size in pixels.
@@ -874,13 +926,18 @@ impl Edel {
             (f64::from(area.size.w) * scale / BACKDROP_SHRINK).ceil() as u32,
             (f64::from(area.size.h) * scale / BACKDROP_SHRINK).ceil() as u32,
         );
+        let blurred = self.deadline.tier() != Tier::Lite;
         let shows = format!(
-            "{pixels:?} {:?} {:?} {:?}",
-            tokens.backdrop, tokens.backdrop_deep, tokens.backdrop_text
+            "{pixels:?} {:?} {:?} {:?} {} {blurred}",
+            tokens.backdrop,
+            tokens.backdrop_deep,
+            tokens.backdrop_text,
+            crate::wallpaper::describe(&self.wallpaper.what)
         );
         let kept = &mut self.overview_kept.backdrops;
         if kept.get(&name).is_none_or(|p| p.shows != shows) {
-            if let Some(pixmap) = glance_look::backdrop(pixels.0, pixels.1, &tokens) {
+            if let Some(pixmap) = backdrop_of(&self.wallpaper.what, pixels, blurred, &name, &tokens)
+            {
                 kept.insert(name.clone(), painted(shows, &pixmap));
             }
         }

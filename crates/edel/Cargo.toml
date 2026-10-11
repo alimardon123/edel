@@ -24,6 +24,9 @@ cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "d
 # Settings, and apps' icons from the icon themes (M5.4c, M5.6a), whose
 # PNGs tiny-skia reads; the same tiny-skia resvg draws with.
 icons = ["dep:resvg", "dep:tiny-skia"]
+# Wallpapers read and blurred for the compositor and shell-ui (M5.10c4c): a
+# JPEG or PNG fitted to a screen, and the blur behind the overview.
+pictures = ["icons", "dep:jpeg-decoder"]
 
 # Draws an SVG into a PNG for design/wallpapers/make.py (M5.10c4b).
 [[example]]
@@ -35,6 +38,8 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"], optional = true }
 ed25519-dalek = { version = "3", optional = true }
 flate2 = { version = "1", optional = true }
+# Wallpapers' JPEG pictures (M5.10c4b): pure Rust, and it decodes at a half, a quarter or an eighth of the size the screen needs, so a 4K picture never sits whole in memory for a smaller screen.
+jpeg-decoder = { version = "0.3.2", default-features = false, optional = true }
 # O_NOFOLLOW and O_NONBLOCK, to read files in a user's home safely as root.
 libc = { version = "0.2", optional = true }
 resvg = { version = "0.48.1", default-features = false, optional = true }

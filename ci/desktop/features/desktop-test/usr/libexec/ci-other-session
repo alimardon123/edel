@@ -1,0 +1,7 @@
+#!/bin/sh
+# Test only (roadmap M5.10c3b): a second desktop session, which the login
+# screen's session chip offers beside Edel OS. It leaves a file in the
+# person's runtime directory, so the test can see that this session started,
+# then starts Edel OS's own session, as the desktop file's command does.
+echo "ci-other $(id -un)" >"$XDG_RUNTIME_DIR/ci-other"
+exec /usr/libexec/edel-session

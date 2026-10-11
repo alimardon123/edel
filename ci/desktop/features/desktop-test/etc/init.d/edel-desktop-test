@@ -659,6 +659,10 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# The lock screen's parts (M5.10c5): the time top left and a message
+		# at the bottom, read when the screen locks; reset after the check.
+		'lock parts') edel settings set 'lock_screen.parts=[{ part = "person", at = "centre", y = 0.21 }, { part = "clock", at = "top_left" }, { part = "message", at = "bottom", text = "If found, call 555 0100" }]' ;;
+		'lock parts reset') edel settings reset lock_screen.parts ;;
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
 		'power rules')
@@ -676,6 +680,14 @@ commands() {
 		'greeter log')
 			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
 			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
+			;;
+		# The session chip (M5.10c3b): the file ci-other's session left in
+		# ci's runtime directory, and the login screen's remembered choices.
+		'ci other')
+			say "ci_other $(cat "/run/user/$(id -u ci)/ci-other" 2>/dev/null)"
+			;;
+		'greeter sessions')
+			say "greeter_sessions $(cat "$greeter_sessions" 2>/dev/null | tr '\n' ' ')"
 			;;
 		'kill compositor')
 			echo 'ci:edel-desktop-test' | chpasswd

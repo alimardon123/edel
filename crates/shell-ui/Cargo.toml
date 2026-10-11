@@ -23,7 +23,7 @@ anyhow = "1.0.104"
 # toolkit decision, M5.1b).
 cosmic-text = { version = "0.19.0", default-features = false, features = ["std", "fontconfig", "swash"] }
 # The design tokens and, later, the settings file, read as every part does.
-edel = { path = "../edel", default-features = false, features = ["icons"] }
+edel = { path = "../edel", default-features = false, features = ["icons", "pictures"] }
 # Reading the tray items' streams of signals (M5.2e); already in the tree
 # through zbus.
 futures-lite = { version = "2.6", default-features = false }

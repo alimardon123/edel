@@ -992,12 +992,44 @@ mod tests {
             ("Mail".into(), String::new()),
             ("Chat".into(), String::new()),
         ];
-        crate::lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
+        let corner_view = crate::corner::View {
+            layout: Some("EN".into()),
+            menu: false,
+            restart_waiting: false,
+            hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
+        };
+        let at = crate::lock::screen_layout(
+            1280.0,
+            800.0,
+            &tokens,
+            true,
+            None,
+            None,
+            false,
+            &crate::corner::layout(1280.0, 800.0, &corner_view),
+            &mut text,
+        );
+        crate::lock::paint(
+            &mut pixmap,
+            &screen,
+            &at,
+            &tokens,
+            &mut text,
+            None,
+            &mut crate::lock::Pictures::default(),
+            1.0,
+        );
         let corner = crate::corner::View {
             layout: Some("EN".into()),
             menu: false,
             restart_waiting: false,
             hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
         };
         let corner_at = crate::corner::layout(1280.0, 800.0, &corner);
         crate::corner::paint(&mut pixmap, &corner, &corner_at, &tokens, &mut text, 1.0);

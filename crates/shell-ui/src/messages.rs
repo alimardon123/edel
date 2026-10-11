@@ -44,6 +44,13 @@ pub fn login_failed(why: impl Display) -> String {
     format!("could not log in: {why}; the greeter asks again, and Ctrl+Alt+F2 gives a text login")
 }
 
+/// The login screen could not write down the desktop a person chose (M5.10c3b).
+pub fn session_not_kept(why: impl Display) -> String {
+    format!(
+        "could not remember the desktop for this login: {why}; the login went on, and the next login starts the default unless the choice is made again"
+    )
+}
+
 /// shell-ui stops with an error.
 pub fn stopped(why: impl Display) -> String {
     format!("could not run: {why}; the compositor starts it again unless it keeps failing")
@@ -237,6 +244,20 @@ pub fn huge_pages_on(why: impl Display) -> String {
 /// The compositor ended the connection.
 pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes with it";
 
+/// A picture of the lock screen cannot be read, so the screen leaves it out
+/// (M5.10c5): its path and why, and what to do.
+pub fn picture_not_read(path: &str, why: impl Display) -> String {
+    format!(
+        "could not read the picture {path:?}, so the lock screen leaves it out: {why}; check the path and that the file is a PNG"
+    )
+}
+
+/// The reason for a picture that is not a PNG: this release reads PNG only.
+pub const PICTURE_NOT_PNG: &str = "only PNG pictures are read in this release";
+
+/// The reason for a picture when there is no memory to cut it to size.
+pub const PICTURE_NO_MEMORY: &str = "there is no memory to draw it";
+
 /// A power choice on the lock screen failed (M5.10c).
 pub fn power_failed(what: &str, why: impl Display) -> String {
     format!(
@@ -247,6 +268,15 @@ pub fn power_failed(what: &str, why: impl Display) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_choice_that_is_not_kept_says_the_login_went_on() {
+        let text = session_not_kept("Permission denied (os error 13)");
+        assert!(
+            text.starts_with("could not remember the desktop for this login: Permission denied")
+        );
+        assert!(text.contains("the login went on"));
+    }
 
     #[test]
     fn a_power_choice_that_fails_says_what_to_check() {
@@ -422,6 +452,9 @@ mod tests {
             DARK_STYLE_NO_HOME.to_string(),
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
+            picture_not_read("/a.jpg", "x"),
+            PICTURE_NOT_PNG.to_string(),
+            PICTURE_NO_MEMORY.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");
