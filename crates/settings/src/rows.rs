@@ -112,6 +112,24 @@ pub const ROWS: &[Row] = &[
         key: "appearance.switcher_ends",
         title: n_("Switcher ends"),
     },
+    // The Lock screen page (M5.10c5c): the look, what lies behind it, the
+    // clock and the date, and the count of unread notifications.
+    Row {
+        key: "lock_screen.look",
+        title: n_("Look"),
+    },
+    Row {
+        key: "lock_screen.background",
+        title: n_("Background"),
+    },
+    Row {
+        key: "lock_screen.parts",
+        title: n_("Clock and date"),
+    },
+    Row {
+        key: "lock_screen.notifications",
+        title: n_("Unread count"),
+    },
     // The Displays page (M5.7a); the `*` is a screen's name.
     Row {
         key: "displays.*.resolution",

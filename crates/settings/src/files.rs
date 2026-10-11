@@ -278,6 +278,29 @@ impl Files {
         Self::layout_from(&machine, &person)
     }
 
+    /// The lock screen as the desktop reads it (M5.10c5c): each key the
+    /// person's file sets over the machine's, and the looks of both, the
+    /// person's of a name over the machine's.
+    pub fn lock(&self) -> settings::LockScreen {
+        let machine = Self::file_of(Some(&self.machine)).lock_screen;
+        let person = self.person_file().lock_screen;
+        let mut looks = machine.looks.unwrap_or_default();
+        looks.extend(person.looks.clone().unwrap_or_default());
+        settings::LockScreen {
+            parts: person.parts.or(machine.parts),
+            look: person.look.or(machine.look),
+            background: person.background.or(machine.background),
+            notifications: person.notifications.or(machine.notifications),
+            looks: (!looks.is_empty()).then_some(looks),
+        }
+    }
+
+    /// This person's own file as the desktop reads it, empty when there is
+    /// none (the lock screen's own looks are written from it).
+    pub fn person_file(&self) -> settings::SettingsFile {
+        Self::file_of(self.person.as_ref())
+    }
+
     /// The panels that apply, as shell-ui draws them (M5.31d): the person's
     /// `panels.list` over the machine's, else the preset's.
     pub fn panels(&self) -> Vec<Panel> {
