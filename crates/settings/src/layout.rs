@@ -25,28 +25,13 @@ use crate::style::Theme;
 use crate::widgets;
 use crate::{colours, panels, preview, rows, shape, tray, wallpaper, workspaces};
 
-const PANELS_INTRO: &str = n_(
-    "The panels and docks along the screen's edges and what they hold. Each \
-     choice here is also a line of your settings file and an edel settings \
-     set command.",
-);
+const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
-const WORKSPACES_INTRO: &str = n_(
-    "Workspaces keep windows apart, each a desktop of its own. Each choice \
-     here is also a line of your settings file and an edel settings set \
-     command.",
-);
+const WORKSPACES_INTRO: &str = n_("Desktops of their own, to keep windows apart.");
 
-const APPEARANCE_INTRO: &str = n_(
-    "How the desktop looks. Each choice here is also a line of your \
-     settings file and an edel settings set command.",
-);
+const APPEARANCE_INTRO: &str = n_("Colours, accent, shape and motion. Every change shows at once.");
 
-const INTRO: &str = n_(
-    "One preset sets up the whole desktop: its panels, where windows open \
-                     and how they tile. Each choice here is also a line of your settings \
-                     file and an edel settings set command.",
-);
+const INTRO: &str = n_("One preset sets up the whole desktop: its panels, windows and tiling.");
 
 /// A row's control: a switch for a flag, a list for one of a few values, or
 /// buttons in a row for a few values all in view (the workspaces' numbers).

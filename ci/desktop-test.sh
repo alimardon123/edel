@@ -1771,13 +1771,24 @@ case_display() {
 	clamp=$((area < 704 ? area : 704))
 	left=$((x + 204 + (area - clamp) / 2 + 32))
 	right=$((left + clamp - 64))
-	# The first screen's Scale row, 314 px down the page; its 200% button
-	# 45 px in from the card's right edge, the chosen 100% button's left
-	# end 285 px in, and Reset 354 px in.
-	row=$((y + 314))
-	sleep 2
-	shot display $((right - 285)) "$row" "$(token accent)" >/dev/null ||
-		fail "the Displays page does not show Virtual-1's 100% scale chosen: $((right - 285)),$row is not the accent #$(token accent)"
+	# The first screen's Scale row: its 200% button 45 px in from the
+	# card's right edge, the chosen 100% button's left end 285 px in, and
+	# Reset 354 px in. The row's height on the page is found, not written:
+	# the first accent pixel down that column is the chosen 100% button's
+	# top, and the row's middle is 8 px under it (the page's intro, above
+	# it, changes length with its words).
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/display.png"
+		top=$(python3 ci/qmp.py find "$dir/display.png" $((right - 285)) $((y + 150)) $((y + 600)) "$(token accent)")
+		[ "$top" = none ] || break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	[ "$top" != none ] ||
+		fail "the Displays page does not show Virtual-1's 100% scale chosen: no accent #$(token accent) down x $((right - 285))"
+	row=$((top + 8))
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 2$')
 	python3 ci/qmp.py click $((right - 45)) "$row"
 	wait_more 'edel-compositor: output Virtual-1 scale 2$' "$scaled" ||
@@ -1792,7 +1803,7 @@ case_display() {
 	now=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$now" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$now" | sed 's/Settings@//; s/[,x]/ /g')
-	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + 314) * 2))
+	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + row - y) * 2))
 	python3 ci/qmp.py screendump "$dir/display-scale2.png"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	python3 ci/qmp.py click "$rx" "$ry"
@@ -1849,12 +1860,13 @@ case_updates() {
 		fail "the Updates page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
 	# The card at the top (crates/settings, M5.8d): the page's cards are
 	# at most 704 px wide with 32 px margins, centred beside the 204 px
-	# sidebar; 80 px down is inside the card, above its words.
+	# sidebar; 120 px down is inside the card, under the page's one-line
+	# intro and above the card's words.
 	area=$((w - 204))
 	clamp=$((area < 704 ? area : 704))
 	card_x=$((x + 204 + (area - clamp) / 2 + 32 + clamp - 64 - 40))
-	shot updates $card_x $((y + 80)) "$(token card)" >/dev/null ||
-		fail "the Updates page has no card at the top at $card_x,$((y + 80)) in the card token's #$(token card)"
+	shot updates $card_x $((y + 120)) "$(token card)" >/dev/null ||
+		fail "the Updates page has no card at the top at $card_x,$((y + 120)) in the card token's #$(token card)"
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: updates_log ')
@@ -3875,6 +3887,22 @@ case_lock() {
 	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
+# editor_places: the lock screen's edit mode's last whole places line,
+# one that ends with Done's place; a line still being written when the
+# log is read ends early, so the read is tried again for up to 3 s.
+editor_places() {
+	i=0
+	while :; do
+		line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+		case "$line" in
+		*", done "*x[0-9]*) echo "$line"; return ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || { echo "$line"; return; }
+		sleep 0.3
+	done
+}
+
 case_lock_edit() {
 	# The lock screen's edit mode (M5.10c6b): ci's bus call, the one Settings'
 	# Edit lock screen makes, opens it over the desktop, live, with each part
@@ -3892,14 +3920,14 @@ case_lock_edit() {
 	guest 'lock editor'
 	wait_for 'edel-shell-ui: lock editor shown' ||
 		fail "the lock screen's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
 	set -- $clock
 	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) $((1280 - 24 - $3 / 2)) $((24 + $4 / 2 + 40))
 	wait_for 'edel-shell-ui: lock editor moved clock to top_right' ||
 		fail "the clock did not move to the top right: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	message=$(echo "$places" | sed -n 's/.*, tile[0-9]* message \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$message" ] || fail "the drawer does not offer a message tile: $places"
 	set -- $message
@@ -3907,7 +3935,7 @@ case_lock_edit() {
 	wait_for 'edel-shell-ui: lock editor added message' ||
 		fail "the message tile was not added: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	python3 ci/qmp.py screendump "$dir/lock-editor.png"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies: $places"
 	set -- $done_at
@@ -3980,7 +4008,7 @@ case_lock_edit() {
 	guest 'lock editor'
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
 		fail "the edit mode did not open for the clock's card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
 	set -- $clock
@@ -4001,7 +4029,7 @@ case_lock_edit() {
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: lock editor card hidden' "$hidden" ||
 		fail "Escape did not close the card: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies after the card: $places"
 	set -- $done_at
@@ -4012,10 +4040,68 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'face = "analog"' ||
 		fail "ci's settings file does not hold the clock's analog face: $(value settings_file)"
-	# Done wrote ci's own file, so the line is taken out of it.
+	# The look (M5.10c6c3): a right click on the lock's backdrop asks for the
+	# edit after unlock, ci's password unlocks and opens it. Its Looks tab
+	# shows the looks, Magazine is chosen, and Done writes look = "magazine"
+	# with the parts taken out, so the file holds no parts line
+	# (lock-editor-looks.png is kept). Escape would leave it as it was.
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen for the look"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen for the look"
+	asked=$(count 'edel-shell-ui: lock: password to edit')
+	python3 ci/qmp.py rightclick 100 400
+	wait_more 'edel-shell-ui: lock: password to edit' "$asked" ||
+		fail "a right click on the lock screen's backdrop did not ask for the edit: $(tr -d '\r' <"$log" | grep -a 'lock:' | tail -n 3)"
+	python3 ci/qmp.py type 'edel-desktop-test'
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
+	go=$(echo "$places" | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies for the edit: $places"
+	set -- $go
+	asked_edit=$(count 'edel-shell-ui: lock editor asked for from the lock screen')
+	opened=$(count 'edel-shell-ui: lock editor shown')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor asked for from the lock screen' "$asked_edit" ||
+		fail "ci's password did not ask for the edit after unlock: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
+	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
+		fail "the edit mode did not open after the password: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(editor_places)
+	tab=$(echo "$places" | sed -n 's/.*, tab1 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$tab" ] || fail "the edit mode does not say where the Looks tab lies: $places"
+	set -- $tab
+	tabbed=$(count 'edel-shell-ui: lock editor tab looks')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor tab looks' "$tabbed" ||
+		fail "a click on the Looks tab did not show it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(editor_places)
+	magazine=$(echo "$places" | sed -n 's/.*, tile[0-9]* magazine \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$magazine" ] || fail "the Looks tab does not offer Magazine: $places"
+	set -- $magazine
+	chose=$(count 'edel-shell-ui: lock editor look magazine')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor look magazine' "$chose" ||
+		fail "a click on Magazine did not choose it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-editor-looks.png"
+	places=$(editor_places)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies for the look: $places"
+	set -- $done_at
+	looked=$(count 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out' "$looked" ||
+		fail "Done did not write the look and take the parts out: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'look = "magazine"' ||
+		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
+	value settings_file | grep -q 'parts = ' &&
+		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog; a right click on the lock asked for the edit, ci's password opened it, the Looks tab chose Magazine and Done wrote look = magazine with no parts line"
 }
 
 case_scheme() {

@@ -76,6 +76,9 @@ pub struct View {
     pub asking_name: bool,
     /// Whether Caps Lock is on (M5.10c).
     pub caps: bool,
+    /// Whether a right press on the backdrop asked for the edit mode after
+    /// unlock, so the note says the password opens it (M5.10c6c3).
+    pub edit_after: bool,
     /// How many notifications came that nobody has read yet, and their
     /// apps, newest first, at most `MOST_APPS`: each its name and its
     /// icon's name (M5.10c).
@@ -137,6 +140,7 @@ impl View {
             field: Field::Ready,
             asking_name: false,
             caps: false,
+            edit_after: false,
             notices: 0,
             apps: Vec::new(),
             shake: 0,
@@ -1308,6 +1312,7 @@ fn battery_part(
 fn note_text(view: &View) -> Option<&'static str> {
     match view.field {
         Field::Ready if view.caps => Some(tr("Caps Lock is on")),
+        Field::Ready if view.edit_after => Some(tr("Enter your password to edit the lock screen")),
         Field::Ready if view.people.is_some() => Some(tr("Left and right choose a person")),
         Field::Ready => None,
         Field::Checking => Some(tr("Checking")),
@@ -2888,5 +2893,17 @@ mod tests {
         if let Ok(dir) = std::env::var("EDEL_LOCK_PNG") {
             pixmap.save_png(format!("{dir}/lock-people.png")).unwrap();
         }
+    }
+
+    #[test]
+    fn the_note_asks_for_the_password_to_edit_and_caps_lock_wins() {
+        let mut view = View::new("14:06".into(), "Saturday 3 October".into(), "ali".into());
+        view.edit_after = true;
+        assert_eq!(
+            note_text(&view),
+            Some("Enter your password to edit the lock screen")
+        );
+        view.caps = true;
+        assert_eq!(note_text(&view), Some("Caps Lock is on"));
     }
 }

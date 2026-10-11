@@ -185,8 +185,8 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-pages > row.edel-apart {{ margin-top: 18px; }}
 .edel-back {{ margin: 10px 0 0 20px; padding: 2px 8px 2px 4px; border-radius: {rs}px; background: none; box-shadow: none; color: {accent}; }}
 .edel-back:hover {{ background-color: {fill}; }}
-.edel-page-title {{ font-size: {heading}px; font-weight: 650; letter-spacing: -0.4px; }}
-.edel-intro {{ color: {secondary}; margin-top: 4px; }}
+.edel-page-title {{ font-size: {heading}px; font-weight: 700; letter-spacing: -0.5px; }}
+.edel-intro {{ color: {secondary}; margin-top: 4px; margin-bottom: 8px; }}
 .edel-error {{ color: {error}; margin-top: 8px; }}
 .edel-section {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
 .edel-source {{ color: {muted}; font-size: {small}px; }}
