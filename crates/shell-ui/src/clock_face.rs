@@ -5,10 +5,6 @@
 //! of a clock; `show` and `style` of a date), read from the settings file's
 //! `lock_screen.parts`; `lock.rs` lays the parts out and calls these.
 
-// Nothing calls these until `lock.rs` draws the parts with them (the next
-// part of M5.10c5b); this line goes then, so the compiler checks every use.
-#![allow(dead_code)]
-
 use edel::lock_screen::{DatePart, DateStyle, Face, Size};
 use edel::tokens::Colour;
 use tiny_skia::{LineCap, PathBuilder, Pixmap, Stroke, Transform};

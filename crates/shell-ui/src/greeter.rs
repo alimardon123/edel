@@ -265,7 +265,8 @@ impl Greeter {
     }
 
     fn view(&self) -> View {
-        let (time, date) = lock::time_and_date(&jiff::Zoned::now());
+        let now = jiff::Zoned::now();
+        let (time, date) = lock::time_and_date(&now);
         let (field, dots) = match self.busy {
             Some(dots) => (Field::Checking, dots),
             None => (self.field, self.password.letters()),
@@ -276,6 +277,7 @@ impl Greeter {
             asking_name: !self.asking_password,
             caps: self.caps,
             people: self.people_shown().then(|| self.row.clone()),
+            when: Some(lock::When::of(&now)),
             ..View::new(time, date, self.name.clone())
         }
     }

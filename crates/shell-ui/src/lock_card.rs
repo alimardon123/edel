@@ -247,7 +247,8 @@ impl Shell {
     /// What every screen shows now.
     fn lock_view(&self) -> Option<View> {
         let card = self.lock.as_ref()?;
-        let (time, date) = lock::time_and_date(&jiff::Zoned::now());
+        let now = jiff::Zoned::now();
+        let (time, date) = lock::time_and_date(&now);
         let (field, dots) = match card.checking {
             Some(dots) => (Field::Checking, dots),
             None => (card.field, card.password.letters()),
@@ -263,6 +264,7 @@ impl Shell {
             apps: lock::unread_apps(self.notifications.items(), self.live.unread),
             shake,
             go_hover: card.go_hover,
+            when: Some(lock::When::of(&now)),
             ..View::new(time, date, card.user.clone())
         })
     }
