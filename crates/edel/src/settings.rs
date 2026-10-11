@@ -236,6 +236,11 @@ pub enum Kind {
     /// The person's own looks, as `[lock_screen.looks.NAME]` tables
     /// ([`crate::lock_screen::check_looks`], M5.10c5c)
     LockLooks,
+    /// An accent: one of the release's named accents, `wallpaper`, or a
+    /// colour `#rrggbb` ([`crate::tokens::is_accent`], M5.12b1)
+    Accent,
+    /// A colour, `#rrggbb` or `#rrggbbaa` (M5.12b1)
+    Colour,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -369,7 +374,12 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["fade", "arrows", "counts"]),
     ),
     now("appearance.mode", Kind::OneOf(&["light", "dark", "auto"])),
-    later("appearance.accent", Kind::Text),
+    now("appearance.accent", Kind::Accent),
+    // A person's own colours (M5.12b1): any colour token by name, in both
+    // schemes, or the light or the dark scheme's alone on top.
+    now("appearance.colours.*", Kind::Colour),
+    now("appearance.colours.light.*", Kind::Colour),
+    now("appearance.colours.dark.*", Kind::Colour),
     later("appearance.font", Kind::Text),
     later("appearance.font_size", Kind::Number),
     later("appearance.cursor_size", Kind::Whole),
@@ -691,6 +701,10 @@ pub struct Appearance {
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
+    /// A person's own colours, any colour token by name (M5.12b1); absent
+    /// is the release's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub colours: Option<Colours>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -714,6 +728,20 @@ pub struct Appearance {
     /// `arrows` or `counts` (M5.2m); absent is [`SWITCHER_ENDS_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub switcher_ends: Option<String>,
+}
+
+/// A person's own colours (M5.12b1): any colour token by name, for both
+/// schemes, and the light and dark scheme's own on top of them. The shared
+/// names are the flattened table, so `[appearance.colours]` holds
+/// `panel = "#1e1e2e"` and `[appearance.colours.dark]` holds the dark one.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Colours {
+    #[serde(flatten)]
+    pub both: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub light: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dark: Option<BTreeMap<String, String>>,
 }
 
 /// The Lock screen page (M5.10c5): the parts the lock and login screens
@@ -889,6 +917,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     lines.extend(crate::shortcuts::check(&read.file.shortcuts));
     // Across keys: a look that is neither built in nor the file's own (M5.10c5c).
     lines.extend(look_problem(&read.file).map(|m| format!("lock_screen.look: {m}")));
+    // Across keys: the colours name colour tokens and keep every pair readable (M5.12b1).
+    lines.extend(colour_problems(&read.file));
     Ok(lines)
 }
 
@@ -898,6 +928,75 @@ fn look_problem(file: &SettingsFile) -> Option<String> {
     let look = file.lock_screen.look.as_deref()?;
     crate::lock_screen::check_look(look, file.lock_screen.looks.as_ref()).err()
 }
+
+/// The problems the file's accent and colours cause (M5.12b1), one line
+/// each, the key first. A name that is no colour token is said with the
+/// nearest one (`"panl" is not a colour; did you mean panel?`). Then each
+/// pair of the release that the colours leave under its ratio, in either
+/// scheme: `appearance.accent` when the accent alone leaves it, else
+/// `appearance.colours`, with [`crate::tokens::Tokens::contrast_problems`]'s
+/// words.
+fn colour_problems(file: &SettingsFile) -> Vec<String> {
+    let mut lines = Vec::new();
+    let built = crate::tokens::Tokens::built_in();
+    if let Some(colours) = &file.appearance.colours {
+        let tables = [
+            ("appearance.colours", Some(&colours.both)),
+            ("appearance.colours.light", colours.light.as_ref()),
+            ("appearance.colours.dark", colours.dark.as_ref()),
+        ];
+        for (section, table) in tables {
+            for name in table.into_iter().flat_map(|table| table.keys()) {
+                if built.colour(name).is_some() {
+                    continue;
+                }
+                let message = match nearest_value(name, crate::tokens::COLOUR_NAMES) {
+                    Some(near) => trf(
+                        "{name} is not a colour; did you mean {near}?",
+                        &[("name", &format!("{name:?}")), ("near", near)],
+                    ),
+                    None => trf(
+                        "{name} is not a colour; try a colour such as {names}, or see edel settings get appearance",
+                        &[
+                            ("name", &format!("{name:?}")),
+                            (
+                                "names",
+                                &crate::tokens::COLOUR_NAMES[..COLOUR_EXAMPLES].join(", "),
+                            ),
+                        ],
+                    ),
+                };
+                lines.push(format!("{section}.{name}: {message}"));
+            }
+        }
+    }
+    let accent = file.appearance.accent.as_deref();
+    let colours = file.appearance.colours.as_ref();
+    for scheme in [crate::tokens::Scheme::Light, crate::tokens::Scheme::Dark] {
+        let base = crate::tokens::Tokens::built_in_scheme(scheme);
+        let accent_alone = base
+            .clone()
+            .with_appearance(accent, None, scheme, None)
+            .0
+            .contrast_problems();
+        let (tokens, _) = base.with_appearance(accent, colours, scheme, None);
+        for problem in tokens.contrast_problems() {
+            let key = if accent_alone.contains(&problem) {
+                "appearance.accent"
+            } else {
+                "appearance.colours"
+            };
+            let line = format!("{key}: {problem}");
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+        }
+    }
+    lines
+}
+
+/// How many colour names a problem line shows, as examples (M5.12b1).
+const COLOUR_EXAMPLES: usize = 3;
 
 /// Reads the machine's settings file the way an unattended reader must
 /// (ADR-008): a file in a newer format is not read; the file's `.v<N>`
@@ -1206,6 +1305,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             bail!("{key}: {message}");
         }
     }
+    // A colour names a colour token and keeps every pair readable (M5.12b1).
+    if key == "appearance.accent" || key.starts_with("appearance.colours") {
+        let lines = colour_problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
     Ok(text)
 }
 
@@ -1269,6 +1375,19 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
             trf(
                 "{key}: {name} is not a user name",
                 &[("key", key), ("name", &format!("{:?}", path[1]))]
+            )
+        );
+    }
+    // A scheme's table holds colours, not one colour (M5.12b1).
+    if path.len() == 3
+        && path[..2] == ["appearance", "colours"]
+        && matches!(path[2], "light" | "dark")
+    {
+        bail!(
+            "{}",
+            trf(
+                "{key} is a table of colours; set one colour in it, such as {key}.panel",
+                &[("key", key)]
             )
         );
     }
@@ -1437,6 +1556,18 @@ fn clean(
                 key: shown,
                 message: tr("not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _").into(),
             });
+        } else if at == ["appearance", "colours"] && matches!(name.as_str(), "light" | "dark") {
+            // A scheme's own table of colours, read as its own keys (M5.12b1).
+            match value {
+                Value::Table(inner) => {
+                    let inner = clean(inner, &path, problems, later);
+                    kept.insert(name.clone(), Value::Table(inner));
+                }
+                _ => problems.push(Problem {
+                    key: shown,
+                    message: tr("expected a table").into(),
+                }),
+            }
         } else if let Some(key) = KEYS.iter().find(|k| matches(k.path, &path, false)) {
             match normalize(key.kind, value) {
                 Ok(value) => {
@@ -1687,7 +1818,34 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::AppWorkspaces, _) => fail(tr(
             "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }",
         )),
+        (Kind::Accent, Value::String(s)) if crate::tokens::is_accent(s) => Ok(value.clone()),
+        (Kind::Accent, Value::String(s)) => Err(trf(
+            "{value} is not an accent; choose {choices} or a colour such as \"#d0363f\"",
+            &[("value", &format!("{s:?}")), ("choices", &accent_choices())],
+        )),
+        (Kind::Accent, _) => fail(tr(
+            "an accent's name or a colour in quotes, such as \"blue\"",
+        )),
+        (Kind::Colour, Value::String(s)) if crate::tokens::Colour::parse(s).is_some() => {
+            Ok(value.clone())
+        }
+        (Kind::Colour, Value::String(s)) => Err(trf(
+            "{value} is not a colour; use #rrggbb or #rrggbbaa, such as \"#1e1e2e\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Colour, _) => fail(tr("a colour in quotes, such as \"#1e1e2e\"")),
     }
+}
+
+/// The accents a person may choose, as an accent's message names them: the
+/// release's names in the file's order, then `wallpaper` (M5.12b1).
+fn accent_choices() -> String {
+    let mut names: Vec<String> = crate::tokens::accents()
+        .into_iter()
+        .map(|(name, _, _)| name)
+        .collect();
+    names.push(crate::tokens::WALLPAPER_ACCENT.to_string());
+    names.join(", ")
 }
 
 /// An app id as a window gives it (M5.2l): text with no whitespace or
@@ -1841,6 +1999,8 @@ mod tests {
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
             Kind::LockLook => Value::String("minimal".into()),
             Kind::LockBackground => Value::String("blurred".into()),
+            Kind::Accent => Value::String("blue".into()),
+            Kind::Colour => Value::String("#1e1e2e".into()),
             Kind::LockLooks => {
                 value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
             }
@@ -2741,5 +2901,90 @@ font_size = 11
             sample(Kind::AppWorkspaces).to_string(),
             "{ \"org.mozilla.firefox\" = 2 }"
         );
+    }
+
+    #[test]
+    fn an_accent_is_a_named_accent_wallpaper_or_an_opaque_colour() {
+        let accent = |value: &str| set("format = 1\n", "appearance.accent", value);
+        assert!(accent("red").unwrap().contains("accent = \"red\""));
+        assert!(accent("wallpaper").is_ok());
+        assert!(accent("#ff0000").is_ok());
+        assert_eq!(
+            accent("crimson").unwrap_err().to_string(),
+            "appearance.accent: \"crimson\" is not an accent; choose blue, purple, pink, red, orange, yellow, green, teal, graphite, wallpaper or a colour such as \"#d0363f\""
+        );
+        assert!(accent("#ff000080").is_err());
+        let read = read("format = 1\n[appearance]\naccent = \"crimson\"\n").unwrap();
+        assert_eq!(read.problems.len(), 1, "{:?}", read.problems);
+    }
+
+    #[test]
+    fn a_colour_is_read_set_and_reset_per_token_and_per_scheme() {
+        let text = "format = 1\n";
+        let dark = set(text, "appearance.colours.dark.panel", "#11111b").unwrap();
+        let file = read(&dark).unwrap().file;
+        let colours = file.appearance.colours.unwrap();
+        assert!(colours.both.is_empty());
+        assert_eq!(colours.dark.unwrap()["panel"], "#11111b");
+        // A colour for both schemes must hold in each: the background is in no pair.
+        let shared = set(text, "appearance.colours.background", "#202020").unwrap();
+        let colours = read(&shared).unwrap().file.appearance.colours.unwrap();
+        assert_eq!(colours.both["background"], "#202020");
+        assert_eq!(colours.light, None);
+        let reset = unset(&shared, "appearance.colours.background").unwrap();
+        assert_eq!(read(&reset).unwrap().file.appearance.colours, None);
+        let reset = unset(&dark, "appearance.colours.dark.panel").unwrap();
+        assert_eq!(read(&reset).unwrap().file.appearance.colours, None);
+        // A scheme's table is not one colour, and a colour is a colour.
+        let table = set(text, "appearance.colours.light", "#ffffff").unwrap_err();
+        assert!(
+            table.to_string().contains(
+                "appearance.colours.light is a table of colours; set one colour in it, such as appearance.colours.light.panel"
+            ),
+            "{table}"
+        );
+        let not = set(text, "appearance.colours.background", "fff").unwrap_err();
+        assert!(not.to_string().contains("is not a colour"), "{not}");
+    }
+
+    #[test]
+    fn a_colour_name_is_a_token_and_the_nearest_one_is_named() {
+        assert_eq!(
+            check("format = 1\n[appearance.colours]\npanl = \"#ffffff\"\n").unwrap(),
+            ["appearance.colours.panl: \"panl\" is not a colour; did you mean panel?"]
+        );
+        assert_eq!(
+            check("format = 1\n[appearance.colours.dark]\npanl = \"#ffffff\"\n").unwrap(),
+            ["appearance.colours.dark.panl: \"panl\" is not a colour; did you mean panel?"]
+        );
+        let far = check("format = 1\n[appearance.colours]\nzzzzzzzz = \"#ffffff\"\n").unwrap();
+        assert!(
+            far[0].contains("try a colour such as background, title_bar, title_bar_focused"),
+            "{far:?}"
+        );
+        assert_eq!(
+            check("format = 1\n[appearance]\naccent = \"red\"\n[appearance.colours.dark]\npanel = \"#11111b\"\n").unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_colour_that_breaks_a_pair_is_refused_with_its_line() {
+        let grey = set("format = 1\n", "appearance.colours.panel", "#777777")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            grey.starts_with("appearance.colours: panel_text #1c1e22 on panel #777777 reads at 3.7:1; text needs 4.5:1, such as #"),
+            "{grey}"
+        );
+        let pale = set("format = 1\n", "appearance.accent", "#c0d0ff")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            pale.starts_with("appearance.accent: accent #c0d0ff on panel #f6f7f9 reads at 1.4:1; an icon or mark needs 3.0:1, such as #"),
+            "{pale}"
+        );
+        assert!(set("format = 1\n", "appearance.accent", "red").is_ok());
+        assert!(set("format = 1\n", "appearance.colours.dark.panel", "#11111b").is_ok());
     }
 }
