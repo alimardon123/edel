@@ -340,6 +340,9 @@ pub const KEYS: &[Key] = &[
     now("displays.*.enabled", Kind::Flag),
     later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
     now("appearance.wallpaper", Kind::Wallpaper),
+    // What lies behind the windows in dark mode, when it differs from
+    // `appearance.wallpaper` (M5.10c4d): a person's own pair is two paths.
+    now("appearance.wallpaper_dark", Kind::Wallpaper),
     // The panel's workspace switcher: its look, how many numbers show at
     // once and what the strip's ends show where more lie (M5.2m, on the
     // Appearance page since M5.2q).
@@ -659,6 +662,10 @@ impl Display {
 pub struct Appearance {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallpaper: Option<String>,
+    /// What lies behind the windows in dark mode, when it differs from
+    /// `wallpaper`: a person's own pair is two paths (M5.10c4d).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wallpaper_dark: Option<String>,
     /// Light, dark or automatic
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,

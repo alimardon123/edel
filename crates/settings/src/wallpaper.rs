@@ -4,7 +4,10 @@
 //! Colour (a colour chosen in the system's dialog). Each choice is one
 //! line of the person's settings file, `appearance.wallpaper`, written with
 //! `Files::choose_over` so a choice that is what would apply is taken out
-//! and never written (ADR-008). What applies is `shown`: the person's or
+//! and never written (ADR-008). Your picture takes one picture or two: a
+//! pair is `appearance.wallpaper` (the light one) and
+//! `appearance.wallpaper_dark` (M5.10c4d), and one picture sets the mode to
+//! suit it. What applies is `shown`: the person's or
 //! the machine's value, else `release_value`, the default wallpaper when the
 //! `wallpapers` feature carries it, else none. The group follows the files
 //! through `layout.rs`'s `Ui::update`, as `tray.rs` does, and every GTK call
@@ -18,7 +21,7 @@ use gtk::gdk_pixbuf::{Colorspace, Pixbuf};
 use gtk::prelude::*;
 use gtk::{gdk, gio, glib};
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 use edel::places;
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers;
@@ -29,6 +32,11 @@ use crate::{rows, widgets};
 
 /// The key this group chooses.
 const KEY: &str = "appearance.wallpaper";
+/// The picture for dark mode of a pair the person picked (M5.10c4d).
+const DARK_KEY: &str = "appearance.wallpaper_dark";
+/// The mode key one picture sets, and the brightness it is light from.
+const MODE_KEY: &str = "appearance.mode";
+const LIGHT_FROM: f32 = 0.5;
 /// A card's picture in logical pixels: the size of the pictures' thumbnails.
 const WIDTH: i32 = 192;
 const HEIGHT: i32 = 120;
@@ -104,15 +112,27 @@ pub struct Card {
     colour_shown: Rc<Cell<Option<Colour>>>,
     source: widgets::Source,
     problem: gtk::Label,
+    /// Your picture's card: a prompt, or the pair's two halves.
+    slot: gtk::Box,
+    /// The pair the slot shows, so it is drawn again only when it changes.
+    paired: RefCell<Option<(PathBuf, PathBuf)>>,
     /// Set while `show` moves a toggle, so that is not a choice.
     quiet: Cell<bool>,
 }
 
 impl Card {
     /// Shows the value that applies: its card chosen and badged, the
-    /// colour card's colour, and where the value comes from.
+    /// colour card's colour, the pair's halves, and where the value comes
+    /// from. In dark mode the label names the dark picture when there is one.
     pub fn show(&self, files: &Files) {
-        let value = shown(files.chosen(KEY), &self.dir);
+        let chosen = files.chosen(KEY);
+        let chosen_dark = files.chosen(DARK_KEY);
+        let value = shown(chosen, &self.dir);
+        let dark = adw::StyleManager::default().is_dark();
+        let applies = wallpapers::value_for(Some(value.as_str()), chosen_dark.as_deref(), dark)
+            .unwrap_or(value.as_str())
+            .to_string();
+        self.show_pair(pair_of(&value, chosen_dark.as_deref()));
         let at = match kind(&value) {
             Kind::Pair(name) => self.cards[..self.pairs]
                 .iter()
@@ -136,14 +156,61 @@ impl Card {
         let source = files.source(KEY);
         self.source
             .label
-            .set_label(&rows::describe(&source, &title_of(&value)));
+            .set_label(&rows::describe(&source, &title_of(&applies)));
         self.source.reset.set_visible(rows::resettable(&source));
     }
 
-    /// Writes `value` as the choice, then shows what applies now.
+    /// Draws Your picture's slot as `pair` says: the two halves, else the
+    /// prompt. Drawn again only when the pair changes.
+    fn show_pair(&self, pair: Option<(PathBuf, PathBuf)>) {
+        if *self.paired.borrow() == pair {
+            return;
+        }
+        while let Some(child) = self.slot.first_child() {
+            self.slot.remove(&child);
+        }
+        match &pair {
+            Some((light, dark)) => self.slot.append(&halves(light, dark)),
+            None => self.slot.append(&prompt()),
+        }
+        *self.paired.borrow_mut() = pair;
+    }
+
+    /// Writes `value` as the choice, and takes a person's dark picture out
+    /// (a pair's second half never outlives another choice), then shows
+    /// what applies now.
     fn write(&self, value: &str) {
         let release = release_value(&self.dir);
-        let result = Files::here().choose_over(KEY, value, Some(&release));
+        let files = Files::here();
+        let result = files
+            .choose_over(KEY, value, Some(&release))
+            .and_then(|()| unpair(&files));
+        self.report(result);
+        self.show(&Files::here());
+    }
+
+    /// Writes a pick (M5.10c4d): one picture as the choice with the mode
+    /// that suits it, or a pair, light and dark. Logs what it wrote for CI.
+    fn apply_pick(&self, pick: Pick) {
+        let files = Files::here();
+        let result = match &pick {
+            Pick::One { path, mode } => {
+                let release = release_value(&self.dir);
+                files
+                    .choose_over(KEY, path, Some(&release))
+                    .and_then(|()| unpair(&files))
+                    .and_then(|()| files.choose(MODE_KEY, mode))
+                    .inspect(|()| {
+                        eprintln!("edel-settings: wallpaper {path} is {mode}, mode set");
+                    })
+            }
+            Pick::Pair { light, dark } => files
+                .set(KEY, Some(light))
+                .and_then(|()| files.set(DARK_KEY, Some(dark)))
+                .inspect(|()| {
+                    eprintln!("edel-settings: wallpaper pair {light} and {dark}");
+                }),
+        };
         self.report(result);
         self.show(&Files::here());
     }
@@ -181,10 +248,11 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         tr("None").to_string(),
         swatch(theme, |t| t.background).upcast::<gtk::Widget>(),
     ));
+    let slot = picture_slot();
     parts.push((
         PICTURE_CARD.to_string(),
         tr("Your picture").to_string(),
-        picture_prompt().upcast::<gtk::Widget>(),
+        slot.clone().upcast::<gtk::Widget>(),
     ));
     parts.push((
         COLOUR_CARD.to_string(),
@@ -204,6 +272,9 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     let mut cards = Vec::new();
     for (key, title, picture) in &parts {
         let (button, badge) = widgets::picture_card(title, picture);
+        if key == PICTURE_CARD {
+            button.set_tooltip_text(Some(tr("One picture, or two for light and dark")));
+        }
         match &first {
             Some(first) => button.set_group(Some(first)),
             None => first = Some(button.clone()),
@@ -227,6 +298,8 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         colour_shown,
         source,
         problem: problem.clone(),
+        slot,
+        paired: RefCell::new(None),
         quiet: Cell::new(false),
     });
     wire(&card);
@@ -271,37 +344,167 @@ fn wire(card: &Rc<Card>) {
         let Some(card) = reset_weak.upgrade() else {
             return;
         };
-        let result = Files::here().set(KEY, None);
+        let files = Files::here();
+        let result = files.set(KEY, None).and_then(|()| unpair(&files));
         card.report(result);
         card.show(&Files::here());
     });
     let dir = card.dir.clone();
     card.source.copy.connect_clicked(move |button| {
-        let value = shown(Files::here().chosen(KEY), &dir);
-        button.clipboard().set_text(&rows::command(&[(KEY, value)]));
+        let files = Files::here();
+        let mut pairs = vec![(KEY, shown(files.chosen(KEY), &dir))];
+        if let Some(dark) = files.chosen(DARK_KEY) {
+            pairs.push((DARK_KEY, dark));
+        }
+        button.clipboard().set_text(&rows::command(&pairs));
         widgets::copied(button);
     });
 }
 
-/// Asks for a picture and chooses it. A cancelled choice leaves the card
-/// as it was.
+/// Takes the person's dark picture out, if they have one: the second half
+/// of a pair, which another choice ends. Nothing is written when they have
+/// none, so a person with no home folder can still choose.
+fn unpair(files: &Files) -> Result<(), String> {
+    match files.source(DARK_KEY) {
+        edel::settings::Source::Person(_) => files.set(DARK_KEY, None),
+        _ => Ok(()),
+    }
+}
+
+/// The two pictures a pair is, the light one and the dark one, when both
+/// are pictures.
+fn pair_of(light: &str, dark: Option<&str>) -> Option<(PathBuf, PathBuf)> {
+    match (kind(light), dark.map(kind)) {
+        (Kind::Picture(light), Some(Kind::Picture(dark))) => Some((light, dark)),
+        _ => None,
+    }
+}
+
+/// What the pictures a person picked choose (M5.10c4d).
+#[derive(Debug, PartialEq)]
+enum Pick {
+    /// One picture, and the mode that suits it.
+    One { path: String, mode: &'static str },
+    /// Two pictures: the brighter is the light one.
+    Pair { light: String, dark: String },
+}
+
+/// Chooses from the pictures picked: one, or two, and nothing else. A
+/// picture that cannot be read or a choice of another number is the
+/// message to show, and nothing is written.
+fn pick(paths: &[PathBuf]) -> Result<Pick, String> {
+    match paths {
+        [one] => Ok(Pick::One {
+            path: picture_value(one)?,
+            mode: mode_for(brightness(one)?),
+        }),
+        [first, second] => {
+            let (a, b) = (picture_value(first)?, picture_value(second)?);
+            let (la, lb) = (brightness(first)?, brightness(second)?);
+            Ok(if la >= lb {
+                Pick::Pair { light: a, dark: b }
+            } else {
+                Pick::Pair { light: b, dark: a }
+            })
+        }
+        _ => Err(tr("Choose one picture, or two for light and dark mode").to_string()),
+    }
+}
+
+/// The mode a picture of this brightness suits: light when it is at least
+/// half white.
+fn mode_for(luminance: f32) -> &'static str {
+    if luminance >= LIGHT_FROM {
+        "light"
+    } else {
+        "dark"
+    }
+}
+
+/// A picture's brightness, read from a small copy: its mean luminance,
+/// 0 (black) to 1 (white). A picture that cannot be read says why.
+fn brightness(path: &Path) -> Result<f32, String> {
+    let small = Pixbuf::from_file_at_scale(path, 64, 64, true).map_err(|e| {
+        trf(
+            "could not read {path} as a picture: {why}",
+            &[("path", &path.display().to_string()), ("why", e.message())],
+        )
+    })?;
+    Ok(luminance(&to_rgba(&small)))
+}
+
+/// A pixbuf's pixels as RGBA, four bytes a pixel, whatever its channels
+/// and rowstride (a picture without alpha has three).
+fn to_rgba(pixbuf: &Pixbuf) -> Vec<u8> {
+    let (width, height) = (pixbuf.width() as usize, pixbuf.height() as usize);
+    let channels = pixbuf.n_channels() as usize;
+    let stride = pixbuf.rowstride() as usize;
+    let bytes = pixbuf.read_pixel_bytes();
+    let mut out = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let at = y * stride + x * channels;
+            match bytes.get(at..at + 3) {
+                Some(p) => out.extend_from_slice(&[p[0], p[1], p[2], 255]),
+                None => out.extend_from_slice(&[0, 0, 0, 255]),
+            }
+        }
+    }
+    out
+}
+
+/// The mean luminance of RGBA pixels, 0 (black) to 1 (white): each pixel's
+/// 0.2126 red, 0.7152 green and 0.0722 blue, its alpha ignored.
+pub fn luminance(rgba: &[u8]) -> f32 {
+    let count = rgba.chunks_exact(4).len();
+    if count == 0 {
+        return 0.0;
+    }
+    let sum: f32 = rgba
+        .chunks_exact(4)
+        .map(|p| 0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]))
+        .sum();
+    sum / (count as f32 * 255.0)
+}
+
+/// Asks for one picture or two and chooses them (M5.10c4d). A cancelled
+/// choice leaves the card as it was.
 fn pick_picture(card: Weak<Card>, near: gtk::Widget) {
     glib::spawn_future_local(async move {
-        let picked = widgets::pick_file(&near, tr("Choose a picture"), None).await;
+        let picked = pick_pictures(&near).await;
         let Some(card) = card.upgrade() else {
             return;
         };
-        match picked {
-            None => card.show(&Files::here()),
-            Some(path) => match picture_value(&path) {
-                Ok(value) => card.write(&value),
-                Err(e) => {
-                    card.report(Err(e));
-                    card.show(&Files::here());
-                }
-            },
+        let Some(paths) = picked.filter(|paths| !paths.is_empty()) else {
+            card.show(&Files::here());
+            return;
+        };
+        match pick(&paths) {
+            Ok(choice) => card.apply_pick(choice),
+            Err(e) => {
+                card.report(Err(e));
+                card.show(&Files::here());
+            }
         }
     });
+}
+
+/// Asks for pictures, several at once, and gives their paths; None when
+/// the choice was cancelled.
+async fn pick_pictures(near: &gtk::Widget) -> Option<Vec<PathBuf>> {
+    let dialog = gtk::FileDialog::builder()
+        .title(tr("Choose a picture"))
+        .modal(true)
+        .build();
+    let window = near.root().and_downcast::<gtk::Window>();
+    let files = dialog.open_multiple_future(window.as_ref()).await.ok()?;
+    Some(
+        files
+            .iter::<gio::File>()
+            .filter_map(Result::ok)
+            .filter_map(|file| file.path())
+            .collect(),
+    )
 }
 
 /// The value a picture file chooses: its path, if it is a JPEG or PNG.
@@ -367,18 +570,22 @@ fn frame() -> gtk::Box {
     frame
 }
 
-/// Your picture's card: a prompt where a picture would be.
-fn picture_prompt() -> gtk::Box {
-    let frame = frame();
-    frame.append(
-        &gtk::Label::builder()
-            .label(tr("Choose a picture"))
-            .halign(gtk::Align::Center)
-            .valign(gtk::Align::Center)
-            .vexpand(true)
-            .build(),
-    );
-    frame
+/// Your picture's card before a pair is chosen: a prompt where a picture
+/// would be, in a frame that holds the pair's halves once there is one.
+fn picture_slot() -> gtk::Box {
+    let slot = frame();
+    slot.append(&prompt());
+    slot
+}
+
+/// The prompt in Your picture's card.
+fn prompt() -> gtk::Label {
+    gtk::Label::builder()
+        .label(tr("Choose a picture"))
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .vexpand(true)
+        .build()
 }
 
 /// A wallpaper's card picture: its light picture on the left half and its
@@ -386,16 +593,22 @@ fn picture_prompt() -> gtk::Box {
 /// picture uses it for both halves; a picture that will not load leaves an
 /// empty card.
 fn thumbnail(dir: &Path, name: &str) -> gtk::Widget {
-    let (light, dark) = match (
+    match (
         wallpapers::find(dir, name, false),
         wallpapers::find(dir, name, true),
     ) {
-        (Some(light), Some(dark)) => (light, dark),
-        (Some(one), None) | (None, Some(one)) => (one.clone(), one),
-        (None, None) => return frame().upcast(),
-    };
+        (Some(light), Some(dark)) => halves(&light, &dark),
+        (Some(one), None) | (None, Some(one)) => halves(&one, &one),
+        (None, None) => frame().upcast(),
+    }
+}
+
+/// Two pictures' card picture: the light one on the left half and the dark
+/// one on the right, each scaled to the card (M5.10c4d). A picture that
+/// will not load leaves an empty card.
+fn halves(light: &Path, dark: &Path) -> gtk::Widget {
     let load = |path: &Path| Pixbuf::from_file_at_scale(path, WIDTH, HEIGHT, false).ok();
-    let (Some(light), Some(dark)) = (load(&light), load(&dark)) else {
+    let (Some(light), Some(dark)) = (load(light), load(dark)) else {
         return frame().upcast();
     };
     let Some(both) = Pixbuf::new(Colorspace::Rgb, false, 8, WIDTH, HEIGHT) else {
@@ -563,6 +776,82 @@ mod tests {
         assert_eq!(title_of("none"), "None");
         assert_eq!(title_of("#1f2b48"), "#1f2b48");
         assert_eq!(title_of("/home/ali/sea.jpg"), "sea.jpg");
+    }
+
+    #[test]
+    fn luminance_is_the_mean_brightness_and_alpha_is_ignored() {
+        assert_eq!(luminance(&[0, 0, 0, 255, 0, 0, 0, 255]), 0.0);
+        assert!((luminance(&[255, 255, 255, 255, 255, 255, 255, 255]) - 1.0).abs() < 1e-4);
+        // Half black, half white: the mean is a half.
+        assert!((luminance(&[0, 0, 0, 255, 255, 255, 255, 255]) - 0.5).abs() < 1e-4);
+        // Alpha does not count.
+        assert!((luminance(&[255, 255, 255, 0]) - 1.0).abs() < 1e-4);
+        assert_eq!(luminance(&[]), 0.0);
+    }
+
+    #[test]
+    fn one_picture_suits_light_mode_when_it_is_at_least_half_white() {
+        assert_eq!(mode_for(0.5), "light");
+        assert_eq!(mode_for(0.9), "light");
+        assert_eq!(mode_for(0.49), "dark");
+        assert_eq!(mode_for(0.0), "dark");
+    }
+
+    /// A PNG of one colour, written in a folder of the test's own.
+    fn solid(dir: &Path, name: &str, pixel: u32, channels_alpha: bool) -> PathBuf {
+        let _ = std::fs::create_dir_all(dir);
+        let path = dir.join(name);
+        let pixbuf = Pixbuf::new(Colorspace::Rgb, channels_alpha, 8, 4, 4).unwrap();
+        pixbuf.fill(pixel);
+        pixbuf.savev(&path, "png", &[]).unwrap();
+        path
+    }
+
+    #[test]
+    fn two_pictures_are_a_pair_with_the_brighter_as_light() {
+        let dir = std::env::temp_dir().join(format!("edel-pick-pair-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let white = solid(&dir, "white.png", 0xffffffff, true);
+        let black = solid(&dir, "black.png", 0x000000ff, true);
+        assert_eq!(
+            pick(&[black.clone(), white.clone()]),
+            Ok(Pick::Pair {
+                light: white.to_str().unwrap().to_string(),
+                dark: black.to_str().unwrap().to_string(),
+            })
+        );
+        let one = pick(std::slice::from_ref(&black)).unwrap();
+        assert_eq!(
+            one,
+            Pick::One {
+                path: black.to_str().unwrap().to_string(),
+                mode: "dark",
+            }
+        );
+        let light = pick(std::slice::from_ref(&white)).unwrap();
+        assert!(matches!(light, Pick::One { mode: "light", .. }));
+        assert!(pick(&[white.clone(), black.clone(), white.clone()]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_picture_without_alpha_is_read_like_one_with() {
+        let dir = std::env::temp_dir().join(format!("edel-pick-rgb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let grey = solid(&dir, "grey.png", 0xffffffff, false);
+        let lum = brightness(&grey).unwrap();
+        assert!((lum - 1.0).abs() < 1e-3, "{lum}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_picture_that_cannot_be_read_says_so() {
+        let missing = PathBuf::from("/no/such/edel-picture.png");
+        let err = pick(std::slice::from_ref(&missing)).unwrap_err();
+        assert!(
+            err.starts_with("could not read /no/such/edel-picture.png as a picture"),
+            "{err}"
+        );
     }
 
     #[test]

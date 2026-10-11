@@ -577,9 +577,10 @@ impl Edel {
             eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
         }
         // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
-        // dark wallpaper's picture) changes.
+        // dark wallpaper's picture) changes, or the dark one (M5.10c4d).
         if !self.wallpaper.announced
             || old.wallpaper != new.wallpaper
+            || old.wallpaper_dark != new.wallpaper_dark
             || old.color_scheme != new.color_scheme
         {
             self.apply_wallpaper(&new);

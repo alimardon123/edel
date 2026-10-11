@@ -8,6 +8,10 @@
 //! name in [`places::WALLPAPERS_DIR`] (`NAME-light.jpg` and
 //! `NAME-dark.jpg`, the one the colour scheme names, or `NAME.jpg` for
 //! both); or a path starting with `/`, that picture in both schemes.
+//!
+//! `appearance.wallpaper_dark` (M5.10c4d) is the picture for dark mode when
+//! it differs: a person's own light and dark pair is two paths, one in each
+//! key. [`value_for`] picks which of the two applies in a scheme.
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +36,21 @@ pub enum Wallpaper {
     Colour(Colour),
     /// A picture, scaled to fill each screen.
     Picture(PathBuf),
+}
+
+/// The value that applies in the scheme `dark` names: `wallpaper_dark` in
+/// dark mode when it is set, else `wallpaper` (M5.10c4d). Absent is absent,
+/// so [`resolve`] then gives the default.
+pub fn value_for<'a>(
+    wallpaper: Option<&'a str>,
+    wallpaper_dark: Option<&'a str>,
+    dark: bool,
+) -> Option<&'a str> {
+    if dark {
+        wallpaper_dark.or(wallpaper)
+    } else {
+        wallpaper
+    }
 }
 
 /// What `value` shows in the scheme `dark` names, the pairs looked for in
@@ -224,6 +243,25 @@ mod tests {
             resolve(Some("/no/such.jpg"), false, &dir),
             Wallpaper::Background
         );
+    }
+
+    #[test]
+    fn dark_mode_takes_the_dark_key_when_set_else_the_light_one() {
+        assert_eq!(
+            value_for(Some("/a/light.jpg"), Some("/a/dark.jpg"), true),
+            Some("/a/dark.jpg")
+        );
+        assert_eq!(
+            value_for(Some("/a/light.jpg"), Some("/a/dark.jpg"), false),
+            Some("/a/light.jpg")
+        );
+        assert_eq!(value_for(Some("hills"), None, true), Some("hills"));
+        assert_eq!(value_for(None, Some("/a/dark.jpg"), false), None);
+        assert_eq!(
+            value_for(None, Some("/a/dark.jpg"), true),
+            Some("/a/dark.jpg")
+        );
+        assert_eq!(value_for(None, None, true), None);
     }
 
     #[test]
