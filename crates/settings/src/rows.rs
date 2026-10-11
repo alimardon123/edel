@@ -136,6 +136,19 @@ pub const ROWS: &[Row] = &[
         key: "appearance.panel_opacity",
         title: n_("Panels' opacity"),
     },
+    // The text (M5.12b5): the fonts and the size, shown above the shape.
+    Row {
+        key: "appearance.font",
+        title: n_("Interface font"),
+    },
+    Row {
+        key: "appearance.monospace_font",
+        title: n_("Monospace font"),
+    },
+    Row {
+        key: "appearance.text_size",
+        title: n_("Text size"),
+    },
     // The Motion group (M5.12b4): how much things move, how fast, and the
     // feel, whose values (Springy and the rest) search finds too.
     Row {
@@ -396,7 +409,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 16);
+        assert_eq!(on_page("appearance").count(), 19);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

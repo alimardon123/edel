@@ -118,8 +118,9 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.border_width` | a whole number from 0 to 10 logical pixels: the border round each window with a title bar; missing is the release's 1 | M5.12b2 |
 | `appearance.title_bar_height` | a whole number from 24 to 48 logical pixels: the title bar's height; missing is the release's 28 | M5.12b2 |
 | `appearance.panel_opacity` | a whole number from 20 to 100, in percent: the panels' opacity; missing is 100 | M5.12b2 |
-| `appearance.font` | text, a font family | M5.12 |
-| `appearance.font_size` | a number, in points | M5.12 |
+| `appearance.font` | text, the interface font's family as fontconfig names it, such as `"Noto Sans"`; missing is the release's (Inter Variable). The title bars and everything the panels and apps draw follow it at once | M5.12b5 |
+| `appearance.monospace_font` | text, the family apps use for code and terminals; missing is `"Noto Sans Mono"` | M5.12b5 |
+| `appearance.text_size` | a whole number from 80 to 150, in percent of the release's sizes; missing is 100. `edel settings set appearance.text_size=150` makes every text size a half bigger, and the title bars, panels and apps follow | M5.12b5 |
 | `appearance.cursor_size` | a whole number, in pixels | M5.12 |
 | `appearance.icon_size` | a whole number, in pixels | M5.12 |
 | `appearance.animations` | `full`, `reduced` (fades only) or `off`; missing is `full`. The desktop follows it at once | M5.11b |

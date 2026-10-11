@@ -99,6 +99,10 @@ pub struct Settings {
     /// rest), the person's over the machine's, read by the tokens too;
     /// the desktop follows them live (M5.12b2b).
     pub shape: edel::tokens::Shape,
+    /// The text keys (M5.12b5, `appearance.font`, `monospace_font` and
+    /// `text_size`), the person's over the machine's; the tokens follow them
+    /// too, and the title bars' font is loaded again when they change.
+    pub text: edel::tokens::Text,
 }
 
 /// Whether `speed` is in the key table's range for `appearance.animation_speed`
@@ -127,6 +131,7 @@ impl Settings {
     pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
         let mut settings = Settings {
             shape: edel::tokens::Shape::between(machine, person),
+            text: edel::tokens::Text::between(machine, person),
             ..Settings::default()
         };
         for file in [machine, person].into_iter().flatten() {

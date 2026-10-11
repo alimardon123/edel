@@ -30,7 +30,6 @@ appearance.wallpaper_dark
 appearance.mode
 appearance.accent
 appearance.font
-appearance.font_size
 appearance.cursor_size
 appearance.icon_size
 appearance.animations
@@ -88,3 +87,5 @@ appearance.gaps_outer
 appearance.border_width
 appearance.title_bar_height
 appearance.panel_opacity
+appearance.monospace_font
+appearance.text_size

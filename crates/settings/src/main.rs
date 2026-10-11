@@ -33,6 +33,7 @@ mod sound;
 mod status;
 mod style;
 mod system;
+mod text;
 mod tray;
 mod updates;
 mod users;

@@ -24,6 +24,11 @@ pub const BUILT_IN: &str = include_str!("../../../design/tokens.toml");
 /// The only tokens format so far.
 pub const FORMAT: i64 = 1;
 
+/// The monospace font's family when the tokens name none (M5.12b5), the
+/// font apps use for code and terminals. `design/tokens.toml` may name one
+/// in `[font] monospace` later; the reader already takes it.
+pub const MONOSPACE: &str = "Noto Sans Mono";
+
 /// An sRGB colour with alpha, each channel 0 to 1.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Colour {
@@ -149,6 +154,9 @@ pub fn load_from_files(
     let shape = Shape::between(machine.as_ref(), person.as_ref());
     let (tokens, more) = tokens.with_shape(&shape);
     notes.extend(more);
+    let text = Text::between(machine.as_ref(), person.as_ref());
+    let (tokens, more) = tokens.with_text(&text);
+    notes.extend(more);
     (tokens, notes)
 }
 
@@ -165,7 +173,10 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
             let notes = read
                 .problems
                 .iter()
-                .filter(|p| settings::SHAPE_KEYS.contains(&p.key.as_str()))
+                .filter(|p| {
+                    settings::SHAPE_KEYS.contains(&p.key.as_str())
+                        || settings::TEXT_KEYS.contains(&p.key.as_str())
+                })
                 .map(ToString::to_string)
                 .collect();
             (Some(read.file), notes)
@@ -602,6 +613,11 @@ pub struct Tokens {
     pub text_size: u32,
     /// The interface font's family.
     pub font: String,
+    /// The monospace font's family (M5.12b5), `[font] monospace`.
+    pub monospace: String,
+    /// The text size in percent of the release's, as `appearance.text_size`
+    /// sets it (M5.12b5); 100 is the release's sizes.
+    pub text_percent: u32,
 }
 
 /// Every colour token by its name in `design/tokens.toml` (M5.12b1): one
@@ -1022,12 +1038,16 @@ impl Tokens {
                 }
                 continue;
             }
-            if key != "interface" {
-                notes.push(format!("unknown key font.{key} ignored"));
-                continue;
-            }
+            let slot = match key.as_str() {
+                "interface" => &mut self.font,
+                "monospace" => &mut self.monospace,
+                _ => {
+                    notes.push(format!("unknown key font.{key} ignored"));
+                    continue;
+                }
+            };
             match value.as_str().filter(|name| !name.trim().is_empty()) {
-                Some(name) => self.font = name.trim().to_string(),
+                Some(name) => *slot = name.trim().to_string(),
                 None => notes.push(format!(
                     "font.{key} = {value} is not a font's name; the built-in one is used"
                 )),
@@ -1151,6 +1171,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         row: 0,
         text_size: 0,
         font: String::new(),
+        monospace: MONOSPACE.to_string(),
+        text_percent: 100,
     };
     tokens.apply(&table, &mut notes);
     let mut light = tokens.clone();
@@ -1277,6 +1299,100 @@ impl Tokens {
             in_shape_range("appearance.panel_opacity", shape.panel_opacity, &mut notes)
         {
             self.panel_opacity = percent;
+        }
+        (self, notes)
+    }
+}
+
+/// A person's text (M5.12b5): the interface and monospace fonts and the
+/// text size in percent; each value the person's file's, else the machine's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Text {
+    pub font: Option<String>,
+    pub monospace_font: Option<String>,
+    pub text_size: Option<u32>,
+}
+
+impl Text {
+    /// Each value the person's settings file sets, else the machine's
+    /// (M5.12b5).
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Text {
+        Text {
+            font: over(machine, person, |a| a.font.clone()),
+            monospace_font: over(machine, person, |a| a.monospace_font.clone()),
+            text_size: over(machine, person, |a| a.text_size),
+        }
+    }
+}
+
+/// The value of one appearance key: the person's file's, else the machine's.
+fn over<T>(
+    machine: Option<&SettingsFile>,
+    person: Option<&SettingsFile>,
+    value: fn(&Appearance) -> Option<T>,
+) -> Option<T> {
+    person
+        .and_then(|file| value(&file.appearance))
+        .or_else(|| machine.and_then(|file| value(&file.appearance)))
+}
+
+/// `family` trimmed if it names a font, else a note that the release's is
+/// used, in the words of `docs/MESSAGES.md` (M5.12b5).
+fn family_in(key: &str, family: Option<&str>, notes: &mut Vec<String>) -> Option<String> {
+    let family = family?.trim();
+    if family.is_empty() {
+        notes.push(trf(
+            "{key} is empty; the release's is used",
+            &[("key", key)],
+        ));
+        None
+    } else {
+        Some(family.to_string())
+    }
+}
+
+/// A text size of `value` scaled to `percent` of the release's, rounded
+/// half up and never below 8 px (M5.12b5).
+fn scaled(value: u32, percent: u32) -> u32 {
+    ((u64::from(value) * u64::from(percent) + 50) / 100).max(8) as u32
+}
+
+impl Tokens {
+    /// Every size of letters (M5.12b5), in one list: a later text size token
+    /// is one line here, and [`Tokens::with_text`] scales them all.
+    fn text_sizes_mut(&mut self) -> [&mut u32; 5] {
+        [
+            &mut self.title_text_size,
+            &mut self.panel_text_size,
+            &mut self.panel_text_small_size,
+            &mut self.text_size,
+            &mut self.lock_clock,
+        ]
+    }
+
+    /// These tokens with a person's text on top (M5.12b5): the interface
+    /// and monospace fonts replace their families, and `text_size` scales
+    /// every size of letters by its percent, rounded half up, never below 8
+    /// px; the boxes stay as they are, so the bars keep their room. Lenient
+    /// (ADR-008): an empty family or a size out of range is noted and
+    /// skipped.
+    pub fn with_text(mut self, text: &Text) -> (Tokens, Vec<String>) {
+        let mut notes = Vec::new();
+        if let Some(family) = family_in("appearance.font", text.font.as_deref(), &mut notes) {
+            self.font = family;
+        }
+        if let Some(family) = family_in(
+            "appearance.monospace_font",
+            text.monospace_font.as_deref(),
+            &mut notes,
+        ) {
+            self.monospace = family;
+        }
+        if let Some(percent) = in_shape_range("appearance.text_size", text.text_size, &mut notes) {
+            for size in self.text_sizes_mut() {
+                *size = scaled(*size, percent);
+            }
+            self.text_percent = percent;
         }
         (self, notes)
     }
@@ -1932,5 +2048,124 @@ mod tests {
         };
         let (mine, _) = release.with_appearance(Some("red"), Some(&own), Scheme::Light, None);
         assert_eq!(mine.title_bar_focused.hex(), "#123456");
+    }
+
+    #[test]
+    fn absent_text_changes_nothing_and_the_monospace_font_is_the_default() {
+        let built = Tokens::built_in();
+        assert_eq!(built.monospace, MONOSPACE);
+        assert_eq!(built.text_percent, 100);
+        let (same, notes) = built.clone().with_text(&Text::default());
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(same, built);
+    }
+
+    #[test]
+    fn a_text_size_of_150_and_80_scales_each_size_of_letters_only() {
+        let text = |percent: u32| Text {
+            text_size: Some(percent),
+            ..Text::default()
+        };
+        let built = Tokens::built_in();
+        let (big, notes) = built.clone().with_text(&text(150));
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(
+            (
+                big.title_text_size,
+                big.panel_text_size,
+                big.panel_text_small_size,
+                big.text_size,
+                big.lock_clock
+            ),
+            (20, 20, 17, 20, 225)
+        );
+        assert_eq!(big.text_percent, 150);
+        // The boxes keep their sizes, so the bars keep their room.
+        assert_eq!(
+            (big.title_bar_height, big.panel_height, big.row),
+            (built.title_bar_height, built.panel_height, built.row)
+        );
+        let (small, _) = built.clone().with_text(&text(80));
+        assert_eq!(
+            (
+                small.title_text_size,
+                small.panel_text_size,
+                small.panel_text_small_size,
+                small.text_size,
+                small.lock_clock
+            ),
+            (10, 10, 9, 10, 120)
+        );
+    }
+
+    #[test]
+    fn a_title_at_150_percent_still_fits_its_bar_less_six_pixels() {
+        let text = Text {
+            text_size: Some(150),
+            ..Text::default()
+        };
+        let (big, _) = Tokens::built_in().with_text(&text);
+        assert!(big.title_text_size + 6 <= big.title_bar_height);
+    }
+
+    #[test]
+    fn a_family_replaces_the_font_and_the_monospace_one() {
+        let text = Text {
+            font: Some(" Noto Sans ".into()),
+            monospace_font: Some("Fira Code".into()),
+            text_size: None,
+        };
+        let (tokens, notes) = Tokens::built_in().with_text(&text);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.font, "Noto Sans");
+        assert_eq!(tokens.monospace, "Fira Code");
+    }
+
+    #[test]
+    fn the_persons_text_wins_over_the_machines_each_key_on_its_own() {
+        let read = |text: &str| settings::read(text).unwrap().file;
+        let machine = read("format = 1\n[appearance]\ntext_size = 80\nfont = \"Noto Sans\"\n");
+        let person = read("format = 1\n[appearance]\ntext_size = 150\n");
+        let text = Text::between(Some(&machine), Some(&person));
+        assert_eq!(
+            text,
+            Text {
+                font: Some("Noto Sans".into()),
+                monospace_font: None,
+                text_size: Some(150),
+            }
+        );
+        let (tokens, notes) = load_from_files(Scheme::Light, None, None, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.text_size, Tokens::built_in().text_size);
+        let (tokens, _) = load_from_files(
+            Scheme::Light,
+            Some("format = 1\n[appearance]\ntext_size = 80\n"),
+            Some("format = 1\n[appearance]\ntext_size = 150\n"),
+            None,
+        );
+        assert_eq!((tokens.text_size, tokens.text_percent), (20, 150));
+    }
+
+    #[test]
+    fn an_out_of_range_size_or_an_empty_family_is_a_note_and_changes_nothing() {
+        let built = Tokens::built_in();
+        let wide = Text {
+            text_size: Some(200),
+            ..Text::default()
+        };
+        let (tokens, notes) = built.clone().with_text(&wide);
+        assert_eq!(tokens, built);
+        assert_eq!(
+            notes,
+            ["appearance.text_size 200 is more than 150; the release's is used"]
+        );
+        let empty = Text {
+            font: Some("  ".into()),
+            ..Text::default()
+        };
+        let (tokens, notes) = built.clone().with_text(&empty);
+        assert_eq!(tokens.font, built.font);
+        assert_eq!(notes, ["appearance.font is empty; the release's is used"]);
     }
 }

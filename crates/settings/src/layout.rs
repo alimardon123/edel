@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{colours, motion, panels, preview, rows, shape, tray, wallpaper, workspaces};
+use crate::{colours, motion, panels, preview, rows, shape, text, tray, wallpaper, workspaces};
 
 const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
@@ -164,6 +164,9 @@ struct Ui {
     /// The Appearance page's Shape group, which follows the files too
     /// (M5.12b2c).
     shape: Option<Rc<shape::Group>>,
+    /// The Appearance page's Text group, which follows the files too
+    /// (M5.12b5).
+    text: Option<Rc<text::Group>>,
     /// The Appearance page's Motion group, which follows the files too
     /// (M5.12b4).
     motion: Option<Rc<motion::Group>>,
@@ -215,6 +218,9 @@ impl Ui {
         }
         if let Some(shape) = &self.shape {
             shape.show();
+        }
+        if let Some(text) = &self.text {
+            text.show();
         }
         if let Some(motion) = &self.motion {
             motion.show();
@@ -307,6 +313,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut wallpaper = None;
     let mut colour_group = None;
     let mut shape_group = None;
+    let mut text_group = None;
     let mut motion_group = None;
     match section {
         "layout" => {
@@ -475,8 +482,10 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             settings.push(style);
             // The accent and the colours after the Style row (M5.12b1c).
             colour_group = Some(colours::group(&content, theme, &problem));
-            // The windows' shape after the colours (M5.12b2c): corners, gaps,
+            // The text after the colours (M5.12b5): the fonts and the size,
+            // and the windows' shape after them (M5.12b2c): corners, gaps,
             // border, title bars and panels' opacity, with a picture.
+            text_group = Some(text::group(&content, &problem));
             shape_group = Some(shape::group(&content, theme, &problem));
             // The motion after the shape (M5.12b4): how much, how fast and
             // with what feel things move.
@@ -534,6 +543,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         wallpaper: wallpaper.clone(),
         colours: colour_group.clone(),
         shape: shape_group.clone(),
+        text: text_group.clone(),
         motion: motion_group.clone(),
     });
     ui.update();

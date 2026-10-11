@@ -100,6 +100,9 @@ pub struct Edel {
     pub dragging: bool,
     /// The title font, once its thread has loaded it (`decoration.rs`).
     pub text: Option<Text>,
+    /// Counts each title font that loads or changes size (M5.12b5); the
+    /// bars draw again when it moves.
+    pub text_key: u32,
     /// The apps' icons for the title bars (M5.6a).
     pub app_icons: crate::decoration::AppIcons,
     /// The cursor and its images (`pointer.rs`).
@@ -282,6 +285,7 @@ impl Edel {
             last_frame: None,
             dragging: false,
             text: None,
+            text_key: 0,
             cursors: Cursors::new(),
             hover: None,
             dock_shown: false,
@@ -574,8 +578,11 @@ impl Edel {
             || old.colours != new.colours
             || old.wallpaper != new.wallpaper
             || old.wallpaper_dark != new.wallpaper_dark
-            || old.shape != new.shape;
+            || old.shape != new.shape
+            || old.text != new.text;
         let mut tokens_changed = false;
+        // The title font and its size (M5.12b5), as they were.
+        let old_text = (self.tokens.font.clone(), self.tokens.title_text_size);
         // The shape (M5.12b2b) is read with the tokens, and the windows'
         // frames are measured before the tokens change.
         let old_sizes = sizes_of(&self.tokens);
@@ -605,6 +612,11 @@ impl Edel {
         if sizes_of(&self.tokens) != old_sizes {
             self.shape_changed(old_insets);
         }
+        if old.text != new.text
+            || old_text != (self.tokens.font.clone(), self.tokens.title_text_size)
+        {
+            self.text_changed(old_text);
+        }
         // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
         // dark wallpaper's picture) changes, or the dark one (M5.10c4d).
         if !self.wallpaper.announced
@@ -632,7 +644,12 @@ impl Edel {
             let name = new.color_scheme.name();
             crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
         } else if tokens_changed {
-            crate::shellui::restart(self, "the colours changed");
+            let why = if old.text != new.text {
+                "the text changed"
+            } else {
+                "the colours changed"
+            };
+            crate::shellui::restart(self, why);
         } else if old.language != new.language {
             let name = new.language.as_deref().unwrap_or("English");
             crate::shellui::restart(self, &format!("the language is now {name}"));
@@ -651,6 +668,39 @@ impl Edel {
         }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();
+    }
+
+    /// The text changed (M5.12b5): the title bars load the family and size
+    /// the tokens name, and draw again when they arrive. A family this system
+    /// has no font for keeps the one the bars had, logged, as the release's
+    /// fonts are the fallback at start.
+    fn text_changed(&mut self, was: (String, u32)) {
+        let (family, size) = was;
+        if self.tokens.font != family
+            && edel_compositor::frame::font_file(
+                &self.tokens.font,
+                &edel_compositor::frame::font_dirs(),
+            )
+            .is_none()
+        {
+            eprintln!(
+                "edel-compositor: no font called {:?}; title bars keep {family:?}",
+                self.tokens.font
+            );
+            self.tokens.font = family.clone();
+        }
+        if (self.tokens.font.clone(), self.tokens.title_text_size) == (family, size) {
+            return;
+        }
+        eprintln!(
+            "edel-compositor: text {} at {} px",
+            self.tokens.font, self.tokens.title_text_size
+        );
+        self.text_key += 1;
+        self.dirty = true;
+        if let Some(handle) = self.handle.clone() {
+            crate::decoration::load_text(&handle, &self.tokens.font, self.tokens.title_text_size);
+        }
     }
 
     /// The shape changed (M5.12b2b): the gaps go to every workspace, and

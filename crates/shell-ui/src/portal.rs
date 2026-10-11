@@ -23,6 +23,11 @@ use crate::shell_bus::{Edit, ShellBus};
 pub const NAME: &str = "org.freedesktop.impl.portal.desktop.edel";
 const PATH: &str = "/org/freedesktop/portal/desktop";
 const APPEARANCE: &str = "org.freedesktop.appearance";
+/// GTK's and libadwaita's namespace for the fonts, which Flatpak and GTK
+/// apps read through the portal (M5.12b5).
+const INTERFACE: &str = "org.gnome.desktop.interface";
+/// A pixel is three quarters of a point, as GTK sizes its text (M5.12b5).
+const POINTS_PER_PIXEL: f64 = 0.75;
 
 /// What the portal says, by namespace and key.
 type Settings = HashMap<String, HashMap<String, OwnedValue>>;
@@ -43,15 +48,39 @@ pub fn settings(tokens: &Tokens) -> Settings {
         f64::from(accent.b),
     );
     let mut appearance = HashMap::new();
-    let mut put = |key: &str, value: Value| {
-        if let Ok(value) = OwnedValue::try_from(value) {
-            appearance.insert(key.to_string(), value);
-        }
-    };
-    put("color-scheme", Value::from(scheme));
-    put("accent-color", Value::from(accent));
-    put("contrast", Value::from(0u32));
-    HashMap::from([(APPEARANCE.to_string(), appearance)])
+    put(&mut appearance, "color-scheme", Value::from(scheme));
+    put(&mut appearance, "accent-color", Value::from(accent));
+    put(&mut appearance, "contrast", Value::from(0u32));
+    // The text (M5.12b5): the fonts with their sizes in points, as GTK reads
+    // `font-name`, and the text's scale as the desktop's percent.
+    let points = (f64::from(tokens.text_size) * POINTS_PER_PIXEL).round();
+    let mut interface = HashMap::new();
+    put(
+        &mut interface,
+        "font-name",
+        Value::from(format!("{} {points}", tokens.font)),
+    );
+    put(
+        &mut interface,
+        "monospace-font-name",
+        Value::from(format!("{} {points}", tokens.monospace)),
+    );
+    put(
+        &mut interface,
+        "text-scaling-factor",
+        Value::from(f64::from(tokens.text_percent) / 100.0),
+    );
+    HashMap::from([
+        (APPEARANCE.to_string(), appearance),
+        (INTERFACE.to_string(), interface),
+    ])
+}
+
+/// Adds `key` to a namespace's keys, when the value can be sent.
+fn put(keys: &mut HashMap<String, OwnedValue>, key: &str, value: Value) {
+    if let Ok(value) = OwnedValue::try_from(value) {
+        keys.insert(key.to_string(), value);
+    }
 }
 
 /// A colour's relative lightness, 0 for black to 1 for white.
@@ -205,9 +234,33 @@ mod tests {
             got.sort();
             got
         };
-        assert_eq!(names(&[]), [APPEARANCE]);
+        assert_eq!(names(&[]), [APPEARANCE, INTERFACE]);
         assert_eq!(names(&["org.freedesktop.appearance"]), [APPEARANCE]);
         assert_eq!(names(&["org.freedesktop.*"]), [APPEARANCE]);
-        assert!(names(&["org.gnome.desktop.interface"]).is_empty());
+        assert_eq!(names(&["org.gnome.desktop.interface"]), [INTERFACE]);
+        assert!(names(&["org.gnome.nothing"]).is_empty());
+    }
+
+    #[test]
+    fn the_text_gives_the_fonts_in_points_and_the_scale() {
+        let tokens = Tokens::built_in();
+        let all = settings(&tokens);
+        let interface = &all[INTERFACE];
+        let text = |key: &str| String::try_from(interface[key].try_clone().unwrap()).unwrap();
+        // The release's 13 px is 9.75 points, which GTK shows as 10.
+        assert_eq!(text("font-name"), "Inter Variable 10");
+        assert_eq!(text("monospace-font-name"), "Noto Sans Mono 10");
+        let scale = f64::try_from(interface["text-scaling-factor"].try_clone().unwrap()).unwrap();
+        assert!((scale - 1.0).abs() < 1e-9);
+        let mut big = tokens.clone();
+        big.text_size = 20;
+        big.text_percent = 150;
+        let all = settings(&big);
+        let scale = f64::try_from(all[INTERFACE]["text-scaling-factor"].try_clone().unwrap());
+        assert!((scale.unwrap() - 1.5).abs() < 1e-9);
+        assert_eq!(
+            String::try_from(all[INTERFACE]["font-name"].try_clone().unwrap()).unwrap(),
+            "Inter Variable 15"
+        );
     }
 }
