@@ -380,6 +380,15 @@ pub const KEYS: &[Key] = &[
     now("appearance.colours.*", Kind::Colour),
     now("appearance.colours.light.*", Kind::Colour),
     now("appearance.colours.dark.*", Kind::Colour),
+    // The windows' shape (M5.12b2): the corners, the gaps between tiled
+    // windows and at the screen's edge (when it differs), the border, the
+    // title bar's height and the panels' opacity, each in its range.
+    now("appearance.radius", Kind::WholeFromTo(0, 24)),
+    now("appearance.gaps", Kind::WholeFromTo(0, 64)),
+    now("appearance.gaps_outer", Kind::WholeFromTo(0, 64)),
+    now("appearance.border_width", Kind::WholeFromTo(0, 10)),
+    now("appearance.title_bar_height", Kind::WholeFromTo(24, 48)),
+    now("appearance.panel_opacity", Kind::WholeFromTo(20, 100)),
     later("appearance.font", Kind::Text),
     later("appearance.font_size", Kind::Number),
     later("appearance.cursor_size", Kind::Whole),
@@ -702,6 +711,27 @@ pub struct Appearance {
     /// is the release's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub colours: Option<Colours>,
+    /// The windows' corner radius in logical pixels, 0 to 24 (M5.12b2); the
+    /// other corners scale with it. Absent is the release's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub radius: Option<u32>,
+    /// The gap between tiled windows, logical pixels, 0 to 64 (M5.12b2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gaps: Option<u32>,
+    /// The gap between tiled windows and the screen's edge, 0 to 64 (M5.12b2);
+    /// absent is `gaps`' value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gaps_outer: Option<u32>,
+    /// The border round each window with a title bar, 0 to 10 logical pixels
+    /// (M5.12b2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_width: Option<u32>,
+    /// The title bar's height, 24 to 48 logical pixels (M5.12b2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title_bar_height: Option<u32>,
+    /// The panels' opacity in percent, 20 to 100 (M5.12b2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub panel_opacity: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -775,6 +805,40 @@ pub fn colours_over(machine: Option<&Colours>, person: Option<&Colours>) -> Opti
         light: merged(machine.light.as_ref(), person.light.as_ref()),
         dark: merged(machine.dark.as_ref(), person.dark.as_ref()),
     })
+}
+
+/// The six keys of the windows' shape (M5.12b2), each a whole number in its
+/// key table range ([`whole_range`]).
+pub const SHAPE_KEYS: &[&str] = &[
+    "appearance.radius",
+    "appearance.gaps",
+    "appearance.gaps_outer",
+    "appearance.border_width",
+    "appearance.title_bar_height",
+    "appearance.panel_opacity",
+];
+
+/// The least and most a whole-number key takes, from its entry in [`KEYS`]
+/// (M5.12b2): the one place a reader finds a range, so the tokens and the
+/// file's own check agree. None for a key that is not a whole number range.
+pub fn whole_range(key: &str) -> Option<(i64, i64)> {
+    KEYS.iter()
+        .find(|k| k.path == key)
+        .and_then(|k| match k.kind {
+            Kind::WholeFromTo(least, most) => Some((least, most)),
+            _ => None,
+        })
+}
+
+/// Whether any of the windows' shape keys differ between two appearances
+/// (M5.12b2), for the compositor to re-lay its windows when the file changes.
+pub fn shape_changed(old: &Appearance, new: &Appearance) -> bool {
+    old.radius != new.radius
+        || old.gaps != new.gaps
+        || old.gaps_outer != new.gaps_outer
+        || old.border_width != new.border_width
+        || old.title_bar_height != new.title_bar_height
+        || old.panel_opacity != new.panel_opacity
 }
 
 /// The Lock screen page (M5.10c5): the parts the lock and login screens
@@ -3046,5 +3110,37 @@ font_size = 11
         assert_eq!(merged.dark.as_ref().unwrap()["panel"], "#333333");
         assert_eq!(colours_over(None, None), None);
         assert_eq!(colours_over(Some(&machine), None).unwrap(), machine);
+    }
+
+    #[test]
+    fn the_shape_keys_take_their_range_and_refuse_outside_it() {
+        let radius = |value: &str| set("format = 1\n", "appearance.radius", value);
+        assert!(radius("0").unwrap().contains("radius = 0"));
+        assert!(radius("24").is_ok());
+        let wide = radius("40").unwrap_err().to_string();
+        assert!(wide.contains("a whole number from 0 to 24"), "{wide}");
+        assert!(set("format = 1\n", "appearance.title_bar_height", "23").is_err());
+        assert!(set("format = 1\n", "appearance.title_bar_height", "48").is_ok());
+        assert!(set("format = 1\n", "appearance.panel_opacity", "19").is_err());
+        assert!(set("format = 1\n", "appearance.panel_opacity", "20").is_ok());
+        assert!(set("format = 1\n", "appearance.gaps_outer", "65").is_err());
+        assert!(set("format = 1\n", "appearance.border_width", "10").is_ok());
+        assert_eq!(whole_range("appearance.gaps"), Some((0, 64)));
+        assert_eq!(whole_range("appearance.mode"), None);
+    }
+
+    #[test]
+    fn a_changed_shape_is_seen_and_a_colour_change_is_not() {
+        let shape = |text: &str| read(text).unwrap().file.appearance;
+        let old = shape("format = 1\n[appearance]\nradius = 10\n");
+        let new = shape("format = 1\n[appearance]\nradius = 12\n");
+        assert!(shape_changed(&old, &new));
+        assert!(!shape_changed(&old, &old));
+        let coloured = shape("format = 1\n[appearance]\nradius = 10\naccent = \"red\"\n");
+        assert!(!shape_changed(&old, &coloured));
+        assert!(shape_changed(
+            &Appearance::default(),
+            &shape("format = 1\n[appearance]\npanel_opacity = 50\n")
+        ));
     }
 }

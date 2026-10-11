@@ -112,6 +112,12 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.colours.*` | a colour `"#rrggbb"` or `"#rrggbbaa"` for any colour token by its name (`background`, `panel`, `title_bar_focused`, ...), in both schemes; missing is the release's. `edel settings set appearance.colours.background=#202020` works; `edel settings set appearance.colours.panl=#ffffff` is refused with `appearance.colours.panl: "panl" is not a colour; did you mean panel?`. `edel settings reset appearance.colours.background` takes it back. A colour that leaves a pair under its ratio is refused with that pair's line, in both schemes | M5.12b1 |
 | `appearance.colours.light.*` | the same, for the light scheme alone, over the shared one: `edel settings set appearance.colours.light.panel=#f6f7f9` works | M5.12b1 |
 | `appearance.colours.dark.*` | the same, for the dark scheme alone: `edel settings set appearance.colours.dark.panel=#11111b` works. `edel settings set appearance.colours.panel=#1e1e2e` is refused, since the light scheme's text would not read on that panel; the refusal names the pair | M5.12b1 |
+| `appearance.radius` | a whole number from 0 to 24 logical pixels: the windows' corner radius; the menus', the controls' and the small corners scale with it, and 0 makes every corner square; missing is the release's 10 | M5.12b2 |
+| `appearance.gaps` | a whole number from 0 to 64 logical pixels: the gap between tiled windows, and at the screen's edge too unless `appearance.gaps_outer` is set; missing is the release's 8 | M5.12b2 |
+| `appearance.gaps_outer` | a whole number from 0 to 64 logical pixels: the gap between tiled windows and the screen's edge; missing is `appearance.gaps`' value, or the release's 8 when that is missing too | M5.12b2 |
+| `appearance.border_width` | a whole number from 0 to 10 logical pixels: the border round each window with a title bar; missing is the release's 1 | M5.12b2 |
+| `appearance.title_bar_height` | a whole number from 24 to 48 logical pixels: the title bar's height; missing is the release's 28 | M5.12b2 |
+| `appearance.panel_opacity` | a whole number from 20 to 100, in percent: the panels' opacity; missing is 100 | M5.12b2 |
 | `appearance.font` | text, a font family | M5.12 |
 | `appearance.font_size` | a number, in points | M5.12 |
 | `appearance.cursor_size` | a whole number, in pixels | M5.12 |
