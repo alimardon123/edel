@@ -922,18 +922,12 @@ fn desktop_follows(key: &str) -> bool {
         .any(|section| key.starts_with(section))
 }
 
-/// `edel settings reset KEY...`: removes each key, so the release decides
-/// it again.
+/// `edel settings reset KEY...`: removes each key the file holds, so the
+/// release decides it again; refused only when none is there.
 pub fn reset(keys: &[String]) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
     let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
-    edit(&what, &keys, |text| {
-        let mut text = text.to_string();
-        for key in &keys {
-            text = settings::unset(&text, key)?;
-        }
-        Ok(text)
-    })
+    edit(&what, &keys, |text| settings::unset_all(text, &keys))
 }
 
 /// A page's name as people type it: its title in lowercase, `_` for a
@@ -942,10 +936,18 @@ fn page_word(page: &settings::Page) -> String {
     page.title.to_lowercase().replace(' ', "_").replace('-', "")
 }
 
-/// `edel settings` alone: the pages, in the Settings app's order.
+/// `edel settings` alone: the pages under their groups, in the Settings
+/// app's order (M5.32b).
 pub fn pages() {
-    println!(
-        "{}\n",
+    print!("{}", pages_text());
+}
+
+/// What `edel settings` prints: each group's title alone on a line, its
+/// pages under it, and a blank line between groups (the groups are
+/// `settings::GROUPS`, as the sidebar shows them).
+fn pages_text() -> String {
+    let mut text = format!(
+        "{}\n\n",
         tr("Settings, page by page, as the Settings app shows them:")
     );
     let width = settings::PAGES
@@ -953,20 +955,36 @@ pub fn pages() {
         .map(|p| page_word(p).len())
         .max()
         .unwrap_or(0);
-    for page in settings::PAGES {
-        println!(
-            "  {:width$}  {}: {}",
-            page_word(page),
-            tr(page.title),
-            tr(page.about)
-        );
+    let mut shown = 0;
+    for group in settings::GROUPS {
+        let pages: Vec<&settings::Page> = settings::PAGES
+            .iter()
+            .filter(|p| p.group == group.name)
+            .collect();
+        if pages.is_empty() {
+            continue;
+        }
+        if shown > 0 {
+            text.push('\n');
+        }
+        shown += 1;
+        text.push_str(&format!("{}\n", tr(group.title)));
+        for page in pages {
+            text.push_str(&format!(
+                "  {:width$}  {}: {}\n",
+                page_word(page),
+                tr(page.title),
+                tr(page.about)
+            ));
+        }
     }
-    println!(
-        "\n{}",
+    text.push_str(&format!(
+        "\n{}\n",
         tr(
             "edel settings get PAGE shows a page's settings and where each comes from;\nedel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
         )
-    );
+    ));
+    text
 }
 
 /// Every value in `table`, by its dotted key; a list is one value.
@@ -1364,6 +1382,65 @@ fn describe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_lists_the_five_groups_with_their_pages_under_them() {
+        let text = pages_text();
+        let lines: Vec<&str> = text.lines().collect();
+        let headings: Vec<&str> = lines
+            .iter()
+            .copied()
+            .filter(|l| !l.starts_with(' ') && !l.is_empty())
+            .collect();
+        assert_eq!(
+            headings,
+            [
+                "Settings, page by page, as the Settings app shows them:",
+                "Desktop",
+                "Connections",
+                "Devices",
+                "Personal",
+                "System",
+                "edel settings get PAGE shows a page's settings and where each comes from;",
+                "edel settings set KEY=VALUE changes one, and reset KEY gives it back to the release.",
+            ]
+        );
+        let under = |heading: &str| -> Vec<String> {
+            lines
+                .iter()
+                .skip_while(|l| **l != heading)
+                .skip(1)
+                .take_while(|l| l.starts_with("  "))
+                .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+                .collect()
+        };
+        assert_eq!(
+            under("Desktop"),
+            [
+                "appearance",
+                "layout",
+                "panels",
+                "workspaces",
+                "lock_screen"
+            ]
+        );
+        assert_eq!(under("Connections"), ["network", "bluetooth"]);
+        assert_eq!(under("Devices"), ["displays", "sound", "power"]);
+        assert_eq!(
+            under("Personal"),
+            [
+                "notifications",
+                "shortcuts",
+                "region",
+                "default_apps",
+                "startup"
+            ]
+        );
+        assert_eq!(
+            under("System"),
+            ["apps", "addons", "services", "users", "updates", "system"]
+        );
+    }
 
     const PASSWD: &str = "root:x:0:0:root:/root:/bin/sh\n\
         sshd:x:22:22:sshd:/dev/null:/sbin/nologin\n\

@@ -36,51 +36,80 @@ pub struct Page {
     pub title: &'static str,
     /// What the page holds, in a few words
     pub about: &'static str,
+    /// The group the page stands under (a `GROUPS` name)
+    pub group: &'static str,
 }
 
+/// A heading the pages stand under, in the sidebar and in `edel settings`
+/// (M5.32b): few pages to a group, so the list reads at a glance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Group {
+    /// The word the code and the tests use
+    pub name: &'static str,
+    /// What the heading says
+    pub title: &'static str,
+}
+
+/// The groups of the Settings app, in its order; each page names one.
+pub const GROUPS: &[Group] = &[
+    Group {
+        name: "desktop",
+        title: n_("Desktop"),
+    },
+    Group {
+        name: "connections",
+        title: n_("Connections"),
+    },
+    Group {
+        name: "devices",
+        title: n_("Devices"),
+    },
+    Group {
+        name: "personal",
+        title: n_("Personal"),
+    },
+    Group {
+        name: "system",
+        title: n_("System"),
+    },
+];
+
 /// The Settings app's pages, in its order (the mockups' order, Alimardon
-/// 2026-10-08: the everyday pages first, people and the system last);
-/// every section of the file is
-/// one of them, and a page may have no section of the file (Sound, whose
-/// state is the sound system's own). Settings (M5.6) reads the same table.
+/// 2026-10-08, and their groups, M5.32b: the page people open most first,
+/// the desktop's pages, then the connections, the devices, the person's
+/// own and the system's). Every section of the file is one of them, and a
+/// page may have no section of the file (Sound, whose state is the sound
+/// system's own). Settings (M5.6) reads the same table.
 pub const PAGES: &[Page] = &[
+    Page {
+        section: "appearance",
+        title: n_("Appearance"),
+        about: n_("colours, accent, shape, fonts and motion"),
+        group: "desktop",
+    },
     Page {
         section: "layout",
         title: n_("Layout"),
         about: n_("the preset, tiling and title bars"),
+        group: "desktop",
     },
     Page {
         section: "panels",
         title: n_("Panels"),
         about: n_("the panels and docks, the tray and the pinned apps"),
+        group: "desktop",
     },
     Page {
         section: "workspaces",
         title: n_("Workspaces"),
         about: n_("how many, their names and the apps that open on each"),
-    },
-    Page {
-        section: "appearance",
-        title: n_("Appearance"),
-        about: n_("light or dark, the accent, fonts, animations and the workspace switcher"),
+        group: "desktop",
     },
     Page {
         section: "lock_screen",
         title: n_("Lock screen"),
-        about: n_("the clock, the parts and where they stand"),
-    },
-    Page {
-        section: "displays",
-        title: n_("Displays"),
-        about: n_("each screen's place, scale and resolution"),
-    },
-    Page {
-        // The sound system's own state, not a section of the file: the
-        // volume and the chosen devices are WirePlumber's (M5.7b), so this
-        // page has no key, and `edel settings get sound` says so.
-        section: "sound",
-        title: n_("Sound"),
-        about: n_("the output and input devices and their volume"),
+        about: n_("its look, parts and background"),
+        group: "desktop",
     },
     Page {
         // The connections and Wi-Fi passwords are NetworkManager's own
@@ -89,6 +118,7 @@ pub const PAGES: &[Page] = &[
         section: "network",
         title: n_("Network"),
         about: n_("wired and Wi-Fi connections, and the device's name"),
+        group: "connections",
     },
     Page {
         // BlueZ's own state, like Sound's: no key, and `edel settings get
@@ -96,67 +126,95 @@ pub const PAGES: &[Page] = &[
         section: "bluetooth",
         title: n_("Bluetooth"),
         about: n_("pairing and connecting headphones, mice and other devices"),
+        group: "connections",
+    },
+    Page {
+        section: "displays",
+        title: n_("Displays"),
+        about: n_("each screen's place, scale and resolution"),
+        group: "devices",
+    },
+    Page {
+        // The sound system's own state, not a section of the file: the
+        // volume and the chosen devices are WirePlumber's (M5.7b), so this
+        // page has no key, and `edel settings get sound` says so.
+        section: "sound",
+        title: n_("Sound"),
+        about: n_("the output and input devices and their volume"),
+        group: "devices",
     },
     Page {
         section: "power",
         title: n_("Power"),
         about: n_("the lid, the power button and the screen lock"),
+        group: "devices",
     },
     Page {
         // Banners and the notification centre are shell-ui's (M5.9b).
         section: "notifications",
         title: n_("Notifications"),
         about: n_("banners and do not disturb"),
-    },
-    Page {
-        section: "region",
-        title: n_("Region"),
-        about: n_("language, keyboard and time zone"),
+        group: "personal",
     },
     Page {
         section: "shortcuts",
         title: n_("Shortcuts"),
         about: n_("the keys for each action"),
+        group: "personal",
+    },
+    Page {
+        section: "region",
+        title: n_("Region"),
+        about: n_("language, keyboard and time zone"),
+        group: "personal",
     },
     Page {
         section: "default_apps",
         title: n_("Default apps"),
         about: n_("the browser, files, editor, terminal and mail"),
+        group: "personal",
     },
     Page {
         section: "startup",
         title: n_("Startup"),
         about: n_("apps that start after login"),
+        group: "personal",
     },
     Page {
         section: "apps",
         title: n_("Apps"),
         about: n_("the apps installed from Flathub"),
+        group: "system",
     },
     Page {
         section: "addons",
         title: n_("Add-ons"),
         about: n_("signed extras to the system"),
+        group: "system",
     },
     Page {
         section: "services",
         title: n_("Services"),
         about: n_("optional services, on or off"),
+        group: "system",
     },
     Page {
         section: "users",
         title: n_("Users"),
         about: n_("the people who log in, and their ssh keys"),
+        group: "system",
     },
     Page {
         section: "updates",
         title: n_("Updates"),
         about: n_("when updates are installed"),
+        group: "system",
     },
     Page {
         section: "system",
         title: n_("System"),
         about: n_("developer mode and profiles"),
+        group: "system",
     },
 ];
 
@@ -1449,26 +1507,52 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
 /// user's table stays when its last key goes, so apply still looks after
 /// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
-    let path: Vec<&str> = key.split('.').collect();
+    unset_all(text, &[key])
+}
+
+/// `edel settings reset KEY...` on a file's text: removes each key the
+/// file holds, as `unset` does. A key already at its default is passed
+/// over while another one is removed, so resetting a group needs no care
+/// for which of its keys are set; only when none is in the file does it
+/// refuse, as there is nothing to reset.
+pub fn unset_all(text: &str, keys: &[&str]) -> Result<String> {
     let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
-    let removed = match path.as_slice() {
+    let mut removed = false;
+    for key in keys {
+        removed |= remove_key(&mut doc, key)?;
+    }
+    if !removed {
+        match keys {
+            [key] => bail!(
+                "{}",
+                trf(
+                    "{key} is not in the file, so it already has its default; there is nothing to reset",
+                    &[("key", key)]
+                )
+            ),
+            _ => bail!(
+                "{}",
+                trf(
+                    "none of {keys} is in the file, so they already have their defaults; there is nothing to reset",
+                    &[("keys", &keys.join(", "))]
+                )
+            ),
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// Removes `key` from `doc`; whether it was there.
+fn remove_key(doc: &mut DocumentMut, key: &str) -> Result<bool> {
+    let path: Vec<&str> = key.split('.').collect();
+    Ok(match path.as_slice() {
         ["users", name, last] => doc
             .get_mut("users")
             .and_then(|users| users.as_table_like_mut()?.get_mut(name))
             .and_then(|user| user.as_table_like_mut())
             .is_some_and(|user| user.remove(last).is_some()),
         _ => remove_path(doc.as_table_mut(), &path)?,
-    };
-    if !removed {
-        bail!(
-            "{}",
-            trf(
-                "{key} is not in the file, so it already has its default; there is nothing to reset",
-                &[("key", key)]
-            )
-        );
-    }
-    Ok(doc.to_string())
+    })
 }
 
 fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
@@ -2574,6 +2658,21 @@ cursor_size = 11
     }
 
     #[test]
+    fn unset_all_passes_over_keys_at_their_default() {
+        let unset_once = unset_all(EDITED, &["future.key", "network.hostname"]).unwrap();
+        assert_eq!(
+            unset_all(EDITED, &["layout.preset", "network.hostname", "future.key"]).unwrap(),
+            unset_once
+        );
+        assert_eq!(
+            unset_all(&unset_once, &["network.hostname", "future.key"])
+                .unwrap_err()
+                .to_string(),
+            "none of network.hostname, future.key is in the file, so they already have their defaults; there is nothing to reset"
+        );
+    }
+
+    #[test]
     fn unset_keeps_a_user_whose_last_key_goes() {
         assert_eq!(
             unset("format = 1\n[users.bob]\nadmin = true\n", "users.bob.admin").unwrap(),
@@ -2778,6 +2877,48 @@ cursor_size = 11
             );
         }
     }
+
+    #[test]
+    fn every_page_names_a_group_that_exists() {
+        for page in PAGES {
+            assert!(
+                GROUPS.iter().any(|g| g.name == page.group),
+                "{} names the group {:?}, which GROUPS does not hold",
+                page.section,
+                page.group
+            );
+        }
+    }
+
+    #[test]
+    fn a_groups_pages_stand_together_in_their_groups_order() {
+        // The groups appear in GROUPS' order, each as one run of pages.
+        let runs: Vec<&str> = PAGES
+            .iter()
+            .enumerate()
+            .filter_map(|(at, page)| {
+                (at == 0 || PAGES[at - 1].group != page.group).then_some(page.group)
+            })
+            .collect();
+        let order: Vec<&str> = GROUPS.iter().map(|g| g.name).collect();
+        assert_eq!(
+            runs, order,
+            "each group's pages in one run, in GROUPS' order"
+        );
+    }
+
+    #[test]
+    fn about_lines_fit_one_line_of_the_sidebar() {
+        for page in PAGES {
+            assert!(
+                page.about.chars().count() <= 60,
+                "the about line of {} is longer than 60 characters: {:?}",
+                page.section,
+                page.about
+            );
+        }
+    }
+
     #[test]
     fn keeping_appends_once_and_taking_out_removes() {
         let now = vec!["nm-applet".to_string()];

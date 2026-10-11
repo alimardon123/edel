@@ -983,8 +983,10 @@ case_settings() {
 		echo "Settings (M5.6a): $settings_own MiB of its own while open (budget ${settings_limit:-none yet}), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	# Narrow (M5.6b): tiled alone on a screen 512 px wide (scale 2.5),
-	# Settings folds its sidebar away and shows the pages' list across
-	# the window, in the sidebar's colour where the page was.
+	# Settings folds its sidebar away. Opened on the Layout page by name
+	# (M5.32b, as Appearance now comes first), it shows that page across
+	# the whole window with a way back to the list, so the page's colour
+	# lies where the sidebar was at full width.
 	tiled=$(count 'edel-compositor: windows now tiling')
 	guest 'tiling on'
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile Settings"
@@ -995,15 +997,21 @@ case_settings() {
 	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
-	# A point low in the part of the window on screen, below the pages'
-	# list: Settings keeps at least 360 by 300, so it may reach past the
-	# screen's 512 by 320.
-	right=$(($1 + $3)) bottom=$(($2 + $4))
-	[ "$right" -le 512 ] || right=512
+	# A point low in the window's page margin, 24 px in from its left
+	# edge, where the pages' list stands at full width and the page's
+	# cards never reach: Settings keeps at least 360 by 300, so it may
+	# reach past the screen's 320 px height.
+	bottom=$(($2 + $4))
 	[ "$bottom" -le 320 ] || bottom=320
-	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
-	shot settings-narrow "$nx" "$ny" "$side" >/dev/null ||
-		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$side"
+	nx=$((($1 + 24) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
+	page=$(token window)
+	shot settings-narrow "$nx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the page's #$page"
+	# The window's left side, where the sidebar was: 24 px in, at the same
+	# height, is the page's colour too, so the sidebar is gone.
+	lx=$((($1 + 24) * 5 / 2))
+	shot settings-narrow "$lx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen still shows its sidebar: $lx,$ny is not the page's #$page"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	guest 'scale default'
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
@@ -1389,7 +1397,9 @@ case_settings_appearance() {
 	# row, it logs where Light, Dark and Automatic lie in the window. A
 	# click on Dark writes appearance.mode = "dark" to ci's file and the
 	# compositor takes the dark scheme (`colour scheme dark`); the line
-	# taken out again, it is light, the release's default.
+	# taken out again, it is light, the release's default. Its sidebar's
+	# group headings are logged (M5.32b), kept with the picture of the
+	# sidebar as settings-sidebar.png.
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings appearance'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Appearance page: $(value windows)"
@@ -1407,6 +1417,21 @@ case_settings_appearance() {
 		[ -n "$dark" ] || dark=none
 		[ "$dark" = none ] && sleep 1
 	done
+	# The sidebar (M5.32b): its headings are logged where they lie once the
+	# list is laid out, and the picture of Settings opened on Appearance at
+	# its own size is kept as settings-sidebar.png.
+	sidebar=0
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		guest 'settings appearance log'
+		text=$(value settings_appearance_log)
+		if echo "$text" | grep -q 'sidebar group desktop ' && echo "$text" | grep -q 'sidebar group system '; then
+			sidebar=1
+			break
+		fi
+		sleep 1
+	done
+	[ "$sidebar" = 1 ] || fail "Settings' sidebar did not log its desktop and system headings: $text"
+	python3 ci/qmp.py screendump "$dir/settings-sidebar.png"
 	set -- $dark
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
 	sleep 2
