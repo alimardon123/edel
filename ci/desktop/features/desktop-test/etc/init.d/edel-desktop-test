@@ -313,6 +313,9 @@ commands() {
 		# The wallpaper the Wallpaper group's card wrote to ci's own file
 		# (M5.10c4c), taken out again.
 		'wallpaper mine default') as_ci "sed -i '/^wallpaper = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The accent Settings' swatches wrote to ci's own file (M5.12b1c),
+		# taken out again.
+		'accent mine default') as_ci "sed -i '/^accent = /d' /home/ci/.config/edel/$settings_name" ;;
 		# The sound system's volume (M5.9a): the default output at 20
 		# percent, for the quick settings slider to start from.
 		'volume 20') as_ci wpctl set-volume @DEFAULT_AUDIO_SINK@ 20% ;;
@@ -522,6 +525,12 @@ commands() {
 			as_ci edel-settings --page appearance.wallpaper </dev/null >/tmp/settings-wallpaper.log 2>&1 &
 			;;
 		'settings wallpaper log') say "settings_wallpaper_log $(tr '\n' ';' </tmp/settings-wallpaper.log 2>/dev/null)" ;;
+		# Settings' accent swatches (M5.12b1c): opened by the name of the
+		# accent row, its log says where each swatch lies.
+		'settings accent')
+			as_ci edel-settings --page appearance.accent </dev/null >/tmp/settings-accent.log 2>&1 &
+			;;
+		'settings accent log') say "settings_accent_log $(tr '\n' ';' </tmp/settings-accent.log 2>/dev/null)" ;;
 		# Settings' Lock screen page (M5.10c5c): opened by the name of the
 		# lock screen's section, its log says where each look's card lies.
 		'settings lock')

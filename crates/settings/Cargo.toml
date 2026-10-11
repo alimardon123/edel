@@ -13,7 +13,10 @@ description = "Settings, Edel OS's app for every setting (roadmap M5.6)"
 # (ADR-008); without the command's network and signing.
 # Its icons too, drawn from design/icons by the code the shell uses, so
 # one file changes every place that shows it (feature `icons`, M5.5d).
-edel = { path = "../edel", default-features = false, features = ["icons"] }
+# Pictures' accents too, so the Wallpaper swatch shows a picture's colour
+# (feature `pictures`, M5.12b1c; the library's JPEG reader is already in
+# the lock file for the compositor).
+edel ={ path = "../edel", default-features = false, features = ["icons", "pictures"] }
 # Settings is the one app of ours on libadwaita (ADR-004); 1.4 brings the
 # navigation split view and breakpoints that collapse it on narrow screens.
 # 4.12 brings loading a stylesheet from a string, written from the tokens

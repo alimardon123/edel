@@ -501,7 +501,8 @@ fn picture_value(path: &Path) -> Result<String, String> {
 }
 
 /// Asks for a colour, starting from the one chosen (else the accent), and
-/// chooses it as `#rrggbb`. A cancelled choice leaves the card as it was.
+/// chooses it as `#rrggbb` (`widgets::choose_colour`). A cancelled choice
+/// leaves the card as it was.
 fn pick_colour(card: Weak<Card>, button: gtk::ToggleButton) {
     let Some(now) = card.upgrade() else {
         return;

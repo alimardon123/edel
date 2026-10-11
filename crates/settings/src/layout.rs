@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{panels, preview, rows, tray, wallpaper, workspaces};
+use crate::{colours, panels, preview, rows, tray, wallpaper, workspaces};
 
 const PANELS_INTRO: &str = n_(
     "The panels and docks along the screen's edges and what they hold. Each \
@@ -173,6 +173,9 @@ struct Ui {
     /// The Appearance page's Wallpaper group, which follows the files too
     /// (M5.10c4c).
     wallpaper: Option<Rc<wallpaper::Card>>,
+    /// The Appearance page's accent and colours, which follow the files too
+    /// (M5.12b1c).
+    colours: Option<Rc<colours::Group>>,
 }
 
 impl Ui {
@@ -215,6 +218,9 @@ impl Ui {
         }
         if let Some(wallpaper) = &self.wallpaper {
             wallpaper.show(&files);
+        }
+        if let Some(colours) = &self.colours {
+            colours.show(&files);
         }
         let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
@@ -302,6 +308,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut bar = None;
     let (mut panels, mut tray, mut names) = (None, None, None);
     let mut wallpaper = None;
+    let mut colour_group = None;
     match section {
         "layout" => {
             let source = widgets::section(&content, rows::title("layout.preset"));
@@ -467,6 +474,8 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             );
             log_places(&page, &look, &style, ("appearance", "style"));
             settings.push(style);
+            // The accent and the colours after the Style row (M5.12b1c).
+            colour_group = Some(colours::group(&content, theme, &problem));
             widgets::heading(&content, tr("Workspace switcher"));
             let switcher = widgets::group(&content);
             settings.push(setting(
@@ -518,6 +527,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         panels: panels.clone(),
         names,
         wallpaper: wallpaper.clone(),
+        colours: colour_group.clone(),
     });
     ui.update();
     if let Some(tray) = &tray {

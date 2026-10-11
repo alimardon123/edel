@@ -1455,6 +1455,78 @@ case_settings_wallpaper() {
 	echo "PASS: Settings' Wallpaper group put the ci card at $cx,$cy; a click wrote appearance.wallpaper = \"ci\" to ci's file and the compositor drew ci-light.png, #d08a2e at $sx,$sy (settings-wallpaper.png), and taking the line out brought the background back (settings-wallpaper-gone.png)"
 }
 
+case_settings_accent() {
+	# Settings' accent swatches (M5.12b1c): Settings opened on its Appearance
+	# page by the name of the accent row logs where each swatch lies; a click
+	# on the red one writes appearance.accent = "red", and the compositor
+	# takes the light red #d0363f, which the switcher's shown pill shows at
+	# once. Super+Q closes Settings, and `colours default` takes the accent
+	# out, so the light blue is back. Kept as settings-accent.png.
+	# Super+1 shows the first workspace, whose pill lies at x + 29.
+	python3 ci/qmp.py key meta_l-1
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings accent'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Accent row: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	red=none
+	i=0
+	while [ "$red" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the red swatch lies: $(value settings_accent_log)"
+		guest 'settings accent log'
+		text=$(value settings_accent_log)
+		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
+		# commas and the log's `;` line ends become spaces first.
+		red=$(echo "$text" | sed -n 's/.*accent group places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "red") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$red" ] || red=none
+		[ "$red" = none ] && sleep 1
+	done
+	set -- $red
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	sleep 2
+	said=$(count 'edel-compositor: accent #d0363f')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	placed=$(count 'edel-shell-ui: panel places')
+	python3 ci/qmp.py click "$cx" "$cy"
+	if ! wait_more 'edel-compositor: accent #d0363f' "$said"; then
+		python3 ci/qmp.py screendump "$dir/settings-accent-miss.png"
+		guest 'settings file'
+		sleep 2
+		fail "a click on the red swatch at $cx,$cy did not make the compositor take #d0363f (settings-accent-miss.png); ci's file: $(value settings_file)"
+	fi
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for the red accent"
+	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: panel places' "$placed" ||
+		fail "shell-ui did not lay its panel out again after the restart"
+	place=$(panel_places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	[ -n "$place" ] || fail "shell-ui did not say where the workspace switcher lies"
+	shot settings-accent $((place + 29)) 780 d0363f >/dev/null ||
+		fail "the switcher's shown pill at $((place + 29)),780 is not #d0363f after a click on the red swatch (settings-accent.png)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'accent = "red"' ||
+		fail "ci's settings file is not what the swatch writes: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	placed=$(count 'edel-shell-ui: panel places')
+	guest 'accent mine default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui after the accent was taken out"
+	wait_more 'edel-shell-ui: panel places' "$placed" ||
+		fail "shell-ui did not lay its panel out again after the reset"
+	shot settings-accent-default $((place + 29)) 780 "$(token accent)" >/dev/null ||
+		fail "the switcher's shown pill at $((place + 29)),780 is not the light accent #$(token accent) after reset"
+	echo "PASS: Settings' accent swatches put the red one at $cx,$cy; a click wrote appearance.accent = \"red\" to ci's file and the compositor took #d0363f, the switcher's pill red (settings-accent.png), and colours default brought the light accent back"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
