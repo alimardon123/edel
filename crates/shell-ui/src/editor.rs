@@ -16,6 +16,7 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item as Node;
 use crate::edit_kit;
+use crate::lock_editor;
 use crate::paint::{EDIT_PAD, Face, LIFTED, Text, fill, outline};
 use crate::popup::{self, Card, Rect, wrap};
 use crate::trayview::Key;
@@ -33,12 +34,34 @@ pub const WIDTH: f32 = 560.0;
 const SIDE: f32 = 32.0;
 /// A tile's size on a desktop; a compact drawer shrinks its width to fit.
 pub const TILE: (f32, f32) = (104.0, 84.0);
-/// A tile of a bare strip (the lock screen's, M5.10c7f): 114 by 92 logical
-/// pixels, the mockup's, with its live preview in the top part.
-pub const BARE_TILE: (f32, f32) = (114.0, 92.0);
+/// A tile of a bare strip (the lock screen's, M5.10c7f): 112 by 92 logical
+/// pixels, the mockup's, with its live preview and its title stacked in it.
+pub const BARE_TILE: (f32, f32) = (112.0, 92.0);
 /// A tab's width in a bare drawer (the lock screen's strip), logical pixels
 /// (M5.10c7e): each tab's segment is this wide, the tabs centred under the bar.
-pub const TAB_W: f32 = 104.0;
+pub const TAB_W: f32 = 120.0;
+/// The bare strip's tabs (M5.10c7f): each segment 32 px high, the track round
+/// them `BARE_TAB_PAD` (4 px) wide, its corners `BARE_TRACK_RADIUS`.
+const BARE_TAB_H: f32 = 32.0;
+const BARE_TAB_PAD: f32 = 4.0;
+const BARE_TRACK_RADIUS: f32 = 14.0;
+const BARE_SEGMENT_RADIUS: f32 = 10.0;
+/// The bare strip's tile (M5.10c7f): its corners, its fill (white at 6 percent,
+/// 10 under the pointer), its hairline (white at 10 percent), the gap between
+/// its preview and its title, and the title's size.
+const BARE_RADIUS: f32 = 16.0;
+const BARE_FILL: f32 = 0.06;
+const BARE_HOVER: f32 = 0.10;
+const BARE_EDGE: f32 = 0.10;
+const BARE_GAP: f32 = 6.0;
+const BARE_TITLE: f32 = 11.5;
+const BARE_TITLE_LINE: f32 = 14.0;
+/// The tab words' shares: the others white at 80 percent (the chosen is dark).
+const BARE_OTHER_SHARE: f32 = 0.80;
+/// The tab track's fill, white at 8 percent, and its hairline at 10.
+const BARE_TRACK_FILL: f32 = 0.08;
+const BARE_TRACK_EDGE: f32 = 0.10;
+const BARE_LINE: f32 = 1.0;
 /// The opacity of a tile a panel already holds (its picture and words alike).
 const CHOSEN_OPACITY: f32 = 0.5;
 /// The room between tiles, rows and columns alike, and between the buttons.
@@ -404,19 +427,29 @@ fn layout_bare(view: &View) -> Layout {
     let tile_w = tile_width(view, width, columns);
     let counted = view.tiles.len().max(view.tallest);
     let rows = counted.max(1).div_ceil(columns);
-    let button = if view.compact { BUTTON_TOUCH } else { BUTTON };
     let (tabs_row, tabs) = if view.tabs.is_empty() {
         (Rect::new(0.0, 0.0, 0.0, 0.0), Vec::new())
     } else {
         let n = view.tabs.len() as f32;
-        let w = n * TAB_W + 2.0 * TAB_INNER;
-        let row = Rect::new(((width - w) / 2.0).round(), 0.0, w, button);
-        popup::segments_at(row, row.right(), view.tabs.len(), TAB_W, button)
+        let w = n * TAB_W + 2.0 * BARE_TAB_PAD;
+        let h = BARE_TAB_H + 2.0 * BARE_TAB_PAD;
+        let row = Rect::new(((width - w) / 2.0).round(), 0.0, w, h);
+        let tabs = (0..view.tabs.len())
+            .map(|i| {
+                Rect::new(
+                    row.x + BARE_TAB_PAD + i as f32 * TAB_W,
+                    row.y + BARE_TAB_PAD,
+                    TAB_W,
+                    BARE_TAB_H,
+                )
+            })
+            .collect();
+        (row, tabs)
     };
     let top = if view.tabs.is_empty() {
         0.0
     } else {
-        tabs_row.y + button + SPACE
+        tabs_row.y + tabs_row.h + SPACE
     };
     let tiles = place_tiles(view, width, columns, tile_w, top, counted, BARE_TILE.1);
     let height = top + rows as f32 * BARE_TILE.1 + (rows - 1) as f32 * TILE_GAP;
@@ -759,34 +792,51 @@ pub fn paint(
         } else {
             edit_kit::State::Rest
         };
-        let tile_rect = Rect::new(0.0, 0.0, rect.w, rect.h);
-        edit_kit::tile(
-            &mut layer,
-            tile_rect,
-            tile.icon,
-            &tile.title,
-            state,
-            false,
-            tokens,
-            text.as_deref_mut(),
-            style,
-            s,
-        );
-        // A panel's tile shows the widget as it is on a panel; a lock
-        // screen's tile has its icon and title only.
-        if let Some(Picture(picture)) = &tile.picture {
-            thumbnail(&mut layer, picture, rect.w, rect.h, s);
-        }
-        if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(&tile.name)) {
-            picture(
+        if view.bare {
+            // The strip's own tile (M5.10c7f): its preview and title stacked.
+            let preview = tile.picture.as_ref().map(|Picture(p)| p.as_ref());
+            let hover = state == edit_kit::State::Hover;
+            bare_tile(
                 &mut layer,
-                widget,
-                &tile.shown,
+                rect.w,
+                rect.h,
+                &tile.title,
+                preview,
+                hover,
                 tokens,
                 text.as_deref_mut(),
-                icons.as_deref_mut(),
                 s,
             );
+        } else {
+            let tile_rect = Rect::new(0.0, 0.0, rect.w, rect.h);
+            edit_kit::tile(
+                &mut layer,
+                tile_rect,
+                tile.icon,
+                &tile.title,
+                state,
+                false,
+                tokens,
+                text.as_deref_mut(),
+                style,
+                s,
+            );
+            // A panel's tile shows the widget as it is on a panel; a lock
+            // screen's tile has its icon and title only.
+            if let Some(Picture(picture)) = &tile.picture {
+                thumbnail(&mut layer, picture, rect.w, rect.h, s);
+            }
+            if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(&tile.name)) {
+                picture(
+                    &mut layer,
+                    widget,
+                    &tile.shown,
+                    tokens,
+                    text.as_deref_mut(),
+                    icons.as_deref_mut(),
+                    s,
+                );
+            }
         }
         let opacity = if view.lifted == Some(i) {
             LIFTED
@@ -839,9 +889,10 @@ pub fn paint(
     }
 }
 
-/// The bare strip's tabs (M5.10c7f), as the mockup's segmented control: a
-/// dark glass track, the chosen tab a white pill with dark words, the others in
-/// the glass text. The keyboard's focus ring is drawn by the caller.
+/// The bare strip's tabs (M5.10c7f), as the mockup's segmented control: a track
+/// of white at 8 percent with a 1 px hairline of white at 10, the chosen tab a
+/// white pill with dark words (`lock_edit_deep`, semibold), the others regular
+/// at 80 percent white. The keyboard's focus ring is drawn by the caller.
 fn paint_bare_tabs(
     pixmap: &mut Pixmap,
     view: &View,
@@ -850,31 +901,122 @@ fn paint_bare_tabs(
     text: Option<&mut Text>,
     s: f32,
 ) {
-    let track = Colour {
-        a: 0.55,
-        ..tokens.lock_backdrop_deep
-    };
+    let white = tokens.backdrop_text;
     let (x, y, w, h) = l.tabs_row.device(s);
-    fill(pixmap, x, y, w, h, h / 2.0, track);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        BARE_TRACK_RADIUS * s,
+        Colour {
+            a: BARE_TRACK_FILL,
+            ..white
+        },
+    );
+    edit_kit::stroke(
+        pixmap,
+        (x, y, w, h),
+        BARE_TRACK_RADIUS * s,
+        BARE_LINE * s,
+        Colour {
+            a: BARE_TRACK_EDGE,
+            ..white
+        },
+        None,
+    );
     if let Some(segment) = l.tabs.get(view.tab) {
         let (x, y, w, h) = segment.device(s);
-        fill(pixmap, x, y, w, h, h / 2.0, tokens.backdrop_text);
+        fill(pixmap, x, y, w, h, BARE_SEGMENT_RADIUS * s, white);
     }
     let Some(text) = text else {
         return;
     };
-    let size = tokens.panel_text_small_size as f32 * s;
+    let size = tokens.panel_text_size as f32 * s;
     for (j, (word, segment)) in view.tabs.iter().zip(&l.tabs).enumerate() {
-        let colour = if j == view.tab {
-            tokens.lock_backdrop_deep
+        let chosen = j == view.tab;
+        let (face, colour) = if chosen {
+            (Face::SEMIBOLD, tokens.lock_edit_deep)
         } else {
-            tokens.backdrop_text
+            (
+                Face::REGULAR,
+                Colour {
+                    a: BARE_OTHER_SHARE,
+                    ..white
+                },
+            )
         };
-        let mut line = text.fit(word, size, segment.w * s);
+        let mut line = text.fit_in(word, size, segment.w * s, face);
         let x = segment.x * s + ((segment.w * s - line.width) / 2.0).round();
         let y = popup::middle(segment.y, segment.h, size, s);
         text.draw(pixmap, &mut line, x, y, colour);
     }
+}
+
+/// A bare strip's tile (M5.10c7f, the mockup's strip) drawn into its own layer
+/// of `w` by `h` logical pixels: a rounded tile of white at 6 percent (10 under
+/// the pointer) with a 1 px hairline of white at 10 percent, and its live
+/// preview and its title stacked and centred together, `BARE_GAP` apart, the
+/// title 11.5 px regular. The preview is drawn at `PREVIEW_SCALE`, so it is
+/// scaled back to its own box of `PREVIEW_BOX`.
+#[allow(clippy::too_many_arguments)]
+fn bare_tile(
+    layer: &mut Pixmap,
+    w: f32,
+    h: f32,
+    title: &str,
+    preview: Option<&Pixmap>,
+    hover: bool,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let white = tokens.backdrop_text;
+    let (x, y, dw, dh) = Rect::new(0.0, 0.0, w, h).device(s);
+    let share = if hover { BARE_HOVER } else { BARE_FILL };
+    let fill_colour = Colour { a: share, ..white };
+    fill(layer, x, y, dw, dh, BARE_RADIUS * s, fill_colour);
+    let edge = Colour {
+        a: BARE_EDGE,
+        ..white
+    };
+    edit_kit::stroke(
+        layer,
+        (x, y, dw, dh),
+        BARE_RADIUS * s,
+        BARE_LINE * s,
+        edge,
+        None,
+    );
+    let (box_w, box_h) = lock_editor::PREVIEW_BOX;
+    let (preview_h, gap) = if preview.is_some() {
+        (box_h, BARE_GAP)
+    } else {
+        (0.0, 0.0)
+    };
+    let group = preview_h + gap + BARE_TITLE_LINE;
+    let top = ((h - group) / 2.0).round();
+    if let Some(preview) = preview {
+        // The preview's pixmap is drawn at `PREVIEW_SCALE`; this puts it at its
+        // own box, centred across the tile.
+        let k = s / lock_editor::PREVIEW_SCALE;
+        let left = ((w - box_w) / 2.0).round();
+        let transform = Transform::from_row(k, 0.0, 0.0, k, left * s, top * s);
+        let paint = PixmapPaint {
+            quality: FilterQuality::Bilinear,
+            ..PixmapPaint::default()
+        };
+        layer.draw_pixmap(0, 0, preview.as_ref(), &paint, transform, None);
+    }
+    let Some(text) = text else {
+        return;
+    };
+    let size = BARE_TITLE * s;
+    let mut line = text.fit_in(title, size, (w - 2.0 * BARE_GAP) * s, Face::REGULAR);
+    let at = ((w * s - line.width) / 2.0).round();
+    let baseline = popup::middle(top + preview_h + gap, BARE_TITLE_LINE, size, s);
+    text.draw(layer, &mut line, at, baseline, white);
 }
 
 /// What a screen reader finds: each tile as a button, named by its title

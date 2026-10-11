@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{self, Anchor, DatePart, DateStyle, Face, Part, Placed, Size};
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
@@ -184,7 +184,17 @@ const PLAIN_GAP: f32 = 12.0;
 /// badge that numbers a second clock (20 px across, its figure 11 px
 /// semibold), `BADGE_GAP` after the title's last letter.
 const HEAD_H: f32 = 24.0;
-const TITLE_SIZE: f32 = 15.0;
+const TITLE_SIZE: f32 = 14.0;
+/// The docked card's words (M5.10c7f, the mockup's): labels and values 12.5 px,
+/// the labels white at 75 percent, the chevrons at 50, the group filled with
+/// white at 5 percent and its hairlines at 8, the badge at 10.
+const DOCK_TEXT: f32 = 12.5;
+const DOCK_LABEL_SHARE: f32 = 0.75;
+const CHEVRON_SHARE: f32 = 0.50;
+const DOCK_GROUP_SHARE: f32 = 0.05;
+const DOCK_RULE_SHARE: f32 = 0.08;
+const DOCK_BADGE_SHARE: f32 = 0.10;
+const DOCK_FACE_SHARE: f32 = 0.07;
 const BADGE: f32 = 20.0;
 const BADGE_SIZE: f32 = 11.0;
 const BADGE_GAP: f32 = 8.0;
@@ -201,9 +211,9 @@ const CHEVRON: f32 = 12.0;
 const REMOVE_H: f32 = ROW_H;
 /// A clock's face tile in the docked grid: two across, 56 high, with
 /// `FACE_TILE_GAP` between and the corners `FACE_RADIUS`.
-const FACE_TILE_H: f32 = 56.0;
-const FACE_TILE_GAP: f32 = 8.0;
-const FACE_RADIUS: f32 = 12.0;
+const FACE_TILE_H: f32 = 48.0;
+const FACE_TILE_GAP: f32 = 6.0;
+const FACE_RADIUS: f32 = 10.0;
 /// The faces are drawn at 9:41 in this weight, as the mockups' previews.
 const SAMPLE_TIME: (i8, i8, i8) = (9, 41, 0);
 const FACE_WEIGHT: u16 = 400;
@@ -1176,7 +1186,11 @@ fn draw_value(
     let x = chevron.x * s - VALUE_GAP * s - line.width;
     let y = popup::middle(head.y, ROW_H, size, s);
     text.draw(pixmap, &mut line, x, y, dim);
-    popup::icon_in(pixmap, "chevron-right", CHEVRON, chevron, s, dim);
+    let chevron_ink = Colour {
+        a: CHEVRON_SHARE,
+        ..dim
+    };
+    popup::icon_in(pixmap, "chevron-right", CHEVRON, chevron, s, chevron_ink);
 }
 
 /// Draws a docked switch (M5.10c7f) at `switch`: a pill in the accent when on,
@@ -1228,7 +1242,11 @@ fn draw_faces(
         };
         let on = now == Some(j);
         let (x, y, w, h) = cell.device(s);
-        let fill_colour = if on { ink.accent } else { ink.raised };
+        let unchosen = Colour {
+            a: DOCK_FACE_SHARE,
+            ..ink.text
+        };
+        let fill_colour = if on { ink.accent } else { unchosen };
         fill(pixmap, x, y, w, h, FACE_RADIUS * s, fill_colour);
         let colour = if on { ink.accent_text } else { ink.text };
         let clock_size = match face {
@@ -1278,6 +1296,10 @@ fn draw_heading(
     };
     let top = heading.y + (heading.h - BADGE) / 2.0;
     let badge_x = x + width + BADGE_GAP * s;
+    let badge = Colour {
+        a: DOCK_BADGE_SHARE,
+        ..ink.text
+    };
     fill(
         pixmap,
         badge_x,
@@ -1285,7 +1307,7 @@ fn draw_heading(
         BADGE * s,
         BADGE * s,
         BADGE / 2.0 * s,
-        ink.raised,
+        badge,
     );
     let size = BADGE_SIZE * s;
     let mut figure = text.line_in(&n.to_string(), size, crate::paint::Face::SEMIBOLD);
@@ -1311,9 +1333,26 @@ pub fn paint(
     s: f32,
 ) {
     let ink = edit_kit::inks(Style::GLASS, tokens);
-    lock::lift(pixmap, l.card, edit_kit::SHEET_RADIUS, s, tokens);
-    edit_kit::sheet(pixmap, l.card, tokens, Style::GLASS, s);
+    if l.docked {
+        // Docked in the right panel, the card is a side panel with no shadow.
+        edit_kit::side_panel(pixmap, l.card, tokens, s);
+    } else {
+        lock::lift(pixmap, l.card, edit_kit::SHEET_RADIUS, s, tokens);
+        edit_kit::sheet(pixmap, l.card, tokens, Style::GLASS, s);
+    }
     let size = tokens.panel_text_size as f32 * s;
+    // A docked card's labels and values are smaller, its labels dimmer.
+    let (text_px, label_ink) = if l.docked {
+        (
+            DOCK_TEXT * s,
+            Colour {
+                a: DOCK_LABEL_SHARE,
+                ..ink.text
+            },
+        )
+    } else {
+        (size, ink.text)
+    };
     let radius = tokens.radius_control as f32 * s;
     // A faint ink: the group's hairlines and the controls drawn in the group.
     let faint = edel::tokens::Colour {
@@ -1325,7 +1364,15 @@ pub fn paint(
     }
     if let Some(group) = l.group {
         let (x, y, w, h) = group.device(s);
-        fill(pixmap, x, y, w, h, GROUP_RADIUS * s, ink.raised);
+        let group_fill = if l.docked {
+            Colour {
+                a: DOCK_GROUP_SHARE,
+                ..ink.text
+            }
+        } else {
+            ink.raised
+        };
+        fill(pixmap, x, y, w, h, GROUP_RADIUS * s, group_fill);
     }
     let first = l.rows.iter().position(|r| grouped(l, r.line));
     let last = l.rows.iter().rposition(|r| grouped(l, r.line));
@@ -1362,7 +1409,15 @@ pub fn paint(
                     1.0,
                 );
                 let (x, y, w, h) = rule.device(s);
-                fill(pixmap, x, y, w, h, 0.0, faint);
+                let rule_ink = if l.docked {
+                    Colour {
+                        a: DOCK_RULE_SHARE,
+                        ..ink.text
+                    }
+                } else {
+                    faint
+                };
+                fill(pixmap, x, y, w, h, 0.0, rule_ink);
             }
         }
         match row.line {
@@ -1377,9 +1432,9 @@ pub fn paint(
                     text,
                     row,
                     row_label(row.line, true),
-                    size,
+                    text_px,
                     s,
-                    ink.text,
+                    label_ink,
                 );
             }
             Line::Face | Line::Hours | Line::Size | Line::Style => {
@@ -1401,10 +1456,10 @@ pub fn paint(
                         s,
                     );
                 }
-                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
                 if l.docked {
                     let words = value_of(view, row.line);
-                    draw_value(pixmap, text, row, &words, size, s, ink.dim);
+                    draw_value(pixmap, text, row, &words, text_px, s, ink.text);
                 }
             }
             Line::Show(part) if l.docked => {
@@ -1412,7 +1467,7 @@ pub fn paint(
                     let on = shown(&view.placed).contains(&part);
                     draw_switch(pixmap, switch, on, &ink, s);
                 }
-                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
             }
             Line::Show(part) => {
                 let Some(box_) = row.control else { continue };
@@ -1428,7 +1483,7 @@ pub fn paint(
                         ink.accent,
                     );
                 }
-                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
             }
             Line::Field | Line::Zone | Line::Label => {
                 if let Some(field) = row.control {
@@ -1456,10 +1511,10 @@ pub fn paint(
                     }
                 }
                 // A clock's zone and label name their field, at its left or above it.
-                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
                 if l.docked {
                     let words = value_of(view, row.line);
-                    draw_value(pixmap, text, row, &words, size, s, ink.dim);
+                    draw_value(pixmap, text, row, &words, text_px, s, ink.text);
                 }
             }
             Line::File => {
@@ -2101,17 +2156,18 @@ mod tests {
         );
         assert!(l.card.h <= dock().h, "the rows fit the panel: {:?}", l.card);
         // The faces are a 2 by 2 grid filling the inner width (208 less 16 at
-        // each side) in two columns 8 px apart, each 56 high (M5.10c7g).
+        // each side) in two columns 6 px apart, each 48 high (M5.10c7f): each
+        // column is (176 - 6) / 2 = 85 wide.
         let face = &l.rows[0];
         assert_eq!(face.segments.len(), 4);
         assert!(
             face.segments
                 .iter()
-                .all(|c| (c.w - 84.0).abs() < 0.01 && (c.h - 56.0).abs() < 0.01)
+                .all(|c| (c.w - 85.0).abs() < 0.01 && (c.h - 48.0).abs() < 0.01)
         );
         assert_eq!(face.segments[0].x, l.card.x + 16.0);
-        assert!((face.segments[1].x - (face.segments[0].x + 92.0)).abs() < 0.01);
-        assert!((face.segments[2].y - (face.segments[0].y + 64.0)).abs() < 0.01);
+        assert!((face.segments[1].x - (face.segments[0].x + 91.0)).abs() < 0.01);
+        assert!((face.segments[2].y - (face.segments[0].y + 54.0)).abs() < 0.01);
         assert!((face.segments[3].x - face.segments[1].x).abs() < 0.01);
         // The heading sits 16 px under the panel's top, and the group under the grid.
         let heading = l.heading.expect("docked cards have a heading");

@@ -31,9 +31,19 @@ use crate::trayview::Key;
 /// The screen's margin round everything in the edit mode, logical pixels (the
 /// lock's own, `lock::MARGIN`): the bar, the panels, the strip and the canvas.
 pub const MARGIN: f32 = lock::MARGIN;
-/// The bar's height on a desktop, logical pixels (M5.10c7e): a button's
-/// height. A Compact screen uses the touch height instead (`bar_height`).
-pub const BAR_H: f32 = edit_kit::BUTTON;
+/// The bar's height on a desktop, logical pixels (M5.10c7f: the mockup's 32 px
+/// pills). A Compact screen uses the touch height instead (`bar_height`).
+pub const BAR_H: f32 = 32.0;
+/// The bar's words: 13 px (regular for Cancel and Preview, semibold for the
+/// title), the title 13.5 px, its subtitle 11 px at 60 percent white.
+const BAR_WORDS: f32 = 13.0;
+const TITLE_SIZE: f32 = 13.5;
+const SUBTITLE_SHARE: f32 = 0.60;
+/// Cancel's fill (white at 10 percent) and Preview's outline (white at 28
+/// percent, 1 px).
+const CANCEL_FILL: f32 = 0.10;
+const PREVIEW_LINE: f32 = 0.28;
+const BAR_LINE: f32 = 1.0;
 /// The room between the bar and the canvas, logical pixels.
 const BAR_GAP: f32 = 16.0;
 /// The bar's buttons: Cancel and Done are `BAR_BUTTON_W` wide, Preview
@@ -55,17 +65,28 @@ pub const STRIP_GAP: f32 = 16.0;
 /// line of 14) take with the padding and the gaps between them (M5.10c7f).
 /// The right panel is as high as the canvas, and the card in it takes what it
 /// needs.
-pub const WALLPAPER_PANEL_H: f32 = 2.0 * PANEL_PAD
+pub const WALLPAPER_PANEL_H: f32 = 2.0 * PANEL_PAD_Y
     + 16.0
     + PANEL_STACK_GAP
     + (PANEL_W - 2.0 * PANEL_PAD) * WALLPAPER_SHARE
     + PANEL_STACK_GAP
     + 18.0
     + 14.0;
-/// The wallpaper panel's inner padding, logical pixels, and the gap between
-/// its heading, its picture and its title.
+/// The wallpaper panel's inner padding, logical pixels: 14 at the sides and
+/// 16 at the top and bottom (M5.10c7f), and the gap between its heading, its
+/// picture and its title.
 const PANEL_PAD: f32 = 14.0;
+const PANEL_PAD_Y: f32 = 16.0;
 const PANEL_STACK_GAP: f32 = 8.0;
+/// The panel's heading (10.5 px semibold, white at 50 percent), its name
+/// (13.5 px semibold) and its note (11 px, white at 55 percent), and the
+/// thumbnail's corners and hairline (10 px, white at 16 percent).
+const HEADING_SIZE: f32 = 10.5;
+const HEADING_SHARE: f32 = 0.50;
+const NAME_SIZE: f32 = 13.5;
+const NOTE_SHARE: f32 = 0.55;
+const THUMB_RADIUS: f32 = 10.0;
+const THUMB_EDGE: f32 = 0.16;
 /// The wallpaper's picture is the screen's 16 to 10 (`THUMB`).
 const WALLPAPER_SHARE: f32 = 10.0 / 16.0;
 /// The preview's pill (M5.10c7f): 16 px from the top, at most `PREVIEW_W` wide,
@@ -81,6 +102,10 @@ const PREVIEW_DOT: f32 = 8.0;
 /// scales it to the tile's place).
 pub const PREVIEW_BOX: (f32, f32) = (98.0, 41.0);
 pub const PREVIEW_SCALE: f32 = 2.0;
+/// The date's words (white at 85 percent) and the now playing bar (white at
+/// 30 percent) in a strip tile's preview (M5.10c7f).
+const PREVIEW_DATE_SHARE: f32 = 0.85;
+const PREVIEW_BAR_SHARE: f32 = 0.30;
 
 /// A message as it is added from the drawer, logical pixels: its words wrap
 /// to one line of 300 px, 50 px high, the size of a line of its words.
@@ -1147,7 +1172,9 @@ pub fn paint_bar(
             edit_kit::State::Rest
         }
     };
-    // Cancel is a dark glass pill with the quiet line over it (the mockup's).
+    // Cancel is a pill filled with white at 10 percent, no outline, its words
+    // regular (the mockup's); the keyboard's ring lies round it when focused.
+    let size = BAR_WORDS * s;
     let (x, y, w, h) = bar.cancel.device(s);
     fill(
         pixmap,
@@ -1157,35 +1184,35 @@ pub fn paint_bar(
         h,
         h / 2.0,
         Colour {
-            a: 0.45,
-            ..tokens.lock_backdrop_deep
+            a: CANCEL_FILL,
+            ..ink.text
         },
     );
-    edit_kit::button(
+    let mut cancel = text.line_in(tr("Cancel"), size, Face::REGULAR);
+    let x = bar.cancel.x * s + ((bar.cancel.w * s - cancel.width) / 2.0).round();
+    let y = popup::middle(bar.cancel.y, bar.cancel.h, size, s);
+    text.draw(pixmap, &mut cancel, x, y, ink.text);
+    if state(BarButton::Cancel) == edit_kit::State::Focus {
+        popup::focus_ring(pixmap, bar.cancel, bar.cancel.h / 2.0, s, tokens);
+    }
+    // Preview is a pill with no fill and a 1 px outline of white at 28 percent,
+    // a play triangle before its regular word.
+    let (x, y, w, h) = bar.preview.device(s);
+    edit_kit::stroke(
         pixmap,
-        bar.cancel,
-        tr("Cancel"),
-        edit_kit::ButtonKind::Quiet,
-        state(BarButton::Cancel),
-        tokens,
-        Some(&mut *text),
-        style,
-        s,
-    );
-    // Preview is a quiet pill with a play triangle before its word.
-    edit_kit::button(
-        pixmap,
-        bar.preview,
-        "",
-        edit_kit::ButtonKind::Quiet,
-        state(BarButton::Preview),
-        tokens,
+        (x, y, w, h),
+        h / 2.0,
+        BAR_LINE * s,
+        Colour {
+            a: PREVIEW_LINE,
+            ..ink.text
+        },
         None,
-        style,
-        s,
     );
-    let size = tokens.panel_text_size as f32 * s;
-    let mut word = text.line_in(tr("Preview"), size, Face::SEMIBOLD);
+    if state(BarButton::Preview) == edit_kit::State::Focus {
+        popup::focus_ring(pixmap, bar.preview, bar.preview.h / 2.0, s, tokens);
+    }
+    let mut word = text.line_in(tr("Preview"), size, Face::REGULAR);
     const TRIANGLE: (f32, f32) = (8.0, 10.0);
     const TRIANGLE_GAP: f32 = 6.0;
     let total = TRIANGLE.0 + TRIANGLE_GAP + word.width / s;
@@ -1233,7 +1260,7 @@ pub fn paint_bar(
         .heading
         .clone()
         .unwrap_or_else(|| tr("Edit lock screen").into());
-    let size = tokens.panel_text_size as f32 * s;
+    let size = TITLE_SIZE * s;
     let mut line = text.fit_in(&title, size, room, Face::SEMIBOLD);
     let x = bar.title.x * s + ((room - line.width) / 2.0).round();
     let y = popup::middle(bar.title.y, bar.title.h / 2.0, size, s);
@@ -1242,11 +1269,16 @@ pub fn paint_bar(
         Some(words) => words.to_string(),
         None => editor::hint_words(&view.drawer).to_string(),
     };
+    // The subtitle is 11 px, white at 60 percent (the mockup's).
     let small = tokens.panel_text_small_size as f32 * s;
     let mut words = text.fit(&subtitle, small, room);
     let x = bar.title.x * s + ((room - words.width) / 2.0).round();
     let y = popup::middle(bar.title.y + bar.title.h / 2.0, bar.title.h / 2.0, small, s);
-    text.draw(pixmap, &mut words, x, y, ink.dim);
+    let dim = Colour {
+        a: SUBTITLE_SHARE,
+        ..ink.text
+    };
+    text.draw(pixmap, &mut words, x, y, dim);
 }
 
 /// The wallpaper panel on the left of the edit mode (M5.10c7e): a quiet glass
@@ -1264,20 +1296,24 @@ pub fn paint_wallpaper_panel(
     s: f32,
 ) {
     let style = edit_kit::Style::GLASS;
-    edit_kit::sheet(pixmap, rect, tokens, style, s);
+    edit_kit::side_panel(pixmap, rect, tokens, s);
     let ink = edit_kit::inks(style, tokens);
     let inner = Rect::new(
         rect.x + PANEL_PAD,
-        rect.y + PANEL_PAD,
+        rect.y + PANEL_PAD_Y,
         rect.w - 2.0 * PANEL_PAD,
-        rect.h - 2.0 * PANEL_PAD,
+        rect.h - 2.0 * PANEL_PAD_Y,
     );
-    // The heading is WALLPAPER in capitals, 11 px and semibold (M5.10c7f).
-    let small_words = tokens.panel_text_small_size as f32;
+    // The heading is WALLPAPER in capitals, 10.5 px semibold at half white.
+    let small_words = HEADING_SIZE;
     let small = small_words * s;
     let mut heading = text.line_in(&tr("Wallpaper").to_uppercase(), small, Face::SEMIBOLD);
     let y = popup::middle(inner.y, small_words, small, s);
-    text.draw(pixmap, &mut heading, inner.x * s, y, ink.dim);
+    let heading_ink = Colour {
+        a: HEADING_SHARE,
+        ..ink.text
+    };
+    text.draw(pixmap, &mut heading, inner.x * s, y, heading_ink);
     let picture_at = Rect::new(
         inner.x,
         inner.y + small_words + PANEL_STACK_GAP,
@@ -1287,11 +1323,23 @@ pub fn paint_wallpaper_panel(
     let (x, y, w, h) = picture_at.device(s);
     match picture {
         Some(picture) => {
-            paint_kit::rounded_picture(pixmap, picture, (x, y, w, h), edit_kit::TILE_RADIUS * s)
+            paint_kit::rounded_picture(pixmap, picture, (x, y, w, h), THUMB_RADIUS * s);
         }
-        None => fill(pixmap, x, y, w, h, edit_kit::TILE_RADIUS * s, ink.raised),
+        None => fill(pixmap, x, y, w, h, THUMB_RADIUS * s, ink.raised),
     }
-    let title_words = tokens.panel_text_size as f32;
+    let edge = Colour {
+        a: THUMB_EDGE,
+        ..ink.text
+    };
+    edit_kit::stroke(
+        pixmap,
+        (x, y, w, h),
+        THUMB_RADIUS * s,
+        BAR_LINE * s,
+        edge,
+        None,
+    );
+    let title_words = NAME_SIZE;
     let title_size = title_words * s;
     let mut title = text.fit_in(
         &wallpaper_title(&view.background),
@@ -1308,7 +1356,11 @@ pub fn paint_wallpaper_panel(
         let mut words = text.fit(&own, caption, inner.w * s);
         let caption_top = top + title_words + 2.0;
         let y = popup::middle(caption_top, 14.0, caption, s);
-        text.draw(pixmap, &mut words, inner.x * s, y, ink.dim);
+        let note = Colour {
+            a: NOTE_SHARE,
+            ..ink.text
+        };
+        text.draw(pixmap, &mut words, inner.x * s, y, note);
     }
 }
 
@@ -1573,16 +1625,28 @@ pub fn preview_picture(
         let y = popup::middle(0.0, bh, size * s, s);
         text.draw(pixmap, &mut line, x, y, ink.text);
     };
+    // The mockup's sizes (M5.10c7f): the clock 22 px at weight 250, the date
+    // and the message 12 px, the charge 17 px, the bar 40 by 12 and the
+    // picture's tile 26 by 20.
     let light = Face {
-        weight: 300,
+        weight: 250,
         tabular: false,
     };
+    let date_ink = Colour {
+        a: PREVIEW_DATE_SHARE,
+        ..ink.text
+    };
     match part {
-        Part::Clock => centre_text(&mut pixmap, text, words, light, 20.0),
-        Part::Date => centre_text(&mut pixmap, text, words, Face::REGULAR, 12.0),
+        Part::Clock => centre_text(&mut pixmap, text, words, light, 22.0),
+        Part::Date => {
+            let mut line = text.line_in(words, 12.0 * s, Face::REGULAR);
+            let x = ((bw * s - line.width) / 2.0).round();
+            let y = popup::middle(0.0, bh, 12.0 * s, s);
+            text.draw(&mut pixmap, &mut line, x, y, date_ink);
+        }
         Part::Message => centre_text(&mut pixmap, text, words, Face::REGULAR, 12.0),
         Part::Battery if !words.is_empty() => {
-            centre_text(&mut pixmap, text, words, Face::MEDIUM, 13.0)
+            centre_text(&mut pixmap, text, words, Face::REGULAR, 17.0)
         }
         Part::Battery => {
             let px = 18.0 * s;
@@ -1591,15 +1655,19 @@ pub fn preview_picture(
             paint_kit::icon(&mut pixmap, "battery", px, x, y, ink.text);
         }
         Part::Player => {
-            let (w, h) = (44.0 * s, 10.0 * s);
+            let (w, h) = (40.0 * s, 12.0 * s);
             let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
-            fill(&mut pixmap, x, y, w, h, h / 2.0, ink.raised);
+            let bar = Colour {
+                a: PREVIEW_BAR_SHARE,
+                ..ink.text
+            };
+            fill(&mut pixmap, x, y, w, h, 6.0 * s, bar);
         }
         Part::Picture => {
             let (w, h) = (26.0 * s, 20.0 * s);
             let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
             let bottom = paint_kit::mix(tokens.accent, tokens.backdrop_text, 0.5);
-            paint_kit::fill_vertical(&mut pixmap, (x, y, w, h), 5.0 * s, tokens.accent, bottom);
+            paint_kit::fill_vertical(&mut pixmap, (x, y, w, h), 6.0 * s, tokens.accent, bottom);
         }
         _ => {}
     }
@@ -2306,35 +2374,43 @@ mod tests {
         let i = index_of(&classic, "clock");
         let r = at.placed[i].expect("the clock is drawn");
         let mut view = view_of(classic.clone());
-        let accent =
-            [tokens.accent.r, tokens.accent.g, tokens.accent.b].map(|c| (c * 255.0).round() as i32);
         // The screen is the lock's own, so the part's place is its place.
         let same = Preview {
             k: 1.0,
             x: 0.0,
             y: 0.0,
         };
-        let mut ringed = |view: &View| -> bool {
+        // The ring is 1.5 px of white at 90 percent on the part's own left
+        // edge (M5.10c7f); the accent halo lies just outside it, 4 px wide.
+        let mut shot = |view: &View| -> Pixmap {
             let mut pixmap = Pixmap::new(1280, 800).unwrap();
             paint(&mut pixmap, view, &at, same, &tokens, &mut text, 1.0);
-            // The ring lies 3 px outside the outline, which is 8 px outside
-            // the part: 11 px out from the part's left edge, 2 px wide.
-            let y = (r.y + r.h / 2.0) as u32;
-            (0..8).any(|k| {
-                let x = (r.x - 12.0 + k as f32) as u32;
-                pixmap.pixel(x, y).is_some_and(|p| {
-                    let c = p.demultiply();
-                    p.alpha() > 200
-                        && [c.red(), c.green(), c.blue()]
-                            .iter()
-                            .zip(accent)
-                            .all(|(got, want)| (i32::from(*got) - want).abs() <= 12)
-                })
+            pixmap
+        };
+        let y = (r.y + r.h / 2.0) as u32;
+        let white_at = |pixmap: &Pixmap, x: u32| {
+            pixmap.pixel(x, y).is_some_and(|p| {
+                let c = p.demultiply();
+                p.alpha() > 200 && c.red() > 180 && c.green() > 180 && c.blue() > 180
             })
         };
-        assert!(!ringed(&view), "with no focus there is no ring");
+        let unfocused = shot(&view);
+        let x0 = r.x as u32;
+        assert!(
+            !(x0 - 1..x0 + 2).any(|x| white_at(&unfocused, x)),
+            "with no focus there is no ring"
+        );
         set_focus(&mut view, Some(Focus::Part(i)));
-        assert!(ringed(&view), "the focused part is ringed in the accent");
+        let focused = shot(&view);
+        assert!(
+            (x0 - 1..x0 + 2).any(|x| white_at(&focused, x)),
+            "the focused part has the white ring on its edge"
+        );
+        let halo = (x0 - 5..x0 - 1).any(|x| {
+            let (a, b) = (unfocused.pixel(x, y), focused.pixel(x, y));
+            a != b
+        });
+        assert!(halo, "the accent halo lies just outside the ring");
     }
 
     #[test]
@@ -2516,11 +2592,11 @@ mod tests {
     #[test]
     fn the_bar_sits_at_the_margin_and_the_title_between_cancel_and_preview() {
         let b = bar((1280.0, 800.0));
-        assert_eq!(b.cancel, Rect::new(24.0, 24.0, 88.0, 36.0));
+        assert_eq!(b.cancel, Rect::new(24.0, 24.0, 88.0, 32.0));
         assert_eq!(b.preview.x, 1048.0, "1280 - 24 - 88 - 8 - 112");
         assert_eq!(b.done.right(), 1280.0 - 24.0);
         assert_eq!(b.title.y, 24.0);
-        assert_eq!(b.title.h, 36.0);
+        assert_eq!(b.title.h, 32.0);
         assert!(b.title.x >= b.cancel.right() + 16.0 - 0.01);
         assert!(b.title.right() <= b.preview.x - 16.0 + 0.01);
         // A bar's buttons are hit where they lie and nowhere else.
@@ -2634,7 +2710,7 @@ mod tests {
         assert!(l.tiles.iter().all(|t| t.y == row_y), "one row");
         assert_eq!(
             row_y,
-            edit_kit::BUTTON + 12.0,
+            l.tabs_row.y + l.tabs_row.h + 12.0,
             "under the tabs, SPACE lower"
         );
         assert_eq!(l.card.h, row_y + editor::BARE_TILE.1, "no padding below");
@@ -2759,10 +2835,10 @@ mod tests {
             &drawer,
         );
         assert!(
-            line.contains(", cancel 24+24+88x36, preview 1048+24+112x36, done 1168+24+88x36"),
+            line.contains(", cancel 24+24+88x32, preview 1048+24+112x32, done 1168+24+88x32"),
             "{line}"
         );
-        assert!(line.ends_with("x36"), "Done's place ends the line: {line}");
+        assert!(line.ends_with("x32"), "Done's place ends the line: {line}");
         assert!(line.contains(", tab1 wallpaper "), "{line}");
     }
 
