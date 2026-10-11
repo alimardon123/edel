@@ -23,6 +23,7 @@
 //! `lock player shown, TITLE by ARTIST`, `lock player hidden` and
 //! `screen unlocked`.
 
+use std::cell::RefCell;
 use std::time::{Duration, Instant};
 
 use edel::settings::LockScreen;
@@ -79,6 +80,9 @@ pub struct LockCard {
     /// keeps their dots.
     checking: Option<usize>,
     user: String,
+    /// The time zones a clock named that this machine lacks, logged once
+    /// each for this lock (M5.10c7d).
+    zones_warned: RefCell<Vec<String>>,
     /// Whether Caps Lock is on, as the keyboard last said.
     caps: bool,
     /// When the field's shake started, while it shakes.
@@ -186,6 +190,7 @@ impl Shell {
                     wallpaper: lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark),
                     pictures: lock::Pictures::default(),
                     backdrops: lock::Backdrops::default(),
+                    zones_warned: RefCell::new(Vec::new()),
                     _follow: follow,
                     page: 0,
                     pages: 0,
@@ -280,6 +285,7 @@ impl Shell {
             shake,
             go_hover: card.go_hover,
             when: Some(lock::When::of(&now)),
+            zoned: lock::zoned_times(&card.lock, &now, &card.zones_warned),
             battery: self.battery_view(),
             ..View::new(time, date, card.user.clone())
         })

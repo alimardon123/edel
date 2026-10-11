@@ -18,6 +18,7 @@
 //! disc and the name's place, and the hint to choose with the arrows shows
 //! under the field while it is ready.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -99,6 +100,9 @@ pub struct View {
     /// The battery's charge in percent and whether it charges (M5.10c5c);
     /// None on a machine without one, or where the screen does not know it.
     pub battery: Option<(u8, bool)>,
+    /// The time in each zone a clock names (M5.10c7d), as `zoned_times`
+    /// makes it; a clock whose zone is not here shows `when`.
+    pub zoned: Vec<(String, When)>,
 }
 
 /// The time to the minute and the date, as the clock and the date show
@@ -148,8 +152,39 @@ impl View {
             people: None,
             when: None,
             battery: None,
+            zoned: Vec::new(),
         }
     }
+}
+
+/// The time in each zone a clock of `lock`'s parts names (M5.10c7d), made
+/// from `now`. A zone the machine has no zone file for is left out, so its
+/// clock shows this machine's time, and said once for each zone in `warned`
+/// (kept by the one lock or greeter that draws).
+pub fn zoned_times(
+    lock: &LockScreen,
+    now: &jiff::Zoned,
+    warned: &RefCell<Vec<String>>,
+) -> Vec<(String, When)> {
+    let parts = lock_screen::applied(lock, false).parts;
+    let mut out: Vec<(String, When)> = Vec::new();
+    for zone in parts
+        .iter()
+        .filter(|p| p.part == Part::Clock)
+        .filter_map(|p| p.zone.as_deref())
+    {
+        if out.iter().any(|(z, _)| z == zone) || warned.borrow().iter().any(|z| z == zone) {
+            continue;
+        }
+        match jiff::tz::TimeZone::get(zone) {
+            Ok(tz) => out.push((zone.to_string(), When::of(&now.clone().with_time_zone(tz)))),
+            Err(_) => {
+                warned.borrow_mut().push(zone.to_string());
+                eprintln!("edel-shell-ui: {}", messages::clock_zone_missing(zone));
+            }
+        }
+    }
+    out
 }
 
 /// Where a screen's parts lie, logical pixels from its top left corner
@@ -163,14 +198,13 @@ pub struct Layout {
     pub compact: bool,
     /// The date and the clock: each drawn centred across its rectangle.
     pub date: Option<Rect>,
+    /// The first clock's rectangle, which is `clocks[0]`'s (M5.10c7d), so
+    /// every caller that names the one clock keeps working.
     pub clock: Option<Rect>,
-    /// The clock's font size, its options' size share taken (M5.10c5b).
-    pub clock_size: f32,
-    /// The clock's face, its hours (12 or 24) and its weight, and the
-    /// date's parts and style, from their parts' options (M5.10c5b).
-    pub clock_face: ClockFace,
-    pub clock_hours: u8,
-    pub clock_weight: u16,
+    /// Each clock of the list, in its order, with its own options, zone and
+    /// label (M5.10c7d).
+    pub clocks: Vec<ClockAt>,
+    /// The date's parts and style, from the date's options (M5.10c5b).
     pub date_show: Vec<DatePart>,
     pub date_style: DateStyle,
     /// The notifications' count, drawn centred in its rectangle; None
@@ -203,6 +237,24 @@ pub struct Layout {
     /// a battery the machine lacks, a part `arrange` left out). The edit mode
     /// finds where each part stands by it (M5.10c6).
     pub placed: Vec<Option<Rect>>,
+}
+
+/// One clock of a lock screen's list (M5.10c7d): its rectangle with the
+/// label under the face (None when not drawn), its face's height, and its
+/// own options, font size, face, hours and weight, with its zone and label.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClockAt {
+    pub rect: Option<Rect>,
+    /// The face's height, from the rectangle's top; the label lies under it.
+    pub face_h: f32,
+    pub size: f32,
+    pub face: ClockFace,
+    pub hours: u8,
+    pub weight: u16,
+    /// The zone the clock shows; None is this machine's time.
+    pub zone: Option<String>,
+    /// The words under the clock: its label, or its zone's city; None for none.
+    pub label: Option<String>,
 }
 
 /// What the layout needs besides the screen: the parts a list says, the
@@ -255,6 +307,8 @@ const PICTURE: f32 = 112.0;
 /// September in its own parts and style, the widest English date; a
 /// translated date that is wider is drawn in the same room.
 const CLOCK_WIDEST: &str = "88:88";
+/// The room between a clock's face and its label (M5.10c7d).
+const LABEL_GAP: f32 = 4.0;
 /// The widest count the count is sized for, in its words' size.
 const COUNT_WIDEST: &str = "99 notifications";
 /// The notifications' count: its height, its apps' tiles, how much each
@@ -351,13 +405,53 @@ pub fn keep_out(corner_at: &corner::Layout) -> Vec<lock_screen::Rect> {
 /// What an item of the layout stands for, until `arrange` says where it goes.
 enum Slot {
     Date,
-    Clock,
+    /// The clock at this index of the list's clocks.
+    Clock(usize),
     Count,
     Person,
     Player,
     Message(Vec<String>, Anchor),
     Picture(String),
     Battery,
+}
+
+/// The clock `part` stands for, sized with its own options (M5.10c5b,
+/// M5.10c7d): the font size its size share takes, never wider than the
+/// screen's room (a wider font, or the one a machine without the tokens'
+/// font falls back to, shrinks it rather than leaving the time out), its
+/// face, hours and weight, and its zone and label. Its face's height is
+/// measured by the caller.
+fn clock_of(part: &Placed, w: f32, tokens: &Tokens, text: &mut Text) -> ClockAt {
+    let weight = part
+        .weight
+        .unwrap_or(tokens.lock_clock_weight.clamp(100, 900) as u16);
+    let size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0)
+        * crate::clock_face::size_share(part.size);
+    let room = w - 2.0 * MARGIN;
+    let wide = text
+        .line_in(
+            CLOCK_WIDEST,
+            size,
+            Face {
+                weight,
+                tabular: true,
+            },
+        )
+        .width;
+    ClockAt {
+        rect: None,
+        face_h: 0.0,
+        size: if wide > room {
+            size * room / wide
+        } else {
+            size
+        },
+        face: part.face.unwrap_or(ClockFace::Digital),
+        hours: part.hours.unwrap_or(24),
+        weight,
+        zone: part.zone.clone(),
+        label: lock_screen::clock_label(part),
+    }
 }
 
 /// One arrangement of `parts` on a screen: the layout, and whether the
@@ -373,19 +467,9 @@ fn place_all(
     text: &mut Text,
 ) -> (Layout, bool) {
     let compact = w < COMPACT_BELOW;
-    // The clock's and the date's options (M5.10c5b): the first clock and
-    // date of the list, as `check` lets each stand once.
-    let clock_part = parts.iter().find(|p| p.part == Part::Clock);
+    // The date's options (M5.10c5b): the first date of the list, as `check`
+    // lets it stand once. Each clock has its own (`clock_of`).
     let date_part = parts.iter().find(|p| p.part == Part::Date);
-    let clock_kind = clock_part
-        .and_then(|p| p.face)
-        .unwrap_or(ClockFace::Digital);
-    let clock_hours = clock_part.and_then(|p| p.hours).unwrap_or(24);
-    let clock_weight = clock_part
-        .and_then(|p| p.weight)
-        .unwrap_or(tokens.lock_clock_weight.clamp(100, 900) as u16);
-    let mut clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0)
-        * crate::clock_face::size_share(clock_part.and_then(|p| p.size));
     let date_show = date_part
         .and_then(|p| p.show.clone())
         .unwrap_or_else(|| vec![DatePart::Weekday, DatePart::Day, DatePart::Month]);
@@ -400,18 +484,8 @@ fn place_all(
     // it, as tall as the note's last line (the note is part of the block, so
     // a part at the bottom keeps the note clear of the corner too).
     let person_h = 2.0 * AVATAR + 12.0 + NAME * 1.25 + 14.0 + FIELD_HIGH + 12.0 + NOTE * 1.25;
-    let figures = Face {
-        weight: clock_weight,
-        tabular: true,
-    };
-    // The clock is never wider than the screen's room: a wider font (a
-    // language's own, or the one a machine without the tokens' font falls
-    // back to) shrinks it rather than leaving the time out.
     let room = w - 2.0 * MARGIN;
-    let wide = text.line_in(CLOCK_WIDEST, clock_size, figures).width;
-    if wide > room {
-        clock_size *= room / wide;
-    }
+    let mut clocks: Vec<ClockAt> = Vec::new();
     let mut slots: Vec<(Slot, Item)> = Vec::new();
     // The part each slot stands for, by its index in `parts` (M5.10c6).
     let mut origin: Vec<usize> = Vec::new();
@@ -431,16 +505,33 @@ fn place_all(
                 slots.push((Slot::Date, item(width, DATE * 1.25)));
             }
             Part::Clock => {
+                let mut one = clock_of(p, w, tokens, text);
+                let figures = Face {
+                    weight: one.weight,
+                    tabular: true,
+                };
                 // The digital face keeps its own measure, as the mockup sets
                 // it; the others take their faces' sizes.
-                let (cw, ch) = match clock_kind {
+                let (cw, ch) = match one.face {
                     ClockFace::Digital => (
-                        text.line_in(CLOCK_WIDEST, clock_size, figures).width,
-                        clock_size * 1.2,
+                        text.line_in(CLOCK_WIDEST, one.size, figures).width,
+                        one.size * 1.2,
                     ),
-                    face => crate::clock_face::size(face, clock_size, text, clock_weight),
+                    face => crate::clock_face::size(face, one.size, text, one.weight),
                 };
-                slots.push((Slot::Clock, item(cw, ch)));
+                one.face_h = ch;
+                // A label adds its line under the face, LABEL_GAP apart.
+                let (lw, lh) = match &one.label {
+                    Some(words) => (
+                        text.line_in(words, tokens.text_size as f32, Face::REGULAR)
+                            .width
+                            .min(room),
+                        LABEL_GAP + tokens.text_size as f32 * 1.25,
+                    ),
+                    None => (0.0, 0.0),
+                };
+                slots.push((Slot::Clock(clocks.len()), item(cw.max(lw), ch + lh)));
+                clocks.push(one);
             }
             Part::Count if notices => {
                 let words = text.line_in(COUNT_WIDEST, COUNT_TEXT, Face::SEMIBOLD).width;
@@ -517,7 +608,12 @@ fn place_all(
         };
         match slot {
             Slot::Date => date = Some(rect),
-            Slot::Clock => clock = Some(rect),
+            Slot::Clock(i) => {
+                if i == 0 {
+                    clock = Some(rect);
+                }
+                clocks[i].rect = Some(rect);
+            }
             Slot::Count => count = Some(rect),
             Slot::Person => person = Some(rect),
             Slot::Player => player = Some(rect),
@@ -560,10 +656,7 @@ fn place_all(
         compact,
         date,
         clock,
-        clock_size,
-        clock_face: clock_kind,
-        clock_hours,
-        clock_weight,
+        clocks,
         date_show,
         date_style,
         count,
@@ -664,6 +757,12 @@ pub fn places(at: &Layout) -> String {
     }
     if let Some(clock) = at.clock {
         line.push_str(&format!(", clock {}", r(clock)));
+    }
+    // The other clocks of the list, after the first (M5.10c7d).
+    for (i, one) in at.clocks.iter().enumerate().skip(1) {
+        if let Some(rect) = one.rect {
+            line.push_str(&format!(", clock{} {}", i + 1, r(rect)));
+        }
     }
     for (i, (rect, _, _)) in at.messages.iter().enumerate() {
         line.push_str(&format!(", message{i} {}", r(*rect)));
@@ -1090,50 +1189,9 @@ pub fn paint(
             date_ink,
         );
     }
-    if let Some(rect) = at.clock {
-        let centre = rect.x + rect.w / 2.0;
-        match (at.clock_face, view.when) {
-            // Another face, drawn by `clock_face` at the time it is (M5.10c5b).
-            (face, Some(n)) if face != ClockFace::Digital => crate::clock_face::draw(
-                pixmap,
-                rect,
-                (n.hour, n.minute, 0),
-                face,
-                at.clock_hours,
-                at.clock_size,
-                at.clock_weight,
-                ink,
-                text,
-                s,
-            ),
-            _ => {
-                let time = view.when.map_or_else(
-                    || view.time.clone(),
-                    |n| {
-                        crate::clock_face::time_lines(
-                            n.hour,
-                            n.minute,
-                            ClockFace::Digital,
-                            at.clock_hours,
-                        )
-                        .concat()
-                    },
-                );
-                centred(
-                    pixmap,
-                    text,
-                    s,
-                    w,
-                    &time,
-                    at.clock_size,
-                    Face {
-                        weight: at.clock_weight,
-                        tabular: true,
-                    },
-                    (centre, rect.y),
-                    ink,
-                );
-            }
+    for one in &at.clocks {
+        if let Some(rect) = one.rect {
+            paint_clock(pixmap, view, tokens, text, s, one, rect);
         }
     }
     for (rect, lines, anchor) in &at.messages {
@@ -1275,6 +1333,83 @@ pub fn paint(
 /// The battery part (M5.10c5c): its icon in the backdrop's text colour, then
 /// the percent beside it, both centred down the rectangle `rect` (logical
 /// pixels).
+/// One clock of the list (M5.10c5b, M5.10c7d): its face in its own options
+/// at the time of its zone (`View::zoned`, else this machine's time), and its
+/// label under the face, centred, at 85 percent of the words' ink.
+fn paint_clock(
+    pixmap: &mut Pixmap,
+    view: &View,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+    one: &ClockAt,
+    rect: Rect,
+) {
+    let w = pixmap.width() as f32 / s;
+    let ink = tokens.backdrop_text;
+    let centre = rect.x + rect.w / 2.0;
+    let face_rect = Rect::new(rect.x, rect.y, rect.w, one.face_h);
+    let when = one
+        .zone
+        .as_ref()
+        .and_then(|zone| view.zoned.iter().find(|(z, _)| z == zone))
+        .map(|(_, n)| *n)
+        .or(view.when);
+    match (one.face, when) {
+        // Another face, drawn by `clock_face` at the time it is (M5.10c5b).
+        (face, Some(n)) if face != ClockFace::Digital => crate::clock_face::draw(
+            pixmap,
+            face_rect,
+            (n.hour, n.minute, 0),
+            face,
+            one.hours,
+            one.size,
+            one.weight,
+            ink,
+            text,
+            s,
+        ),
+        _ => {
+            let time = when.map_or_else(
+                || view.time.clone(),
+                |n| {
+                    crate::clock_face::time_lines(n.hour, n.minute, ClockFace::Digital, one.hours)
+                        .concat()
+                },
+            );
+            centred(
+                pixmap,
+                text,
+                s,
+                w,
+                &time,
+                one.size,
+                Face {
+                    weight: one.weight,
+                    tabular: true,
+                },
+                (centre, rect.y),
+                ink,
+            );
+        }
+    }
+    if let Some(words) = &one.label {
+        let quiet = mix(ink, tokens.lock_backdrop_deep, 0.15);
+        let y = rect.y + one.face_h + LABEL_GAP;
+        centred(
+            pixmap,
+            text,
+            s,
+            w,
+            words,
+            tokens.text_size as f32,
+            Face::REGULAR,
+            (centre, y),
+            quiet,
+        );
+    }
+}
+
 fn battery_part(
     pixmap: &mut Pixmap,
     rect: Rect,
@@ -1930,12 +2065,12 @@ mod tests {
         }
         // The clock is sized by the classic arrangement at a desktop's size.
         assert_eq!(
-            classic_at(1280.0, 800.0, false, &mut text).clock_size,
+            classic_at(1280.0, 800.0, false, &mut text).clocks[0].size,
             tokens.lock_clock as f32
         );
         assert!(
-            classic_at(360.0, 740.0, false, &mut text).clock_size
-                < classic_at(1280.0, 800.0, false, &mut text).clock_size
+            classic_at(360.0, 740.0, false, &mut text).clocks[0].size
+                < classic_at(1280.0, 800.0, false, &mut text).clocks[0].size
         );
     }
 
@@ -1977,6 +2112,172 @@ mod tests {
         }
     }
 
+    /// A zone the machine has gives its time; one it lacks is left out, and is
+    /// said once for the lock, so its clock shows this machine's time (M5.10c7d).
+    #[test]
+    fn a_zone_the_machine_has_gives_its_time_and_one_it_lacks_is_said_once() {
+        let clock = |zone: &str| Placed {
+            zone: Some(zone.into()),
+            ..lock_screen::classic(false)
+                .into_iter()
+                .find(|p| p.part == Part::Clock)
+                .unwrap()
+        };
+        let mut parts = lock_screen::classic(false);
+        parts.push(clock("UTC"));
+        parts.push(clock("Mars/Base"));
+        let lock = with_parts(Some(&parts));
+        let now = jiff::Zoned::now();
+        let warned = RefCell::new(Vec::new());
+        let zoned = zoned_times(&lock, &now, &warned);
+        assert_eq!(zoned.len(), 1, "{zoned:?}");
+        assert_eq!(zoned[0].0, "UTC");
+        assert_eq!(
+            zoned[0].1,
+            When::of(&now.clone().with_time_zone(jiff::tz::TimeZone::UTC))
+        );
+        assert_eq!(*warned.borrow(), ["Mars/Base".to_string()]);
+        zoned_times(&lock, &now, &warned);
+        assert_eq!(warned.borrow().len(), 1, "said once for the lock");
+    }
+
+    /// Two clocks, the classic one and a small analog one at the top right in
+    /// UTC, both stand and do not overlap on a desktop and on a phone; the
+    /// second's label is its zone's city, and `places` names it `clock2`. With
+    /// `EDEL_LOCK_PNG` set it writes `lock-two-clocks.png` (M5.10c7d).
+    #[test]
+    fn two_clocks_stand_apart_each_with_its_own_zone_and_label() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        for (w, h) in [(1280.0, 800.0), (360.0, 740.0)] {
+            let mut parts = lock_screen::classic(w < COMPACT_BELOW);
+            parts.push(Placed {
+                part: Part::Clock,
+                at: Anchor::TopRight,
+                x: 0.0,
+                y: 0.0,
+                text: None,
+                path: None,
+                face: Some(ClockFace::Analog),
+                hours: None,
+                size: Some(lock_screen::Size::Small),
+                weight: None,
+                show: None,
+                style: None,
+                zone: Some("UTC".into()),
+                label: None,
+            });
+            let corner_at = corner::layout(
+                w,
+                h,
+                &corner::View {
+                    layout: Some("EN".into()),
+                    menu: false,
+                    restart_waiting: false,
+                    hover: None,
+                    session: None,
+                    chip_w: 0.0,
+                    sessions: None,
+                },
+            );
+            let at = screen_layout(
+                w,
+                h,
+                &tokens,
+                false,
+                &with_parts(Some(&parts)),
+                None,
+                false,
+                false,
+                &corner_at,
+                &mut text,
+            );
+            assert_eq!(at.clocks.len(), 2, "{w}x{h}");
+            let first = at.clocks[0].rect.expect("the classic clock stands");
+            let second = at.clocks[1].rect.expect("the UTC clock stands");
+            assert!(!overlap(first, second), "{w}x{h}: {first:?} {second:?}");
+            assert_eq!(at.clocks[1].zone.as_deref(), Some("UTC"));
+            assert_eq!(at.clocks[1].label.as_deref(), Some("UTC"));
+            // The label lies under the face, so the rectangle is taller.
+            assert!(second.h > at.clocks[1].face_h, "{second:?}");
+            assert_eq!(at.clock, Some(first));
+            assert!(places(&at).contains(&format!(", clock2 {:.0}+", second.x)));
+        }
+        if let Ok(dir) = std::env::var("EDEL_LOCK_PNG") {
+            let mut parts = lock_screen::classic(false);
+            parts.push(Placed {
+                part: Part::Clock,
+                at: Anchor::TopRight,
+                x: 0.0,
+                y: 0.0,
+                text: None,
+                path: None,
+                face: Some(ClockFace::Analog),
+                hours: None,
+                size: Some(lock_screen::Size::Small),
+                weight: None,
+                show: None,
+                style: None,
+                zone: Some("UTC".into()),
+                label: None,
+            });
+            let corner_at = corner::layout(
+                1280.0,
+                800.0,
+                &corner::View {
+                    layout: Some("EN".into()),
+                    menu: false,
+                    restart_waiting: false,
+                    hover: None,
+                    session: None,
+                    chip_w: 0.0,
+                    sessions: None,
+                },
+            );
+            let at = screen_layout(
+                1280.0,
+                800.0,
+                &tokens,
+                true,
+                &with_parts(Some(&parts)),
+                Some((400.0, 100.0)),
+                false,
+                false,
+                &corner_at,
+                &mut text,
+            );
+            let when = |hour| When {
+                hour,
+                minute: 6,
+                weekday: 6,
+                day: 3,
+                month: 10,
+                year: 2026,
+            };
+            let view = View {
+                when: Some(when(14)),
+                zoned: vec![("UTC".into(), when(5))],
+                ..View::new("14:06".into(), "Saturday 3 October".into(), "ali".into())
+            };
+            let mut pixmap = Pixmap::new(1280, 800).unwrap();
+            paint(
+                &mut pixmap,
+                &view,
+                &at,
+                &tokens,
+                &mut text,
+                None,
+                &mut Pictures::default(),
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
+                1.0,
+            );
+            pixmap
+                .save_png(format!("{dir}/lock-two-clocks.png"))
+                .unwrap();
+        }
+    }
+
     #[test]
     fn a_list_puts_the_clock_top_left_and_a_message_at_the_bottom_clear_of_the_field() {
         let tokens = Tokens::built_in();
@@ -1995,6 +2296,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
             Placed {
                 part: Part::Clock,
@@ -2009,6 +2312,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
             Placed {
                 part: Part::Message,
@@ -2023,6 +2328,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
         ];
         let corner_at = corner::layout(
@@ -2077,6 +2384,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
             Placed {
                 part: Part::Clock,
@@ -2091,6 +2400,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
             Placed {
                 part: Part::Message,
@@ -2105,6 +2416,8 @@ mod tests {
                 weight: None,
                 show: None,
                 style: None,
+                zone: None,
+                label: None,
             },
         ];
         for (w, h) in [(1280.0, 800.0), (360.0, 740.0), (3840.0, 2160.0)] {
@@ -2490,6 +2803,8 @@ mod tests {
             weight: None,
             show: None,
             style: None,
+            zone: None,
+            label: None,
         });
         let lock = LockScreen {
             parts: Some(parts),
@@ -2710,6 +3025,8 @@ mod tests {
                     weight: None,
                     show: None,
                     style: None,
+                    zone: None,
+                    label: None,
                 },
                 Placed {
                     part: Part::Clock,
@@ -2724,6 +3041,8 @@ mod tests {
                     weight: None,
                     show: None,
                     style: None,
+                    zone: None,
+                    label: None,
                 },
                 Placed {
                     part: Part::Message,
@@ -2738,6 +3057,8 @@ mod tests {
                     weight: None,
                     show: None,
                     style: None,
+                    zone: None,
+                    label: None,
                 },
             ];
             let corner_at = corner::layout(

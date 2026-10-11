@@ -380,6 +380,12 @@ msgstr ""
 msgid "Words"
 msgstr ""
 
+msgid "Time zone"
+msgstr ""
+
+msgid "Label"
+msgstr ""
+
 msgid "Choose in Settings"
 msgstr ""
 
@@ -387,6 +393,12 @@ msgid "No picture"
 msgstr ""
 
 msgid "Words: {words}"
+msgstr ""
+
+msgid "Time zone: {words}"
+msgstr ""
+
+msgid "Label: {words}"
 msgstr ""
 
 msgid "Other"
