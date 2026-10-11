@@ -437,7 +437,7 @@ msgstr ""
 msgid "Keep as a look"
 msgstr ""
 
-msgid "Edit look"
+msgid "Customize"
 msgstr ""
 
 msgid "More"
@@ -449,7 +449,7 @@ msgstr ""
 msgid "Rename…"
 msgstr ""
 
-msgid "Delete"
+msgid "Delete…"
 msgstr ""
 
 msgid "On every look"
@@ -486,6 +486,9 @@ msgid "Delete the look {look}?"
 msgstr ""
 
 msgid "It cannot be brought back."
+msgstr ""
+
+msgid "Delete"
 msgstr ""
 
 msgid "--page needs the name of a page, such as --page displays"

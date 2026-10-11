@@ -2,7 +2,7 @@
 //! a preset of its own with its parts and its background. The three built-in
 //! looks never change; the person's own are kept in `lock_screen.looks`, made
 //! from the look in use (New look, Duplicate, Keep as a look), renamed or
-//! deleted. Under the gallery is the look in use, with Edit look and a More
+//! deleted. Under the gallery is the look in use, with Customize and a More
 //! menu, then the notifications' switch. Each choice is one key of the
 //! person's settings file, written with `Files` as the other pages write
 //! theirs (ADR-008): `lock_screen.look`, `lock_screen.looks` and, for a look
@@ -318,6 +318,9 @@ struct Ui {
     /// card is `current_head`, which the page scrolls to when asked for the
     /// background or the parts.
     current_title: gtk::Label,
+    /// The look in use drawn small beside its name, redrawn in place.
+    current_shown: Rc<RefCell<LookShown>>,
+    current_view: gtk::DrawingArea,
     current_line: gtk::Label,
     current_head: gtk::Widget,
     keep: gtk::Button,
@@ -359,6 +362,10 @@ impl Ui {
             .iter()
             .any(|key| matches!(files.source(key), Source::Person(_)));
         self.current_title.set_label(&current_title(&lock));
+        let applied = lock_screen::applied(&lock, false);
+        *self.current_shown.borrow_mut() =
+            (applied.parts, applied.background == Background::Backdrop);
+        self.current_view.queue_draw();
         self.current_line.set_label(&look_line(&look, changed));
         self.keep.set_visible(changed);
         let own = !lock_screen::is_built_in(&look);
@@ -745,7 +752,7 @@ fn gradient(cr: &Context, h: f64, top: Colour, deep: Colour) {
 }
 
 /// The Lock screen page (M5.10c5c, M5.32b, M5.10c7b): the gallery of looks
-/// with the New look card, the look in use with Edit look and its More menu,
+/// with the New look card, the look in use with Customize and its More menu,
 /// then the notifications' count, each row with its Reset, Copy as command
 /// and where its value comes from.
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
@@ -769,7 +776,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     content.append(&looks);
 
     // The look in use: its title and line, then Keep as a look (only for a
-    // look changed over from the command line), Edit look and the More menu.
+    // look changed over from the command line), Customize and the More menu.
     let title = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
@@ -786,10 +793,21 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .hexpand(true)
         .valign(gtk::Align::Center)
         .build();
-    words.append(&title);
+    // The name with its In use tag, as the gallery's card says it.
+    let name_row = gtk::Box::builder().spacing(8).build();
+    name_row.append(&title);
+    name_row.append(
+        &gtk::Label::builder()
+            .label(tag("", true))
+            .valign(gtk::Align::Center)
+            .css_classes(["edel-tag-accent"])
+            .build(),
+    );
+    words.append(&name_row);
     words.append(&line);
     let keep = widgets::action(tr("Keep as a look"), false);
-    let edit = widgets::action(tr("Edit look"), true);
+    // Customize, the word the lock's switcher uses for the same thing.
+    let edit = widgets::action(tr("Customize"), true);
     for button in [&keep, &edit] {
         button.add_css_class("edel-current-button");
     }
@@ -807,7 +825,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .build();
     let duplicate = menu_item(tr("Duplicate"));
     let rename = menu_item(tr("Rename…"));
-    let delete = menu_item(tr("Delete"));
+    let delete = menu_item(tr("Delete…"));
     for item in [&duplicate, &rename, &delete] {
         items.append(item);
     }
@@ -826,6 +844,13 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .hexpand(true)
         .css_classes(["edel-group", "edel-current"])
         .build();
+    // The look in use, small, beside its name (16:10, as every card).
+    let current_shown: Rc<RefCell<LookShown>> = Rc::new(RefCell::new((Vec::new(), false)));
+    let current_view = look_picture(theme, &current_shown, 96, 60);
+    current_view.set_valign(gtk::Align::Center);
+    // Its own size when the card stacks too, never stretched across.
+    current_view.set_halign(gtk::Align::Start);
+    current.append(&current_view);
     current.append(&words);
     current.append(&actions);
     // The page's narrow width, as the window's: the card is what it
@@ -869,6 +894,8 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let ui = Rc::new(Ui {
         theme: theme.clone(),
         current_title: title,
+        current_shown,
+        current_view,
         current_line: line,
         current_head: bin.clone().upcast(),
         keep: keep.clone(),
@@ -922,7 +949,7 @@ fn menu_item(label: &str) -> gtk::Button {
 /// Connects the page's controls, the More menu, and the Reset and Copy
 /// buttons of its rows and of the gallery's section.
 fn wire(ui: &Rc<Ui>) {
-    // Edit look asks shell-ui for its edit mode over the session bus, as the
+    // Customize asks shell-ui for its edit mode over the session bus, as the
     // Panels group asks for the panel editor (the same call, given the
     // method's name); the page writes nothing itself.
     let weak = Rc::downgrade(ui);
@@ -1161,7 +1188,7 @@ fn ask_delete(ui: &Rc<Ui>, near: &gtk::Widget, current: &str) {
 /// `lock_screen.look` the page first scrolls the gallery to the top and gives
 /// the keyboard to the look in use; asked for by `lock_screen.background` or
 /// `.parts` it scrolls the look in use to the top and gives the keyboard to
-/// Edit look. It logs once two frames agree, after the scroll.
+/// Customize. It logs once two frames agree, after the scroll.
 fn log_places(looks: &gtk::FlowBox, ui: &Rc<Ui>) {
     let weak = Rc::downgrade(ui);
     let last = RefCell::new(String::new());
