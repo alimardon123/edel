@@ -541,6 +541,15 @@ commands() {
 			as_ci edel-settings --page lock_screen </dev/null >/tmp/settings-lock.log 2>&1 &
 			;;
 		'settings lock log') say "settings_lock_log $(tr '\n' ';' </tmp/settings-lock.log 2>/dev/null)" ;;
+		# Settings' Shape group (M5.12b2c): opened by the name of the gaps
+		# row, its log says where the sliders lie and what each write did.
+		'settings shape')
+			as_ci edel-settings --page appearance.gaps </dev/null >/tmp/settings-shape.log 2>&1 &
+			;;
+		'settings shape log') say "settings_shape_log $(tr '\n' ';' </tmp/settings-shape.log 2>/dev/null)" ;;
+		# The six shape keys ci's own file holds (Settings writes ci's file,
+		# not the machine's), taken out again.
+		'shape mine default') as_ci "sed -i -E '/^(radius|gaps|gaps_outer|border_width|title_bar_height|panel_opacity) = /d' /home/ci/.config/edel/$settings_name" ;;
 		'settings workspaces log') say "settings_workspaces_log $(tr '\n' ';' </tmp/settings-workspaces.log 2>/dev/null)" ;;
 		# The apps widget's pins (M5.31d): ci's own file with one dock along
 		# the bottom holding the apps widget, and two pins, terminal and

@@ -1531,6 +1531,63 @@ case_settings_accent() {
 	echo "PASS: Settings' accent swatches put the red one at $cx,$cy; a click wrote appearance.accent = \"red\" to ci's file and the compositor took #d0363f, the switcher's pill red (settings-accent.png), and colours default brought the light accent back"
 }
 
+# shape_logged PATTERN: asks the test service for Settings' log (its
+# stderr, which the serial console does not carry) and tells whether it
+# holds PATTERN.
+shape_logged() {
+	guest 'settings shape log'
+	value settings_shape_log | grep -q "$1"
+}
+
+case_settings_shape() {
+	# Settings' Shape group (M5.12b2c): Settings opened on its Appearance
+	# page by the name of the gaps row logs where the group's sliders lie.
+	# The gaps slider has the keyboard then: End takes it to 64 and sixteen
+	# presses of Left to 48, so Settings writes appearance.gaps = 48 to ci's
+	# file, and the compositor lays its windows 48 apart (`shape gaps
+	# 48/48`). Super+Q closes Settings, and `shape mine default` takes the
+	# six keys out of ci's file, the compositor back at `shape gaps 8/8`.
+	# Kept as settings-shape.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings shape'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Appearance page by the gaps row: $(value windows)"
+	i=0
+	until shape_logged 'shape group places'; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the Shape group lies: $(value settings_shape_log)"
+		sleep 1
+	done
+	said=$(count 'edel-compositor: shape gaps 48/48')
+	python3 ci/qmp.py key end
+	i=0
+	while [ "$i" -lt 16 ]; do
+		python3 ci/qmp.py key left
+		i=$((i + 1))
+	done
+	i=0
+	until shape_logged 'shape appearance.gaps 48 written'; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not write appearance.gaps = 48: $(value settings_shape_log)"
+		sleep 1
+	done
+	wait_more 'edel-compositor: shape gaps 48/48' "$said" 60 ||
+		fail "the compositor did not lay its windows 48 apart after appearance.gaps = 48"
+	python3 ci/qmp.py screendump "$dir/settings-shape.png"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'gaps = 48' ||
+		fail "ci's settings file is not what the gaps slider writes: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	reset=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
+	guest 'shape mine default'
+	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$reset" ||
+		fail "the compositor did not go back to shape gaps 8/8 after the six keys were taken out"
+	echo "PASS: Settings' Shape group took the gaps slider to 48 from the keyboard and wrote appearance.gaps = 48 to ci's file and the compositor laid its windows 48 apart (settings-shape.png), and shape mine default brought the gaps back to 8"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
