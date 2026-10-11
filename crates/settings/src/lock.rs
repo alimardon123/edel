@@ -22,11 +22,11 @@ use edel::lock_screen::{
     self, BACKGROUND, Background, DateStyle, Face, Item, LOOK, Part, Placed, Rect,
 };
 use edel::panel_edit::EDIT_LOCK_SCREEN;
-use edel::settings::{LockScreen, OwnLook, Source};
+use edel::settings::{LockScreen, Source};
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::{self, Wallpaper};
 
-use crate::files::{self, Files};
+use crate::files::Files;
 use crate::style::Theme;
 use crate::{icon, panels, preview, rows, widgets};
 
@@ -179,17 +179,6 @@ fn parts_text(parts: &[Placed]) -> Result<String, String> {
     lock_screen::parts_value(parts)
 }
 
-/// The name a look shows as: the built-in names translated, else the
-/// person's own name with a capital.
-fn look_title(name: &str) -> String {
-    match name {
-        "classic" => tr("Classic").to_string(),
-        "magazine" => tr("Magazine").to_string(),
-        "minimal" => tr("Minimal").to_string(),
-        _ => files::title(name),
-    }
-}
-
 /// The built-in and the person's own looks, each with the parts it places,
 /// in the order people see them: the built-in ones, then the person's own
 /// by name.
@@ -212,7 +201,7 @@ fn current_title(lock: &LockScreen) -> String {
     if lock.parts.is_some() {
         tr("Your own arrangement").to_string()
     } else {
-        look_title(lock.look.as_deref().unwrap_or(CLASSIC))
+        lock_screen::look_title(lock.look.as_deref().unwrap_or(CLASSIC))
     }
 }
 
@@ -317,14 +306,10 @@ fn choose_look(name: &str) -> Result<(), String> {
 /// taken out. The key's own check says what a name must be.
 fn save_look(name: &str) -> Result<(), String> {
     let files = Files::here();
-    let parts = lock_screen::applied(&files.lock(), false).parts;
-    let mut own: std::collections::BTreeMap<String, OwnLook> =
-        files.person_file().lock_screen.looks.unwrap_or_default();
-    own.insert(name.to_string(), OwnLook { parts });
-    let text = toml::Value::try_from(&own)
-        .map_err(|e| e.to_string())?
-        .to_string();
-    files.set(OWN_LOOKS, Some(&text))?;
+    let look = lock_screen::as_own_look(&files.lock());
+    let own = files.person_file().lock_screen.looks;
+    let text = lock_screen::looks_value(own.as_ref(), name, Some(look));
+    files.set(OWN_LOOKS, text.as_deref())?;
     files.set(LOOK, Some(&format!("{name:?}")))?;
     reset_person(&files, PARTS)
 }
@@ -490,7 +475,8 @@ impl Ui {
             let backdrop = lock_screen::look_background(name) == Background::Backdrop;
             let shown = Rc::new(RefCell::new((parts.clone(), backdrop)));
             let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H);
-            let (button, badge) = widgets::picture_card(&look_title(name), &picture.upcast());
+            let (button, badge) =
+                widgets::picture_card(&lock_screen::look_title(name), &picture.upcast());
             match &first {
                 Some(first) => button.set_group(Some(first)),
                 None => first = Some(button.clone()),
@@ -1515,10 +1501,11 @@ mod tests {
     #[test]
     fn a_saved_look_reads_back_to_the_same_parts() {
         let parts = lock_screen::classic(false);
-        let own: std::collections::BTreeMap<String, OwnLook> = [(
+        let own: std::collections::BTreeMap<String, edel::settings::OwnLook> = [(
             "home".to_string(),
-            OwnLook {
+            edel::settings::OwnLook {
                 parts: parts.clone(),
+                background: None,
             },
         )]
         .into_iter()
@@ -1530,10 +1517,15 @@ mod tests {
         let looks = read.file.lock_screen.looks.unwrap();
         assert_eq!(looks["home"].parts, parts);
         // The key's own check says what a name must be.
-        let bad: std::collections::BTreeMap<String, OwnLook> =
-            [("my look".to_string(), OwnLook { parts })]
-                .into_iter()
-                .collect();
+        let bad: std::collections::BTreeMap<String, edel::settings::OwnLook> = [(
+            "my look".to_string(),
+            edel::settings::OwnLook {
+                parts,
+                background: None,
+            },
+        )]
+        .into_iter()
+        .collect();
         let text = toml::Value::try_from(&bad).unwrap().to_string();
         let error = edel::settings::set("format = 1\n", OWN_LOOKS, &text).unwrap_err();
         assert!(
@@ -1558,8 +1550,9 @@ mod tests {
         let lock = LockScreen::default();
         let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
         assert_eq!(names, ["classic", "magazine", "minimal"]);
-        let own = OwnLook {
+        let own = edel::settings::OwnLook {
             parts: lock_screen::classic(false),
+            background: None,
         };
         let lock = LockScreen {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
@@ -1567,8 +1560,8 @@ mod tests {
         };
         let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
         assert_eq!(names, ["classic", "magazine", "minimal", "home"]);
-        assert_eq!(look_title("magazine"), "Magazine");
-        assert_eq!(look_title("home"), "Home");
+        assert_eq!(lock_screen::look_title("magazine"), "Magazine");
+        assert_eq!(lock_screen::look_title("home"), "Home");
     }
 
     #[test]
