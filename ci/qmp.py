@@ -169,6 +169,15 @@ def click(qmp, x, y, which="left"):
     button(qmp, False, which)
 
 
+def wheel(qmp, x, y, notches):
+    """Turns the wheel `notches` times at x,y: down when positive, up when negative."""
+    point(qmp, screen_size(qmp), x, y)
+    which = "wheel-down" if notches > 0 else "wheel-up"
+    for _ in range(abs(notches)):
+        button(qmp, True, which)
+        button(qmp, False, which)
+
+
 def drag(qmp, x, y, to_x, to_y, steps=10):
     size = screen_size(qmp)
     point(qmp, size, x, y)
@@ -300,6 +309,8 @@ def main(argv):
         click(qmp, int(args[0]), int(args[1]))
     elif command == "rightclick":
         click(qmp, int(args[0]), int(args[1]), "right")
+    elif command == "wheel":
+        wheel(qmp, int(args[0]), int(args[1]), int(args[2]))
     elif command == "drag":
         drag(qmp, *map(int, args[:4]))
     elif command == "key":

@@ -185,8 +185,8 @@
 #               and a right click reach it, and the icon goes with its app
 #               (M5.2e)
 #   settings-tour  Settings opened on each page edel settings lists (the page
-#               list is read from the tool), each drawn, scrolled with
-#               Page_Down and drawn again, and each again at 366 px, maximized,
+#               list is read from the tool), each maximized and drawn,
+#               scrolled with the wheel and drawn again, and each again at 366 px,
 #               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
 #               and named in the PASS line
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
@@ -1657,10 +1657,11 @@ case_settings_tour() {
 	# page list is what `edel settings` prints, read by the service
 	# (`settings pages`), never written here. Each page opens by
 	# `edel-settings --page NAME` (the service's `settings tour`) and is
-	# drawn after two seconds (settings-tour-NAME-1.png); a click in the
-	# page's empty right margin, 20 px in and half way down, gives it the
-	# keyboard, Page_Down scrolls it (-2.png), and once more (-3.png) only
-	# when -2.png differs from -1.png. A page this machine's Settings does
+	# maximized (Super+M), so a picture holds as much of the page as the
+	# screen does, and drawn (settings-tour-NAME-1.png); ten notches of the
+	# wheel over the page scroll it (-2.png), and ten more (-3.png) only
+	# when -2.png differs from -1.png (Page_Down, tried first, moved the
+	# sidebar's selection instead, which held the keyboard). A page this machine's Settings does
 	# not show yet is skipped: edel settings lists pages the Settings app
 	# has not built (region, shortcuts, default apps, startup, apps,
 	# add-ons and services, as the Settings app stood on 2026-10-11), and Settings refuses each one
@@ -1668,7 +1669,7 @@ case_settings_tour() {
 	# width, 366 logical px wide by scale 3.5 as the power case does, on
 	# an empty workspace (Super+4), maximized (Super+M), as
 	# settings-tour-NAME-narrow.png. The case fails only when Settings does
-	# not open on a page it has. Nothing is maximized in the first pass.
+	# not open on a page it has.
 	guest 'settings pages'
 	wait_for 'DESKTOP-TEST: settings_pages ' 20 || fail "the service did not list edel settings' pages"
 	pages=$(value settings_pages)
@@ -1682,15 +1683,14 @@ case_settings_tour() {
 		fi
 		shown="$shown $page"
 		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 2
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
-		set -- $(tour_place)
-		x=$1 y=$2 w=$3 h=$4
-		python3 ci/qmp.py click $((x + w - 20)) $((y + h / 2))
-		python3 ci/qmp.py key pgdn
+		python3 ci/qmp.py wheel 760 400 10
 		sleep 1
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-2.png"
 		if ! same_file "$dir/settings-tour-$page-1.png" "$dir/settings-tour-$page-2.png"; then
-			python3 ci/qmp.py key pgdn
+			python3 ci/qmp.py wheel 760 400 10
 			sleep 1
 			python3 ci/qmp.py screendump "$dir/settings-tour-$page-3.png"
 		fi
@@ -1721,7 +1721,7 @@ case_settings_tour() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
 	python3 ci/qmp.py key meta_l-1
 	set -- $shown
-	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, with -2.png after Page_Down and -3.png when -2.png moved, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, with -2.png after ten notches of the wheel and -3.png when -2.png moved, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {
