@@ -334,7 +334,7 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-fold > title arrow {{ color: {muted}; }}
 .edel-current {{ padding: 16px; }}
 .edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
-.edel-current-button {{ min-height: 34px; padding: 0 16px; }}
+.edel-current-button {{ min-height: 34px; padding: 0 16px; border-radius: 999px; }}
 .edel-in-use {{ background-color: {accent}; color: {accent_text}; font-size: {tiny}px; font-weight: 600;
   border-radius: 999px; padding: 2px 9px 2px 7px; box-shadow: 0 1px 2px alpha({accent}, 0.35); }}
 .edel-built-in {{ background-color: alpha({deep}, 0.55); color: {deep_text}; font-size: {tiny}px; font-weight: 600;
@@ -346,7 +346,7 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-new-circle {{ min-width: 36px; min-height: 36px; border-radius: 999px; background-color: alpha({accent}, 0.14); }}
 .edel-new-plus {{ color: {accent}; font-size: {hero}px; font-weight: 300; }}
 .edel-new-hint {{ color: {muted}; font-size: {small}px; }}
-.edel-more {{ min-width: 34px; min-height: 34px; padding: 0; border-radius: 999px; background-image: none;
+.edel-more {{ min-width: 36px; min-height: 36px; padding: 0; border-radius: 999px; background-image: none;
   background-color: {card}; border: 1px solid {line}; box-shadow: none; color: {text}; }}
 .edel-menu-item {{ min-height: 26px; padding: 0 10px; border-radius: {rs}px; background: none; background-image: none;
   box-shadow: none; border: none; color: {text}; font-weight: 400; }}

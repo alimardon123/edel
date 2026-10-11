@@ -47,10 +47,11 @@ const SCREEN: (f32, f32) = (1280.0, 800.0);
 const MARGIN: f32 = 24.0;
 const GAP: f32 = 16.0;
 
-/// A look's picture on its card in logical pixels: 256 by 160, 16:10, and the
+/// A look's least picture on its card in logical pixels: 184 by 115, 16:10, so
+/// three stand on a line as the mockup has them, and the
 /// room between the cards.
-const CARD_W: i32 = 256;
-const CARD_H: i32 = 160;
+const CARD_W: i32 = 184;
+const CARD_H: i32 = 115;
 const CARD_GAP: i32 = 16;
 
 /// Each part's size on the screen, width and height in logical pixels.
@@ -187,19 +188,52 @@ fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
     pill
 }
 
-/// The line under the look in use: what the person can do with it. A look
-/// changed over from the command line says so, whatever kind it is.
-fn look_line(name: &str, changed: bool) -> String {
+/// The line under the look in use (M5.10c7b, as the mockup words it): what
+/// the look shows and over what, such as "Clock, date, music player and
+/// notification count over your wallpaper, blurred." A look changed over
+/// from the command line says so instead.
+fn look_line(name: &str, changed: bool, parts: &[Placed], background: &Background) -> String {
     if changed {
-        trf(
+        return trf(
             "Changed over {look} on the command line.",
             &[("look", &lock_screen::look_title(name))],
-        )
-    } else if lock_screen::is_built_in(name) {
-        tr("Built in. Edit it on the lock; your changes become a new look.").to_string()
-    } else {
-        tr("Yours. Edit it on the lock, where it is.").to_string()
+        );
     }
+    // In a fixed order, the clock first, whatever order the list has.
+    let kinds = [
+        (Part::Clock, tr("clock")),
+        (Part::Date, tr("date")),
+        (Part::Player, tr("music player")),
+        (Part::Count, tr("notification count")),
+        (Part::Message, tr("message")),
+        (Part::Picture, tr("picture")),
+        (Part::Battery, tr("battery")),
+    ];
+    let words: Vec<&str> = kinds
+        .iter()
+        .filter(|(kind, _)| parts.iter().any(|p| p.part == *kind))
+        .map(|(_, word)| *word)
+        .collect();
+    let shown = match words.split_last() {
+        None => tr("Only the sign in").to_string(),
+        Some((last, [])) => (*last).to_string(),
+        Some((last, rest)) => format!("{} {} {last}", rest.join(", "), tr("and")),
+    };
+    let mut shown = shown;
+    if let Some(first) = shown.get(..1) {
+        shown = first.to_uppercase() + &shown[1..];
+    }
+    let over = match background {
+        Background::Backdrop => tr("the navy backdrop"),
+        Background::Blurred => tr("your wallpaper, blurred"),
+        Background::Sharp => tr("your wallpaper"),
+        Background::Colour(_) => tr("a plain colour"),
+        Background::Picture(_) => tr("a picture of yours"),
+    };
+    trf(
+        "{parts} over {background}.",
+        &[("parts", &shown), ("background", over)],
+    )
 }
 
 /// Takes `key` out of the person's file, when they have it: nothing is
@@ -377,10 +411,15 @@ impl Ui {
             .any(|key| matches!(files.source(key), Source::Person(_)));
         self.current_title.set_label(&current_title(&lock));
         let applied = lock_screen::applied(&lock, false);
+        self.current_line.set_label(&look_line(
+            &look,
+            changed,
+            &applied.parts,
+            &applied.background,
+        ));
         *self.current_shown.borrow_mut() =
             (applied.parts, applied.background == Background::Backdrop);
         self.current_view.queue_draw();
-        self.current_line.set_label(&look_line(&look, changed));
         self.keep.set_visible(changed);
         let own = !lock_screen::is_built_in(&look);
         self.rename.set_visible(own);
@@ -979,6 +1018,10 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let keep = widgets::action(tr("Keep as a look"), false);
     // Customize, the word the lock's switcher uses for the same thing.
     let edit = widgets::action(tr("Customize"), true);
+    let edit_words = gtk::Box::builder().spacing(6).build();
+    edit_words.append(&icon::image("edit", 14));
+    edit_words.append(&gtk::Label::new(Some(tr("Customize"))));
+    edit.set_child(Some(&edit_words));
     for button in [&keep, &edit] {
         button.add_css_class("edel-current-button");
     }
@@ -1578,21 +1621,23 @@ mod tests {
 
     #[test]
     fn the_line_under_the_look_in_use_says_what_it_is() {
+        let classic = lock_screen::classic(false);
+        let line = look_line("classic", false, &classic, &Background::Blurred);
+        assert!(line.ends_with(" over your wallpaper, blurred."), "{line}");
+        assert!(line.starts_with("Clock, date"), "{line}");
+        assert!(line.contains(" and "), "{line}");
+        let alone: Vec<Placed> = classic
+            .iter()
+            .filter(|p| p.part == Part::Person)
+            .cloned()
+            .collect();
         assert_eq!(
-            look_line("classic", false),
-            "Built in. Edit it on the lock; your changes become a new look."
+            look_line("minimal", false, &alone, &Background::Backdrop),
+            "Only the sign in over the navy backdrop."
         );
         assert_eq!(
-            look_line("home", false),
-            "Yours. Edit it on the lock, where it is."
-        );
-        assert_eq!(
-            look_line("home", true),
+            look_line("home", true, &classic, &Background::Blurred),
             "Changed over Home on the command line."
-        );
-        assert_eq!(
-            look_line("classic", true),
-            "Changed over Classic on the command line."
         );
     }
 
@@ -1706,7 +1751,7 @@ mod tests {
 
     #[test]
     fn the_pictures_keep_the_shape_of_sixteen_to_ten() {
-        assert_eq!((CARD_W, CARD_H), (256, 160));
+        assert_eq!((CARD_W, CARD_H), (184, 115));
         assert_eq!(CARD_W * 10, CARD_H * 16);
     }
 }
