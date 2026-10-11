@@ -199,9 +199,29 @@ pub fn x11_not_started(program: &str, why: impl Display) -> String {
     format!("could not start {program}: {why}; X11 apps cannot open until the next login")
 }
 
+/// The wallpaper picture cannot be shown, so the background colour does
+/// (M5.10c4b); `why` is what `wallpaper::load` said.
+pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
+    format!(
+        "the wallpaper {} could not be shown, so the background colour shows instead: {why}; choose another in Settings, Appearance, or run edel settings reset appearance.wallpaper",
+        path.display()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wallpaper_that_cannot_be_shown_says_what_shows_instead() {
+        assert_eq!(
+            wallpaper_not_read(
+                Path::new("/home/ali/sea.jpg"),
+                "the file could not be read: No such file or directory (os error 2)"
+            ),
+            "the wallpaper /home/ali/sea.jpg could not be shown, so the background colour shows instead: the file could not be read: No such file or directory (os error 2); choose another in Settings, Appearance, or run edel settings reset appearance.wallpaper"
+        );
+    }
 
     #[test]
     fn a_failure_to_start_says_what_to_do() {

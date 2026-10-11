@@ -78,6 +78,9 @@ pub struct Settings {
     /// `workspaces.overview_strip` (M5.2j-b), as the file writes it; see
     /// [`Settings::overview_strip`] for what applies.
     pub overview_strip: Option<String>,
+    /// `appearance.wallpaper` (M5.10c4b): what lies behind the windows, as
+    /// `edel::wallpapers` reads it.
+    pub wallpaper: Option<String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -164,6 +167,9 @@ impl Settings {
             }
             if let Some(scheme) = file.appearance.mode.as_deref().and_then(Scheme::parse) {
                 settings.color_scheme = scheme;
+            }
+            if file.appearance.wallpaper.is_some() {
+                settings.wallpaper.clone_from(&file.appearance.wallpaper);
             }
             settings.shortcuts.extend(file.shortcuts.clone());
             if file.region.keyboard.is_some() {
