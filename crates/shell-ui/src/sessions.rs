@@ -97,9 +97,13 @@ pub fn read(dir: &Path) -> Vec<Session> {
     found
 }
 
+/// Our own session's desktop file id, `features/login`'s `edel.desktop`.
+pub const OURS: &str = "edel";
+
 /// The sessions to offer and the index of the default one. The session
 /// whose command is `cmd` (the login screen's `--cmd`) is the default; when
-/// no file names it, `cmd` is an extra first session named as Edel OS, so
+/// no file names it, our own session takes `cmd` as its command, and
+/// without our file `cmd` is an extra first session named as Edel OS, so
 /// a machine with no desktop files offers exactly what it did before.
 pub fn with_default(found: Vec<Session>, cmd: &str) -> (Vec<Session>, usize) {
     let wanted = words(cmd);
@@ -108,6 +112,14 @@ pub fn with_default(found: Vec<Session>, cmd: &str) -> (Vec<Session>, usize) {
     }
     if wanted.is_empty() {
         return (found, 0);
+    }
+    // Our own session's file (`features/login`) with another command: the
+    // login screen's `--cmd` is how this machine starts it, so it takes
+    // that command rather than standing twice in the menu.
+    let mut found = found;
+    if let Some(ours) = found.iter_mut().position(|s| s.id == OURS) {
+        found[ours].cmd = wanted;
+        return (found, ours);
     }
     let id = Path::new(&wanted[0])
         .file_name()
@@ -259,6 +271,22 @@ mod tests {
         assert_eq!(list[0].cmd, vec!["env", "X=1", "/bin/edel"]);
         assert_eq!(list[0].id, "env");
         assert_eq!(&list[1..], &found[..]);
+    }
+
+    #[test]
+    fn our_own_file_takes_a_cmd_no_file_names_so_it_stands_once() {
+        let found = vec![
+            parse("ci-other", "[Desktop Entry]\nName=CI other\nExec=/bin/a\n").unwrap(),
+            parse(OURS, EDEL).unwrap(),
+        ];
+        let (list, default) = with_default(found, "env X=1 dbus-run-session -- edel-compositor");
+        assert_eq!(list.len(), 2);
+        assert_eq!(default, 1);
+        assert_eq!(list[1].id, OURS);
+        assert_eq!(
+            list[1].cmd,
+            vec!["env", "X=1", "dbus-run-session", "--", "edel-compositor"]
+        );
     }
 
     #[test]

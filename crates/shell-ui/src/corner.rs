@@ -669,6 +669,23 @@ mod tests {
             lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
             paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
             pixmap.save_png(format!("{dir}/corner.png")).unwrap();
+            // The login screen's chip with its menu open (M5.10c3b).
+            let shown = View {
+                layout: Some("EN".into()),
+                menu: false,
+                restart_waiting: false,
+                hover: None,
+                session: Some("Edel OS".into()),
+                chip_w: chip_width(&mut text, "Edel OS"),
+                sessions: Some((vec!["Edel OS".into(), "Console".into()], 0)),
+            };
+            let l = layout(w, h, &shown);
+            let mut pixmap = Pixmap::new(1280, 800).unwrap();
+            lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
+            paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
+            pixmap
+                .save_png(format!("{dir}/corner-sessions.png"))
+                .unwrap();
         }
     }
 }

@@ -530,7 +530,7 @@ case_respawn() {
 	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
 	# The session chip (M5.10c3b): its `session X+Y+WxH Edel OS` place
 	# on the same line. A click opens the sessions' menu, whose row
-	# `session1 X+Y+WxH CI other` is clicked, so ci logs in with it.
+	# `sessionN X+Y+WxH CI other` is clicked, so ci logs in with it.
 	chip=$(printf '%s\n' "$places" | sed -n 's/.*session \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) Edel OS.*/\1 \2 \3 \4/p')
 	[ -n "$chip" ] || fail "the greeter has no session chip for Edel OS: \"$places\""
 	read -r cx cy cw ch <<-EOF
@@ -539,11 +539,11 @@ case_respawn() {
 	python3 ci/qmp.py click $((cx + cw / 2)) $((cy + ch / 2))
 	sleep 1
 	guest 'greeter places'
-	wait_for 'DESKTOP-TEST: greeter.log .*session1 [0-9]' 10 ||
+	wait_for 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* CI other' 10 ||
 		fail "the session chip's menu has no CI other row: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greeter.log ' | tail -n 3)"
 	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
-	row=$(printf '%s\n' "$places" | sed -n 's/.*session1 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) CI other.*/\1 \2 \3 \4/p')
-	[ -n "$row" ] || fail "no session1 row named CI other on the greeter's places line: \"$places\""
+	row=$(printf '%s\n' "$places" | sed -n 's/.*session[0-9][0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) CI other.*/\1 \2 \3 \4/p')
+	[ -n "$row" ] || fail "no row named CI other on the greeter's places line: \"$places\""
 	read -r rx ry rw rh <<-EOF
 		$row
 	EOF

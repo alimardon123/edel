@@ -19,7 +19,10 @@ depend() {
 
 start() {
 	. /usr/share/edel/places.sh
-	checkpath -d -m 0755 -o greetd:greetd "$greeter_dir"
+	# A login screen that cannot keep a choice still logs people in, so a
+	# failure here is a warning, never a stop to the live login below.
+	checkpath -d -m 0755 -o greetd:greetd "$greeter_dir" ||
+		ewarn "the login screen will not remember each person's desktop: $greeter_dir could not be made"
 	ebegin "Checking for a USB stick"
 	/usr/bin/edel boot live
 	eend $?
