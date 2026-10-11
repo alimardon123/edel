@@ -173,7 +173,6 @@ pub const WIDTH: u32 = 300;
 /// A segment of a segmented row, logical pixels across, and the room its
 /// control keeps round the segments.
 const SEGMENT: f32 = 64.0;
-const INNER: f32 = 2.0;
 /// The room between a row's label and its control.
 const GAP: f32 = 8.0;
 /// A hairline's height, logical pixels: the layout reserves one, and it is
@@ -222,22 +221,14 @@ fn control_of(row: Row, rect: Rect, right: f32, tokens: &Tokens) -> (Option<Rect
             )
         }
         Row::Style | Row::Size => {
-            let count = words(row).len();
-            let width = count as f32 * SEGMENT + 2.0 * INNER;
-            let height = tokens.panel_control as f32;
-            let x = right - width;
-            let y = rect.y + (rect.h - height) / 2.0;
-            let segments = (0..count)
-                .map(|j| {
-                    Rect::new(
-                        x + INNER + j as f32 * SEGMENT,
-                        y + INNER,
-                        SEGMENT,
-                        height - 2.0 * INNER,
-                    )
-                })
-                .collect();
-            (Some(Rect::new(x, y, width, height)), segments)
+            let (control, segments) = popup::segments_at(
+                rect,
+                right,
+                words(row).len(),
+                SEGMENT,
+                tokens.panel_control as f32,
+            );
+            (Some(control), segments)
         }
         _ => (None, Vec::new()),
     }
@@ -580,8 +571,15 @@ pub fn paint(
                 );
             }
             (Row::Style | Row::Size, Some(c)) => {
-                let chosen = chosen(&view.facts, *row);
-                paint_control(pixmap, c, chosen.map(|j| l.segments[i][j]), tokens, s);
+                popup::segmented(
+                    pixmap,
+                    text.as_deref_mut(),
+                    (c, &l.segments[i]),
+                    &words(*row),
+                    chosen(&view.facts, *row),
+                    tokens,
+                    s,
+                );
             }
             _ => {}
         }
@@ -592,75 +590,6 @@ pub fn paint(
             let y = popup::middle(rect.y, rect.h, size, s);
             text.draw(pixmap, &mut line, left * s, y, tokens.panel_text);
         }
-        if let Some(text) = text.as_deref_mut() {
-            paint_words(
-                pixmap,
-                text,
-                *row,
-                &l.segments[i],
-                chosen(&view.facts, *row),
-                tokens,
-                s,
-            );
-        }
-    }
-}
-
-/// A segmented row's control: a raised rounded rect, its chosen segment
-/// filled with the accent.
-fn paint_control(
-    pixmap: &mut Pixmap,
-    control: Rect,
-    chosen: Option<Rect>,
-    tokens: &Tokens,
-    s: f32,
-) {
-    let (x, y, w, h) = control.device(s);
-    fill(
-        pixmap,
-        x,
-        y,
-        w,
-        h,
-        tokens.radius_control as f32 * s,
-        popup::raised(tokens),
-    );
-    if let Some(seg) = chosen {
-        let (x, y, w, h) = seg.device(s);
-        fill(
-            pixmap,
-            x,
-            y,
-            w,
-            h,
-            tokens.radius_small as f32 * s,
-            tokens.accent,
-        );
-    }
-}
-
-/// The words of a segmented row, each centred in its segment: the chosen
-/// one in the accent's text colour, the others in the panel's.
-fn paint_words(
-    pixmap: &mut Pixmap,
-    text: &mut Text,
-    row: Row,
-    segments: &[Rect],
-    chosen: Option<usize>,
-    tokens: &Tokens,
-    s: f32,
-) {
-    let size = tokens.panel_text_small_size as f32 * s;
-    for (j, (word, seg)) in words(row).into_iter().zip(segments).enumerate() {
-        let ink = if Some(j) == chosen {
-            tokens.accent_text
-        } else {
-            tokens.panel_text
-        };
-        let mut line = text.fit(word, size, seg.w * s);
-        let x = seg.x * s + ((seg.w * s - line.width) / 2.0).round();
-        let y = popup::middle(seg.y, seg.h, size, s);
-        text.draw(pixmap, &mut line, x, y, ink);
     }
 }
 

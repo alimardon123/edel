@@ -19,6 +19,7 @@ use crate::a11y::Item;
 use crate::editor::{self, Act, DRAG_START, Tile};
 use crate::lock;
 use crate::paint::{Text, fill, outline};
+use crate::part_card;
 use crate::player;
 use crate::popup::{self, Rect};
 use crate::trayview::Key;
@@ -70,6 +71,9 @@ pub struct View {
     pub focus: Option<Focus>,
     /// The drawer of the parts not shown (kind `LockScreen`).
     pub drawer: editor::View,
+    /// The part card open beside a part, if any (M5.10c6c2): the keys go to
+    /// it first, and a press away from it closes it.
+    pub card: Option<part_card::View>,
 }
 
 /// The keyboard's focus in the edit mode (M5.10c6c): a placed part by its
@@ -89,6 +93,8 @@ pub enum Step {
     Nudge(usize, i32, i32),
     Remove(usize),
     Add(Part),
+    /// Opens the part's card, for a part that has one (M5.10c6c2).
+    Open(usize),
     Undo,
     Done,
     Close,
@@ -450,6 +456,10 @@ pub fn key(view: &View, key: Key, shift: bool) -> Step {
 fn part_key(view: &View, i: usize, key: Key, shift: bool) -> Step {
     let step = if shift { 10 } else { 1 };
     match key {
+        Key::Activate => match view.parts.get(i) {
+            Some(placed) if part_card::card_for(placed.part) => Step::Open(i),
+            _ => Step::Nothing,
+        },
         Key::Left => Step::Nudge(i, -step, 0),
         Key::Right => Step::Nudge(i, step, 0),
         Key::Up => Step::Nudge(i, 0, -step),
@@ -797,6 +807,7 @@ mod tests {
         View {
             parts,
             screen: (1280.0, 800.0),
+            card: None,
             drag: None,
             guides: Vec::new(),
             hover: None,

@@ -572,6 +572,89 @@ pub fn focus_ring(pixmap: &mut Pixmap, r: Rect, radius: f32, s: f32, tokens: &To
     );
 }
 
+/// A segmented control's inset: its segments sit this far in from its edges,
+/// logical pixels.
+const INNER: f32 = 2.0;
+
+/// A segmented control `count` segments of `segment` logical pixels across and
+/// `height` high, its right edge at `right`, centred up and down in `row`:
+/// the control's place and each segment's (`segmented` draws them). Shared by
+/// the panel's menu and the lock screen's part cards (ADR-010).
+pub fn segments_at(
+    row: Rect,
+    right: f32,
+    count: usize,
+    segment: f32,
+    height: f32,
+) -> (Rect, Vec<Rect>) {
+    let width = count as f32 * segment + 2.0 * INNER;
+    let x = right - width;
+    let y = row.y + (row.h - height) / 2.0;
+    let segments = (0..count)
+        .map(|j| {
+            Rect::new(
+                x + INNER + j as f32 * segment,
+                y + INNER,
+                segment,
+                height - 2.0 * INNER,
+            )
+        })
+        .collect();
+    (Rect::new(x, y, width, height), segments)
+}
+
+/// A segmented control (M5.31c, moved here in M5.10c6c2): a raised rounded
+/// rect, its chosen segment `chosen` filled with the accent, and each
+/// segment's word centred in it, the chosen one in the accent's text colour.
+/// Without `text`, only the light.
+pub fn segmented(
+    pixmap: &mut Pixmap,
+    text: Option<&mut Text>,
+    (control, segments): (Rect, &[Rect]),
+    words: &[&str],
+    chosen: Option<usize>,
+    tokens: &Tokens,
+    s: f32,
+) {
+    let (x, y, w, h) = control.device(s);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        tokens.radius_control as f32 * s,
+        raised(tokens),
+    );
+    if let Some(seg) = chosen.and_then(|j| segments.get(j)) {
+        let (x, y, w, h) = seg.device(s);
+        fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            tokens.radius_small as f32 * s,
+            tokens.accent,
+        );
+    }
+    let Some(text) = text else {
+        return;
+    };
+    let size = tokens.panel_text_small_size as f32 * s;
+    for (j, (word, seg)) in words.iter().zip(segments).enumerate() {
+        let ink = if Some(j) == chosen {
+            tokens.accent_text
+        } else {
+            tokens.panel_text
+        };
+        let mut line = text.fit(word, size, seg.w * s);
+        let x = seg.x * s + ((seg.w * s - line.width) / 2.0).round();
+        let y = middle(seg.y, seg.h, size, s);
+        text.draw(pixmap, &mut line, x, y, ink);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

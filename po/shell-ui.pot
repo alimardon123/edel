@@ -299,6 +299,57 @@ msgstr ""
 msgid "Panel menu"
 msgstr ""
 
+msgid "Digital"
+msgstr ""
+
+msgid "Stacked"
+msgstr ""
+
+msgid "Analog"
+msgstr ""
+
+msgid "Minimal"
+msgstr ""
+
+msgid "Long"
+msgstr ""
+
+msgid "Short"
+msgstr ""
+
+msgid "Numeric"
+msgstr ""
+
+msgid "Weekday"
+msgstr ""
+
+msgid "Day"
+msgstr ""
+
+msgid "Month"
+msgstr ""
+
+msgid "Year"
+msgstr ""
+
+msgid "Face"
+msgstr ""
+
+msgid "Hours"
+msgstr ""
+
+msgid "Words"
+msgstr ""
+
+msgid "Choose in Settings"
+msgstr ""
+
+msgid "No picture"
+msgstr ""
+
+msgid "Words: {words}"
+msgstr ""
+
 msgid "Other"
 msgstr ""
 
