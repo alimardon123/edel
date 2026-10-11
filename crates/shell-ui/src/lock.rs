@@ -333,7 +333,7 @@ fn place_all(
     let clock_weight = clock_part
         .and_then(|p| p.weight)
         .unwrap_or(tokens.lock_clock_weight.clamp(100, 900) as u16);
-    let clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0)
+    let mut clock_size = (tokens.lock_clock as f32).min(w * 0.24).max(40.0)
         * crate::clock_face::size_share(clock_part.and_then(|p| p.size));
     let date_show = date_part
         .and_then(|p| p.show.clone())
@@ -353,6 +353,14 @@ fn place_all(
         weight: clock_weight,
         tabular: true,
     };
+    // The clock is never wider than the screen's room: a wider font (a
+    // language's own, or the one a machine without the tokens' font falls
+    // back to) shrinks it rather than leaving the time out.
+    let room = w - 2.0 * MARGIN;
+    let wide = text.line_in(CLOCK_WIDEST, clock_size, figures).width;
+    if wide > room {
+        clock_size *= room / wide;
+    }
     let mut slots: Vec<(Slot, Item)> = Vec::new();
     for p in parts {
         let item = |w: f32, h: f32| Item {
