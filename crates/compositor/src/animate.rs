@@ -45,6 +45,9 @@ pub struct Animations {
     /// a session, as its line, written while shell-ui writes its own to the
     /// same log, could otherwise cut into shell-ui's lines CI reads.
     popups_said: std::collections::HashSet<String>,
+    /// When the last frame was drawn (`prune`'s `now`): a popup whose end
+    /// came after it still wants one more frame, drawn whole.
+    drawn: Duration,
     /// The tier, motion, speed and curve last logged.
     logged: Option<(Tier, Motion, u32, Curve)>,
 }
@@ -115,6 +118,7 @@ impl Animations {
             context: None,
             popups: HashMap::new(),
             popups_said: std::collections::HashSet::new(),
+            drawn: Duration::ZERO,
             logged: None,
         }
     }
@@ -129,15 +133,18 @@ impl Animations {
         self.opening.retain(|_, anim| !anim.done(now));
         self.slides.retain(|_, slide| !slide.anim.done(now));
         self.closing.retain(|c| !c.anim.done(now));
+        self.drawn = now;
     }
 
-    /// Whether anything still animates, so another frame is wanted.
+    /// Whether anything still animates, so another frame is wanted. A
+    /// popup counts until a frame was drawn after its end, so its last
+    /// frame on screen is the whole one, not one a step short of it (a
+    /// greeter left a shade transparent until the next damage).
     pub fn running(&self) -> bool {
-        let now = self.now();
         !(self.opening.is_empty()
             && self.slides.is_empty()
             && self.closing.is_empty()
-            && self.popups.values().all(|anim| anim.done(now)))
+            && popups_drawn_whole(self.popups.values(), self.drawn))
     }
 
     /// `window` was shown for the first time.
@@ -428,5 +435,25 @@ impl Edel {
             leave,
         });
         self.dirty = true;
+    }
+}
+
+/// Whether every popup's end came by `drawn`, the time of the last frame
+/// drawn, so each shows whole and no further frame is wanted for them.
+fn popups_drawn_whole<'a>(popups: impl IntoIterator<Item = &'a Anim>, drawn: Duration) -> bool {
+    popups.into_iter().all(|anim| anim.done(drawn))
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::*;
+
+    #[test]
+    fn a_popup_wants_one_frame_drawn_after_its_end() {
+        let anim = Anim::new(Duration::from_millis(0), Duration::from_millis(200));
+        // The last frame was drawn at 190 ms: the popup was not yet whole.
+        assert!(!popups_drawn_whole([&anim], Duration::from_millis(190)));
+        // A frame drawn at 210 ms shows it whole; nothing more is wanted.
+        assert!(popups_drawn_whole([&anim], Duration::from_millis(210)));
     }
 }
