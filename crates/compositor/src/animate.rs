@@ -41,6 +41,10 @@ pub struct Animations {
     /// The overlay surfaces that popped up, each with when it did (M5.12b4),
     /// kept until the surface hides or is destroyed.
     popups: HashMap<WlSurface, Anim>,
+    /// The popups' namespaces already logged (M5.12b4): each is said once
+    /// a session, as its line, written while shell-ui writes its own to the
+    /// same log, could otherwise cut into shell-ui's lines CI reads.
+    popups_said: std::collections::HashSet<String>,
     /// The tier, motion, speed and curve last logged.
     logged: Option<(Tier, Motion, u32, Curve)>,
 }
@@ -110,6 +114,7 @@ impl Animations {
             closing: Vec::new(),
             context: None,
             popups: HashMap::new(),
+            popups_said: std::collections::HashSet::new(),
             logged: None,
         }
     }
@@ -266,10 +271,12 @@ impl Edel {
         self.animations
             .popups
             .insert(surface.clone(), Anim::new(now, open));
-        eprintln!(
-            "edel-compositor: popup {namespace} opens over {} ms",
-            open.as_millis()
-        );
+        if self.animations.popups_said.insert(namespace.to_string()) {
+            eprintln!(
+                "edel-compositor: popup {namespace} opens over {} ms",
+                open.as_millis()
+            );
+        }
         self.dirty = true;
     }
 
