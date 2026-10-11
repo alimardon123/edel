@@ -3618,7 +3618,7 @@ case_lock_edit() {
 	wait_for 'edel-shell-ui: lock editor done, lock_screen.parts written' ||
 		fail "Done did not write lock_screen.parts: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
-	value settings_file | grep -q 'part = "clock", at = "top_right"' ||
+	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
 	value settings_file | grep -q 'part = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
