@@ -26,8 +26,11 @@ inotify = { version = "0.11.5", default-features = false }
 smithay = { version = "=0.7.0", default-features = false, features = ["backend_drm", "backend_gbm", "backend_libinput", "backend_session_libseat", "backend_udev", "backend_winit", "desktop", "renderer_gl", "wayland_frontend"] }
 toml = "1.1.6"
 # The overview's tray, labels and buttons (M5.2j-b), drawn as shell-ui draws
-# its cards; already in the tree through edel's icons.
-tiny-skia = { version = "0.12.0", default-features = false, features = ["std"] }
+# its cards; already in the tree through edel's icons; PNG wallpapers
+# (M5.10c4b).
+tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "png-format"] }
+# Wallpapers' JPEG pictures (M5.10c4b): pure Rust, and it decodes at a half, a quarter or an eighth of the size, so a 4K picture never sits whole in memory for a smaller screen.
+jpeg-decoder = { version = "0.3.2", default-features = false }
 # The code for our private protocol, protocols/edel-shell-v1.xml (M5.3);
 # already in the tree through smithay's protocols.
 wayland-scanner = "0.31.11"

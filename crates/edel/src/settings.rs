@@ -214,6 +214,10 @@ pub enum Kind {
     Channel,
     /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
     AppWorkspaces,
+    /// A wallpaper: a wallpaper's name such as `"hills"`, a picture's
+    /// path, a colour `"#rrggbb"` or `"none"` ([`crate::wallpapers`],
+    /// M5.10c4b)
+    Wallpaper,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -327,7 +331,7 @@ pub const KEYS: &[Key] = &[
     now("displays.*.refresh_rate", Kind::Number),
     now("displays.*.enabled", Kind::Flag),
     later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
-    later("appearance.wallpaper", Kind::Text),
+    now("appearance.wallpaper", Kind::Wallpaper),
     // The panel's workspace switcher: its look, how many numbers show at
     // once and what the strip's ends show where more lie (M5.2m, on the
     // Appearance page since M5.2q).
@@ -1508,6 +1512,14 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::Channel, _) => fail(tr("a channel name in quotes, such as \"stable\"")),
+        (Kind::Wallpaper, Value::String(s)) if crate::wallpapers::is_form(s) => Ok(value.clone()),
+        (Kind::Wallpaper, Value::String(s)) => Err(trf(
+            "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Wallpaper, _) => fail(tr(
+            "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\"",
+        )),
         (Kind::Panels, _) => fail(tr(
             "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]",
         )),
@@ -1688,6 +1700,7 @@ mod tests {
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::Channel => Value::String("stable".into()),
+            Kind::Wallpaper => Value::String("hills".into()),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
         }
     }

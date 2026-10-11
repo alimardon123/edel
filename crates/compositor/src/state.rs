@@ -134,6 +134,8 @@ pub struct Edel {
     pub overview_kept: crate::glance::Kept,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
+    /// The wallpaper and its picture for each screen (M5.10c4b).
+    pub wallpaper: crate::wallpaper::Shown,
     /// `[displays]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
@@ -293,6 +295,7 @@ impl Edel {
             overview: None,
             overview_kept: Default::default(),
             settings: Settings::default(),
+            wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
@@ -572,6 +575,14 @@ impl Edel {
             self.repaint = true;
             self.dirty = true;
             eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
+        }
+        // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
+        // dark wallpaper's picture) changes.
+        if !self.wallpaper.announced
+            || old.wallpaper != new.wallpaper
+            || old.color_scheme != new.color_scheme
+        {
+            self.apply_wallpaper(&new);
         }
         if old.buttons != new.buttons {
             eprintln!("edel-compositor: title bar buttons {}", new.buttons.names());

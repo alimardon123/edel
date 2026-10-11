@@ -1,0 +1,27 @@
+The wallpapers Edel OS carries, and where each comes from (M5.10c4b).
+Each is a pair, NAME-light.jpg and NAME-dark.jpg; the desktop shows the
+one the colour scheme names.
+
+hills-light.jpg, hills-dark.jpg, aurora-light.jpg, aurora-dark.jpg
+  Our own, drawn by design/wallpapers/make.py from design/tokens.toml's
+  colours. Licence: GPL-3.0-or-later, as the rest of Edel OS.
+
+earth-light.jpg
+  Europe by day: NASA Earth Observatory, Blue Marble Next Generation,
+  July 2004, topography and bathymetry, by Reto Stockli (NASA Goddard
+  Space Flight Center).
+  https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73751/world.topo.bathy.200407.3x21600x10800.jpg
+  Licence: public domain (a work of NASA, not under copyright in the
+  United States).
+
+earth-dark.jpg
+  Europe by night: NASA Earth Observatory, Black Marble 2016, by Joshua
+  Stevens, using Suomi NPP VIIRS data from Miguel Roman (NASA Goddard
+  Space Flight Center).
+  https://eoimages.gsfc.nasa.gov/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg
+  Licence: public domain (a work of NASA, not under copyright in the
+  United States).
+
+Both Earth pictures are cut to longitude 12 W to 60 E and latitude 30 N
+to 63 N and drawn at 2560x1600 by design/wallpapers/make.py --earth.
+NASA asks that its images not be used to suggest it endorses anything.

@@ -224,6 +224,8 @@ impl Edel {
                 .into_iter()
                 .map(|e| Drawn::Plain(Element::Surface(e))),
         );
+        // The wallpaper lies under everything, so it comes last (M5.10c4b).
+        elements.extend(self.wallpaper_elements(renderer, output, screen.size, scale));
         elements
     }
 

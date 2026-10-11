@@ -92,6 +92,9 @@ pub const PACKAGES_FILE: &str = share!("/packages");
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
 /// GTK's colours from the tokens (M5.5b).
 pub const GTK_CSS: &str = share!("/gtk.css");
+/// The wallpapers the `wallpapers` feature carries, and their `CREDITS`
+/// (M5.10c4b): `NAME-light.jpg` and `NAME-dark.jpg` for a pair.
+pub const WALLPAPERS_DIR: &str = share!("/wallpapers");
 /// Where each part's words in each language are (M5.24): `LANG/PART.po`.
 pub const LOCALE_DIR: &str = share!("/locale");
 /// Alpine's initramfs `init` with our one change, which finds a root

@@ -38,6 +38,7 @@ mod statefile;
 mod switcher;
 mod tiers;
 mod toplevels;
+mod wallpaper;
 mod watch;
 mod winit;
 mod workspaces;
