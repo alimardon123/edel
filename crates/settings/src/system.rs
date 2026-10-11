@@ -21,10 +21,7 @@ use edel::i18n::{n_, tr, trf};
 
 use crate::{cmd, widgets};
 
-const INTRO: &str = n_(
-    "A machine is one settings file. Save this one to set up another the same way, or pick a \
-     file to see what it would change here before anything is changed.",
-);
+const INTRO: &str = n_("Copy this machine to another, or set it up from a file.");
 
 /// What `edel settings diff FILE` said, ready to show.
 #[derive(Debug, PartialEq, Eq)]

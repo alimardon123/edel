@@ -18,12 +18,17 @@ use std::path::Path;
 use gtk::gio;
 use gtk::prelude::*;
 
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::{places, session_log};
 
 use crate::{rows, widgets};
 
 const OS_RELEASE: &str = "/usr/lib/os-release";
+
+/// What the settings file is, said once for every page.
+const SETTINGS_NOTE: &str = n_(
+    "Every choice in Settings is also a line of your settings file and an edel settings command. Each group's copy button gives the command.",
+);
 
 /// The action Check for updates calls: the window shows the page named.
 const SHOW_PAGE: &str = "win.show-page";
@@ -68,6 +73,11 @@ pub fn page() -> gtk::Widget {
         Some(lines) => widgets::log_row(&group, tr("The last lines of this session"), &lines),
         None => widgets::text_row(&group, &nothing_yet(dir.as_deref())),
     }
+    // The one place that says what the settings file is for: the other
+    // pages leave it out.
+    widgets::heading(&content, tr("Settings and the command line"));
+    let group = widgets::group(&content);
+    widgets::text_row(&group, tr(SETTINGS_NOTE));
     page
 }
 

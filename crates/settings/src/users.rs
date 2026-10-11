@@ -3,21 +3,16 @@
 //! first on a card, their name large with their login name and whether
 //! they are an administrator under it; Administrator, a key of the
 //! settings file (`users.NAME.admin`), follows as a row; the other people
-//! come next, then Add a person and Remove a person, and Details, closed,
-//! with the login name, user id, home folder and login shell for people
-//! who need them. A password is never shown, read or touched: the page
-//! reads `/etc/passwd` and `/etc/group` (`edel::users`) and nothing else.
+//! come next, and Details, closed, with the login name, user id, home
+//! folder and login shell for people who need them. A password is never
+//! shown, read or touched: the page reads `/etc/passwd` and `/etc/group`
+//! (`edel::users`) and nothing else.
 //!
-//! Changing people needs root, and a person's Settings cannot ask for it
-//! until `doas` (M6.5), so the switch and the buttons are shown as they
-//! will be, unusable, with a line that says why and what an administrator
-//! can do now: the keys `users.NAME.admin`, `users.NAME.login_shell` and
-//! `users.NAME.ssh_keys` of the machine's settings file, written as root
-//! with `edel settings set` and applied with `edel settings apply`, which
-//! adds the account. Removing a person has no command at all yet (apply
-//! never deletes an account), and the page says so. Seam (ADR-008): with
-//! `doas` the page runs those same commands through `cmd.rs`, as the
-//! Updates page runs `edel update`, and the controls come on.
+//! Adding and removing people wait for `doas` (M6.5), which lets Settings
+//! run the commands for them, so the page shows no such buttons until
+//! then. Seam (ADR-008): with `doas` the page runs `edel settings apply`
+//! through `cmd.rs`, as the Updates page runs `edel update`, and the
+//! buttons come back as rows of the same kind.
 
 use std::rc::Rc;
 
@@ -28,7 +23,7 @@ use edel::users::{self, Person};
 
 use crate::{card, rows, widgets};
 
-const INTRO: &str = n_("The people who use this computer. Passwords are never shown here.");
+const INTRO: &str = n_("The people who use this computer.");
 
 /// What a person is: an administrator can change the system.
 fn role(person: &Person) -> &'static str {
@@ -167,24 +162,8 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         widgets::fact_row(&group, person.shown(), &line(person));
     }
 
-    widgets::heading(body, tr("Add or remove people"));
-    let group = widgets::group(body);
-    widgets::note_row(
-        &group,
-        tr(
-            "Adding a person needs administrator rights, which Settings cannot ask for yet. An administrator can add one now with edel settings set users.NAME.admin=false and then edel settings apply.",
-        ),
-    );
-    widgets::note_row(&group, tr("Removing a person is not available yet."));
-    let buttons = widgets::button_flow();
-    for label in [tr("Add a person"), tr("Remove a person")] {
-        let button = widgets::big_button(label, false);
-        button.set_sensitive(false);
-        button.set_tooltip_text(Some(tr("Not available yet")));
-        buttons.append(&button);
-    }
-    body.append(&buttons);
-
+    // Add a person and Remove a person come with doas (M6.5), as the module
+    // says; no button is shown before then.
     let inner = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .build();
