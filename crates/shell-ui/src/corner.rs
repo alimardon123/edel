@@ -77,9 +77,6 @@ const NOTE_RIGHT: f32 = 12.0;
 /// How much the glass under the pointer or a pressed button is lightened
 /// again (M5.10c).
 const HOVER_TINT: f32 = 0.12;
-/// The menu's solid base, under its glass, so its text reads (M5.10c).
-const MENU_SOLID: f32 = 0.85;
-
 /// Where the corner's parts lie.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
@@ -218,12 +215,7 @@ pub fn paint(
     };
     let (x, y, w, h) = menu.device(s);
     let r = MENU_RADIUS * s;
-    let solid = Colour {
-        a: MENU_SOLID,
-        ..mix(tokens.lock_backdrop_deep, tokens.lock_backdrop, 0.35)
-    };
-    fill(pixmap, x, y, w, h, r, solid);
-    glass(pixmap, (x, y, w, h), r, s, tokens);
+    crate::lock::frosted(pixmap, (x, y, w, h), r, s, tokens);
     for (i, (choice, row)) in CHOICES.iter().zip(&l.rows).enumerate() {
         let (rx, ry, rw, rh) = row.device(s);
         if view.hover == Some(Hit::Row(i)) {
