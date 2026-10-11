@@ -64,6 +64,11 @@ pub const BUILT_IN: [(&str, &str); 69] = [
         "page-about",
         include_str!("../../../design/icons/page-about.svg"),
     ),
+    // Settings' Lock screen page (M5.32c).
+    (
+        "page-lock-screen",
+        include_str!("../../../design/icons/page-lock-screen.svg"),
+    ),
     // The Sound page's (M5.7b).
     (
         "page-sound",

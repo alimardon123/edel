@@ -182,6 +182,11 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-pages > row:hover {{ background-color: {fill}; }}
 .edel-pages > row:selected {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
 .edel-pages > row:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: -2px; }}
+/* A group's heading (M5.32b): not selectable, so no fill, the small text, semibold, with 6 px below and 18 px above unless it is first. */
+.edel-pages > row.edel-heading {{ min-height: 0; margin: 0 0 6px; padding: 0 9px; background: none; color: {secondary};
+  font-size: {small}px; font-weight: 600; }}
+.edel-pages > row.edel-heading:hover {{ background: none; }}
+.edel-pages > row.edel-apart {{ margin-top: 18px; }}
 .edel-back {{ margin: 10px 0 0 20px; padding: 2px 8px 2px 4px; border-radius: {rs}px; background: none; box-shadow: none; color: {accent}; }}
 .edel-back:hover {{ background-color: {fill}; }}
 .edel-page-title {{ font-size: {heading}px; font-weight: 700; letter-spacing: -0.5px; }}

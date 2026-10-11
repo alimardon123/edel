@@ -489,9 +489,10 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
-		# Settings (M5.6a), as ci, and the file it writes.
+		# Settings (M5.6a), as ci, and the file it writes. On its Layout page
+		# (M5.32b: Settings opens on Appearance, the first page, without one).
 		'settings window')
-			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
+			as_ci edel-settings --page layout </dev/null >/tmp/settings.log 2>&1 &
 			;;
 		# Settings on the session's bus (M5.9h), as an app the desktop
 		# starts has it, so its Tray card reads the tray's apps.
@@ -730,7 +731,7 @@ commands() {
 		# The lines the lock screen's edit mode wrote to ci's own file
 		# (M5.10c6b, M5.10c6c3): the look, the parts and the background under
 		# [lock_screen], taken out again.
-		'lock parts mine default') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{/^(look|parts|background) = /d}' /home/ci/.config/edel/$settings_name" ;;
+		'lock parts mine default') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{/^(look|looks|parts|background) = /d}' /home/ci/.config/edel/$settings_name" ;;
 		# The lock screen's edit mode (M5.10c6b): the call Settings' Edit lock
 		# screen makes, as ci on ci's session bus, which opens the edit mode.
 		'lock editor')

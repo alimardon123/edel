@@ -90,10 +90,11 @@ pub enum Undo {
 }
 
 /// The lines of the person's lock screen settings before Done wrote them
-/// (M5.10c6c3): the look, the parts and the background, each as its value,
-/// None for no line. Undo puts all three back.
+/// (M5.10c6c3, M5.10c7a): the person's own looks, the look, the parts and the
+/// background, each as its value, None for no line. Undo puts all four back.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LockBefore {
+    pub looks: Option<String>,
     pub look: Option<String>,
     pub parts: Option<String>,
     pub background: Option<String>,
@@ -290,6 +291,8 @@ impl Shell {
             focus: None,
             lifted: None,
             taking: false,
+            heading: None,
+            subtitle: None,
         };
         mark_placed(&mut view, &now);
         let layout = editor::layout(&view);
