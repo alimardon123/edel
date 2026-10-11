@@ -28,12 +28,15 @@ const PILL_WIDTH: f32 = 88.0;
 const PILL: f32 = 36.0;
 const PILL_TOUCH: f32 = 44.0;
 
-/// What the bar shows: whether the pointer is on Undo, and the screen's
-/// width in logical pixels, 0 when unknown (a Compact screen's touch sizes).
+/// What the bar shows: whether the pointer is on Undo, the screen's width in
+/// logical pixels, 0 when unknown (a Compact screen's touch sizes), and the
+/// words it says: "Panels changed" for the panel editor, "Lock screen
+/// changed" for the lock screen's edit mode (M5.10c6).
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
     pub hover: bool,
     pub width: u32,
+    pub text: String,
 }
 
 /// Where the bar's parts lie, logical pixels from its top left corner.
@@ -84,7 +87,7 @@ pub fn places(l: &Layout) -> String {
 }
 
 /// What a screen reader finds: the text, then the Undo button.
-pub fn nodes(l: &Layout) -> Vec<Item> {
+pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
     let at = |r: Rect| {
         accesskit::Rect::new(
             f64::from(r.x),
@@ -102,7 +105,7 @@ pub fn nodes(l: &Layout) -> Vec<Item> {
         value: None,
     };
     vec![
-        item(Role::Label, tr("Panels changed"), at(l.text)),
+        item(Role::Label, text, at(l.text)),
         item(Role::Button, tr("Undo"), at(l.undo)),
     ]
 }
@@ -116,7 +119,7 @@ pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: Option<&mu
     let size = tokens.panel_text_size as f32 * s;
     let mut text = text;
     if let Some(text) = text.as_deref_mut() {
-        let mut line = text.fit(tr("Panels changed"), size, l.text.w * s);
+        let mut line = text.fit(&view.text, size, l.text.w * s);
         let y = popup::middle(l.text.y, l.text.h, size, s);
         text.draw(pixmap, &mut line, l.text.x * s, y, tokens.panel_text);
     }
@@ -143,6 +146,7 @@ mod tests {
         View {
             hover: false,
             width,
+            text: "Panels changed".into(),
         }
     }
 
@@ -174,10 +178,20 @@ mod tests {
 
     #[test]
     fn the_nodes_are_a_label_and_an_undo_button() {
-        let nodes = nodes(&layout(&view(1280)));
+        let nodes = nodes(&layout(&view(1280)), "Panels changed");
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0].role, Role::Label);
+        assert_eq!(nodes[0].label, "Panels changed");
         assert_eq!(nodes[1].role, Role::Button);
+        assert_eq!(nodes[1].label, "Undo");
+    }
+
+    #[test]
+    fn the_lock_screens_bar_says_its_own_words() {
+        let mut lock = view(1280);
+        lock.text = "Lock screen changed".into();
+        let nodes = nodes(&layout(&lock), &lock.text);
+        assert_eq!(nodes[0].label, "Lock screen changed");
         assert_eq!(nodes[1].label, "Undo");
     }
 
@@ -196,6 +210,7 @@ mod tests {
             let v = View {
                 hover: true,
                 width: 1280,
+                text: "Panels changed".into(),
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();

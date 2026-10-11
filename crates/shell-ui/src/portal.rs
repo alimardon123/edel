@@ -16,7 +16,7 @@ use smithay_client_toolkit::reexports::calloop::channel;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::{OwnedValue, Value};
 
-use crate::shell_bus::ShellBus;
+use crate::shell_bus::{Edit, ShellBus};
 
 /// The name xdg-desktop-portal finds the backend by, from
 /// `/usr/share/xdg-desktop-portal/portals/edel.portal`.
@@ -134,7 +134,7 @@ impl Backend {
 /// The panel editor is served on the same connection (M5.31d, `shell_bus.rs`):
 /// its object at `SHELL_PATH` is built in, and its name is requested once
 /// the portal is up, so a name another program holds leaves the portal served.
-pub fn serve(tokens: &Tokens, edits: channel::Sender<()>) -> Option<zbus::blocking::Connection> {
+pub fn serve(tokens: &Tokens, edits: channel::Sender<Edit>) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
         settings: settings(tokens),
     };

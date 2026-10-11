@@ -95,10 +95,19 @@ msgstr ""
 msgid "Edit panels"
 msgstr ""
 
+msgid "Edit lock screen"
+msgstr ""
+
 msgid "Drop here to take it off the panel"
 msgstr ""
 
 msgid "Drag a widget along the panels or onto another, from here to add it, or here to take it away"
+msgstr ""
+
+msgid "Drop here to take it away"
+msgstr ""
+
+msgid "Drag a part anywhere, from here to add it, or here to take it away"
 msgstr ""
 
 msgid "Undo"
@@ -114,6 +123,9 @@ msgid "Add {title}"
 msgstr ""
 
 msgid "Panels changed"
+msgstr ""
+
+msgid "Lock screen changed"
 msgstr ""
 
 msgid "Type to search"
@@ -159,6 +171,24 @@ msgid "Who is logging in?"
 msgstr ""
 
 msgid "User name"
+msgstr ""
+
+msgid "Clock"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Now playing"
+msgstr ""
+
+msgid "You (the person)"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Picture"
 msgstr ""
 
 msgid "Close notification"
@@ -363,9 +393,6 @@ msgid "Apps: {names}"
 msgstr ""
 
 msgid "Notifications, {count} unread"
-msgstr ""
-
-msgid "Clock"
 msgstr ""
 
 msgid "Keyboard layout"

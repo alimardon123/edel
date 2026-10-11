@@ -166,7 +166,7 @@ impl Card {
         self.edit.connect_clicked(move |_| {
             let problem = problem.clone();
             glib::spawn_future_local(async move {
-                let asked = gio::spawn_blocking(ask_editor)
+                let asked = gio::spawn_blocking(|| ask_editor(EDIT_PANELS))
                     .await
                     .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
                 match asked {
@@ -261,17 +261,19 @@ fn copy_pins_command() -> String {
     }
 }
 
-/// Asks shell-ui to open its panel editor over the session bus, as a
-/// panel's right-click menu does. Blocking, so it runs on GIO's thread; with
-/// no desktop it fails with the bus's own words.
-fn ask_editor() -> Result<(), String> {
+/// Asks shell-ui to open one of its editors over the session bus: `method` is
+/// `EDIT_PANELS` for the panel editor, or `EDIT_LOCK_SCREEN` for the lock
+/// screen's edit mode (M5.10c6), which the Lock screen page asks through this
+/// same function. Blocking, so it runs on GIO's thread; with no desktop it
+/// fails with the bus's own words.
+pub(crate) fn ask_editor(method: &str) -> Result<(), String> {
     let bus = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
         .map_err(|e| e.to_string())?;
     bus.call_sync(
         Some(SHELL_BUS),
         SHELL_PATH,
         SHELL_INTERFACE,
-        EDIT_PANELS,
+        method,
         None,
         None,
         gio::DBusCallFlags::NONE,

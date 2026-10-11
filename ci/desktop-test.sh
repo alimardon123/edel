@@ -3653,6 +3653,74 @@ case_lock() {
 	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
+case_lock_edit() {
+	# The lock screen's edit mode (M5.10c6b): ci's bus call, the one Settings'
+	# Edit lock screen makes, opens it over the desktop, live, with each part
+	# of the lock screen as a tile and a drawer of the parts not shown. The
+	# clock is dragged from its middle to the top right (shell-ui logs the
+	# anchor it snapped to), a message is dragged from the drawer to the
+	# bottom middle of the lock's picture (drawn smaller above the drawer,
+	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# into ci's file. The
+	# next lock must place the clock at the top right and show a message.
+	# Kept as lock-editor.png, and the list is reset at the end.
+	guest 'lock editor'
+	wait_for 'edel-shell-ui: lock editor shown' ||
+		fail "the lock screen's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the edit mode did not say where the clock lies: $places"
+	set -- $clock
+	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) $((1280 - 24 - $3 / 2)) $((24 + $4 / 2 + 40))
+	wait_for 'edel-shell-ui: lock editor moved clock to top_right' ||
+		fail "the clock did not move to the top right: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	message=$(echo "$places" | sed -n 's/.*, tile[0-9]* message \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$message" ] || fail "the drawer does not offer a message tile: $places"
+	set -- $message
+	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) 640 480
+	wait_for 'edel-shell-ui: lock editor added message' ||
+		fail "the message tile was not added: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-editor.png"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies: $places"
+	set -- $done_at
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_for 'edel-shell-ui: lock editor done, lock_screen.parts written' ||
+		fail "Done did not write lock_screen.parts: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
+	value settings_file | grep -q 'part = "message"' ||
+		fail "ci's settings file does not hold the message: $(value settings_file)"
+	# The next lock reads the file: the clock on the right, the message below.
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen after the edit"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen after the edit"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the lock after the edit has no clock: $places"
+	set -- $clock
+	[ "$1" -gt 640 ] || fail "the lock's clock at $1,$2 is not at the top right: $places"
+	echo "$places" | grep -q ', message0 ' || fail "the lock after the edit shows no message: $places"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (after the edit)"
+	set -- $go
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the edit"
+	# Done wrote ci's own file, so the line is taken out of it.
+	guest 'lock parts mine default'
+	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file"
+}
+
 case_scheme() {
 	# Light and dark (M5.5c): edel settings set appearance.mode=dark
 	# gives the compositor the tokens' [colour], drawing the title bars

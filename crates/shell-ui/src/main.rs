@@ -30,6 +30,8 @@ mod launcher;
 mod link;
 mod lock;
 mod lock_card;
+mod lock_editor;
+mod lock_editor_card;
 mod messages;
 mod mpris;
 mod notice;
@@ -129,6 +131,8 @@ const PANEL_MENU: &str = "edel-panel-menu";
 const EDITOR: &str = "edel-editor";
 /// The Undo bar after Done, where the drawer was (M5.31b).
 const UNDO: &str = "edel-panels-undo";
+/// The lock screen's edit mode, over the whole main screen (M5.10c6b).
+const LOCK_EDITOR: &str = "edel-lock-editor";
 /// Quick settings, opened from the status area (M5.9a).
 const QUICK: &str = "edel-quick";
 /// A new notification's banner and the notification centre, which the
@@ -191,6 +195,8 @@ struct Shell {
     /// panels while it is open.
     panel_menu: Option<panel_menu_card::PanelMenu>,
     editor: Option<editor_card::Editor>,
+    /// The lock screen's edit mode while it is open (M5.10c6b).
+    lock_editor: Option<lock_editor_card::LockEditor>,
     /// Done's Undo bar, while it shows (M5.31b).
     undo_bar: Option<editor_card::UndoBar>,
     /// Quick settings while open (M5.9a), the preset's tiles for it, and
@@ -392,7 +398,7 @@ fn run() -> Result<()> {
     let status_wanted = panels
         .iter()
         .any(|p| p.row.all().any(|w| w.name == "status"));
-    let (edits, asks) = channel::channel::<()>();
+    let (edits, asks) = channel::channel::<shell_bus::Edit>();
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -418,6 +424,7 @@ fn run() -> Result<()> {
         styles: None,
         panel_menu: None,
         editor: None,
+        lock_editor: None,
         undo_bar: None,
         quick: None,
         quick_tiles: preset.quick.tiles.clone(),
@@ -493,15 +500,24 @@ fn run() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("watching notifications: {e}"))?;
         }
     }
-    // Settings asks for the panel editor over the session bus (M5.31d); the
-    // calls reach the loop over a channel as the notifications' do.
+    // Settings asks for the panel editor (M5.31d) and the lock screen's edit
+    // mode (M5.10c6) over the session bus; the calls reach the loop over a
+    // channel as the notifications' do.
     if shell._portal.is_some() {
         event_loop
             .handle()
             .insert_source(asks, |event, _, shell: &mut Shell| {
-                if let channel::Event::Msg(()) = event {
-                    eprintln!("edel-shell-ui: panel editor asked for over the bus");
-                    shell.open_editor();
+                if let channel::Event::Msg(edit) = event {
+                    match edit {
+                        shell_bus::Edit::Panels => {
+                            eprintln!("edel-shell-ui: panel editor asked for over the bus");
+                            shell.open_editor();
+                        }
+                        shell_bus::Edit::LockScreen => {
+                            eprintln!("edel-shell-ui: lock editor asked for over the bus");
+                            shell.open_lock_editor();
+                        }
+                    }
                 }
             })
             .map_err(|e| anyhow::anyhow!("watching the panel editor's bus: {e}"))?;
@@ -1168,6 +1184,7 @@ impl Shell {
     /// Closes every popup that hangs on a panel or shows over the desktop,
     /// each its own way, so none is left pointing at a panel that goes.
     fn close_popups(&mut self) {
+        self.close_lock_editor(false);
         self.close_launcher();
         self.close_styles();
         self.close_panel_menu();
@@ -1679,6 +1696,8 @@ impl LayerShellHandler for Shell {
             self.close_panel_menu();
         } else if self.is_editor(surface.wl_surface()) {
             self.close_editor(false);
+        } else if self.is_lock_editor(surface.wl_surface()) {
+            self.close_lock_editor(false);
         } else if self.is_undo_bar(surface.wl_surface()) {
             self.hide_undo_bar();
         } else if self.is_quick(surface.wl_surface()) {
@@ -1719,6 +1738,9 @@ impl LayerShellHandler for Shell {
                 editor.popup.configured();
             }
             return self.draw_editor();
+        }
+        if self.is_lock_editor(surface.wl_surface()) {
+            return self.lock_editor_configured(configure.new_size);
         }
         if self.is_undo_bar(surface.wl_surface()) {
             if let Some(bar) = &mut self.undo_bar {
@@ -1818,6 +1840,9 @@ impl CompositorHandler for Shell {
             }
             return self.draw_editor();
         }
+        if self.is_lock_editor(surface) {
+            return self.lock_editor_scaled(factor);
+        }
         if self.is_undo_bar(surface) {
             if let Some(bar) = &mut self.undo_bar {
                 bar.popup.set_scale(factor);
@@ -1914,6 +1939,9 @@ impl CompositorHandler for Shell {
                 editor.popup.framed();
             }
             return self.draw_editor();
+        }
+        if self.is_lock_editor(surface) {
+            return self.lock_editor_framed();
         }
         if self.is_undo_bar(surface) {
             if let Some(bar) = &mut self.undo_bar {
@@ -2126,6 +2154,10 @@ impl PointerHandler for Shell {
                 self.panel_menu_pointer(event);
                 continue;
             }
+            if self.is_lock_editor(&event.surface) {
+                self.lock_editor_pointer(event);
+                continue;
+            }
             if self.is_editor(&event.surface) {
                 self.editor_pointer(event);
                 continue;
@@ -2295,6 +2327,8 @@ impl KeyboardHandler for Shell {
             self.close_panel_menu();
         } else if self.is_editor(surface) {
             self.close_editor(false);
+        } else if self.is_lock_editor(surface) {
+            self.close_lock_editor(false);
         } else if self.is_quick(surface) {
             self.close_quick();
         } else if self.is_centre(surface) {
@@ -2314,6 +2348,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.lock.is_some() {
             self.lock_key(event);
+        } else if self.lock_editor.is_some() {
+            self.lock_editor_key(event);
         } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
@@ -2341,6 +2377,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.lock.is_some() {
             self.lock_key(event);
+        } else if self.lock_editor.is_some() {
+            self.lock_editor_key(event);
         } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
