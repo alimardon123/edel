@@ -359,6 +359,9 @@ msgstr ""
 msgid "Save as"
 msgstr ""
 
+msgid "Edit lock screen"
+msgstr ""
+
 msgid "Look's own"
 msgstr ""
 
@@ -408,6 +411,12 @@ msgid "Date"
 msgstr ""
 
 msgid "Show the count of unread notifications"
+msgstr ""
+
+msgid "the call to the desktop stopped"
+msgstr ""
+
+msgid "The desktop's lock screen is not running, so it cannot be edited now:\n{why}"
 msgstr ""
 
 msgid "Name, such as home"
@@ -615,9 +624,6 @@ msgid "Drag an app's icon on the panel to pin, move or unpin it"
 msgstr ""
 
 msgid "None"
-msgstr ""
-
-msgid "the call to the desktop stopped"
 msgstr ""
 
 msgid "The desktop's panels are not running, so they cannot be edited now:\n{why}"

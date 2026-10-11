@@ -16,19 +16,20 @@ use gtk::cairo::{Context, LinearGradient};
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 use edel::lock_screen::{self, Background, DateStyle, Face, Item, Part, Placed, Rect};
+use edel::panel_edit::EDIT_LOCK_SCREEN;
 use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
 
 use crate::files::{self, Files};
 use crate::style::Theme;
-use crate::{preview, rows, widgets};
+use crate::{panels, preview, rows, widgets};
 
 /// The keys this page chooses.
 const LOOK: &str = "lock_screen.look";
 const BACKGROUND: &str = "lock_screen.background";
-const PARTS: &str = "lock_screen.parts";
+const PARTS: &str = lock_screen::PARTS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
 
@@ -149,9 +150,7 @@ pub fn date_style(parts: &[Placed], style: DateStyle) -> Vec<Placed> {
 /// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
 /// list of tables in one line, absent options left out.
 fn parts_text(parts: &[Placed]) -> Result<String, String> {
-    toml::Value::try_from(parts)
-        .map(|value| value.to_string())
-        .map_err(|e| e.to_string())
+    lock_screen::parts_value(parts)
 }
 
 /// The name a look shows as: the built-in names translated, else the
@@ -646,10 +645,19 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .css_classes(["edel-intro"])
         .build();
     content.append(&note);
+    // Save as and Edit lock screen side by side: the edit mode is shell-ui's,
+    // opened over the desktop, and writes only when Done is pressed there.
     let save = widgets::action(tr("Save as"), false);
-    save.set_halign(gtk::Align::Start);
-    save.set_margin_top(12);
-    content.append(&save);
+    let edit = widgets::action(tr("Edit lock screen"), false);
+    let buttons = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(12)
+        .halign(gtk::Align::Start)
+        .margin_top(12)
+        .build();
+    buttons.append(&save);
+    buttons.append(&edit);
+    content.append(&buttons);
 
     let background = widgets::Segments::new(&[
         tr("Look's own").to_string(),
@@ -733,7 +741,15 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             }
         });
     }
-    wire(&ui, &save, &background, &face, &date, &hours, &count);
+    wire(
+        &ui,
+        (&save, &edit),
+        &background,
+        &face,
+        &date,
+        &hours,
+        &count,
+    );
     log_places(&looks, &ui);
 
     // The page's state lives as long as the page does.
@@ -748,13 +764,39 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
 /// and of the cards' section.
 fn wire(
     ui: &Rc<Ui>,
-    save: &gtk::Button,
+    (save, edit): (&gtk::Button, &gtk::Button),
     background: &Rc<widgets::Segments>,
     face: &Rc<widgets::Segments>,
     date: &Rc<widgets::Segments>,
     hours: &gtk::Switch,
     count: &gtk::Switch,
 ) {
+    // Edit lock screen asks shell-ui for its edit mode over the session bus,
+    // as the Panels group asks for the panel editor (the same call, given the
+    // method's name); the page writes nothing itself.
+    let weak = Rc::downgrade(ui);
+    edit.connect_clicked(move |_| {
+        let weak = weak.clone();
+        glib::spawn_future_local(async move {
+            let asked = gio::spawn_blocking(|| panels::ask_editor(EDIT_LOCK_SCREEN))
+                .await
+                .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            match asked {
+                Ok(()) => {
+                    eprintln!("edel-settings: asked the lock screen to be edited");
+                    ui.report(Ok(()));
+                }
+                Err(why) => ui.report(Err(trf(
+                    "The desktop's lock screen is not running, so it cannot be edited now:\n{why}",
+                    &[("why", &why)],
+                ))),
+            }
+        });
+    });
+
     let weak = Rc::downgrade(ui);
     save.connect_clicked(move |button| {
         if let Some(ui) = weak.upgrade() {
