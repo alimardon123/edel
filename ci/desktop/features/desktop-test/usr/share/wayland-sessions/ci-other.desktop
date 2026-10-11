@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=CI other
+Comment=Test only (M5.10c3b): a second session for the login screen's chip
+Exec=/usr/libexec/ci-other-session
+Type=Application

@@ -17,7 +17,14 @@
 //! `greeter: chose LOGIN` or `greeter: chose other`, `greeter: power menu
 //! shown, 3 rows`, `greeter: power menu hidden`, `greeter: power: NAME`,
 //! `greeter: logging USER in`, `greeter: wrong user name or password` and
-//! `greeter: session started for USER`.
+//! `greeter: session started for USER`, then `greeter: desktop ID`.
+//! With two or more desktop sessions installed (M5.10c3b) a chip in the
+//! corner names the one the login starts and opens a menu of them, each
+//! person's choice is remembered in `places::GREETER_SESSIONS`, and the
+//! session menu logs `greeter: session menu shown, N sessions`, `greeter:
+//! session menu hidden` and `greeter: session NAME chosen`.
+
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -50,6 +57,7 @@ use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
 use edel::lock_screen::Placed;
+use edel::places;
 use edel::tokens::Tokens;
 
 use crate::corner;
@@ -59,6 +67,7 @@ use crate::messages;
 use crate::paint::{self, Text};
 use crate::people;
 use crate::power;
+use crate::sessions::{self, Session};
 
 /// The greeter: its screens, what is typed and where it stands.
 struct Greeter {
@@ -93,8 +102,17 @@ struct Greeter {
     corner_hover: Option<corner::Hit>,
     /// The last places line logged, so only a change is logged.
     logged: String,
-    /// The session's command, and where the login's answer comes back.
-    cmd: String,
+    /// The desktop sessions offered, the default's index, and the one the
+    /// login starts (M5.10c3b). The chip's name is measured for it in
+    /// `chip_w`, and the session menu is open while `session_menu`.
+    sessions: Vec<Session>,
+    default_session: usize,
+    session: usize,
+    chip_w: f32,
+    session_menu: bool,
+    /// The remembered choices as the file held them at start.
+    remembered: String,
+    /// Where the login's answer comes back.
     tx: channel::Sender<Login>,
     exit: bool,
     /// The parts the machine's file says, read once at start (people have
@@ -147,6 +165,12 @@ pub fn run(cmd: String) -> Result<()> {
         None => (String::new(), false),
     };
     let parts = lock::parts_of(crate::settings_texts().0.as_deref(), None);
+    // The sessions installed, with the one `--cmd` names as the default
+    // (M5.10c3b). A machine with no session files offers only `--cmd`.
+    let (sessions, default_session) =
+        sessions::with_default(sessions::read(Path::new(places::WAYLAND_SESSIONS)), &cmd);
+    // A missing or unreadable file means every person's default.
+    let remembered = std::fs::read_to_string(places::GREETER_SESSIONS).unwrap_or_default();
     let mut greeter = Greeter {
         parts,
         pictures: lock::Pictures::default(),
@@ -173,10 +197,16 @@ pub fn run(cmd: String) -> Result<()> {
         restart_waiting: false,
         corner_hover: None,
         logged: String::new(),
-        cmd,
+        sessions,
+        default_session,
+        session: default_session,
+        chip_w: 0.0,
+        session_menu: false,
+        remembered,
         tx,
         exit: false,
     };
+    greeter.session_for_row();
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -250,13 +280,100 @@ impl Greeter {
         }
     }
 
-    /// What the corner shows now: Power only, with its menu when open.
+    /// What the corner shows now: Power, and the session chip when two or
+    /// more sessions are installed, with the open menus.
     fn corner_view(&self) -> corner::View {
+        let many = self.sessions.len() > 1;
         corner::View {
             layout: None,
             menu: self.menu,
             restart_waiting: self.restart_waiting,
             hover: self.corner_hover,
+            session: many
+                .then(|| self.sessions.get(self.session))
+                .flatten()
+                .map(|s| s.name.clone()),
+            chip_w: self.chip_w,
+            sessions: (many && self.session_menu).then(|| {
+                let names = self.sessions.iter().map(|s| s.name.clone()).collect();
+                (names, self.session)
+            }),
+        }
+    }
+
+    /// Makes the session `index` the one the login starts, and measures
+    /// the chip for its name.
+    fn set_session(&mut self, index: usize) {
+        self.session = index;
+        if let Some(session) = self.sessions.get(index) {
+            self.chip_w = corner::chip_width(&mut self.text, &session.name);
+        }
+    }
+
+    /// The session a person's login starts with: their remembered choice
+    /// when it is still installed, else the default (M5.10c3b). Other, with
+    /// no person chosen, starts the default.
+    fn session_for_row(&mut self) {
+        let remembered = self
+            .row
+            .people
+            .get(self.row.chosen)
+            .and_then(|person| sessions::remembered(&self.remembered, &person.login));
+        let index = remembered
+            .and_then(|id| self.sessions.iter().position(|s| s.id == id))
+            .unwrap_or(self.default_session);
+        self.set_session(index);
+    }
+
+    /// Opens or closes the session menu, logging it. It opens only with the
+    /// power menu shut, and draws again.
+    fn set_session_menu(&mut self, open: bool) {
+        if open {
+            self.menu = false;
+            self.session_menu = true;
+            eprintln!(
+                "edel-shell-ui: greeter: session menu shown, {} sessions",
+                self.sessions.len()
+            );
+        } else {
+            self.session_menu = false;
+            eprintln!("edel-shell-ui: greeter: session menu hidden");
+        }
+        self.draw();
+    }
+
+    /// A session row chosen: the login starts it, and the menu closes.
+    fn choose_session(&mut self, index: usize) {
+        let Some(session) = self.sessions.get(index) else {
+            return;
+        };
+        eprintln!("edel-shell-ui: greeter: session {} chosen", session.name);
+        self.set_session(index);
+        self.session_menu = false;
+        self.draw();
+    }
+
+    /// Writes the session a login started as the person's choice, or takes
+    /// their line out when it is the default (writers never write a
+    /// default). Nothing is written when the file already says so. A
+    /// failure is logged and never stops the login (Reliable).
+    fn remember_choice(&self) {
+        let login = self.name.trim();
+        let id = if self.session == self.default_session {
+            None
+        } else {
+            self.sessions.get(self.session).map(|s| s.id.as_str())
+        };
+        let path = Path::new(places::GREETER_SESSIONS);
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        if sessions::remembered(&text, login).as_deref() == id {
+            return;
+        }
+        let tmp = path.with_extension("new");
+        let written = std::fs::write(&tmp, sessions::remember(&text, login, id))
+            .and_then(|()| std::fs::rename(&tmp, path));
+        if let Err(e) = written {
+            eprintln!("edel-shell-ui: {}", messages::session_not_kept(e));
         }
     }
 
@@ -299,14 +416,17 @@ impl Greeter {
                 self.asking_password = false;
             }
         }
+        self.session_for_row();
     }
 
     /// Opens or closes Power's menu, logging it, and draws again. Opening
-    /// reads whether an update waits for a restart.
+    /// reads whether an update waits for a restart, and shuts the session
+    /// menu.
     fn set_menu(&mut self, open: bool) {
         if open {
             self.restart_waiting = power::restart_waiting();
             self.menu = true;
+            self.session_menu = false;
             eprintln!(
                 "edel-shell-ui: greeter: power menu shown, {} rows",
                 power::CHOICES.len()
@@ -455,6 +575,7 @@ impl Greeter {
         }
         match event.keysym {
             Keysym::Escape if self.menu => return self.set_menu(false),
+            Keysym::Escape if self.session_menu => return self.set_session_menu(false),
             Keysym::Left | Keysym::Right if self.field_empty() => {
                 let by = if event.keysym == Keysym::Left { -1 } else { 1 };
                 self.choose(people::step(&self.row, by));
@@ -509,7 +630,11 @@ impl Greeter {
         eprintln!("edel-shell-ui: greeter: logging {user} in");
         self.busy = Some(self.password.letters());
         let password = self.password.take();
-        let cmd = self.cmd.clone();
+        // The chosen session's command, its words as greetd takes them.
+        let cmd: Vec<String> = self
+            .sessions
+            .get(self.session)
+            .map_or_else(Vec::new, |s| s.cmd.clone());
         let tx = self.tx.clone();
         let spawned = std::thread::Builder::new()
             .name("greetd".into())
@@ -517,7 +642,8 @@ impl Greeter {
                 let login = match greetd::Greetd::connect() {
                     Ok(mut greetd) => {
                         let words = password.text().unwrap_or_default();
-                        greetd::log_in(&mut greetd, &user, words, &[&cmd])
+                        let cmd: Vec<&str> = cmd.iter().map(String::as_str).collect();
+                        greetd::log_in(&mut greetd, &user, words, &cmd)
                     }
                     Err(e) => Login::Failed(format!("{e:#}")),
                 };
@@ -536,10 +662,14 @@ impl Greeter {
         self.busy = None;
         match login {
             Login::Started => {
+                self.remember_choice();
                 eprintln!(
                     "edel-shell-ui: greeter: session started for {}",
                     self.name.trim()
                 );
+                if let Some(session) = self.sessions.get(self.session) {
+                    eprintln!("edel-shell-ui: greeter: desktop {}", session.id);
+                }
                 self.exit = true;
                 return;
             }
@@ -592,10 +722,10 @@ impl Greeter {
         }
     }
 
-    /// A left press: the corner first (Power toggles its menu, a row runs
-    /// its choice), then with the menu open only a close, then a person
-    /// (chosen as the arrows choose), then the go button, which logs in when
-    /// the password has letters.
+    /// A left press: the corner first (Power and the session chip toggle
+    /// their menus, a row runs its choice), then with a menu open only a
+    /// close, then a person (chosen as the arrows choose), then the go
+    /// button, which logs in when the password has letters.
     fn press(&mut self, x: f32, y: f32, w: f32, h: f32) {
         if self.busy.is_some() {
             return;
@@ -603,15 +733,22 @@ impl Greeter {
         let hit = corner::hit(&corner::layout(w, h, &self.corner_view()), x, y);
         match hit {
             Some(corner::Hit::Button(corner::Button::Power)) => return self.set_menu(!self.menu),
+            Some(corner::Hit::Button(corner::Button::Session)) => {
+                return self.set_session_menu(!self.session_menu);
+            }
             Some(corner::Hit::Row(i)) => {
                 if let Some(&choice) = power::CHOICES.get(i) {
                     return self.run_power(choice);
                 }
             }
+            Some(corner::Hit::Session(i)) => return self.choose_session(i),
             _ => {}
         }
         if self.menu {
             return self.set_menu(false);
+        }
+        if self.session_menu {
+            return self.set_session_menu(false);
         }
         let people = self.people_shown();
         let corner_at = corner::layout(w, h, &self.corner_view());

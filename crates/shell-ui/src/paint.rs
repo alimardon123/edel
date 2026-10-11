@@ -18,6 +18,7 @@ use tiny_skia::{
 };
 
 use edel::i18n::tr;
+use edel::pictures::box_blur;
 use edel::presets::{Edge, Size, Style};
 use edel::tokens::{Colour, Tokens};
 
@@ -608,35 +609,6 @@ pub fn shadow(w: u32, h: u32, room: u32, r: f32, tokens: &Tokens, s: f32) -> Opt
         pixel.copy_from_slice(&[mul(cr), mul(cg), mul(cb), (a * 255.0).round() as u8]);
     }
     Some(out)
-}
-
-/// Blurs `values`, a `w` by `h` grid, by averaging each with its
-/// neighbours up to `radius` away, across and then down.
-fn box_blur(values: &mut [f32], w: usize, h: usize, radius: usize) {
-    if radius == 0 {
-        return;
-    }
-    let mut line = Vec::new();
-    let mut pass =
-        |values: &mut [f32], len: usize, count: usize, at: &dyn Fn(usize, usize) -> usize| {
-            let span = (2 * radius + 1) as f32;
-            for i in 0..count {
-                line.clear();
-                line.extend((0..len).map(|j| values[at(i, j)]));
-                let mut sum: f32 = line.iter().take(radius + 1).sum();
-                for j in 0..len {
-                    values[at(i, j)] = sum / span;
-                    if j + radius + 1 < len {
-                        sum += line[j + radius + 1];
-                    }
-                    if j >= radius {
-                        sum -= line[j - radius];
-                    }
-                }
-            }
-        };
-    pass(values, w, h, &|row, col| row * w + col);
-    pass(values, h, w, &|col, row| row * w + col);
 }
 
 /// A rectangle with corners of radius `r`, as a path.

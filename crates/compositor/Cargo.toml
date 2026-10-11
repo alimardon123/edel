@@ -15,7 +15,7 @@ path = "src/main.rs"
 anyhow = "1.0.104"
 # The settings file reader (M4.5), without the command line's network and
 # signing dependencies.
-edel = { path = "../edel", default-features = false, features = ["icons"] }
+edel = { path = "../edel", default-features = false, features = ["icons", "pictures"] }
 fontdue = "0.9.4"
 # Copies of the X11 sockets that xwayland-satellite inherits (M4.7), and
 # the session's log in place of standard output and error (M5.28a).
@@ -29,8 +29,6 @@ toml = "1.1.6"
 # its cards; already in the tree through edel's icons; PNG wallpapers
 # (M5.10c4b).
 tiny-skia = { version = "0.12.0", default-features = false, features = ["std", "png-format"] }
-# Wallpapers' JPEG pictures (M5.10c4b): pure Rust, and it decodes at a half, a quarter or an eighth of the size, so a 4K picture never sits whole in memory for a smaller screen.
-jpeg-decoder = { version = "0.3.2", default-features = false }
 # The code for our private protocol, protocols/edel-shell-v1.xml (M5.3);
 # already in the tree through smithay's protocols.
 wayland-scanner = "0.31.11"

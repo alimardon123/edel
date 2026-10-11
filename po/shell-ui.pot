@@ -89,6 +89,9 @@ msgstr ""
 msgid "Update waiting"
 msgstr ""
 
+msgid "Desktop for this login"
+msgstr ""
+
 msgid "Edit panels"
 msgstr ""
 

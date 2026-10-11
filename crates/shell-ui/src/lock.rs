@@ -1422,6 +1422,9 @@ mod tests {
                 menu: false,
                 restart_waiting: false,
                 hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
             },
         );
         // The card as `lock_card` sizes it: wide, or the width less the margins
@@ -1588,6 +1591,9 @@ mod tests {
                 menu: false,
                 restart_waiting: false,
                 hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
             },
         );
         let at = screen_layout(
@@ -1649,6 +1655,9 @@ mod tests {
                     menu: false,
                     restart_waiting: false,
                     hover: None,
+                    session: None,
+                    chip_w: 0.0,
+                    sessions: None,
                 },
             );
             let classic = classic_at(w, h, true, &mut text);
@@ -1719,6 +1728,9 @@ mod tests {
                 menu: false,
                 restart_waiting: false,
                 hover: None,
+                session: None,
+                chip_w: 0.0,
+                sessions: None,
             },
         );
         let broken = Look {
@@ -1934,6 +1946,9 @@ mod tests {
                     menu: false,
                     restart_waiting: false,
                     hover: None,
+                    session: None,
+                    chip_w: 0.0,
+                    sessions: None,
                 },
             );
             let listed = screen_layout(

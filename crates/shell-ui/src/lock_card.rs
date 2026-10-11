@@ -283,6 +283,10 @@ impl Shell {
             menu: card.menu,
             restart_waiting: card.restart_waiting,
             hover: card.corner_hover,
+            // The lock screen has no session chip (M5.10c3b).
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
         })
     }
 
@@ -642,6 +646,8 @@ impl Shell {
                         self.run_power(choice);
                     }
                 }
+                // The lock screen has no session chip (M5.10c3b).
+                Some(corner::Hit::Button(Button::Session) | corner::Hit::Session(_)) => {}
                 None if card.menu => self.set_power_menu(false),
                 None if over && card.checking.is_none() => self.check_password(),
                 None => {}
@@ -1150,6 +1156,9 @@ mod tests {
             menu: false,
             restart_waiting: false,
             hover: None,
+            session: None,
+            chip_w: 0.0,
+            sessions: None,
         }
     }
 
