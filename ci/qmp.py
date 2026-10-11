@@ -170,12 +170,20 @@ def click(qmp, x, y, which="left"):
 
 
 def wheel(qmp, x, y, notches):
-    """Turns the wheel `notches` times at x,y: down when positive, up when negative."""
+    """Turns the wheel `notches` times at x,y: down when positive, up when
+    negative. The tablet places the pointer; the clicks go to the VM's
+    mouse by its id, `mouse`, as QEMU would hand a button with no device
+    named to the tablet, whose wheel the guest may not see."""
     point(qmp, screen_size(qmp), x, y)
     which = "wheel-down" if notches > 0 else "wheel-up"
     for _ in range(abs(notches)):
-        button(qmp, True, which)
-        button(qmp, False, which)
+        for down in (True, False):
+            time.sleep(0.05)
+            qmp.run(
+                "input-send-event",
+                device="mouse",
+                events=[{"type": "btn", "data": {"down": down, "button": which}}],
+            )
 
 
 def drag(qmp, x, y, to_x, to_y, steps=10):

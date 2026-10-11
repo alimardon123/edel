@@ -5191,7 +5191,7 @@ fi
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
-	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
+	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci,id=mouse \
 	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
