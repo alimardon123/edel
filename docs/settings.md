@@ -117,6 +117,14 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.switcher_shown` | a whole number from 1 to 9: how many numbers the `numbers` look shows at once, the shown workspace and its neighbours; missing is 3. `edel settings set appearance.switcher_shown=10` is refused with "expected a whole number from 1 to 9, not 10" | M5.2m |
 | `appearance.switcher_ends` | `fade`, `arrows` or `counts`: where more workspaces lie than show, an arrow at each end, dark where more lie that way and faint where none do (`arrows`), the next one peeking in, faded (`fade`), or with how many lie beyond it, as `+2` (`counts`); a click on an end shows the view one step towards it. Missing is `arrows`. `edel settings set appearance.switcher_ends=dots` is refused with "unknown value \"dots\"; use fade, arrows or counts" | M5.2m |
 
+## Lock screen: `[lock_screen]`
+
+The lock and login screens are made of parts (M5.10c5), each placed by an anchor and an offset, so one arrangement fits a phone, a laptop and a 4K screen. Missing is the classic arrangement, the mockup's.
+
+| Key | Value | From |
+|---|---|---|
+| `lock_screen.parts` | a list of parts, each a table: `part` (`clock`, `date`, `count`, `player`, `person`, `message`, `picture` or `battery`), `at` (where it stands: `top_left`, `top`, `top_right`, `left`, `centre`, `right`, `bottom_left`, `bottom` or `bottom_right`), and optionally `x` and `y` (an offset, a share of the screen's width and height, from -1 to 1), `text` (a message's words, 1 to 120 characters on one line) and `path` (a picture's file, an absolute path ending `.png`, `.jpg` or `.jpeg`). The person stands exactly once, so nobody is locked out; each other part at most once, and at most 3 messages and 3 pictures. Parts at one anchor stack, one below the other. On the command line `edel settings set 'lock_screen.parts=[{ part = "person", at = "centre" }]'`; `edel settings set lock_screen.parts=[{ part = "person", at = "top" }]` is refused with "the lock screen needs the person and their password field" | M5.10c5 |
+
 ## Shortcuts: `[shortcuts]`
 
 | Key | Value | From |
