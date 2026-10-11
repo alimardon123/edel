@@ -622,8 +622,10 @@ mod tests {
     #[test]
     fn the_corner_keeps_clear_of_the_field_and_the_note() {
         for (w, h) in [(1280.0, 800.0), (1024.0, 768.0), (360.0, 740.0)] {
-            let at = lock::layout(w, h, &Tokens::built_in(), true);
+            let tokens = Tokens::built_in();
+            let mut text = Text::load(&tokens.font);
             let l = layout(w, h, &view(Some("EN"), false));
+            let at = lock::screen_layout(w, h, &tokens, true, None, None, false, &l, &mut text);
             let f = at.field;
             for (_, r) in &l.buttons {
                 assert!(!overlaps(r, (f.x, f.y, f.w, f.h)), "{w}x{h} field");
@@ -666,7 +668,19 @@ mod tests {
             let mut screen =
                 lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
             screen.dots = 7;
-            lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
+            let below = layout(w, h, &view(None, false));
+            let at =
+                lock::screen_layout(w, h, &tokens, false, None, None, false, &below, &mut text);
+            lock::paint(
+                &mut pixmap,
+                &screen,
+                &at,
+                &tokens,
+                &mut text,
+                None,
+                &mut lock::Pictures::default(),
+                1.0,
+            );
             paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
             pixmap.save_png(format!("{dir}/corner.png")).unwrap();
             // The login screen's chip with its menu open (M5.10c3b).
@@ -681,7 +695,17 @@ mod tests {
             };
             let l = layout(w, h, &shown);
             let mut pixmap = Pixmap::new(1280, 800).unwrap();
-            lock::paint(&mut pixmap, &screen, &tokens, &mut text, None, 1.0);
+            let at = lock::screen_layout(w, h, &tokens, false, None, None, false, &l, &mut text);
+            lock::paint(
+                &mut pixmap,
+                &screen,
+                &at,
+                &tokens,
+                &mut text,
+                None,
+                &mut lock::Pictures::default(),
+                1.0,
+            );
             paint(&mut pixmap, &shown, &l, &tokens, &mut text, 1.0);
             pixmap
                 .save_png(format!("{dir}/corner-sessions.png"))

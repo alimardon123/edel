@@ -665,6 +665,10 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# The lock screen's parts (M5.10c5): the time top left and a message
+		# at the bottom, read when the screen locks; reset after the check.
+		'lock parts') edel settings set 'lock_screen.parts=[{ part = "person", at = "centre", y = 0.21 }, { part = "clock", at = "top_left" }, { part = "message", at = "bottom", text = "If found, call 555 0100" }, { part = "player", at = "bottom_left" }]' ;;
+		'lock parts reset') edel settings reset lock_screen.parts ;;
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
 		'power rules')

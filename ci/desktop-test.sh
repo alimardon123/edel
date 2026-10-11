@@ -3371,7 +3371,8 @@ case_lock() {
 	# row is clicked. Then (M5.10c4) ci's test player, Night Drive by
 	# Lumen, shows its card once it plays, and the card's play button,
 	# read from the lock places line, pauses it, which the player prints.
-	# Kept as lock.png, lock-power.png, lock-player.png and lock-go.png.
+	# Kept as lock.png, lock-power.png, lock-parts.png, lock-player.png and
+	# lock-go.png.
 	guest 'lock password'
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
@@ -3397,6 +3398,40 @@ case_lock() {
 	shot lock-power 640 790 "$deep" >/dev/null || true
 	python3 ci/qmp.py key esc
 	wait_for 'edel-shell-ui: power menu hidden$' || fail "Escape did not close the power menu"
+	# The lock's parts (M5.10c5): a list in the settings file is read when
+	# the screen locks, so ci unlocks, sets the list (`lock parts`), locks
+	# again and reads the last places line: the clock at the top left (x
+	# below 100) and a message at the bottom, its bottom 24 px above the
+	# screen's edge (800 - 24). Kept as lock-parts.png. The list is reset
+	# (`lock parts reset`) while this lock holds; the player card below runs
+	# in it, so the list holds the player too: a list leaves out what it
+	# does not name, and the parts are read when the screen locks.
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_for 'edel-compositor: screen unlocked$' ||
+		fail "ci's password did not unlock the screen before the lock's parts"
+	guest 'lock parts'
+	wait_for 'DESKTOP-TEST: ran lock parts: 0' || fail "ci's lock parts could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the parts"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the parts"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
+	set -- $clock
+	[ "$1" -lt 100 ] || fail "the lock's clock at $1,$2 is not at the top left: $places"
+	message=$(echo "$places" | sed -n 's/.*, message0 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$message" ] || fail "shell-ui did not say where the lock's message lies: $places"
+	set -- $message
+	[ $(($2 + $4)) -le $((800 - 24)) ] ||
+		fail "the lock's message at $1,$2 ${3}x$4 reaches the screen's bottom: $places"
+	shot lock-parts 640 790 "$deep" >/dev/null ||
+		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
+	guest 'lock parts reset'
+	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
 	# The player card (M5.10c4): the test player plays, the card shows once
 	# it does, and a click on its play button, read from the last lock
 	# places line, reaches the player, which pauses and prints it, as
@@ -3442,7 +3477,7 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it"
 }
 
 case_scheme() {

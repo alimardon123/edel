@@ -25,6 +25,7 @@
 
 use std::time::{Duration, Instant};
 
+use edel::lock_screen::Placed;
 use edel::tokens::Tokens;
 use smithay_client_toolkit::reexports::calloop::channel;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -52,9 +53,6 @@ use crate::power;
 use crate::quick_card;
 use crate::widgets::keyboard;
 
-/// The room between the player card and what lies over it on a Compact
-/// screen, the clock or the count of notifications (M5.10c4).
-const CARD_GAP: f32 = 16.0;
 /// The close button (M5.10c4): a disc this side, 8 px in from the card's
 /// top right corner, its glyph this side.
 const CLOSE: f32 = 20.0;
@@ -106,6 +104,10 @@ pub struct LockCard {
     ticking: bool,
     cover: Option<(String, Option<Pixmap>)>,
     player_at: PlayerAt,
+    /// The parts the person or the machine chose, read when the screen
+    /// locks (None for the classic arrangement), and the pictures they show.
+    parts: Option<Vec<Placed>>,
+    pictures: lock::Pictures,
 }
 
 /// What the pointer is on, of the player card (M5.10c4): nothing of it, its
@@ -166,7 +168,10 @@ impl Shell {
                     .as_ref()
                     .zip(self.player_tx.clone())
                     .map(|(connection, events)| mpris::follow(connection, events));
+                let (machine, person) = crate::settings_texts();
                 self.lock = Some(LockCard {
+                    parts: lock::parts_of(machine.as_deref(), person.as_deref()),
+                    pictures: lock::Pictures::default(),
                     _follow: follow,
                     page: 0,
                     pages: 0,
@@ -313,8 +318,29 @@ impl Shell {
         let Some(card) = &mut self.lock else {
             return;
         };
-        for screen in &mut card.screens {
+        // Each screen's layout first, from the parts and the corner's places.
+        let mut laid = Vec::with_capacity(card.screens.len());
+        for screen in &card.screens {
+            let at = screen.size.map(|(w, h)| {
+                let (fw, fh) = (w as f32, h as f32);
+                let corner_at = corner::layout(fw, fh, &shown.corner);
+                let at = card.layout_at(
+                    fw,
+                    fh,
+                    &self.tokens,
+                    shown.lock.notices > 0,
+                    &corner_at,
+                    &mut self.text,
+                );
+                (at, corner_at)
+            });
+            laid.push(at);
+        }
+        for (screen, laid) in card.screens.iter_mut().zip(laid) {
             let Some((w, h)) = screen.size else {
+                continue;
+            };
+            let Some((at, corner_at)) = laid else {
                 continue;
             };
             if screen.drawn.as_ref() == Some(&shown) {
@@ -328,26 +354,27 @@ impl Shell {
             lock::paint(
                 &mut pixmap,
                 &shown.lock,
+                &at,
                 &self.tokens,
                 &mut self.text,
                 Some(&mut self.icons),
+                &mut card.pictures,
                 s as f32,
             );
-            let (fw, fh) = (w as f32, h as f32);
+            let fw = w as f32;
             // The player card lies over the lock and under the corner.
             let mut parts = None;
-            if let Some(draw) = &shown.player {
+            if let (Some(draw), Some(card_at)) = (&shown.player, at.player) {
                 parts = Some(paint_player(
                     &mut pixmap,
                     draw,
-                    player_card(fw, fh, draw.pages, &self.tokens, self.live.unread > 0),
+                    card_at,
                     fw < lock::COMPACT_BELOW,
                     s as f32,
                     &self.tokens,
                     &mut self.text,
                 ));
             }
-            let corner_at = corner::layout(fw, fh, &shown.corner);
             corner::paint(
                 &mut pixmap,
                 &shown.corner,
@@ -356,8 +383,7 @@ impl Shell {
                 &mut self.text,
                 s as f32,
             );
-            let lock_places =
-                lock::places(&lock::layout(fw, fh, &self.tokens, shown.lock.notices > 0));
+            let lock_places = lock::places(&at);
             let player_places = parts.map_or(String::new(), |p: player::Parts| {
                 format!(", player {}, play {}", place(p.card), place(p.play))
             });
@@ -585,16 +611,18 @@ impl Shell {
             return;
         };
         let (x, y) = (event.position.0 as f32, event.position.1 as f32);
-        let at = lock::layout(w as f32, h as f32, &self.tokens, self.live.unread > 0);
-        let over = lock::on_go(&at, x, y);
         let corner_at = corner::layout(w as f32, h as f32, &corner_now);
-        let hit = corner::hit(&corner_at, x, y);
-        let player_now = card.player_under(
-            (w as f32, h as f32),
+        let at = card.layout_at(
+            w as f32,
+            h as f32,
             &self.tokens,
             self.live.unread > 0,
-            (x, y),
+            &corner_at,
+            &mut self.text,
         );
+        let over = lock::on_go(&at, x, y);
+        let hit = corner::hit(&corner_at, x, y);
+        let player_now = card.player_under(&at, (x, y));
         match event.kind {
             PointerEventKind::Press { button, .. }
                 if button == BTN_LEFT && player_now != PlayerAt::Away =>
@@ -697,25 +725,6 @@ impl Shell {
     }
 }
 
-/// The player card's place on a screen `w` by `h` logical pixels (M5.10c4):
-/// the wide pill, 24 px in from the left and the bottom, in the room
-/// `lock::layout` keeps free there. On a Compact screen it
-/// is as wide as the screen less 48 px and lies `CARD_GAP` under the clock,
-/// or under the count of notifications while one shows, as
-/// `docs/mockups/shell/lock-phone.jpg` draws it.
-fn player_card(w: f32, h: f32, pages: usize, tokens: &Tokens, notices: bool) -> Rect {
-    let (wide, high) = player::wide_size(pages);
-    if w >= lock::COMPACT_BELOW {
-        return Rect::new(corner::EDGE, h - corner::EDGE - high, wide, high);
-    }
-    let at = lock::layout(w, h, tokens, notices);
-    let top = at
-        .count
-        .map_or(at.clock + at.clock_size * 1.2, |c| c + 36.0)
-        + CARD_GAP;
-    Rect::new(corner::EDGE, top, (w - 2.0 * corner::EDGE).max(0.0), high)
-}
-
 /// The close button's place on a card at `card`: its top right corner.
 fn close_rect(card: Rect) -> Rect {
     Rect::new(
@@ -789,32 +798,52 @@ impl LockCard {
     }
 
     /// The card's parts on a screen `w` by `h`, while it shows.
-    fn player_parts(
+    /// The layout of a screen `w` by `h` (M5.10c5): the parts the lock's
+    /// list says, the card's size while it shows (its width less the margins
+    /// on a Compact screen) and the corner's places kept clear.
+    fn layout_at(
         &self,
         w: f32,
         h: f32,
         tokens: &Tokens,
         notices: bool,
-    ) -> Option<player::Parts> {
-        self.shows().then(|| {
-            player::place_wide(
-                player_card(w, h, self.pages, tokens, notices),
-                w < lock::COMPACT_BELOW,
-                self.pages,
-                self.page,
-            )
-        })
+        corner_at: &corner::Layout,
+        text: &mut Text,
+    ) -> lock::Layout {
+        let compact = w < lock::COMPACT_BELOW;
+        let player = self.shows().then(|| {
+            let (wide, high) = player::wide_size(self.pages);
+            if compact {
+                (w - 2.0 * corner::EDGE, high)
+            } else {
+                (wide, high)
+            }
+        });
+        lock::screen_layout(
+            w,
+            h,
+            tokens,
+            notices,
+            self.parts.as_deref(),
+            player,
+            false,
+            corner_at,
+            text,
+        )
     }
 
-    /// What the pointer at (`x`, `y`) is on, on a screen `w` by `h`.
-    fn player_under(
-        &self,
-        (w, h): (f32, f32),
-        tokens: &Tokens,
-        notices: bool,
-        (x, y): (f32, f32),
-    ) -> PlayerAt {
-        let Some(parts) = self.player_parts(w, h, tokens, notices) else {
+    /// The card's parts on a screen laid out as `at`, while it shows.
+    fn player_parts(&self, at: &lock::Layout) -> Option<player::Parts> {
+        if !self.shows() {
+            return None;
+        }
+        let card = at.player?;
+        Some(player::place_wide(card, at.compact, self.pages, self.page))
+    }
+
+    /// What the pointer at (`x`, `y`) is on, on a screen laid out as `at`.
+    fn player_under(&self, at: &lock::Layout, (x, y): (f32, f32)) -> PlayerAt {
+        let Some(parts) = self.player_parts(at) else {
             return PlayerAt::Away;
         };
         if !parts.card.contains(x, y) {
@@ -1077,6 +1106,49 @@ mod tests {
         a.x < b.right() && b.x < a.right() && a.y < b.y + b.h && b.y < a.y + a.h
     }
 
+    /// The classic lock's layout of a screen, with the corner's buttons kept
+    /// clear as a lock with two layouts shows them.
+    fn lock_at(w: f32, h: f32, notices: bool) -> lock::Layout {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        lock::screen_layout(
+            w,
+            h,
+            &tokens,
+            notices,
+            None,
+            None,
+            false,
+            &corner::layout(w, h, &corner_view(true)),
+            &mut text,
+        )
+    }
+
+    /// The player card as the lock lays it out with `pages` players: the
+    /// size `layout_at` gives it, placed by the classic arrangement.
+    fn player_card(w: f32, h: f32, pages: usize, tokens: &Tokens, notices: bool) -> Rect {
+        let (wide, high) = player::wide_size(pages);
+        let size = if w < lock::COMPACT_BELOW {
+            (w - 2.0 * corner::EDGE, high)
+        } else {
+            (wide, high)
+        };
+        let mut text = Text::load(&tokens.font);
+        lock::screen_layout(
+            w,
+            h,
+            tokens,
+            notices,
+            None,
+            Some(size),
+            false,
+            &corner::layout(w, h, &corner_view(true)),
+            &mut text,
+        )
+        .player
+        .expect("the card stands")
+    }
+
     /// The corner with Power only, as a lock with one layout shows it.
     fn corner_view(layouts: bool) -> corner::View {
         corner::View {
@@ -1116,14 +1188,12 @@ mod tests {
     #[test]
     fn on_a_compact_screen_the_card_is_the_width_less_48_under_the_clock() {
         let tokens = Tokens::built_in();
-        let at = lock::layout(360.0, 740.0, &tokens, true);
+        let at = lock_at(360.0, 740.0, true);
+        let clock = at.clock.expect("the clock stands");
         let card = player_card(360.0, 740.0, 2, &tokens, true);
         assert_eq!((card.x, card.w), (24.0, 312.0));
-        assert!(card.y > at.clock, "{card:?} is over the clock");
-        assert!(
-            card.y + card.h <= at.avatar.1 - at.avatar.2,
-            "{card:?} meets the person"
-        );
+        assert!(card.y >= clock.y + clock.h, "{card:?} is over the clock");
+        assert!(card.y + card.h <= at.person.y, "{card:?} meets the person");
     }
 
     #[test]
@@ -1144,19 +1214,30 @@ mod tests {
 
     #[test]
     fn on_a_desktop_the_card_does_not_meet_the_field_or_the_person() {
+        // One layout with the card of two players, so the card and the
+        // person are placed together, as the lock places them.
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
         for (w, h) in &SCREENS[..2] {
-            let at = lock::layout(*w, *h, &Tokens::built_in(), true);
+            let at = lock::screen_layout(
+                *w,
+                *h,
+                &tokens,
+                true,
+                None,
+                Some(player::wide_size(2)),
+                false,
+                &corner::layout(*w, *h, &corner_view(true)),
+                &mut text,
+            );
+            let card = at.player.expect("the card stands");
             let (x, y, r) = at.avatar;
             let disc = Rect::new(x - r, y - r, 2.0 * r, 2.0 * r);
-            assert!(!overlap(
-                &player_card(*w, *h, 2, &Tokens::built_in(), true),
-                &disc
-            ));
+            assert!(!overlap(&card, &disc), "{card:?} meets the disc on {w}x{h}");
             let field = at.field;
             assert!(
-                !overlap(&player_card(*w, *h, 2, &Tokens::built_in(), true), &field),
-                "{:?} meets the field {field:?} on {w}x{h}",
-                player_card(*w, *h, 2, &Tokens::built_in(), true)
+                !overlap(&card, &field),
+                "{card:?} meets the field {field:?} on {w}x{h}"
             );
         }
     }
