@@ -55,7 +55,7 @@ use crate::style::Theme;
 pub const APP_ID: &str = "io.github.alimardon123.edel.Settings";
 
 /// Below this width the sidebar folds away.
-const NARROW: &str = "max-width: 600sp";
+pub(crate) const NARROW: &str = "max-width: 600sp";
 
 /// The sidebar's width, in logical pixels, as the mockups draw it.
 const SIDEBAR: f64 = 204.0;

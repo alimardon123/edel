@@ -223,7 +223,7 @@ pub fn heading(content: &gtk::Box, title: &str) -> gtk::Box {
     heading
 }
 
-fn source() -> Source {
+pub fn source() -> Source {
     let label = gtk::Label::builder()
         .xalign(1.0)
         .css_classes(["edel-source"])
