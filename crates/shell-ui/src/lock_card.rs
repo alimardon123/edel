@@ -35,6 +35,7 @@ use smithay_client_toolkit::reexports::client::protocol::{
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
+use smithay_client_toolkit::seat::pointer::BTN_RIGHT;
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
 use smithay_client_toolkit::session_lock::{
     SessionLock, SessionLockHandler, SessionLockSurface, SessionLockSurfaceConfigure,
@@ -66,6 +67,10 @@ const TICK: Duration = Duration::from_secs(1);
 /// The lock while it holds.
 pub struct LockCard {
     session: SessionLock,
+    /// A right press on the backdrop asked for the edit mode after unlock:
+    /// a right password opens it (M5.10c6c3), Escape on an empty field or a
+    /// second right press leaves this state.
+    edit_after: bool,
     screens: Vec<Screen>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     password: Password,
@@ -176,6 +181,7 @@ impl Shell {
                 let (machine, person) = crate::settings_texts();
                 let dark = quick::is_dark(machine.as_deref(), person.as_deref());
                 self.lock = Some(LockCard {
+                    edit_after: false,
                     lock: lock::lock_settings(machine.as_deref(), person.as_deref()),
                     wallpaper: lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark),
                     pictures: lock::Pictures::default(),
@@ -268,6 +274,7 @@ impl Shell {
             dots,
             field,
             caps: card.caps,
+            edit_after: card.edit_after,
             notices: self.live.unread,
             apps: lock::unread_apps(self.notifications.items(), self.live.unread),
             shake,
@@ -470,6 +477,10 @@ impl Shell {
         match event.keysym {
             Keysym::Return | Keysym::KP_Enter => return self.check_password(),
             Keysym::BackSpace => card.password.pop(),
+            Keysym::Escape if card.edit_after && card.password.letters() == 0 => {
+                card.edit_after = false;
+                eprintln!("edel-shell-ui: lock: edit cancelled");
+            }
             Keysym::Escape => card.password.clear(),
             _ => {
                 if let Some(text) = event
@@ -546,6 +557,7 @@ impl Shell {
         let Some(card) = self.lock.take() else {
             return;
         };
+        let edit = card.edit_after;
         if let Some(keyboard) = &card.keyboard {
             keyboard.release();
         }
@@ -554,6 +566,12 @@ impl Shell {
         self.live.players.clear();
         eprintln!("edel-shell-ui: screen unlocked");
         self.draw_all();
+        // Asked for from the lock with a right press, the edit mode opens
+        // now that the person is in (M5.10c6c3).
+        if edit {
+            eprintln!("edel-shell-ui: lock editor asked for from the lock screen");
+            self.open_lock_editor();
+        }
     }
 }
 
@@ -650,11 +668,30 @@ impl Shell {
         let over = lock::on_go(&at, x, y);
         let hit = corner::hit(&corner_at, x, y);
         let player_now = card.player_under(&at, (x, y));
+        let on_field = at.field.contains(x, y);
         match event.kind {
             PointerEventKind::Press { button, .. }
                 if button == BTN_LEFT && player_now != PlayerAt::Away =>
             {
                 self.player_press(player_now)
+            }
+            // A right press on the backdrop asks for the edit mode after
+            // unlock; another one, or Escape on an empty field, takes that back.
+            PointerEventKind::Press { button, .. }
+                if button == BTN_RIGHT
+                    && hit.is_none()
+                    && !over
+                    && !on_field
+                    && player_now == PlayerAt::Away =>
+            {
+                if card.edit_after {
+                    card.edit_after = false;
+                    eprintln!("edel-shell-ui: lock: edit cancelled");
+                } else {
+                    card.edit_after = true;
+                    eprintln!("edel-shell-ui: lock: password to edit");
+                }
+                self.draw_lock();
             }
             PointerEventKind::Press { button, .. } if button == BTN_LEFT => match hit {
                 Some(corner::Hit::Button(Button::Power)) => {
