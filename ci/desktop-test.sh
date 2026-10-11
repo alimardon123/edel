@@ -4482,12 +4482,12 @@ case_scroll() {
 	}
 	# whole NAME: its column lies on the 1280 px screen.
 	whole() {
-		set -- $(column "$1")
+		set -- $(column "$1") "" ""
 		[ -n "$1" ] && [ "$1" -ge 0 ] && [ $(($1 + $2)) -le 1280 ]
 	}
 	# gone NAME: its column lies off the screen's left edge.
 	gone() {
-		set -- $(column "$1")
+		set -- $(column "$1") "" ""
 		[ -n "$1" ] && [ $(($1 + $2)) -le 0 ]
 	}
 	i=0
