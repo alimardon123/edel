@@ -169,6 +169,8 @@ pub fn css(t: &Tokens) -> String {
     let big = size + 1;
     let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
+    // A look's picture corners and its ring (M5.10c7b): the menus' radius.
+    let rm = t.radius_menu;
     format!(
         r#"/* Written from design/tokens.toml by edel-settings (style.rs), after the mockups' own CSS. */
 window.edel {{ background-color: {window}; color: {text}; font-family: "{font}"; font-size: {size}px; letter-spacing: -0.08px; }}
@@ -208,6 +210,14 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-preset:checked {{ background-color: {card}; color: {text}; border-color: {accent}; box-shadow: 0 0 0 1px {accent}; }}
 .edel-preset:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
 .edel-preset-name {{ font-weight: 550; font-size: {small}px; margin-left: 2px; }}
+/* A look on the Lock screen page (M5.10c7b): no card around the picture; the chosen one is ringed 3 px outside it, a hovered one thinly. */
+.edel-look-card, .edel-look-card:hover, .edel-look-card:checked, .edel-look-card:active {{ padding: 0; border: none; border-radius: {rm}px; background: none; background-image: none; box-shadow: none; color: {text}; }}
+.edel-look-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
+.edel-look-picture {{ border-radius: {rm}px; }}
+.edel-look-card:hover .edel-look-picture {{ outline: 1px solid alpha({accent}, 0.35); outline-offset: 3px; }}
+.edel-look-card:checked .edel-look-picture {{ outline: 2px solid {accent}; outline-offset: 3px; }}
+.edel-look-name {{ font-size: {small}px; font-weight: 500; }}
+.edel-look-card:checked .edel-look-name {{ font-weight: 600; }}
 .edel-wallpaper-thumb {{ border-radius: {rs}px; }}
 .edel-badge {{ background-color: {accent}; color: {accent_text}; border-radius: 999px; min-width: 14px; min-height: 14px; margin-right: 2px; }}
 .edel-badge image {{ margin: 1px; }}
@@ -329,7 +339,7 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
   border-radius: 999px; padding: 2px 9px 2px 7px; box-shadow: 0 1px 2px alpha({accent}, 0.35); }}
 .edel-built-in {{ background-color: alpha({deep}, 0.55); color: {deep_text}; font-size: {tiny}px; font-weight: 600;
   border-radius: 999px; padding: 2px 8px 2px 7px; box-shadow: inset 0 0 0 1px alpha({deep_text}, 0.22); }}
-.edel-new-card {{ padding: 7px; border-radius: {rw}px; background: none; background-image: none; box-shadow: none; border: none; }}
+.edel-new-card {{ padding: 0; border-radius: {rw}px; background: none; background-image: none; box-shadow: none; border: none; }}
 .edel-new-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
 .edel-new-look {{ border: 1.5px dashed {line}; border-radius: {rw}px; }}
 .edel-new-card:hover .edel-new-look {{ border-color: alpha({accent}, 0.5); }}
