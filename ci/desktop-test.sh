@@ -3517,7 +3517,68 @@ case_lock() {
 		fail "the lock screen did not get the 17 letters typed: $(tr -d '\r' <"$log" | grep -a 'lock: checking' | tail -n 1)"
 	wait_for 'edel-compositor: screen unlocked$' || fail "ci's password did not unlock the screen"
 	shot lock-gone 640 790 "$(token panel)" >/dev/null || fail "after unlocking, the panel is not back at 640,790"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count"
+	# Settings' Lock screen page (M5.10c5c): Magazine's card is clicked, which
+	# writes lock_screen.look = "magazine"; the next lock draws the
+	# wallpaper blurred behind its parts, as shell-ui logs it. Kept as
+	# lock-magazine.png, and the look is taken out again at the end.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	# The test image carries no wallpaper, so the test picture goes up
+	# for Magazine's blurred background; `lock magazine reset` takes it out.
+	pictured=$(count 'DESKTOP-TEST: ran wallpaper picture: 0')
+	guest 'wallpaper picture'
+	wait_more 'DESKTOP-TEST: ran wallpaper picture: 0' "$pictured" || fail "ci's wallpaper could not be set for Magazine"
+	guest 'settings lock'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on the Lock screen page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) .*/\1 \2/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	card=none
+	i=0
+	while [ "$card" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the magazine card lies: $(value settings_lock_log)"
+		guest 'settings lock log'
+		text=$(value settings_lock_log)
+		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
+		# commas and the log's `;` line ends become spaces first.
+		card=$(echo "$text" | sed -n 's/.*lock_screen group places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "magazine") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$card" ] || card=none
+		[ "$card" = none ] && sleep 1
+	done
+	set -- $card
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	backdrop=$(count 'edel-shell-ui: lock backdrop .* blurred$')
+	python3 ci/qmp.py click "$cx" "$cy"
+	i=0
+	until guest 'settings file' && value settings_file | grep -q 'look = "magazine"'; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "a click on the magazine card did not write lock_screen.look: $(value settings_file)"
+		sleep 1
+	done
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with magazine's look"
+	wait_more 'edel-shell-ui: lock backdrop .* blurred$' "$backdrop" ||
+		fail "the lock did not draw magazine's background blurred: $(tr -d '\r' <"$log" | grep -a 'lock backdrop' | tail -n 1)"
+	shot lock-magazine 640 790 "$deep" >/dev/null || true
+	# Unlocked as above: ci's password typed, the go button clicked.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test'
+	go=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places ' | tail -n 1 | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies (magazine)"
+	set -- $go
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
+	guest 'lock magazine reset'
+	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
 case_scheme() {

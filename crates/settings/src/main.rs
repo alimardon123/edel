@@ -18,6 +18,7 @@ mod display;
 mod files;
 mod icon;
 mod layout;
+mod lock;
 mod network;
 mod notifications;
 mod panels;
@@ -212,6 +213,15 @@ fn all_pages() -> Vec<Page> {
                 icon: "page-appearance",
                 section: Some(page.section),
                 build: layout::appearance_page,
+                needs: Some("shell"),
+            }),
+            // The lock screen is shell-ui's look, so the desktop's (M5.10c5c).
+            // Its icon is Appearance's: there is no page-lock icon yet.
+            "lock_screen" => Some(Page {
+                title: tr(page.title),
+                icon: "page-appearance",
+                section: Some(page.section),
+                build: lock::page,
                 needs: Some("shell"),
             }),
             // The screens are the compositor's too.
@@ -540,6 +550,7 @@ mod tests {
                 "Panels",
                 "Workspaces",
                 "Appearance",
+                "Lock screen",
                 "Displays",
                 "Sound",
                 "Network",
@@ -583,6 +594,7 @@ mod tests {
                 "Panels",
                 "Workspaces",
                 "Appearance",
+                "Lock screen",
                 "Displays",
                 "Sound",
                 "Network",
@@ -612,6 +624,7 @@ mod tests {
         assert_eq!(titles("pinned"), ["Panels"]);
         assert_eq!(titles("dynamic"), ["Workspaces"]);
         assert_eq!(titles("switcher"), ["Appearance"]);
+        assert_eq!(titles("lock"), ["Lock screen"], "its title");
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
         assert!(titles("nothing like this").is_empty());
@@ -625,25 +638,28 @@ mod tests {
         assert_eq!(at("panels"), Some(1));
         assert_eq!(at("workspaces"), Some(2));
         assert_eq!(at("appearance"), Some(3));
-        assert_eq!(at("displays"), Some(4));
-        assert_eq!(at("Displays"), Some(4));
-        assert_eq!(at("display"), Some(4), "the start of one name");
-        assert_eq!(at("sound"), Some(5));
-        assert_eq!(at("Sound"), Some(5));
-        assert_eq!(at("users"), Some(10));
-        assert_eq!(at("network"), Some(6));
-        assert_eq!(at("bluetooth"), Some(7));
-        assert_eq!(at("blue"), Some(7));
-        assert_eq!(at("power"), Some(8));
-        assert_eq!(at("notifications"), Some(9));
-        assert_eq!(at("notif"), Some(9));
-        assert_eq!(at("updates"), Some(11));
-        assert_eq!(at("system"), Some(12));
-        assert_eq!(at("sy"), Some(12));
-        assert_eq!(at("about"), Some(13));
-        assert_eq!(at("abo"), Some(13));
+        assert_eq!(at("lock_screen"), Some(4));
+        assert_eq!(at("Lock screen"), Some(4));
+        assert_eq!(at("displays"), Some(5));
+        assert_eq!(at("Displays"), Some(5));
+        assert_eq!(at("display"), Some(5), "the start of one name");
+        assert_eq!(at("sound"), Some(6));
+        assert_eq!(at("Sound"), Some(6));
+        assert_eq!(at("users"), Some(11));
+        assert_eq!(at("network"), Some(7));
+        assert_eq!(at("bluetooth"), Some(8));
+        assert_eq!(at("blue"), Some(8));
+        assert_eq!(at("power"), Some(9));
+        assert_eq!(at("notifications"), Some(10));
+        assert_eq!(at("notif"), Some(10));
+        assert_eq!(at("updates"), Some(12));
+        assert_eq!(at("system"), Some(13));
+        assert_eq!(at("sy"), Some(13));
+        assert_eq!(at("about"), Some(14));
+        assert_eq!(at("abo"), Some(14));
         assert_eq!(at(""), None);
-        assert_eq!(at("l"), Some(0), "one start only");
+        assert_eq!(at("la"), Some(0), "one start only");
+        assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
     }
 
     #[test]
@@ -652,7 +668,7 @@ mod tests {
         let pages = all_pages();
         assert_eq!(page_named(&pages, "panels.list"), Some(1));
         assert_eq!(page_named(&pages, "Panels"), Some(1));
-        assert_eq!(page_named(&pages, "scale"), Some(4), "a row of Displays");
+        assert_eq!(page_named(&pages, "scale"), Some(5), "a row of Displays");
         assert_eq!(page_named(&pages, "workspaces.count"), Some(2));
         assert_eq!(page_named(&pages, "Number of workspaces"), Some(2));
         assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(3));
@@ -668,15 +684,16 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(13));
-        assert_eq!(start(&["--page=about"]), Ok(13));
-        assert_eq!(start(&["--page", "updates"]), Ok(11));
-        assert_eq!(start(&["--page", "sound"]), Ok(5));
-        assert_eq!(start(&["--page", "users"]), Ok(10));
-        assert_eq!(start(&["--page", "notifications"]), Ok(9));
-        assert_eq!(start(&["--page", "network"]), Ok(6));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(7));
-        assert_eq!(start(&["--page", "power"]), Ok(8));
+        assert_eq!(start(&["--page", "about"]), Ok(14));
+        assert_eq!(start(&["--page=about"]), Ok(14));
+        assert_eq!(start(&["--page", "updates"]), Ok(12));
+        assert_eq!(start(&["--page", "sound"]), Ok(6));
+        assert_eq!(start(&["--page", "users"]), Ok(11));
+        assert_eq!(start(&["--page", "notifications"]), Ok(10));
+        assert_eq!(start(&["--page", "network"]), Ok(7));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(8));
+        assert_eq!(start(&["--page", "power"]), Ok(9));
+        assert_eq!(start(&["--page", "lock_screen"]), Ok(4));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -713,6 +730,7 @@ mod tests {
                 "Panels",
                 "Workspaces",
                 "Appearance",
+                "Lock screen",
                 "Displays",
                 "Notifications",
                 "Users",
@@ -729,6 +747,7 @@ mod tests {
                 "Panels",
                 "Workspaces",
                 "Appearance",
+                "Lock screen",
                 "Displays",
                 "Sound",
                 "Notifications",

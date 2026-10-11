@@ -529,11 +529,19 @@ pub fn applying(parts: Option<&[Placed]>, compact: bool) -> Vec<Placed> {
 }
 
 /// The built-in looks, in the order people see them (M5.10c5c).
-pub const LOOKS: &[&str] = &["classic", "magazine", "minimal"];
+pub const LOOKS: &[&str] = &[CLASSIC, "magazine", "minimal"];
 
 /// The look that applies while none is chosen, and the one an unknown name
 /// falls back to.
-const CLASSIC: &str = "classic";
+pub const CLASSIC: &str = "classic";
+
+/// What `lock_screen.notifications` takes: the count shown (absent is
+/// this) or hidden (M5.10c5c).
+pub const NOTIFICATIONS: &[&str] = &[COUNT_SHOWN, COUNT_HIDDEN];
+/// The unread notifications' count shows.
+pub const COUNT_SHOWN: &str = "count";
+/// The unread notifications' count is hidden.
+pub const COUNT_HIDDEN: &str = "none";
 
 /// The most characters a look's name may have.
 const MOST_LOOK: usize = 32;
@@ -750,7 +758,7 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
             .as_deref()
             .and_then(parse_background)
             .unwrap_or_else(|| look_background(look)),
-        notifications: lock.notifications.as_deref() != Some("none"),
+        notifications: lock.notifications.as_deref() != Some(COUNT_HIDDEN),
     }
 }
 
