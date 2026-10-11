@@ -189,8 +189,8 @@
 #               and a right click reach it, and the icon goes with its app
 #               (M5.2e)
 #   settings-tour  Settings opened on each page edel settings lists (the page
-#               list is read from the tool), each drawn, scrolled with
-#               Page_Down and drawn again, and each again at 366 px, maximized,
+#               list is read from the tool), each maximized and drawn,
+#               and each again at 366 px,
 #               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
 #               and named in the PASS line
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
@@ -1042,8 +1042,10 @@ case_settings() {
 		echo "Settings (M5.6a): $settings_own MiB of its own while open (budget ${settings_limit:-none yet}), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	# Narrow (M5.6b): tiled alone on a screen 512 px wide (scale 2.5),
-	# Settings folds its sidebar away and shows the pages' list across
-	# the window, in the sidebar's colour where the page was.
+	# Settings folds its sidebar away. Opened on the Layout page by name
+	# (M5.32b, as Appearance now comes first), it shows that page across
+	# the whole window with a way back to the list, so the page's colour
+	# lies where the sidebar was at full width.
 	tiled=$(count 'edel-compositor: windows now tiling')
 	guest 'tiling on'
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "layout.tiling = true did not tile Settings"
@@ -1054,15 +1056,21 @@ case_settings() {
 	narrow=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$narrow" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$narrow" | sed 's/Settings@//; s/[,x]/ /g')
-	# A point low in the part of the window on screen, below the pages'
-	# list: Settings keeps at least 360 by 300, so it may reach past the
-	# screen's 512 by 320.
-	right=$(($1 + $3)) bottom=$(($2 + $4))
-	[ "$right" -le 512 ] || right=512
+	# A point low in the window's page margin, 24 px in from its left
+	# edge, where the pages' list stands at full width and the page's
+	# cards never reach: Settings keeps at least 360 by 300, so it may
+	# reach past the screen's 320 px height.
+	bottom=$(($2 + $4))
 	[ "$bottom" -le 320 ] || bottom=320
-	nx=$((($1 + (right - $1) / 2) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
-	shot settings-narrow "$nx" "$ny" "$side" >/dev/null ||
-		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the sidebar's #$side"
+	nx=$((($1 + 24) * 5 / 2)) ny=$((($2 + (bottom - $2) * 3 / 4) * 5 / 2))
+	page=$(token window)
+	shot settings-narrow "$nx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen did not fold its sidebar: $nx,$ny is not the page's #$page"
+	# The window's left side, where the sidebar was: 24 px in, at the same
+	# height, is the page's colour too, so the sidebar is gone.
+	lx=$((($1 + 24) * 5 / 2))
+	shot settings-narrow "$lx" "$ny" "$page" >/dev/null ||
+		fail "Settings at $narrow on the 512 px screen still shows its sidebar: $lx,$ny is not the page's #$page"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	guest 'scale default'
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
@@ -1448,7 +1456,9 @@ case_settings_appearance() {
 	# row, it logs where Light, Dark and Automatic lie in the window. A
 	# click on Dark writes appearance.mode = "dark" to ci's file and the
 	# compositor takes the dark scheme (`colour scheme dark`); the line
-	# taken out again, it is light, the release's default.
+	# taken out again, it is light, the release's default. Its sidebar's
+	# group headings are logged (M5.32b), kept with the picture of the
+	# sidebar as settings-sidebar.png.
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings appearance'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Appearance page: $(value windows)"
@@ -1466,6 +1476,21 @@ case_settings_appearance() {
 		[ -n "$dark" ] || dark=none
 		[ "$dark" = none ] && sleep 1
 	done
+	# The sidebar (M5.32b): its headings are logged where they lie once the
+	# list is laid out, and the picture of Settings opened on Appearance at
+	# its own size is kept as settings-sidebar.png.
+	sidebar=0
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		guest 'settings appearance log'
+		text=$(value settings_appearance_log)
+		if echo "$text" | grep -q 'sidebar group desktop ' && echo "$text" | grep -q 'sidebar group system '; then
+			sidebar=1
+			break
+		fi
+		sleep 1
+	done
+	[ "$sidebar" = 1 ] || fail "Settings' sidebar did not log its desktop and system headings: $text"
+	python3 ci/qmp.py screendump "$dir/settings-sidebar.png"
 	set -- $dark
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
 	sleep 2
@@ -1728,10 +1753,12 @@ case_settings_tour() {
 	# page list is what `edel settings` prints, read by the service
 	# (`settings pages`), never written here. Each page opens by
 	# `edel-settings --page NAME` (the service's `settings tour`) and is
-	# drawn after two seconds (settings-tour-NAME-1.png); a click in the
-	# page's empty right margin, 20 px in and half way down, gives it the
-	# keyboard, Page_Down scrolls it (-2.png), and once more (-3.png) only
-	# when -2.png differs from -1.png. A page this machine's Settings does
+	# maximized (Super+M), so a picture holds as much of the page as the
+	# screen does, and drawn (settings-tour-NAME-1.png). Pages are not
+	# scrolled: Page_Down moved the sidebar's selection, which held the
+	# keyboard, the tablet's wheel never reached the page, and QMP sends a
+	# button to no input device of our choosing (its device names a
+	# display), so the maximized picture is what the tour shows. A page this machine's Settings does
 	# not show yet is skipped: edel settings lists pages the Settings app
 	# has not built (region, shortcuts, default apps, startup, apps,
 	# add-ons and services, as the Settings app stood on 2026-10-11), and Settings refuses each one
@@ -1739,7 +1766,7 @@ case_settings_tour() {
 	# width, 366 logical px wide by scale 3.5 as the power case does, on
 	# an empty workspace (Super+4), maximized (Super+M), as
 	# settings-tour-NAME-narrow.png. The case fails only when Settings does
-	# not open on a page it has. Nothing is maximized in the first pass.
+	# not open on a page it has.
 	guest 'settings pages'
 	wait_for 'DESKTOP-TEST: settings_pages ' 20 || fail "the service did not list edel settings' pages"
 	pages=$(value settings_pages)
@@ -1753,18 +1780,9 @@ case_settings_tour() {
 		fi
 		shown="$shown $page"
 		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 2
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
-		set -- $(tour_place)
-		x=$1 y=$2 w=$3 h=$4
-		python3 ci/qmp.py click $((x + w - 20)) $((y + h / 2))
-		python3 ci/qmp.py key pgdn
-		sleep 1
-		python3 ci/qmp.py screendump "$dir/settings-tour-$page-2.png"
-		if ! same_file "$dir/settings-tour-$page-1.png" "$dir/settings-tour-$page-2.png"; then
-			python3 ci/qmp.py key pgdn
-			sleep 1
-			python3 ci/qmp.py screendump "$dir/settings-tour-$page-3.png"
-		fi
 		tour_close
 	done
 	# Compact, as the power case makes it: 366 logical px wide, Settings
@@ -1792,7 +1810,7 @@ case_settings_tour() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
 	python3 ci/qmp.py key meta_l-1
 	set -- $shown
-	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, with -2.png after Page_Down and -3.png when -2.png moved, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {

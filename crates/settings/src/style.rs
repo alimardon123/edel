@@ -162,6 +162,7 @@ pub fn css(t: &Tokens) -> String {
     let key = format!("{:.1}", f64::from(size) - 2.5);
     let heading = size * 20 / 13;
     let hero = size * 22 / 13;
+    let current = size * 17 / 13;
     let big = size + 1;
     let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
@@ -178,6 +179,11 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-pages > row:hover {{ background-color: {fill}; }}
 .edel-pages > row:selected {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
 .edel-pages > row:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: -2px; }}
+/* A group's heading (M5.32b): not selectable, so no fill, the small text, semibold, with 6 px below and 18 px above unless it is first. */
+.edel-pages > row.edel-heading {{ min-height: 0; margin: 0 0 6px; padding: 0 9px; background: none; color: {secondary};
+  font-size: {small}px; font-weight: 600; }}
+.edel-pages > row.edel-heading:hover {{ background: none; }}
+.edel-pages > row.edel-apart {{ margin-top: 18px; }}
 .edel-back {{ margin: 10px 0 0 20px; padding: 2px 8px 2px 4px; border-radius: {rs}px; background: none; box-shadow: none; color: {accent}; }}
 .edel-back:hover {{ background-color: {fill}; }}
 .edel-page-title {{ font-size: {heading}px; font-weight: 700; letter-spacing: -0.5px; }}
@@ -313,6 +319,10 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-fold > title {{ margin: 0 0 10px; padding: 4px 0; }}
 .edel-fold > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
 .edel-fold > title arrow {{ color: {muted}; }}
+.edel-current {{ padding: 16px; }}
+.edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
+.edel-current-button {{ min-height: 34px; padding: 0 16px; }}
+.edel-tile-blank {{ background-color: {card}; color: {muted}; border: 1px solid {line}; border-radius: {rs}px; }}
 "#
     )
 }

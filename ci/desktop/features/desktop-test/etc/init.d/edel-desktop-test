@@ -502,9 +502,10 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
-		# Settings (M5.6a), as ci, and the file it writes.
+		# Settings (M5.6a), as ci, and the file it writes. On its Layout page
+		# (M5.32b: Settings opens on Appearance, the first page, without one).
 		'settings window')
-			as_ci edel-settings </dev/null >/tmp/settings.log 2>&1 &
+			as_ci edel-settings --page layout </dev/null >/tmp/settings.log 2>&1 &
 			;;
 		# Settings on the session's bus (M5.9h), as an app the desktop
 		# starts has it, so its Tray card reads the tray's apps.
@@ -556,7 +557,7 @@ commands() {
 		# Settings' Lock screen page (M5.10c5c): opened by the name of the
 		# lock screen's section, its log says where each look's card lies.
 		'settings lock')
-			as_ci edel-settings --page lock_screen </dev/null >/tmp/settings-lock.log 2>&1 &
+			as_ci edel-settings --page lock_screen.look </dev/null >/tmp/settings-lock.log 2>&1 &
 			;;
 		'settings lock log') say "settings_lock_log $(tr '\n' ';' </tmp/settings-lock.log 2>/dev/null)" ;;
 		# Settings' Shape group (M5.12b2c): opened by the name of the gaps
