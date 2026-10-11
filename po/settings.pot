@@ -437,9 +437,6 @@ msgstr ""
 msgid "Wallpaper sharp"
 msgstr ""
 
-msgid "Colour"
-msgstr ""
-
 msgid "Picture"
 msgstr ""
 

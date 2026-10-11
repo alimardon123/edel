@@ -16,8 +16,8 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use std::path::{Path, PathBuf};
 use std::rc::{Rc, Weak};
 
+use gtk::glib;
 use gtk::prelude::*;
-use gtk::{gdk, glib};
 
 use edel::i18n::tr;
 use edel::places;
