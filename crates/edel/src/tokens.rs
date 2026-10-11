@@ -465,6 +465,19 @@ fn from_hsl(hue: f32, saturation: f32, lightness: f32, alpha: f32) -> Colour {
 
 /// The text on an accent: whichever of the two schemes' `accent_text`
 /// reads better on it (M5.12b1).
+/// `base` with `percent` of `accent` mixed in, its alpha kept: the
+/// focused title bar's tint.
+fn tinted(base: Colour, accent: Colour, percent: u32) -> Colour {
+    let k = percent.min(100) as f32 / 100.0;
+    let mix = |a: f32, b: f32| a + (b - a) * k;
+    Colour {
+        r: mix(base.r, accent.r),
+        g: mix(base.g, accent.g),
+        b: mix(base.b, accent.b),
+        a: base.a,
+    }
+}
+
 fn text_on(accent: Colour) -> Colour {
     [
         Tokens::built_in_scheme(Scheme::Light).accent_text,
@@ -578,6 +591,9 @@ pub struct Tokens {
     /// only the bars and docks are drawn with it, never the cards and menus
     /// that share the panel's colour.
     pub panel_opacity: u32,
+    /// How much of the accent the focused title bar takes, in percent,
+    /// laid on by [`Tokens::with_appearance`]; 0 keeps the bar neutral.
+    pub title_tint: u32,
     pub shadow_blur: u32,
     pub shadow_offset: u32,
     /// A row in a menu or list, logical pixels.
@@ -659,6 +675,10 @@ impl Tokens {
                 None => {}
             }
         }
+        // The focused title bar takes a breath of the accent, so the window
+        // with the keyboard reads at a glance; a person's own
+        // title_bar_focused, laid over below, replaces it whole.
+        self.title_bar_focused = tinted(self.title_bar_focused, self.accent, self.title_tint);
         if let Some(colours) = colours {
             for (name, value) in &colours.both {
                 self.set_from_text(name, value, &mut notes);
@@ -974,6 +994,7 @@ impl Tokens {
                 "text" => (&mut self.text_size, 100),
                 "lock_clock" => (&mut self.lock_clock, 400),
                 "panel_opacity" => (&mut self.panel_opacity, 100),
+                "title_tint" => (&mut self.title_tint, 30),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
                     continue;
@@ -1046,6 +1067,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "lock_clock",
                 "gap_outer",
                 "panel_opacity",
+                "title_tint",
             ][..],
         ),
         ("font", &["interface", "lock_clock_weight"][..]),
@@ -1122,6 +1144,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         lock_glow_second: BLACK,
         lock_clock: 0,
         panel_opacity: 0,
+        title_tint: 0,
         lock_clock_weight: 0,
         shadow_blur: 0,
         shadow_offset: 0,
@@ -1686,7 +1709,7 @@ mod tests {
         };
         let (tokens, notes) =
             Tokens::built_in().with_appearance(None, Some(&bad), Scheme::Dark, None);
-        assert_eq!(tokens, Tokens::built_in());
+        assert_eq!(tokens.panel, Tokens::built_in().panel);
         assert_eq!(notes.len(), 2, "{notes:?}");
         assert!(notes.iter().any(|n| n.contains("\"panl\"")), "{notes:?}");
     }
@@ -1884,5 +1907,30 @@ mod tests {
             Tokens::built_in().edge,
             "the built-in dark border"
         );
+    }
+
+    #[test]
+    fn the_focused_title_bar_takes_a_breath_of_the_accent_unless_set() {
+        let release = Tokens::built_in_scheme(Scheme::Light);
+        let (tokens, _) = release
+            .clone()
+            .with_appearance(Some("red"), None, Scheme::Light, None);
+        let red = accent_named("red", Scheme::Light).unwrap();
+        assert_eq!(
+            tokens.title_bar_focused,
+            tinted(release.title_bar_focused, red, 6)
+        );
+        assert_ne!(tokens.title_bar_focused, release.title_bar_focused);
+        assert_eq!(tokens.title_bar, release.title_bar);
+        let own = Colours {
+            both: std::collections::BTreeMap::from([(
+                "title_bar_focused".into(),
+                "#123456".into(),
+            )]),
+            light: None,
+            dark: None,
+        };
+        let (mine, _) = release.with_appearance(Some("red"), Some(&own), Scheme::Light, None);
+        assert_eq!(mine.title_bar_focused.hex(), "#123456");
     }
 }
