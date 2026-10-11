@@ -610,6 +610,20 @@ count() {
 	tr -d '\r' <"$log" | grep -cE "$1" || true
 }
 
+# panel_places: shell-ui's last `panel places` line once the panel has
+# kept it for a second (up to 5 s), so a click is not aimed at a place a
+# widget growing late (the status area's icons) is about to move.
+panel_places() {
+	last= i=0
+	while :; do
+		now=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1)
+		{ [ -n "$now" ] && [ "$now" = "$last" ]; } || [ "$i" -ge 5 ] && break
+		last=$now i=$((i + 1))
+		sleep 1
+	done
+	printf '%s\n' "$now"
+}
+
 # wait_more PATTERN N [SECONDS]: waits up to SECONDS (20) for more than N
 # lines to match.
 wait_more() {
@@ -648,7 +662,7 @@ case_panel() {
 	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
 	# wide after 2 px of room, with the accent; another switches it back.
 	# The checked pixel is left of where the cursor lies after a click.
-	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
+	toggle=$(panel_places | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
 	[ -n "$toggle" ] || fail "shell-ui did not say where its layout toggle lies"
 	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle at $((toggle + 6)),780 is filled while the windows float"
 	tiled=$(count 'edel-compositor: windows now tiling')
@@ -1577,7 +1591,7 @@ case_keyboard() {
 	# then goes back to German, as the rest of the case expects.
 	wait_for 'edel-shell-ui: panel places .*keyboard [0-9]+\+[1-9][0-9]*' 5 ||
 		fail "the panel shows no keyboard indicator with two layouts: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
-	kbd=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	kbd=$(panel_places | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	set -- $kbd
 	at=$(($1 + $2 / 2))
 	switched=$(count 'edel-compositor: keyboard layout now English')
@@ -2068,7 +2082,7 @@ case_overview() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more 'edel-compositor: workspace 1$' "$back" || fail "Super+1 did not show workspace 1 after the overview"
 	# A click on the panel switcher's lit workspace, 1, opens it too.
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*workspaces \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its switcher lies"
 	lit=$(($1 + 29))
@@ -2555,7 +2569,7 @@ case_player() {
 	# as it plays, and a click on the second dot shows Radio's Morning
 	# Walk. Kept as player-pages.png.
 	guest mpris
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
 	pill_x=$(($1 + $2 / 2))
@@ -3467,8 +3481,9 @@ case_wallpaper() {
 	# #3a8fc0; set to a colour, that colour; reset, the default, which
 	# the test image has no picture for (no wallpapers feature), so the
 	# background colour. The compositor logs what it shows, `wallpaper
-	# WHAT`, and the first picture on each screen. Kept as
-	# wallpaper-picture.png, wallpaper-colour.png and wallpaper-gone.png.
+	# WHAT`, and the first picture on each screen; the overview's backdrop
+	# is the picture too (M5.10c4c). Kept as wallpaper-picture.png,
+	# wallpaper-colour.png, wallpaper-gone.png and wallpaper-backdrop.png.
 	logged=$(count 'edel-compositor: wallpaper /')
 	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
 	guest 'wallpaper picture'
@@ -3478,6 +3493,22 @@ case_wallpaper() {
 		fail "the wallpaper's top left at 4,4 is not #c0563a (wallpaper-picture.png)"
 	shot wallpaper-picture-right 1276 4 3a8fc0 >/dev/null ||
 		fail "the wallpaper's top right at 1276,4 is not #3a8fc0 (wallpaper-picture-right.png)"
+	# The overview over the picture (M5.10c4c): its backdrop is the picture,
+	# blurred on the Full and Balanced tiers and sharp on Lite, which CI's
+	# llvmpipe runs at; dimmed in both. The top right corner lies far from
+	# the strip and the frames, so it shows the picture's blue, dimmed.
+	shown=$(count 'edel-compositor: overview shown$')
+	backdrops=$(count 'edel-compositor: overview backdrop on Virtual-1 ')
+	hidden=$(count 'edel-compositor: overview hidden$')
+	python3 ci/qmp.py key meta_l-w
+	wait_more 'edel-compositor: overview shown$' "$shown" || fail "Super+W did not show the overview over the wallpaper"
+	wait_more 'edel-compositor: overview backdrop on Virtual-1 ' "$backdrops" || fail "the overview did not make its backdrop from the wallpaper picture"
+	tier=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: overview backdrop on Virtual-1 ' | tail -n 1 | sed 's/.* //')
+	backdrop=$(shot wallpaper-backdrop 1276 4 "!$(token background)") ||
+		fail "the overview's backdrop at 1276,4 is the background colour, not the picture (wallpaper-backdrop.png)"
+	[ "$backdrop" != 000000 ] || fail "the overview's backdrop at 1276,4 is black (wallpaper-backdrop.png)"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview over the wallpaper"
 	logged=$(count 'edel-compositor: wallpaper colour #336699')
 	guest 'wallpaper colour'
 	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"
@@ -3507,7 +3538,7 @@ case_wallpaper() {
 	wait_more 'edel-compositor: wallpaper none' "$logged" || fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
 	shot wallpaper-gone 4 4 "$(token background)" >/dev/null ||
 		fail "with no wallpaper the background at 4,4 is not #$(token background) (wallpaper-gone.png)"
-	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699; then the pair ci-light.png and ci-dark.png, #2e6fd0 in dark mode and #d08a2e in light (appearance.wallpaper_dark, M5.10c4d); then, reset, the background colour"
+	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699; then the pair ci-light.png and ci-dark.png, #2e6fd0 in dark mode and #d08a2e in light (appearance.wallpaper_dark, M5.10c4d); then, reset, the background colour; the overview's backdrop was the picture, $tier, and its top right corner at 1276,4 was $backdrop, neither the background nor black (wallpaper-backdrop.png)"
 }
 
 case_buttons() {

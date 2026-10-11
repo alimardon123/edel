@@ -120,6 +120,21 @@ pub fn backdrop(w: u32, h: u32, tokens: &Tokens) -> Option<Pixmap> {
     Some(pixmap)
 }
 
+/// `pixmap` covered by `colour` at `alpha` of its own strength: the dim over
+/// the wallpaper behind the overview (M5.10c4c), or the whole of a colour
+/// with `alpha` 1 on an empty pixmap.
+pub fn veil(pixmap: &mut Pixmap, colour: Colour, alpha: f32) {
+    let (w, h) = (pixmap.width() as f32, pixmap.height() as f32);
+    let Some(rect) = Rect::from_xywh(0.0, 0.0, w, h) else {
+        return;
+    };
+    let paint = Paint {
+        shader: tiny_skia::Shader::SolidColor(colour_of(colour, alpha)),
+        ..Paint::default()
+    };
+    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+}
+
 fn colour_of(colour: Colour, a: f32) -> tiny_skia::Color {
     let [r, g, b, _] = colour.bytes();
     tiny_skia::Color::from_rgba8(r, g, b, (colour.a * a * 255.0).round() as u8)

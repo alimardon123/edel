@@ -24,6 +24,8 @@ pub mod keep;
 pub mod keyboard;
 pub mod network;
 pub mod panel_edit;
+#[cfg(feature = "pictures")]
+pub mod pictures;
 pub mod places;
 pub mod power;
 pub mod presets;
