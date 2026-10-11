@@ -283,10 +283,37 @@ budget() {
 # [colour.light] table, the release's default scheme (M5.12a), or in
 # TABLE, such as colour for the dark one (M5.5c), as rrggbb.
 token() {
+	case "$1" in
+	title_bar_focused) focused_bar "${2:-colour.light}" ;;
+	*) raw_token "$@" ;;
+	esac
+}
+
+# raw_token NAME [TABLE]: the token NAME as design/tokens.toml writes it.
+raw_token() {
 	awk -v key="$1" -v table="[${2:-colour.light}]" '
 		/^\[/ { here = ($1 == table); next }
 		here && $1 == key && $3 ~ /^"#[0-9a-f]{6}"$/ { print substr($3, 3, 6); exit }
 	' design/tokens.toml
+}
+
+# focused_bar [TABLE]: the focused title bar as the desktop draws it, the
+# token with size.title_tint percent of the release's accent mixed in
+# (edel::tokens' tinted); both roundings when a channel lands on a half.
+focused_bar() {
+	python3 - "$(raw_token title_bar_focused "$1")" "$(raw_token accent "$1")" \
+		"$(awk '/^\[/ { here = ($1 == "[size]"); next } here && $1 == "title_tint" { print $3; exit }' design/tokens.toml)" <<-'EOF'
+		import math, sys
+		base, accent, tint = sys.argv[1], sys.argv[2], int(sys.argv[3]) / 100
+		low, high = [], []
+		for i in (0, 2, 4):
+		    b, a = int(base[i:i + 2], 16), int(accent[i:i + 2], 16)
+		    v = b + (a - b) * tint
+		    low.append(math.floor(v + 0.5) if abs(v % 1 - 0.5) > 0.01 else math.floor(v))
+		    high.append(math.floor(v + 0.5) if abs(v % 1 - 0.5) > 0.01 else math.ceil(v))
+		one, two = "".join("%02x" % c for c in low), "".join("%02x" % c for c in high)
+		print(one if one == two else one + "|" + two)
+	EOF
 }
 
 # guest COMMAND: sends one line to the test service, which runs the

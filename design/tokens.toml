@@ -14,7 +14,7 @@ format = 1
 background = "#1a1d23"
 # Window title bars (M4.4), the focused one lighter, and their text,
 # dimmer on the windows without the keyboard.
-title_bar = "#24272e"
+title_bar = "#212329"
 title_bar_focused = "#2b2e36"
 title_text = "#eceef1"
 title_text_unfocused = "#737a85"
@@ -76,7 +76,7 @@ lock_glow_second = "#454079"
 # same keys, each one given, over the dark values above.
 [colour.light]
 background = "#dfe3ea"
-title_bar = "#f1f2f4"
+title_bar = "#eceef1"
 title_bar_focused = "#f7f8f9"
 title_text = "#1c1e22"
 title_text_unfocused = "#8d929b"
@@ -193,6 +193,10 @@ lock_clock = 150
 # The panels' opacity in percent (M5.12b2, appearance.panel_opacity),
 # for the bars and docks alone, not the cards that share their colour.
 panel_opacity = 100
+# How much of the accent the focused window's title bar takes, in percent,
+# so the window with the keyboard reads at a glance; 0 keeps it neutral.
+# A person's own title_bar_focused colour replaces the tint.
+title_tint = 6
 
 [font]
 # The interface font's family, for title bars and everything shell-ui
