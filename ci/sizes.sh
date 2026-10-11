@@ -59,12 +59,7 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 	# What a person downloads to update the desktop (M5.10c4c): its slot's
 	# image, compressed, the wallpapers and the fonts included.
 	if [ -e "$desktop" ]; then
-		size=$(awk -v b="$(stat -c %s "$desktop")" 'BEGIN { printf "%.1f", b / 1048576 }')
-		if [ -n "$(budget desktop_image_mib)" ]; then
-			check 'Desktop update image (ext4.gz)' "$size" desktop_image_mib MiB
-		else
-			echo "desktop_image_mib: $size MiB, no budget yet"
-		fi
+		check 'Desktop update image (ext4.gz)' "$(awk -v b="$(stat -c %s "$desktop")" 'BEGIN { printf "%.1f", b / 1048576 }')" desktop_image_mib MiB
 	fi
 	check 'VM root used' "$(cut -d' ' -f3 out/budgets.txt | median)" vm_root_mib MiB
 	check 'VM boot to confirmed slot' "$(cut -d' ' -f1 out/budgets.txt | median)" vm_boot_seconds s
