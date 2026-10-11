@@ -239,7 +239,13 @@ msgstr ""
 msgid "bottom right"
 msgstr ""
 
+msgid "Cancel"
+msgstr ""
+
 msgid "{title}, {where}"
+msgstr ""
+
+msgid "Wallpaper"
 msgstr ""
 
 msgid "Music"
@@ -254,13 +260,10 @@ msgstr ""
 msgid "the looks do not write as TOML"
 msgstr ""
 
-msgid "Parts"
+msgid "Widgets"
 msgstr ""
 
 msgid "Looks"
-msgstr ""
-
-msgid "Background"
 msgstr ""
 
 msgid "Close notification"

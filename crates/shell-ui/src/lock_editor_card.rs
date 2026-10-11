@@ -44,7 +44,7 @@ use crate::edit_kit::{self, Style};
 use crate::editor::{self, DRAG_START, Kind, Picture};
 use crate::editor_card::{self, LockBefore, Undo};
 use crate::lock::{self, Backdrops, Pictures};
-use crate::lock_editor::{self, Drag, Focus, From, Step};
+use crate::lock_editor::{self, BarButton, Drag, Focus, From, Step};
 use crate::messages;
 use crate::paint;
 use crate::part_card;
@@ -64,6 +64,22 @@ struct Saved {
 
 /// The log words of what Done did when nothing changed.
 const NOTHING: &str = "nothing to write";
+
+/// What a pointer event on the edit mode leaves for its caller to do
+/// (M5.10c7e): nothing, Done's write, or Cancel's close without writing.
+enum Leave {
+    Stay,
+    Write,
+    Discard,
+}
+
+/// Whether Undo has anything to put back: the edit differs from the one it
+/// opened with (M5.10c7e, the bar's Undo is dimmed while it does not).
+fn undo_on(le: &LockEditor) -> bool {
+    le.view.parts != le.original
+        || le.view.editing != le.original_editing
+        || le.view.background != le.original_background
+}
 /// The settings key of the person's own looks (M5.10c5c), which Done writes
 /// first, as the look must exist before the look line names it.
 const LOOKS: &str = "lock_screen.looks";
@@ -122,8 +138,8 @@ fn refresh_tiles(le: &mut LockEditor) {
         .max(le.looks.len())
         .max(lock_editor::background_choices().len());
     le.view.drawer.tiles = match le.view.drawer.tab {
-        1 => lock_editor::look_tiles(&le.looks, Some(le.view.editing.as_str())),
-        2 => lock_editor::background_tiles(&le.view.background),
+        1 => lock_editor::background_tiles(&le.view.background),
+        2 => lock_editor::look_tiles(&le.looks, Some(le.view.editing.as_str())),
         _ => parts,
     };
     let (heading, subtitle) = lock_editor::drawer_words(&le.view);
@@ -391,7 +407,7 @@ impl Shell {
             drawer: editor::View {
                 kind: Kind::LockScreen,
                 tiles: Vec::new(),
-                tabs: vec![tr("Parts"), tr("Looks"), tr("Background")],
+                tabs: vec![tr("Widgets"), tr("Wallpaper"), tr("Looks")],
                 tab: 0,
                 tallest: 0,
                 compact,
@@ -402,6 +418,7 @@ impl Shell {
                 taking: false,
                 heading: None,
                 subtitle: None,
+                bare: true,
             },
         };
         let surface = self.compositor.create_surface(&self.qh);
@@ -640,6 +657,32 @@ impl Shell {
             &mut self.text,
             s as f32,
         );
+        let bar = lock_editor::bar(screen);
+        lock_editor::paint_bar(
+            &mut pixmap,
+            &le.view,
+            &bar,
+            undo_on(le),
+            &self.tokens,
+            &mut self.text,
+            s as f32,
+        );
+        if let Some((left, _)) = lock_editor::panels(screen, preview) {
+            let picture = self.wallpaper_picture(le);
+            lock_editor::paint_wallpaper_panel(
+                &mut pixmap,
+                left,
+                &le.view,
+                picture.as_ref().map(|p| p.0.as_ref()),
+                &self.tokens,
+                &mut self.text,
+                s as f32,
+            );
+        }
+        let card = self.card_layout(le, &at, preview);
+        if let (Some(view), Some(l)) = (le.view.card.as_ref(), card.as_ref()) {
+            part_card::paint(&mut pixmap, view, l, &self.tokens, &mut self.text, s as f32);
+        }
         lock_editor::paint_drawer(
             &mut pixmap,
             &le.view,
@@ -647,10 +690,6 @@ impl Shell {
             &mut self.text,
             s as f32,
         );
-        let card = self.card_layout(le, &at, preview);
-        if let (Some(view), Some(l)) = (le.view.card.as_ref(), card.as_ref()) {
-            part_card::paint(&mut pixmap, view, l, &self.tokens, &mut self.text, s as f32);
-        }
         let places = lock_editor::places(&le.view, &at, preview, place, &drawer);
         if places != le.logged {
             eprintln!("edel-shell-ui: lock editor places {places}");
@@ -719,62 +758,81 @@ impl Shell {
 
     /// Gives each look's and each background's tile its picture (M5.10c6c3),
     /// drawn the first time and kept in `thumbs`, so each is drawn once. The
-    /// Parts tab has none.
+    /// Widgets tab has none.
     fn attach_thumbnails(&mut self, le: &mut LockEditor) {
         let tab = le.view.drawer.tab;
         if tab == 0 {
             return;
         }
-        let lock_view = self.lock_editor_look();
         for i in 0..le.view.drawer.tiles.len() {
             let name = le.view.drawer.tiles[i].name.clone();
-            let (key, parts, background) = if tab == 1 {
-                let Some((_, parts)) = le.looks.iter().find(|(n, _)| *n == name) else {
-                    continue;
-                };
-                (
-                    format!("look:{name}"),
-                    parts.clone(),
-                    lock_screen::look_background(&name),
-                )
+            let picture = if tab == 2 {
+                self.look_picture(le, &name)
             } else {
-                let choice = lock_editor::background_choices()
-                    .into_iter()
-                    .find(|(n, _, _)| *n == name)
-                    .and_then(|(_, _, background)| background);
-                let Some(background) = choice else {
-                    continue;
-                };
-                (
-                    format!("background:{name}"),
-                    lock_screen::classic(le.compact),
-                    background,
-                )
+                self.background_picture(le, &name)
             };
-            let picture = match le.thumbs.get(&key) {
-                Some(picture) => picture.clone(),
-                None => {
-                    let Some(pixmap) = lock_editor::thumbnail(
-                        &lock_view,
-                        &parts,
-                        &background,
-                        le.battery,
-                        &self.tokens,
-                        &mut self.text,
-                        Some(&mut self.icons),
-                        &mut le.pictures,
-                        &mut le.backdrops,
-                        &le.wallpaper,
-                    ) else {
-                        continue;
-                    };
-                    let picture = Picture(Rc::new(pixmap));
-                    le.thumbs.insert(key, picture.clone());
-                    picture
-                }
-            };
-            le.view.drawer.tiles[i].picture = Some(picture);
+            if let Some(picture) = picture {
+                le.view.drawer.tiles[i].picture = Some(picture);
+            }
         }
+    }
+
+    /// The picture of the look called `name` (M5.10c7e), drawn once.
+    fn look_picture(&mut self, le: &mut LockEditor, name: &str) -> Option<Picture> {
+        let parts = le.looks.iter().find(|(n, _)| n.as_str() == name)?.1.clone();
+        let background = lock_screen::look_background(name);
+        self.thumb(le, format!("look:{name}"), &parts, &background)
+    }
+
+    /// The picture of the background called `name` (M5.10c7e), drawn once over
+    /// the classic lock. The person's own picture has none.
+    fn background_picture(&mut self, le: &mut LockEditor, name: &str) -> Option<Picture> {
+        let background = lock_editor::background_choices()
+            .into_iter()
+            .find(|(n, _, _)| *n == name)
+            .and_then(|(_, _, background)| background)?;
+        let parts = lock_screen::classic(le.compact);
+        self.thumb(le, format!("background:{name}"), &parts, &background)
+    }
+
+    /// The picture in use for the wallpaper panel (M5.10c7e): the background
+    /// the edit has now, its thumbnail.
+    fn wallpaper_picture(&mut self, le: &mut LockEditor) -> Option<Picture> {
+        let name = lock_editor::background_tiles(&le.view.background)
+            .into_iter()
+            .find(|tile| tile.chosen)?
+            .name;
+        self.background_picture(le, &name)
+    }
+
+    /// The thumbnail under `key`, made from `parts` over `background` when it
+    /// is not kept yet (`lock_editor::thumbnail`).
+    fn thumb(
+        &mut self,
+        le: &mut LockEditor,
+        key: String,
+        parts: &[Placed],
+        background: &Background,
+    ) -> Option<Picture> {
+        if let Some(picture) = le.thumbs.get(&key) {
+            return Some(picture.clone());
+        }
+        let lock_view = self.lock_editor_look();
+        let pixmap = lock_editor::thumbnail(
+            &lock_view,
+            parts,
+            background,
+            le.battery,
+            &self.tokens,
+            &mut self.text,
+            Some(&mut self.icons),
+            &mut le.pictures,
+            &mut le.backdrops,
+            &le.wallpaper,
+        )?;
+        let picture = Picture(Rc::new(pixmap));
+        le.thumbs.insert(key, picture.clone());
+        Some(picture)
     }
 
     /// Chooses the background at `i` of the Background tab (M5.10c6c3): the
@@ -809,8 +867,8 @@ impl Shell {
     /// a look is chosen, or a background.
     fn drawer_choose(&mut self, le: &mut LockEditor, i: usize) {
         match le.view.drawer.tab {
-            1 => choose_look(le, i),
-            2 => self.choose_background(le, i),
+            1 => self.choose_background(le, i),
+            2 => choose_look(le, i),
             _ => {}
         }
     }
@@ -826,11 +884,14 @@ impl Shell {
     ) -> Option<part_card::Layout> {
         let card = le.view.card.as_ref()?;
         let near = (*at.placed.get(card.index)?)?;
+        // Docked in the right panel on a wide screen (M5.10c7e), else floating.
+        let dock = lock_editor::panels(le.view.screen, shown).map(|(_, right)| right);
         Some(part_card::layout(
             card,
             shown.to_screen(near),
             le.view.screen,
             &self.tokens,
+            dock,
         ))
     }
 
@@ -1004,23 +1065,50 @@ impl Shell {
         let Some(mut le) = self.lock_editor.take() else {
             return;
         };
-        let done = self.lock_editor_on_pointer(&mut le, event);
+        let leave = self.lock_editor_on_pointer(&mut le, event);
         self.lock_editor = Some(le);
-        if done {
-            self.close_lock_editor(true);
+        match leave {
+            Leave::Stay => {}
+            Leave::Write => self.close_lock_editor(true),
+            Leave::Discard => self.close_lock_editor(false),
         }
     }
 
-    /// The pointer's event on `le`; true when Done was pressed.
-    fn lock_editor_on_pointer(&mut self, le: &mut LockEditor, event: &PointerEvent) -> bool {
+    /// A press on one of the bar's buttons (M5.10c7e): Cancel leaves without
+    /// writing, Undo puts the edit back, Done writes it.
+    fn bar_press(&mut self, le: &mut LockEditor, button: BarButton) -> Leave {
+        match button {
+            BarButton::Cancel => Leave::Discard,
+            BarButton::Undo => {
+                self.undo_lock_editor(le);
+                Leave::Stay
+            }
+            BarButton::Done => Leave::Write,
+        }
+    }
+
+    /// The pointer's event on `le`: what it leaves for the caller to do. The
+    /// bar comes first (M5.10c7e), then an open card, then the drawer and the
+    /// parts.
+    fn lock_editor_on_pointer(&mut self, le: &mut LockEditor, event: &PointerEvent) -> Leave {
         // The pointer on the screen (the drawer's) and on the lock screen
         // being edited, drawn smaller above it (the parts', the drags').
         let (sx, sy) = (event.position.0 as f32, event.position.1 as f32);
         let (at, drawer, place, shown) = self.lock_editor_geometry(le);
         let (x, y) = shown.to_lock((sx, sy));
+        if let PointerEventKind::Press { button, .. } = &event.kind {
+            if *button == BTN_LEFT && le.view.drawer.bare {
+                let bar = lock_editor::bar(le.view.screen);
+                if let Some(button) = lock_editor::bar_hit(&bar, sx, sy) {
+                    // A bar button closes an open card first, as Done does.
+                    end_card(le);
+                    return self.bar_press(le, button);
+                }
+            }
+        }
         if le.view.card.is_some() {
             self.lock_card_pointer(le, event, &at, shown, (sx, sy));
-            return false;
+            return Leave::Stay;
         }
         let inside = place.contains(sx, sy);
         let on_drawer = if inside {
@@ -1070,7 +1158,7 @@ impl Shell {
                 if inside {
                     match on_drawer {
                         Some(editor::Part::Undo) => self.undo_lock_editor(le),
-                        Some(editor::Part::Done) => return true,
+                        Some(editor::Part::Done) => return Leave::Write,
                         Some(editor::Part::Tab(i)) => set_tab(le, i),
                         Some(editor::Part::Tile(i)) if le.view.drawer.tab != 0 => {
                             self.drawer_choose(le, i)
@@ -1109,7 +1197,7 @@ impl Shell {
             }
             _ => {}
         }
-        false
+        Leave::Stay
     }
 
     /// Shows a drag as it is: the guides it snaps to, the drawer's tile

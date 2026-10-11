@@ -293,6 +293,7 @@ impl Shell {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         };
         mark_placed(&mut view, &now);
         let layout = editor::layout(&view);

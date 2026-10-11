@@ -142,15 +142,21 @@ pub enum Step {
 }
 
 /// Where one line lies: its row, its control (the segmented control, the
-/// check box, the field or the button; none for the file's name) and each
-/// segment of a segmented row, logical pixels in the screen.
+/// check box, the field or the button; none for the file's name), each
+/// segment of a segmented row, and where its label is drawn (M5.10c7e: None
+/// for a line with no label of its own), logical pixels in the screen.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub line: Line,
     pub rect: Rect,
     pub control: Option<Rect>,
     pub segments: Vec<Rect>,
+    pub label: Option<Rect>,
 }
+
+/// The room between two stacked lines of a docked card, logical pixels
+/// (M5.10c7e).
+const DOCK_GAP: f32 = 4.0;
 
 /// Where everything on the card lies: the card's rectangle and its rows.
 #[derive(Clone, Debug, PartialEq)]
@@ -616,12 +622,29 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Hit> {
     }
 }
 
-/// Where the card goes and where everything on it lies (M5.10c6c2): the one
-/// function that places the card and every control. It stands to the right
-/// of `near` (the part, in the screen's logical pixels) when there is room
-/// on the screen, else to its left, kept inside the screen with the lock's
-/// margin, and its top lies level with the part's, kept inside it too.
-pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Layout {
+/// Where the card goes and where everything on it lies (M5.10c6c2, M5.10c7e):
+/// the one function that places the card and every control. Floating (no
+/// `dock`) it stands to the right of `near` (the part, in the screen's logical
+/// pixels) when there is room on the screen, else to its left, kept inside the
+/// screen with the lock's margin, and its top lies level with the part's, kept
+/// inside it too. Docked (`dock`, the right panel's rectangle) it is that
+/// rectangle's width and stands at its top left, with every line stacked: its
+/// label on a row of its own, its control under it across the full width.
+pub fn layout(
+    view: &View,
+    near: Rect,
+    screen: (f32, f32),
+    tokens: &Tokens,
+    dock: Option<Rect>,
+) -> Layout {
+    match dock {
+        Some(panel) => docked(view, panel, tokens),
+        None => floating(view, near, screen, tokens),
+    }
+}
+
+/// The card floating beside its part (`layout`, no dock).
+fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Layout {
     let lines = lines(view.placed.part);
     let row_h = tokens.row as f32;
     let height = 2.0 * PAD + lines.len() as f32 * row_h;
@@ -649,7 +672,8 @@ pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> L
                 row_h,
             );
             let right = rect.right() - INSET;
-            let (control, cells) = match line {
+            let left = rect.x + INSET;
+            let (control, cells, label) = match line {
                 Line::Face | Line::Hours | Line::Size | Line::Style => {
                     let (control, cells) = popup::segments_at(
                         rect,
@@ -658,17 +682,15 @@ pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> L
                         SEGMENT,
                         panel_control,
                     );
-                    (Some(control), cells)
+                    let label = Rect::new(left, rect.y, control.x - 8.0 - left, rect.h);
+                    (Some(control), cells, Some(label))
                 }
-                Line::Show(_) => (
-                    Some(Rect::new(
-                        right - glyph,
-                        rect.y + (rect.h - glyph) / 2.0,
-                        glyph,
-                        glyph,
-                    )),
-                    Vec::new(),
-                ),
+                Line::Show(_) => {
+                    let box_ =
+                        Rect::new(right - glyph, rect.y + (rect.h - glyph) / 2.0, glyph, glyph);
+                    let label = Rect::new(left, rect.y, box_.x - 8.0 - left, rect.h);
+                    (Some(box_), Vec::new(), Some(label))
+                }
                 Line::Field | Line::Button => (
                     Some(Rect::new(
                         rect.x + INSET,
@@ -677,31 +699,134 @@ pub fn layout(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> L
                         panel_control,
                     )),
                     Vec::new(),
+                    None,
                 ),
                 // A clock's zone and label: the row's name at the left, the
                 // field for the words at the right, from `FIELD_AT` across.
                 Line::Zone | Line::Label => {
                     let x = rect.x + rect.w * FIELD_AT;
-                    (
-                        Some(Rect::new(
-                            x,
-                            rect.y + (rect.h - panel_control) / 2.0,
-                            right - x,
-                            panel_control,
-                        )),
-                        Vec::new(),
-                    )
+                    let field = Rect::new(
+                        x,
+                        rect.y + (rect.h - panel_control) / 2.0,
+                        right - x,
+                        panel_control,
+                    );
+                    let label = Rect::new(left, rect.y, field.x - 8.0 - left, rect.h);
+                    (Some(field), Vec::new(), Some(label))
                 }
-                Line::File => (None, Vec::new()),
+                Line::File => {
+                    let label = Rect::new(left, rect.y, rect.w - 2.0 * INSET, rect.h);
+                    (None, Vec::new(), Some(label))
+                }
             };
             Row {
                 line,
                 rect,
                 control,
                 segments: cells,
+                label,
             }
         })
         .collect();
+    Layout { card, rows }
+}
+
+/// The card docked in the right panel (`layout`, M5.10c7e): the panel's width,
+/// at its top left, each line stacked under the last with `DOCK_GAP` between
+/// them. A segmented line's segments share the control's width equally; a
+/// date part keeps its check box at the right of its one row.
+fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
+    let row_h = tokens.row as f32;
+    let control_h = tokens.panel_control as f32;
+    let glyph = tokens.panel_glyph as f32;
+    let inner_x = panel.x + PAD;
+    let inner_w = panel.w - 2.0 * PAD;
+    let mut y = panel.y + PAD;
+    let mut rows = Vec::new();
+    for (i, line) in lines(view.placed.part).into_iter().enumerate() {
+        if i > 0 {
+            y += DOCK_GAP;
+        }
+        let (row, used) = match line {
+            Line::Face | Line::Hours | Line::Size | Line::Style => {
+                let label = Rect::new(inner_x, y, inner_w, row_h);
+                let control = Rect::new(inner_x, y + row_h, inner_w, control_h);
+                let n = segments(line).len().max(1);
+                let cell = inner_w / n as f32;
+                let cells = (0..n)
+                    .map(|j| Rect::new(control.x + j as f32 * cell, control.y, cell, control.h))
+                    .collect();
+                let row = Row {
+                    line,
+                    rect: Rect::new(inner_x, y, inner_w, row_h + control_h),
+                    control: Some(control),
+                    segments: cells,
+                    label: Some(label),
+                };
+                (row, row_h + control_h)
+            }
+            Line::Show(_) => {
+                let rect = Rect::new(inner_x, y, inner_w, row_h);
+                let box_ = Rect::new(
+                    rect.right() - INSET - glyph,
+                    rect.y + (rect.h - glyph) / 2.0,
+                    glyph,
+                    glyph,
+                );
+                let label = Rect::new(
+                    rect.x + INSET,
+                    rect.y,
+                    box_.x - 8.0 - (rect.x + INSET),
+                    rect.h,
+                );
+                let row = Row {
+                    line,
+                    rect,
+                    control: Some(box_),
+                    segments: Vec::new(),
+                    label: Some(label),
+                };
+                (row, row_h)
+            }
+            Line::Field | Line::Zone | Line::Label => {
+                let label = Rect::new(inner_x, y, inner_w, row_h);
+                let control = Rect::new(inner_x, y + row_h, inner_w, control_h);
+                let row = Row {
+                    line,
+                    rect: Rect::new(inner_x, y, inner_w, row_h + control_h),
+                    control: Some(control),
+                    segments: Vec::new(),
+                    label: Some(label),
+                };
+                (row, row_h + control_h)
+            }
+            Line::Button => {
+                let control = Rect::new(inner_x, y, inner_w, control_h);
+                let row = Row {
+                    line,
+                    rect: control,
+                    control: Some(control),
+                    segments: Vec::new(),
+                    label: None,
+                };
+                (row, control_h)
+            }
+            Line::File => {
+                let rect = Rect::new(inner_x, y, inner_w, row_h);
+                let row = Row {
+                    line,
+                    rect,
+                    control: None,
+                    segments: Vec::new(),
+                    label: Some(rect),
+                };
+                (row, row_h)
+            }
+        };
+        y += used;
+        rows.push(row);
+    }
+    let card = Rect::new(panel.x, panel.y, panel.w, y - panel.y + PAD);
     Layout { card, rows }
 }
 
@@ -715,6 +840,25 @@ fn file_name(placed: &Placed) -> String {
             || tr("No picture").to_string(),
             |name| name.to_string_lossy().into_owned(),
         )
+}
+
+/// Draws a row's label, its words fitted to where the layout put the label
+/// (M5.10c7e); a row with no label draws nothing.
+fn draw_label(
+    pixmap: &mut Pixmap,
+    text: &mut Text,
+    row: &Row,
+    words: &str,
+    size: f32,
+    s: f32,
+    colour: edel::tokens::Colour,
+) {
+    let Some(at) = row.label else {
+        return;
+    };
+    let mut line = text.fit(words, size, at.w * s);
+    let y = popup::middle(at.y, at.h, size, s);
+    text.draw(pixmap, &mut line, at.x * s, y, colour);
 }
 
 /// Draws the card at scale `s` over what is under it (the lock and the
@@ -742,7 +886,6 @@ pub fn paint(
             let (x, y, w, h) = row.rect.device(s);
             fill(pixmap, x, y, w, h, radius, ink.lit);
         }
-        let left = (row.rect.x + INSET) * s;
         match row.line {
             Line::Face | Line::Hours | Line::Size | Line::Style => {
                 if let Some(control) = row.control {
@@ -758,10 +901,7 @@ pub fn paint(
                         s,
                     );
                 }
-                let right = row.control.map_or(row.rect.right(), |c| c.x) - 8.0;
-                let mut line = text.fit(label(row.line), size, (right * s) - left);
-                let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, ink.text);
+                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
             }
             Line::Show(part) => {
                 let Some(box_) = row.control else { continue };
@@ -777,10 +917,7 @@ pub fn paint(
                         ink.accent,
                     );
                 }
-                let right = box_.x - 8.0;
-                let mut line = text.fit(label(row.line), size, (right * s) - left);
-                let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, ink.text);
+                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
             }
             Line::Field | Line::Zone | Line::Label => {
                 let Some(field) = row.control else { continue };
@@ -792,13 +929,8 @@ pub fn paint(
                 let x0 = (field.x + PAD) * s;
                 let y0 = popup::middle(field.y, field.h, size, s);
                 text.draw(pixmap, &mut line, x0, y0, ink.text);
-                // A clock's zone and label name their field at its left.
-                if matches!(row.line, Line::Zone | Line::Label) {
-                    let right = field.x - 8.0;
-                    let mut name = text.fit(label(row.line), size, (right * s) - left);
-                    let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                    text.draw(pixmap, &mut name, left, y, ink.text);
-                }
+                // A clock's zone and label name their field, at its left or above it.
+                draw_label(pixmap, text, row, label(row.line), size, s, ink.text);
                 if view.typing && view.focus == Some(row.line) {
                     let caret_x = (x0 + line.width).round();
                     let (top, bottom) = (field.y + field.h * 0.2, field.y + field.h * 0.8);
@@ -815,10 +947,7 @@ pub fn paint(
             }
             Line::File => {
                 let name = file_name(&view.placed);
-                let room = (row.rect.w - 2.0 * INSET) * s;
-                let mut line = text.fit(&name, size, room);
-                let y = popup::middle(row.rect.y, row.rect.h, size, s);
-                text.draw(pixmap, &mut line, left, y, ink.text);
+                draw_label(pixmap, text, row, &name, size, s, ink.text);
             }
             Line::Button => {
                 let Some(button) = row.control else { continue };
@@ -1148,13 +1277,13 @@ mod tests {
         let t = tokens();
         let screen = (1280.0, 800.0);
         let v = open(0, clock(None));
-        let l = layout(&v, near_left(), screen, &t);
+        let l = layout(&v, near_left(), screen, &t, None);
         assert!(l.card.x >= near_left().right(), "right of the part");
         assert!(l.card.right() <= screen.0 - lock::MARGIN);
         assert!(l.card.y >= lock::MARGIN && l.card.y + l.card.h <= screen.1 - lock::MARGIN);
 
         let at_edge = Rect::new(1280.0 - 24.0 - 240.0, 300.0, 240.0, 120.0);
-        let l = layout(&v, at_edge, screen, &t);
+        let l = layout(&v, at_edge, screen, &t, None);
         assert!(
             l.card.right() <= at_edge.x,
             "left of the part at the right edge"
@@ -1168,12 +1297,12 @@ mod tests {
         let screen = (360.0, 740.0);
         let v = open(0, clock(None));
         let near = Rect::new(20.0, 200.0, 200.0, 100.0);
-        let l = layout(&v, near, screen, &t);
+        let l = layout(&v, near, screen, &t, None);
         assert!(l.card.x >= lock::MARGIN, "inside the margin");
         assert!(l.card.right() <= screen.0 - lock::MARGIN);
         assert!(l.card.y >= lock::MARGIN && l.card.y + l.card.h <= screen.1 - lock::MARGIN);
         let date_near = Rect::new(120.0, 600.0, 220.0, 40.0);
-        let l = layout(&open(0, date()), date_near, screen, &t);
+        let l = layout(&open(0, date()), date_near, screen, &t, None);
         assert!(l.card.right() <= screen.0 - lock::MARGIN && l.card.x >= lock::MARGIN);
         assert!(l.card.y + l.card.h <= screen.1 - lock::MARGIN);
     }
@@ -1181,7 +1310,13 @@ mod tests {
     #[test]
     fn hit_finds_each_segment_and_each_check_box_and_nothing_in_a_label() {
         let t = tokens();
-        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let l = layout(
+            &open(0, clock(None)),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+            None,
+        );
         let face = l.rows[0].clone();
         for (j, seg) in face.segments.iter().enumerate() {
             let (cx, cy) = (seg.x + seg.w / 2.0, seg.y + seg.h / 2.0);
@@ -1192,7 +1327,7 @@ mod tests {
             None,
             "the label"
         );
-        let d = layout(&open(0, date()), near_left(), (1280.0, 800.0), &t);
+        let d = layout(&open(0, date()), near_left(), (1280.0, 800.0), &t, None);
         let year = d
             .rows
             .iter()
@@ -1361,7 +1496,13 @@ mod tests {
     #[test]
     fn the_zone_and_label_fields_have_their_controls_and_places() {
         let t = tokens();
-        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let l = layout(
+            &open(0, clock(None)),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+            None,
+        );
         let zone = l
             .rows
             .iter()
@@ -1379,6 +1520,79 @@ mod tests {
         let log = places(&l);
         assert!(log.contains(", zone ") && log.contains(", label "), "{log}");
         assert!(l.card.h > 2.0 * PAD + 3.0 * t.row as f32, "five rows");
+    }
+
+    /// The right panel of the edit mode on 1280 by 800 (M5.10c7e): 208 wide,
+    /// from the canvas's top.
+    fn dock() -> Rect {
+        Rect::new(1048.0, 76.0, 208.0, 480.0)
+    }
+
+    /// Docked, a clock's card is the panel's width at its top left, inside it,
+    /// its four Face segments are equal cells across the inner width, each
+    /// label sits above its control, and no row overlaps another.
+    #[test]
+    fn docked_the_card_fills_the_panel_width_and_stacks_its_lines() {
+        let t = tokens();
+        let l = layout(
+            &open(0, clock(None)),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+            Some(dock()),
+        );
+        assert_eq!(
+            (l.card.x, l.card.y, l.card.w),
+            (1048.0, 76.0, 208.0),
+            "the panel's width, at its top left"
+        );
+        assert!(l.card.h <= dock().h, "the rows fit the panel: {:?}", l.card);
+        let face = &l.rows[0];
+        assert_eq!(face.segments.len(), 4);
+        let cell = face.segments[0].w;
+        assert!(face.segments.iter().all(|c| (c.w - cell).abs() < 0.01));
+        assert_eq!(face.segments[0].x, l.card.x + PAD);
+        let last = face.segments[3];
+        assert!((last.right() - (l.card.right() - PAD)).abs() < 0.01);
+        let label = face.label.expect("the Face label");
+        assert!(label.y + label.h <= face.control.expect("the control").y);
+        for pair in l.rows.windows(2) {
+            assert!(
+                pair[0].rect.y + pair[0].rect.h <= pair[1].rect.y,
+                "{:?} overlaps {:?}",
+                pair[0].rect,
+                pair[1].rect
+            );
+        }
+        for row in &l.rows {
+            assert!(row.rect.x >= l.card.x && row.rect.right() <= l.card.right());
+        }
+    }
+
+    /// A date's card docked lies inside the panel too, its check boxes at the
+    /// right of their rows, and the message's field is the card's full width.
+    #[test]
+    fn docked_the_date_and_the_message_lie_inside_the_panel() {
+        let t = tokens();
+        let d = layout(
+            &open(0, date()),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+            Some(dock()),
+        );
+        assert!(d.card.y + d.card.h <= 800.0 - lock::MARGIN, "{:?}", d.card);
+        let year = d
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Show(DatePart::Year))
+            .expect("year");
+        assert!(year.control.expect("a box").right() <= d.card.right());
+        let mut m = plain(Part::Message, Anchor::Bottom);
+        m.text = Some(String::new());
+        let m = layout(&open(0, m), near_left(), (1280.0, 800.0), &t, Some(dock()));
+        let field = m.rows[0].control.expect("the field");
+        assert!((field.w - (208.0 - 2.0 * PAD)).abs() < 0.01, "{field:?}");
     }
 
     #[test]
@@ -1403,14 +1617,14 @@ mod tests {
     fn a_press_on_a_segment_chooses_it_and_a_press_on_the_field_focuses_it() {
         let t = tokens();
         let v = open(0, clock(None));
-        let l = layout(&v, near_left(), (1280.0, 800.0), &t);
+        let l = layout(&v, near_left(), (1280.0, 800.0), &t, None);
         let seg = l.rows[1].segments[0];
         assert_eq!(
             press(&l, seg.x + 1.0, seg.y + 1.0),
             Step::Choose(Choice::Hours(24))
         );
         let text = open(0, plain(Part::Message, Anchor::Bottom));
-        let m = layout(&text, near_left(), (1280.0, 800.0), &t);
+        let m = layout(&text, near_left(), (1280.0, 800.0), &t, None);
         let field = m.rows[0].control.expect("the field");
         assert_eq!(
             press(&m, field.x + 1.0, field.y + 1.0),
@@ -1421,7 +1635,13 @@ mod tests {
     #[test]
     fn the_places_name_each_control_the_card_has() {
         let t = tokens();
-        let l = layout(&open(0, clock(None)), near_left(), (1280.0, 800.0), &t);
+        let l = layout(
+            &open(0, clock(None)),
+            near_left(),
+            (1280.0, 800.0),
+            &t,
+            None,
+        );
         let log = places(&l);
         assert!(log.starts_with("card 300x"), "{log}");
         for name in [
@@ -1449,6 +1669,7 @@ mod tests {
             near_left(),
             (1280.0, 800.0),
             &t,
+            None,
         );
         let v = open(0, clock(Some(Face::Analog)));
         let items = nodes(&v, &l);
@@ -1532,7 +1753,7 @@ mod tests {
             };
             let mut card = open(index, placed);
             set_focus(&mut card, Some(focus));
-            let l = layout(&card, near, screen, &t);
+            let l = layout(&card, near, screen, &t, None);
             assert!(
                 l.card.right() <= screen.0 - lock::MARGIN,
                 "{file}: inside the screen"

@@ -33,6 +33,9 @@ pub const WIDTH: f32 = 560.0;
 const SIDE: f32 = 32.0;
 /// A tile's size on a desktop; a compact drawer shrinks its width to fit.
 pub const TILE: (f32, f32) = (104.0, 84.0);
+/// A tab's width in a bare drawer (the lock screen's strip), logical pixels
+/// (M5.10c7e): each tab's segment is this wide, the tabs centred under the bar.
+pub const TAB_W: f32 = 104.0;
 /// The opacity of a tile a panel already holds (its picture and words alike).
 const CHOSEN_OPACITY: f32 = 0.5;
 /// The room between tiles, rows and columns alike, and between the buttons.
@@ -147,6 +150,10 @@ pub struct View {
     /// The hint's words in place of the kind's, when set and no tile is being
     /// dragged over the drawer (M5.10c7a: what Done does to the look).
     pub subtitle: Option<&'static str>,
+    /// A bare strip (M5.10c7e, the lock screen's edit mode): no sheet, no
+    /// heading, no hint and no footer, as the edit's bar holds those; the tabs
+    /// row first at the top, then the tiles, and Undo and Done are not reached.
+    pub bare: bool,
 }
 
 /// Where a widget dragged to a panel would land there (M5.31b): the group,
@@ -273,6 +280,9 @@ fn widget_of(name: &str) -> Option<&'static Widget> {
 /// the screen less `SIDE` when that is narrower.
 fn card_width(view: &View) -> f32 {
     let screen = view.width as f32;
+    if view.bare && screen > 0.0 {
+        return screen - 2.0 * crate::lock::MARGIN;
+    }
     match (view.compact, screen > 0.0) {
         (true, true) => screen,
         (_, true) => WIDTH.min(screen - SIDE),
@@ -293,13 +303,12 @@ fn columns(view: &View) -> usize {
 /// places everything. Tiles fill rows from the top, centred across the
 /// card; the footer holds Undo and Done at the right.
 pub fn layout(view: &View) -> Layout {
+    if view.bare {
+        return layout_bare(view);
+    }
     let width = card_width(view);
     let columns = columns(view);
-    let tile_w = if view.compact {
-        (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
-    } else {
-        TILE.0
-    };
+    let tile_w = tile_width(view, width, columns);
     // The drawer keeps the height of its tallest tab, so changing tabs never
     // makes it jump (M5.10c6c3).
     let counted = view.tiles.len().max(view.tallest);
@@ -320,24 +329,7 @@ pub fn layout(view: &View) -> Layout {
     } else {
         tabs_row.y + button + SPACE
     };
-    // Each row's tiles are centred across the card on their own, so a short
-    // row (the last one) sits in the middle too.
-    let row_left = |row: usize| {
-        let n = (counted - row * columns).min(columns) as f32;
-        let used = n * tile_w + (n - 1.0) * TILE_GAP;
-        ((width - used) / 2.0).round()
-    };
-    let tiles = (0..view.tiles.len())
-        .map(|i| {
-            let (row, column) = (i / columns, i % columns);
-            Rect::new(
-                row_left(row) + column as f32 * (tile_w + TILE_GAP),
-                top + row as f32 * (TILE.1 + TILE_GAP),
-                tile_w,
-                TILE.1,
-            )
-        })
-        .collect();
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted);
     let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
     // The footer holds the buttons, with the card's padding under them.
     let footer_top = tiles_bottom + SPACE;
@@ -351,6 +343,83 @@ pub fn layout(view: &View) -> Layout {
         tiles,
         undo,
         done,
+        tabs_row,
+        tabs,
+    }
+}
+
+/// A tile's width: the desktop's `TILE` width, or on a Compact screen the
+/// card's width shared out across the columns.
+fn tile_width(view: &View, width: f32, columns: usize) -> f32 {
+    if view.compact {
+        (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
+    } else {
+        TILE.0
+    }
+}
+
+/// The tiles' places from `top`, `columns` across: each row's tiles centred
+/// across the card on their own, so a short row (the last one) sits in the
+/// middle too. `counted` is the most tiles any tab holds, which keeps the
+/// card's height (`tallest`).
+fn place_tiles(
+    view: &View,
+    width: f32,
+    columns: usize,
+    tile_w: f32,
+    top: f32,
+    counted: usize,
+) -> Vec<Rect> {
+    let row_left = |row: usize| {
+        let n = (counted - row * columns).min(columns) as f32;
+        let used = n * tile_w + (n - 1.0) * TILE_GAP;
+        ((width - used) / 2.0).round()
+    };
+    (0..view.tiles.len())
+        .map(|i| {
+            let (row, column) = (i / columns, i % columns);
+            Rect::new(
+                row_left(row) + column as f32 * (tile_w + TILE_GAP),
+                top + row as f32 * (TILE.1 + TILE_GAP),
+                tile_w,
+                TILE.1,
+            )
+        })
+        .collect()
+}
+
+/// A bare strip's size and places (M5.10c7e): the tabs' row at the top, the
+/// tiles under it, then no padding below. Undo and Done have no place here
+/// (the edit's bar holds them), so their rectangles are empty at the corner.
+fn layout_bare(view: &View) -> Layout {
+    let width = card_width(view);
+    let columns = columns(view);
+    let tile_w = tile_width(view, width, columns);
+    let counted = view.tiles.len().max(view.tallest);
+    let rows = counted.max(1).div_ceil(columns);
+    let button = if view.compact { BUTTON_TOUCH } else { BUTTON };
+    let (tabs_row, tabs) = if view.tabs.is_empty() {
+        (Rect::new(0.0, 0.0, 0.0, 0.0), Vec::new())
+    } else {
+        let n = view.tabs.len() as f32;
+        let w = n * TAB_W + 2.0 * TAB_INNER;
+        let row = Rect::new(((width - w) / 2.0).round(), 0.0, w, button);
+        popup::segments_at(row, row.right(), view.tabs.len(), TAB_W, button)
+    };
+    let top = if view.tabs.is_empty() {
+        0.0
+    } else {
+        tabs_row.y + button + SPACE
+    };
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted);
+    let height = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
+    let none = Rect::new(0.0, 0.0, 0.0, 0.0);
+    Layout {
+        size: (width.ceil() as u32, height.ceil() as u32),
+        card: Rect::new(0.0, 0.0, width, height),
+        tiles,
+        undo: none,
+        done: none,
         tabs_row,
         tabs,
     }
@@ -396,8 +465,10 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Part> {
 pub fn ring(view: &View) -> Vec<Part> {
     let mut out: Vec<Part> = (0..view.tabs.len()).map(Part::Tab).collect();
     out.extend((0..view.tiles.len()).map(Part::Tile));
-    out.push(Part::Undo);
-    out.push(Part::Done);
+    if !view.bare {
+        out.push(Part::Undo);
+        out.push(Part::Done);
+    }
     out
 }
 
@@ -437,7 +508,7 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
         }
         (Key::Up, Some(Part::Tile(i))) => Step::Focus(Part::Tile(i.saturating_sub(columns))),
         (Key::Down, Some(Part::Tile(i))) if i + columns < n => Step::Focus(Part::Tile(i + columns)),
-        (Key::Down, Some(Part::Tile(_))) => Step::Focus(Part::Undo),
+        (Key::Down, Some(Part::Tile(_))) if !view.bare => Step::Focus(Part::Undo),
         (Key::Left | Key::Up, Some(Part::Done)) => Step::Focus(Part::Undo),
         (Key::Right | Key::Down, Some(Part::Undo)) => Step::Focus(Part::Done),
         (Key::Left | Key::Up, Some(Part::Undo)) if n > 0 => Step::Focus(Part::Tile(n - 1)),
@@ -457,7 +528,9 @@ pub fn places(l: &Layout, view: &View) -> String {
     for (tile, rect) in view.tiles.iter().zip(&l.tiles) {
         out.push_str(&format!(", tile {} {}", tile.name, at(*rect)));
     }
-    out.push_str(&format!(", undo {}, done {}", at(l.undo), at(l.done)));
+    if !view.bare {
+        out.push_str(&format!(", undo {}, done {}", at(l.undo), at(l.done)));
+    }
     out
 }
 
@@ -557,7 +630,7 @@ fn thumbnail(layer: &mut Pixmap, picture: &Pixmap, w: f32, h: f32, s: f32) {
 
 /// The words a drawer's hint says (`paint`): the panels' and the lock
 /// screen's, and on the lock screen's tabs what their tiles do.
-fn hint_words(view: &View) -> &'static str {
+pub(crate) fn hint_words(view: &View) -> &'static str {
     if let (Some(words), false) = (view.subtitle, view.taking) {
         return words;
     }
@@ -567,10 +640,10 @@ fn hint_words(view: &View) -> &'static str {
             "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
         ),
         (Kind::LockScreen, true) => tr("Drop here to take it away"),
-        (Kind::LockScreen, false) if view.tab == 1 => {
+        (Kind::LockScreen, false) if view.tab == 2 => {
             tr("Choose a look, which brings its parts and its background")
         }
-        (Kind::LockScreen, false) if view.tab == 2 => {
+        (Kind::LockScreen, false) if view.tab == 1 => {
             tr("Choose what lies behind the lock screen's parts")
         }
         (Kind::LockScreen, false) => {
@@ -598,7 +671,9 @@ pub fn paint(
     let mut text = text;
     let style = style(view.kind);
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
-    edit_kit::sheet(pixmap, l.card, tokens, style, s);
+    if !view.bare {
+        edit_kit::sheet(pixmap, l.card, tokens, style, s);
+    }
     if view.taking {
         let (x, y, w, h) = l.card.device(s);
         outline(
@@ -611,7 +686,9 @@ pub fn paint(
     }
     let heading = (tokens.panel_text_size + 2) as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
-    if let Some(text) = text.as_deref_mut() {
+    if view.bare {
+        // The strip has no heading or hint: the edit's bar holds them.
+    } else if let Some(text) = text.as_deref_mut() {
         let heading_words = match (&view.heading, view.kind) {
             (Some(words), _) => words.as_str(),
             (None, Kind::Panels) => tr("Edit panels"),
@@ -625,6 +702,7 @@ pub fn paint(
     let hint_words = hint_words(view);
     let room = l.card.w - 2.0 * PAD;
     let lines = match text.as_deref_mut() {
+        _ if view.bare => Vec::new(),
         Some(text) => wrap(hint_words, hint_lines(view), room * s, |t| {
             text.line(t, small).width
         }),
@@ -722,7 +800,10 @@ pub fn paint(
     for (part, rect, words, kind) in [
         (Part::Undo, l.undo, tr("Undo"), edit_kit::ButtonKind::Quiet),
         (Part::Done, l.done, tr("Done"), edit_kit::ButtonKind::Accent),
-    ] {
+    ]
+    .into_iter()
+    .filter(|_| !view.bare)
+    {
         let state = if view.focus == Some(part) {
             edit_kit::State::Focus
         } else if view.hover == Some(part) {
@@ -788,8 +869,10 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         };
         button(label, at(*rect))
     }));
-    out.push(button(tr("Undo").into(), at(l.undo)));
-    out.push(button(tr("Done").into(), at(l.done)));
+    if !view.bare {
+        out.push(button(tr("Undo").into(), at(l.undo)));
+        out.push(button(tr("Done").into(), at(l.done)));
+    }
     out
 }
 
@@ -823,6 +906,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         }
     }
 
@@ -1068,6 +1152,7 @@ mod tests {
                 taking: false,
                 heading: None,
                 subtitle: None,
+                bare: false,
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1133,6 +1218,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         };
         let l = layout(&v);
         let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1183,6 +1269,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         }
     }
 

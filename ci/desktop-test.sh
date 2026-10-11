@@ -4140,7 +4140,7 @@ case_lock_edit() {
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
 		fail "the edit mode did not open after the password: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	places=$(editor_places)
-	tab=$(echo "$places" | sed -n 's/.*, tab1 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	tab=$(echo "$places" | sed -n 's/.*, tab2 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$tab" ] || fail "the edit mode does not say where the Looks tab lies: $places"
 	set -- $tab
 	tabbed=$(count 'edel-shell-ui: lock editor tab looks')
