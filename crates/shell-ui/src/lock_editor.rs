@@ -754,6 +754,13 @@ pub fn places(
         }
     }
     out.push_str(&format!(", drawer {}", at_rect(drawer_at)));
+    for (i, (word, rect)) in view.drawer.tabs.iter().zip(&drawer.tabs).enumerate() {
+        out.push_str(&format!(
+            ", tab{i} {} {}",
+            word.to_lowercase(),
+            at_rect(moved(*rect))
+        ));
+    }
     for (i, (tile, rect)) in view.drawer.tiles.iter().zip(&drawer.tiles).enumerate() {
         out.push_str(&format!(
             ", tile{i} {} {}",
@@ -1229,7 +1236,8 @@ mod tests {
     fn places_name_every_placed_part_and_each_tile() {
         let classic = lock_screen::classic(false);
         let at = at_classic(&classic);
-        let view = view_of(classic.clone());
+        let mut view = view_of(classic.clone());
+        view.drawer.tabs = vec!["Parts", "Looks", "Background"];
         let drawer = editor::layout(&view.drawer);
         let drawer_at = drawer_rect(view.screen, &drawer);
         let line = places(
@@ -1244,6 +1252,7 @@ mod tests {
             assert!(line.contains(&format!(" {name} ")), "{name}: {line}");
         }
         assert!(line.contains(", drawer "), "{line}");
+        assert!(line.contains(", tab1 looks "), "{line}");
         assert!(line.contains(", tile0 message "), "{line}");
         assert!(line.contains(", tile1 battery "), "{line}");
         assert!(
