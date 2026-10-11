@@ -922,18 +922,12 @@ fn desktop_follows(key: &str) -> bool {
         .any(|section| key.starts_with(section))
 }
 
-/// `edel settings reset KEY...`: removes each key, so the release decides
-/// it again.
+/// `edel settings reset KEY...`: removes each key the file holds, so the
+/// release decides it again; refused only when none is there.
 pub fn reset(keys: &[String]) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
     let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
-    edit(&what, &keys, |text| {
-        let mut text = text.to_string();
-        for key in &keys {
-            text = settings::unset(&text, key)?;
-        }
-        Ok(text)
-    })
+    edit(&what, &keys, |text| settings::unset_all(text, &keys))
 }
 
 /// A page's name as people type it: its title in lowercase, `_` for a

@@ -1449,26 +1449,52 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
 /// user's table stays when its last key goes, so apply still looks after
 /// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
-    let path: Vec<&str> = key.split('.').collect();
+    unset_all(text, &[key])
+}
+
+/// `edel settings reset KEY...` on a file's text: removes each key the
+/// file holds, as `unset` does. A key already at its default is passed
+/// over while another one is removed, so resetting a group needs no care
+/// for which of its keys are set; only when none is in the file does it
+/// refuse, as there is nothing to reset.
+pub fn unset_all(text: &str, keys: &[&str]) -> Result<String> {
     let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
-    let removed = match path.as_slice() {
+    let mut removed = false;
+    for key in keys {
+        removed |= remove_key(&mut doc, key)?;
+    }
+    if !removed {
+        match keys {
+            [key] => bail!(
+                "{}",
+                trf(
+                    "{key} is not in the file, so it already has its default; there is nothing to reset",
+                    &[("key", key)]
+                )
+            ),
+            _ => bail!(
+                "{}",
+                trf(
+                    "none of {keys} is in the file, so they already have their defaults; there is nothing to reset",
+                    &[("keys", &keys.join(", "))]
+                )
+            ),
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// Removes `key` from `doc`; whether it was there.
+fn remove_key(doc: &mut DocumentMut, key: &str) -> Result<bool> {
+    let path: Vec<&str> = key.split('.').collect();
+    Ok(match path.as_slice() {
         ["users", name, last] => doc
             .get_mut("users")
             .and_then(|users| users.as_table_like_mut()?.get_mut(name))
             .and_then(|user| user.as_table_like_mut())
             .is_some_and(|user| user.remove(last).is_some()),
         _ => remove_path(doc.as_table_mut(), &path)?,
-    };
-    if !removed {
-        bail!(
-            "{}",
-            trf(
-                "{key} is not in the file, so it already has its default; there is nothing to reset",
-                &[("key", key)]
-            )
-        );
-    }
-    Ok(doc.to_string())
+    })
 }
 
 fn remove_path(table: &mut toml_edit::Table, path: &[&str]) -> Result<bool> {
@@ -2570,6 +2596,21 @@ cursor_size = 11
         assert_eq!(
             unset(EDITED, "future.key").unwrap(),
             EDITED.replace("future.key = 1 # kept\n", "")
+        );
+    }
+
+    #[test]
+    fn unset_all_passes_over_keys_at_their_default() {
+        let unset_once = unset_all(EDITED, &["future.key", "network.hostname"]).unwrap();
+        assert_eq!(
+            unset_all(EDITED, &["layout.preset", "network.hostname", "future.key"]).unwrap(),
+            unset_once
+        );
+        assert_eq!(
+            unset_all(&unset_once, &["network.hostname", "future.key"])
+                .unwrap_err()
+                .to_string(),
+            "none of network.hostname, future.key is in the file, so they already have their defaults; there is nothing to reset"
         );
     }
 
