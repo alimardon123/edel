@@ -2352,6 +2352,7 @@ mod tests {
             keep_out: lock::keep_out(&corner_at),
             battery: false,
             background: lock_screen::Background::Backdrop,
+            dim: lock_screen::DIM,
         };
         let at = lock::layout(screen.0, screen.1, &t, true, &look, &mut text);
         let lock_view = lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());

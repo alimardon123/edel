@@ -70,8 +70,28 @@ pub const WALLPAPER_PANEL_H: f32 = 2.0 * PANEL_PAD_Y
     + PANEL_STACK_GAP
     + (PANEL_W - 2.0 * PANEL_PAD) * WALLPAPER_SHARE
     + PANEL_STACK_GAP
-    + 18.0
-    + 14.0;
+    + NAME_LINE
+    + NOTE_LINE
+    + DIM_GAP
+    + DIM_WORD_LINE
+    + DIM_SLIDER_GAP
+    + edit_kit::KNOB;
+/// The lines the wallpaper panel's name (18) and its note (14) take, and the
+/// Dim block under them (M5.10c7g): the word "Dim" (12 px, white at 75
+/// percent, a line of 14) after `DIM_GAP`, and the slider `DIM_SLIDER_GAP`
+/// under the word.
+const NAME_LINE: f32 = 18.0;
+const NOTE_LINE: f32 = 14.0;
+const DIM_GAP: f32 = 12.0;
+const DIM_WORD: f32 = 12.0;
+const DIM_WORD_LINE: f32 = 14.0;
+const DIM_WORD_SHARE: f32 = 0.75;
+const DIM_SLIDER_GAP: f32 = 8.0;
+/// How far above and below the slider a press still counts as on it, logical
+/// pixels: the knob is 16 px, a finger needs more.
+const DIM_HIT: f32 = 12.0;
+/// The step the Left and Right keys move the Dim by, in percent (M5.10c7g).
+pub const DIM_STEP: i32 = 5;
 /// The wallpaper panel's inner padding, logical pixels: 14 at the sides and
 /// 16 at the top and bottom (M5.10c7f), and the gap between its heading, its
 /// picture and its title.
@@ -102,10 +122,21 @@ const PREVIEW_DOT: f32 = 8.0;
 /// scales it to the tile's place).
 pub const PREVIEW_BOX: (f32, f32) = (98.0, 41.0);
 pub const PREVIEW_SCALE: f32 = 2.0;
-/// The date's words (white at 85 percent) and the now playing bar (white at
-/// 30 percent) in a strip tile's preview (M5.10c7f).
+/// The date's words (white at 85 percent) in a strip tile's preview (M5.10c7f).
 const PREVIEW_DATE_SHARE: f32 = 0.85;
-const PREVIEW_BAR_SHARE: f32 = 0.30;
+/// The battery's charge a strip tile's preview draws its outline at (M5.10c7g).
+const PREVIEW_CHARGE: u32 = 82;
+/// The music player's preview (M5.10c7g), logical pixels: a 40 by 22 pill of
+/// white at 12 percent, 3 px in from its left and right ends the cover (16
+/// px, `PREVIEW_COVER`) and the play glyph (9 px, `PREVIEW_PLAY`).
+const PREVIEW_PLAYER: (f32, f32) = (40.0, 22.0);
+const PREVIEW_PLAYER_SHARE: f32 = 0.12;
+const PREVIEW_PLAYER_PAD: f32 = 3.0;
+const PREVIEW_COVER: f32 = 16.0;
+const PREVIEW_PLAY: f32 = 9.0;
+/// The message's icon, 14 px, at 85 percent, and the picture's glyph, 12 px.
+const PREVIEW_MESSAGE_SHARE: f32 = 0.85;
+const PREVIEW_PICTURE: f32 = 12.0;
 
 /// A message as it is added from the drawer, logical pixels: its words wrap
 /// to one line of 300 px, 50 px high, the size of a line of its words.
@@ -158,6 +189,9 @@ pub struct View {
     /// The preview (M5.10c7f): the lock as it will be, over the whole screen,
     /// with the pill that says so; only Escape and Return go back.
     pub previewing: bool,
+    /// How much the background is darkened, in percent (M5.10c7g): the Dim
+    /// slider's value, which the lock picture uses and Done saves.
+    pub dim: u32,
 }
 
 /// The keyboard's focus in the edit mode (M5.10c6c): a placed part by its
@@ -168,6 +202,8 @@ pub enum Focus {
     Drawer(editor::Part),
     /// One of the bar's buttons (M5.10c7e), when the drawer is bare.
     Bar(BarButton),
+    /// The Dim slider of the wallpaper panel (M5.10c7g), when the panel shows.
+    Dim,
 }
 
 /// The bar's buttons (M5.10c7e, M5.10c7f): Cancel closes without writing,
@@ -256,6 +292,8 @@ pub enum Step {
     /// Shows the preview, or goes back from it (M5.10c7f).
     Preview,
     Back,
+    /// Moves the Dim by this many percent (M5.10c7g), clamped by the caller.
+    Dim(i32),
     Undo,
     Done,
     Close,
@@ -358,6 +396,7 @@ pub fn thumbnail(
     view: &lock::View,
     parts: &[Placed],
     background: &Background,
+    dim: u32,
     battery: bool,
     tokens: &Tokens,
     text: &mut Text,
@@ -370,7 +409,7 @@ pub fn thumbnail(
     // The lock's own layout would fall back to the classic parts.
     if parts.is_empty() {
         let mut pixmap = Pixmap::new(THUMB.0, THUMB.1)?;
-        match backdrops.get(background, wallpaper, THUMB, tokens) {
+        match backdrops.get(background, dim, wallpaper, THUMB, tokens) {
             Some(made) => pixmap.draw_pixmap(
                 0,
                 0,
@@ -390,6 +429,7 @@ pub fn thumbnail(
         keep_out: Vec::new(),
         battery,
         background: background.clone(),
+        dim,
     };
     let at = lock::layout(THUMB.0 as f32, THUMB.1 as f32, tokens, true, &look, text);
     let mut pixmap = Pixmap::new(THUMB.0, THUMB.1)?;
@@ -709,11 +749,21 @@ pub fn ring(view: &View) -> Vec<Focus> {
     } else {
         Vec::new()
     };
+    // The wallpaper panel's Dim comes after the parts, where its panel lies
+    // beside the canvas, and only on a screen wide enough for the panel.
+    let dim = has_panel(view).then_some(Focus::Dim);
     (0..view.parts.len())
         .map(Focus::Part)
+        .chain(dim)
         .chain(editor::ring(&view.drawer).into_iter().map(Focus::Drawer))
         .chain(bar)
         .collect()
+}
+
+/// Whether the edit mode draws the wallpaper panel, and with it the Dim
+/// slider: on a screen at least `WIDE` wide (`panels`).
+pub fn has_panel(view: &View) -> bool {
+    view.screen.0 >= WIDE
 }
 
 /// The next focus of the ring after `view`'s, forwards or backwards (Tab,
@@ -760,6 +810,17 @@ pub fn key(view: &View, key: Key, shift: bool) -> Step {
         Some(Focus::Part(i)) => part_key(view, i, key, shift),
         Some(Focus::Drawer(part)) => drawer_key(view, part, key),
         Some(Focus::Bar(button)) => bar_key(button, key),
+        Some(Focus::Dim) => dim_key(key),
+    }
+}
+
+/// A key on the Dim slider (M5.10c7g): the Left and Right keys step it by
+/// `DIM_STEP`, the others do nothing (Tab and Escape are the edit's).
+fn dim_key(key: Key) -> Step {
+    match key {
+        Key::Left => Step::Dim(-DIM_STEP),
+        Key::Right => Step::Dim(DIM_STEP),
+        _ => Step::Nothing,
     }
 }
 
@@ -852,6 +913,7 @@ pub fn focus_name(view: &View, focus: Focus) -> String {
         Focus::Bar(BarButton::Cancel) => "cancel".into(),
         Focus::Bar(BarButton::Preview) => "preview".into(),
         Focus::Bar(BarButton::Done) => "done".into(),
+        Focus::Dim => "dim".into(),
         Focus::Drawer(editor::Part::Undo) => "undo".into(),
         Focus::Drawer(editor::Part::Done) => "done".into(),
         Focus::Drawer(editor::Part::Tab(j)) => {
@@ -932,6 +994,16 @@ pub fn nodes(
             })
             .collect::<Vec<Item>>(),
     );
+    if let Some(rect) = dim_on_screen(view, preview) {
+        out.push(Item {
+            role: Role::Slider,
+            label: tr("Dim").to_string(),
+            bounds: bounds(rect),
+            children: Vec::new(),
+            toggled: None,
+            value: Some((f64::from(view.dim), 0.0, f64::from(lock_screen::MOST_DIM))),
+        });
+    }
     let (dx, dy) = (f64::from(drawer_at.x), f64::from(drawer_at.y));
     out.extend(
         editor::nodes(&view.drawer, drawer)
@@ -956,22 +1028,25 @@ pub fn focus_node(view: &View, at: &lock::Layout) -> Option<usize> {
     let drawn = at.placed.iter().filter(|r| r.is_some()).count();
     let tiles = view.drawer.tiles.len();
     let tabs = view.drawer.tabs.len();
+    // The Dim slider is one node after the parts when the panel shows it.
+    let dim = usize::from(has_panel(view));
     match view.focus? {
         Focus::Bar(button) => BAR_ORDER
             .iter()
             .position(|b| *b == button)
-            .map(|p| drawn + tabs + tiles + p),
+            .map(|p| drawn + dim + tabs + tiles + p),
         Focus::Part(i) => {
             if at.placed.get(i)?.is_none() {
                 return None;
             }
             Some(at.placed[..i].iter().filter(|r| r.is_some()).count())
         }
+        Focus::Dim => has_panel(view).then_some(drawn),
         // The drawer's nodes are its tabs, then its tiles, then Undo and Done.
-        Focus::Drawer(editor::Part::Tab(j)) => Some(drawn + j),
-        Focus::Drawer(editor::Part::Tile(j)) => Some(drawn + tabs + j),
-        Focus::Drawer(editor::Part::Undo) => Some(drawn + tabs + tiles),
-        Focus::Drawer(editor::Part::Done) => Some(drawn + tabs + tiles + 1),
+        Focus::Drawer(editor::Part::Tab(j)) => Some(drawn + dim + j),
+        Focus::Drawer(editor::Part::Tile(j)) => Some(drawn + dim + tabs + j),
+        Focus::Drawer(editor::Part::Undo) => Some(drawn + dim + tabs + tiles),
+        Focus::Drawer(editor::Part::Done) => Some(drawn + dim + tabs + tiles + 1),
     }
 }
 
@@ -998,6 +1073,9 @@ pub fn places(
                 at_rect(preview.to_screen(*rect))
             ));
         }
+    }
+    if let Some(dim) = dim_on_screen(view, preview) {
+        out.push_str(&format!(", dim {}", at_rect(dim)));
     }
     out.push_str(&format!(", drawer {}", at_rect(drawer_at)));
     for (i, (word, rect)) in view.drawer.tabs.iter().zip(&drawer.tabs).enumerate() {
@@ -1281,6 +1359,54 @@ pub fn paint_bar(
     text.draw(pixmap, &mut words, x, y, dim);
 }
 
+/// The Dim block of the wallpaper panel `panel` (M5.10c7g): the top of the
+/// word "Dim" and the slider's rectangle under it, logical pixels, from the
+/// panel's padding and the lines above it (the heading, the picture, the name
+/// and the note).
+fn dim_block(panel: Rect) -> (f32, Rect) {
+    let inner_w = panel.w - 2.0 * PANEL_PAD;
+    let top = panel.y
+        + PANEL_PAD_Y
+        + HEADING_SIZE
+        + PANEL_STACK_GAP
+        + inner_w * WALLPAPER_SHARE
+        + PANEL_STACK_GAP;
+    let word_y = top + NAME_LINE + NOTE_LINE + DIM_GAP;
+    let slider_y = word_y + DIM_WORD_LINE + DIM_SLIDER_GAP;
+    (
+        word_y,
+        Rect::new(panel.x + PANEL_PAD, slider_y, inner_w, edit_kit::KNOB),
+    )
+}
+
+/// The Dim slider's rectangle on the screen (M5.10c7g), when the edit mode
+/// draws the wallpaper panel (`has_panel`), else None.
+pub fn dim_on_screen(view: &View, preview: Preview) -> Option<Rect> {
+    if !has_panel(view) {
+        return None;
+    }
+    let (left, _) = panels(view.screen, preview)?;
+    Some(dim_block(left).1)
+}
+
+/// The Dim a press or a drag at `x` gives on the slider `slider` (M5.10c7g):
+/// the knob's centre travels from half a knob in from the slider's left to
+/// half a knob in from its right, so the value is where the knob would stand.
+pub fn dim_at(slider: Rect, x: f32) -> u32 {
+    let travel = (slider.w - edit_kit::KNOB).max(1.0);
+    let share = ((x - slider.x - edit_kit::KNOB / 2.0) / travel).clamp(0.0, 1.0);
+    (share * lock_screen::MOST_DIM as f32).round() as u32
+}
+
+/// Whether a point lies on the Dim slider, with `DIM_HIT` room above and below
+/// it for a finger (M5.10c7g).
+pub fn dim_hit(slider: Rect, x: f32, y: f32) -> bool {
+    x >= slider.x
+        && x <= slider.right()
+        && y >= slider.y - DIM_HIT
+        && y <= slider.y + slider.h + DIM_HIT
+}
+
 /// The wallpaper panel on the left of the edit mode (M5.10c7e): a quiet glass
 /// card with the heading "Wallpaper", the chosen background's picture (its
 /// thumbnail, drawn 16 to 10 with the tile's corners; a grey space for the
@@ -1361,6 +1487,21 @@ pub fn paint_wallpaper_panel(
             ..ink.text
         };
         text.draw(pixmap, &mut words, inner.x * s, y, note);
+    }
+    // The Dim (M5.10c7g): the word, then the slider under it, its knob at the
+    // dim, and the keyboard's ring when it has the focus.
+    let (word_y, slider) = dim_block(rect);
+    let mut word = text.line_in(tr("Dim"), DIM_WORD * s, Face::REGULAR);
+    let y = popup::middle(word_y, DIM_WORD_LINE, DIM_WORD * s, s);
+    let word_ink = Colour {
+        a: DIM_WORD_SHARE,
+        ..ink.text
+    };
+    text.draw(pixmap, &mut word, inner.x * s, y, word_ink);
+    let share = view.dim as f32 / lock_screen::MOST_DIM as f32;
+    edit_kit::slider(pixmap, slider, share, tokens, s);
+    if view.focus == Some(Focus::Dim) {
+        edit_kit::mark_part(pixmap, slider, edit_kit::State::Focus, tokens, style, s);
     }
 }
 
@@ -1484,6 +1625,10 @@ pub fn parts_moved(view: &mut View) {
 /// A background was chosen in the Background tab (M5.10c7a): the edit saves a
 /// look when Done is pressed, as a part change does.
 pub fn background_chosen(view: &mut View, background: Background) {
+    // A dim the person has not moved follows the background's default (M5.10c7g).
+    if view.dim == lock_screen::default_dim(&view.background) {
+        view.dim = lock_screen::default_dim(&background);
+    }
     view.background = background;
     view.changed = true;
 }
@@ -1604,11 +1749,13 @@ pub fn preview_words(part: Part, when: &lock::When, charge: Option<u8>) -> Strin
     }
 }
 
-/// A strip tile's live preview (M5.10c7f), drawn once for its words at
-/// `PREVIEW_SCALE`: the clock's time in 20 px light, the date in 12 px, the
-/// battery's charge in 13 px or its icon, the message in 12 px, the now
-/// playing bar of 44 by 10 glass, and the picture's tile of 26 by 20 with a
-/// two-colour gradient of the accent. None when the pixmap cannot be made.
+/// A strip tile's live preview (M5.10c7f, recognisable pictures in M5.10c7g),
+/// drawn once for its words at `PREVIEW_SCALE`: the clock's time in 22 px
+/// light, the date in 12 px, the battery's outline icon at 82 percent with its
+/// charge in 14 px, the message's icon with the words in 12 px, a small music
+/// player (a 40 by 22 pill with a cover and the play glyph) and the picture's
+/// tile of 26 by 20 with a two-colour gradient of the accent and its glyph.
+/// None when the pixmap cannot be made.
 pub fn preview_picture(
     part: Part,
     words: &str,
@@ -1644,30 +1791,89 @@ pub fn preview_picture(
             let y = popup::middle(0.0, bh, 12.0 * s, s);
             text.draw(&mut pixmap, &mut line, x, y, date_ink);
         }
-        Part::Message => centre_text(&mut pixmap, text, words, Face::REGULAR, 12.0),
-        Part::Battery if !words.is_empty() => {
-            centre_text(&mut pixmap, text, words, Face::REGULAR, 17.0)
-        }
         Part::Battery => {
-            let px = 18.0 * s;
-            let x = (bw * s - px) / 2.0;
+            // The outline at 16 px as the status area draws it, then the charge.
+            let px = 16.0 * s;
+            let mut line = text.line_in(words, 14.0 * s, Face::REGULAR);
+            let gap = if words.is_empty() { 0.0 } else { 6.0 * s };
+            let total = px + gap + line.width;
+            let x = ((bw * s - total) / 2.0).round();
             let y = (bh * s - px) / 2.0;
-            paint_kit::icon(&mut pixmap, "battery", px, x, y, ink.text);
+            let halo = s.round().max(1.0) as i32;
+            paint_kit::battery(
+                &mut pixmap,
+                px,
+                (x, y),
+                (PREVIEW_CHARGE, false),
+                ink.text,
+                halo,
+            );
+            if !words.is_empty() {
+                let top = popup::middle(0.0, bh, 14.0 * s, s);
+                text.draw(&mut pixmap, &mut line, x + px + gap, top, ink.text);
+            }
         }
-        Part::Player => {
-            let (w, h) = (40.0 * s, 12.0 * s);
-            let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
-            let bar = Colour {
-                a: PREVIEW_BAR_SHARE,
+        Part::Message => {
+            // The message's icon at 14 px, at 85 percent, then the words.
+            let px = 14.0 * s;
+            let gap = 5.0 * s;
+            let mut line = text.line_in(words, 12.0 * s, Face::REGULAR);
+            let total = px + gap + line.width;
+            let x = ((bw * s - total) / 2.0).round();
+            let y = (bh * s - px) / 2.0;
+            let glyph = Colour {
+                a: PREVIEW_MESSAGE_SHARE,
                 ..ink.text
             };
-            fill(&mut pixmap, x, y, w, h, 6.0 * s, bar);
+            paint_kit::icon(&mut pixmap, "message", px, x, y, glyph);
+            let top = popup::middle(0.0, bh, 12.0 * s, s);
+            text.draw(&mut pixmap, &mut line, x + px + gap, top, ink.text);
+        }
+        Part::Player => {
+            // A small player: the pill, the cover with the music glyph in it,
+            // and the play glyph at its right.
+            let (w, h) = (PREVIEW_PLAYER.0 * s, PREVIEW_PLAYER.1 * s);
+            let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
+            let pill = Colour {
+                a: PREVIEW_PLAYER_SHARE,
+                ..ink.text
+            };
+            fill(&mut pixmap, x, y, w, h, h / 2.0, pill);
+            let cover = PREVIEW_COVER * s;
+            let cover_y = y + (h - cover) / 2.0;
+            let cover_x = x + PREVIEW_PLAYER_PAD * s;
+            fill(
+                &mut pixmap,
+                cover_x,
+                cover_y,
+                cover,
+                cover,
+                4.0 * s,
+                tokens.accent,
+            );
+            let note = 10.0 * s;
+            paint_kit::icon(
+                &mut pixmap,
+                "music",
+                note,
+                cover_x + (cover - note) / 2.0,
+                cover_y + (cover - note) / 2.0,
+                ink.text,
+            );
+            let play = PREVIEW_PLAY * s;
+            let play_x = x + w - PREVIEW_PLAYER_PAD * s - play;
+            let play_y = y + (h - play) / 2.0;
+            paint_kit::icon(&mut pixmap, "media-play", play, play_x, play_y, ink.text);
         }
         Part::Picture => {
             let (w, h) = (26.0 * s, 20.0 * s);
             let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
             let bottom = paint_kit::mix(tokens.accent, tokens.backdrop_text, 0.5);
             paint_kit::fill_vertical(&mut pixmap, (x, y, w, h), 6.0 * s, tokens.accent, bottom);
+            // The picture glyph, white, centred on the tile.
+            let glyph = PREVIEW_PICTURE * s;
+            let (gx, gy) = (x + (w - glyph) / 2.0, y + (h - glyph) / 2.0);
+            paint_kit::icon(&mut pixmap, "picture", glyph, gx, gy, ink.text);
         }
         _ => {}
     }
@@ -1687,6 +1893,9 @@ pub struct Lines {
     /// them out, as a look Done saves or switches to brings its own.
     pub parts: Option<Option<String>>,
     pub background: Option<Option<String>>,
+    /// The person's `lock_screen.dim` line, taken out as the background's is
+    /// when a look saves it (M5.10c7g).
+    pub dim: Option<Option<String>>,
 }
 
 /// The `lock_screen.look` line for the look `name` (classic is none): None
@@ -1714,7 +1923,8 @@ pub fn written(view: &View, lock: &LockScreen) -> Result<Lines, String> {
             looks: None,
             look,
             parts: over.clone(),
-            background: over,
+            background: over.clone(),
+            dim: over,
         });
     }
     let own = lock.looks.as_ref();
@@ -1727,9 +1937,12 @@ pub fn written(view: &View, lock: &LockScreen) -> Result<Lines, String> {
     };
     let background = (view.background != Background::Blurred)
         .then(|| lock_screen::background_value(&view.background));
+    // The dim is kept only when it is not the background's default (M5.10c7g).
+    let dim = (view.dim != lock_screen::default_dim(&view.background)).then_some(view.dim);
     let look = OwnLook {
         parts: view.parts.clone(),
         background,
+        dim,
     };
     let looks = lock_screen::looks_value(own, &name, Some(look))
         .ok_or_else(|| tr("the looks do not write as TOML").to_string())?;
@@ -1738,6 +1951,7 @@ pub fn written(view: &View, lock: &LockScreen) -> Result<Lines, String> {
         look: look_line(&name, lock),
         parts: Some(None),
         background: Some(None),
+        dim: Some(None),
     })
 }
 
@@ -1775,6 +1989,7 @@ mod tests {
             keep_out: lock::keep_out(&corner_at),
             battery: false,
             background: Background::Backdrop,
+            dim: lock_screen::DIM,
         };
         lock::layout(1280.0, 800.0, &Tokens::built_in(), true, &look, &mut text)
     }
@@ -1803,6 +2018,7 @@ mod tests {
             editing: lock_screen::CLASSIC.into(),
             changed: false,
             background: Background::Backdrop,
+            dim: lock_screen::DIM,
             screen: (1280.0, 800.0),
             card: None,
             previewing: false,
@@ -2195,6 +2411,7 @@ mod tests {
             keep_out: lock::keep_out(&corner_at),
             battery: false,
             background: Background::Backdrop,
+            dim: lock_screen::DIM,
         };
         let at = lock::layout(360.0, 740.0, &tokens, true, &look, &mut text);
         let mut view = view_of(classic.clone());
@@ -2238,7 +2455,7 @@ mod tests {
         let mut view = view_of(classic.clone());
         assert_eq!(
             ring(&view).len(),
-            classic.len() + view.drawer.tiles.len() + 2
+            classic.len() + view.drawer.tiles.len() + 2 + usize::from(has_panel(&view))
         );
         set_focus(&mut view, Some(Focus::Drawer(editor::Part::Done)));
         assert_eq!(
@@ -2346,7 +2563,10 @@ mod tests {
         let shown = preview(view.screen, &drawer);
         let items = nodes(&view, &at, shown, place, &drawer);
         let placed = at.placed.iter().filter(|r| r.is_some()).count();
-        assert_eq!(items.len(), placed + view.drawer.tiles.len() + 2);
+        assert_eq!(
+            items.len(),
+            placed + view.drawer.tiles.len() + 2 + usize::from(has_panel(&view))
+        );
         assert_eq!(
             items[0].label,
             format!(
@@ -2469,7 +2689,8 @@ mod tests {
                 looks: None,
                 look: None,
                 parts: None,
-                background: None
+                background: None,
+                dim: None,
             }
         );
     }
@@ -2485,7 +2706,8 @@ mod tests {
                 looks: None,
                 look: Some(Some("magazine".into())),
                 parts: Some(None),
-                background: Some(None)
+                background: Some(None),
+                dim: Some(None),
             }
         );
         let lock = LockScreen {
@@ -2536,6 +2758,7 @@ mod tests {
         let home = OwnLook {
             parts: lock_screen::classic(false),
             background: None,
+            dim: None,
         };
         let lock = lock_with(&[("home", home)], Some("home"));
         let mut view = view_of(lock_screen::classic(false));
@@ -2554,6 +2777,7 @@ mod tests {
         let own = OwnLook {
             parts: lock_screen::classic(false),
             background: None,
+            dim: None,
         };
         let lock = lock_with(&[("classic-2", own)], None);
         let mut view = view_of(lock_screen::classic(false));
@@ -2738,8 +2962,11 @@ mod tests {
         );
         assert_eq!(
             ring.len(),
-            3 + classic.len() + view.drawer.tiles.len() + view.drawer.tabs.len(),
-            "parts, tabs, tiles and bar"
+            3 + classic.len()
+                + view.drawer.tiles.len()
+                + view.drawer.tabs.len()
+                + usize::from(has_panel(&view)),
+            "parts, dim, tabs, tiles and bar"
         );
         assert!(!ring.contains(&Focus::Drawer(editor::Part::Undo)));
         // Tab from nothing focuses the first placed part, not the bar.
@@ -2799,7 +3026,10 @@ mod tests {
         let placed = at.placed.iter().filter(|r| r.is_some()).count();
         assert_eq!(
             items.len(),
-            3 + placed + view.drawer.tabs.len() + view.drawer.tiles.len()
+            3 + placed
+                + view.drawer.tabs.len()
+                + view.drawer.tiles.len()
+                + usize::from(has_panel(&view))
         );
         // The bar's three come last, as the ring's do (M5.10c7f).
         let n = items.len();
@@ -2888,6 +3118,7 @@ mod tests {
             keep_out: lock::keep_out(&corner_at),
             battery: false,
             background: view.background.clone(),
+            dim: lock_screen::DIM,
         };
         let at = lock::layout(screen.0, screen.1, tokens, true, &look, text);
         let mut lock_view =
@@ -2951,6 +3182,7 @@ mod tests {
                 &lock_view,
                 &[],
                 &view.background,
+                lock_screen::DIM,
                 false,
                 tokens,
                 text,
@@ -3051,6 +3283,7 @@ mod tests {
                 &lock_view,
                 &classic,
                 &background,
+                lock_screen::DIM,
                 false,
                 &tokens,
                 &mut text,
@@ -3088,6 +3321,123 @@ mod tests {
                 .unwrap();
         }
     }
+    /// The Dim slider (M5.10c7g): it lies in the wallpaper panel under the
+    /// note, its knob's travel maps a pointer to the dim and back, and the
+    /// press's hit area covers it with room above and below.
+    #[test]
+    fn the_dim_slider_maps_the_pointer_to_the_dim_and_back() {
+        let classic = lock_screen::classic(false);
+        let mut view = view_of(classic);
+        let drawer = editor::layout(&view.drawer);
+        let shown = preview(view.screen, &drawer);
+        let slider = dim_on_screen(&view, shown).expect("the panel shows the slider");
+        let left = panels(view.screen, shown).expect("wide screen").0;
+        assert!(
+            slider.x > left.x && slider.right() < left.right(),
+            "{slider:?}"
+        );
+        assert!(
+            slider.y > left.y && slider.y < left.y + left.h,
+            "{slider:?}"
+        );
+        let knob = edit_kit::KNOB;
+        assert_eq!(dim_at(slider, slider.x), 0);
+        assert_eq!(dim_at(slider, slider.x + knob / 2.0), 0);
+        assert_eq!(
+            dim_at(slider, slider.right() - knob / 2.0),
+            lock_screen::MOST_DIM
+        );
+        assert_eq!(dim_at(slider, slider.right()), lock_screen::MOST_DIM);
+        let middle = dim_at(slider, slider.x + slider.w / 2.0);
+        assert!((38..=42).contains(&middle), "{middle}");
+        assert!(dim_hit(slider, slider.x + 4.0, slider.y + slider.h / 2.0));
+        assert!(dim_hit(slider, slider.x + 4.0, slider.y - DIM_HIT + 1.0));
+        assert!(!dim_hit(slider, slider.x - 1.0, slider.y));
+        assert!(!dim_hit(slider, slider.x + 4.0, slider.y - DIM_HIT - 1.0));
+        // On a screen with no wallpaper panel there is no slider.
+        view.screen = (360.0, 740.0);
+        assert_eq!(dim_on_screen(&view, shown), None);
+    }
+
+    /// The keyboard reaches the Dim after the parts and steps it by five
+    /// percent; a dim the person changes makes the edit changed.
+    #[test]
+    fn the_dim_takes_the_keys_left_and_right_by_five() {
+        let classic = lock_screen::classic(false);
+        let mut view = view_of(classic.clone());
+        let ring = ring(&view);
+        let at = ring
+            .iter()
+            .position(|f| *f == Focus::Dim)
+            .expect("in the ring");
+        assert_eq!(at, classic.len(), "after the parts");
+        set_focus(&mut view, Some(Focus::Dim));
+        assert_eq!(key(&view, Key::Right, false), Step::Dim(DIM_STEP));
+        assert_eq!(key(&view, Key::Left, false), Step::Dim(-DIM_STEP));
+        assert_eq!(key(&view, Key::Up, false), Step::Nothing);
+        assert_eq!(focus_name(&view, Focus::Dim), "dim");
+        // Tab steps on from it, to the strip's first tile (its tabs are not in
+        // the ring of a bare strip).
+        assert_eq!(
+            key(&view, Key::Tab, false),
+            Step::Focus(Some(Focus::Drawer(editor::Part::Tile(0))))
+        );
+    }
+
+    /// The reader's node for the slider is a slider named Dim with its value,
+    /// placed after the parts.
+    #[test]
+    fn the_reader_names_the_dim_a_slider_with_its_value() {
+        let classic = lock_screen::classic(false);
+        let at = at_classic(&classic);
+        let mut view = view_of(classic.clone());
+        view.dim = 55;
+        let drawer = editor::layout(&view.drawer);
+        let place = drawer_rect(view.screen, &drawer);
+        let shown = preview(view.screen, &drawer);
+        let items = nodes(&view, &at, shown, place, &drawer);
+        let placed = at.placed.iter().filter(|r| r.is_some()).count();
+        let dim = &items[placed];
+        assert_eq!(dim.label, "Dim");
+        assert_eq!(dim.role, Role::Slider);
+        assert_eq!(
+            dim.value,
+            Some((55.0, 0.0, f64::from(lock_screen::MOST_DIM)))
+        );
+        set_focus(&mut view, Some(Focus::Dim));
+        assert_eq!(focus_node(&view, &at), Some(placed));
+        // The log names the slider's place once it is drawn.
+        assert!(places(&view, &at, shown, place, &drawer).contains(", dim "));
+    }
+
+    /// A dim the person sets is saved in the look like the background is,
+    /// unless it is the background's default; a new background moves a dim
+    /// the person has not set.
+    #[test]
+    fn a_dim_is_saved_in_the_look_and_follows_the_background_until_set() {
+        let mut view = view_of(lock_screen::classic(false));
+        view.dim = 70;
+        parts_moved(&mut view);
+        let lines = written_for(&view);
+        assert_eq!(lines.dim, Some(None), "the person's line goes");
+        let text = lines.looks.flatten().expect("a look is saved");
+        assert!(text.contains("dim = 70"), "{text}");
+        // The default for the background is not written.
+        view.dim = lock_screen::DIM;
+        view.background = Background::Blurred;
+        let lines = written_for(&view);
+        assert!(!lines.looks.flatten().unwrap().contains("dim ="));
+        // A new background moves the dim while it is the default; a set one stays.
+        background_chosen(&mut view, Background::Sharp);
+        assert_eq!(view.dim, lock_screen::DIM_SHARP);
+        view.dim = 20;
+        background_chosen(
+            &mut view,
+            Background::Colour(edel::tokens::Colour::parse("#336699").unwrap()),
+        );
+        assert_eq!(view.dim, 20);
+    }
+
     /// Preview (M5.10c7f): the pill sits 16 px from the top and centred, its
     /// Back button inside it, and only Escape and Return go back to the edit;
     /// the other keys do nothing while the lock is shown as it will be.

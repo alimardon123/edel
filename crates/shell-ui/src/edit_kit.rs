@@ -128,6 +128,11 @@ const MARK_RING: f32 = 1.5;
 const MARK_HALO: f32 = 4.0;
 const MARK_RADIUS: f32 = 16.0;
 const MARK_RING_SHARE: f32 = 0.9;
+/// The glass slider's track (`slider`, M5.10c7g): 4 px high, its rest white at
+/// 18 percent, and its knob 16 px across.
+pub const TRACK: f32 = 4.0;
+pub const TRACK_REST: f32 = 0.18;
+pub const KNOB: f32 = 16.0;
 const MARK_HALO_SHARE: f32 = 0.45;
 
 /// The colours an editor draws its parts in, for its style: the text, the
@@ -370,6 +375,40 @@ pub fn side_panel(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, s: f32) {
         ..tokens.backdrop_text
     };
     stroke(pixmap, (x, y, w, h), radius, LINE * s, edge, None);
+}
+
+/// The track of a glass slider (M5.10c7g, the Dim of the wallpaper panel):
+/// `TRACK` logical pixels high with round ends, its rest white at
+/// `TRACK_REST`, filled in the accent from its left end to `share` (0 to 1)
+/// of the knob's travel, and a white `KNOB` at that point. `track` is the
+/// whole slider; the knob's centre travels from half a knob in from its left
+/// to half a knob in from its right, so the knob never leaves it.
+pub fn slider(pixmap: &mut Pixmap, track: Rect, share: f32, tokens: &Tokens, s: f32) {
+    let ink = inks(Style::GLASS, tokens);
+    let share = share.clamp(0.0, 1.0);
+    let bar_y = track.y + (track.h - TRACK) / 2.0;
+    let centre_y = track.y + track.h / 2.0;
+    let travel = track.w - KNOB;
+    let knob_x = track.x + KNOB / 2.0 + travel * share;
+    let (x, y, w, h) = Rect::new(track.x, bar_y, track.w, TRACK).device(s);
+    let rest = Colour {
+        a: TRACK_REST,
+        ..ink.text
+    };
+    fill(pixmap, x, y, w, h, TRACK / 2.0 * s, rest);
+    let filled = (knob_x - track.x).max(0.0);
+    if filled > 0.0 {
+        fill(pixmap, x, y, filled * s, h, TRACK / 2.0 * s, ink.accent);
+    }
+    if let Some(path) = PathBuilder::from_circle(knob_x * s, centre_y * s, KNOB / 2.0 * s) {
+        pixmap.fill_path(
+            &path,
+            &paint_of(ink.text),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 /// A part's outline (M5.10c6c3): `PART_PAD` outside the part `r` (logical

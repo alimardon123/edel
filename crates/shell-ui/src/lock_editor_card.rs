@@ -97,6 +97,10 @@ pub struct LockEditor {
     original: Vec<Placed>,
     original_editing: String,
     original_background: Background,
+    /// The Dim the edit started from (M5.10c7g), put back by Undo, and whether
+    /// a press on the Dim slider is moving it.
+    original_dim: u32,
+    dimming: bool,
     view: lock_editor::View,
     battery: bool,
     compact: bool,
@@ -161,8 +165,9 @@ fn set_tab(le: &mut LockEditor, tab: usize) {
 /// big, as the lock draws it: the player's card at its one-page size, the
 /// corner's buttons kept clear (`corner_view`, with no menu), the count shown
 /// (two notifications, so the count is a part to move), the battery when the
-/// machine has one, and `background` behind. Returns the layout and the
-/// corner's layout.
+/// machine has one, and `background` behind, darkened by `dim` (M5.10c7g).
+/// Returns the layout and the corner's layout.
+#[allow(clippy::too_many_arguments)]
 fn layout_of(
     text: &mut paint::Text,
     tokens: &Tokens,
@@ -170,6 +175,7 @@ fn layout_of(
     parts: &[Placed],
     battery: bool,
     background: &Background,
+    dim: u32,
     corner_view: &corner::View,
 ) -> (lock::Layout, corner::Layout) {
     let corner_at = corner::layout(screen.0, screen.1, corner_view);
@@ -180,9 +186,22 @@ fn layout_of(
         keep_out: lock::keep_out(&corner_at),
         battery,
         background: background.clone(),
+        dim,
     };
     let at = lock::layout(screen.0, screen.1, tokens, true, &look, text);
     (at, corner_at)
+}
+
+/// The Dim moves to `dim` percent (M5.10c7g, clamped to `MOST_DIM`): the edit
+/// changed, so Done saves it, and the log says what it moved to.
+fn set_dim(le: &mut LockEditor, dim: u32) {
+    let dim = dim.min(lock_screen::MOST_DIM);
+    if dim == le.view.dim {
+        return;
+    }
+    le.view.dim = dim;
+    le.view.changed = true;
+    eprintln!("edel-shell-ui: lock editor dim {dim}");
 }
 
 /// Whether a drag has gone far enough to be a drag (`DRAG_START`).
@@ -403,6 +422,7 @@ impl Shell {
             editing: editing.clone(),
             changed: false,
             background: applied.background.clone(),
+            dim: applied.dim,
             screen,
             drag: None,
             guides: Vec::new(),
@@ -462,6 +482,8 @@ impl Shell {
             shown: false,
             original_editing: editing,
             original_background: view.background.clone(),
+            original_dim: view.dim,
+            dimming: false,
             original,
             view,
             battery,
@@ -589,6 +611,7 @@ impl Shell {
             &le.view.parts,
             le.battery,
             &le.view.background,
+            le.view.dim,
             &corner_view,
         );
         let drawer = editor::layout(&le.view.drawer);
@@ -841,12 +864,13 @@ impl Shell {
             .into_iter()
             .find(|(n, _, _)| *n == name)
             .and_then(|(_, _, background)| background)?;
+        let dim = le.view.dim;
         let (parts, key) = if bare {
-            (Vec::new(), format!("wallpaper:{name}"))
+            (Vec::new(), format!("wallpaper:{name}:{dim}"))
         } else {
             (
                 lock_screen::classic(le.compact),
-                format!("background:{name}"),
+                format!("background:{name}:{dim}"),
             )
         };
         self.thumb(le, key, &parts, &background)
@@ -879,6 +903,7 @@ impl Shell {
             &lock_view,
             parts,
             background,
+            le.view.dim,
             le.battery,
             &self.tokens,
             &mut self.text,
@@ -1103,6 +1128,7 @@ impl Shell {
             &le.view.parts,
             le.battery,
             &le.view.background,
+            le.view.dim,
             &corner_view,
         );
         let drawer = editor::layout(&le.view.drawer);
@@ -1167,6 +1193,13 @@ impl Shell {
                         focus_to(&mut le, Some(Focus::Drawer(editor::Part::Tab(i))));
                     }
                     Step::Background(i) => self.choose_background(&mut le, i),
+                    Step::Dim(delta) => {
+                        let dim = i64::from(le.view.dim) + i64::from(delta);
+                        set_dim(
+                            &mut le,
+                            dim.clamp(0, i64::from(lock_screen::MOST_DIM)) as u32,
+                        );
+                    }
                     Step::Undo => self.undo_lock_editor(&mut le),
                     Step::Open(i) => open_card(&mut le, i, true),
                     Step::Preview => self.start_preview(&mut le),
@@ -1240,6 +1273,31 @@ impl Shell {
         if le.view.card.is_some() {
             self.lock_card_pointer(le, event, &at, shown, (sx, sy));
             return Leave::Stay;
+        }
+        // The Dim slider of the wallpaper panel (M5.10c7g): a press on it, and
+        // a drag that began there, set the dim where the pointer is.
+        if let Some(slider) = lock_editor::dim_on_screen(&le.view, shown) {
+            match &event.kind {
+                PointerEventKind::Press { button, .. }
+                    if *button == BTN_LEFT && lock_editor::dim_hit(slider, sx, sy) =>
+                {
+                    le.dimming = true;
+                    set_dim(le, lock_editor::dim_at(slider, sx));
+                    self.paint_lock_editor(le);
+                    return Leave::Stay;
+                }
+                PointerEventKind::Motion { .. } if le.dimming => {
+                    set_dim(le, lock_editor::dim_at(slider, sx));
+                    self.paint_lock_editor(le);
+                    return Leave::Stay;
+                }
+                PointerEventKind::Release { button, .. } if *button == BTN_LEFT && le.dimming => {
+                    le.dimming = false;
+                    return Leave::Stay;
+                }
+                PointerEventKind::Leave { .. } => le.dimming = false,
+                _ => {}
+            }
         }
         let inside = place.contains(sx, sy);
         let on_drawer = if inside {
@@ -1411,6 +1469,7 @@ impl Shell {
         le.view.editing = le.original_editing.clone();
         le.view.changed = false;
         le.view.background = le.original_background.clone();
+        le.view.dim = le.original_dim;
         refresh_tiles(le);
         le.view.drag = None;
         le.view.guides.clear();
@@ -1431,6 +1490,7 @@ impl Shell {
             .map(|read| read.file.lock_screen)
             .unwrap_or_default();
         let before = LockBefore {
+            dim: person_lock.dim.map(|dim| dim.to_string()),
             looks: person_lock
                 .looks
                 .as_ref()
@@ -1479,6 +1539,12 @@ impl Shell {
                     .unwrap_or_else(|| before.background.clone()),
                 before.background.clone(),
                 BACKGROUND,
+            ),
+            (
+                lock_screen::DIM_KEY,
+                lines.dim.unwrap_or_else(|| before.dim.clone()),
+                before.dim.clone(),
+                lock_screen::DIM_KEY,
             ),
         ];
         let changed: Vec<_> = edits
@@ -1594,6 +1660,11 @@ impl Shell {
                 "lock_screen.parts",
             ),
             (BACKGROUND, before.background.as_deref(), BACKGROUND),
+            (
+                lock_screen::DIM_KEY,
+                before.dim.as_deref(),
+                lock_screen::DIM_KEY,
+            ),
         ];
         let mut words = Vec::new();
         for (key, value, word) in lines {

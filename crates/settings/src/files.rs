@@ -290,6 +290,7 @@ impl Files {
             parts: person.parts.or(machine.parts),
             look: person.look.or(machine.look),
             background: person.background.or(machine.background),
+            dim: person.dim.or(machine.dim),
             notifications: person.notifications.or(machine.notifications),
             looks: (!looks.is_empty()).then_some(looks),
         }

@@ -89,3 +89,4 @@ appearance.title_bar_height
 appearance.panel_opacity
 appearance.monospace_font
 appearance.text_size
+lock_screen.dim

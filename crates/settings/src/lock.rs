@@ -36,6 +36,7 @@ const INTRO: &str = n_("How the lock and login screens look.");
 /// the blurred and sharp tiles show (`wallpaper.rs` chooses it).
 const PARTS: &str = lock_screen::PARTS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
+const DIM: &str = lock_screen::DIM_KEY;
 const OWN_LOOKS: &str = "lock_screen.looks";
 const WALLPAPER: &str = "appearance.wallpaper";
 
@@ -239,6 +240,16 @@ fn background_release(files: &Files) -> String {
     lock_screen::background_value(&lock_screen::look_background(&look))
 }
 
+/// The dim the lock applies without the person's own key (M5.10c7g): the
+/// look's own, else the background's default, as a whole number as text. The
+/// release value a write is compared with, so a dim that is what applies
+/// anyway is taken out, never written.
+fn dim_release(files: &Files) -> String {
+    let mut lock = files.lock();
+    lock.dim = None;
+    lock_screen::applied(&lock, false).dim.to_string()
+}
+
 /// Takes `key` out of the person's file, when they have it: nothing is
 /// written when they have none, as writers never write a default.
 fn reset_person(files: &Files, key: &str) -> Result<(), String> {
@@ -267,6 +278,7 @@ fn command_for(key: &str) -> String {
     let value = match key {
         PARTS => parts_text(&applied.parts).unwrap_or_default(),
         BACKGROUND => lock_screen::background_value(&applied.background),
+        DIM => applied.dim.to_string(),
         NOTIFICATIONS if applied.notifications => COUNT.to_string(),
         NOTIFICATIONS => NONE.to_string(),
         _ => lock.look.unwrap_or_else(|| CLASSIC.to_string()),
@@ -348,6 +360,12 @@ struct Ui {
     background_source: widgets::Source,
     background_flow: gtk::FlowBox,
     tiles: RefCell<Vec<Tile>>,
+    /// The Dim slider, its words and its row (M5.10c7g), and the count of
+    /// its moves, so only the last one after it settles is written.
+    dim: gtk::Scale,
+    dim_words: gtk::Label,
+    dim_row: widgets::Row,
+    dim_moves: Cell<u32>,
     /// What the tiles draw, as it was built, so they are built again only
     /// when it changes.
     tiles_shown: RefCell<String>,
@@ -440,6 +458,18 @@ impl Ui {
             ),
         );
         self.count_row.reset.set_visible(rows::resettable(&count));
+        let dim = files.source(DIM);
+        self.dim.set_value(f64::from(applied.dim));
+        self.dim_words
+            .set_label(&trf("{percent}%", &[("percent", &applied.dim.to_string())]));
+        set_line(
+            &self.dim_row,
+            &line(
+                tr("Darkens the background so the white words read"),
+                rows::note(&dim, false),
+            ),
+        );
+        self.dim_row.reset.set_visible(rows::resettable(&dim));
         self.quiet.set(false);
         self.problem.set_visible(false);
     }
@@ -976,6 +1006,30 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .unwrap_or_else(|| tiles.clone().upcast());
     content.append(&tiles);
 
+    // Dim (M5.10c7g): how much the background is darkened so the white words
+    // read, a slider from 0 to `MOST_DIM` percent in a card of its own.
+    let dim_group = widgets::group(&content);
+    let dim = gtk::Scale::with_range(
+        gtk::Orientation::Horizontal,
+        0.0,
+        f64::from(lock_screen::MOST_DIM),
+        1.0,
+    );
+    dim.set_digits(0);
+    dim.set_draw_value(false);
+    dim.set_valign(gtk::Align::Center);
+    dim.set_size_request(DIM_SLIDER, -1);
+    let dim_words = gtk::Label::builder()
+        .width_request(DIM_WORDS)
+        .xalign(1.0)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-value"])
+        .build();
+    let dim_box = gtk::Box::builder().spacing(12).build();
+    dim_box.append(&dim);
+    dim_box.append(&dim_words);
+    let dim_row = widgets::row(&dim_group, tr("Dim"), dim_box.upcast_ref());
+
     widgets::heading(&content, tr("Clock and date"));
     let clock_group = widgets::group(&content);
     let face = widgets::Segments::new(&[
@@ -1027,6 +1081,10 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         background_flow: tiles.clone(),
         tiles: RefCell::new(Vec::new()),
         tiles_shown: RefCell::new(String::new()),
+        dim: dim.clone(),
+        dim_words,
+        dim_row,
+        dim_moves: Cell::new(0),
         face: face.clone(),
         face_row,
         hours: hours.clone(),
@@ -1048,7 +1106,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             }
         });
     }
-    wire(&ui, (&save, &edit), &face, &date, &hours, &count);
+    wire(&ui, (&save, &edit), &face, &date, &hours, &count, &dim);
     log_places(&looks, &ui);
 
     // The page's state lives as long as the page does.
@@ -1059,6 +1117,12 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     page
 }
 
+/// The Dim slider's width and its words' width (M5.10c7g), as Motion's speed.
+const DIM_SLIDER: i32 = 220;
+const DIM_WORDS: i32 = 56;
+/// How long the Dim slider must stand still before its value is written.
+const SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+
 /// Connects the page's controls and the Reset and Copy buttons of its rows
 /// and of the cards' section.
 fn wire(
@@ -1068,6 +1132,7 @@ fn wire(
     date: &Rc<widgets::Segments>,
     hours: &gtk::Switch,
     count: &gtk::Switch,
+    dim: &gtk::Scale,
 ) {
     // Edit lock screen asks shell-ui for its edit mode over the session bus,
     // as the Panels group asks for the panel editor (the same call, given the
@@ -1148,6 +1213,47 @@ fn wire(
         }
     });
 
+    // Dim: the words follow at once and the value is written once the slider
+    // settles (250 ms), unless the page moved it, as Motion's speed is.
+    let weak = Rc::downgrade(ui);
+    dim.connect_value_changed(move |scale| {
+        let Some(ui) = weak.upgrade() else {
+            return;
+        };
+        let value = scale.value().round() as u32;
+        ui.dim_words
+            .set_label(&trf("{percent}%", &[("percent", &value.to_string())]));
+        if ui.quiet.get() {
+            return;
+        }
+        let moves = ui.dim_moves.get().wrapping_add(1);
+        ui.dim_moves.set(moves);
+        let weak = Rc::downgrade(&ui);
+        glib::timeout_add_local_once(SETTLE, move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            if ui.dim_moves.get() != moves {
+                return;
+            }
+            let value = ui.dim.value().round() as u32;
+            let files = Files::here();
+            let release = dim_release(&files);
+            let result = files.choose_over(DIM, &value.to_string(), Some(&release));
+            if result.is_ok() {
+                eprintln!("edel-settings: lock dim {value} written");
+            }
+            ui.report(result);
+            ui.update();
+        });
+    });
+    let weak = Rc::downgrade(ui);
+    ui.dim_row.reset.connect_clicked(move |_| {
+        if let Some(ui) = weak.upgrade() {
+            ui.report(reset_person(&Files::here(), DIM));
+            ui.update();
+        }
+    });
     // Reset: the look's own arrangement and look, the background, the
     // option's default in the person's list, or the count.
     let weak = Rc::downgrade(ui);
@@ -1205,6 +1311,7 @@ fn wire(
         }
     });
     copy(&ui.background_source.copy, || command_for(BACKGROUND));
+    copy(&ui.dim_row.copy, || command_for(DIM));
     for row in [&ui.face_row, &ui.hours_row, &ui.date_row] {
         copy(&row.copy, || command_for(PARTS));
     }
@@ -1501,6 +1608,7 @@ mod tests {
             edel::settings::OwnLook {
                 parts: parts.clone(),
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()
@@ -1517,6 +1625,7 @@ mod tests {
             edel::settings::OwnLook {
                 parts,
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()
@@ -1548,6 +1657,7 @@ mod tests {
         let own = edel::settings::OwnLook {
             parts: lock_screen::classic(false),
             background: None,
+            dim: None,
         };
         let lock = LockScreen {
             looks: Some([("home".to_string(), own)].into_iter().collect()),

@@ -98,6 +98,8 @@ pub struct LockBefore {
     pub look: Option<String>,
     pub parts: Option<String>,
     pub background: Option<String>,
+    /// The person's `lock_screen.dim` line (M5.10c7g).
+    pub dim: Option<String>,
 }
 
 /// The words the Undo bar says for what it undoes (M5.10c6).

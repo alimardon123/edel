@@ -425,6 +425,12 @@ msgstr ""
 msgid "Off hides the number of notifications that wait"
 msgstr ""
 
+msgid "{percent}%"
+msgstr ""
+
+msgid "Darkens the background so the white words read"
+msgstr ""
+
 msgid "Choose one picture"
 msgstr ""
 
@@ -441,6 +447,9 @@ msgid "Looks"
 msgstr ""
 
 msgid "Background"
+msgstr ""
+
+msgid "Dim"
 msgstr ""
 
 msgid "Clock and date"

@@ -251,6 +251,9 @@ msgstr ""
 msgid "{title}, {where}"
 msgstr ""
 
+msgid "Dim"
+msgstr ""
+
 msgid "Wallpaper"
 msgstr ""
 
