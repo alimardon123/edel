@@ -272,6 +272,7 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
             match result {
                 Ok(text) => {
                     state.text = Some(text);
+                    state.text_key += 1;
                     state.dirty = true;
                 }
                 Err(e) => eprintln!("edel-compositor: {e:#}; title bars show no titles"),

@@ -965,6 +965,9 @@ msgstr ""
 msgid "{key} {value} is less than {least}; the release's is used"
 msgstr ""
 
+msgid "{key} is empty; the release's is used"
+msgstr ""
+
 msgid "could not read /proc/self/mountinfo"
 msgstr ""
 
