@@ -32,14 +32,9 @@ const PARTS: &str = "lock_screen.parts";
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
 
-/// The built-in look that applies while none is chosen. Its owner is
-/// `edel::lock_screen`, where the same name is the first of `LOOKS`.
-const CLASSIC: &str = "classic";
-
-/// The values `lock_screen.notifications` takes, as the key table lists
-/// them.
-const COUNT: &str = "count";
-const NONE: &str = "none";
+/// The look that applies while none is chosen, and the notifications'
+/// values, as `edel::lock_screen` owns them.
+use lock_screen::{CLASSIC, COUNT_HIDDEN as NONE, COUNT_SHOWN as COUNT};
 
 /// The faces and date styles the segments show, in their order.
 const FACES: [Face; 4] = [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal];
