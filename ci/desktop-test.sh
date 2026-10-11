@@ -4115,7 +4115,7 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'face = "analog"' ||
 		fail "ci's settings file does not hold the clock's analog face: $(value settings_file)"
-	# The look (M5.10c6c3): Magazine is chosen before the edit (M5.10c7f: the
+	# The look (M5.10c6c3): Magazine is written into ci's file before the edit (M5.10c7e: the
 	# Looks tab is gone), a right click on the lock's backdrop asks for the
 	# edit after unlock, ci's password unlocks and opens it. Done keeps the
 	# look, which the file holds with no parts line (lock-editor-looks.png

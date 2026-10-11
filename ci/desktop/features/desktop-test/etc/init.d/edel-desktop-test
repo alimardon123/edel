@@ -760,7 +760,7 @@ commands() {
 		# (M5.10c5c) and the test picture behind it, in the machine's file,
 		# are taken out after the check, so the cases after it see the
 		# classic look.
-		'lock magazine set') edel settings set lock_screen.look=magazine ;;
+		'lock magazine set') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{s/^look = .*/look = \"magazine\"/}' /home/ci/.config/edel/$settings_name" ;;
 		'lock magazine reset') as_ci "sed -i '/^look = /d' /home/ci/.config/edel/$settings_name" && edel settings reset appearance.wallpaper ;;
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
