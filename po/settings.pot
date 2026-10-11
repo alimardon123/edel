@@ -395,12 +395,6 @@ msgstr ""
 msgid "How the lock and login screens look."
 msgstr ""
 
-msgid "Magazine"
-msgstr ""
-
-msgid "Minimal"
-msgstr ""
-
 msgid "Your own arrangement"
 msgstr ""
 

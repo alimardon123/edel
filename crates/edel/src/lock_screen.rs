@@ -710,6 +710,14 @@ pub fn check_looks(looks: &BTreeMap<String, crate::settings::OwnLook>) -> Result
                 &[("name", &shown)],
             ));
         }
+        if let Some(background) = &look.background {
+            if parse_background(background).is_none() {
+                return Err(trf(
+                    "the look {name} has the background {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path",
+                    &[("name", &shown), ("background", &format!("{background:?}"))],
+                ));
+            }
+        }
         check(&look.parts).map_err(|why| {
             trf(
                 "the look {name} does not check: {why}",
@@ -718,6 +726,87 @@ pub fn check_looks(looks: &BTreeMap<String, crate::settings::OwnLook>) -> Result
         })?;
     }
     Ok(())
+}
+
+/// Whether `name` is a built-in look, which never changes: editing one
+/// saves a new look of the person's (Alimardon, 2026-10-11).
+pub fn is_built_in(name: &str) -> bool {
+    LOOKS.contains(&name)
+}
+
+/// The name a look shows as: a built-in look's translated, else the
+/// person's own with a capital and spaces for hyphens (`classic-2` reads
+/// Classic 2). Settings and the lock's editor both show this.
+pub fn look_title(name: &str) -> String {
+    match name {
+        CLASSIC => tr("Classic").to_string(),
+        "magazine" => tr("Magazine").to_string(),
+        "minimal" => tr("Minimal").to_string(),
+        own => {
+            let words = own.replace('-', " ");
+            let mut chars = words.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect(),
+                None => words,
+            }
+        }
+    }
+}
+
+/// A free name for a new look made from `base` (a copy, or the changes to a
+/// built-in look): `base-2`, else `base-3` and on, cut so it stays a look's
+/// name; `taken` says whether a name is in use.
+pub fn new_look_name(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    // A copy of a copy counts on from its base: classic-2 gives classic-3.
+    let stem = match base.rsplit_once('-') {
+        Some((stem, n)) if !stem.is_empty() && n.parse::<u32>().is_ok() => stem,
+        _ => base,
+    };
+    (2..)
+        .map(|n| {
+            let tail = format!("-{n}");
+            let room = MOST_LOOK.saturating_sub(tail.len());
+            format!("{}{tail}", &stem[..stem.len().min(room)])
+        })
+        .find(|name| !LOOKS.contains(&name.as_str()) && !taken(name))
+        .unwrap_or_default()
+}
+
+/// What applies now as a look of the person's (Save as, Duplicate, and Done
+/// on a built-in look): the wide arrangement and the background, written as
+/// a value only when it is not what a new look gets without one.
+pub fn as_own_look(lock: &crate::settings::LockScreen) -> crate::settings::OwnLook {
+    let applied = applied(lock, false);
+    crate::settings::OwnLook {
+        parts: applied.parts,
+        background: (applied.background != Background::Blurred)
+            .then(|| background_value(&applied.background)),
+    }
+}
+
+/// The value of `lock_screen.looks` with `name` set to `look` (None takes
+/// it out), as TOML for `edel settings set`; None when no look is left, so
+/// the key is reset rather than written empty.
+pub fn looks_value(
+    own: Option<&BTreeMap<String, crate::settings::OwnLook>>,
+    name: &str,
+    look: Option<crate::settings::OwnLook>,
+) -> Option<String> {
+    let mut own = own.cloned().unwrap_or_default();
+    match look {
+        Some(look) => {
+            own.insert(name.to_string(), look);
+        }
+        None => {
+            own.remove(name);
+        }
+    }
+    if own.is_empty() {
+        return None;
+    }
+    toml::Value::try_from(&own)
+        .ok()
+        .map(|value| value.to_string())
 }
 
 /// What the lock screen shows (M5.10c5c), from [`applied`].
@@ -746,6 +835,12 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
     });
     // A look this file does not have is classic, so its background too.
     let look = if list.is_some() { name } else { CLASSIC };
+    let own_background = lock
+        .looks
+        .as_ref()
+        .and_then(|own| own.get(look))
+        .and_then(|own| own.background.as_deref())
+        .and_then(parse_background);
     let parts = match (&lock.parts, list) {
         (Some(parts), _) => applying(Some(parts), compact),
         (None, Some(list)) => applying(Some(&list), compact),
@@ -757,6 +852,7 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
             .background
             .as_deref()
             .and_then(parse_background)
+            .or(own_background)
             .unwrap_or_else(|| look_background(look)),
         notifications: lock.notifications.as_deref() != Some(COUNT_HIDDEN),
     }
@@ -1846,6 +1942,7 @@ mod tests {
     fn applied_uses_a_persons_own_look_and_falls_back_to_classic() {
         let own = crate::settings::OwnLook {
             parts: vec![part_at(Part::Clock, Anchor::Top, 0.2), person(false)],
+            background: None,
         };
         let lock = crate::settings::LockScreen {
             look: Some("home".into()),
@@ -1865,6 +1962,69 @@ mod tests {
     }
 
     #[test]
+    fn an_own_look_brings_its_background() {
+        let own = crate::settings::OwnLook {
+            parts: classic(false),
+            background: Some("#336699".into()),
+        };
+        let mut lock = crate::settings::LockScreen {
+            look: Some("home".into()),
+            looks: Some([("home".to_string(), own)].into_iter().collect()),
+            ..Default::default()
+        };
+        let colour = crate::tokens::Colour::parse("#336699").unwrap();
+        assert_eq!(applied(&lock, false).background, Background::Colour(colour));
+        // The key over the look still wins, as on the command line.
+        lock.background = Some("sharp".into());
+        assert_eq!(applied(&lock, false).background, Background::Sharp);
+        // A look written back keeps its background, and blurred is not written.
+        lock.background = None;
+        assert_eq!(as_own_look(&lock).background.as_deref(), Some("#336699"));
+        lock.looks = None;
+        lock.look = Some("magazine".into());
+        assert_eq!(as_own_look(&lock).background, None);
+        let mut looks = BTreeMap::new();
+        looks.insert(
+            "bad".to_string(),
+            crate::settings::OwnLook {
+                parts: classic(false),
+                background: Some("purple".into()),
+            },
+        );
+        assert!(check_looks(&looks).unwrap_err().contains("\"purple\""));
+    }
+
+    #[test]
+    fn new_looks_get_free_names_and_titles() {
+        assert_eq!(new_look_name("classic", |_| false), "classic-2");
+        assert_eq!(new_look_name("classic", |n| n == "classic-2"), "classic-3");
+        assert_eq!(
+            new_look_name("classic-2", |n| n == "classic-2"),
+            "classic-3"
+        );
+        let long = "a".repeat(MOST_LOOK);
+        let name = new_look_name(&long, |_| false);
+        assert!(is_look_name(&name) && name.ends_with("-2"));
+        assert_eq!(look_title("classic-2"), "Classic 2");
+        assert_eq!(look_title("minimal"), "Minimal");
+        assert!(is_built_in("magazine") && !is_built_in("home"));
+    }
+
+    #[test]
+    fn looks_value_adds_and_takes_out() {
+        let look = crate::settings::OwnLook {
+            parts: vec![person(false)],
+            background: None,
+        };
+        let one = looks_value(None, "home", Some(look.clone())).unwrap();
+        let text = format!("format = 1\n[lock_screen]\nlooks = {one}\n");
+        let read = crate::settings::read(&text).unwrap();
+        assert_eq!(read.file.lock_screen.looks.unwrap()["home"], look);
+        let own: BTreeMap<_, _> = [("home".to_string(), look)].into_iter().collect();
+        assert_eq!(looks_value(Some(&own), "home", None), None);
+    }
+
+    #[test]
     fn check_look_names_the_looks_it_takes() {
         assert!(check_look("magazine", None).is_ok());
         assert_eq!(
@@ -1875,6 +2035,7 @@ mod tests {
             "home".to_string(),
             crate::settings::OwnLook {
                 parts: classic(false),
+                background: None,
             },
         )]
         .into_iter()

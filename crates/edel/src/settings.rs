@@ -970,10 +970,16 @@ pub struct LockScreen {
     pub looks: Option<BTreeMap<String, OwnLook>>,
 }
 
-/// One of the person's own looks: the parts it places ([`LockScreen::looks`]).
+/// One of the person's own looks: the parts it places and what lies behind
+/// them ([`LockScreen::looks`]). A look is a preset of the lock: choosing it
+/// brings both (Alimardon, 2026-10-11).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OwnLook {
     pub parts: Vec<crate::lock_screen::Placed>,
+    /// As `lock_screen.background` takes it; absent is the blurred
+    /// wallpaper, as for every look but classic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
 }
 
 /// The Default apps page.

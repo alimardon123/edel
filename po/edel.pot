@@ -224,7 +224,19 @@ msgstr ""
 msgid "{name} is a built-in look; name yours another way, such as \"home\""
 msgstr ""
 
+msgid "the look {name} has the background {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path"
+msgstr ""
+
 msgid "the look {name} does not check: {why}"
+msgstr ""
+
+msgid "Classic"
+msgstr ""
+
+msgid "Magazine"
+msgstr ""
+
+msgid "Minimal"
 msgstr ""
 
 msgid "Your message"
@@ -486,9 +498,6 @@ msgid "only a dock hides; the {edge} panel is a bar"
 msgstr ""
 
 msgid "a dock floats already; take floating out of the {edge} panel"
-msgstr ""
-
-msgid "Classic"
 msgstr ""
 
 msgid "Mac-like"
