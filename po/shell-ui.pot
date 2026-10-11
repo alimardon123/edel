@@ -203,16 +203,13 @@ msgstr ""
 msgid "Picture"
 msgstr ""
 
-msgid "Blurred wallpaper"
+msgid "Blurred"
 msgstr ""
 
-msgid "Sharp wallpaper"
+msgid "Sharp"
 msgstr ""
 
 msgid "Colour"
-msgstr ""
-
-msgid "Picture in Settings"
 msgstr ""
 
 msgid "Magazine"

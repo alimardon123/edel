@@ -182,16 +182,8 @@ pub const THUMB: (u32, u32) = (960, 600);
 /// opens Settings' lock screen page and changes nothing here).
 pub fn background_choices() -> Vec<(&'static str, String, Option<Background>)> {
     vec![
-        (
-            "blurred",
-            tr("Blurred").into(),
-            Some(Background::Blurred),
-        ),
-        (
-            "sharp",
-            tr("Sharp").into(),
-            Some(Background::Sharp),
-        ),
+        ("blurred", tr("Blurred").into(), Some(Background::Blurred)),
+        ("sharp", tr("Sharp").into(), Some(Background::Sharp)),
         ("backdrop", tr("Colour").into(), Some(Background::Backdrop)),
         ("picture", tr("Picture").into(), None),
     ]
