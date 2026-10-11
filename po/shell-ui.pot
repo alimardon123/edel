@@ -92,12 +92,6 @@ msgstr ""
 msgid "Desktop for this login"
 msgstr ""
 
-msgid "Edit panels"
-msgstr ""
-
-msgid "Edit lock screen"
-msgstr ""
-
 msgid "Drop here to take it off the panel"
 msgstr ""
 
@@ -107,7 +101,19 @@ msgstr ""
 msgid "Drop here to take it away"
 msgstr ""
 
+msgid "Choose a look, which brings its parts and its background"
+msgstr ""
+
+msgid "Choose what lies behind the lock screen's parts"
+msgstr ""
+
 msgid "Drag a part anywhere, from here to add it, or here to take it away"
+msgstr ""
+
+msgid "Edit panels"
+msgstr ""
+
+msgid "Edit lock screen"
 msgstr ""
 
 msgid "Undo"
@@ -117,6 +123,9 @@ msgid "Done"
 msgstr ""
 
 msgid "{title}, on a panel"
+msgstr ""
+
+msgid "{title}, in use"
 msgstr ""
 
 msgid "Add {title}"
@@ -141,6 +150,9 @@ msgid "{percent}%"
 msgstr ""
 
 msgid "Caps Lock is on"
+msgstr ""
+
+msgid "Enter your password to edit the lock screen"
 msgstr ""
 
 msgid "Left and right choose a person"
@@ -191,6 +203,21 @@ msgstr ""
 msgid "Picture"
 msgstr ""
 
+msgid "Blurred"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Colour"
+msgstr ""
+
+msgid "Magazine"
+msgstr ""
+
+msgid "Minimal"
+msgstr ""
+
 msgid "top left"
 msgstr ""
 
@@ -222,6 +249,15 @@ msgid "{title}, {where}"
 msgstr ""
 
 msgid "Music"
+msgstr ""
+
+msgid "Parts"
+msgstr ""
+
+msgid "Looks"
+msgstr ""
+
+msgid "Background"
 msgstr ""
 
 msgid "Close notification"
@@ -309,9 +345,6 @@ msgid "Stacked"
 msgstr ""
 
 msgid "Analog"
-msgstr ""
-
-msgid "Minimal"
 msgstr ""
 
 msgid "Long"

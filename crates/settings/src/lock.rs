@@ -17,7 +17,9 @@ use gtk::prelude::*;
 use gtk::{gio, glib};
 
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Background, DateStyle, Face, Item, Part, Placed, Rect};
+use edel::lock_screen::{
+    self, BACKGROUND, Background, DateStyle, Face, Item, LOOK, Part, Placed, Rect,
+};
 use edel::panel_edit::EDIT_LOCK_SCREEN;
 use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
@@ -27,8 +29,6 @@ use crate::style::Theme;
 use crate::{panels, preview, rows, widgets};
 
 /// The keys this page chooses.
-const LOOK: &str = "lock_screen.look";
-const BACKGROUND: &str = "lock_screen.background";
 const PARTS: &str = lock_screen::PARTS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
