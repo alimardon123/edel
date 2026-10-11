@@ -740,6 +740,9 @@ msgstr ""
 msgid "{key} is not in the file, so it already has its default; there is nothing to reset"
 msgstr ""
 
+msgid "none of {keys} is in the file, so they already have their defaults; there is nothing to reset"
+msgstr ""
+
 msgid "{table} is not a table in the file; change it by hand"
 msgstr ""
 
