@@ -5,6 +5,9 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Every choice in Settings is also a line of your settings file and an edel settings command. Each group's copy button gives the command."
+msgstr ""
+
 msgid "About"
 msgstr ""
 
@@ -27,6 +30,9 @@ msgid "Session log"
 msgstr ""
 
 msgid "The last lines of this session"
+msgstr ""
+
+msgid "Settings and the command line"
 msgstr ""
 
 msgid "Name"
@@ -83,7 +89,7 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
-msgid "Connect headphones, speakers, a mouse or a keyboard. Pairings are kept safely by this computer and never go in your settings file."
+msgid "Headphones, speakers, mice and keyboards. Pairings stay on this computer."
 msgstr ""
 
 msgid "This computer has no Bluetooth"
@@ -278,7 +284,7 @@ msgstr ""
 msgid "Colours"
 msgstr ""
 
-msgid "Each screen's size, scale and place. Changes apply at once. Each choice is also a line of your settings file and an edel settings set command."
+msgid "Each screen's size, scale and place."
 msgstr ""
 
 msgid "Automatic"
@@ -317,16 +323,16 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
-msgid "The panels and docks along the screen's edges and what they hold. Each choice here is also a line of your settings file and an edel settings set command."
+msgid "The bars and docks along the screen's edges, and what they hold."
 msgstr ""
 
-msgid "Workspaces keep windows apart, each a desktop of its own. Each choice here is also a line of your settings file and an edel settings set command."
+msgid "Desktops of their own, to keep windows apart."
 msgstr ""
 
-msgid "How the desktop looks. Each choice here is also a line of your settings file and an edel settings set command."
+msgid "Colours, accent, shape and motion. Every change shows at once."
 msgstr ""
 
-msgid "One preset sets up the whole desktop: its panels, where windows open and how they tile. Each choice here is also a line of your settings file and an edel settings set command."
+msgid "One preset sets up the whole desktop: its panels, windows and tiling."
 msgstr ""
 
 msgid "Dynamic workspaces decide how many"
@@ -386,6 +392,9 @@ msgstr ""
 msgid "What shows where more workspaces lie"
 msgstr ""
 
+msgid "How the lock and login screens look."
+msgstr ""
+
 msgid "Magazine"
 msgstr ""
 
@@ -423,9 +432,6 @@ msgid "Off hides the number of notifications that wait"
 msgstr ""
 
 msgid "Choose one picture"
-msgstr ""
-
-msgid "How the lock and login screens look. Each choice here is also a line of your settings file and an edel settings set command."
 msgstr ""
 
 msgid "Edit it where it is: move, add or take away parts on the lock itself."
@@ -512,7 +518,7 @@ msgstr ""
 msgid "Search the settings"
 msgstr ""
 
-msgid "Connect by cable or Wi-Fi. Wi-Fi passwords are kept safely by this computer and never go in your settings file."
+msgid "Wired and Wi-Fi. Passwords stay on this computer."
 msgstr ""
 
 msgid "weak"
@@ -659,7 +665,7 @@ msgstr ""
 msgid "Nothing is connected, so there are no addresses to show."
 msgstr ""
 
-msgid "Banners appear when an app has something to say, and the clock keeps them all."
+msgid "Banners, do not disturb, and the list the clock keeps."
 msgstr ""
 
 msgid "Banners stay away; notifications still collect in the list the clock opens"
@@ -692,82 +698,7 @@ msgstr ""
 msgid "The desktop's panels are not running, so they cannot be edited now:\n{why}"
 msgstr ""
 
-msgid "How much battery is left, and what the lid and the power button do."
-msgstr ""
-
-msgid "When the lid closes"
-msgstr ""
-
-msgid "Not available yet. Sleep, lock, do nothing or shut down."
-msgstr ""
-
-msgid "Lock the screen after"
-msgstr ""
-
-msgid "Not available yet. Lock when the computer sits unused."
-msgstr ""
-
-msgid "Power button"
-msgstr ""
-
-msgid "Not available yet. What pressing the power button does."
-msgstr ""
-
-msgid "On battery"
-msgstr ""
-
-msgid "Not available yet. Save power or run at full speed."
-msgstr ""
-
-msgid "Plugged in"
-msgstr ""
-
-msgid "This computer has no battery."
-msgstr ""
-
-msgid "Running on battery"
-msgstr ""
-
-msgid "The battery's charge is not reported."
-msgstr ""
-
-msgid "Battery at {percent}%"
-msgstr ""
-
-msgid "Plugged in and charging. About {time} until full."
-msgstr ""
-
-msgid "Plugged in and charging."
-msgstr ""
-
-msgid "Plugged in."
-msgstr ""
-
-msgid "Plugged in, not charging at the moment."
-msgstr ""
-
-msgid "Battery empty"
-msgstr ""
-
-msgid "Plug in the charger to keep working."
-msgstr ""
-
-msgid "On battery. About {time} left."
-msgstr ""
-
-msgid "On battery."
-msgstr ""
-
-msgid "Looking at the battery"
-msgstr ""
-
-msgid "Other batteries"
-msgstr ""
-
-msgid "Power settings"
-msgstr ""
-
-msgid "Power information is not available"
+msgid "The battery, the lid and the power button."
 msgstr ""
 
 msgid "Preset"
@@ -837,6 +768,15 @@ msgid "Title bar height"
 msgstr ""
 
 msgid "Panels' opacity"
+msgstr ""
+
+msgid "Interface font"
+msgstr ""
+
+msgid "Monospace font"
+msgstr ""
+
+msgid "Text size"
 msgstr ""
 
 msgid "Switcher look"
@@ -974,7 +914,7 @@ msgstr ""
 msgid "How the windows will look with these shapes"
 msgstr ""
 
-msgid "Choose where sound plays and what listens, and how loud. This is the sound system's own state, kept for you by the machine, so it is not a line of your settings file; each row can copy the wpctl command that does the same."
+msgid "Where sound plays, what listens, and how loud."
 msgstr ""
 
 msgid "Output"
@@ -1100,7 +1040,7 @@ msgstr ""
 msgid "Can't reach the update server. Check your internet connection and try again."
 msgstr ""
 
-msgid "A machine is one settings file. Save this one to set up another the same way, or pick a file to see what it would change here before anything is changed."
+msgid "Copy this machine to another, or set it up from a file."
 msgstr ""
 
 msgid "This machine already matches this file; there is nothing to apply."
@@ -1151,6 +1091,18 @@ msgstr ""
 msgid "could not write {path}: {why}; choose a folder you can write to"
 msgstr ""
 
+msgid "Default"
+msgstr ""
+
+msgid "{name} (default)"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "A sample of the text in the chosen font and size"
+msgstr ""
+
 msgid "No app has put an icon in the tray yet"
 msgstr ""
 
@@ -1199,16 +1151,13 @@ msgstr ""
 msgid "A channel this machine was set up to follow."
 msgstr ""
 
+msgid "Edel OS updates as a whole, and can always go back."
+msgstr ""
+
 msgid "What's new"
 msgstr ""
 
 msgid "Update settings"
-msgstr ""
-
-msgid "Install updates automatically"
-msgstr ""
-
-msgid "Not available yet. For now, check for updates here."
 msgstr ""
 
 msgid "Runs {command}"
@@ -1232,7 +1181,7 @@ msgstr ""
 msgid "the command stopped without an answer; try again"
 msgstr ""
 
-msgid "The people who use this computer. Passwords are never shown here."
+msgid "The people who use this computer."
 msgstr ""
 
 msgid "Administrator"
@@ -1257,24 +1206,6 @@ msgid "Other people"
 msgstr ""
 
 msgid "No one else has an account on this computer."
-msgstr ""
-
-msgid "Add or remove people"
-msgstr ""
-
-msgid "Adding a person needs administrator rights, which Settings cannot ask for yet. An administrator can add one now with edel settings set users.NAME.admin=false and then edel settings apply."
-msgstr ""
-
-msgid "Removing a person is not available yet."
-msgstr ""
-
-msgid "Add a person"
-msgstr ""
-
-msgid "Remove a person"
-msgstr ""
-
-msgid "Not available yet"
 msgstr ""
 
 msgid "Login name"

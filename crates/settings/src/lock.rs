@@ -17,7 +17,7 @@ use adw::prelude::*;
 use gtk::cairo::{Context, LinearGradient};
 use gtk::{gdk, gio, glib};
 
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::lock_screen::{
     self, BACKGROUND, Background, DateStyle, Face, Item, LOOK, Part, Placed, Rect,
 };
@@ -29,6 +29,8 @@ use edel::wallpapers::{self, Wallpaper};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::{icon, panels, preview, rows, widgets};
+
+const INTRO: &str = n_("How the lock and login screens look.");
 
 /// The keys this page chooses, and the one it reads for the wallpaper that
 /// the blurred and sharp tiles show (`wallpaper.rs` chooses it).
@@ -893,12 +895,7 @@ fn blank_tile() -> gtk::Widget {
 /// value comes from.
 pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let files = Files::here();
-    let (page, content, problem) = widgets::page(
-        tr("Lock screen"),
-        tr(
-            "How the lock and login screens look. Each choice here is also a line of your settings file and an edel settings set command.",
-        ),
-    );
+    let (page, content, problem) = widgets::page(tr("Lock screen"), tr(INTRO));
 
     // What applies now (M5.32b): its picture, its name, a line, and Edit
     // lock screen beside the quiet Save as. Narrow, the picture stacks on

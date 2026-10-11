@@ -22,11 +22,7 @@ use edel::sound::{self, Device, Devices, Kind};
 
 use crate::widgets;
 
-const INTRO: &str = n_(
-    "Choose where sound plays and what listens, and how loud. This is the sound system's own \
-     state, kept for you by the machine, so it is not a line of your settings file; each row \
-     can copy the wpctl command that does the same.",
-);
+const INTRO: &str = n_("Where sound plays, what listens, and how loud.");
 
 /// How often the page looks at the sound system while it is open.
 const FOLLOW: u32 = 2;

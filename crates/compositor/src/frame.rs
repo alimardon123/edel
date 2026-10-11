@@ -298,6 +298,9 @@ pub struct Look {
     pub hovered: Option<Button>,
     /// Whether the font had loaded.
     pub text: bool,
+    /// Which title font is loaded and at what size (M5.12b5): the state
+    /// counts each new one, so a bar drawn with another draws again.
+    pub text_key: u32,
     /// The side the buttons sit on (M5.4b).
     pub side: Side,
     /// Which buttons it shows (M5.18a).
@@ -524,7 +527,7 @@ pub struct Text {
 
 /// Where fonts live: `fonts` in each of `$XDG_DATA_DIRS`, else in
 /// `/usr/local/share` and `/usr/share`, as fontconfig looks.
-fn font_dirs() -> Vec<PathBuf> {
+pub fn font_dirs() -> Vec<PathBuf> {
     let dirs = std::env::var("XDG_DATA_DIRS")
         .ok()
         .filter(|d| !d.is_empty())
@@ -976,6 +979,7 @@ mod tests {
             maximized: false,
             hovered: None,
             text: false,
+            text_key: 0,
             side: Side::Right,
             shown: Shown::default(),
             icon: None,

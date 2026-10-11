@@ -389,8 +389,11 @@ pub const KEYS: &[Key] = &[
     now("appearance.border_width", Kind::WholeFromTo(0, 10)),
     now("appearance.title_bar_height", Kind::WholeFromTo(24, 48)),
     now("appearance.panel_opacity", Kind::WholeFromTo(20, 100)),
-    later("appearance.font", Kind::Text),
-    later("appearance.font_size", Kind::Number),
+    // The text (M5.12b5): the interface and monospace fonts by family name,
+    // and every text size in percent of the release's.
+    now(FONT, Kind::Text),
+    now(MONOSPACE_FONT, Kind::Text),
+    now(TEXT_SIZE, Kind::WholeFromTo(80, 150)),
     later("appearance.cursor_size", Kind::Whole),
     later("appearance.icon_size", Kind::Whole),
     now(
@@ -735,10 +738,16 @@ pub struct Appearance {
     /// The panels' opacity in percent, 20 to 100 (M5.12b2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel_opacity: Option<u32>,
+    /// The interface font's family (M5.12b5); absent is the tokens' own.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
+    /// The monospace font's family (M5.12b5); absent is
+    /// [`crate::tokens::MONOSPACE`].
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub font_size: Option<f64>,
+    pub monospace_font: Option<String>,
+    /// Every text size in percent, 80 to 150 (M5.12b5); absent is 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_size: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -821,6 +830,17 @@ pub const SHAPE_KEYS: &[&str] = &[
     "appearance.panel_opacity",
 ];
 
+/// The interface font's family, as fontconfig names it (M5.12b5).
+pub const FONT: &str = "appearance.font";
+/// The font apps use for code and terminals (M5.12b5); absent is
+/// [`crate::tokens::MONOSPACE`].
+pub const MONOSPACE_FONT: &str = "appearance.monospace_font";
+/// Every text size in percent of the release's, 80 to 150 (M5.12b5).
+pub const TEXT_SIZE: &str = "appearance.text_size";
+
+/// The three keys of the text (M5.12b5), read by [`crate::tokens::Text`].
+pub const TEXT_KEYS: &[&str] = &[FONT, MONOSPACE_FONT, TEXT_SIZE];
+
 /// The least and most a whole-number key takes, from its entry in [`KEYS`]
 /// (M5.12b2): the one place a reader finds a range, so the tokens and the
 /// file's own check agree. None for a key that is not a whole number range.
@@ -831,6 +851,14 @@ pub fn whole_range(key: &str) -> Option<(i64, i64)> {
             Kind::WholeFromTo(least, most) => Some((least, most)),
             _ => None,
         })
+}
+
+/// Whether any of the text keys differ between two appearances (M5.12b5),
+/// for the compositor and shell-ui to read the text again.
+pub fn text_changed(old: &Appearance, new: &Appearance) -> bool {
+    old.font != new.font
+        || old.monospace_font != new.monospace_font
+        || old.text_size != new.text_size
 }
 
 /// Whether any of the windows' shape keys differ between two appearances
@@ -2147,7 +2175,7 @@ hostname = "lab-1"
 [appearance]
 acent = "red"
 mode = "sepia"
-font_size = 11
+cursor_size = 11
 "#;
 
     #[test]
@@ -2180,7 +2208,7 @@ font_size = 11
         assert!(lines.contains(
             &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
         ));
-        assert!(lines.contains(&"appearance.font_size: not supported yet".to_string()));
+        assert!(lines.contains(&"appearance.cursor_size: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
 
@@ -2196,7 +2224,7 @@ font_size = 11
         let read = read(MIXED).unwrap();
         assert_eq!(read.file.network.hostname.as_deref(), Some("lab-1"));
         assert_eq!(read.file.appearance.mode, None);
-        assert_eq!(read.file.appearance.font_size, Some(11.0));
+        assert_eq!(read.file.appearance.cursor_size, Some(11));
         let keys: Vec<&str> = read.problems.iter().map(|p| p.key.as_str()).collect();
         assert_eq!(keys, ["appearance.acent", "appearance.mode"]);
     }
@@ -2520,8 +2548,8 @@ font_size = 11
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
-            error("appearance.font_size", "11"),
-            "appearance.font_size: not supported yet; this release does not act on it, so it cannot be set"
+            error("appearance.cursor_size", "11"),
+            "appearance.cursor_size: not supported yet; this release does not act on it, so it cannot be set"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }
@@ -3145,5 +3173,25 @@ font_size = 11
             &Appearance::default(),
             &shape("format = 1\n[appearance]\npanel_opacity = 50\n")
         ));
+    }
+
+    #[test]
+    fn the_text_keys_take_their_range_and_a_changed_text_is_seen() {
+        let text_size = |value: &str| set("format = 1\n", "appearance.text_size", value);
+        assert!(text_size("80").unwrap().contains("text_size = 80"));
+        assert!(text_size("150").is_ok());
+        let wide = text_size("151").unwrap_err().to_string();
+        assert!(wide.contains("a whole number from 80 to 150"), "{wide}");
+        assert!(text_size("79").is_err());
+        assert!(set("format = 1\n", "appearance.font", "Noto Sans").is_ok());
+        assert_eq!(whole_range("appearance.text_size"), Some((80, 150)));
+        let appearance = |text: &str| read(text).unwrap().file.appearance;
+        let old = appearance("format = 1\n[appearance]\nfont = \"Inter Variable\"\n");
+        let new = appearance("format = 1\n[appearance]\nfont = \"Noto Sans\"\n");
+        assert!(text_changed(&old, &new));
+        assert!(!text_changed(&old, &old));
+        let bigger = appearance("format = 1\n[appearance]\ntext_size = 120\n");
+        assert!(text_changed(&old, &bigger));
+        assert!(!shape_changed(&old, &bigger));
     }
 }

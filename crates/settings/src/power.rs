@@ -3,8 +3,8 @@
 //! headline how full the battery is and whether the computer is plugged in
 //! and charging, with the time left under it; a computer with no battery
 //! says `Plugged in` and nothing more. The batteries of other things (a
-//! wireless mouse) follow when UPower lists any. Power settings come next,
-//! and Details, closed, holds what technical people read: UPower's own
+//! wireless mouse) follow when UPower lists any. Details, closed, holds
+//! what technical people read: UPower's own
 //! dump, as `upower --dump` prints it.
 //!
 //! Everything comes from UPower (`edel::power`, which the panel's battery
@@ -14,13 +14,13 @@
 //! battery's own state, not a line of the settings file, so the status has
 //! no Reset.
 //!
-//! The four settings below it are keys of the table that nothing follows
-//! yet (`power.lid_close`, `power.lock_after_minutes`, `power.power_button`
-//! and `power.on_battery`, M7.8, which needs the logind-free sleep and the
-//! screen lock to exist), so each row only says so, as the Updates page's
-//! automatic updates did. Seam (ADR-008): with M7.8 they become rows of
-//! `rows.rs` like Channel, written with `Files::choose`, and a test here
-//! fails the day the table supports one, so the row cannot be forgotten.
+//! The four `[power]` keys of the table that nothing follows yet
+//! (`power.lid_close`, `power.lock_after_minutes`, `power.power_button` and
+//! `power.on_battery`) have no row until M7.8, which needs the logind-free
+//! sleep and the screen lock to exist, so the page shows no setting that
+//! does not work. Seam (ADR-008): with M7.8 they become rows of `rows.rs`
+//! like Channel, written with `Files::choose`, and a test here fails the
+//! day the table supports one, so the row cannot be forgotten.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -34,34 +34,19 @@ use edel::power::{self, Snapshot, State};
 
 use crate::{card, widgets};
 
-const INTRO: &str = n_("How much battery is left, and what the lid and the power button do.");
+const INTRO: &str = n_("The battery, the lid and the power button.");
 
 /// How often the page looks at UPower while it is on screen, in seconds.
 const FOLLOW: u32 = 5;
 
-/// A setting of this page that no release follows yet: its key, its title,
-/// and what it will do, in plain words.
-const LATER: &[(&str, &str, &str)] = &[
-    (
-        "power.lid_close",
-        n_("When the lid closes"),
-        n_("Not available yet. Sleep, lock, do nothing or shut down."),
-    ),
-    (
-        "power.lock_after_minutes",
-        n_("Lock the screen after"),
-        n_("Not available yet. Lock when the computer sits unused."),
-    ),
-    (
-        "power.power_button",
-        n_("Power button"),
-        n_("Not available yet. What pressing the power button does."),
-    ),
-    (
-        "power.on_battery",
-        n_("On battery"),
-        n_("Not available yet. Save power or run at full speed."),
-    ),
+/// The `[power]` keys that no release follows yet, so no row shows them
+/// (M7.8 brings their rows, as the module says); the test holds the table to it.
+#[cfg(test)]
+const WAITING: &[&str] = &[
+    "power.lid_close",
+    "power.lock_after_minutes",
+    "power.power_button",
+    "power.on_battery",
 ];
 
 /// The card at the top: the words, and whether its icon is lit.
@@ -169,11 +154,8 @@ pub fn page() -> gtk::Widget {
     others_head.set_visible(false);
     others.set_visible(false);
 
-    widgets::heading(&content, tr("Power settings"));
-    let group = widgets::group(&content);
-    for (_, title, blurb) in LATER {
-        later_row(&group, tr(title), tr(blurb));
-    }
+    // The lid, the screen lock, the power button and the power profile
+    // come with M7.8, as rows of `[power]`; none is shown until then.
 
     // Details, closed: UPower's own words.
     let inner = gtk::Box::builder()
@@ -194,18 +176,6 @@ pub fn page() -> gtk::Widget {
     });
     card::while_shown(&page, FOLLOW, move || refresh(&ui));
     page
-}
-
-/// A setting nothing follows yet: its title, a control that cannot be
-/// used and the line that says so.
-fn later_row(group: &gtk::Box, title: &str, blurb: &str) {
-    let choice = widgets::Choice::new(vec![tr("Automatic").to_string()]);
-    let control = choice.widget();
-    control.set_sensitive(false);
-    let row = widgets::row(group, title, &control);
-    row.subtitle.set_label(blurb);
-    row.reset.set_visible(false);
-    row.copy.set_visible(false);
 }
 
 /// Asks UPower and shows what it says.
@@ -369,16 +339,15 @@ mod tests {
             .iter()
             .filter(|k| k.path.starts_with("power."))
             .collect();
-        let rows: Vec<&str> = LATER.iter().map(|(key, _, _)| *key).collect();
         assert_eq!(
             table.iter().map(|k| k.path).collect::<Vec<_>>(),
-            rows,
-            "every power key has a row here, in the table's order"
+            WAITING,
+            "every power key that waits is listed here, in the table's order"
         );
         for key in table {
             assert!(
                 !key.supported,
-                "{} is followed now: make it a row of rows.rs, written with Files::choose, and take it out of LATER",
+                "{} is followed now: make it a row of rows.rs, written with Files::choose, and take it out of WAITING",
                 key.path
             );
         }

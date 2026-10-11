@@ -26,10 +26,7 @@ use crate::screens::{self, Screen};
 use crate::style::Theme;
 use crate::{preview, rows, widgets};
 
-const INTRO: &str = n_(
-    "Each screen's size, scale and place. Changes apply at once. Each choice is also a line \
-     of your settings file and an edel settings set command.",
-);
+const INTRO: &str = n_("Each screen's size, scale and place.");
 
 /// The page's own state, so every change shows everywhere on it.
 struct Ui {
