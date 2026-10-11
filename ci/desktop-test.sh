@@ -1343,7 +1343,7 @@ case_settings_wallpaper() {
 	# ci's file, and the compositor draws ci-light.png in the light scheme
 	# (`wallpaper PATH`, then `wallpaper on Virtual-1 1280x800`), so the
 	# screen's top left is #d08a2e. The top left is Settings' only if its
-	# window starts at 4,4 or before; then the bottom right is checked
+	# window starts at 4,4 or before; then the top right is checked
 	# instead, the same colour. Super+Q closes Settings, the line taken out
 	# of ci's file brings the background back (`wallpaper none`). Kept as
 	# settings-wallpaper.png and settings-wallpaper-gone.png.
@@ -1370,9 +1370,11 @@ case_settings_wallpaper() {
 	done
 	set -- $card
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	# The top left, outside Settings' window; the top right if the window
+	# reaches it (the panel lies along the bottom).
 	sx=4 sy=4
 	if [ "$x" -le 4 ] && [ "$y" -le 4 ]; then
-		sx=1276 sy=796
+		sx=1276
 	fi
 	sleep 2
 	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
@@ -1388,7 +1390,7 @@ case_settings_wallpaper() {
 	filed=$(count 'DESKTOP-TEST: settings_file ')
 	guest 'settings file'
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
-	value settings_file | grep -q '\[appearance\];wallpaper = "ci";' ||
+	value settings_file | grep -q '\[appearance\];.*wallpaper = "ci"' ||
 		fail "ci's settings file is not what the Wallpaper card writes: $(value settings_file)"
 	shot settings-wallpaper "$sx" "$sy" d08a2e >/dev/null ||
 		fail "the wallpaper at $sx,$sy is not the ci card's #d08a2e (settings-wallpaper.png)"

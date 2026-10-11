@@ -454,6 +454,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             // workspace switcher's look, shown count and ends (M5.2m).
             wallpaper = Some(wallpaper::card(&content, &problem, theme));
             let look = widgets::group(&content);
+            look.set_margin_top(20);
             let style = setting(
                 &look,
                 "appearance.mode",

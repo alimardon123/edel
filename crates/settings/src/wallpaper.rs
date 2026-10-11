@@ -409,6 +409,7 @@ fn thumbnail(dir: &Path, name: &str) -> gtk::Widget {
     picture.set_content_fit(gtk::ContentFit::Cover);
     picture.set_size_request(WIDTH, HEIGHT);
     picture.add_css_class("edel-wallpaper-thumb");
+    picture.set_overflow(gtk::Overflow::Hidden);
     picture.upcast()
 }
 
