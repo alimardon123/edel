@@ -214,6 +214,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-look-card, .edel-look-card:hover, .edel-look-card:checked, .edel-look-card:active {{ padding: 0; border: none; border-radius: {rm}px; background: none; background-image: none; box-shadow: none; color: {text}; }}
 .edel-look-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
 .edel-look-picture {{ border-radius: {rm}px; }}
+.edel-look-shot {{ border-radius: {rm}px; }}
 .edel-look-card:hover .edel-look-picture {{ outline: 1px solid alpha({accent}, 0.35); outline-offset: 3px; }}
 .edel-look-card:checked .edel-look-picture {{ outline: 2px solid {accent}; outline-offset: 3px; }}
 .edel-look-name {{ font-size: {small}px; font-weight: 500; }}

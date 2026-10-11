@@ -26,6 +26,7 @@ use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
 
 use crate::files::Files;
+use crate::look_pictures::{self, Inputs};
 use crate::style::Theme;
 use crate::{icon, panels, preview, rows, widgets};
 
@@ -133,10 +134,11 @@ fn parts_text(parts: &[Placed]) -> Result<String, String> {
 }
 
 /// The built-in looks, then the person's own by name, each with what its
-/// picture draws: the parts and whether the background is the navy scene.
-/// Each look is applied on its own, so a card shows the look as it is, not
-/// what the person has changed over it.
-fn card_list(lock: &LockScreen) -> Vec<(String, LookShown)> {
+/// picture draws: the parts and whether the background is the navy scene,
+/// and the key of its picture (`look_pictures::key`). Each look is applied on
+/// its own, so a card shows the look as it is, not what the person has
+/// changed over it.
+fn card_list(lock: &LockScreen, inputs: &Inputs) -> Vec<(String, LookShown, String)> {
     let built_in = lock_screen::LOOKS.iter().map(|name| name.to_string());
     let own = lock
         .looks
@@ -153,8 +155,9 @@ fn card_list(lock: &LockScreen) -> Vec<(String, LookShown)> {
                 ..LockScreen::default()
             };
             let applied = lock_screen::applied(&look, false);
+            let key = look_pictures::key(&applied.parts, &applied.background, inputs);
             let shown = (applied.parts, applied.background == Background::Backdrop);
-            (name, shown)
+            (name, shown, key)
         })
         .collect()
 }
@@ -368,7 +371,10 @@ struct Ui {
     current_title: gtk::Label,
     /// The look in use drawn small beside its name, redrawn in place.
     current_shown: Rc<RefCell<LookShown>>,
-    current_view: gtk::DrawingArea,
+    /// Drawn by Settings, and the frame it sits in: a picture drawn by
+    /// shell-ui replaces the drawing there (`look_pictures`).
+    current_drawn: gtk::DrawingArea,
+    current_view: gtk::Overlay,
     current_line: gtk::Label,
     current_head: gtk::Widget,
     keep: gtk::Button,
@@ -385,7 +391,7 @@ struct Ui {
     new_card: RefCell<Option<gtk::Button>>,
     /// The cards' names and what they draw, as they were built, so they are
     /// built again only when a look changes.
-    shown: RefCell<Vec<(String, LookShown)>>,
+    shown: RefCell<Vec<(String, LookShown, String)>>,
     look_source: widgets::Source,
     count: gtk::Switch,
     count_row: widgets::Row,
@@ -405,6 +411,12 @@ impl Ui {
         let files = Files::here();
         let lock = files.lock();
         let look = current_look(&lock);
+        let inputs = Inputs::of(
+            files.chosen("appearance.wallpaper").as_deref(),
+            files.chosen("appearance.wallpaper_dark").as_deref(),
+            files.chosen("appearance.mode").as_deref(),
+            &self.theme.tokens(),
+        );
         self.quiet.set(true);
         let changed = [PARTS, BACKGROUND]
             .iter()
@@ -419,7 +431,22 @@ impl Ui {
         ));
         *self.current_shown.borrow_mut() =
             (applied.parts, applied.background == Background::Backdrop);
-        self.current_view.queue_draw();
+        self.current_drawn.queue_draw();
+        // The look in use small is shell-ui's picture of the look while the
+        // person changes nothing over it; Settings draws what they changed.
+        let alone = lock_screen::applied(
+            &LockScreen {
+                look: Some(look.clone()),
+                looks: lock.looks.clone(),
+                ..LockScreen::default()
+            },
+            false,
+        );
+        let current_key = look_pictures::key(&alone.parts, &alone.background, &inputs);
+        look_pictures::show_drawn(&self.current_view);
+        if lock.parts.is_none() && lock.background.is_none() {
+            look_pictures::want(&self.current_view, &look, &current_key);
+        }
         self.keep.set_visible(changed);
         let own = !lock_screen::is_built_in(&look);
         self.rename.set_visible(own);
@@ -429,7 +456,7 @@ impl Ui {
             .update_property(&[gtk::accessible::Property::Label(
                 trf("More for {look}", &[("look", &title)]).as_str(),
             )]);
-        self.show_looks(&lock);
+        self.show_looks(&lock, &inputs);
         let source = if lock.parts.is_some() {
             files.source(PARTS)
         } else {
@@ -457,13 +484,22 @@ impl Ui {
         self.count_row.reset.set_visible(rows::resettable(&count));
         self.quiet.set(false);
         self.problem.set_visible(false);
+        // The folder keeps the pictures this page shows, and no others.
+        let mut keep: Vec<String> = self
+            .shown
+            .borrow()
+            .iter()
+            .map(|(_, _, key)| key.clone())
+            .collect();
+        keep.push(current_key);
+        look_pictures::prune(&keep);
     }
 
     /// Shows the gallery: built again when a look changes, and the one that
     /// applies chosen, with its tag. Nothing is chosen while the person's own
     /// arrangement is set.
-    fn show_looks(self: &Rc<Self>, lock: &LockScreen) {
-        let list = card_list(lock);
+    fn show_looks(self: &Rc<Self>, lock: &LockScreen, inputs: &Inputs) {
+        let list = card_list(lock, inputs);
         if *self.shown.borrow() != list {
             self.build_cards(&list);
         }
@@ -481,13 +517,13 @@ impl Ui {
     /// Builds the cards of `list` in the flow, each a picture of its parts
     /// with its name and tag, then the New look card, and wires each to a
     /// choice.
-    fn build_cards(self: &Rc<Self>, list: &[(String, LookShown)]) {
+    fn build_cards(self: &Rc<Self>, list: &[(String, LookShown, String)]) {
         while let Some(child) = self.looks.first_child() {
             self.looks.remove(&child);
         }
         let mut cards = Vec::new();
         let mut first: Option<gtk::ToggleButton> = None;
-        for (name, shown) in list {
+        for (name, shown, key) in list {
             let shown = Rc::new(RefCell::new(shown.clone()));
             let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H, PICTURE_CORNER);
             // The picture fills its card's width, and its height follows the
@@ -496,11 +532,16 @@ impl Ui {
             // would letterbox the picture.
             picture.set_hexpand(true);
             follow_width(&picture);
-            // A built-in look wears its badge on the picture's corner.
+            // The picture is laid over the drawing by `look_pictures`; the
+            // badges lie over both, so they stay on top when it comes.
             let shown_picture = gtk::Overlay::builder()
                 .child(&picture)
                 .hexpand(true)
                 .css_classes(["edel-look-picture"])
+                .build();
+            let badges = gtk::Overlay::builder()
+                .child(&shown_picture)
+                .hexpand(true)
                 .build();
             if lock_screen::is_built_in(name) {
                 let built_in = pill("lock", tr("Built in"), "edel-built-in");
@@ -508,16 +549,14 @@ impl Ui {
                 built_in.set_valign(gtk::Align::Start);
                 built_in.set_margin_start(8);
                 built_in.set_margin_top(8);
-                shown_picture.add_overlay(&built_in);
+                badges.add_overlay(&built_in);
             }
+            // shell-ui's picture replaces the drawing once it is there.
+            look_pictures::want(&shown_picture, name, key);
             // In use sits after the name, on the same row.
             let in_use = pill("check", tr("In use"), "edel-in-use");
             in_use.set_visible(false);
-            let button = look_card(
-                &lock_screen::look_title(name),
-                &shown_picture.upcast(),
-                &in_use,
-            );
+            let button = look_card(&lock_screen::look_title(name), &badges.upcast(), &in_use);
             match &first {
                 Some(first) => button.set_group(Some(first)),
                 None => first = Some(button.clone()),
@@ -1060,14 +1099,18 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .build();
     // The look in use, small, beside its name (16:10, as every card).
     let current_shown: Rc<RefCell<LookShown>> = Rc::new(RefCell::new((Vec::new(), false)));
-    let current_view = look_picture(
+    let current_drawn = look_picture(
         theme,
         &current_shown,
         96,
         60,
         PICTURE_CORNER * 96.0 / f64::from(CARD_W),
     );
-    current_view.set_valign(gtk::Align::Center);
+    // A frame so shell-ui's picture can take the drawing's place.
+    let current_view = gtk::Overlay::builder()
+        .child(&current_drawn)
+        .valign(gtk::Align::Center)
+        .build();
     // Its own size when the card stacks too, never stretched across.
     current_view.set_halign(gtk::Align::Start);
     current.append(&current_view);
@@ -1115,6 +1158,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         theme: theme.clone(),
         current_title: title,
         current_shown,
+        current_drawn,
         current_view,
         current_line: line,
         current_head: bin.clone().upcast(),
@@ -1570,7 +1614,10 @@ mod tests {
     #[test]
     fn the_cards_are_the_built_in_looks_then_the_persons_own() {
         let lock = LockScreen::default();
-        let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
+        let names: Vec<String> = card_list(&lock, &Inputs::default())
+            .into_iter()
+            .map(|(n, _, _)| n)
+            .collect();
         assert_eq!(names, ["classic", "magazine", "minimal"]);
         let own = OwnLook {
             parts: lock_screen::classic(false),
@@ -1580,7 +1627,10 @@ mod tests {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
             ..LockScreen::default()
         };
-        let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
+        let names: Vec<String> = card_list(&lock, &Inputs::default())
+            .into_iter()
+            .map(|(n, _, _)| n)
+            .collect();
         assert_eq!(names, ["classic", "magazine", "minimal", "home"]);
         assert_eq!(lock_screen::look_title("magazine"), "Magazine");
         assert_eq!(lock_screen::look_title("home"), "Home");
@@ -1596,10 +1646,10 @@ mod tests {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
             ..LockScreen::default()
         };
-        let cards = card_list(&lock);
-        let (_, (_, backdrop)) = cards.iter().find(|(n, _)| n == "home").unwrap();
+        let cards = card_list(&lock, &Inputs::default());
+        let (_, (_, backdrop), _) = cards.iter().find(|(n, _, _)| n == "home").unwrap();
         assert!(*backdrop, "the look's own navy background");
-        let (_, (_, magazine)) = cards.iter().find(|(n, _)| n == "magazine").unwrap();
+        let (_, (_, magazine), _) = cards.iter().find(|(n, _, _)| n == "magazine").unwrap();
         assert!(!magazine, "magazine is blurred");
     }
 
@@ -1704,8 +1754,8 @@ mod tests {
             gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, w, h).expect("a surface");
         {
             let cr = Context::new(&surface).expect("a context");
-            let looks = card_list(&LockScreen::default());
-            for (i, (_, (parts, backdrop))) in looks.iter().take(3).enumerate() {
+            let looks = card_list(&LockScreen::default(), &Inputs::default());
+            for (i, (_, (parts, backdrop), _)) in looks.iter().take(3).enumerate() {
                 cr.save().expect("save");
                 cr.translate(f64::from(cell_w * i as i32), 0.0);
                 draw_look(
