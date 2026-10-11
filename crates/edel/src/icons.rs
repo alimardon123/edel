@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 68] = [
+pub const BUILT_IN: [(&str, &str); 69] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     // An app with no icon of its own, in the window list (M5.29).
     (
@@ -62,6 +62,11 @@ pub const BUILT_IN: [(&str, &str); 68] = [
     (
         "page-about",
         include_str!("../../../design/icons/page-about.svg"),
+    ),
+    // Settings' Lock screen page (M5.32c).
+    (
+        "page-lock-screen",
+        include_str!("../../../design/icons/page-lock-screen.svg"),
     ),
     // The Sound page's (M5.7b).
     (
