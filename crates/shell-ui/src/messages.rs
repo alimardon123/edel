@@ -248,15 +248,9 @@ pub const COMPOSITOR_GONE: &str = "the compositor went away; the panel closes wi
 /// (M5.10c5): its path and why, and what to do.
 pub fn picture_not_read(path: &str, why: impl Display) -> String {
     format!(
-        "could not read the picture {path:?}, so the lock screen leaves it out: {why}; check the path and that the file is a PNG"
+        "could not read the picture {path:?}, so the lock screen leaves it out: {why}; check the path and that the file is a PNG or JPEG picture"
     )
 }
-
-/// The reason for a picture that is not a PNG: this release reads PNG only.
-pub const PICTURE_NOT_PNG: &str = "only PNG pictures are read in this release";
-
-/// The reason for a picture when there is no memory to cut it to size.
-pub const PICTURE_NO_MEMORY: &str = "there is no memory to draw it";
 
 /// A power choice on the lock screen failed (M5.10c).
 pub fn power_failed(what: &str, why: impl Display) -> String {
@@ -453,8 +447,6 @@ mod tests {
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
             picture_not_read("/a.jpg", "x"),
-            PICTURE_NOT_PNG.to_string(),
-            PICTURE_NO_MEMORY.to_string(),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

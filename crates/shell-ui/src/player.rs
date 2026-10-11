@@ -1006,8 +1006,9 @@ mod tests {
             800.0,
             &tokens,
             true,
+            &Default::default(),
             None,
-            None,
+            false,
             false,
             &crate::corner::layout(1280.0, 800.0, &corner_view),
             &mut text,
@@ -1020,6 +1021,8 @@ mod tests {
             &mut text,
             None,
             &mut crate::lock::Pictures::default(),
+            &mut crate::lock::Backdrops::default(),
+            &edel::wallpapers::Wallpaper::Background,
             1.0,
         );
         let corner = crate::corner::View {

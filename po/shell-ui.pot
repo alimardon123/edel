@@ -125,6 +125,9 @@ msgstr ""
 msgid "Password"
 msgstr ""
 
+msgid "{percent}%"
+msgstr ""
+
 msgid "Caps Lock is on"
 msgstr ""
 
@@ -303,9 +306,6 @@ msgid "Sound: outputs"
 msgstr ""
 
 msgid "Settings"
-msgstr ""
-
-msgid "{percent}%"
 msgstr ""
 
 msgid "charging"
