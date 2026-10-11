@@ -11,8 +11,10 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, Guide, Part, Placed, SNAP};
+use edel::lock_screen::{self, Anchor, Background, Guide, Part, Placed, SNAP};
+use edel::settings::LockScreen;
 use edel::tokens::Tokens;
+use edel::wallpapers::Wallpaper;
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item;
@@ -50,6 +52,12 @@ const BATTERY_NEW: (f32, f32) = (80.0, 22.0);
 pub struct View {
     /// The lock screen's parts, in the list's order: what Done writes.
     pub parts: Vec<Placed>,
+    /// The look the parts came from, while no part has been moved since
+    /// (M5.10c6c3); None once one has, as the parts are then the person's.
+    pub look: Option<String>,
+    /// What lies behind the parts (M5.10c6c3): what Done writes, and the
+    /// backgrounds' tiles show which one is in use.
+    pub background: Background,
     /// The screen's size in logical pixels.
     pub screen: (f32, f32),
     /// The press or the drag in progress, if any.
@@ -85,6 +93,11 @@ pub enum Step {
     Nudge(usize, i32, i32),
     Remove(usize),
     Add(Part),
+    /// Shows a drawer tab (M5.10c6c3), its focus with it.
+    Tab(usize),
+    /// Chooses a look or a background of the drawer's tabs (M5.10c6c3).
+    Look(usize),
+    Background(usize),
     /// Opens the part's card, for a part that has one (M5.10c6c2).
     Open(usize),
     Undo,
@@ -160,6 +173,121 @@ pub fn part_named(name: &str) -> Option<Part> {
     .find(|part| part.name() == name)
 }
 
+/// A look's or a background's thumbnail, logical pixels (M5.10c6c3): a
+/// 16 to 10 screen, drawn once and kept, then scaled into each tile.
+pub const THUMB: (u32, u32) = (960, 600);
+
+/// The backgrounds the Background tab offers, in order: each one's name, its
+/// title as people read it, and what it is (`None` for the picture, which
+/// opens Settings' lock screen page and changes nothing here).
+pub fn background_choices() -> Vec<(&'static str, String, Option<Background>)> {
+    vec![
+        (
+            "blurred",
+            tr("Blurred").into(),
+            Some(Background::Blurred),
+        ),
+        (
+            "sharp",
+            tr("Sharp").into(),
+            Some(Background::Sharp),
+        ),
+        ("backdrop", tr("Colour").into(), Some(Background::Backdrop)),
+        ("picture", tr("Picture").into(), None),
+    ]
+}
+
+/// The title of a built-in look as people read it, or a person's own look's
+/// name as it is.
+fn look_title(name: &str) -> String {
+    match name {
+        "classic" => tr("Classic").into(),
+        "magazine" => tr("Magazine").into(),
+        "minimal" => tr("Minimal").into(),
+        own => own.into(),
+    }
+}
+
+/// The Looks tab's tiles (M5.10c6c3): one for each look, the built-in ones
+/// and then the person's own, each with its name, and the one `chosen` is
+/// the look in use. Their pictures come from `thumbnail`.
+pub fn look_tiles(looks: &[(String, Vec<Placed>)], chosen: Option<&str>) -> Vec<Tile> {
+    looks
+        .iter()
+        .map(|(name, _)| Tile {
+            name: name.clone(),
+            icon: "",
+            title: look_title(name),
+            shown: String::new(),
+            placed: false,
+            chosen: chosen == Some(name.as_str()),
+            picture: None,
+        })
+        .collect()
+}
+
+/// The Background tab's tiles (M5.10c6c3), one for each choice of
+/// `background_choices`; the one `current` is is the one in use.
+pub fn background_tiles(current: &Background) -> Vec<Tile> {
+    background_choices()
+        .into_iter()
+        .map(|(name, title, background)| Tile {
+            name: name.into(),
+            icon: if background.is_none() { "picture" } else { "" },
+            title,
+            shown: String::new(),
+            placed: false,
+            chosen: match &background {
+                Some(background) => background == current,
+                None => matches!(current, Background::Picture(_)),
+            },
+            picture: None,
+        })
+        .collect()
+}
+
+/// A lock screen drawn small (M5.10c6c3): `parts` over `background` at
+/// `THUMB`, laid out and painted as the lock draws it, with the lock's
+/// `view` (the time and date) and the battery when the machine has one. The
+/// caller keeps the result, so each look is drawn once.
+#[allow(clippy::too_many_arguments)]
+pub fn thumbnail(
+    view: &lock::View,
+    parts: &[Placed],
+    background: &Background,
+    battery: bool,
+    tokens: &Tokens,
+    text: &mut Text,
+    icons: Option<&mut edel::app_icons::Icons>,
+    pictures: &mut lock::Pictures,
+    backdrops: &mut lock::Backdrops,
+    wallpaper: &Wallpaper,
+) -> Option<Pixmap> {
+    let look = lock::Look {
+        parts,
+        player: Some(player::wide_size(1)),
+        people: false,
+        keep_out: Vec::new(),
+        battery,
+        background: background.clone(),
+    };
+    let at = lock::layout(THUMB.0 as f32, THUMB.1 as f32, tokens, true, &look, text);
+    let mut pixmap = Pixmap::new(THUMB.0, THUMB.1)?;
+    lock::paint(
+        &mut pixmap,
+        view,
+        &at,
+        tokens,
+        text,
+        icons,
+        pictures,
+        backdrops,
+        wallpaper,
+        1.0,
+    );
+    Some(pixmap)
+}
+
 /// The size a part has when it is dragged in from the drawer, logical pixels
 /// (see the consts above).
 fn new_size(part: Part) -> (f32, f32) {
@@ -174,7 +302,7 @@ fn new_size(part: Part) -> (f32, f32) {
     }
 }
 
-/// The drawer's tiles (M5.10c6b): one for each part `lock_screen::missing`
+/// The drawer's tiles of the Parts tab (M5.10c6b): one for each part `lock_screen::missing`
 /// offers, in its order, with no picture (a picture needs a file, which the
 /// edit mode does not choose yet, M5.10c6c), and none of them placed.
 pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
@@ -182,11 +310,13 @@ pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
         .into_iter()
         .filter(|part| *part != Part::Picture)
         .map(|part| Tile {
-            name: part.name(),
+            name: part.name().into(),
             icon: part_icon(part),
             title: part_title(part),
             shown: String::new(),
             placed: false,
+            chosen: false,
+            picture: None,
         })
         .collect()
 }
@@ -472,18 +602,24 @@ fn part_key(view: &View, i: usize, key: Key, shift: bool) -> Step {
 fn drawer_key(view: &View, part: editor::Part, key: Key) -> Step {
     if key == Key::Activate {
         return match part {
-            editor::Part::Tile(i) => view
-                .drawer
-                .tiles
-                .get(i)
-                .and_then(|tile| part_named(tile.name))
-                .map_or(Step::Nothing, Step::Add),
+            editor::Part::Tile(i) => match view.drawer.tab {
+                1 => Step::Look(i),
+                2 => Step::Background(i),
+                _ => view
+                    .drawer
+                    .tiles
+                    .get(i)
+                    .and_then(|tile| part_named(&tile.name))
+                    .map_or(Step::Nothing, Step::Add),
+            },
+            editor::Part::Tab(i) => Step::Tab(i),
             editor::Part::Undo => Step::Undo,
             editor::Part::Done => Step::Done,
         };
     }
     match editor::key(&view.drawer, Some(part), key) {
         editor::Step::Focus(p) => Step::Focus(Some(Focus::Drawer(p))),
+        editor::Step::Tab(i) => Step::Tab(i),
         editor::Step::Act(Act::Undo) => Step::Undo,
         editor::Step::Act(Act::Done) => Step::Done,
         editor::Step::Act(Act::Close) => Step::Close,
@@ -515,9 +651,12 @@ pub fn focus_name(view: &View, focus: Focus) -> String {
         Focus::Part(i) => view.parts.get(i).map_or("part", |p| p.part.name()).into(),
         Focus::Drawer(editor::Part::Undo) => "undo".into(),
         Focus::Drawer(editor::Part::Done) => "done".into(),
+        Focus::Drawer(editor::Part::Tab(j)) => {
+            format!("tab {}", view.drawer.tabs.get(j).map_or("tab", |t| t))
+        }
         Focus::Drawer(editor::Part::Tile(j)) => format!(
             "tile {}",
-            view.drawer.tiles.get(j).map_or("tile", |t| t.name)
+            view.drawer.tiles.get(j).map_or("tile", |t| t.name.as_str())
         ),
     }
 }
@@ -582,6 +721,7 @@ pub fn nodes(
 pub fn focus_node(view: &View, at: &lock::Layout) -> Option<usize> {
     let drawn = at.placed.iter().filter(|r| r.is_some()).count();
     let tiles = view.drawer.tiles.len();
+    let tabs = view.drawer.tabs.len();
     match view.focus? {
         Focus::Part(i) => {
             if at.placed.get(i)?.is_none() {
@@ -589,8 +729,10 @@ pub fn focus_node(view: &View, at: &lock::Layout) -> Option<usize> {
             }
             Some(at.placed[..i].iter().filter(|r| r.is_some()).count())
         }
-        Focus::Drawer(editor::Part::Tile(j)) => Some(drawn + j),
-        Focus::Drawer(editor::Part::Undo) => Some(drawn + tiles),
+        // The drawer's nodes are its tabs, then its tiles, then Undo and Done.
+        Focus::Drawer(editor::Part::Tab(j)) => Some(drawn + j),
+        Focus::Drawer(editor::Part::Tile(j)) => Some(drawn + tabs + j),
+        Focus::Drawer(editor::Part::Undo) => Some(drawn + tabs + tiles),
         Focus::Drawer(editor::Part::Done) => Some(drawn + tiles + 1),
     }
 }
@@ -847,6 +989,65 @@ pub fn paint_drawer(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mu
     }
 }
 
+/// Chooses the look at `i` of `looks` (M5.10c6c3): the edit's parts become
+/// its parts and its background its background, and the look is in use until
+/// a part moves. Returns its name, or None for no such look.
+pub fn choose_look(view: &mut View, looks: &[(String, Vec<Placed>)], i: usize) -> Option<String> {
+    let (name, parts) = looks.get(i)?.clone();
+    view.background = lock_screen::look_background(&name);
+    view.parts = parts;
+    view.look = Some(name.clone());
+    Some(name)
+}
+
+/// A part was moved, added or taken away: the parts are the person's own, so
+/// no look is in use any more (M5.10c6c3).
+pub fn parts_moved(view: &mut View) {
+    view.look = None;
+}
+
+/// The three lines Done writes (M5.10c6c3): each one's value, None taking
+/// the person's line out, as a default is never written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Lines {
+    pub look: Option<String>,
+    pub parts: Option<String>,
+    pub background: Option<String>,
+}
+
+/// What Done writes for the edit `view` (M5.10c6c3), with `lock` the person's
+/// lock settings over the machine's. The look is written while it is in use
+/// and is not the release's. The parts are written unless a look is in use
+/// (it brings its own) or what applies without a parts line, under that look,
+/// is what the edit shows. The background is written only when it differs
+/// from what the look gives (the release's for none). Fails with the parts'
+/// own message when they do not write as a list.
+pub fn written(view: &View, lock: &LockScreen, compact: bool) -> Result<Lines, String> {
+    let look = view
+        .look
+        .clone()
+        .filter(|name| name != lock_screen::CLASSIC);
+    let base = LockScreen {
+        parts: None,
+        look: look.clone(),
+        ..lock.clone()
+    };
+    let without_parts = lock_screen::applied(&base, compact).parts;
+    let parts = if view.look.is_some() || view.parts == without_parts {
+        None
+    } else {
+        Some(lock_screen::parts_value(&view.parts).map_err(|e| format!("{e:#}"))?)
+    };
+    let gives = lock_screen::look_background(look.as_deref().unwrap_or(lock_screen::CLASSIC));
+    let background =
+        (view.background != gives).then(|| lock_screen::background_value(&view.background));
+    Ok(Lines {
+        look,
+        parts,
+        background,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -889,6 +1090,9 @@ mod tests {
     fn view_of(parts: Vec<Placed>) -> View {
         let drawer = editor::View {
             kind: Kind::LockScreen,
+            tabs: Vec::new(),
+            tab: 0,
+            tallest: 0,
             tiles: drawer_tiles(&parts, true),
             compact: false,
             width: 1280,
@@ -899,6 +1103,8 @@ mod tests {
         };
         View {
             parts,
+            look: None,
+            background: Background::Backdrop,
             screen: (1280.0, 800.0),
             card: None,
             drag: None,
@@ -933,16 +1139,12 @@ mod tests {
     #[test]
     fn the_drawer_of_classic_offers_the_message_and_the_battery_but_not_the_person() {
         let classic = lock_screen::classic(false);
-        let names: Vec<&str> = drawer_tiles(&classic, true)
-            .iter()
-            .map(|t| t.name)
-            .collect();
+        let tiles = drawer_tiles(&classic, true);
+        let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["message", "battery"]);
         assert!(!names.contains(&"person"));
-        let no_battery: Vec<&str> = drawer_tiles(&classic, false)
-            .iter()
-            .map(|t| t.name)
-            .collect();
+        let tiles = drawer_tiles(&classic, false);
+        let no_battery: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(no_battery, ["message"], "a machine without one offers none");
     }
 
@@ -1491,5 +1693,228 @@ mod tests {
         assert!(!ringed(&view), "with no focus there is no ring");
         set_focus(&mut view, Some(Focus::Part(i)));
         assert!(ringed(&view), "the focused part is ringed in the accent");
+    }
+
+    /// The Looks tab's list: the built-in looks, classic first.
+    fn looks_of() -> Vec<(String, Vec<Placed>)> {
+        lock_screen::LOOKS
+            .iter()
+            .filter_map(|name| {
+                lock_screen::look_parts(name, false).map(|parts| (name.to_string(), parts))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn choosing_a_look_sets_its_parts_and_background_and_a_moved_part_clears_it() {
+        let mut view = view_of(lock_screen::classic(false));
+        let looks = looks_of();
+        assert_eq!(choose_look(&mut view, &looks, 1), Some("magazine".into()));
+        assert_eq!(view.look.as_deref(), Some("magazine"));
+        assert_eq!(view.parts, looks[1].1);
+        assert_eq!(view.background, Background::Blurred);
+        assert_eq!(choose_look(&mut view, &looks, 9), None, "no such look");
+        parts_moved(&mut view);
+        assert_eq!(view.look, None, "the parts are the person's own now");
+    }
+
+    #[test]
+    fn the_look_tiles_name_each_look_and_the_one_in_use_is_chosen() {
+        let tiles = look_tiles(&looks_of(), Some("magazine"));
+        let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["classic", "magazine", "minimal"]);
+        assert_eq!(
+            tiles.iter().map(|t| t.chosen).collect::<Vec<_>>(),
+            [false, true, false]
+        );
+        assert_eq!(tiles[1].title, "Magazine");
+    }
+
+    #[test]
+    fn the_background_tab_offers_blurred_sharp_colour_and_the_picture() {
+        let tiles = background_tiles(&Background::Sharp);
+        let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["blurred", "sharp", "backdrop", "picture"]);
+        assert_eq!(
+            tiles.iter().map(|t| t.chosen).collect::<Vec<_>>(),
+            [false, true, false, false]
+        );
+        assert_eq!(tiles[3].title, "Picture");
+        let picture = background_tiles(&Background::Picture("/x/a.png".into()));
+        assert!(
+            picture[3].chosen,
+            "a picture of the person's is the picture tile in use"
+        );
+    }
+
+    /// The lines Done writes for `view` with the person's settings empty.
+    fn written_for(view: &View) -> Lines {
+        written(view, &LockScreen::default(), false).unwrap()
+    }
+
+    #[test]
+    fn done_writes_nothing_for_the_releases_own_look() {
+        let view = view_of(lock_screen::classic(false));
+        assert_eq!(
+            written_for(&view),
+            Lines {
+                look: None,
+                parts: None,
+                background: None
+            }
+        );
+    }
+
+    #[test]
+    fn done_writes_magazine_as_the_look_and_takes_its_parts_out() {
+        let mut view = view_of(lock_screen::look_parts("magazine", false).unwrap());
+        view.look = Some("magazine".into());
+        view.background = Background::Blurred;
+        assert_eq!(
+            written_for(&view),
+            Lines {
+                look: Some("magazine".into()),
+                parts: None,
+                background: None
+            },
+            "the look brings its parts, and its own background"
+        );
+    }
+
+    #[test]
+    fn done_after_a_moved_part_takes_the_look_out_and_writes_the_parts() {
+        let mut view = view_of(lock_screen::look_parts("magazine", false).unwrap());
+        view.look = Some("magazine".into());
+        view.background = Background::Blurred;
+        parts_moved(&mut view);
+        let i = index_of(&view.parts, "date");
+        view.parts[i] = lock_screen::nudged(&view.parts[i], 3, 0);
+        let lines = written_for(&view);
+        assert_eq!(lines.look, None);
+        assert!(lines.parts.is_some(), "the moved list is written");
+        assert_eq!(
+            lines.background.as_deref(),
+            Some("blurred"),
+            "classic gives the navy scene"
+        );
+    }
+
+    #[test]
+    fn a_background_the_look_does_not_give_is_written_and_the_looks_own_is_not() {
+        let mut view = view_of(lock_screen::classic(false));
+        view.background = Background::Sharp;
+        assert_eq!(written_for(&view).background.as_deref(), Some("sharp"));
+        view.look = Some("magazine".into());
+        view.background = Background::Blurred;
+        assert_eq!(
+            written_for(&view).background,
+            None,
+            "magazine gives the blurred wallpaper"
+        );
+    }
+
+    /// The Looks and the Background tabs (M5.10c6c3) with their tiles' own
+    /// pictures: each look drawn small as the lock draws it, the one in use
+    /// ringed, and the backgrounds, each over the classic lock. The tiles
+    /// with pictures differ from the same drawer without them. Writes
+    /// `lock-editor-looks.png` and `lock-editor-background.png` into
+    /// `EDEL_LOCK_PNG`.
+    #[test]
+    fn the_looks_and_the_backgrounds_tabs_draw_their_pictures() {
+        use crate::editor::Picture;
+        use std::rc::Rc;
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let wallpaper = lock::wallpaper_of(None, None, false);
+        let mut pictures = lock::Pictures::default();
+        let mut backdrops = lock::Backdrops::default();
+        let mut lock_view =
+            lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        lock_view.notices = 2;
+        let classic = lock_screen::classic(false);
+        let at = at_classic(&classic);
+        let looks = looks_of();
+        let mut view = view_of(classic.clone());
+        view.look = Some("magazine".into());
+        view.drawer.tabs = vec!["Parts", "Looks", "Background"];
+        view.drawer.tab = 1;
+        view.drawer.tallest = 3;
+        view.drawer.tiles = look_tiles(&looks, Some("magazine"));
+        for (tile, (_, parts)) in view.drawer.tiles.iter_mut().zip(&looks) {
+            let background = lock_screen::look_background(&tile.name);
+            let pixmap = thumbnail(
+                &lock_view,
+                parts,
+                &background,
+                false,
+                &tokens,
+                &mut text,
+                None,
+                &mut pictures,
+                &mut backdrops,
+                &wallpaper,
+            )
+            .expect("a look's thumbnail draws");
+            tile.picture = Some(Picture(Rc::new(pixmap)));
+        }
+        let looks_png = render(&view, &at, &tokens, &mut text);
+        if let (Some(dir), Some(Picture(thumb))) = (
+            std::env::var_os("EDEL_LOCK_PNG"),
+            view.drawer.tiles[1].picture.clone(),
+        ) {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            thumb.save_png(dir.join("lock-look-magazine.png")).unwrap();
+        }
+        let mut bare = view.clone();
+        for tile in &mut bare.drawer.tiles {
+            tile.picture = None;
+        }
+        assert_ne!(
+            render(&bare, &at, &tokens, &mut text).data(),
+            looks_png.data(),
+            "the looks' pictures show in their tiles"
+        );
+
+        view.drawer.tab = 2;
+        view.drawer.tiles = background_tiles(&Background::Blurred);
+        for tile in &mut view.drawer.tiles {
+            let Some((_, _, Some(background))) = background_choices()
+                .into_iter()
+                .find(|(name, _, _)| *name == tile.name)
+            else {
+                continue;
+            };
+            let pixmap = thumbnail(
+                &lock_view,
+                &classic,
+                &background,
+                false,
+                &tokens,
+                &mut text,
+                None,
+                &mut pictures,
+                &mut backdrops,
+                &wallpaper,
+            )
+            .expect("a background's thumbnail draws");
+            tile.picture = Some(Picture(Rc::new(pixmap)));
+        }
+        let background_png = render(&view, &at, &tokens, &mut text);
+        assert_ne!(
+            looks_png.data(),
+            background_png.data(),
+            "the tabs show their own tiles"
+        );
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            looks_png
+                .save_png(dir.join("lock-editor-looks.png"))
+                .unwrap();
+            background_png
+                .save_png(dir.join("lock-editor-background.png"))
+                .unwrap();
+        }
     }
 }

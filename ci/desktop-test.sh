@@ -3790,10 +3790,68 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'face = "analog"' ||
 		fail "ci's settings file does not hold the clock's analog face: $(value settings_file)"
-	# Done wrote ci's own file, so the line is taken out of it.
+	# The look (M5.10c6c3): a right click on the lock's backdrop asks for the
+	# edit after unlock, ci's password unlocks and opens it. Its Looks tab
+	# shows the looks, Magazine is chosen, and Done writes look = "magazine"
+	# with the parts taken out, so the file holds no parts line
+	# (lock-editor-looks.png is kept). Escape would leave it as it was.
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen for the look"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen for the look"
+	asked=$(count 'edel-shell-ui: lock: password to edit')
+	python3 ci/qmp.py rightclick 100 400
+	wait_more 'edel-shell-ui: lock: password to edit' "$asked" ||
+		fail "a right click on the lock screen's backdrop did not ask for the edit: $(tr -d '\r' <"$log" | grep -a 'lock:' | tail -n 3)"
+	python3 ci/qmp.py type 'edel-desktop-test'
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
+	go=$(echo "$places" | sed -n 's/.*, go \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$go" ] || fail "shell-ui did not say where the lock's go button lies for the edit: $places"
+	set -- $go
+	asked_edit=$(count 'edel-shell-ui: lock editor asked for from the lock screen')
+	opened=$(count 'edel-shell-ui: lock editor shown')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor asked for from the lock screen' "$asked_edit" ||
+		fail "ci's password did not ask for the edit after unlock: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
+	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
+		fail "the edit mode did not open after the password: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	tab=$(echo "$places" | sed -n 's/.*, tab1 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$tab" ] || fail "the edit mode does not say where the Looks tab lies: $places"
+	set -- $tab
+	tabbed=$(count 'edel-shell-ui: lock editor tab looks')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor tab looks' "$tabbed" ||
+		fail "a click on the Looks tab did not show it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	magazine=$(echo "$places" | sed -n 's/.*, tile[0-9]* magazine \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$magazine" ] || fail "the Looks tab does not offer Magazine: $places"
+	set -- $magazine
+	chose=$(count 'edel-shell-ui: lock editor look magazine')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor look magazine' "$chose" ||
+		fail "a click on Magazine did not choose it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-editor-looks.png"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies for the look: $places"
+	set -- $done_at
+	looked=$(count 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out')
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_more 'edel-shell-ui: lock editor done, lock_screen.look written; lock_screen.parts taken out' "$looked" ||
+		fail "Done did not write the look and take the parts out: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'look = "magazine"' ||
+		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
+	value settings_file | grep -q 'parts = ' &&
+		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done wrote face = analog; a right click on the lock asked for the edit, ci's password opened it, the Looks tab chose Magazine and Done wrote look = magazine with no parts line"
 }
 
 case_scheme() {

@@ -689,9 +689,10 @@ commands() {
 		# at the bottom, read when the screen locks; reset after the check.
 		'lock parts') edel settings set 'lock_screen.parts=[{ part = "person", at = "centre", y = 0.21 }, { part = "clock", at = "top_left" }, { part = "message", at = "bottom", text = "If found, call 555 0100" }, { part = "player", at = "bottom_left" }]' ;;
 		'lock parts reset') edel settings reset lock_screen.parts ;;
-		# The parts the lock screen's edit mode wrote to ci's own file
-		# (M5.10c6b), taken out again.
-		'lock parts mine default') as_ci "sed -i '/^parts = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The lines the lock screen's edit mode wrote to ci's own file
+		# (M5.10c6b, M5.10c6c3): the look, the parts and the background under
+		# [lock_screen], taken out again.
+		'lock parts mine default') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{/^(look|parts|background) = /d}' /home/ci/.config/edel/$settings_name" ;;
 		# The lock screen's edit mode (M5.10c6b): the call Settings' Edit lock
 		# screen makes, as ci on ci's session bus, which opens the edit mode.
 		'lock editor')
