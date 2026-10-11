@@ -3715,10 +3715,37 @@ case_lock_edit() {
 	set -- $go
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the edit"
+	# The keyboard (M5.10c6c): the edit mode opens again, Tab focuses a part,
+	# Right nudges it three times, and Escape leaves without writing, so
+	# ci's file keeps the line Done wrote.
+	guest 'settings file'
+	parts_before=$(value settings_file | grep -o 'parts = [^;]*')
+	[ -n "$parts_before" ] || fail "ci's settings file holds no lock_screen.parts line: $(value settings_file)"
+	opened=$(count 'edel-shell-ui: lock editor shown')
+	guest 'lock editor'
+	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
+		fail "the edit mode did not open again: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	focused=$(count 'edel-shell-ui: lock editor focus ')
+	python3 ci/qmp.py key tab
+	wait_more 'edel-shell-ui: lock editor focus ' "$focused" ||
+		fail "Tab did not focus a part of the lock screen: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	nudged=$(count 'edel-shell-ui: lock editor nudged ')
+	python3 ci/qmp.py key right
+	python3 ci/qmp.py key right
+	python3 ci/qmp.py key right
+	wait_more 'edel-shell-ui: lock editor nudged ' $((nudged + 2)) ||
+		fail "the arrow keys did not move the focused part three times: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	undone=$(count 'edel-shell-ui: lock editor undone')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: lock editor undone' "$undone" ||
+		fail "Escape did not leave the edit mode: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	guest 'settings file'
+	[ "$(value settings_file | grep -o 'parts = [^;]*')" = "$parts_before" ] ||
+		fail "Escape changed ci's lock_screen.parts line: $(value settings_file)"
 	# Done wrote ci's own file, so the line is taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, both on the next lock and in ci's file; the keyboard nudged a part and left without writing"
 }
 
 case_scheme() {

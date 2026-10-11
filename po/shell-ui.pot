@@ -191,6 +191,36 @@ msgstr ""
 msgid "Picture"
 msgstr ""
 
+msgid "top left"
+msgstr ""
+
+msgid "top centre"
+msgstr ""
+
+msgid "top right"
+msgstr ""
+
+msgid "middle left"
+msgstr ""
+
+msgid "middle"
+msgstr ""
+
+msgid "middle right"
+msgstr ""
+
+msgid "bottom left"
+msgstr ""
+
+msgid "bottom centre"
+msgstr ""
+
+msgid "bottom right"
+msgstr ""
+
+msgid "{title}, {where}"
+msgstr ""
+
 msgid "Close notification"
 msgstr ""
 

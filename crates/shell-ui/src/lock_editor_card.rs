@@ -9,9 +9,14 @@
 //! back for ten seconds. Logs `lock editor shown, N parts, M in the drawer`,
 //! `lock editor places ...`, `lock editor drag NAME`, `lock editor WORDS`,
 //! `lock editor undo`, `lock editor done, WHAT`, `lock editor undone` and
-//! `lock editor hidden`.
+//! `lock editor hidden`. The keyboard moves a focus round the parts and the
+//! drawer (Tab), moves or takes away the focused part (the arrows, Shift for
+//! ten steps, and Delete), and adds, undoes or finishes as its keys say
+//! (M5.10c6c), logging `lock editor focus NAME`, `lock editor nudged NAME`
+//! and `lock editor took away NAME`.
 
-use edel::lock_screen::{self, Background, Placed};
+use edel::i18n::tr;
+use edel::lock_screen::{self, Background, Part, Placed};
 use edel::places;
 use edel::presets::Edge;
 use edel::settings::{self, LockScreen};
@@ -29,15 +34,17 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::SlotPool;
 use tiny_skia::Pixmap;
 
+use crate::a11y;
 use crate::corner;
 use crate::editor::{self, DRAG_START, Kind};
-use crate::editor_card::Undo;
+use crate::editor_card::{self, Undo};
 use crate::lock::{self, Backdrops, Pictures};
-use crate::lock_editor::{self, Drag, From};
+use crate::lock_editor::{self, Drag, Focus, From, Step};
 use crate::messages;
 use crate::paint;
 use crate::player;
 use crate::quick;
+use crate::trayview::Key;
 use crate::widgets::keyboard;
 use crate::{LOCK_EDITOR, Shell, fillets, settings_texts};
 
@@ -79,6 +86,9 @@ pub struct LockEditor {
     backdrops: Backdrops,
     drawn: Option<(lock_editor::View, u32)>,
     logged: String,
+    /// What a screen reader reads of the edit mode, updated at each drawing
+    /// (M5.10c6c).
+    reader: a11y::Reader,
 }
 
 /// The lock screen's layout of `parts` on a screen `screen` logical pixels
@@ -123,6 +133,62 @@ fn name_of(view: &lock_editor::View, from: From) -> &'static str {
     }
 }
 
+/// Moves the keyboard's focus to `focus` (M5.10c6c), logging the part it lands
+/// on (`lock editor focus NAME`) when that changes it.
+fn focus_to(le: &mut LockEditor, focus: Option<Focus>) {
+    if le.view.focus == focus {
+        return;
+    }
+    lock_editor::set_focus(&mut le.view, focus);
+    if let Some(focus) = focus {
+        eprintln!(
+            "edel-shell-ui: lock editor focus {}",
+            lock_editor::focus_name(&le.view, focus)
+        );
+    }
+}
+
+/// Moves the part at `i` by `dx`, `dy` steps by the arrow keys, its anchor
+/// kept (`lock_screen::nudged`), logging `lock editor nudged NAME`.
+fn nudge(le: &mut LockEditor, i: usize, dx: i32, dy: i32) {
+    let Some((moved, name)) = le
+        .view
+        .parts
+        .get(i)
+        .map(|p| (lock_screen::nudged(p, dx, dy), p.part.name()))
+    else {
+        return;
+    };
+    le.view.parts[i] = moved;
+    eprintln!("edel-shell-ui: lock editor nudged {name}");
+}
+
+/// Takes the part at `i` away (`lock_screen::without`, never the person),
+/// logging `lock editor took away NAME`. The focus lets go, as the part is
+/// gone.
+fn take_away(le: &mut LockEditor, i: usize) {
+    let Some(name) = le.view.parts.get(i).map(|p| p.part.name()) else {
+        return;
+    };
+    le.view.parts = lock_screen::without(&le.view.parts, i);
+    le.view.drawer.tiles = lock_editor::drawer_tiles(&le.view.parts, le.battery);
+    lock_editor::set_focus(&mut le.view, None);
+    eprintln!("edel-shell-ui: lock editor took away {name}");
+}
+
+/// Adds the drawer's `part` at the screen's middle (`lock_editor::added_at_middle`,
+/// as a drop there would), logging `lock editor added NAME`. The tile it
+/// was is gone, so the focus lets go.
+fn add(le: &mut LockEditor, part: Part) {
+    let Some((parts, words)) = lock_editor::added_at_middle(&le.view, part) else {
+        return;
+    };
+    le.view.parts = parts;
+    le.view.drawer.tiles = lock_editor::drawer_tiles(&le.view.parts, le.battery);
+    lock_editor::set_focus(&mut le.view, None);
+    eprintln!("edel-shell-ui: lock editor {words}");
+}
+
 impl Shell {
     /// Opens the lock screen's edit mode (M5.10c6b): nothing while the lock
     /// is up, the panel editor is open or this is open. It starts from the
@@ -147,6 +213,7 @@ impl Shell {
             drag: None,
             guides: Vec::new(),
             hover: None,
+            focus: None,
             drawer: editor::View {
                 kind: Kind::LockScreen,
                 tiles: lock_editor::drawer_tiles(&original, battery),
@@ -203,6 +270,7 @@ impl Shell {
             backdrops: Backdrops::default(),
             drawn: None,
             logged: String::new(),
+            reader: a11y::Reader::new(tr("Edit lock screen")),
         });
     }
 
@@ -362,6 +430,10 @@ impl Shell {
             eprintln!("edel-shell-ui: lock editor places {places}");
             le.logged = places;
         }
+        let items = lock_editor::nodes(&le.view, &at, preview, place, &drawer);
+        let focus = lock_editor::focus_node(&le.view, &at);
+        le.reader
+            .update_focused((f64::from(screen.0), f64::from(screen.1)), items, focus);
         let bytes = (pw * ph * 4) as usize;
         if le.pool.is_none() {
             // Two buffers' room, as each drawing replaces the last.
@@ -432,16 +504,48 @@ impl Shell {
         (at, drawer, place, shown)
     }
 
-    /// A key while the edit mode is open: Escape leaves without writing,
-    /// Return is Done.
+    /// A key while the edit mode is open (M5.10c6c): `lock_editor::key` says
+    /// what it does with the focus. Escape leaves without writing and Done
+    /// (Return with nothing focused, or Done's button) writes. Tab's keyboard
+    /// sends Shift+Tab as ISO_Left_Tab, which counts as Shift.
     pub fn lock_editor_key(&mut self, event: KeyEvent) {
-        if self.lock_editor.is_none() {
+        let Some(le) = self.lock_editor.as_ref() else {
+            return;
+        };
+        let sym = event.keysym;
+        let shift_tab = sym == Keysym::ISO_Left_Tab;
+        let key = if shift_tab {
+            Some(Key::Tab)
+        } else {
+            editor_card::key_of(sym)
+        };
+        let Some(key) = key else {
+            return;
+        };
+        // Space is Activate too, but with nothing focused it must not finish
+        // the edit.
+        if sym == Keysym::space && le.view.focus.is_none() {
             return;
         }
-        match event.keysym {
-            Keysym::Escape => self.close_lock_editor(false),
-            Keysym::Return | Keysym::KP_Enter => self.close_lock_editor(true),
-            _ => {}
+        let step = lock_editor::key(&le.view, key, self.shift || shift_tab);
+        match step {
+            Step::Done => self.close_lock_editor(true),
+            Step::Close => self.close_lock_editor(false),
+            step => {
+                let Some(mut le) = self.lock_editor.take() else {
+                    return;
+                };
+                match step {
+                    Step::Focus(focus) => focus_to(&mut le, focus),
+                    Step::Nudge(i, dx, dy) => nudge(&mut le, i, dx, dy),
+                    Step::Remove(i) => take_away(&mut le, i),
+                    Step::Add(part) => add(&mut le, part),
+                    Step::Undo => self.undo_lock_editor(&mut le),
+                    Step::Done | Step::Close | Step::Nothing => {}
+                }
+                self.paint_lock_editor(&mut le);
+                self.lock_editor = Some(le);
+            }
         }
     }
 
@@ -476,6 +580,10 @@ impl Shell {
             .placed
             .iter()
             .position(|r| r.is_some_and(|r| r.contains(x, y)));
+        // A press is the pointer's own: the keyboard's focus lets go (M5.10c6c).
+        if matches!(event.kind, PointerEventKind::Press { .. }) {
+            lock_editor::set_focus(&mut le.view, None);
+        }
         match &event.kind {
             PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. } => {
                 let mut started = None;
