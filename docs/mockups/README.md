@@ -128,5 +128,13 @@ The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
 boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg`, `greeter-sessions.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
 
+## Settings (2026-10-11): Appearance with themes
+
+| Picture | What it shows |
+|---|---|
+| [settings/appearance.jpg](settings/appearance.jpg) | The Appearance page with themes (M5.12b6, approved by Alimardon on 2026-10-11): the theme in use on one line, its pictures and what changed, with Reset, Keep as new and a More menu; under it three equal pictures of the theme, Light, Dark and Automatic, which are the style; then the themes in one row, each its light and dark side split diagonally with a Built in badge, New last; then Accent, Text, Shape and Motion, open as before; the page's icon a paint palette |
+
+Its board is `settings/canvas/appearance.html`, plain HTML drawn from the design canvas board "Appearance with themes"; the canvas is Alimardon's private design artifact, and this is the copy every session reads.
+
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).

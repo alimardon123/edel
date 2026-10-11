@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Appearance with themes</title>
+
+</head>
+<body>
+
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#2d6ae3}a:hover{color:#1f55c4}
+input[type=range]{accent-color:currentColor}
+</style>
+
+<div style="width: 1120px; height: 1440px; box-sizing: border-box; padding: 40px; font-family: 'Inter', sans-serif; background: #8d9aba; display: flex; flex-direction: column">
+<div style="flex-grow: 1; display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; background: #ffffff; box-shadow: 0 2px 6px rgba(0,0,0,0.12), 0 24px 60px rgba(0,0,0,0.22); border: 1px solid rgba(20,24,32,0.14)">
+
+<div style="height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 16px; background: #eceef1; border-bottom: 1px solid rgba(20,24,32,0.08)">
+<div style="font-size: 13px; font-weight: 600; color: #1c1e22">Settings</div>
+<div style="display: flex; gap: 2px">
+<button aria-label="Minimise" style="width: 28px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #5d636e; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+<button aria-label="Maximise" style="width: 28px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #5d636e; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"></rect></svg></button>
+<button aria-label="Close" style="width: 28px; height: 24px; border: 0; border-radius: 6px; background: transparent; color: #5d636e; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+</div>
+</div>
+
+<div style="flex-grow: 1; display: flex; min-height: 0">
+
+<nav aria-label="Pages" style="width: 248px; flex-shrink: 0; background: #f5f6f8; border-right: 1px solid rgba(20,24,32,0.08); padding: 14px 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px">
+<label style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; margin: 0 2px 6px; border-radius: 8px; background: #eef0f3; color: #5d636e; font-size: 13px">
+<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.75" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M10.5 10.5l3.25 3.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
+<input aria-label="Search settings" placeholder="Search" style="border: 0; outline: 0; background: transparent; font: inherit; color: #1c1e22; width: 100%">
+</label>
+
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #8d929b; padding: 6px 10px 4px">Desktop</div>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 600; color: #ffffff; background: #2d6ae3">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.75a6.25 6.25 0 1 0 0 12.5c.85 0 1.35-.55 1.35-1.25 0-.45-.3-.8-.3-1.25 0-.7.55-1.25 1.25-1.25h1.45a2.75 2.75 0 0 0 2.75-2.75C14.5 4.4 11.6 1.75 8 1.75zM4.6 7.6h.01M6.4 4.85h.01M9.7 4.85h.01M11.5 7.2h.01"></path></svg>
+<span>Appearance</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.25 3.25h11.5v9.5H2.25zM7 3.25v9.5"></path></svg>
+<span>Layout</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.25 2.75h11.5v10.5H2.25zM2.25 10.75h11.5"></path></svg>
+<span>Panels</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 3.75h5.5v4h-5.5zM8.75 3.75h5.5v4h-5.5zM1.75 9.25h5.5v3h-5.5zM8.75 9.25h5.5v3h-5.5z"></path></svg>
+<span>Workspaces</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.25 1.25h7.5a1 1 0 0 1 1 1v11.5a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1V2.25a1 1 0 0 1 1-1zM6 8.25h4v3.5H6zM6.75 8.25V7.25a1.25 1.25 0 0 1 2.5 0v1"></path></svg>
+<span>Lock screen</span>
+</a>
+
+
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #8d929b; padding: 16px 10px 4px">Connections</div>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 6.25a9 9 0 0 1 12.5 0M4 8.75a5.75 5.75 0 0 1 8 0M6.25 11.25a2.5 2.5 0 0 1 3.5 0"></path></svg>
+<span>Network</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5l7 6-3.5 3V2l3.5 3-7 6"></path></svg>
+<span>Bluetooth</span>
+</a>
+
+
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #8d929b; padding: 16px 10px 4px">Devices</div>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 2.25h12.5v8.5H1.75zM8 10.75v3M5.25 13.75h5.5"></path></svg>
+<span>Displays</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.25 6v4h2.5l3.5 3V3l-3.5 3zM11 5.5a3.5 3.5 0 0 1 0 5"></path></svg>
+<span>Sound</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.75v5.5M4.5 4a5.25 5.25 0 1 0 7 0"></path></svg>
+<span>Power</span>
+</a>
+
+
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #8d929b; padding: 16px 10px 4px">Personal</div>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5a4 4 0 0 1 8 0c0 3.5 1.5 4.5 1.5 4.5h-11S4 10 4 6.5zM6.5 13.25a1.75 1.75 0 0 0 3 0"></path></svg>
+<span>Notifications</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.75 4.25h12.5v7.5H1.75zM4.5 7h.01M7 7h.01M9.5 7h.01M5 9.25h6"></path></svg>
+<span>Shortcuts</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.75a6.25 6.25 0 1 0 0 12.5 6.25 6.25 0 0 0 0-12.5zM1.75 8h12.5M8 1.75c2 2 2 10.5 0 12.5M8 1.75c-2 2-2 10.5 0 12.5"></path></svg>
+<span>Region</span>
+</a>
+
+
+<div style="font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #8d929b; padding: 16px 10px 4px">System</div>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.25a2.75 2.75 0 1 0 0 5.5 2.75 2.75 0 0 0 0-5.5zM2.75 13.75a5.25 5.25 0 0 1 10.5 0"></path></svg>
+<span>Users</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13.25 8A5.25 5.25 0 1 1 11.7 4.3M13.25 2.25V5H10.5"></path></svg>
+<span>Updates</span>
+</a>
+
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; font-weight: 400; color: #1c1e22; background: transparent">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.75a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5zM8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1"></path></svg>
+<span>System</span>
+</a>
+
+
+<div style="flex-grow: 1"></div>
+<a href="#" style="display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; text-decoration: none; font-size: 13px; color: #5d636e">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="6.25"></circle><path d="M8 7.25v4M8 4.75v.01"></path></svg>
+<span>About</span>
+</a>
+</nav>
+
+<main style="flex-grow: 1; min-width: 0; overflow: hidden; padding: 28px 40px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 26px; color: #1c1e22">
+
+<header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div>
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Appearance</h1>
+<p style="margin: 4px 0 0; font-size: 13px; color: #5d636e">Your theme in light and dark, and how everything is drawn.</p>
+</div>
+<button style="height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid rgba(20,24,32,0.14); background: transparent; color: #5d636e; font: inherit; font-size: 12px; display: flex; align-items: center; gap: 6px"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.25" y="5.25" width="8.5" height="8.5" rx="1.75"></rect><path d="M10.75 5.25V3.5a1.25 1.25 0 0 0-1.25-1.25h-6A1.25 1.25 0 0 0 2.25 3.5v6a1.25 1.25 0 0 0 1.25 1.25h1.75"></path></svg>Copy as commands</button>
+</header>
+
+<section aria-label="Theme" style="display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px">
+<div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+<div style="display: flex; align-items: baseline; gap: 10px"><span style="font-size: 20px; font-weight: 700; letter-spacing: -0.02em">Aurora</span><span style="font-size: 12px; color: #8d929b">Built in theme</span></div>
+<div style="display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: #5d636e">
+<button style="display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; font: inherit; color: #5d636e"><span style="display:flex"><span style="width:20px;height:14px;border-radius:4px;background:radial-gradient(120% 90% at 30% 20%, #7ee0b5 0%, rgba(126,224,181,0) 45%), radial-gradient(90% 80% at 80% 30%, #9b6cf0 0%, rgba(155,108,240,0) 55%), linear-gradient(180deg,#14223d,#0b1324);box-shadow:0 0 0 1.5px #ffffff;margin-left:0px"></span><span style="width:20px;height:14px;border-radius:4px;background:radial-gradient(100% 80% at 60% 10%, #5ee6c4 0%, rgba(94,230,196,0) 50%), linear-gradient(180deg,#0f2a36,#081620);box-shadow:0 0 0 1.5px #ffffff;margin-left:-6px"></span><span style="width:20px;height:14px;border-radius:4px;background:radial-gradient(110% 90% at 20% 30%, #f07ab8 0%, rgba(240,122,184,0) 45%), radial-gradient(90% 80% at 85% 20%, #6c8cf0 0%, rgba(108,140,240,0) 50%), linear-gradient(180deg,#1b1a3d,#0d0c22);box-shadow:0 0 0 1.5px #ffffff;margin-left:-6px"></span></span>5 pictures <span style="color: #8d929b">›</span></button>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width:6px;height:6px;border-radius:3px;background:#f0a020"></span>Changed: your accent</span>
+</div>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; flex: none">
+<button style="height: 30px; padding: 0 12px; border-radius: 15px; border: 0; background: transparent; color: #2d6ae3; font: inherit; font-size: 12.5px">Reset</button>
+<button style="height: 30px; padding: 0 14px; border-radius: 15px; border: 0; background: #2d6ae3; color: #fff; font: inherit; font-size: 12.5px; font-weight: 600">Keep as new</button>
+<button aria-label="More" style="width: 30px; height: 30px; border-radius: 15px; border: 1px solid rgba(20,24,32,0.14); background: transparent; color: #1c1e22; display: flex; align-items: center; justify-content: center"><svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg></button>
+</div>
+</div>
+<div role="radiogroup" aria-label="Style" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+<button role="radio" style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:9px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:3px;border-radius:14px;border:2px solid transparent"><div style="position:relative;height:128px;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(20,24,32,0.08),0 10px 24px rgba(20,24,32,0.14)"><div style="position:absolute;inset:0;background:radial-gradient(120% 90% at 28% 18%, #bff3de 0%, rgba(191,243,222,0) 50%), radial-gradient(90% 80% at 82% 28%, #ddccfb 0%, rgba(221,204,251,0) 55%), linear-gradient(180deg,#eef4fc,#d3def2)"><div style="position:absolute;left:17%;top:17%;width:54%;height:54%;border-radius:7px;background:#ffffff;box-shadow:0 8px 20px rgba(0,0,0,0.22);overflow:hidden"><div style="height:11px;background:#eef1f6;display:flex;align-items:center;justify-content:flex-end;gap:3px;padding:0 5px"><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#e5484d"></span></div><div style="margin:9px 9px 0;height:5px;width:58%;border-radius:3px;background:rgba(20,24,32,0.10)"></div><div style="margin:5px 9px 0;height:5px;width:40%;border-radius:3px;background:rgba(20,24,32,0.10)"></div><div style="margin:9px 9px 0;height:11px;width:30%;border-radius:6px;background:#9466ee"></div></div><div style="position:absolute;left:0;right:0;bottom:0;height:13px;background:rgba(255,255,255,0.62);display:flex;align-items:center;padding:0 8px"><span style="width:6px;height:6px;border-radius:2px;background:#1c1e22;opacity:0.7"></span><span style="flex:1"></span><span style="width:18px;height:4px;border-radius:2px;background:#1c1e22;opacity:0.6"></span></div></div></div></div><span style="font-size:13px;font-weight:400">Light</span></button>
+<button role="radio" style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:9px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:3px;border-radius:14px;border:2px solid transparent"><div style="position:relative;height:128px;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(20,24,32,0.08),0 10px 24px rgba(20,24,32,0.14)"><div style="position:absolute;inset:0;background:radial-gradient(120% 90% at 28% 18%, #6fd9ab 0%, rgba(111,217,171,0) 45%), radial-gradient(90% 80% at 82% 28%, #9466ee 0%, rgba(148,102,238,0) 55%), linear-gradient(180deg,#14223d,#0b1324)"><div style="position:absolute;left:17%;top:17%;width:54%;height:54%;border-radius:7px;background:#1f232c;box-shadow:0 8px 20px rgba(0,0,0,0.22);overflow:hidden"><div style="height:11px;background:#2a2f3a;display:flex;align-items:center;justify-content:flex-end;gap:3px;padding:0 5px"><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#e5484d"></span></div><div style="margin:9px 9px 0;height:5px;width:58%;border-radius:3px;background:rgba(255,255,255,0.18)"></div><div style="margin:5px 9px 0;height:5px;width:40%;border-radius:3px;background:rgba(255,255,255,0.18)"></div><div style="margin:9px 9px 0;height:11px;width:30%;border-radius:6px;background:#9466ee"></div></div><div style="position:absolute;left:0;right:0;bottom:0;height:13px;background:rgba(20,24,32,0.55);display:flex;align-items:center;padding:0 8px"><span style="width:6px;height:6px;border-radius:2px;background:#eceef1;opacity:0.7"></span><span style="flex:1"></span><span style="width:18px;height:4px;border-radius:2px;background:#eceef1;opacity:0.6"></span></div></div></div></div><span style="font-size:13px;font-weight:400">Dark</span></button>
+<button role="radio" style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:9px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:3px;border-radius:14px;border:2px solid #2d6ae3"><div style="position:relative;height:128px;border-radius:10px;overflow:hidden;box-shadow:0 1px 2px rgba(20,24,32,0.08),0 10px 24px rgba(20,24,32,0.14)"><div style="position:absolute;inset:0;background:radial-gradient(120% 90% at 28% 18%, #6fd9ab 0%, rgba(111,217,171,0) 45%), radial-gradient(90% 80% at 82% 28%, #9466ee 0%, rgba(148,102,238,0) 55%), linear-gradient(180deg,#14223d,#0b1324)"><div style="position:absolute;left:17%;top:17%;width:54%;height:54%;border-radius:7px;background:#1f232c;box-shadow:0 8px 20px rgba(0,0,0,0.22);overflow:hidden"><div style="height:11px;background:#2a2f3a;display:flex;align-items:center;justify-content:flex-end;gap:3px;padding:0 5px"><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#e5484d"></span></div><div style="margin:9px 9px 0;height:5px;width:58%;border-radius:3px;background:rgba(255,255,255,0.18)"></div><div style="margin:5px 9px 0;height:5px;width:40%;border-radius:3px;background:rgba(255,255,255,0.18)"></div><div style="margin:9px 9px 0;height:11px;width:30%;border-radius:6px;background:#9466ee"></div></div><div style="position:absolute;left:0;right:0;bottom:0;height:13px;background:rgba(20,24,32,0.55);display:flex;align-items:center;padding:0 8px"><span style="width:6px;height:6px;border-radius:2px;background:#eceef1;opacity:0.7"></span><span style="flex:1"></span><span style="width:18px;height:4px;border-radius:2px;background:#eceef1;opacity:0.6"></span></div></div><div style="position:absolute;inset:0;background:radial-gradient(120% 90% at 28% 18%, #bff3de 0%, rgba(191,243,222,0) 50%), radial-gradient(90% 80% at 82% 28%, #ddccfb 0%, rgba(221,204,251,0) 55%), linear-gradient(180deg,#eef4fc,#d3def2);clip-path:polygon(0 0,100% 0,0 100%)"><div style="position:absolute;left:17%;top:17%;width:54%;height:54%;border-radius:7px;background:#ffffff;box-shadow:0 8px 20px rgba(0,0,0,0.22);overflow:hidden"><div style="height:11px;background:#eef1f6;display:flex;align-items:center;justify-content:flex-end;gap:3px;padding:0 5px"><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#8d929b"></span><span style="width:4px;height:4px;border-radius:2px;background:#e5484d"></span></div><div style="margin:9px 9px 0;height:5px;width:58%;border-radius:3px;background:rgba(20,24,32,0.10)"></div><div style="margin:5px 9px 0;height:5px;width:40%;border-radius:3px;background:rgba(20,24,32,0.10)"></div><div style="margin:9px 9px 0;height:11px;width:30%;border-radius:6px;background:#9466ee"></div></div><div style="position:absolute;left:0;right:0;bottom:0;height:13px;background:rgba(255,255,255,0.62);display:flex;align-items:center;padding:0 8px"><span style="width:6px;height:6px;border-radius:2px;background:#1c1e22;opacity:0.7"></span><span style="flex:1"></span><span style="width:18px;height:4px;border-radius:2px;background:#1c1e22;opacity:0.6"></span></div></div></div></div><span style="font-size:13px;font-weight:600">Automatic</span></button>
+</div>
+</section>
+
+<section aria-label="Themes" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><h2 style="margin: 0; font-size: 13px; font-weight: 600">Themes</h2><span style="font-size: 12px; color: #8d929b">Light and dark in each</span></div>
+<div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px">
+<button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid #2d6ae3"><div style="position:relative;height:70px;border-radius:9px;overflow:hidden;background:radial-gradient(120% 90% at 28% 18%, #6fd9ab 0%, rgba(111,217,171,0) 45%), radial-gradient(90% 80% at 82% 28%, #9466ee 0%, rgba(148,102,238,0) 55%), linear-gradient(180deg,#14223d,#0b1324);box-shadow:0 4px 12px rgba(20,24,32,0.12)"><div style="position:absolute;inset:0;background:radial-gradient(120% 90% at 28% 18%, #bff3de 0%, rgba(191,243,222,0) 50%), radial-gradient(90% 80% at 82% 28%, #ddccfb 0%, rgba(221,204,251,0) 55%), linear-gradient(180deg,#eef4fc,#d3def2);clip-path:polygon(0 0,100% 0,0 100%)"></div><span style="position:absolute;top:6px;left:6px;z-index:2;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,0.94);background:rgba(16,22,38,0.38);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</span></div></div><span style="font-size:12.5px;font-weight:600">Aurora</span></button><button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid transparent"><div style="position:relative;height:70px;border-radius:9px;overflow:hidden;background:radial-gradient(70% 60% at 25% 15%, rgba(110,140,230,0.55) 0%, rgba(110,140,230,0) 60%), linear-gradient(160deg,#33416a,#1a2440);box-shadow:0 4px 12px rgba(20,24,32,0.12)"><div style="position:absolute;inset:0;background:radial-gradient(70% 60% at 25% 15%, rgba(160,185,245,0.7) 0%, rgba(160,185,245,0) 60%), linear-gradient(160deg,#e3e9f7,#bcc8e4);clip-path:polygon(0 0,100% 0,0 100%)"></div><span style="position:absolute;top:6px;left:6px;z-index:2;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,0.94);background:rgba(16,22,38,0.38);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</span></div></div><span style="font-size:12.5px;font-weight:400">Edel</span></button><button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid transparent"><div style="position:relative;height:70px;border-radius:9px;overflow:hidden;background:linear-gradient(180deg,#5b4a72 0%,#3a3f66 50%,#22294a 100%);box-shadow:0 4px 12px rgba(20,24,32,0.12)"><div style="position:absolute;inset:0;background:linear-gradient(180deg,#fde3cc 0%,#f2c3b6 45%,#a9b6d6 100%);clip-path:polygon(0 0,100% 0,0 100%)"></div><span style="position:absolute;top:6px;left:6px;z-index:2;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,0.94);background:rgba(16,22,38,0.38);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</span></div></div><span style="font-size:12.5px;font-weight:400">Mountains</span></button><button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid transparent"><div style="position:relative;height:70px;border-radius:9px;overflow:hidden;background:linear-gradient(180deg,#1f4f6a 0%,#103348 60%,#08202f 100%);box-shadow:0 4px 12px rgba(20,24,32,0.12)"><div style="position:absolute;inset:0;background:linear-gradient(180deg,#e3f6fa 0%,#a6dbe6 55%,#5cb8c9 100%);clip-path:polygon(0 0,100% 0,0 100%)"></div><span style="position:absolute;top:6px;left:6px;z-index:2;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,0.94);background:rgba(16,22,38,0.38);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</span></div></div><span style="font-size:12.5px;font-weight:400">Ocean</span></button><button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid transparent"><div style="position:relative;height:70px;border-radius:9px;overflow:hidden;background:radial-gradient(100% 80% at 70% 20%, #f2a65a 0%, rgba(242,166,90,0) 50%), linear-gradient(180deg,#4a3a6a,#1c1730);box-shadow:0 4px 12px rgba(20,24,32,0.12)"><div style="position:absolute;inset:0;background:radial-gradient(100% 80% at 70% 20%, #ffd2a6 0%, rgba(255,210,166,0) 55%), linear-gradient(180deg,#efe2f4,#cdbfe0);clip-path:polygon(0 0,100% 0,0 100%)"></div><span style="position:absolute;top:6px;left:6px;z-index:2;display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-size:9.5px;font-weight:600;color:rgba(255,255,255,0.94);background:rgba(16,22,38,0.38);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</span></div></div><span style="font-size:12.5px;font-weight:400">Evening</span></button><button style="padding:0;border:0;background:transparent;font:inherit;color:inherit;display:flex;flex-direction:column;gap:7px;align-items:center;min-width:0"><div style="width:100%;box-sizing:border-box;padding:2px;border-radius:12px;border:2px solid transparent"><div style="height:70px;border-radius:9px;border:1.5px dashed rgba(20,24,32,0.14);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#2d6ae3;font-size:20px;font-weight:300">+</div></div><span style="font-size:12.5px;color:#5d636e">New</span></button>
+</div>
+</section>
+
+<section aria-label="Accent" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><h2 style="margin: 0; font-size: 13px; font-weight: 600">Accent</h2><span style="font-size: 12px; color: #8d929b">appearance.accent</span></div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.08)">
+
+<button aria-label="Blue" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid #2d6ae3; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #2d6ae3; display: block"></span></button>
+
+<button aria-label="Purple" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #7a4fd6; display: block"></span></button>
+
+<button aria-label="Pink" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #c43c86; display: block"></span></button>
+
+<button aria-label="Red" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #d0363f; display: block"></span></button>
+
+<button aria-label="Orange" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #b8520f; display: block"></span></button>
+
+<button aria-label="Yellow" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #8f6a00; display: block"></span></button>
+
+<button aria-label="Green" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #267f39; display: block"></span></button>
+
+<button aria-label="Teal" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #0f7f86; display: block"></span></button>
+
+<button aria-label="Graphite" style="width: 28px; height: 28px; border-radius: 14px; padding: 0; border: 2px solid transparent; background: #fafbfc; display: flex; align-items: center; justify-content: center"><span style="width: 20px; height: 20px; border-radius: 10px; background: #5a6270; display: block"></span></button>
+
+<span style="width: 1px; height: 22px; background: rgba(20,24,32,0.14)"></span>
+<button style="height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid rgba(20,24,32,0.14); background: transparent; color: #1c1e22; font: inherit; font-size: 12px">From wallpaper</button>
+<button style="height: 28px; padding: 0 12px; border-radius: 14px; border: 1px solid rgba(20,24,32,0.14); background: transparent; color: #1c1e22; font: inherit; font-size: 12px">Custom…</button>
+<span style="flex-grow: 1"></span>
+<span style="font-size: 12px; color: #5d636e">Blue</span>
+</div>
+</section>
+
+<section aria-label="Text" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><h2 style="margin: 0; font-size: 13px; font-weight: 600">Text</h2><button style="border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; color: #2d6ae3">Reset</button></div>
+<div style="border-radius: 12px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.08); overflow: hidden">
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid rgba(20,24,32,0.08)">
+<span style="font-size: 13px">Interface font</span>
+<button style="justify-self: start; height: 30px; min-width: 220px; padding: 0 10px 0 12px; border-radius: 7px; border: 1px solid rgba(20,24,32,0.14); background: #eef0f3; color: #1c1e22; font: inherit; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px">Inter <span style="color: #8d929b">Default</span><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.25L8 9.75l3.5-3.5"></path></svg></button>
+<span></span>
+</div>
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid rgba(20,24,32,0.08)">
+<span style="font-size: 13px">Monospace font</span>
+<button style="justify-self: start; height: 30px; min-width: 220px; padding: 0 10px 0 12px; border-radius: 7px; border: 1px solid rgba(20,24,32,0.14); background: #eef0f3; color: #1c1e22; font-family: ui-monospace, monospace; font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px">Noto Sans Mono<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6.25L8 9.75l3.5-3.5"></path></svg></button>
+<span></span>
+</div>
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px">
+<span style="font-size: 13px">Text size</span>
+<div style="display: flex; align-items: center; gap: 10px; color: #2d6ae3"><span style="font-size: 11px; color: #8d929b">A</span><input type="range" min="80" max="150" value="100" aria-label="Text size" style="width: 100%"><span style="font-size: 16px; color: #8d929b">A</span></div>
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">Default</span>
+</div>
+</div>
+</section>
+
+<section aria-label="Shape" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><h2 style="margin: 0; font-size: 13px; font-weight: 600">Shape</h2><button style="border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; color: #2d6ae3">Reset</button></div>
+<div style="display: flex; gap: 0; border-radius: 12px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.08); overflow: hidden">
+<div style="width: 240px; flex-shrink: 0; padding: 16px; box-sizing: border-box; border-right: 1px solid rgba(20,24,32,0.08)">
+<div style="height: 176px; border-radius: 10px; position: relative; overflow: hidden; background: linear-gradient(160deg,#8d9aba,#3c4868)">
+<div style="position: absolute; left: 8px; top: 8px; bottom: 22px; width: calc(50% - 12px); border-radius: 6px; background: #ffffff; border: 1px solid #2d6ae3"><div style="height: 12px; border-radius: 6px 6px 0 0; background: #ebeff8"></div></div>
+<div style="position: absolute; right: 8px; top: 8px; bottom: 22px; width: calc(50% - 12px); border-radius: 6px; background: #ffffff; border: 1px solid rgba(20,24,32,0.14)"><div style="height: 12px; border-radius: 6px 6px 0 0; background: #eceef1"></div></div>
+<div style="position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: #f6f7f9"></div>
+</div>
+</div>
+<div style="flex-grow: 1; min-width: 0; padding: 6px 16px">
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Corners</span>
+<input type="range" min="0" max="24" value="10" aria-label="Corners" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">10 px</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Gaps</span>
+<input type="range" min="0" max="64" value="8" aria-label="Gaps" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">8 px</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Gaps at the edge</span>
+<input type="range" min="0" max="64" value="8" aria-label="Gaps at the edge" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">Same</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Border</span>
+<input type="range" min="0" max="10" value="1" aria-label="Border" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">1 px</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Title bars</span>
+<input type="range" min="24" max="48" value="28" aria-label="Title bars" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">28 px</span>
+</div>
+
+<div style="display: grid; grid-template-columns: 140px minmax(0, 1fr) 72px; align-items: center; gap: 14px; height: 34px">
+<span style="font-size: 13px">Panels’ opacity</span>
+<input type="range" min="20" max="100" value="100" aria-label="Panels’ opacity" style="width: 100%; color: #2d6ae3">
+<span style="font-size: 13px; color: #5d636e; text-align: right; font-variant-numeric: tabular-nums">100 %</span>
+</div>
+
+</div>
+</div>
+</section>
+
+<section aria-label="Motion" style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; align-items: baseline; justify-content: space-between"><h2 style="margin: 0; font-size: 13px; font-weight: 600">Motion</h2><button style="border: 0; background: transparent; padding: 0; font: inherit; font-size: 12px; color: #2d6ae3">Reset</button></div>
+<div style="border-radius: 12px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.08); overflow: hidden">
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid rgba(20,24,32,0.08)">
+<span style="font-size: 13px">Animations</span>
+<div role="radiogroup" aria-label="Animations" style="justify-self: start; display: flex; padding: 2px; border-radius: 8px; background: #eef0f3">
+<button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #1c1e22; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.18)">Full</button><button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #5d636e; background: transparent; box-shadow: none">Reduced</button><button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #5d636e; background: transparent; box-shadow: none">Off</button>
+</div>
+<span></span>
+</div>
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px; border-bottom: 1px solid rgba(20,24,32,0.08)">
+<span style="font-size: 13px">Speed</span>
+<div style="display: flex; align-items: center; gap: 10px; color: #2d6ae3"><span style="font-size: 11px; color: #8d929b">Slower</span><input type="range" min="25" max="400" value="100" aria-label="Speed" style="width: 100%"><span style="font-size: 11px; color: #8d929b">Faster</span></div>
+<span style="font-size: 13px; color: #5d636e; text-align: right">As made</span>
+</div>
+<div style="display: grid; grid-template-columns: 180px minmax(0, 1fr) 96px; align-items: center; gap: 16px; min-height: 48px; padding: 0 16px">
+<span style="font-size: 13px">Feel</span>
+<div role="radiogroup" aria-label="Feel" style="justify-self: start; display: flex; padding: 2px; border-radius: 8px; background: #eef0f3">
+<button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #1c1e22; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.18)">Smooth</button><button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #5d636e; background: transparent; box-shadow: none">Snappy</button><button role="radio" style="height: 26px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12px; font-weight: 500; color: #5d636e; background: transparent; box-shadow: none">Springy</button>
+</div>
+<span></span>
+</div>
+</div>
+</section>
+
+</main>
+</div>
+</div>
+</div>
+
+
+</body>
+</html>
