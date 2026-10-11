@@ -26,6 +26,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 W, H = 3840, 2400
 QUALITY = 90
+GRAIN = 1.0
 
 
 def tokens():
@@ -193,7 +194,7 @@ def ours():
         "hills-light": hills(
             sky=(mix(accent_light, "#ffffff", 0.82), dawn),
             glow="#ffd2b8",
-            near=mix(accent_light, "#2a3570", 0.35),
+            near=mix(mix(accent_light, "#2a3570", 0.25), "#ffffff", 0.15),
             far=mix(accent_light, "#ffffff", 0.78),
             shade=mix(accent_light, "#1a2050", 0.5),
             shade_alpha=0.12,
@@ -225,7 +226,11 @@ def draw(out, name, svg):
         "-p", "edel", "--features", "icons", "--example", "render-svg", "--",
         str(svg_path), str(png_path),
     )
-    run("convert", str(png_path), "-quality", str(QUALITY), str(out / f"{name}.jpg"))
+    # A faint grain, so the soft gradients show no bands in 8 bits.
+    run(
+        "convert", str(png_path), "-seed", "1", "-attenuate", str(GRAIN), "+noise", "Uniform",
+        "-quality", str(QUALITY), str(out / f"{name}.jpg"),
+    )
     svg_path.unlink()
     png_path.unlink()
 
