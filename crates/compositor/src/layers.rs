@@ -10,6 +10,7 @@
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
 use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_output};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
@@ -27,6 +28,8 @@ use toml::{Table, Value};
 
 use edel_compositor::desks::screen_in;
 
+use crate::animate::Animations;
+use crate::render::{Drawn, Element, centre_of, zoomed};
 use crate::state::Edel;
 
 /// The layers drawn over the windows, the topmost first.
@@ -134,6 +137,19 @@ impl Edel {
             }
         }
         self.give_keyboard(&output, surface);
+        // An overlay surface pops up the first time it shows a picture
+        // (M5.12b4), and pops up again after it hid.
+        let overlay = layer_map_for_output(&output)
+            .layer_for_surface(surface, WindowSurfaceType::TOPLEVEL)
+            .filter(|layer| layer.layer() == Layer::Overlay)
+            .map(|layer| layer.namespace().to_string());
+        let shown =
+            with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false);
+        match (shown, overlay) {
+            (true, Some(namespace)) => self.popup_mapped(surface, &namespace),
+            (false, _) => self.popup_gone(surface),
+            _ => {}
+        }
         if self.window_areas() != before {
             self.relayout();
         }
@@ -391,15 +407,18 @@ fn name(layer: Layer) -> &'static str {
 }
 
 /// `output`'s layer surfaces on `layers`, the topmost first, for drawing,
-/// but for those `hidden`.
+/// but for those `hidden`. A popup that popped up (M5.12b4) fades in and
+/// grows about its centre, as a window opens.
 pub fn elements(
     renderer: &mut GlesRenderer,
     output: &Output,
     layers: &[Layer],
     scale: f64,
     hidden: &[WlSurface],
-) -> Vec<WaylandSurfaceRenderElement<GlesRenderer>> {
+    animations: &Animations,
+) -> Vec<Drawn> {
     let map = layer_map_for_output(output);
+    let now = animations.now();
     let mut elements = Vec::new();
     for layer in layers {
         for surface in map.layers_on(*layer).rev() {
@@ -409,13 +428,20 @@ pub fn elements(
             let Some(place) = map.layer_geometry(surface) else {
                 continue;
             };
+            let (alpha, zoom) = animations
+                .popup_look(surface.wl_surface(), now)
+                .unwrap_or((1.0, 1.0));
+            let parts = surface.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+                renderer,
+                place.loc.to_physical_precise_round(scale),
+                Scale::from(scale),
+                alpha,
+            );
+            let centre = centre_of(place, Point::default(), scale, Point::default());
             elements.extend(
-                surface.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-                    renderer,
-                    place.loc.to_physical_precise_round(scale),
-                    Scale::from(scale),
-                    1.0,
-                ),
+                parts
+                    .into_iter()
+                    .map(|e| zoomed(Element::Surface(e), centre, zoom)),
             );
         }
     }
@@ -469,6 +495,7 @@ impl WlrLayerShellHandler for Edel {
         if self.keyboard_layer.as_ref() == Some(surface.wl_surface()) {
             self.keyboard_layer = None;
         }
+        self.popup_gone(surface.wl_surface());
         // The keyboard goes back to the top window if the layer had it.
         let had_keyboard = self
             .seat

@@ -745,11 +745,14 @@ impl Edel {
             .then(|| frame_at(&screen.plan.frames, pointer))
             .flatten();
         let hidden = self.hidden_layers();
-        let mut front: Vec<Drawn> =
-            crate::layers::elements(renderer, output, self.layers_over(output), scale, &hidden)
-                .into_iter()
-                .map(|e| Drawn::Plain(Element::Surface(e)))
-                .collect();
+        let mut front: Vec<Drawn> = crate::layers::elements(
+            renderer,
+            output,
+            self.layers_over(output),
+            scale,
+            &hidden,
+            &self.animations,
+        );
         front.extend(self.overview_tip(renderer, &mut overview, &screen, area, scale));
         // The window held, at the pointer, over everything else.
         if let Some((window, grip)) = &held {
@@ -917,11 +920,14 @@ impl Edel {
             area,
             scale,
         ));
-        front.extend(
-            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale, &hidden)
-                .into_iter()
-                .map(|e| Drawn::Plain(Element::Surface(e))),
-        );
+        front.extend(crate::layers::elements(
+            renderer,
+            output,
+            &crate::layers::BELOW,
+            scale,
+            &hidden,
+            &self.animations,
+        ));
         let pixels = (
             (f64::from(area.size.w) * scale / BACKDROP_SHRINK).ceil() as u32,
             (f64::from(area.size.h) * scale / BACKDROP_SHRINK).ceil() as u32,

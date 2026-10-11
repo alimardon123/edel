@@ -20,6 +20,7 @@ mod files;
 mod icon;
 mod layout;
 mod lock;
+mod motion;
 mod network;
 mod notifications;
 mod panels;
@@ -333,9 +334,14 @@ fn finds(page: &Page, query: &str) -> bool {
     let holds = |text: &str| text.to_lowercase().contains(&query);
     query.is_empty()
         || holds(page.title)
-        || page
-            .section
-            .is_some_and(|s| rows::on_page(s).any(|row| holds(tr(row.title))))
+        || page.section.is_some_and(|s| {
+            rows::on_page(s).any(|row| {
+                holds(tr(row.title))
+                    || rows::values(row.key)
+                        .iter()
+                        .any(|value| holds(&rows::label(value)))
+            })
+        })
 }
 
 fn window(app: &adw::Application, start: usize, asked: bool) {

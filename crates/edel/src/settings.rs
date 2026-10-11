@@ -397,6 +397,12 @@ pub const KEYS: &[Key] = &[
         "appearance.animations",
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
+    // How fast everything moves, as a share of the release's speed (M5.12b4):
+    // 200 halves every length, 50 doubles it. One curve for every kind of
+    // animation, windows and popups alike; there are no per-kind keys, as
+    // the one setting is simpler and everything still follows it.
+    now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
+    now("appearance.animation_curve", Kind::OneOf(CURVES)),
     // The lock and login screens' parts, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
     now("lock_screen.parts", Kind::LockParts),
@@ -746,6 +752,14 @@ pub struct Appearance {
     /// Full, reduced or off
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animations: Option<String>,
+    /// How fast things move, percent of the release's speed (M5.12b4); absent
+    /// is 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation_speed: Option<u32>,
+    /// How each animation eases, `smooth`, `snappy` or `springy` (M5.12b4);
+    /// absent is smooth.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animation_curve: Option<String>,
     /// The workspace switcher's look, `numbers` or `button` (M5.2m); absent
     /// is [`SWITCHER_LOOK_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1234,6 +1248,28 @@ pub const NOTIFICATION_BADGE: &str = "notifications.badge";
 /// `reduced` or `off`; the lock screen's field shakes only at `full`
 /// (M5.10c).
 pub const ANIMATIONS: &str = "appearance.animations";
+
+/// The key that says how fast things move (M5.12b4), as a percent of the
+/// release's speed: 100, the default, is as made; 200 is twice as fast.
+pub const ANIMATION_SPEED: &str = "appearance.animation_speed";
+
+/// The key that says how each animation eases (M5.12b4): `smooth`, the
+/// default, `snappy` or `springy`; its values are [`CURVES`].
+pub const ANIMATION_CURVE: &str = "appearance.animation_curve";
+
+/// The easing curves `appearance.animation_curve` takes (M5.12b4).
+pub const CURVES: &[&str] = &["smooth", "snappy", "springy"];
+
+/// The speed `appearance.animation_speed` is when the file does not say,
+/// as a percent of the release's (M5.12b4): as made.
+pub const ANIMATION_SPEED_DEFAULT: u32 = 100;
+
+/// The motion `appearance.animations` is when the file does not say (M5.12b4).
+pub const ANIMATIONS_DEFAULT: &str = "full";
+
+/// The curve `appearance.animation_curve` is when the file does not say
+/// (M5.12b4).
+pub const ANIMATION_CURVE_DEFAULT: &str = "smooth";
 
 /// The key the tray's apps kept in the panel are listed under (M5.9g), the
 /// one name shell-ui, Settings and `edel settings` share.
@@ -3130,6 +3166,17 @@ font_size = 11
         assert!(set("format = 1\n", "appearance.border_width", "10").is_ok());
         assert_eq!(whole_range("appearance.gaps"), Some((0, 64)));
         assert_eq!(whole_range("appearance.mode"), None);
+    }
+
+    #[test]
+    fn the_animation_speed_takes_its_range_and_the_curve_its_names() {
+        let speed = |value: &str| set("format = 1\n", "appearance.animation_speed", value);
+        assert!(speed("200").unwrap().contains("animation_speed = 200"));
+        let fast = speed("500").unwrap_err().to_string();
+        assert!(fast.contains("a whole number from 25 to 400"), "{fast}");
+        assert!(set("format = 1\n", "appearance.animation_curve", "springy").is_ok());
+        assert!(set("format = 1\n", "appearance.animation_curve", "bouncy").is_err());
+        assert_eq!(whole_range("appearance.animation_speed"), Some((25, 400)));
     }
 
     #[test]

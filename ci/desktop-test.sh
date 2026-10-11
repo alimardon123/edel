@@ -782,6 +782,25 @@ case_animations() {
 	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [1-9][0-9]* ms, close [1-9][0-9]* ms, slide 0 ms' ||
 		fail "appearance.animations = \"reduced\" did not leave fades only: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
 	reduced=$(tr -d '\r' <"$log" | grep -a 'motion reduced: open' | tail -n 1 | sed 's/.*: open/open/')
+	# appearance.animation_speed and animation_curve (M5.12b4): speed 200
+	# halves the fade's length (at Lite, 100 ms to 50 ms), springy is logged,
+	# and the launcher, a popup, fades in over its own length at that speed
+	# and feel (`popup edel-...`, as the overlay's surface maps).
+	reduced_open=$(tr -d '\r' <"$log" | grep -a 'motion reduced: open' | tail -n 1 | sed 's/.*: open \([0-9]*\) ms.*/\1/')
+	guest 'motion speed 200'
+	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [0-9]+ ms, close [0-9]+ ms, slide 0 ms, speed 200 %' ||
+		fail "appearance.animation_speed = 200 did not restyle the animations: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
+	fast_open=$(tr -d '\r' <"$log" | grep -a 'speed 200 %' | tail -n 1 | sed 's/.*: open \([0-9]*\) ms.*/\1/')
+	awk -v a="$fast_open" -v b="$reduced_open" 'BEGIN { exit !(a != "" && a * 2 == b) }' ||
+		fail "speed 200 made the fade ${fast_open:-?} ms long, not half of the $reduced_open ms it was"
+	guest 'motion curve springy'
+	wait_for 'curve springy' || fail "appearance.animation_curve = \"springy\" was not logged"
+	popups=$(count 'popup edel-[a-z]+ opens over')
+	python3 ci/qmp.py key meta_l
+	wait_more 'popup edel-[a-z]+ opens over' "$popups" || fail "the launcher did not pop up at speed 200 and springy"
+	popup=$(tr -d '\r' <"$log" | grep -aE 'popup edel-[a-z]+ opens over' | tail -n 1 | sed 's/^.*popup //')
+	python3 ci/qmp.py key esc
+	full=$(count 'motion full: open')
 	guest 'motion default'
 	i=0
 	while [ "$(tr -d '\r' <"$log" | grep -c 'motion full: open' || true)" -le "$full" ]; do
@@ -844,13 +863,42 @@ case_animations() {
 	done
 	limit=$(budget animation_p99_ms)
 	echo "ten windows: the smaller pair added ${added:-?} ms (${p99_off:-?} ms off, ${p99:-?} ms full), budget $limit ms"
+	# Ten windows at speed 50 and at 200 (M5.12b4), each after its log line
+	# shows, each p99 within the same budget over the motion-off p99 above.
+	speeds=''
+	for speed in 50 200; do
+		runs=$(count "speed $speed %")
+		guest "motion speed $speed"
+		wait_more "speed $speed %" "$runs" || fail "appearance.animation_speed = $speed did not show in the animations' log"
+		windows=$(value windows)
+		runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+		guest 'open ten'
+		wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows at speed $speed"
+		speed_p99=$(value open_ten_p99_ms)
+		speed_frames=$(value open_ten_frames)
+		speed_added=$(awk -v m="$speed_p99" -v o="$p99_off" 'BEGIN { if (m != "" && o != "") printf "%.1f", m - o }')
+		i=0
+		while [ "$(value windows)" != "$windows" ]; do
+			i=$((i + 1))
+			[ "$i" -lt 100 ] || fail "the ten windows did not all close at speed $speed: $(value windows)"
+			sleep 0.2
+		done
+		[ "${speed_frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${speed_frames:-no} frames with ten windows at speed $speed"
+		awk -v a="$speed_added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' ||
+			fail "at speed $speed, ten windows added ${speed_added:-?} ms to the frames at p99 over motion off (${p99_off:-?} ms), over the budget of $limit ms"
+		echo "ten windows at speed $speed: frames p99 $speed_p99 ms, $speed_added ms more than motion off over $speed_frames frames"
+		speeds="$speeds speed $speed: p99 $speed_p99 ms, $speed_added ms added;"
+	done
+	full=$(count 'motion full: open')
+	guest 'motion default'
+	wait_more 'motion full: open' "$full" || fail "removing the speed and feel did not bring the default animations back"
 	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
 	awk -v a="$added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' ||
 		fail "with ten windows opening and closing at tier $tier, the animations added ${added:-?} ms to the frames at p99 in the better of two pairs (${p99_off:-?} ms with motion off, ${p99:-?} ms with it full), over the budget of $limit ms"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Ten windows opening and closing with animations (M5.11b): frames p99 $p99 ms, $p99_off ms with motion off, $added ms added (budget $limit ms), $frames frames, tier $tier." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.animations = reduced left fades only ($reduced) and its removal brought the tier's own back; ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, $added ms more than without animations ($p99_off ms), within $limit ms"
+	echo "PASS: appearance.animations = reduced left fades only ($reduced); speed 200 halved its fade to $fast_open ms and springy was logged; the launcher popped up ($popup); ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, $added ms more than without animations ($p99_off ms), within $limit ms; at$speeds all within $limit ms"
 }
 
 case_shortcuts() {

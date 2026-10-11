@@ -45,7 +45,7 @@ smithay::backend::renderer::element::render_elements! {
 }
 
 /// `element` at `zoom` times its size about `centre`.
-fn zoomed(element: Element, centre: Point<i32, Physical>, zoom: f64) -> Drawn {
+pub(crate) fn zoomed(element: Element, centre: Point<i32, Physical>, zoom: f64) -> Drawn {
     if (zoom - 1.0).abs() < f64::EPSILON {
         Drawn::Plain(element)
     } else {
@@ -78,7 +78,7 @@ pub fn border_places(
 
 /// The centre of `frame` on a screen at `screen`, in its pixels, moved by
 /// `shift`.
-fn centre_of(
+pub(crate) fn centre_of(
     frame: Rectangle<i32, Logical>,
     screen: Point<i32, Logical>,
     scale: f64,
@@ -173,11 +173,14 @@ impl Edel {
         // Panels over the windows, backgrounds under them (M5.1a); a dock
         // a window covers is not drawn (M5.4f).
         let hidden = self.hidden_layers();
-        elements.extend(
-            crate::layers::elements(renderer, output, self.layers_over(output), scale, &hidden)
-                .into_iter()
-                .map(|e| Drawn::Plain(Element::Surface(e))),
-        );
+        elements.extend(crate::layers::elements(
+            renderer,
+            output,
+            self.layers_over(output),
+            scale,
+            &hidden,
+            &self.animations,
+        ));
         // Closed windows fading out where they were in the stack (M5.11b).
         let mut pictures: Vec<(usize, Vec<Drawn>)> = self
             .animations
@@ -219,11 +222,14 @@ impl Edel {
         for (_, drawn) in &mut pictures {
             elements.append(drawn);
         }
-        elements.extend(
-            crate::layers::elements(renderer, output, &crate::layers::BELOW, scale, &hidden)
-                .into_iter()
-                .map(|e| Drawn::Plain(Element::Surface(e))),
-        );
+        elements.extend(crate::layers::elements(
+            renderer,
+            output,
+            &crate::layers::BELOW,
+            scale,
+            &hidden,
+            &self.animations,
+        ));
         // The wallpaper lies under everything, so it comes last (M5.10c4b).
         elements.extend(self.wallpaper_elements(renderer, output, screen.size, scale));
         elements

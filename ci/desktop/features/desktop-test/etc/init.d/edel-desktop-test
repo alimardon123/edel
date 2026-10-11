@@ -362,7 +362,12 @@ commands() {
 		# appearance.animations (M5.11b), reduced and back to the default.
 		'motion reduced') edel settings set appearance.animations=reduced ;;
 		'motion off') edel settings set appearance.animations=off ;;
-		'motion default') edel settings reset appearance.animations ;;
+		# The speed (M5.12b4) and the feel, as a percent and a curve name.
+		'motion speed '*) edel settings set "appearance.animation_speed=${command#motion speed }" ;;
+		'motion curve '*) edel settings set "appearance.animation_curve=${command#motion curve }" ;;
+		'motion default')
+			edel settings reset appearance.animations appearance.animation_speed appearance.animation_curve
+			;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
 		# A window that locks the pointer and says what it hears, and one

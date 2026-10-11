@@ -14,7 +14,7 @@ use edel::presets::{self, Side};
 use edel::settings::{self, SettingsFile};
 pub use edel::tokens::Scheme;
 
-use crate::animation::Motion;
+use crate::animation::{Curve, Motion};
 use crate::frame::Shown;
 use crate::tiling::Style;
 
@@ -47,6 +47,11 @@ pub struct Settings {
     pub outputs: BTreeMap<String, OutputSettings>,
     /// `appearance.animations` (M5.11b): absent means full.
     pub motion: Motion,
+    /// `appearance.animation_speed` (M5.12b4), a percent of the release's
+    /// speed; absent means `edel::settings::ANIMATION_SPEED_DEFAULT`.
+    pub animation_speed: Option<u32>,
+    /// `appearance.animation_curve` (M5.12b4): absent means smooth.
+    pub animation_curve: Curve,
     /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
     pub color_scheme: Scheme,
     /// `[shortcuts]`, action to keys as written, the person's over the
@@ -94,6 +99,13 @@ pub struct Settings {
     /// rest), the person's over the machine's, read by the tokens too;
     /// the desktop follows them live (M5.12b2b).
     pub shape: edel::tokens::Shape,
+}
+
+/// Whether `speed` is in the key table's range for `appearance.animation_speed`
+/// (M5.12b4); a value outside it is read as absent.
+fn speed_in_range(speed: u32) -> bool {
+    edel::settings::whole_range(edel::settings::ANIMATION_SPEED)
+        .is_some_and(|(least, most)| (least..=most).contains(&i64::from(speed)))
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -180,6 +192,21 @@ impl Settings {
                 .and_then(Motion::parse)
             {
                 settings.motion = motion;
+            }
+            if let Some(speed) = file
+                .appearance
+                .animation_speed
+                .filter(|s| speed_in_range(*s))
+            {
+                settings.animation_speed = Some(speed);
+            }
+            if let Some(curve) = file
+                .appearance
+                .animation_curve
+                .as_deref()
+                .and_then(Curve::parse)
+            {
+                settings.animation_curve = curve;
             }
             if let Some(scheme) = file.appearance.mode.as_deref().and_then(Scheme::parse) {
                 settings.color_scheme = scheme;
@@ -491,6 +518,26 @@ mod tests {
         let both = Settings::from_files(Some(&machine), Some(&person));
         let panels = both.panels.clone().unwrap();
         assert_eq!(panels[0].edge, edel::presets::Edge::Bottom);
+    }
+
+    #[test]
+    fn the_animation_speed_and_curve_fall_back_on_bad_values() {
+        let plain = Settings::from_files(None, None);
+        assert_eq!(
+            (plain.animation_speed, plain.animation_curve),
+            (None, Curve::Smooth)
+        );
+        let machine = file(
+            "format = 1\n[appearance]\nanimation_speed = 200\nanimation_curve = \"springy\"\n",
+        );
+        let person =
+            file("format = 1\n[appearance]\nanimation_speed = 500\nanimation_curve = \"bouncy\"\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(both.animation_speed, Some(200), "500 is out of range");
+        assert_eq!(both.animation_curve, Curve::Springy, "bouncy is unknown");
+        let person = file("format = 1\n[appearance]\nanimation_speed = 50\n");
+        let fast = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(fast.animation_speed, Some(50), "the person's wins");
     }
 
     #[test]
