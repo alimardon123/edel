@@ -3522,6 +3522,11 @@ case_lock() {
 	# wallpaper blurred behind its parts, as shell-ui logs it. Kept as
 	# lock-magazine.png, and the look is taken out again at the end.
 	opened=$(count 'edel-compositor: mapped window Settings')
+	# The test image carries no wallpaper, so the test picture goes up
+	# for Magazine's blurred background; `lock magazine reset` takes it out.
+	pictured=$(count 'DESKTOP-TEST: ran wallpaper picture: 0')
+	guest 'wallpaper picture'
+	wait_more 'DESKTOP-TEST: ran wallpaper picture: 0' "$pictured" || fail "ci's wallpaper could not be set for Magazine"
 	guest 'settings lock'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
 		fail "Settings did not open on the Lock screen page: $(value windows)"

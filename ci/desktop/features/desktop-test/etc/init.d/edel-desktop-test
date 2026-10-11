@@ -685,12 +685,15 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.edel.Shell --object-path /org/edel/Shell --method org.edel.Shell1.EditLockScreen" </dev/null
 			;;
 		# The lock screen's look (M5.10c5c): the minimal look over the
-		# blurred wallpaper, read when the screen locks; reset after the check.
-		'lock look') edel settings set lock_screen.look=minimal; edel settings set lock_screen.background=blurred ;;
-		'lock look reset') edel settings reset lock_screen.look; edel settings reset lock_screen.background ;;
-		# The look Settings' Lock screen page chose (M5.10c5c) is taken out
-		# after the check, so the cases after it see the classic look.
-		'lock magazine reset') edel settings reset lock_screen.look ;;
+		# blurred wallpaper, the test picture, as the test image carries no
+		# wallpaper of its own; read when the screen locks, reset after.
+		'lock look') edel settings set lock_screen.look=minimal lock_screen.background=blurred "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
+		'lock look reset') edel settings reset lock_screen.look lock_screen.background appearance.wallpaper ;;
+		# The look Settings' Lock screen page wrote to ci's own file
+		# (M5.10c5c) and the test picture behind it, in the machine's file,
+		# are taken out after the check, so the cases after it see the
+		# classic look.
+		'lock magazine reset') as_ci "sed -i '/^look = /d' /home/ci/.config/edel/$settings_name" && edel settings reset appearance.wallpaper ;;
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
 		'power rules')
