@@ -162,6 +162,7 @@ pub fn css(t: &Tokens) -> String {
     let key = format!("{:.1}", f64::from(size) - 2.5);
     let heading = size * 20 / 13;
     let hero = size * 22 / 13;
+    let current = size * 17 / 13;
     let big = size + 1;
     let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
@@ -313,6 +314,10 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-fold > title {{ margin: 0 0 10px; padding: 4px 0; }}
 .edel-fold > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
 .edel-fold > title arrow {{ color: {muted}; }}
+.edel-current {{ padding: 16px; }}
+.edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
+.edel-current-button {{ min-height: 34px; padding: 0 16px; }}
+.edel-tile-blank {{ background-color: {card}; color: {muted}; border: 1px solid {line}; border-radius: {rs}px; }}
 "#
     )
 }

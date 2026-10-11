@@ -404,7 +404,19 @@ msgstr ""
 msgid "Your own arrangement"
 msgstr ""
 
-msgid "What lies behind the parts"
+msgid "The look's own"
+msgstr ""
+
+msgid "Navy"
+msgstr ""
+
+msgid "Blurred"
+msgstr ""
+
+msgid "Sharp"
+msgstr ""
+
+msgid "Picture"
 msgstr ""
 
 msgid "How the clock is drawn"
@@ -422,31 +434,19 @@ msgstr ""
 msgid "Choose one picture"
 msgstr ""
 
-msgid "Look"
-msgstr ""
-
-msgid "Your own arrangement; choose a look to replace it"
-msgstr ""
-
-msgid "Save as"
+msgid "Edit it where it is: move, add or take away parts on the lock itself."
 msgstr ""
 
 msgid "Edit lock screen"
 msgstr ""
 
-msgid "Look's own"
+msgid "Save as"
 msgstr ""
 
-msgid "Navy"
+msgid "Looks"
 msgstr ""
 
-msgid "Wallpaper blurred"
-msgstr ""
-
-msgid "Wallpaper sharp"
-msgstr ""
-
-msgid "Picture"
+msgid "Background"
 msgstr ""
 
 msgid "Clock and date"
@@ -479,7 +479,7 @@ msgstr ""
 msgid "Date"
 msgstr ""
 
-msgid "Show the count of unread notifications"
+msgid "Unread notifications count"
 msgstr ""
 
 msgid "the call to the desktop stopped"
@@ -788,7 +788,7 @@ msgstr ""
 msgid "Switcher ends"
 msgstr ""
 
-msgid "Background"
+msgid "Look"
 msgstr ""
 
 msgid "Unread count"
