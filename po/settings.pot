@@ -1004,9 +1004,6 @@ msgstr ""
 msgid "Level"
 msgstr ""
 
-msgid "Devices"
-msgstr ""
-
 msgid "Checking for updates..."
 msgstr ""
 

@@ -578,6 +578,27 @@ msgstr ""
 msgid "wrote {path} on the EFI system partition"
 msgstr ""
 
+msgid "Desktop"
+msgstr ""
+
+msgid "Connections"
+msgstr ""
+
+msgid "Devices"
+msgstr ""
+
+msgid "Personal"
+msgstr ""
+
+msgid "System"
+msgstr ""
+
+msgid "Appearance"
+msgstr ""
+
+msgid "colours, accent, shape, fonts and motion"
+msgstr ""
+
 msgid "Layout"
 msgstr ""
 
@@ -596,28 +617,10 @@ msgstr ""
 msgid "how many, their names and the apps that open on each"
 msgstr ""
 
-msgid "Appearance"
-msgstr ""
-
-msgid "light or dark, the accent, fonts, animations and the workspace switcher"
-msgstr ""
-
 msgid "Lock screen"
 msgstr ""
 
-msgid "the clock, the parts and where they stand"
-msgstr ""
-
-msgid "Displays"
-msgstr ""
-
-msgid "each screen's place, scale and resolution"
-msgstr ""
-
-msgid "Sound"
-msgstr ""
-
-msgid "the output and input devices and their volume"
+msgid "its look, parts and background"
 msgstr ""
 
 msgid "Network"
@@ -632,6 +635,18 @@ msgstr ""
 msgid "pairing and connecting headphones, mice and other devices"
 msgstr ""
 
+msgid "Displays"
+msgstr ""
+
+msgid "each screen's place, scale and resolution"
+msgstr ""
+
+msgid "Sound"
+msgstr ""
+
+msgid "the output and input devices and their volume"
+msgstr ""
+
 msgid "Power"
 msgstr ""
 
@@ -644,16 +659,16 @@ msgstr ""
 msgid "banners and do not disturb"
 msgstr ""
 
-msgid "Region"
-msgstr ""
-
-msgid "language, keyboard and time zone"
-msgstr ""
-
 msgid "Shortcuts"
 msgstr ""
 
 msgid "the keys for each action"
+msgstr ""
+
+msgid "Region"
+msgstr ""
+
+msgid "language, keyboard and time zone"
 msgstr ""
 
 msgid "Default apps"
@@ -696,9 +711,6 @@ msgid "Updates"
 msgstr ""
 
 msgid "when updates are installed"
-msgstr ""
-
-msgid "System"
 msgstr ""
 
 msgid "developer mode and profiles"

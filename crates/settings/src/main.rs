@@ -178,6 +178,43 @@ struct Page {
     section: Option<&'static str>,
     build: fn(&Rc<Theme>) -> gtk::Widget,
     needs: Option<&'static str>,
+    /// The group whose heading the page stands under (a `GROUPS` name);
+    /// About has none (M5.32b).
+    group: Option<&'static str>,
+}
+
+/// One row of the sidebar's list (M5.32b): a group's heading, or a page by
+/// its index in `all_pages`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Row {
+    Heading(&'static str),
+    Page(usize),
+}
+
+/// The sidebar's rows for the pages shown, given each shown page's group
+/// (None for About): a group's heading above its first page, none for a
+/// group with no page shown, since only shown pages are given.
+fn sidebar_rows(groups: &[Option<&'static str>]) -> Vec<Row> {
+    let mut rows = Vec::new();
+    let mut last = None;
+    for (at, group) in groups.iter().enumerate() {
+        if let Some(group) = *group {
+            if last != Some(group) {
+                rows.push(Row::Heading(group));
+                last = Some(group);
+            }
+        }
+        rows.push(Row::Page(at));
+    }
+    rows
+}
+
+/// The list row that shows page `at`, which the selection and the
+/// row-activation use.
+fn row_of(rows: &[Row], at: usize) -> Option<i32> {
+    rows.iter()
+        .position(|row| *row == Row::Page(at))
+        .map(|row| row as i32)
 }
 
 /// The pages this release has, in `edel::settings::PAGES`' order, then
@@ -193,6 +230,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: layout::page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             // The panels, the workspaces and the look are the desktop's
             // as well (M5.2q): pages of their own beside Layout.
@@ -202,6 +240,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: layout::panels_page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             "workspaces" => Some(Page {
                 title: tr(page.title),
@@ -209,6 +248,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: layout::workspaces_page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             "appearance" => Some(Page {
                 title: tr(page.title),
@@ -216,15 +256,16 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: layout::appearance_page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             // The lock screen is shell-ui's look, so the desktop's (M5.10c5c).
-            // Its icon is Appearance's: there is no page-lock icon yet.
             "lock_screen" => Some(Page {
                 title: tr(page.title),
-                icon: "page-appearance",
+                icon: "page-lock-screen",
                 section: Some(page.section),
                 build: lock::page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             // The screens are the compositor's too.
             "displays" => Some(Page {
@@ -233,6 +274,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: display::page,
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             // Sound talks to PipeWire through wpctl; no sound feature, no page.
             "sound" => Some(Page {
@@ -241,6 +283,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| sound::page(),
                 needs: Some("sound"),
+                group: Some(page.group),
             }),
             // Users reads the accounts every machine has (M5.8b).
             "users" => Some(Page {
@@ -249,6 +292,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| users::page(),
                 needs: None,
+                group: Some(page.group),
             }),
             // Network talks to NetworkManager through nmcli, Bluetooth to
             // BlueZ through bluetoothctl; no such feature, no page (M5.8a).
@@ -258,6 +302,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| network::page(),
                 needs: Some("network"),
+                group: Some(page.group),
             }),
             "bluetooth" => Some(Page {
                 title: tr(page.title),
@@ -265,6 +310,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| bluetooth::page(),
                 needs: Some("bluetooth"),
+                group: Some(page.group),
             }),
             // Power talks to UPower through upower (M5.8b).
             "power" => Some(Page {
@@ -273,6 +319,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| power::page(),
                 needs: Some("power"),
+                group: Some(page.group),
             }),
             // Notifications are shell-ui's, so the desktop's (M5.9b).
             "notifications" => Some(Page {
@@ -281,6 +328,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| notifications::page(),
                 needs: Some("shell"),
+                group: Some(page.group),
             }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
@@ -289,6 +337,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| updates::page(),
                 needs: None,
+                group: Some(page.group),
             }),
             "system" => Some(Page {
                 title: tr(page.title),
@@ -296,6 +345,7 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |_| system::page(),
                 needs: None,
+                group: Some(page.group),
             }),
             _ => None,
         })
@@ -306,6 +356,7 @@ fn all_pages() -> Vec<Page> {
         section: None,
         build: |_| about::page(),
         needs: None,
+        group: None,
     });
     pages
 }
@@ -402,24 +453,96 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         }
     }
 
+    // The list: each group's heading above its pages, About last (M5.32b).
+    let rows = Rc::new(sidebar_rows(
+        &pages.iter().map(|page| page.group).collect::<Vec<_>>(),
+    ));
     let list = gtk::ListBox::builder()
         .css_classes(["edel-pages"])
         .vexpand(true)
         .build();
-    for page in pages.iter() {
-        let row = gtk::Box::builder().spacing(10).build();
-        row.append(&icon::image(page.icon, 16));
-        row.append(&gtk::Label::builder().label(page.title).xalign(0.0).build());
-        list.append(&row);
+    let mut headings = Vec::new();
+    for (at, row) in rows.iter().enumerate() {
+        // The gap above a heading (not the first row) and above About.
+        let apart = at > 0 && !matches!(row, Row::Page(i) if pages[*i].group.is_some());
+        match *row {
+            Row::Heading(group) => {
+                let title = edel::settings::GROUPS
+                    .iter()
+                    .find(|g| g.name == group)
+                    .map_or(group, |g| tr(g.title));
+                let heading = gtk::ListBoxRow::builder()
+                    .selectable(false)
+                    .activatable(false)
+                    .focusable(false)
+                    .build();
+                heading.set_child(Some(
+                    &gtk::Label::builder().label(title).xalign(0.0).build(),
+                ));
+                heading.add_css_class("edel-heading");
+                if apart {
+                    heading.add_css_class("edel-apart");
+                }
+                headings.push((group, heading.clone()));
+                list.append(&heading);
+            }
+            Row::Page(i) => {
+                let page = &pages[i];
+                let item = gtk::ListBoxRow::new();
+                let inner = gtk::Box::builder().spacing(10).build();
+                inner.append(&icon::image(page.icon, 16));
+                inner.append(&gtk::Label::builder().label(page.title).xalign(0.0).build());
+                item.set_child(Some(&inner));
+                if apart {
+                    item.add_css_class("edel-apart");
+                }
+                list.append(&item);
+            }
+        }
     }
     {
-        let (split, show) = (split.clone(), show.clone());
-        list.connect_row_activated(move |_, row| {
-            show(row.index().max(0) as usize);
-            split.set_show_content(true);
+        // For CI (M5.32b): where each heading lies, logged once the list is
+        // laid out and two frames agree.
+        let last = RefCell::new(String::new());
+        list.add_tick_callback(move |list, _| {
+            let Some(window) = list.root().and_downcast::<gtk::Window>() else {
+                return gtk::glib::ControlFlow::Continue;
+            };
+            let places: Option<Vec<String>> = headings
+                .iter()
+                .map(|(group, heading)| {
+                    heading
+                        .compute_bounds(&window)
+                        .map(|bounds| format!("group {group} {}", widgets::place(Some(bounds))))
+                })
+                .collect();
+            let Some(lines) = places else {
+                return gtk::glib::ControlFlow::Continue;
+            };
+            let text = lines.join("\n");
+            if last.replace(text.clone()) != text {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            for line in lines {
+                eprintln!("edel-settings: sidebar {line}");
+            }
+            gtk::glib::ControlFlow::Break
         });
     }
-    list.select_row(list.row_at_index(start as i32).as_ref());
+    {
+        let (split, show, rows) = (split.clone(), show.clone(), rows.clone());
+        list.connect_row_activated(move |_, row| {
+            if let Some(Row::Page(at)) = rows.get(row.index().max(0) as usize) {
+                show(*at);
+                split.set_show_content(true);
+            }
+        });
+    }
+    list.select_row(
+        row_of(&rows, start)
+            .and_then(|row| list.row_at_index(row))
+            .as_ref(),
+    );
 
     let search = gtk::Entry::builder()
         .placeholder_text(tr("Search"))
@@ -428,11 +551,16 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         .build();
     search.update_property(&[gtk::accessible::Property::Label(tr("Search the settings"))]);
     {
-        let (pages, search2) = (pages.clone(), search.clone());
+        let (pages, search2, rows) = (pages.clone(), search.clone(), rows.clone());
         list.set_filter_func(move |row| {
-            pages
-                .get(row.index().max(0) as usize)
-                .is_some_and(|page| finds(page, &search2.text()))
+            let query = search2.text();
+            match rows.get(row.index().max(0) as usize) {
+                // The headings hide while the search has text: its results
+                // are one flat list.
+                Some(Row::Heading(_)) => query.trim().is_empty(),
+                Some(Row::Page(at)) => pages.get(*at).is_some_and(|page| finds(page, &query)),
+                None => false,
+            }
         });
     }
     {
@@ -445,7 +573,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
         search.connect_activate(move |_| {
             let mut at = 0;
             while let Some(row) = list.row_at_index(at) {
-                if row.is_child_visible() {
+                if row.is_child_visible() && row.is_activatable() {
                     list.select_row(Some(&row));
                     row.activate();
                     break;
@@ -494,7 +622,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
     // button does: the sidebar follows, and a narrow window shows the page.
     let go = gio::SimpleAction::new("show-page", Some(gtk::glib::VariantTy::STRING));
     {
-        let (pages, list, split) = (pages.clone(), list.clone(), split.clone());
+        let (pages, list, split, rows) = (pages.clone(), list.clone(), split.clone(), rows.clone());
         go.connect_activate(move |_, name| {
             let Some(at) = name
                 .and_then(|n| n.str())
@@ -503,7 +631,11 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
                 return;
             };
             show(at);
-            list.select_row(list.row_at_index(at as i32).as_ref());
+            list.select_row(
+                row_of(&rows, at)
+                    .and_then(|row| list.row_at_index(row))
+                    .as_ref(),
+            );
             split.set_show_content(true);
         });
     }
@@ -522,7 +654,7 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
     window.present();
     // The pages' list takes the keyboard first, so the search field opens
     // quiet; it is a click away, or Ctrl+F.
-    if let Some(row) = list.row_at_index(start as i32) {
+    if let Some(row) = row_of(&rows, start).and_then(|row| list.row_at_index(row)) {
         row.grab_focus();
     }
 }
@@ -548,15 +680,15 @@ mod tests {
         assert_eq!(
             titles,
             [
+                "Appearance",
                 "Layout",
                 "Panels",
                 "Workspaces",
-                "Appearance",
                 "Lock screen",
-                "Displays",
-                "Sound",
                 "Network",
                 "Bluetooth",
+                "Displays",
+                "Sound",
                 "Power",
                 "Notifications",
                 "Users",
@@ -565,6 +697,72 @@ mod tests {
                 "About"
             ]
         );
+    }
+
+    #[test]
+    fn the_sidebar_has_a_heading_above_each_groups_first_shown_page() {
+        use Row::{Heading, Page};
+        let rows = sidebar_rows(&[Some("desktop"), Some("desktop"), Some("connections"), None]);
+        assert_eq!(
+            rows,
+            [
+                Heading("desktop"),
+                Page(0),
+                Page(1),
+                Heading("connections"),
+                Page(2),
+                Page(3),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_group_with_no_shown_page_draws_no_heading() {
+        use Row::{Heading, Page};
+        // Bluetooth and Network hidden, as a machine without their features
+        // shows them: Connections has no page, so no heading.
+        let rows = sidebar_rows(&[Some("desktop"), Some("devices"), Some("system"), None]);
+        assert_eq!(
+            rows,
+            [
+                Heading("desktop"),
+                Page(0),
+                Heading("devices"),
+                Page(1),
+                Heading("system"),
+                Page(2),
+                Page(3),
+            ]
+        );
+        assert!(!rows.contains(&Heading("connections")));
+        assert_eq!(sidebar_rows(&[]), []);
+        assert_eq!(sidebar_rows(&[None]), [Page(0)], "About alone");
+    }
+
+    #[test]
+    fn the_sidebar_selects_a_page_by_its_row() {
+        use Row::{Heading, Page};
+        let rows = sidebar_rows(&[Some("desktop"), Some("desktop"), Some("system")]);
+        assert_eq!(row_of(&rows, 0), Some(1), "after the first heading");
+        assert_eq!(row_of(&rows, 1), Some(2));
+        assert_eq!(row_of(&rows, 2), Some(4));
+        assert_eq!(row_of(&rows, 9), None);
+        assert!(matches!(rows[0], Heading(_)), "a heading is not a page");
+        assert!(matches!(rows[1], Page(0)));
+    }
+
+    #[test]
+    fn every_page_names_a_group_that_exists_but_about() {
+        for page in all_pages() {
+            match page.group {
+                Some(group) => assert!(
+                    edel::settings::GROUPS.iter().any(|g| g.name == group),
+                    "the {} page names the group {group:?}, which GROUPS does not hold",
+                    page.title
+                ),
+                None => assert_eq!(page.title, "About", "only About has no group"),
+            }
+        }
     }
 
     #[test]
@@ -592,15 +790,15 @@ mod tests {
         assert_eq!(
             titles(""),
             [
+                "Appearance",
                 "Layout",
                 "Panels",
                 "Workspaces",
-                "Appearance",
                 "Lock screen",
-                "Displays",
-                "Sound",
                 "Network",
                 "Bluetooth",
+                "Displays",
+                "Sound",
                 "Power",
                 "Notifications",
                 "Users",
@@ -636,21 +834,21 @@ mod tests {
     fn a_page_is_asked_for_by_name() {
         let pages = all_pages();
         let at = |name: &str| page_named(&pages, name);
-        assert_eq!(at("layout"), Some(0));
-        assert_eq!(at("panels"), Some(1));
-        assert_eq!(at("workspaces"), Some(2));
-        assert_eq!(at("appearance"), Some(3));
+        assert_eq!(at("layout"), Some(1));
+        assert_eq!(at("panels"), Some(2));
+        assert_eq!(at("workspaces"), Some(3));
+        assert_eq!(at("appearance"), Some(0));
         assert_eq!(at("lock_screen"), Some(4));
         assert_eq!(at("Lock screen"), Some(4));
-        assert_eq!(at("displays"), Some(5));
-        assert_eq!(at("Displays"), Some(5));
-        assert_eq!(at("display"), Some(5), "the start of one name");
-        assert_eq!(at("sound"), Some(6));
-        assert_eq!(at("Sound"), Some(6));
+        assert_eq!(at("displays"), Some(7));
+        assert_eq!(at("Displays"), Some(7));
+        assert_eq!(at("display"), Some(7), "the start of one name");
+        assert_eq!(at("sound"), Some(8));
+        assert_eq!(at("Sound"), Some(8));
         assert_eq!(at("users"), Some(11));
-        assert_eq!(at("network"), Some(7));
-        assert_eq!(at("bluetooth"), Some(8));
-        assert_eq!(at("blue"), Some(8));
+        assert_eq!(at("network"), Some(5));
+        assert_eq!(at("bluetooth"), Some(6));
+        assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
@@ -660,7 +858,7 @@ mod tests {
         assert_eq!(at("about"), Some(14));
         assert_eq!(at("abo"), Some(14));
         assert_eq!(at(""), None);
-        assert_eq!(at("la"), Some(0), "one start only");
+        assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
     }
 
@@ -668,14 +866,14 @@ mod tests {
     fn a_row_names_its_page_and_asks_for_its_control() {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         let pages = all_pages();
-        assert_eq!(page_named(&pages, "panels.list"), Some(1));
-        assert_eq!(page_named(&pages, "Panels"), Some(1));
-        assert_eq!(page_named(&pages, "scale"), Some(5), "a row of Displays");
-        assert_eq!(page_named(&pages, "workspaces.count"), Some(2));
-        assert_eq!(page_named(&pages, "Number of workspaces"), Some(2));
-        assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(3));
-        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(1));
-        assert_eq!(start_page(args(&["--page=panels.list"]), &pages), Ok(1));
+        assert_eq!(page_named(&pages, "panels.list"), Some(2));
+        assert_eq!(page_named(&pages, "Panels"), Some(2));
+        assert_eq!(page_named(&pages, "scale"), Some(7), "a row of Displays");
+        assert_eq!(page_named(&pages, "workspaces.count"), Some(3));
+        assert_eq!(page_named(&pages, "Number of workspaces"), Some(3));
+        assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(0));
+        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(2));
+        assert_eq!(start_page(args(&["--page=panels.list"]), &pages), Ok(2));
         assert_eq!(rows::row_named("panels.list"), Some("panels.list"));
         assert_eq!(rows::row_named("--page"), None);
     }
@@ -689,11 +887,11 @@ mod tests {
         assert_eq!(start(&["--page", "about"]), Ok(14));
         assert_eq!(start(&["--page=about"]), Ok(14));
         assert_eq!(start(&["--page", "updates"]), Ok(12));
-        assert_eq!(start(&["--page", "sound"]), Ok(6));
+        assert_eq!(start(&["--page", "sound"]), Ok(8));
         assert_eq!(start(&["--page", "users"]), Ok(11));
         assert_eq!(start(&["--page", "notifications"]), Ok(10));
-        assert_eq!(start(&["--page", "network"]), Ok(7));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(8));
+        assert_eq!(start(&["--page", "network"]), Ok(5));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(6));
         assert_eq!(start(&["--page", "power"]), Ok(9));
         assert_eq!(start(&["--page", "lock_screen"]), Ok(4));
         let refused = start(&["--page"]).unwrap_err();
@@ -728,10 +926,10 @@ mod tests {
         assert_eq!(
             titles(&dir),
             [
+                "Appearance",
                 "Layout",
                 "Panels",
                 "Workspaces",
-                "Appearance",
                 "Lock screen",
                 "Displays",
                 "Notifications",
@@ -745,10 +943,10 @@ mod tests {
         assert_eq!(
             titles(&dir),
             [
+                "Appearance",
                 "Layout",
                 "Panels",
                 "Workspaces",
-                "Appearance",
                 "Lock screen",
                 "Displays",
                 "Sound",

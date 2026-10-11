@@ -1372,7 +1372,9 @@ case_settings_appearance() {
 	# row, it logs where Light, Dark and Automatic lie in the window. A
 	# click on Dark writes appearance.mode = "dark" to ci's file and the
 	# compositor takes the dark scheme (`colour scheme dark`); the line
-	# taken out again, it is light, the release's default.
+	# taken out again, it is light, the release's default. Its sidebar's
+	# group headings are logged (M5.32b), kept with the picture of the
+	# sidebar as settings-sidebar.png.
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings appearance'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Appearance page: $(value windows)"
@@ -1390,6 +1392,21 @@ case_settings_appearance() {
 		[ -n "$dark" ] || dark=none
 		[ "$dark" = none ] && sleep 1
 	done
+	# The sidebar (M5.32b): its headings are logged where they lie once the
+	# list is laid out, and the picture of Settings opened on Appearance at
+	# its own size is kept as settings-sidebar.png.
+	sidebar=0
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		guest 'settings appearance log'
+		text=$(value settings_appearance_log)
+		if echo "$text" | grep -q 'sidebar group desktop ' && echo "$text" | grep -q 'sidebar group system '; then
+			sidebar=1
+			break
+		fi
+		sleep 1
+	done
+	[ "$sidebar" = 1 ] || fail "Settings' sidebar did not log its desktop and system headings: $text"
+	python3 ci/qmp.py screendump "$dir/settings-sidebar.png"
 	set -- $dark
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
 	sleep 2
