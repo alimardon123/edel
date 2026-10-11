@@ -564,17 +564,32 @@ impl Edel {
         } else if self.desks.count() != new.workspaces() {
             self.set_workspace_count(new.workspaces());
         }
-        if old.color_scheme != new.color_scheme {
-            // Light or dark (M5.5c): the tokens' other colours, the title
-            // bars drawn again with them, and shell-ui started again.
-            let (tokens, notes) = edel::tokens::load(new.color_scheme);
+        // The tokens follow the scheme, the person's accent and colours and
+        // a wallpaper's accent (M5.12b1), read as every reader on the
+        // machine reads them. A change that leaves the tokens as they were
+        // does nothing.
+        let colours_changed = old.accent != new.accent
+            || old.colours != new.colours
+            || old.wallpaper != new.wallpaper
+            || old.wallpaper_dark != new.wallpaper_dark;
+        let mut tokens_changed = false;
+        if old.color_scheme != new.color_scheme || colours_changed {
+            let (tokens, notes) = edel::tokens::on_this_machine(new.color_scheme);
             for note in notes {
                 eprintln!("edel-compositor: {}: {note}", edel::tokens::PATH);
             }
-            self.tokens = tokens;
-            self.repaint = true;
-            self.dirty = true;
-            eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
+            if tokens != self.tokens {
+                // Light or dark (M5.5c): the tokens' other colours, the title
+                // bars drawn again with them, and shell-ui started again.
+                self.tokens = tokens;
+                self.repaint = true;
+                self.dirty = true;
+                tokens_changed = true;
+                eprintln!("edel-compositor: accent {}", self.tokens.accent.hex());
+            }
+            if old.color_scheme != new.color_scheme {
+                eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
+            }
         }
         // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
         // dark wallpaper's picture) changes, or the dark one (M5.10c4d).
@@ -602,6 +617,8 @@ impl Edel {
         } else if old.color_scheme != new.color_scheme {
             let name = new.color_scheme.name();
             crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
+        } else if tokens_changed {
+            crate::shellui::restart(self, "the colours changed");
         } else if old.language != new.language {
             let name = new.language.as_deref().unwrap_or("English");
             crate::shellui::restart(self, &format!("the language is now {name}"));

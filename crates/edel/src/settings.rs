@@ -744,6 +744,42 @@ pub struct Colours {
     pub dark: Option<BTreeMap<String, String>>,
 }
 
+/// `over`'s colours laid over `under`'s, name by name, in the shared table
+/// and in each scheme's own (M5.12b1); none when neither names one.
+fn merged(
+    under: Option<&BTreeMap<String, String>>,
+    over: Option<&BTreeMap<String, String>>,
+) -> Option<BTreeMap<String, String>> {
+    match (under, over) {
+        (None, None) => None,
+        (under, over) => {
+            let mut colours = under.cloned().unwrap_or_default();
+            colours.extend(
+                over.into_iter()
+                    .flatten()
+                    .map(|(n, v)| (n.clone(), v.clone())),
+            );
+            Some(colours)
+        }
+    }
+}
+
+/// The person's colours over the machine's (M5.12b1): each colour name
+/// the person sets wins, the others stay the machine's, in `both`, `light`
+/// and `dark` alike. None when neither file sets colours.
+pub fn colours_over(machine: Option<&Colours>, person: Option<&Colours>) -> Option<Colours> {
+    if machine.is_none() && person.is_none() {
+        return None;
+    }
+    let empty = Colours::default();
+    let (machine, person) = (machine.unwrap_or(&empty), person.unwrap_or(&empty));
+    Some(Colours {
+        both: merged(Some(&machine.both), Some(&person.both)).unwrap_or_default(),
+        light: merged(machine.light.as_ref(), person.light.as_ref()),
+        dark: merged(machine.dark.as_ref(), person.dark.as_ref()),
+    })
+}
+
 /// The Lock screen page (M5.10c5): the parts the lock and login screens
 /// show and where each stands.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -2986,5 +3022,32 @@ font_size = 11
         );
         assert!(set("format = 1\n", "appearance.accent", "red").is_ok());
         assert!(set("format = 1\n", "appearance.colours.dark.panel", "#11111b").is_ok());
+    }
+
+    #[test]
+    fn the_persons_colours_lie_over_the_machines_name_by_name() {
+        let machine = Colours {
+            both: BTreeMap::from([("panel".to_string(), "#111111".to_string())]),
+            light: Some(BTreeMap::from([(
+                "window".to_string(),
+                "#222222".to_string(),
+            )])),
+            dark: None,
+        };
+        let person = Colours {
+            both: BTreeMap::from([("accent".to_string(), "#ff0000".to_string())]),
+            light: None,
+            dark: Some(BTreeMap::from([(
+                "panel".to_string(),
+                "#333333".to_string(),
+            )])),
+        };
+        let merged = colours_over(Some(&machine), Some(&person)).unwrap();
+        assert_eq!(merged.both["panel"], "#111111");
+        assert_eq!(merged.both["accent"], "#ff0000");
+        assert_eq!(merged.light.as_ref().unwrap()["window"], "#222222");
+        assert_eq!(merged.dark.as_ref().unwrap()["panel"], "#333333");
+        assert_eq!(colours_over(None, None), None);
+        assert_eq!(colours_over(Some(&machine), None).unwrap(), machine);
     }
 }

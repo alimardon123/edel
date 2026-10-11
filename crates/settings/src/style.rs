@@ -9,6 +9,8 @@ use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
 use edel::tokens::{Scheme, Tokens};
+use gtk::gio;
+use gtk::prelude::*;
 
 /// The tokens the app is drawn with now, and what to draw again when
 /// they change.
@@ -16,17 +18,23 @@ pub struct Theme {
     tokens: RefCell<Tokens>,
     provider: gtk::CssProvider,
     watchers: RefCell<Vec<Box<dyn Fn()>>>,
+    /// The settings files, watched so that an accent or a colour changed in
+    /// them reads the tokens again (M5.12b1).
+    monitors: RefCell<Vec<gio::FileMonitor>>,
 }
 
 impl Theme {
     /// The tokens in the scheme the desktop shows, as GTK learns it from
-    /// the settings portal (M5.5c), following it when it changes.
+    /// the settings portal (M5.5c), following it when it changes, and the
+    /// person's accent and colours as the settings files give them
+    /// (M5.12b1).
     pub fn new() -> Rc<Theme> {
         let manager = adw::StyleManager::default();
         let theme = Rc::new(Theme {
             tokens: RefCell::new(load(manager.is_dark())),
             provider: gtk::CssProvider::new(),
             watchers: RefCell::new(Vec::new()),
+            monitors: RefCell::new(Vec::new()),
         });
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
@@ -44,15 +52,28 @@ impl Theme {
                 theme.change(manager.is_dark());
             }
         });
+        *theme.monitors.borrow_mut() = watch_files(&theme);
         theme
     }
 
+    /// Reads the tokens in `dark` or the light scheme again, and writes the
+    /// stylesheet and calls the watchers when they differ (M5.12b1); a
+    /// change that leaves them as they were does nothing.
     fn change(&self, dark: bool) {
-        *self.tokens.borrow_mut() = load(dark);
+        let tokens = load(dark);
+        if tokens == *self.tokens.borrow() {
+            return;
+        }
+        *self.tokens.borrow_mut() = tokens;
         self.provider.load_from_string(&css(&self.tokens.borrow()));
         for watcher in self.watchers.borrow().iter() {
             watcher();
         }
+    }
+
+    /// [`Theme::change`] in the scheme the portal says now (M5.12b1).
+    fn reload(&self) {
+        self.change(adw::StyleManager::default().is_dark());
     }
 
     /// The tokens now.
@@ -67,11 +88,36 @@ impl Theme {
     }
 }
 
-/// The image's tokens in the dark or the light scheme; what could not be
-/// read is said on standard error, and the built-in value is used.
+/// Watches the machine's settings file and the person's, as Settings'
+/// other pages do, so a change to the accent or the colours reads the
+/// tokens again (M5.12b1); a file that cannot be watched is not followed.
+fn watch_files(theme: &Rc<Theme>) -> Vec<gio::FileMonitor> {
+    let mut monitors = Vec::new();
+    let machine = Some(edel::places::machine_settings());
+    let person = edel::places::person_settings();
+    for path in [machine, person].into_iter().flatten() {
+        let file = gio::File::for_path(edel::places::found(&path));
+        if let Ok(monitor) =
+            file.monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+        {
+            let weak = Rc::downgrade(theme);
+            monitor.connect_changed(move |_, _, _, _| {
+                if let Some(theme) = weak.upgrade() {
+                    theme.reload();
+                }
+            });
+            monitors.push(monitor);
+        }
+    }
+    monitors
+}
+
+/// The image's tokens in the dark or the light scheme, as this machine's
+/// people see them (M5.12b1); what could not be read is said on standard
+/// error, and the built-in value is used.
 fn load(dark: bool) -> Tokens {
     let scheme = if dark { Scheme::Dark } else { Scheme::Light };
-    let (tokens, notes) = edel::tokens::load(scheme);
+    let (tokens, notes) = edel::tokens::on_this_machine(scheme);
     for note in notes {
         eprintln!("edel-settings: design tokens: {note}");
     }
