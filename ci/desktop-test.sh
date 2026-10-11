@@ -3368,6 +3368,38 @@ case_scheme() {
 	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default"
 }
 
+case_wallpaper() {
+	# The wallpaper (M5.10c4b): appearance.wallpaper set to the test
+	# picture (160x100, its left half #c0563a, its right half #3a8fc0)
+	# draws it behind the windows, scaled to fill the 1280x800 screen
+	# (Virtual-1), so the screen's top left is #c0563a and its top right
+	# #3a8fc0; set to a colour, that colour; reset, the default, which
+	# the test image has no picture for (no wallpapers feature), so the
+	# background colour. The compositor logs what it shows, `wallpaper
+	# WHAT`, and the first picture on each screen. Kept as
+	# wallpaper-picture.png, wallpaper-colour.png and wallpaper-gone.png.
+	logged=$(count 'edel-compositor: wallpaper /')
+	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
+	guest 'wallpaper picture'
+	wait_more 'edel-compositor: wallpaper /' "$logged" || fail "the compositor did not take the picture from appearance.wallpaper"
+	wait_more 'edel-compositor: wallpaper on Virtual-1 1280x800' "$shown" || fail "the compositor did not draw the picture on Virtual-1 at 1280x800"
+	shot wallpaper-picture 4 4 c0563a >/dev/null ||
+		fail "the wallpaper's top left at 4,4 is not #c0563a (wallpaper-picture.png)"
+	shot wallpaper-picture-right 1276 4 3a8fc0 >/dev/null ||
+		fail "the wallpaper's top right at 1276,4 is not #3a8fc0 (wallpaper-picture-right.png)"
+	logged=$(count 'edel-compositor: wallpaper colour #336699')
+	guest 'wallpaper colour'
+	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"
+	shot wallpaper-colour 4 4 336699 >/dev/null ||
+		fail "the background at 4,4 is not the wallpaper colour #336699 (wallpaper-colour.png)"
+	logged=$(count 'edel-compositor: wallpaper none')
+	guest 'wallpaper default'
+	wait_more 'edel-compositor: wallpaper none' "$logged" || fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
+	shot wallpaper-gone 4 4 "$(token background)" >/dev/null ||
+		fail "with no wallpaper the background at 4,4 is not #$(token background) (wallpaper-gone.png)"
+	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with layout.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
