@@ -799,6 +799,25 @@ case_animations() {
 	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [1-9][0-9]* ms, close [1-9][0-9]* ms, slide 0 ms' ||
 		fail "appearance.animations = \"reduced\" did not leave fades only: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
 	reduced=$(tr -d '\r' <"$log" | grep -a 'motion reduced: open' | tail -n 1 | sed 's/.*: open/open/')
+	# appearance.animation_speed and animation_curve (M5.12b4): speed 200
+	# halves the fade's length (at Lite, 100 ms to 50 ms), springy is logged,
+	# and the launcher, a popup, fades in over its own length at that speed
+	# and feel (`popup edel-...`, as the overlay's surface maps).
+	reduced_open=$(tr -d '\r' <"$log" | grep -a 'motion reduced: open' | tail -n 1 | sed 's/.*: open \([0-9]*\) ms.*/\1/')
+	guest 'motion speed 200'
+	wait_for 'edel-compositor: animations at tier [a-z]+, motion reduced: open [0-9]+ ms, close [0-9]+ ms, slide 0 ms, speed 200 %' ||
+		fail "appearance.animation_speed = 200 did not restyle the animations: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
+	fast_open=$(tr -d '\r' <"$log" | grep -a 'speed 200 %' | tail -n 1 | sed 's/.*: open \([0-9]*\) ms.*/\1/')
+	awk -v a="$fast_open" -v b="$reduced_open" 'BEGIN { exit !(a != "" && a * 2 == b) }' ||
+		fail "speed 200 made the fade ${fast_open:-?} ms long, not half of the $reduced_open ms it was"
+	guest 'motion curve springy'
+	wait_for 'curve springy' || fail "appearance.animation_curve = \"springy\" was not logged"
+	popups=$(count 'popup edel-[a-z]+ opens over')
+	python3 ci/qmp.py key meta_l
+	wait_more 'popup edel-[a-z]+ opens over' "$popups" || fail "the launcher did not pop up at speed 200 and springy"
+	popup=$(tr -d '\r' <"$log" | grep -aE 'popup edel-[a-z]+ opens over' | tail -n 1 | sed 's/^.*popup //')
+	python3 ci/qmp.py key esc
+	full=$(count 'motion full: open')
 	guest 'motion default'
 	i=0
 	while [ "$(tr -d '\r' <"$log" | grep -c 'motion full: open' || true)" -le "$full" ]; do
@@ -861,13 +880,53 @@ case_animations() {
 	done
 	limit=$(budget animation_p99_ms)
 	echo "ten windows: the smaller pair added ${added:-?} ms (${p99_off:-?} ms off, ${p99:-?} ms full), budget $limit ms"
+	# Ten windows at speed 50 and at 200 (M5.12b4), each after its log line
+	# shows, each p99 within the same budget over the default speed's p99
+	# above. Not over motion off: at speed 50 each animation lasts twice as
+	# long, so twice as many of the ten windows animate at once, which the
+	# person asked for (1.7 and 1.9 ms over motion off on 2026-10-11, about
+	# 1 ms over the default speed), while the frames stay far inside one.
+	speeds=''
+	for speed in 50 200; do
+		runs=$(count "speed $speed %")
+		guest "motion speed $speed"
+		wait_more "speed $speed %" "$runs" || fail "appearance.animation_speed = $speed did not show in the animations' log"
+		# Up to two runs, as the pairs above take the better of two: a
+		# moment the runner was busy lifts one run (1.6 ms against 1.5 at
+		# speed 50 on 2026-10-11), while a real cost lifts both.
+		for try in 1 2; do
+			windows=$(value windows)
+			runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+			guest 'open ten'
+			wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows at speed $speed"
+			speed_p99=$(value open_ten_p99_ms)
+			speed_frames=$(value open_ten_frames)
+			speed_added=$(awk -v m="$speed_p99" -v o="$p99" 'BEGIN { if (m != "" && o != "") printf "%.1f", m - o }')
+			i=0
+			while [ "$(value windows)" != "$windows" ]; do
+				i=$((i + 1))
+				[ "$i" -lt 100 ] || fail "the ten windows did not all close at speed $speed: $(value windows)"
+				sleep 0.2
+			done
+			[ "${speed_frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${speed_frames:-no} frames with ten windows at speed $speed"
+			awk -v a="$speed_added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' && break
+			echo "ten windows at speed $speed, run $try: $speed_added ms added, over the budget of $limit ms"
+			[ "$try" = 1 ] ||
+				fail "at speed $speed, ten windows added ${speed_added:-?} ms to the frames at p99 over the default speed (${p99:-?} ms) in both runs, over the budget of $limit ms"
+		done
+		echo "ten windows at speed $speed: frames p99 $speed_p99 ms, $speed_added ms more than the default speed over $speed_frames frames"
+		speeds="$speeds speed $speed: p99 $speed_p99 ms, $speed_added ms added;"
+	done
+	full=$(count 'motion full: open')
+	guest 'motion default'
+	wait_more 'motion full: open' "$full" || fail "removing the speed and feel did not bring the default animations back"
 	[ "${frames:-0}" -ge 100 ] || fail "weston-presentation-shm timed only ${frames:-no} frames while the ten windows opened"
 	awk -v a="$added" -v b="$limit" 'BEGIN { exit !(a != "" && a <= b) }' ||
 		fail "with ten windows opening and closing at tier $tier, the animations added ${added:-?} ms to the frames at p99 in the better of two pairs (${p99_off:-?} ms with motion off, ${p99:-?} ms with it full), over the budget of $limit ms"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Ten windows opening and closing with animations (M5.11b): frames p99 $p99 ms, $p99_off ms with motion off, $added ms added (budget $limit ms), $frames frames, tier $tier." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.animations = reduced left fades only ($reduced) and its removal brought the tier's own back; ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, $added ms more than without animations ($p99_off ms), within $limit ms"
+	echo "PASS: appearance.animations = reduced left fades only ($reduced); speed 200 halved its fade to $fast_open ms and springy was logged; the launcher popped up ($popup); ten windows opened and closed at tier $tier with frames p99 $p99 ms over $frames frames, $added ms more than without animations ($p99_off ms), within $limit ms; at$speeds each over the default speed, within $limit ms"
 }
 
 case_shortcuts() {
@@ -3688,10 +3747,15 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
 	before=$(value windows)
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	# The lock's places line, waited for whole (it ends with the power
+	# button), as the screen can be drawn before the line is logged.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}')
 	python3 ci/qmp.py key meta_l-l
 	wait_for 'edel-compositor: screen locked$' || fail "Super+L did not lock the screen"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up its lock screen"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]+[+][0-9]+[+][0-9]+x[0-9]{2}' "$placed" ||
+		fail "shell-ui did not log the lock's places: $(tr -d '\r' <"$log" | grep -a 'lock places' | tail -n 1)"
 	deep=$(token lock_backdrop_deep)
 	shot lock 640 790 "$deep" >/dev/null ||
 		fail "the locked screen at 640,790 is not the lock's #$deep but $(python3 ci/qmp.py pixel "$dir/lock.png" 640 790)"

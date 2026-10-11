@@ -306,6 +306,8 @@ impl Edel {
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
                 edel_compositor::effects::Tier::Lite,
                 edel_compositor::animation::Motion::Full,
+                edel::settings::ANIMATION_SPEED_DEFAULT,
+                edel_compositor::animation::Curve::Smooth,
             )),
             x11: None,
             shell_ui: Default::default(),

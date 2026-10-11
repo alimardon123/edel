@@ -512,6 +512,30 @@ msgstr ""
 msgid "Search the settings"
 msgstr ""
 
+msgid "Slower"
+msgstr ""
+
+msgid "As made"
+msgstr ""
+
+msgid "Faster"
+msgstr ""
+
+msgid "Your choice"
+msgstr ""
+
+msgid "Set by this machine"
+msgstr ""
+
+msgid "Automatic ({current})"
+msgstr ""
+
+msgid "the release"
+msgstr ""
+
+msgid "Motion"
+msgstr ""
+
 msgid "Wired and Wi-Fi. Passwords stay on this computer."
 msgstr ""
 
@@ -773,6 +797,12 @@ msgstr ""
 msgid "Text size"
 msgstr ""
 
+msgid "Animation speed"
+msgstr ""
+
+msgid "Feel"
+msgstr ""
+
 msgid "Switcher look"
 msgstr ""
 
@@ -863,15 +893,6 @@ msgstr ""
 msgid "Count"
 msgstr ""
 
-msgid "Your choice"
-msgstr ""
-
-msgid "Set by this machine"
-msgstr ""
-
-msgid "Automatic ({current})"
-msgstr ""
-
 msgid "From the preset"
 msgstr ""
 
@@ -897,9 +918,6 @@ msgid "{n} px"
 msgstr ""
 
 msgid "Its colours are in Colours: {name}"
-msgstr ""
-
-msgid "the release"
 msgstr ""
 
 msgid "Shape"

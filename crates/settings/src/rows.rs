@@ -149,6 +149,20 @@ pub const ROWS: &[Row] = &[
         key: "appearance.text_size",
         title: n_("Text size"),
     },
+    // The Motion group (M5.12b4): how much things move, how fast, and the
+    // feel, whose values (Springy and the rest) search finds too.
+    Row {
+        key: "appearance.animations",
+        title: n_("Motion"),
+    },
+    Row {
+        key: "appearance.animation_speed",
+        title: n_("Animation speed"),
+    },
+    Row {
+        key: "appearance.animation_curve",
+        title: n_("Feel"),
+    },
     Row {
         key: "appearance.switcher_look",
         title: n_("Switcher look"),
@@ -395,7 +409,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 16);
+        assert_eq!(on_page("appearance").count(), 19);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
