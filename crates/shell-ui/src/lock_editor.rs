@@ -11,22 +11,22 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, Background, Guide, Part, Placed, SNAP};
+use edel::lock_screen::{self, Anchor, Background, DatePart, DateStyle, Guide, Part, Placed, SNAP};
 use edel::settings::{LockScreen, OwnLook};
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::Wallpaper;
-use tiny_skia::{Pixmap, PixmapPaint, Transform};
+use tiny_skia::{FillRule, PathBuilder, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item;
+use crate::clock_face;
 use crate::edit_kit;
 use crate::editor::{self, Act, DRAG_START, Tile};
 use crate::lock;
-use crate::paint::{self as paint_kit, Face, Text, fill};
+use crate::paint::{self as paint_kit, Face, Text, fill, paint_of};
 use crate::part_card;
 use crate::player;
 use crate::popup::{self, Rect};
 use crate::trayview::Key;
-use edel::tokens::Colour;
 
 /// The screen's margin round everything in the edit mode, logical pixels (the
 /// lock's own, `lock::MARGIN`): the bar, the panels, the strip and the canvas.
@@ -36,9 +36,11 @@ pub const MARGIN: f32 = lock::MARGIN;
 pub const BAR_H: f32 = edit_kit::BUTTON;
 /// The room between the bar and the canvas, logical pixels.
 const BAR_GAP: f32 = 16.0;
-/// The bar's buttons: their width, the gap between Cancel and Undo, and the
-/// room between Undo and the title, logical pixels.
+/// The bar's buttons: Cancel and Done are `BAR_BUTTON_W` wide, Preview
+/// `BAR_PREVIEW_W` (M5.10c7f), with `BAR_BUTTON_GAP` between Preview and Done.
+/// The title lies between Cancel and Preview, `TITLE_GAP` from each.
 const BAR_BUTTON_W: f32 = 88.0;
+const BAR_PREVIEW_W: f32 = 112.0;
 const BAR_BUTTON_GAP: f32 = 8.0;
 const TITLE_GAP: f32 = 16.0;
 /// The side panels: their width, the room between each and the canvas, and
@@ -49,23 +51,36 @@ pub const WIDE: f32 = 960.0;
 /// The room between the canvas and the strip's tabs, logical pixels.
 pub const STRIP_GAP: f32 = 16.0;
 /// The wallpaper panel's height on the left, logical pixels: what its heading
-/// (a line of 16), its picture and its title (a line of 18) take with the
-/// padding and the gaps between them. The right panel is as high as the
-/// canvas, and the card in it takes what it needs.
+/// (a line of 16), its picture, its title (a line of 18) and its caption (a
+/// line of 14) take with the padding and the gaps between them (M5.10c7f).
+/// The right panel is as high as the canvas, and the card in it takes what it
+/// needs.
 pub const WALLPAPER_PANEL_H: f32 = 2.0 * PANEL_PAD
     + 16.0
     + PANEL_STACK_GAP
     + (PANEL_W - 2.0 * PANEL_PAD) * WALLPAPER_SHARE
     + PANEL_STACK_GAP
-    + 18.0;
+    + 18.0
+    + 14.0;
 /// The wallpaper panel's inner padding, logical pixels, and the gap between
 /// its heading, its picture and its title.
 const PANEL_PAD: f32 = 14.0;
 const PANEL_STACK_GAP: f32 = 8.0;
 /// The wallpaper's picture is the screen's 16 to 10 (`THUMB`).
 const WALLPAPER_SHARE: f32 = 10.0 / 16.0;
-/// How dark the undo button is laid over the stage when nothing is to undo.
-const UNDO_DIM: f32 = 0.55;
+/// The preview's pill (M5.10c7f): 16 px from the top, at most `PREVIEW_W` wide,
+/// `PREVIEW_H` high, with the white Back button `BACK_W` wide inside it.
+const PREVIEW_TOP: f32 = 16.0;
+const PREVIEW_W: f32 = 420.0;
+const PREVIEW_H: f32 = 44.0;
+const BACK_W: f32 = 140.0;
+/// The preview's dot, logical pixels across.
+const PREVIEW_DOT: f32 = 8.0;
+/// The size of a strip tile's live preview, logical pixels, and the scale it
+/// is drawn at (2, so it stays sharp on a 2x screen too; `editor::thumbnail`
+/// scales it to the tile's place).
+pub const PREVIEW_BOX: (f32, f32) = (98.0, 41.0);
+pub const PREVIEW_SCALE: f32 = 2.0;
 
 /// A message as it is added from the drawer, logical pixels: its words wrap
 /// to one line of 300 px, 50 px high, the size of a line of its words.
@@ -115,6 +130,9 @@ pub struct View {
     /// The part card open beside a part, if any (M5.10c6c2): the keys go to
     /// it first, and a press away from it closes it.
     pub card: Option<part_card::View>,
+    /// The preview (M5.10c7f): the lock as it will be, over the whole screen,
+    /// with the pill that says so; only Escape and Return go back.
+    pub previewing: bool,
 }
 
 /// The keyboard's focus in the edit mode (M5.10c6c): a placed part by its
@@ -127,17 +145,17 @@ pub enum Focus {
     Bar(BarButton),
 }
 
-/// The bar's buttons (M5.10c7e): Cancel closes without writing, Undo puts the
-/// edit back, Done writes it.
+/// The bar's buttons (M5.10c7e, M5.10c7f): Cancel closes without writing,
+/// Preview shows the lock as it will be, Done writes the edit. Undo is Ctrl+Z.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarButton {
     Cancel,
-    Undo,
+    Preview,
     Done,
 }
 
 /// The bar's buttons from left to right: the order the arrows step them.
-const BAR_ORDER: [BarButton; 3] = [BarButton::Cancel, BarButton::Undo, BarButton::Done];
+const BAR_ORDER: [BarButton; 3] = [BarButton::Cancel, BarButton::Preview, BarButton::Done];
 
 /// The bar across the top of the edit mode (M5.10c7e), in the screen's logical
 /// pixels: Cancel at the left, Undo right of it, Done at the right edge, and
@@ -146,7 +164,7 @@ const BAR_ORDER: [BarButton; 3] = [BarButton::Cancel, BarButton::Undo, BarButton
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bar {
     pub cancel: Rect,
-    pub undo: Rect,
+    pub preview: Rect,
     pub done: Rect,
     pub title: Rect,
 }
@@ -165,13 +183,18 @@ pub fn bar_height(screen: (f32, f32)) -> f32 {
 pub fn bar(screen: (f32, f32)) -> Bar {
     let h = bar_height(screen);
     let cancel = Rect::new(MARGIN, MARGIN, BAR_BUTTON_W, h);
-    let undo = Rect::new(cancel.right() + BAR_BUTTON_GAP, MARGIN, BAR_BUTTON_W, h);
     let done = Rect::new(screen.0 - MARGIN - BAR_BUTTON_W, MARGIN, BAR_BUTTON_W, h);
-    let left = undo.right() + TITLE_GAP;
-    let title = Rect::new(left, MARGIN, (done.x - TITLE_GAP - left).max(0.0), h);
+    let preview = Rect::new(
+        done.x - BAR_BUTTON_GAP - BAR_PREVIEW_W,
+        MARGIN,
+        BAR_PREVIEW_W,
+        h,
+    );
+    let left = cancel.right() + TITLE_GAP;
+    let title = Rect::new(left, MARGIN, (preview.x - TITLE_GAP - left).max(0.0), h);
     Bar {
         cancel,
-        undo,
+        preview,
         done,
         title,
     }
@@ -181,8 +204,8 @@ pub fn bar(screen: (f32, f32)) -> Bar {
 pub fn bar_hit(bar: &Bar, x: f32, y: f32) -> Option<BarButton> {
     if bar.cancel.contains(x, y) {
         Some(BarButton::Cancel)
-    } else if bar.undo.contains(x, y) {
-        Some(BarButton::Undo)
+    } else if bar.preview.contains(x, y) {
+        Some(BarButton::Preview)
     } else if bar.done.contains(x, y) {
         Some(BarButton::Done)
     } else {
@@ -201,11 +224,13 @@ pub enum Step {
     Add(Part),
     /// Shows a drawer tab (M5.10c6c3), its focus with it.
     Tab(usize),
-    /// Chooses a look or a background of the drawer's tabs (M5.10c6c3).
-    Look(usize),
+    /// Chooses a background of the Wallpaper tab (M5.10c6c3).
     Background(usize),
     /// Opens the part's card, for a part that has one (M5.10c6c2).
     Open(usize),
+    /// Shows the preview, or goes back from it (M5.10c7f).
+    Preview,
+    Back,
     Undo,
     Done,
     Close,
@@ -247,22 +272,6 @@ pub fn part_title(part: Part) -> String {
     }
 }
 
-/// The icon a part shows on its tile in the drawer and on the screen's
-/// outline (M5.10c6c3): the clock's dial, the calendar, the bell, the music,
-/// the person, the message, the picture and the battery, from `design/icons/`.
-pub fn part_icon(part: Part) -> &'static str {
-    match part {
-        Part::Clock => "clock",
-        Part::Date => "calendar",
-        Part::Count => "bell",
-        Part::Player => "music",
-        Part::Person => "person",
-        Part::Message => "message",
-        Part::Picture => "picture",
-        Part::Battery => "battery",
-    }
-}
-
 /// The part a drawer tile is named for (`Part::name`), if the release has it.
 pub fn part_named(name: &str) -> Option<Part> {
     [
@@ -293,24 +302,6 @@ pub fn background_choices() -> Vec<(&'static str, String, Option<Background>)> {
         ("backdrop", tr("Colour").into(), Some(Background::Backdrop)),
         ("picture", tr("Picture").into(), None),
     ]
-}
-
-/// The Looks tab's tiles (M5.10c6c3): one for each look, the built-in ones
-/// and then the person's own, each with its name, and the one `chosen` is
-/// the look in use. Their pictures come from `thumbnail`.
-pub fn look_tiles(looks: &[(String, Vec<Placed>)], chosen: Option<&str>) -> Vec<Tile> {
-    looks
-        .iter()
-        .map(|(name, _)| Tile {
-            name: name.clone(),
-            icon: "",
-            title: lock_screen::look_title(name),
-            shown: String::new(),
-            placed: false,
-            chosen: chosen == Some(name.as_str()),
-            picture: None,
-        })
-        .collect()
 }
 
 /// The Background tab's tiles (M5.10c6c3), one for each choice of
@@ -350,6 +341,23 @@ pub fn thumbnail(
     backdrops: &mut lock::Backdrops,
     wallpaper: &Wallpaper,
 ) -> Option<Pixmap> {
+    // No parts: the background alone, as the wallpaper panel shows it (M5.10c7f).
+    // The lock's own layout would fall back to the classic parts.
+    if parts.is_empty() {
+        let mut pixmap = Pixmap::new(THUMB.0, THUMB.1)?;
+        match backdrops.get(background, wallpaper, THUMB, tokens) {
+            Some(made) => pixmap.draw_pixmap(
+                0,
+                0,
+                made.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            ),
+            None => lock::backdrop(&mut pixmap, tokens),
+        }
+        return Some(pixmap);
+    }
     let look = lock::Look {
         parts,
         player: Some(player::wide_size(1)),
@@ -389,19 +397,38 @@ fn new_size(part: Part) -> (f32, f32) {
     }
 }
 
-/// The drawer's tiles of the Parts tab (M5.10c6b): one for each part `lock_screen::missing`
-/// offers, in its order, with no picture (a picture needs a file, which the
-/// edit mode does not choose yet, M5.10c6c), and none of them placed.
+/// The widgets the strip shows, in its order (M5.10c7f): the clock, the date,
+/// the now playing bar, the battery, the message and the picture. The person
+/// and the notifications' count are not offered.
+pub const STRIP: [Part; 6] = [
+    Part::Clock,
+    Part::Date,
+    Part::Player,
+    Part::Battery,
+    Part::Message,
+    Part::Picture,
+];
+
+/// Whether `part` stands as many times as the look allows (M5.10c7f): `missing`
+/// does not offer it. A battery the machine does not have counts as full, as
+/// it can never be added there.
+pub fn full(parts: &[Placed], battery: bool, part: Part) -> bool {
+    !lock_screen::missing(parts, battery).contains(&part)
+}
+
+/// The strip's tiles (M5.10c6b, M5.10c7f): one for each `STRIP` part, in its
+/// order, its name the part's, and `placed` when the look already holds as
+/// many as it allows (drawn at half strength). Their live previews come from
+/// `preview_picture`, which the caller attaches.
 pub fn drawer_tiles(parts: &[Placed], battery: bool) -> Vec<Tile> {
-    lock_screen::missing(parts, battery)
+    STRIP
         .into_iter()
-        .filter(|part| *part != Part::Picture)
         .map(|part| Tile {
             name: part.name().into(),
-            icon: part_icon(part),
+            icon: "",
             title: part_title(part),
             shown: String::new(),
-            placed: false,
+            placed: full(parts, battery, part),
             chosen: false,
             picture: None,
         })
@@ -648,14 +675,17 @@ pub fn set_focus(view: &mut View, focus: Option<Focus>) {
 /// The keyboard's ring in the edit mode (M5.10c6c): each placed part in the
 /// list's order, then the drawer's ring (its tiles, Undo and Done).
 pub fn ring(view: &View) -> Vec<Focus> {
+    // The placed parts first, then the strip's tabs and tiles, then the bar's
+    // buttons last (M5.10c7f), so Tab from nothing focuses a part.
     let bar: Vec<Focus> = if view.drawer.bare {
         BAR_ORDER.iter().map(|b| Focus::Bar(*b)).collect()
     } else {
         Vec::new()
     };
-    bar.into_iter()
-        .chain((0..view.parts.len()).map(Focus::Part))
+    (0..view.parts.len())
+        .map(Focus::Part)
         .chain(editor::ring(&view.drawer).into_iter().map(Focus::Drawer))
+        .chain(bar)
         .collect()
 }
 
@@ -685,6 +715,13 @@ fn step_ring(view: &View, backwards: bool) -> Option<Focus> {
 /// its part; on Undo and Done it acts; the arrows move between the drawer's
 /// parts as `editor::key` says.
 pub fn key(view: &View, key: Key, shift: bool) -> Step {
+    // The preview takes only Escape and Return, which go back to the edit.
+    if view.previewing {
+        return match key {
+            Key::Escape | Key::Activate => Step::Back,
+            _ => Step::Nothing,
+        };
+    }
     match key {
         Key::Escape => return Step::Close,
         Key::Tab => return Step::Focus(step_ring(view, shift)),
@@ -706,7 +743,7 @@ fn bar_key(button: BarButton, key: Key) -> Step {
     match key {
         Key::Activate => match button {
             BarButton::Cancel => Step::Close,
-            BarButton::Undo => Step::Undo,
+            BarButton::Preview => Step::Preview,
             BarButton::Done => Step::Done,
         },
         Key::Left => Step::Focus(Some(Focus::Bar(BAR_ORDER[at.saturating_sub(1)]))),
@@ -741,7 +778,6 @@ fn drawer_key(view: &View, part: editor::Part, key: Key) -> Step {
         return match part {
             editor::Part::Tile(i) => match view.drawer.tab {
                 1 => Step::Background(i),
-                2 => Step::Look(i),
                 _ => view
                     .drawer
                     .tiles
@@ -786,9 +822,9 @@ pub fn where_words(at: Anchor) -> &'static str {
 pub fn focus_name(view: &View, focus: Focus) -> String {
     match focus {
         Focus::Part(i) => view.parts.get(i).map_or("part", |p| p.part.name()).into(),
-        Focus::Bar(BarButton::Cancel) => "Cancel".into(),
-        Focus::Bar(BarButton::Undo) => "Undo".into(),
-        Focus::Bar(BarButton::Done) => "Done".into(),
+        Focus::Bar(BarButton::Cancel) => "cancel".into(),
+        Focus::Bar(BarButton::Preview) => "preview".into(),
+        Focus::Bar(BarButton::Done) => "done".into(),
         Focus::Drawer(editor::Part::Undo) => "undo".into(),
         Focus::Drawer(editor::Part::Done) => "done".into(),
         Focus::Drawer(editor::Part::Tab(j)) => {
@@ -811,8 +847,9 @@ fn bounds(r: Rect) -> accesskit::Rect {
     )
 }
 
-/// The bar's buttons as a screen reader finds them (M5.10c7e): first in the
-/// reader's list when the drawer is bare, none otherwise.
+/// The bar's buttons as a screen reader finds them (M5.10c7e): last in the
+/// reader's list, after the parts and the drawer, when the drawer is bare, none
+/// otherwise.
 fn bar_nodes(view: &View) -> Vec<Item> {
     if !view.drawer.bare {
         return Vec::new();
@@ -820,7 +857,7 @@ fn bar_nodes(view: &View) -> Vec<Item> {
     let bar = bar(view.screen);
     [
         (bar.cancel, tr("Cancel")),
-        (bar.undo, tr("Undo")),
+        (bar.preview, tr("Preview")),
         (bar.done, tr("Done")),
     ]
     .into_iter()
@@ -846,7 +883,7 @@ pub fn nodes(
     drawer_at: Rect,
     drawer: &editor::Layout,
 ) -> Vec<Item> {
-    let mut out: Vec<Item> = bar_nodes(view);
+    let mut out: Vec<Item> = Vec::new();
     out.extend(
         view.parts
             .iter()
@@ -878,6 +915,8 @@ pub fn nodes(
                 n
             }),
     );
+    // The bar's buttons come last, as the ring's (M5.10c7f).
+    out.extend(bar_nodes(view));
     out
 }
 
@@ -885,24 +924,27 @@ pub fn nodes(
 /// (M5.10c6c): a placed part's place among those drawn, else the drawer's
 /// item after them. None with no focus, or a part that is not drawn.
 pub fn focus_node(view: &View, at: &lock::Layout) -> Option<usize> {
-    // The bar's three come first when the drawer is bare, then the parts.
-    let head = if view.drawer.bare { BAR_ORDER.len() } else { 0 };
+    // The parts come first, then the drawer's tabs, tiles, Undo and Done, then
+    // the bar's buttons, as `nodes` lists them (M5.10c7f).
     let drawn = at.placed.iter().filter(|r| r.is_some()).count();
     let tiles = view.drawer.tiles.len();
     let tabs = view.drawer.tabs.len();
     match view.focus? {
-        Focus::Bar(button) => BAR_ORDER.iter().position(|b| *b == button),
+        Focus::Bar(button) => BAR_ORDER
+            .iter()
+            .position(|b| *b == button)
+            .map(|p| drawn + tabs + tiles + p),
         Focus::Part(i) => {
             if at.placed.get(i)?.is_none() {
                 return None;
             }
-            Some(head + at.placed[..i].iter().filter(|r| r.is_some()).count())
+            Some(at.placed[..i].iter().filter(|r| r.is_some()).count())
         }
         // The drawer's nodes are its tabs, then its tiles, then Undo and Done.
-        Focus::Drawer(editor::Part::Tab(j)) => Some(head + drawn + j),
-        Focus::Drawer(editor::Part::Tile(j)) => Some(head + drawn + tabs + j),
-        Focus::Drawer(editor::Part::Undo) => Some(head + drawn + tabs + tiles),
-        Focus::Drawer(editor::Part::Done) => Some(head + drawn + tabs + tiles + 1),
+        Focus::Drawer(editor::Part::Tab(j)) => Some(drawn + j),
+        Focus::Drawer(editor::Part::Tile(j)) => Some(drawn + tabs + j),
+        Focus::Drawer(editor::Part::Undo) => Some(drawn + tabs + tiles),
+        Focus::Drawer(editor::Part::Done) => Some(drawn + tabs + tiles + 1),
     }
 }
 
@@ -948,9 +990,9 @@ pub fn places(
     if view.drawer.bare {
         let bar = bar(view.screen);
         out.push_str(&format!(
-            ", cancel {}, undo {}, done {}",
+            ", cancel {}, preview {}, done {}",
             at_rect(bar.cancel),
-            at_rect(bar.undo),
+            at_rect(bar.preview),
             at_rect(bar.done)
         ));
     } else {
@@ -1008,14 +1050,14 @@ pub fn paint(
         }
         edit_kit::vacate(pixmap, old, tokens, s);
     }
-    // The parts at rest, under the pointer or the keyboard. The dragged one
-    // keeps its resting outline at its old place.
-    for (i, (part, rect)) in view.parts.iter().zip(&at.placed).enumerate() {
+    // The parts' marks: none at rest, a faint outline under the pointer, the
+    // accent ring on the one a card is open for or the keyboard holds
+    // (M5.10c7f). The dragged part shows no mark at its old place.
+    for (i, rect) in at.placed.iter().enumerate() {
         let Some(rect) = rect else {
             continue;
         };
         let screen = preview.to_screen(*rect);
-        // The part a card is open for keeps its focused outline (M5.10c7e).
         let carded = view.card.as_ref().is_some_and(|c| c.index == i);
         let state = if moved == Some(i) {
             edit_kit::State::Rest
@@ -1026,18 +1068,7 @@ pub fn paint(
         } else {
             edit_kit::State::Rest
         };
-        edit_kit::outline_part(pixmap, screen, state, tokens, style, s);
-        if state != edit_kit::State::Rest {
-            edit_kit::chip(
-                pixmap,
-                &part_title(part.part),
-                edit_kit::part_area(screen),
-                tokens,
-                Some(&mut *text),
-                style,
-                s,
-            );
-        }
+        edit_kit::mark_part(pixmap, screen, state, tokens, style, s);
     }
     if let (Some(drag), Some(new)) = (dragged, target_now) {
         if !over {
@@ -1101,12 +1132,12 @@ pub fn paint_bar(
     pixmap: &mut Pixmap,
     view: &View,
     bar: &Bar,
-    undo_on: bool,
     tokens: &Tokens,
     text: &mut Text,
     s: f32,
 ) {
     let style = edit_kit::Style::GLASS;
+    let ink = edit_kit::inks(style, tokens);
     let state = |button: BarButton| {
         if view.focus == Some(Focus::Bar(button)) {
             edit_kit::State::Focus
@@ -1114,6 +1145,20 @@ pub fn paint_bar(
             edit_kit::State::Rest
         }
     };
+    // Cancel is a dark glass pill with the quiet line over it (the mockup's).
+    let (x, y, w, h) = bar.cancel.device(s);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        h / 2.0,
+        Colour {
+            a: 0.45,
+            ..tokens.lock_backdrop_deep
+        },
+    );
     edit_kit::button(
         pixmap,
         bar.cancel,
@@ -1125,39 +1170,58 @@ pub fn paint_bar(
         style,
         s,
     );
+    // Preview is a quiet pill with a play triangle before its word.
     edit_kit::button(
         pixmap,
-        bar.undo,
-        tr("Undo"),
+        bar.preview,
+        "",
         edit_kit::ButtonKind::Quiet,
-        state(BarButton::Undo),
+        state(BarButton::Preview),
         tokens,
-        Some(&mut *text),
+        None,
         style,
         s,
     );
-    if !undo_on && state(BarButton::Undo) == edit_kit::State::Rest {
-        // Nothing to undo: the stage's dark lies over the button, so it reads
-        // as off. It is drawn over the button's own fill and words.
-        let (x, y, w, h) = bar.undo.device(s);
-        let dark = Colour {
-            a: UNDO_DIM,
-            ..tokens.lock_backdrop_deep
-        };
-        fill(pixmap, x, y, w, h, h / 2.0, dark);
+    let size = tokens.panel_text_size as f32 * s;
+    let mut word = text.line_in(tr("Preview"), size, Face::SEMIBOLD);
+    const TRIANGLE: (f32, f32) = (8.0, 10.0);
+    const TRIANGLE_GAP: f32 = 6.0;
+    let total = TRIANGLE.0 + TRIANGLE_GAP + word.width / s;
+    let left = bar.preview.x + (bar.preview.w - total) / 2.0;
+    let mid = bar.preview.y + bar.preview.h / 2.0;
+    let mut path = PathBuilder::new();
+    path.move_to(left * s, (mid - TRIANGLE.1 / 2.0) * s);
+    path.line_to(left * s, (mid + TRIANGLE.1 / 2.0) * s);
+    path.line_to((left + TRIANGLE.0) * s, mid * s);
+    path.close();
+    if let Some(path) = path.finish() {
+        pixmap.fill_path(
+            &path,
+            &paint_of(ink.text),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
     }
+    let y = popup::middle(bar.preview.y, bar.preview.h, size, s);
+    text.draw(
+        pixmap,
+        &mut word,
+        (left + TRIANGLE.0 + TRIANGLE_GAP) * s,
+        y,
+        ink.text,
+    );
     edit_kit::button(
         pixmap,
         bar.done,
         tr("Done"),
-        edit_kit::ButtonKind::Accent,
+        edit_kit::ButtonKind::Light,
         state(BarButton::Done),
         tokens,
         Some(&mut *text),
         style,
         s,
     );
-    let ink = edit_kit::inks(style, tokens);
     let room = bar.title.w * s;
     if room <= 0.0 {
         return;
@@ -1206,9 +1270,10 @@ pub fn paint_wallpaper_panel(
         rect.w - 2.0 * PANEL_PAD,
         rect.h - 2.0 * PANEL_PAD,
     );
+    // The heading is WALLPAPER in capitals, 11 px and semibold (M5.10c7f).
     let small_words = tokens.panel_text_small_size as f32;
     let small = small_words * s;
-    let mut heading = text.line_in(tr("Wallpaper"), small, Face::SEMIBOLD);
+    let mut heading = text.line_in(&tr("Wallpaper").to_uppercase(), small, Face::SEMIBOLD);
     let y = popup::middle(inner.y, small_words, small, s);
     text.draw(pixmap, &mut heading, inner.x * s, y, ink.dim);
     let picture_at = Rect::new(
@@ -1227,7 +1292,7 @@ pub fn paint_wallpaper_panel(
     let title_words = tokens.panel_text_size as f32;
     let title_size = title_words * s;
     let mut title = text.fit_in(
-        &background_title(view),
+        &wallpaper_title(&view.background),
         title_size,
         inner.w * s,
         Face::SEMIBOLD,
@@ -1235,14 +1300,37 @@ pub fn paint_wallpaper_panel(
     let top = picture_at.y + picture_at.h + PANEL_STACK_GAP;
     let y = popup::middle(top, title_words, title_size, s);
     text.draw(pixmap, &mut title, inner.x * s, y, ink.text);
+    // Under the name, dim: "Classic's own" when the look brings this background.
+    if let Some(own) = own_words(view) {
+        let caption = tokens.panel_text_small_size as f32 * s;
+        let mut words = text.fit(&own, caption, inner.w * s);
+        let caption_top = top + title_words + 2.0;
+        let y = popup::middle(caption_top, 14.0, caption, s);
+        text.draw(pixmap, &mut words, inner.x * s, y, ink.dim);
+    }
 }
 
-/// The title of the background in use, as its tile names it (`background_tiles`).
-fn background_title(view: &View) -> String {
-    background_tiles(&view.background)
-        .into_iter()
-        .find(|tile| tile.chosen)
-        .map_or_else(String::new, |tile| tile.title)
+/// The wallpaper's name, as the panel shows it (M5.10c7f): Blurred wallpaper,
+/// Sharp wallpaper, Navy for the colour, and Picture for the person's own.
+pub fn wallpaper_title(background: &Background) -> String {
+    match background {
+        Background::Blurred => tr("Blurred wallpaper").into(),
+        Background::Sharp => tr("Sharp wallpaper").into(),
+        Background::Backdrop => tr("Navy").into(),
+        Background::Picture(_) => tr("Picture").into(),
+        Background::Colour(_) => tr("Colour").into(),
+    }
+}
+
+/// "Classic's own" (M5.10c7f): the look's name with `'s own`, when the look
+/// brings the background in use; None otherwise.
+fn own_words(view: &View) -> Option<String> {
+    (lock_screen::look_background(&view.editing) == view.background).then(|| {
+        trf(
+            "{look}'s own",
+            &[("look", lock_screen::look_title(&view.editing).as_str())],
+        )
+    })
 }
 
 /// The edit mode's own placeholders, drawn into the lock picture at its full
@@ -1333,32 +1421,6 @@ pub fn paint_drawer(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mu
     }
 }
 
-/// Chooses the look at `i` of `looks` (M5.10c6c3, M5.10c7a): the edit's parts
-/// and background are those `lock_screen::applied` gives that look, with the
-/// person's own looks of `lock`, so an own look brings its own background.
-/// The edit is then inside that look, unchanged. `compact` is the screen's
-/// size class. Returns its name, or None for no such look.
-pub fn choose_look(
-    view: &mut View,
-    lock: &LockScreen,
-    looks: &[(String, Vec<Placed>)],
-    compact: bool,
-    i: usize,
-) -> Option<String> {
-    let (name, _) = looks.get(i)?.clone();
-    let chosen = LockScreen {
-        look: Some(name.clone()),
-        looks: lock.looks.clone(),
-        ..LockScreen::default()
-    };
-    let applied = lock_screen::applied(&chosen, compact);
-    view.parts = applied.parts;
-    view.background = applied.background;
-    view.editing = name.clone();
-    view.changed = false;
-    Some(name)
-}
-
 /// A part was moved, added, taken away or changed: the edit now saves a look
 /// when Done is pressed (M5.10c7a).
 pub fn parts_moved(view: &mut View) {
@@ -1377,15 +1439,169 @@ pub fn background_chosen(view: &mut View, background: Background) {
 /// look for a built-in one. The Looks tab (tab 2) keeps its own hint (None).
 pub fn drawer_words(view: &View) -> (String, Option<&'static str>) {
     let title = lock_screen::look_title(&view.editing);
-    if view.drawer.tab == 2 {
-        return (title, None);
-    }
     let subtitle = if lock_screen::is_built_in(&view.editing) {
-        tr("Built in: Done saves your changes as a new look.")
+        tr("Built in · Done saves a new look")
     } else {
-        tr("Done saves your changes in this look.")
+        tr("Yours · Done saves it")
     };
     (title, Some(subtitle))
+}
+
+/// The preview's pill (M5.10c7f): centred, `PREVIEW_TOP` from the top, inside
+/// the margins on a narrow screen.
+pub fn preview_pill(screen: (f32, f32)) -> Rect {
+    let w = PREVIEW_W.min(screen.0 - 2.0 * MARGIN).max(1.0);
+    Rect::new(((screen.0 - w) / 2.0).round(), PREVIEW_TOP, w, PREVIEW_H)
+}
+
+/// The Back to editing button, at the right inside the preview's pill.
+pub fn preview_back(screen: (f32, f32)) -> Rect {
+    let pill = preview_pill(screen);
+    Rect::new(
+        pill.right() - 8.0 - BACK_W,
+        pill.y + (pill.h - edit_kit::BUTTON) / 2.0,
+        BACK_W,
+        edit_kit::BUTTON,
+    )
+}
+
+/// The preview as the screen reader finds it (M5.10c7f): its Back button.
+pub fn preview_nodes(screen: (f32, f32)) -> Vec<Item> {
+    vec![Item {
+        role: Role::Button,
+        label: tr("Back to editing").into(),
+        bounds: bounds(preview_back(screen)),
+        children: Vec::new(),
+        toggled: None,
+        value: None,
+    }]
+}
+
+/// Draws the preview's pill over the lock as it will be (M5.10c7f): a glass
+/// pill with a small dot, "Preview" in semibold, the dim "Not locked · Esc to
+/// go back", and the white Back button. The lock itself is drawn by the caller
+/// at the full screen, with no marks.
+pub fn paint_preview(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mut Text, s: f32) {
+    let style = edit_kit::Style::GLASS;
+    let ink = edit_kit::inks(style, tokens);
+    let pill = preview_pill(view.screen);
+    lock::lift(pixmap, pill, pill.h / 2.0, s, tokens);
+    lock::glass(pixmap, pill.device(s), pill.h / 2.0 * s, s, tokens);
+    let mid = pill.y + pill.h / 2.0;
+    fill(
+        pixmap,
+        (pill.x + 16.0) * s,
+        (mid - PREVIEW_DOT / 2.0) * s,
+        PREVIEW_DOT * s,
+        PREVIEW_DOT * s,
+        PREVIEW_DOT * s / 2.0,
+        tokens.accent,
+    );
+    let size = tokens.panel_text_size as f32 * s;
+    let mut word = text.line_in(tr("Preview"), size, Face::SEMIBOLD);
+    let x = pill.x + 16.0 + PREVIEW_DOT + 8.0;
+    let y = popup::middle(pill.y, pill.h, size, s);
+    text.draw(pixmap, &mut word, x * s, y, ink.text);
+    let small = tokens.panel_text_small_size as f32;
+    let mut dim = text.fit(
+        tr("Not locked · Esc to go back"),
+        small * s,
+        ((pill.right() - BACK_W - 24.0) - (x + word.width / s + 8.0)).max(1.0) * s,
+    );
+    let x = x + word.width / s + 8.0;
+    let y = popup::middle(pill.y, pill.h, small * s, s);
+    text.draw(pixmap, &mut dim, x * s, y, ink.dim);
+    let back = preview_back(view.screen);
+    let state = if view.focus == Some(Focus::Bar(BarButton::Done)) {
+        edit_kit::State::Focus
+    } else {
+        edit_kit::State::Rest
+    };
+    edit_kit::button(
+        pixmap,
+        back,
+        tr("Back to editing"),
+        edit_kit::ButtonKind::Light,
+        state,
+        tokens,
+        Some(&mut *text),
+        style,
+        s,
+    );
+}
+
+/// The words a strip tile's preview shows for `part` (M5.10c7f): the clock's
+/// `H:MM`, the short date, the battery's charge (`82%`, or none for the icon),
+/// the sample message in quotes. Empty for the others.
+pub fn preview_words(part: Part, when: &lock::When, charge: Option<u8>) -> String {
+    match part {
+        Part::Clock => format!("{}:{:02}", when.hour, when.minute),
+        Part::Date => clock_face::date_text(
+            when.weekday,
+            when.day,
+            when.month,
+            when.year,
+            &[DatePart::Weekday, DatePart::Day, DatePart::Month],
+            DateStyle::Short,
+        ),
+        Part::Battery => charge.map_or_else(String::new, |c| format!("{c}%")),
+        Part::Message => format!("\"{}\"", tr("Hello")),
+        _ => String::new(),
+    }
+}
+
+/// A strip tile's live preview (M5.10c7f), drawn once for its words at
+/// `PREVIEW_SCALE`: the clock's time in 20 px light, the date in 12 px, the
+/// battery's charge in 13 px or its icon, the message in 12 px, the now
+/// playing bar of 44 by 10 glass, and the picture's tile of 26 by 20 with a
+/// two-colour gradient of the accent. None when the pixmap cannot be made.
+pub fn preview_picture(
+    part: Part,
+    words: &str,
+    tokens: &Tokens,
+    text: &mut Text,
+) -> Option<Pixmap> {
+    let s = PREVIEW_SCALE;
+    let (bw, bh) = PREVIEW_BOX;
+    let mut pixmap = Pixmap::new((bw * s).round() as u32, (bh * s).round() as u32)?;
+    let ink = edit_kit::inks(edit_kit::Style::GLASS, tokens);
+    let centre_text = |pixmap: &mut Pixmap, text: &mut Text, words: &str, face: Face, size: f32| {
+        let mut line = text.line_in(words, size * s, face);
+        let x = ((bw * s - line.width) / 2.0).round();
+        let y = popup::middle(0.0, bh, size * s, s);
+        text.draw(pixmap, &mut line, x, y, ink.text);
+    };
+    let light = Face {
+        weight: 300,
+        tabular: false,
+    };
+    match part {
+        Part::Clock => centre_text(&mut pixmap, text, words, light, 20.0),
+        Part::Date => centre_text(&mut pixmap, text, words, Face::REGULAR, 12.0),
+        Part::Message => centre_text(&mut pixmap, text, words, Face::REGULAR, 12.0),
+        Part::Battery if !words.is_empty() => {
+            centre_text(&mut pixmap, text, words, Face::MEDIUM, 13.0)
+        }
+        Part::Battery => {
+            let px = 18.0 * s;
+            let x = (bw * s - px) / 2.0;
+            let y = (bh * s - px) / 2.0;
+            paint_kit::icon(&mut pixmap, "battery", px, x, y, ink.text);
+        }
+        Part::Player => {
+            let (w, h) = (44.0 * s, 10.0 * s);
+            let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
+            fill(&mut pixmap, x, y, w, h, h / 2.0, ink.raised);
+        }
+        Part::Picture => {
+            let (w, h) = (26.0 * s, 20.0 * s);
+            let (x, y) = ((bw * s - w) / 2.0, (bh * s - h) / 2.0);
+            let bottom = paint_kit::mix(tokens.accent, tokens.backdrop_text, 0.5);
+            paint_kit::fill_vertical(&mut pixmap, (x, y, w, h), 5.0 * s, tokens.accent, bottom);
+        }
+        _ => {}
+    }
+    Some(pixmap)
 }
 
 /// The lines Done writes (M5.10c6c3, M5.10c7a). `looks` and `look` are each
@@ -1519,6 +1735,7 @@ mod tests {
             background: Background::Backdrop,
             screen: (1280.0, 800.0),
             card: None,
+            previewing: false,
             drag: None,
             guides: Vec::new(),
             hover: None,
@@ -1549,19 +1766,28 @@ mod tests {
     }
 
     #[test]
-    fn the_drawer_of_classic_offers_the_message_and_the_battery_but_not_the_person() {
+    fn the_strip_shows_every_widget_kind_in_order_and_a_full_kind_is_marked() {
         let classic = lock_screen::classic(false);
         let tiles = drawer_tiles(&classic, true);
         let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
-        // A second clock is offered while fewer than three stand (M5.10c7d).
-        assert_eq!(names, ["clock", "message", "battery"]);
+        // The six kinds in the mockup's order; the person and the count are not offered.
+        assert_eq!(
+            names,
+            ["clock", "date", "player", "battery", "message", "picture"]
+        );
         assert!(!names.contains(&"person"));
+        // Classic holds one date, one now playing bar and one clock, so those
+        // are as many as a kind may stand: they are drawn at half strength.
+        let full: Vec<bool> = tiles.iter().map(|t| t.placed).collect();
+        assert_eq!(full, [false, true, true, false, false, false]);
         let tiles = drawer_tiles(&classic, false);
+        // A battery the machine lacks cannot be added, so its tile is marked too.
+        assert!(tiles[3].placed);
         let no_battery: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(
             no_battery,
-            ["clock", "message"],
-            "a machine without one offers none"
+            ["clock", "date", "player", "battery", "message", "picture"],
+            "a machine without one keeps the same strip"
         );
     }
 
@@ -1655,7 +1881,7 @@ mod tests {
         let classic = lock_screen::classic(false);
         let at = at_classic(&classic);
         let mut view = view_of(classic.clone());
-        view.drawer.tabs = vec!["Parts", "Looks", "Background"];
+        view.drawer.tabs = vec!["Parts", "Wallpaper"];
         let drawer = editor::layout(&view.drawer);
         let drawer_at = drawer_rect(view.screen, &drawer);
         let line = places(
@@ -1670,10 +1896,10 @@ mod tests {
             assert!(line.contains(&format!(" {name} ")), "{name}: {line}");
         }
         assert!(line.contains(", drawer "), "{line}");
-        assert!(line.contains(", tab1 looks "), "{line}");
+        assert!(line.contains(", tab1 wallpaper "), "{line}");
         assert!(line.contains(", tile0 clock "), "{line}");
-        assert!(line.contains(", tile1 message "), "{line}");
-        assert!(line.contains(", tile2 battery "), "{line}");
+        assert!(line.contains(", tile4 message "), "{line}");
+        assert!(line.contains(", tile3 battery "), "{line}");
         assert!(
             line.contains(", undo ") && line.contains(", done "),
             "{line}"
@@ -2115,51 +2341,6 @@ mod tests {
         assert!(ringed(&view), "the focused part is ringed in the accent");
     }
 
-    /// The Looks tab's list: the built-in looks, classic first.
-    fn looks_of() -> Vec<(String, Vec<Placed>)> {
-        lock_screen::LOOKS
-            .iter()
-            .filter_map(|name| {
-                lock_screen::look_parts(name, false).map(|parts| (name.to_string(), parts))
-            })
-            .collect()
-    }
-
-    #[test]
-    fn choosing_a_look_sets_its_parts_and_background_and_a_moved_part_marks_it_changed() {
-        let mut view = view_of(lock_screen::classic(false));
-        let looks = looks_of();
-        let lock = LockScreen::default();
-        assert_eq!(
-            choose_look(&mut view, &lock, &looks, false, 1),
-            Some("magazine".into())
-        );
-        assert_eq!(view.editing, "magazine");
-        assert!(!view.changed);
-        assert_eq!(view.parts, looks[1].1);
-        assert_eq!(view.background, Background::Blurred);
-        assert_eq!(
-            choose_look(&mut view, &lock, &looks, false, 9),
-            None,
-            "no such look"
-        );
-        parts_moved(&mut view);
-        assert!(view.changed, "the edit is changed now");
-        assert_eq!(view.editing, "magazine", "the look it is inside stays");
-    }
-
-    #[test]
-    fn the_look_tiles_name_each_look_and_the_one_in_use_is_chosen() {
-        let tiles = look_tiles(&looks_of(), Some("magazine"));
-        let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
-        assert_eq!(names, ["classic", "magazine", "minimal"]);
-        assert_eq!(
-            tiles.iter().map(|t| t.chosen).collect::<Vec<_>>(),
-            [false, true, false]
-        );
-        assert_eq!(tiles[1].title, "Magazine");
-    }
-
     #[test]
     fn the_background_tab_offers_blurred_sharp_colour_and_the_picture() {
         let tiles = background_tiles(&Background::Sharp);
@@ -2223,9 +2404,9 @@ mod tests {
 
     #[test]
     fn nothing_changed_but_a_look_chosen_writes_only_the_look() {
+        // A look the edit is inside, unchanged: Done writes only its line.
         let mut view = view_of(lock_screen::classic(false));
-        let looks = looks_of();
-        choose_look(&mut view, &LockScreen::default(), &looks, false, 1);
+        view.editing = "magazine".into();
         assert_eq!(
             written_for(&view),
             Lines {
@@ -2324,154 +2505,34 @@ mod tests {
         assert!(text.contains(r#"background = "sharp""#), "{text}");
     }
 
-    #[test]
-    fn choosing_a_look_resets_changed_and_brings_its_own_background() {
-        let own = OwnLook {
-            parts: lock_screen::classic(false),
-            background: Some("#336699".into()),
-        };
-        let lock = lock_with(&[("home", own.clone())], None);
-        let looks = vec![("home".to_string(), own.parts)];
-        let mut view = view_of(lock_screen::classic(false));
-        parts_moved(&mut view);
-        assert_eq!(
-            choose_look(&mut view, &lock, &looks, false, 0),
-            Some("home".into())
-        );
-        assert!(!view.changed, "a chosen look is unchanged");
-        assert_eq!(lock_screen::background_value(&view.background), "#336699");
-    }
-
-    /// The Looks and the Background tabs (M5.10c6c3) with their tiles' own
-    /// pictures: each look drawn small as the lock draws it, the one in use
-    /// ringed, and the backgrounds, each over the classic lock. The tiles
-    /// with pictures differ from the same drawer without them. Writes
-    /// `lock-editor-looks.png` and `lock-editor-background.png` into
-    /// `EDEL_LOCK_PNG`.
-    #[test]
-    fn the_looks_and_the_backgrounds_tabs_draw_their_pictures() {
-        use crate::editor::Picture;
-        use std::rc::Rc;
-        let tokens = Tokens::built_in();
-        let mut text = Text::load(&tokens.font);
-        let wallpaper = lock::wallpaper_of(None, None, false);
-        let mut pictures = lock::Pictures::default();
-        let mut backdrops = lock::Backdrops::default();
-        let mut lock_view =
-            lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
-        lock_view.notices = 2;
-        let classic = lock_screen::classic(false);
-        let at = at_classic(&classic);
-        let looks = looks_of();
-        let mut view = view_of(classic.clone());
-        view.editing = "magazine".into();
-        view.drawer.tabs = vec!["Parts", "Looks", "Background"];
-        view.drawer.tab = 1;
-        view.drawer.tallest = 3;
-        view.drawer.tiles = look_tiles(&looks, Some("magazine"));
-        for (tile, (_, parts)) in view.drawer.tiles.iter_mut().zip(&looks) {
-            let background = lock_screen::look_background(&tile.name);
-            let pixmap = thumbnail(
-                &lock_view,
-                parts,
-                &background,
-                false,
-                &tokens,
-                &mut text,
-                None,
-                &mut pictures,
-                &mut backdrops,
-                &wallpaper,
-            )
-            .expect("a look's thumbnail draws");
-            tile.picture = Some(Picture(Rc::new(pixmap)));
-        }
-        let looks_png = render(&view, &at, &tokens, &mut text);
-        if let (Some(dir), Some(Picture(thumb))) = (
-            std::env::var_os("EDEL_LOCK_PNG"),
-            view.drawer.tiles[1].picture.clone(),
-        ) {
-            let dir = std::path::PathBuf::from(dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            thumb.save_png(dir.join("lock-look-magazine.png")).unwrap();
-        }
-        let mut bare = view.clone();
-        for tile in &mut bare.drawer.tiles {
-            tile.picture = None;
-        }
-        assert_ne!(
-            render(&bare, &at, &tokens, &mut text).data(),
-            looks_png.data(),
-            "the looks' pictures show in their tiles"
-        );
-
-        view.drawer.tab = 2;
-        view.drawer.tiles = background_tiles(&Background::Blurred);
-        for tile in &mut view.drawer.tiles {
-            let Some((_, _, Some(background))) = background_choices()
-                .into_iter()
-                .find(|(name, _, _)| *name == tile.name)
-            else {
-                continue;
-            };
-            let pixmap = thumbnail(
-                &lock_view,
-                &classic,
-                &background,
-                false,
-                &tokens,
-                &mut text,
-                None,
-                &mut pictures,
-                &mut backdrops,
-                &wallpaper,
-            )
-            .expect("a background's thumbnail draws");
-            tile.picture = Some(Picture(Rc::new(pixmap)));
-        }
-        let background_png = render(&view, &at, &tokens, &mut text);
-        assert_ne!(
-            looks_png.data(),
-            background_png.data(),
-            "the tabs show their own tiles"
-        );
-        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
-            let dir = std::path::PathBuf::from(dir);
-            std::fs::create_dir_all(&dir).unwrap();
-            looks_png
-                .save_png(dir.join("lock-editor-looks.png"))
-                .unwrap();
-            background_png
-                .save_png(dir.join("lock-editor-background.png"))
-                .unwrap();
-        }
-    }
-
     /// The edit mode's view of `parts` as the lock editor shows it (M5.10c7e):
     /// a bare strip with the lock's three tabs, its tiles under them.
     fn bare_view_of(parts: Vec<Placed>) -> View {
         let mut view = view_of(parts);
         view.drawer.bare = true;
-        view.drawer.tabs = vec!["Widgets", "Wallpaper", "Looks"];
+        view.drawer.tabs = vec!["Widgets", "Wallpaper"];
         view
     }
 
     /// The bar's place on a 1280 by 800 screen: Cancel at the margin, 88 wide,
-    /// Undo right of it with 8 px between, Done at the right margin, and the
-    /// title between Undo and Done with 16 px to each.
+    /// Preview 112 wide before Done with 8 px between, Done at the right margin,
+    /// and the title between Cancel and Preview with 16 px to each (M5.10c7f).
     #[test]
-    fn the_bar_sits_at_the_margin_and_the_title_between_undo_and_done() {
+    fn the_bar_sits_at_the_margin_and_the_title_between_cancel_and_preview() {
         let b = bar((1280.0, 800.0));
         assert_eq!(b.cancel, Rect::new(24.0, 24.0, 88.0, 36.0));
-        assert_eq!(b.undo.x, 24.0 + 88.0 + 8.0);
+        assert_eq!(b.preview.x, 1048.0, "1280 - 24 - 88 - 8 - 112");
         assert_eq!(b.done.right(), 1280.0 - 24.0);
         assert_eq!(b.title.y, 24.0);
         assert_eq!(b.title.h, 36.0);
-        assert!(b.title.x >= b.undo.right() + 16.0 - 0.01);
-        assert!(b.title.right() <= b.done.x - 16.0 + 0.01);
+        assert!(b.title.x >= b.cancel.right() + 16.0 - 0.01);
+        assert!(b.title.right() <= b.preview.x - 16.0 + 0.01);
         // A bar's buttons are hit where they lie and nowhere else.
         assert_eq!(bar_hit(&b, 30.0, 30.0), Some(BarButton::Cancel));
-        assert_eq!(bar_hit(&b, b.undo.x + 1.0, 30.0), Some(BarButton::Undo));
+        assert_eq!(
+            bar_hit(&b, b.preview.x + 1.0, 30.0),
+            Some(BarButton::Preview)
+        );
         assert_eq!(bar_hit(&b, b.done.x + 1.0, 30.0), Some(BarButton::Done));
         assert_eq!(
             bar_hit(&b, 300.0, 30.0),
@@ -2570,7 +2631,7 @@ mod tests {
     fn a_bare_strip_has_its_tabs_on_top_and_its_tiles_in_one_row_and_no_footer() {
         let view = bare_view_of(lock_screen::classic(false));
         let l = editor::layout(&view.drawer);
-        assert_eq!(l.tabs.len(), 3);
+        assert_eq!(l.tabs.len(), 2, "Widgets and Wallpaper");
         assert_eq!(l.tabs_row.y, 0.0);
         assert!(l.tabs.iter().all(|t| t.w == editor::TAB_W), "{:?}", l.tabs);
         let row_y = l.tiles[0].y;
@@ -2580,7 +2641,7 @@ mod tests {
             edit_kit::BUTTON + 12.0,
             "under the tabs, SPACE lower"
         );
-        assert_eq!(l.card.h, row_y + editor::TILE.1, "no padding below");
+        assert_eq!(l.card.h, row_y + editor::BARE_TILE.1, "no padding below");
         assert_eq!(
             (l.undo.w, l.done.w),
             (0.0, 0.0),
@@ -2591,33 +2652,34 @@ mod tests {
     /// The ring of a bare strip starts with the bar's three buttons and has no
     /// drawer Undo or Done; Tab steps the bar first.
     #[test]
-    fn the_ring_starts_with_the_bar_and_the_bare_strip_has_no_undo_or_done() {
+    fn the_ring_ends_with_the_bar_and_the_bare_strip_has_no_undo_or_done() {
         let classic = lock_screen::classic(false);
         let mut view = bare_view_of(classic.clone());
         let ring = ring(&view);
         assert_eq!(
-            ring[..3],
+            ring[ring.len() - 3..],
             [
                 Focus::Bar(BarButton::Cancel),
-                Focus::Bar(BarButton::Undo),
+                Focus::Bar(BarButton::Preview),
                 Focus::Bar(BarButton::Done),
             ]
         );
         assert_eq!(
             ring.len(),
-            3 + classic.len() + view.drawer.tiles.len() + 3,
-            "bar, parts, tabs and tiles"
+            3 + classic.len() + view.drawer.tiles.len() + view.drawer.tabs.len(),
+            "parts, tabs, tiles and bar"
         );
         assert!(!ring.contains(&Focus::Drawer(editor::Part::Undo)));
+        // Tab from nothing focuses the first placed part, not the bar.
         assert_eq!(
             key(&view, Key::Tab, false),
-            Step::Focus(Some(Focus::Bar(BarButton::Cancel)))
+            Step::Focus(Some(Focus::Part(0)))
         );
         set_focus(&mut view, Some(Focus::Bar(BarButton::Done)));
         assert_eq!(
             key(&view, Key::Tab, false),
             Step::Focus(Some(Focus::Part(0))),
-            "Done is followed by the parts"
+            "Done, the last, wraps to the first part"
         );
     }
 
@@ -2630,15 +2692,15 @@ mod tests {
         assert_eq!(key(&view, Key::Activate, false), Step::Close);
         assert_eq!(
             key(&view, Key::Right, false),
-            Step::Focus(Some(Focus::Bar(BarButton::Undo)))
+            Step::Focus(Some(Focus::Bar(BarButton::Preview)))
         );
         assert_eq!(
             key(&view, Key::Left, false),
             Step::Focus(Some(Focus::Bar(BarButton::Cancel))),
             "no wrap at the left"
         );
-        set_focus(&mut view, Some(Focus::Bar(BarButton::Undo)));
-        assert_eq!(key(&view, Key::Activate, false), Step::Undo);
+        set_focus(&mut view, Some(Focus::Bar(BarButton::Preview)));
+        assert_eq!(key(&view, Key::Activate, false), Step::Preview);
         set_focus(&mut view, Some(Focus::Bar(BarButton::Done)));
         assert_eq!(key(&view, Key::Activate, false), Step::Done);
         assert_eq!(
@@ -2646,9 +2708,9 @@ mod tests {
             Step::Focus(Some(Focus::Bar(BarButton::Done))),
             "no wrap at the right"
         );
-        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Cancel)), "Cancel");
-        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Undo)), "Undo");
-        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Done)), "Done");
+        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Cancel)), "cancel");
+        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Preview)), "preview");
+        assert_eq!(focus_name(&view, Focus::Bar(BarButton::Done)), "done");
     }
 
     /// The reader finds the bar's three buttons first, named and placed, then
@@ -2667,17 +2729,22 @@ mod tests {
             items.len(),
             3 + placed + view.drawer.tabs.len() + view.drawer.tiles.len()
         );
-        let labels: Vec<&str> = items[..3].iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(labels, ["Cancel", "Undo", "Done"]);
-        assert_eq!(items[1].bounds.x0, f64::from(bar(view.screen).undo.x));
+        // The bar's three come last, as the ring's do (M5.10c7f).
+        let n = items.len();
+        let labels: Vec<&str> = items[n - 3..].iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Cancel", "Preview", "Done"]);
+        assert_eq!(
+            items[n - 2].bounds.x0,
+            f64::from(bar(view.screen).preview.x)
+        );
         set_focus(&mut view, Some(Focus::Bar(BarButton::Done)));
-        assert_eq!(focus_node(&view, &at), Some(2));
+        assert_eq!(focus_node(&view, &at), Some(n - 1));
         set_focus(&mut view, Some(Focus::Bar(BarButton::Cancel)));
-        assert_eq!(focus_node(&view, &at), Some(0));
+        assert_eq!(focus_node(&view, &at), Some(n - 3));
         let clock = index_of(&classic, "clock");
         set_focus(&mut view, Some(Focus::Part(clock)));
         let among = at.placed[..clock].iter().filter(|r| r.is_some()).count();
-        assert_eq!(focus_node(&view, &at), Some(3 + among));
+        assert_eq!(focus_node(&view, &at), Some(among));
     }
 
     /// The bar's own places are in the log line CI reads, where the drawer's
@@ -2696,127 +2763,275 @@ mod tests {
             &drawer,
         );
         assert!(
-            line.contains(", cancel 24+24+88x36, undo 120+24+88x36, done 1168+24+88x36"),
+            line.contains(", cancel 24+24+88x36, preview 1048+24+112x36, done 1168+24+88x36"),
             "{line}"
         );
         assert!(line.ends_with("x36"), "Done's place ends the line: {line}");
-        assert!(line.contains(", tab2 looks "), "{line}");
+        assert!(line.contains(", tab1 wallpaper "), "{line}");
     }
 
     /// The new screen (M5.10c7e): the lock with a clock's card open, its
     /// wallpaper panel on the left and the card in the right panel, the bar
     /// and the strip. Written as `lock-stage.png` into `EDEL_LOCK_PNG`.
-    #[test]
-    fn the_new_screen_draws_the_bar_the_panels_the_card_and_the_strip() {
-        let tokens = Tokens::built_in();
-        let mut text = Text::load(&tokens.font);
-        let screen = (1280.0, 800.0);
-        let classic = lock_screen::classic(false);
-        let at = at_classic(&classic);
-        let mut view = bare_view_of(classic.clone());
-        view.drawer.heading = Some("Classic".into());
-        view.drawer.tiles = drawer_tiles(&classic, true);
-        let clock = index_of(&classic, "clock");
-        view.card = Some(part_card::open(clock, classic[clock].clone()));
-        if let Some(card) = view.card.as_mut() {
-            part_card::set_focus(card, Some(part_card::Line::Face));
+    /// The strip's previews for `view` (M5.10c7f): each tile of the Widgets
+    /// tab drawn as the shell draws it, from the words `when` and a battery at
+    /// 82 percent give.
+    fn attach_previews(view: &mut View, when: &lock::When, tokens: &Tokens, text: &mut Text) {
+        for tile in view.drawer.tiles.iter_mut() {
+            let Some(part) = part_named(&tile.name) else {
+                continue;
+            };
+            let words = preview_words(part, when, Some(82));
+            let pixmap = preview_picture(part, &words, tokens, text).expect("a preview");
+            tile.picture = Some(editor::Picture(std::rc::Rc::new(pixmap)));
         }
+    }
+
+    /// The edit mode's whole screen as the shell draws it at 1280 by 800
+    /// (M5.10c7f): the lock with its parts, the stage round its picture, the
+    /// marks, the bar, the wallpaper panel, the card docked in the right
+    /// panel, the strip with its previews; or, previewing, the lock alone with
+    /// the preview's pill.
+    fn stage_picture(view: &View, when: &lock::When, tokens: &Tokens, text: &mut Text) -> Pixmap {
+        let screen = view.screen;
         let drawer = editor::layout(&view.drawer);
         let shown = preview(screen, &drawer);
-        let picture = picture_rect(screen, shown);
-        let lock_view = lock::View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
         let wallpaper = edel::wallpapers::Wallpaper::Background;
-        let mut lock = Pixmap::new(1280, 800).unwrap();
+        let look = lock::Look {
+            parts: &view.parts,
+            player: Some(player::wide_size(1)),
+            people: false,
+            keep_out: Vec::new(),
+            battery: false,
+            background: view.background.clone(),
+        };
+        let at = lock::layout(screen.0, screen.1, tokens, true, &look, text);
+        let mut lock_view =
+            lock::View::new("9:41".into(), "Sunday 11 October".into(), "Ali".into());
+        lock_view.when = Some(*when);
+        lock_view.zoned = vec![("Asia/Tokyo".to_string(), *when)];
+        let mut lock_pixmap = Pixmap::new(1280, 800).unwrap();
         lock::paint(
-            &mut lock,
+            &mut lock_pixmap,
             &lock_view,
             &at,
-            &tokens,
-            &mut text,
+            tokens,
+            text,
             None,
             &mut lock::Pictures::default(),
             &mut lock::Backdrops::default(),
             &wallpaper,
             1.0,
         );
-        draw_placeholders(&mut lock, &view, &at, &tokens, &mut text, 1.0);
+        draw_placeholders(&mut lock_pixmap, view, &at, tokens, text, 1.0);
+        if view.previewing {
+            paint_preview(&mut lock_pixmap, view, tokens, text, 1.0);
+            return lock_pixmap;
+        }
         let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        let picture = picture_rect(screen, shown);
         edit_kit::stage(
             &mut pixmap,
             Rect::new(0.0, 0.0, 1280.0, 800.0),
             picture,
-            &tokens,
+            tokens,
             edit_kit::Style::GLASS,
             1.0,
         );
         edit_kit::stage_frame(
             &mut pixmap,
-            &lock,
+            &lock_pixmap,
             picture,
-            &tokens,
+            tokens,
             edit_kit::Style::GLASS,
             1.0,
         );
-        paint(&mut pixmap, &view, &at, shown, &tokens, &mut text, 1.0);
-        let b = bar(screen);
-        paint_bar(&mut pixmap, &view, &b, false, &tokens, &mut text, 1.0);
-        let thumb = thumbnail(
-            &lock_view,
-            &classic,
-            &Background::Blurred,
-            false,
-            &tokens,
-            &mut text,
-            None,
-            &mut lock::Pictures::default(),
-            &mut lock::Backdrops::default(),
-            &wallpaper,
-        );
-        let (left, right) = panels(screen, shown).expect("a wide screen has panels");
-        paint_wallpaper_panel(
-            &mut pixmap,
-            left,
-            &view,
-            thumb.as_ref(),
-            &tokens,
-            &mut text,
-            1.0,
-        );
-        let l = part_card::layout(
-            view.card.as_ref().expect("the card is open"),
-            shown.to_screen(at.placed[clock].expect("the clock is drawn")),
-            screen,
-            &tokens,
-            Some(right),
-        );
-        assert!(l.card.x == right.x && l.card.y == right.y, "{:?}", l.card);
-        part_card::paint(
-            &mut pixmap,
-            view.card.as_ref().expect("the card is open"),
-            &l,
-            &tokens,
-            &mut text,
-            1.0,
-        );
-        paint_drawer(&mut pixmap, &view, &tokens, &mut text, 1.0);
-        // The bar's Done is the accent, and the wallpaper's picture is drawn.
-        let done = b.done;
-        let px = pixmap
+        paint(&mut pixmap, view, &at, shown, tokens, text, 1.0);
+        paint_bar(&mut pixmap, view, &bar(screen), tokens, text, 1.0);
+        if let Some((left, right)) = panels(screen, shown) {
+            let thumb = thumbnail(
+                &lock_view,
+                &[],
+                &view.background,
+                false,
+                tokens,
+                text,
+                None,
+                &mut lock::Pictures::default(),
+                &mut lock::Backdrops::default(),
+                &wallpaper,
+            );
+            paint_wallpaper_panel(&mut pixmap, left, view, thumb.as_ref(), tokens, text, 1.0);
+            if let Some(card) = view.card.as_ref() {
+                let near = at.placed[card.index].expect("the card's part is drawn");
+                let l = part_card::layout(card, shown.to_screen(near), screen, tokens, Some(right));
+                part_card::paint(&mut pixmap, card, &l, tokens, text, 1.0);
+            }
+        }
+        paint_drawer(&mut pixmap, view, tokens, text, 1.0);
+        pixmap
+    }
+
+    /// The edit mode drawn as the mockup's frames (M5.10c7e, M5.10c7f): the
+    /// stage with a second clock chosen and its card docked (`lock-stage.png`),
+    /// the Wallpaper tab (`lock-stage-wallpaper.png`) and the preview
+    /// (`lock-preview.png`), written into `EDEL_LOCK_PNG`. Each keeps the bar,
+    /// the wallpaper panel and the strip with its live previews.
+    #[test]
+    fn the_edit_mode_draws_the_mockup_and_writes_its_pictures() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let when = lock::When {
+            hour: 9,
+            minute: 41,
+            weekday: 7,
+            day: 11,
+            month: 10,
+            year: 2026,
+        };
+        // The look: classic, and a second clock at the top right, analog, small
+        // and set to Tokyo, as the mockup shows it.
+        let classic = lock_screen::classic(false);
+        let mut parts = classic.clone();
+        parts.push(Placed {
+            part: Part::Clock,
+            at: Anchor::TopRight,
+            x: 0.0,
+            y: 0.0,
+            text: None,
+            path: None,
+            face: Some(lock_screen::Face::Analog),
+            hours: None,
+            size: Some(lock_screen::Size::Small),
+            weight: None,
+            show: None,
+            style: None,
+            zone: Some("Asia/Tokyo".into()),
+            label: None,
+        });
+        let second = parts.len() - 1;
+        let mut view = bare_view_of(parts.clone());
+        view.drawer.heading = Some("Classic".into());
+        view.drawer.subtitle = Some("Built in · Done saves a new look");
+        view.drawer.tiles = drawer_tiles(&parts, true);
+        attach_previews(&mut view, &when, &tokens, &mut text);
+        let mut card = part_card::open(second, parts[second].clone());
+        card.docked = true;
+        card.number = Some(2);
+        part_card::set_focus(&mut card, Some(part_card::Line::Face));
+        view.card = Some(card);
+        let stage = stage_picture(&view, &when, &tokens, &mut text);
+        // The bar's Done is white and the strip has its six tiles drawn.
+        let done = bar((1280.0, 800.0)).done;
+        let px = stage
             .pixel((done.x + 4.0) as u32, (done.y + done.h / 2.0) as u32)
             .expect("inside");
         assert_ne!(px.alpha(), 0, "Done is drawn");
-        assert_ne!(
-            pixmap
-                .pixel((left.x + 20.0) as u32, (left.y + 120.0) as u32)
-                .expect("inside")
-                .alpha(),
-            0,
-            "the wallpaper panel is drawn"
-        );
         if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
             let dir = std::path::PathBuf::from(dir);
             std::fs::create_dir_all(&dir).unwrap();
-            pixmap.save_png(dir.join("lock-stage.png")).unwrap();
+            stage.save_png(dir.join("lock-stage.png")).unwrap();
         }
+
+        // The Wallpaper tab: the backgrounds, each drawn over the classic lock.
+        view.card = None;
+        view.drawer.tab = 1;
+        view.drawer.subtitle = Some("Built in · Done saves a new look");
+        view.drawer.tiles = background_tiles(&view.background);
+        let mut lock_pictures = lock::Pictures::default();
+        let mut backdrops = lock::Backdrops::default();
+        let wallpaper = edel::wallpapers::Wallpaper::Background;
+        let lock_view = lock::View::new("9:41".into(), "Sunday 11 October".into(), "Ali".into());
+        for tile in view.drawer.tiles.iter_mut() {
+            let Some((_, _, Some(background))) = background_choices()
+                .into_iter()
+                .find(|(name, _, _)| *name == tile.name.as_str())
+            else {
+                continue;
+            };
+            let thumb = thumbnail(
+                &lock_view,
+                &classic,
+                &background,
+                false,
+                &tokens,
+                &mut text,
+                None,
+                &mut lock_pictures,
+                &mut backdrops,
+                &wallpaper,
+            )
+            .expect("a thumbnail");
+            tile.picture = Some(editor::Picture(std::rc::Rc::new(thumb)));
+        }
+        let wallpaper_pixmap = stage_picture(&view, &when, &tokens, &mut text);
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            wallpaper_pixmap
+                .save_png(dir.join("lock-stage-wallpaper.png"))
+                .unwrap();
+        }
+
+        // The preview: the lock over the whole screen with its pill.
+        view.drawer.tab = 0;
+        view.drawer.tiles = drawer_tiles(&parts, true);
+        attach_previews(&mut view, &when, &tokens, &mut text);
+        view.previewing = true;
+        let preview_pixmap = stage_picture(&view, &when, &tokens, &mut text);
+        let pill = preview_pill((1280.0, 800.0));
+        let centre = preview_pixmap
+            .pixel((pill.x + pill.w / 2.0) as u32, (pill.y + 4.0) as u32)
+            .expect("inside");
+        assert_ne!(centre.alpha(), 0, "the pill is drawn at the top");
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            preview_pixmap
+                .save_png(dir.join("lock-preview.png"))
+                .unwrap();
+        }
+    }
+    /// Preview (M5.10c7f): the pill sits 16 px from the top and centred, its
+    /// Back button inside it, and only Escape and Return go back to the edit;
+    /// the other keys do nothing while the lock is shown as it will be.
+    #[test]
+    fn preview_takes_only_escape_and_return_and_its_pill_sits_at_the_top() {
+        let mut view = bare_view_of(lock_screen::classic(false));
+        view.previewing = true;
+        assert_eq!(key(&view, Key::Escape, false), Step::Back);
+        assert_eq!(key(&view, Key::Activate, false), Step::Back);
+        assert_eq!(key(&view, Key::Tab, false), Step::Nothing);
+        assert_eq!(key(&view, Key::Left, false), Step::Nothing);
+        let screen = (1280.0, 800.0);
+        let pill = preview_pill(screen);
+        assert_eq!(pill.y, 16.0);
+        assert_eq!(pill.x + pill.w / 2.0, 640.0, "centred");
+        let back = preview_back(screen);
+        assert!(pill.contains(back.x + 1.0, back.y + 1.0));
+        assert!(pill.contains(back.right() - 1.0, back.y + back.h - 1.0));
+        assert_eq!(
+            preview_nodes(screen)[0].label,
+            "Back to editing",
+            "the screen reader finds the Back button"
+        );
+    }
+
+    /// The bar's Preview and the strip's six kinds (M5.10c7f): a press on a
+    /// kind the look holds as many of is refused by the strip, and the Preview
+    /// button is the bar's second, between Cancel and Done.
+    #[test]
+    fn the_bar_has_cancel_preview_and_done_in_that_order() {
+        let view = bare_view_of(lock_screen::classic(false));
+        let ring = ring(&view);
+        assert_eq!(
+            ring[ring.len() - 3..],
+            [
+                Focus::Bar(BarButton::Cancel),
+                Focus::Bar(BarButton::Preview),
+                Focus::Bar(BarButton::Done),
+            ]
+        );
+        let b = bar((1280.0, 800.0));
+        assert!(b.cancel.right() <= b.title.x && b.title.right() <= b.preview.x);
+        assert!(b.preview.right() <= b.done.x);
     }
 }

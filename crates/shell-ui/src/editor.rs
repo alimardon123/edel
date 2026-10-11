@@ -11,12 +11,12 @@ use std::rc::Rc;
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::panel_edit::Group;
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item as Node;
 use crate::edit_kit;
-use crate::paint::{EDIT_PAD, Face, LIFTED, Text, outline};
+use crate::paint::{EDIT_PAD, Face, LIFTED, Text, fill, outline};
 use crate::popup::{self, Card, Rect, wrap};
 use crate::trayview::Key;
 use crate::widgets::{Canvas, Widget};
@@ -33,6 +33,9 @@ pub const WIDTH: f32 = 560.0;
 const SIDE: f32 = 32.0;
 /// A tile's size on a desktop; a compact drawer shrinks its width to fit.
 pub const TILE: (f32, f32) = (104.0, 84.0);
+/// A tile of a bare strip (the lock screen's, M5.10c7f): 114 by 92 logical
+/// pixels, the mockup's, with its live preview in the top part.
+pub const BARE_TILE: (f32, f32) = (114.0, 92.0);
 /// A tab's width in a bare drawer (the lock screen's strip), logical pixels
 /// (M5.10c7e): each tab's segment is this wide, the tabs centred under the bar.
 pub const TAB_W: f32 = 104.0;
@@ -296,7 +299,8 @@ fn columns(view: &View) -> usize {
         return COLUMNS_COMPACT;
     }
     let inner = card_width(view) - 2.0 * PAD;
-    ((inner + GAP) / (TILE.0 + GAP)).floor().max(1.0) as usize
+    let tile = if view.bare { BARE_TILE.0 } else { TILE.0 };
+    ((inner + GAP) / (tile + GAP)).floor().max(1.0) as usize
 }
 
 /// The drawer's size and where each part lies: the one function that
@@ -329,7 +333,7 @@ pub fn layout(view: &View) -> Layout {
     } else {
         tabs_row.y + button + SPACE
     };
-    let tiles = place_tiles(view, width, columns, tile_w, top, counted);
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted, TILE.1);
     let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
     // The footer holds the buttons, with the card's padding under them.
     let footer_top = tiles_bottom + SPACE;
@@ -353,6 +357,8 @@ pub fn layout(view: &View) -> Layout {
 fn tile_width(view: &View, width: f32, columns: usize) -> f32 {
     if view.compact {
         (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
+    } else if view.bare {
+        BARE_TILE.0
     } else {
         TILE.0
     }
@@ -369,6 +375,7 @@ fn place_tiles(
     tile_w: f32,
     top: f32,
     counted: usize,
+    tile_h: f32,
 ) -> Vec<Rect> {
     let row_left = |row: usize| {
         let n = (counted - row * columns).min(columns) as f32;
@@ -380,9 +387,9 @@ fn place_tiles(
             let (row, column) = (i / columns, i % columns);
             Rect::new(
                 row_left(row) + column as f32 * (tile_w + TILE_GAP),
-                top + row as f32 * (TILE.1 + TILE_GAP),
+                top + row as f32 * (tile_h + TILE_GAP),
                 tile_w,
-                TILE.1,
+                tile_h,
             )
         })
         .collect()
@@ -411,8 +418,8 @@ fn layout_bare(view: &View) -> Layout {
     } else {
         tabs_row.y + button + SPACE
     };
-    let tiles = place_tiles(view, width, columns, tile_w, top, counted);
-    let height = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted, BARE_TILE.1);
+    let height = top + rows as f32 * BARE_TILE.1 + (rows - 1) as f32 * TILE_GAP;
     let none = Rect::new(0.0, 0.0, 0.0, 0.0);
     Layout {
         size: (width.ceil() as u32, height.ceil() as u32),
@@ -713,7 +720,14 @@ pub fn paint(
         let rect = Rect::new(PAD, top, room, HINT_LINE);
         edit_kit::hint(pixmap, words, rect, tokens, text.as_deref_mut(), style, s);
     }
-    if !view.tabs.is_empty() {
+    if view.bare && !view.tabs.is_empty() {
+        paint_bare_tabs(pixmap, view, l, tokens, text.as_deref_mut(), s);
+        if let Some(Part::Tab(i)) = view.focus {
+            if let Some(segment) = l.tabs.get(i) {
+                popup::focus_ring(pixmap, *segment, tokens.radius_small as f32, s, tokens);
+            }
+        }
+    } else if !view.tabs.is_empty() {
         let ink = edit_kit::inks(style, tokens);
         popup::segmented_with(
             pixmap,
@@ -822,6 +836,44 @@ pub fn paint(
             style,
             s,
         );
+    }
+}
+
+/// The bare strip's tabs (M5.10c7f), as the mockup's segmented control: a
+/// dark glass track, the chosen tab a white pill with dark words, the others in
+/// the glass text. The keyboard's focus ring is drawn by the caller.
+fn paint_bare_tabs(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let track = Colour {
+        a: 0.55,
+        ..tokens.lock_backdrop_deep
+    };
+    let (x, y, w, h) = l.tabs_row.device(s);
+    fill(pixmap, x, y, w, h, h / 2.0, track);
+    if let Some(segment) = l.tabs.get(view.tab) {
+        let (x, y, w, h) = segment.device(s);
+        fill(pixmap, x, y, w, h, h / 2.0, tokens.backdrop_text);
+    }
+    let Some(text) = text else {
+        return;
+    };
+    let size = tokens.panel_text_small_size as f32 * s;
+    for (j, (word, segment)) in view.tabs.iter().zip(&l.tabs).enumerate() {
+        let colour = if j == view.tab {
+            tokens.lock_backdrop_deep
+        } else {
+            tokens.backdrop_text
+        };
+        let mut line = text.fit(word, size, segment.w * s);
+        let x = segment.x * s + ((segment.w * s - line.width) / 2.0).round();
+        let y = popup::middle(segment.y, segment.h, size, s);
+        text.draw(pixmap, &mut line, x, y, colour);
     }
 }
 

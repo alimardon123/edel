@@ -242,28 +242,49 @@ msgstr ""
 msgid "Cancel"
 msgstr ""
 
+msgid "Preview"
+msgstr ""
+
 msgid "{title}, {where}"
 msgstr ""
 
 msgid "Wallpaper"
 msgstr ""
 
+msgid "Blurred wallpaper"
+msgstr ""
+
+msgid "Sharp wallpaper"
+msgstr ""
+
+msgid "Navy"
+msgstr ""
+
+msgid "{look}'s own"
+msgstr ""
+
 msgid "Music"
 msgstr ""
 
-msgid "Built in: Done saves your changes as a new look."
+msgid "Built in · Done saves a new look"
 msgstr ""
 
-msgid "Done saves your changes in this look."
+msgid "Yours · Done saves it"
+msgstr ""
+
+msgid "Back to editing"
+msgstr ""
+
+msgid "Not locked · Esc to go back"
+msgstr ""
+
+msgid "Hello"
 msgstr ""
 
 msgid "the looks do not write as TOML"
 msgstr ""
 
 msgid "Widgets"
-msgstr ""
-
-msgid "Looks"
 msgstr ""
 
 msgid "Close notification"
@@ -344,6 +365,15 @@ msgstr ""
 msgid "Panel menu"
 msgstr ""
 
+msgid "This computer"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "24-hour"
+msgstr ""
+
 msgid "Digital"
 msgstr ""
 
@@ -393,6 +423,9 @@ msgid "Choose in Settings"
 msgstr ""
 
 msgid "No picture"
+msgstr ""
+
+msgid "Remove"
 msgstr ""
 
 msgid "Words: {words}"

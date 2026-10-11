@@ -166,7 +166,16 @@ pub fn zoned_times(
     now: &jiff::Zoned,
     warned: &RefCell<Vec<String>>,
 ) -> Vec<(String, When)> {
-    let parts = lock_screen::applied(lock, false).parts;
+    zoned_of_parts(&lock_screen::applied(lock, false).parts, now, warned)
+}
+
+/// `zoned_times` for the parts themselves, as the edit mode shows them
+/// (M5.10c7f): the clocks' zones of `parts`, each once.
+pub fn zoned_of_parts(
+    parts: &[Placed],
+    now: &jiff::Zoned,
+    warned: &RefCell<Vec<String>>,
+) -> Vec<(String, When)> {
     let mut out: Vec<(String, When)> = Vec::new();
     for zone in parts
         .iter()

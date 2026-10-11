@@ -57,11 +57,14 @@ pub enum State {
     Lifted,
 }
 
-/// A button's kind: the accent filled, or a quiet line with no fill.
+/// A button's kind: the accent filled, a quiet line with no fill, or (M5.10c7f)
+/// the glass text filled with the stage's dark words, the lock editor's Done
+/// and its preview's Back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
     Accent,
     Quiet,
+    Light,
 }
 
 /// The margin round a placed part's outline, logical pixels.
@@ -565,6 +568,14 @@ pub fn button(
             );
             ink.text
         }
+        ButtonKind::Light => {
+            fill(pixmap, x, y, w, h, radius, ink.text);
+            if style.glass {
+                tokens.lock_backdrop_deep
+            } else {
+                tokens.panel
+            }
+        }
     };
     if let Some(text) = text {
         let size = tokens.panel_text_size as f32 * s;
@@ -575,6 +586,48 @@ pub fn button(
     }
     if state == State::Focus {
         popup::focus_ring(pixmap, r, r.h / 2.0, s, tokens);
+    }
+}
+
+/// A part's mark in the lock editor (M5.10c7f), the canvas as the mockup draws
+/// it: at rest nothing; under the pointer (`Hover`) a faint 1 px solid outline,
+/// the glass text at 25 percent; with the keyboard's focus or a card open on
+/// it (`Focus`) a 2 px accent ring; both round the part's own corners
+/// (`PART_RADIUS`, `PART_PAD` out). `Lifted` is `outline_part`'s. The panel
+/// editor keeps `outline_part`.
+pub fn mark_part(
+    pixmap: &mut Pixmap,
+    r: Rect,
+    state: State,
+    tokens: &Tokens,
+    style: Style,
+    s: f32,
+) {
+    let ink = inks(style, tokens);
+    let (x, y, w, h) = part_area(r).device(s);
+    let radius = PART_RADIUS * style.scale * s;
+    match state {
+        State::Rest => {}
+        State::Hover => stroke(
+            pixmap,
+            (x, y, w, h),
+            radius,
+            LINE * s,
+            Colour {
+                a: 0.25,
+                ..ink.text
+            },
+            None,
+        ),
+        State::Focus => stroke(
+            pixmap,
+            (x, y, w, h),
+            radius,
+            LIFTED_LINE * s,
+            ink.accent,
+            None,
+        ),
+        State::Lifted => outline_part(pixmap, r, State::Lifted, tokens, style, s),
     }
 }
 
