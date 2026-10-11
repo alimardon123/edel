@@ -352,6 +352,7 @@ impl Edel {
                 .filter(|(w, _)| w == window)
                 .map(|(_, b)| *b),
             text: self.text.is_some(),
+            text_key: self.text_key,
             side: self.settings.button_side(),
             shown: self.settings.buttons,
             scheme: self.settings.color_scheme,

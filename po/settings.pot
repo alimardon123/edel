@@ -770,6 +770,15 @@ msgstr ""
 msgid "Panels' opacity"
 msgstr ""
 
+msgid "Interface font"
+msgstr ""
+
+msgid "Monospace font"
+msgstr ""
+
+msgid "Text size"
+msgstr ""
+
 msgid "Switcher look"
 msgstr ""
 
@@ -1080,6 +1089,18 @@ msgid "Choose a settings file"
 msgstr ""
 
 msgid "could not write {path}: {why}; choose a folder you can write to"
+msgstr ""
+
+msgid "Default"
+msgstr ""
+
+msgid "{name} (default)"
+msgstr ""
+
+msgid "Text"
+msgstr ""
+
+msgid "A sample of the text in the chosen font and size"
 msgstr ""
 
 msgid "No app has put an icon in the tray yet"
