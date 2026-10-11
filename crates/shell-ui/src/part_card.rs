@@ -197,8 +197,8 @@ const OPEN_INSET: f32 = 8.0;
 /// A value's space before its chevron, and the chevron's size.
 const VALUE_GAP: f32 = 6.0;
 const CHEVRON: f32 = 12.0;
-/// Remove's pill: 36 px high, its ends round.
-const REMOVE_H: f32 = 36.0;
+/// Remove's row: as high as a group's row, with the group's corners.
+const REMOVE_H: f32 = ROW_H;
 /// A clock's face tile in the docked grid: two across, 56 high, with
 /// `FACE_TILE_GAP` between and the corners `FACE_RADIUS`.
 const FACE_TILE_H: f32 = 56.0;
@@ -1494,18 +1494,15 @@ pub fn paint(
         }
     }
     if let Some(remove) = l.remove {
-        // Remove's pill: red words on the raised colour, lit under the pointer.
+        // Remove's row: a group of its own, as the settings' group above
+        // it, the one word centred in red, lit under the pointer.
         let (x, y, w, h) = remove.device(s);
-        fill(pixmap, x, y, w, h, REMOVE_H / 2.0 * s, ink.raised);
+        fill(pixmap, x, y, w, h, GROUP_RADIUS * s, ink.raised);
         if view.remove_hover {
-            fill(pixmap, x, y, w, h, REMOVE_H / 2.0 * s, ink.lit);
+            fill(pixmap, x, y, w, h, GROUP_RADIUS * s, ink.lit);
         }
         let words_size = tokens.panel_text_size as f32 * s;
-        let mut words = text.line_in(
-            tr("Remove from lock screen"),
-            words_size,
-            crate::paint::Face::MEDIUM,
-        );
+        let mut words = text.line_in(tr("Remove"), words_size, crate::paint::Face::REGULAR);
         let x0 = (remove.x + remove.w / 2.0) * s - words.width / 2.0;
         let y0 = popup::middle(remove.y, remove.h, words_size, s);
         text.draw(pixmap, &mut words, x0, y0, tokens.title_close_hover);
@@ -2122,7 +2119,7 @@ mod tests {
         // ends 16 px under it.
         let remove = l.remove.expect("docked cards have Remove");
         assert!((remove.y - (group.y + group.h + 16.0)).abs() < 0.01);
-        assert!((remove.h - 36.0).abs() < 0.01);
+        assert!((remove.h - ROW_H).abs() < 0.01);
         assert!((l.card.y + l.card.h - (remove.y + remove.h + 16.0)).abs() < 0.01);
         assert!(face.label.is_none(), "the grid has no label of its own");
         for pair in l.rows.windows(2) {
