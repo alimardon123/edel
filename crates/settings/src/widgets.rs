@@ -712,6 +712,35 @@ pub fn copied(button: &gtk::Button) {
     });
 }
 
+/// Asks for a colour in the system's dialog, starting from `initial`, and
+/// gives `done` the colour as `#rrggbb`, or none when the choice was
+/// cancelled (M5.12b1c; the Wallpaper group's Colour card and the
+/// Appearance page's colours share it).
+pub fn choose_colour(
+    near: &gtk::Widget,
+    initial: Option<gtk::gdk::RGBA>,
+    done: impl FnOnce(Option<String>) + 'static,
+) {
+    let window = near.root().and_downcast::<gtk::Window>();
+    gtk::ColorDialog::new().choose_rgba(
+        window.as_ref(),
+        initial.as_ref(),
+        None::<&gtk::gio::Cancellable>,
+        move |picked| done(picked.ok().map(|rgba| hex_of(&rgba))),
+    );
+}
+
+/// A colour as `#rrggbb`, lowercase, each channel rounded to 0 to 255.
+pub fn hex_of(c: &gtk::gdk::RGBA) -> String {
+    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        channel(c.red()),
+        channel(c.green()),
+        channel(c.blue())
+    )
+}
+
 /// A title bar drawn as the compositor draws every window's, in a small
 /// window at the top of a group, for a page whose choices change it: the
 /// title in its middle and the shown buttons on their side, close

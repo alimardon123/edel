@@ -100,6 +100,16 @@ pub const ROWS: &[Row] = &[
         key: "appearance.mode",
         title: n_("Style"),
     },
+    // The accent and the colours (M5.12b1c): the swatches, then each colour
+    // a person sets; `*` is a colour token's name.
+    Row {
+        key: "appearance.accent",
+        title: n_("Accent"),
+    },
+    Row {
+        key: "appearance.colours.*",
+        title: n_("Colours"),
+    },
     Row {
         key: "appearance.switcher_look",
         title: n_("Switcher look"),
@@ -328,7 +338,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 5);
+        assert_eq!(on_page("appearance").count(), 7);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

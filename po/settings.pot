@@ -212,6 +212,72 @@ msgstr ""
 msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
 msgstr ""
 
+msgid "Blue"
+msgstr ""
+
+msgid "Purple"
+msgstr ""
+
+msgid "Pink"
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "Orange"
+msgstr ""
+
+msgid "Yellow"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Teal"
+msgstr ""
+
+msgid "Graphite"
+msgstr ""
+
+msgid "Wallpaper"
+msgstr ""
+
+msgid "Custom"
+msgstr ""
+
+msgid "Light only"
+msgstr ""
+
+msgid "Dark only"
+msgstr ""
+
+msgid "Change this colour"
+msgstr ""
+
+msgid "Colour"
+msgstr ""
+
+msgid "Both"
+msgstr ""
+
+msgid "Light"
+msgstr ""
+
+msgid "Dark"
+msgstr ""
+
+msgid "Which scheme"
+msgstr ""
+
+msgid "Pick this colour"
+msgstr ""
+
+msgid "Add a colour"
+msgstr ""
+
+msgid "Colours"
+msgstr ""
+
 msgid "Each screen's size, scale and place. Changes apply at once. Each choice is also a line of your settings file and an edel settings set command."
 msgstr ""
 
@@ -644,10 +710,10 @@ msgstr ""
 msgid "Side of the strip in the workspace overview"
 msgstr ""
 
-msgid "Wallpaper"
+msgid "Style"
 msgstr ""
 
-msgid "Style"
+msgid "Accent"
 msgstr ""
 
 msgid "Switcher look"
@@ -717,12 +783,6 @@ msgid "Arrows"
 msgstr ""
 
 msgid "Counts"
-msgstr ""
-
-msgid "Light"
-msgstr ""
-
-msgid "Dark"
 msgstr ""
 
 msgid "Stack"
@@ -1077,9 +1137,6 @@ msgid "Login shell"
 msgstr ""
 
 msgid "Your picture"
-msgstr ""
-
-msgid "Colour"
 msgstr ""
 
 msgid "One picture, or two for light and dark"

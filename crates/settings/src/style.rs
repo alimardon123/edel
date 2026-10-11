@@ -269,6 +269,8 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-buttons {{ background: none; }}
 .edel-buttons > flowboxchild {{ padding: 0; margin: 0; background: none; border-radius: {rc}px; }}
 .edel-buttons > flowboxchild:focus-visible {{ outline: none; }}
+.edel-swatch {{ background: none; background-image: none; box-shadow: none; border: none; padding: 0; min-width: 0; min-height: 0; border-radius: {rc}px; }}
+.edel-swatch:hover, .edel-swatch:checked {{ background: none; background-image: none; }}
 .edel-big {{ min-height: 44px; min-width: 168px; padding: 0 24px; border-radius: {rc}px; background-image: none; background-color: transparent;
   box-shadow: none; border: 1px solid alpha({text}, 0.22); color: {text}; font-size: {big}px; font-weight: 550; }}
 .edel-big:hover {{ background-color: {fill}; }}

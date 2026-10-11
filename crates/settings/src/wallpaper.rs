@@ -520,7 +520,8 @@ fn picture_value(path: &Path) -> Result<String, String> {
 }
 
 /// Asks for a colour, starting from the one chosen (else the accent), and
-/// chooses it as `#rrggbb`. A cancelled choice leaves the card as it was.
+/// chooses it as `#rrggbb` (`widgets::choose_colour`). A cancelled choice
+/// leaves the card as it was.
 fn pick_colour(card: Weak<Card>, button: gtk::ToggleButton) {
     let Some(now) = card.upgrade() else {
         return;
@@ -531,32 +532,15 @@ fn pick_colour(card: Weak<Card>, button: gtk::ToggleButton) {
         .unwrap_or_else(|| now.theme.tokens().accent);
     let initial = current.hex().parse::<gdk::RGBA>().ok();
     drop(now);
-    let window = button.root().and_downcast::<gtk::Window>();
-    gtk::ColorDialog::new().choose_rgba(
-        window.as_ref(),
-        initial.as_ref(),
-        None::<&gio::Cancellable>,
-        move |picked| {
-            let Some(card) = card.upgrade() else {
-                return;
-            };
-            match picked {
-                Ok(rgba) => card.write(&hex_of(&rgba)),
-                Err(_) => card.show(&Files::here()),
-            }
-        },
-    );
-}
-
-/// A colour as `#rrggbb`, lowercase, each channel rounded to 0 to 255.
-fn hex_of(c: &gdk::RGBA) -> String {
-    let channel = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-    format!(
-        "#{:02x}{:02x}{:02x}",
-        channel(c.red()),
-        channel(c.green()),
-        channel(c.blue())
-    )
+    widgets::choose_colour(button.upcast_ref(), initial, move |picked| {
+        let Some(card) = card.upgrade() else {
+            return;
+        };
+        match picked {
+            Some(hex) => card.write(&hex),
+            None => card.show(&Files::here()),
+        }
+    });
 }
 
 /// An empty picture the card's size, which the thumbnails and the prompt
