@@ -49,6 +49,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
+use edel::lock_screen::Placed;
 use edel::tokens::Tokens;
 
 use crate::corner;
@@ -96,6 +97,10 @@ struct Greeter {
     cmd: String,
     tx: channel::Sender<Login>,
     exit: bool,
+    /// The parts the machine's file says, read once at start (people have
+    /// no files of their own here), and the pictures they show.
+    parts: Option<Vec<Placed>>,
+    pictures: lock::Pictures,
 }
 
 /// One screen's surface.
@@ -141,7 +146,10 @@ pub fn run(cmd: String) -> Result<()> {
         Some(person) => (person.login.clone(), true),
         None => (String::new(), false),
     };
+    let parts = lock::parts_of(crate::settings_texts().0.as_deref(), None);
     let mut greeter = Greeter {
+        parts,
+        pictures: lock::Pictures::default(),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -335,8 +343,33 @@ impl Greeter {
     fn draw(&mut self) {
         let shown = (self.view(), self.corner_view());
         let mut first = false;
-        for screen in &mut self.screens {
+        // Each screen's layout first, from the machine's parts, with the row
+        // of people when it shows and the corner's places kept clear.
+        let people = self.people_shown();
+        let mut laid = Vec::with_capacity(self.screens.len());
+        for screen in &self.screens {
+            laid.push(screen.size.map(|(w, h)| {
+                let (fw, fh) = (w as f32, h as f32);
+                let corner_at = corner::layout(fw, fh, &shown.1);
+                let at = lock::screen_layout(
+                    fw,
+                    fh,
+                    &self.tokens,
+                    false,
+                    self.parts.as_deref(),
+                    None,
+                    people,
+                    &corner_at,
+                    &mut self.text,
+                );
+                (at, corner_at)
+            }));
+        }
+        for (screen, laid) in self.screens.iter_mut().zip(laid) {
             let Some((w, h)) = screen.size else {
+                continue;
+            };
+            let Some((at, corner_at)) = laid else {
                 continue;
             };
             if screen.drawn.as_ref() == Some(&shown) {
@@ -347,16 +380,17 @@ impl Greeter {
             let Some(mut pixmap) = Pixmap::new(pw, ph) else {
                 continue;
             };
-            let (fw, fh) = (w as f32, h as f32);
+            let fw = w as f32;
             lock::paint(
                 &mut pixmap,
                 &shown.0,
+                &at,
                 &self.tokens,
                 &mut self.text,
                 None,
+                &mut self.pictures,
                 s as f32,
             );
-            let corner_at = corner::layout(fw, fh, &shown.1);
             corner::paint(
                 &mut pixmap,
                 &shown.1,
@@ -365,15 +399,11 @@ impl Greeter {
                 &mut self.text,
                 s as f32,
             );
-            let spots = people::spots(
-                &self.row,
-                fw,
-                lock::layout(fw, fh, &self.tokens, false).avatar.1,
-            );
+            let spots = people::spots(&self.row, fw, at.avatar.1);
             let places = format!(
                 "{}, {}, {}",
                 people::places(&spots, &self.row),
-                lock::places(&lock::layout(fw, fh, &self.tokens, false)),
+                lock::places(&at),
                 corner::places(&corner_at)
             );
             if places != self.logged {
@@ -583,8 +613,20 @@ impl Greeter {
         if self.menu {
             return self.set_menu(false);
         }
-        let at = lock::layout(w, h, &self.tokens, false);
-        if self.people_shown() {
+        let people = self.people_shown();
+        let corner_at = corner::layout(w, h, &self.corner_view());
+        let at = lock::screen_layout(
+            w,
+            h,
+            &self.tokens,
+            false,
+            self.parts.as_deref(),
+            None,
+            people,
+            &corner_at,
+            &mut self.text,
+        );
+        if people {
             let spots = people::spots(&self.row, w, at.avatar.1);
             if let Some(index) = people::hit(&spots, x, y) {
                 self.choose(index);
