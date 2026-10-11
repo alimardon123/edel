@@ -153,6 +153,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-preset:checked {{ background-color: {card}; color: {text}; border-color: {accent}; box-shadow: 0 0 0 1px {accent}; }}
 .edel-preset:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
 .edel-preset-name {{ font-weight: 550; font-size: {small}px; margin-left: 2px; }}
+.edel-wallpaper-thumb {{ border-radius: {rs}px; }}
 .edel-badge {{ background-color: {accent}; color: {accent_text}; border-radius: 999px; min-width: 14px; min-height: 14px; margin-right: 2px; }}
 .edel-badge image {{ margin: 1px; }}
 .edel-group {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}

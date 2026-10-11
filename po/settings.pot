@@ -644,6 +644,9 @@ msgstr ""
 msgid "Side of the strip in the workspace overview"
 msgstr ""
 
+msgid "Wallpaper"
+msgstr ""
+
 msgid "Style"
 msgstr ""
 
@@ -1071,6 +1074,18 @@ msgid "Home folder"
 msgstr ""
 
 msgid "Login shell"
+msgstr ""
+
+msgid "Your picture"
+msgstr ""
+
+msgid "Colour"
+msgstr ""
+
+msgid "Choose a picture"
+msgstr ""
+
+msgid "Pick a JPEG or PNG picture"
 msgstr ""
 
 msgid "Your changes are live"

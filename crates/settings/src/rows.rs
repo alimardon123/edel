@@ -89,8 +89,13 @@ pub const ROWS: &[Row] = &[
         key: "workspaces.overview_strip",
         title: n_("Side of the strip in the workspace overview"),
     },
-    // The Appearance page (M5.2q): light or dark, then the workspace
-    // switcher's look, shown count and ends.
+    // The Appearance page (M5.2q): the wallpaper first (M5.10c4c), then
+    // light or dark, then the workspace switcher's look, shown count and
+    // ends.
+    Row {
+        key: "appearance.wallpaper",
+        title: n_("Wallpaper"),
+    },
     Row {
         key: "appearance.mode",
         title: n_("Style"),
@@ -323,7 +328,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 4);
+        assert_eq!(on_page("appearance").count(), 5);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

@@ -610,6 +610,20 @@ count() {
 	tr -d '\r' <"$log" | grep -cE "$1" || true
 }
 
+# panel_places: shell-ui's last `panel places` line once the panel has
+# kept it for a second (up to 5 s), so a click is not aimed at a place a
+# widget growing late (the status area's icons) is about to move.
+panel_places() {
+	last= i=0
+	while :; do
+		now=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1)
+		{ [ -n "$now" ] && [ "$now" = "$last" ]; } || [ "$i" -ge 5 ] && break
+		last=$now i=$((i + 1))
+		sleep 1
+	done
+	printf '%s\n' "$now"
+}
+
 # wait_more PATTERN N [SECONDS]: waits up to SECONDS (20) for more than N
 # lines to match.
 wait_more() {
@@ -648,7 +662,7 @@ case_panel() {
 	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
 	# wide after 2 px of room, with the accent; another switches it back.
 	# The checked pixel is left of where the cursor lies after a click.
-	toggle=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
+	toggle=$(panel_places | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
 	[ -n "$toggle" ] || fail "shell-ui did not say where its layout toggle lies"
 	shot panel $((toggle + 6)) 780 "$panel" >/dev/null || fail "the layout toggle at $((toggle + 6)),780 is filled while the windows float"
 	tiled=$(count 'edel-compositor: windows now tiling')
@@ -1336,6 +1350,75 @@ case_settings_appearance() {
 	echo "PASS: Settings opened on its Appearance page, a click on Dark at $cx,$cy wrote appearance.mode = \"dark\" to ci's file and the compositor took the dark scheme (settings-appearance.png), and taking the line out brought light back"
 }
 
+case_settings_wallpaper() {
+	# Settings' Wallpaper group (M5.10c4c): its log names each card's place,
+	# and the card of the test pair ci (ci-light.png, #d08a2e, and ci-dark.png,
+	# #2e6fd0) is clicked. The click writes appearance.wallpaper = "ci" to
+	# ci's file, and the compositor draws ci-light.png in the light scheme
+	# (`wallpaper PATH`, then `wallpaper on Virtual-1 1280x800`), so the
+	# screen's top left is #d08a2e. The top left is Settings' only if its
+	# window starts at 4,4 or before; then the top right is checked
+	# instead, the same colour. Super+Q closes Settings, the line taken out
+	# of ci's file brings the background back (`wallpaper none`). Kept as
+	# settings-wallpaper.png and settings-wallpaper-gone.png.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings wallpaper'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Wallpaper page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	card=none
+	i=0
+	while [ "$card" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies: $(value settings_wallpaper_log)"
+		guest 'settings wallpaper log'
+		text=$(value settings_wallpaper_log)
+		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
+		# commas and the log's `;` line ends become spaces first.
+		card=$(echo "$text" | sed -n 's/.*wallpaper group places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "ci") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$card" ] || card=none
+		[ "$card" = none ] && sleep 1
+	done
+	set -- $card
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	# The top left, outside Settings' window; the top right if the window
+	# reaches it (the panel lies along the bottom).
+	sx=4 sy=4
+	if [ "$x" -le 4 ] && [ "$y" -le 4 ]; then
+		sx=1276
+	fi
+	sleep 2
+	shown=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
+	logged=$(count 'edel-compositor: wallpaper .*/ci-light[.]png$')
+	python3 ci/qmp.py click "$cx" "$cy"
+	if ! wait_more 'edel-compositor: wallpaper .*/ci-light[.]png$' "$logged"; then
+		python3 ci/qmp.py screendump "$dir/settings-wallpaper-miss.png"
+		guest 'settings file'
+		sleep 2
+		fail "a click on the ci card at $cx,$cy did not make the compositor take ci-light.png (settings-wallpaper-miss.png); ci's file: $(value settings_file)"
+	fi
+	wait_more 'edel-compositor: wallpaper on Virtual-1 1280x800' "$shown" || fail "the compositor did not draw ci-light.png on Virtual-1 at 1280x800"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[appearance\];.*wallpaper = "ci"' ||
+		fail "ci's settings file is not what the Wallpaper card writes: $(value settings_file)"
+	shot settings-wallpaper "$sx" "$sy" d08a2e >/dev/null ||
+		fail "the wallpaper at $sx,$sy is not the ci card's #d08a2e (settings-wallpaper.png)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	none=$(count 'edel-compositor: wallpaper none')
+	guest 'wallpaper mine default'
+	wait_more 'edel-compositor: wallpaper none' "$none" || fail "taking appearance.wallpaper out of ci's file did not give no picture (wallpaper none)"
+	shot settings-wallpaper-gone "$sx" "$sy" "$(token background)" >/dev/null ||
+		fail "with no wallpaper the background at $sx,$sy is not #$(token background) (settings-wallpaper-gone.png)"
+	echo "PASS: Settings' Wallpaper group put the ci card at $cx,$cy; a click wrote appearance.wallpaper = \"ci\" to ci's file and the compositor drew ci-light.png, #d08a2e at $sx,$sy (settings-wallpaper.png), and taking the line out brought the background back (settings-wallpaper-gone.png)"
+}
+
 case_display() {
 	# Displays (M5.7a): Settings opened on its Displays page lists each
 	# screen from the compositor's state file; the first screen's Scale
@@ -1508,7 +1591,7 @@ case_keyboard() {
 	# then goes back to German, as the rest of the case expects.
 	wait_for 'edel-shell-ui: panel places .*keyboard [0-9]+\+[1-9][0-9]*' 5 ||
 		fail "the panel shows no keyboard indicator with two layouts: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
-	kbd=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	kbd=$(panel_places | sed -n 's/.*keyboard \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	set -- $kbd
 	at=$(($1 + $2 / 2))
 	switched=$(count 'edel-compositor: keyboard layout now English')
@@ -1999,7 +2082,7 @@ case_overview() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more 'edel-compositor: workspace 1$' "$back" || fail "Super+1 did not show workspace 1 after the overview"
 	# A click on the panel switcher's lit workspace, 1, opens it too.
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*workspaces \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its switcher lies"
 	lit=$(($1 + 29))
@@ -2486,7 +2569,7 @@ case_player() {
 	# as it plays, and a click on the second dot shows Radio's Morning
 	# Walk. Kept as player-pages.png.
 	guest mpris
-	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+	set -- $(panel_places |
 		sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
 	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
 	pill_x=$(($1 + $2 / 2))
@@ -4257,7 +4340,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
