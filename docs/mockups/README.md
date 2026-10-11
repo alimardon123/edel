@@ -136,5 +136,14 @@ boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.h
 
 Its board is `settings/canvas/appearance.html`, plain HTML drawn from the design canvas board "Appearance with themes"; the canvas is Alimardon's private design artifact, and this is the copy every session reads.
 
+## Settings (2026-10-11): Power, Updates, Users and the lock looks
+
+| Picture | What it shows |
+|---|---|
+| [settings/power-updates-users.jpg](settings/power-updates-users.jpg) | Power, Updates and Users (M5.32, approved by Alimardon on 2026-10-11): Power's battery with its last day, the power modes and what the lid, the power button and the screen do; Updates' calm hero, the version kept ready to roll back to, what the release brought and the channel; Users' person with their picture, others to add and logging in without a password |
+| [settings/lock-looks.jpg](settings/lock-looks.jpg) | The lock looks (M5.10c7, approved by Alimardon on 2026-10-11): the Lock screen page's looks with In use and Built in, the card with Customize and its More menu; the looks side by side on the lock (Super+L); the editor with its bar, wallpaper panel, widget card and strip, and Preview |
+
+Their boards are `settings/canvas/power-updates-users.html` and `settings/canvas/lock-looks.html`, drawn from the design canvas as the Appearance board is.
+
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
