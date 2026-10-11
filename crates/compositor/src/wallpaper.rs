@@ -155,7 +155,12 @@ impl Edel {
     /// makes every screen's picture again.
     pub fn apply_wallpaper(&mut self, settings: &Settings) {
         let dark = settings.color_scheme == Scheme::Dark;
-        let what = edel::wallpapers::on_this_machine(settings.wallpaper.as_deref(), dark);
+        let value = edel::wallpapers::value_for(
+            settings.wallpaper.as_deref(),
+            settings.wallpaper_dark.as_deref(),
+            dark,
+        );
+        let what = edel::wallpapers::on_this_machine(value, dark);
         eprintln!("edel-compositor: wallpaper {}", describe(&what));
         self.wallpaper.what = what;
         self.wallpaper.screens.clear();

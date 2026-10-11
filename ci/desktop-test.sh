@@ -3483,12 +3483,31 @@ case_wallpaper() {
 	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"
 	shot wallpaper-colour 4 4 336699 >/dev/null ||
 		fail "the background at 4,4 is not the wallpaper colour #336699 (wallpaper-colour.png)"
+	# A person's own pair (M5.10c4d): the test pair ci-light.png (#d08a2e)
+	# and ci-dark.png (#2e6fd0) as appearance.wallpaper and
+	# appearance.wallpaper_dark, with the mode dark, then light. The
+	# compositor logs the picture it takes for each mode.
+	logged=$(count 'edel-compositor: wallpaper .*/ci-dark[.]png$')
+	guest 'wallpaper pair'
+	wait_more 'edel-compositor: wallpaper .*/ci-dark[.]png$' "$logged" || fail "the compositor did not take ci-dark.png for dark mode from appearance.wallpaper_dark"
+	shot wallpaper-pair-dark 4 4 2e6fd0 >/dev/null ||
+		fail "the pair's dark picture at 4,4 is not #2e6fd0 (wallpaper-pair-dark.png)"
+	logged=$(count 'edel-compositor: wallpaper .*/ci-light[.]png$')
+	guest 'wallpaper pair light'
+	wait_more 'edel-compositor: wallpaper .*/ci-light[.]png$' "$logged" || fail "the compositor did not take ci-light.png for light mode from appearance.wallpaper"
+	shot wallpaper-pair-light 4 4 d08a2e >/dev/null ||
+		fail "the pair's light picture at 4,4 is not #d08a2e (wallpaper-pair-light.png)"
+	# The dark picture and the mode go; the light picture stays for the
+	# reset below, which logs none, as the picture is then the default's.
+	logged=$(count 'edel-compositor: wallpaper .*/ci-light[.]png$')
+	guest 'wallpaper pair reset'
+	wait_more 'edel-compositor: wallpaper .*/ci-light[.]png$' "$logged" || fail "taking appearance.wallpaper_dark out did not show the light picture again"
 	logged=$(count 'edel-compositor: wallpaper none')
 	guest 'wallpaper default'
 	wait_more 'edel-compositor: wallpaper none' "$logged" || fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
 	shot wallpaper-gone 4 4 "$(token background)" >/dev/null ||
 		fail "with no wallpaper the background at 4,4 is not #$(token background) (wallpaper-gone.png)"
-	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699, then, reset, the background colour"
+	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699; then the pair ci-light.png and ci-dark.png, #2e6fd0 in dark mode and #d08a2e in light (appearance.wallpaper_dark, M5.10c4d); then, reset, the background colour"
 }
 
 case_buttons() {

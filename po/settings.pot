@@ -1082,6 +1082,15 @@ msgstr ""
 msgid "Colour"
 msgstr ""
 
+msgid "One picture, or two for light and dark"
+msgstr ""
+
+msgid "Choose one picture, or two for light and dark mode"
+msgstr ""
+
+msgid "could not read {path} as a picture: {why}"
+msgstr ""
+
 msgid "Choose a picture"
 msgstr ""
 

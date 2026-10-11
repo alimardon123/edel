@@ -81,6 +81,9 @@ pub struct Settings {
     /// `appearance.wallpaper` (M5.10c4b): what lies behind the windows, as
     /// `edel::wallpapers` reads it.
     pub wallpaper: Option<String>,
+    /// `appearance.wallpaper_dark` (M5.10c4d): what lies behind the windows
+    /// in dark mode, when it differs; `edel::wallpapers::value_for` picks.
+    pub wallpaper_dark: Option<String>,
 }
 
 /// One screen's keys; each absent one means the screen decides.
@@ -170,6 +173,11 @@ impl Settings {
             }
             if file.appearance.wallpaper.is_some() {
                 settings.wallpaper.clone_from(&file.appearance.wallpaper);
+            }
+            if file.appearance.wallpaper_dark.is_some() {
+                settings
+                    .wallpaper_dark
+                    .clone_from(&file.appearance.wallpaper_dark);
             }
             settings.shortcuts.extend(file.shortcuts.clone());
             if file.region.keyboard.is_some() {
@@ -478,6 +486,21 @@ mod tests {
             Settings::from_files(Some(&machine), Some(&person)).motion,
             Motion::Reduced,
             "the person's wins"
+        );
+    }
+
+    #[test]
+    fn a_dark_wallpaper_is_the_persons_over_the_machines() {
+        assert_eq!(Settings::from_files(None, None).wallpaper_dark, None);
+        let machine = file("format = 1\n[appearance]\nwallpaper_dark = \"/m/dark.jpg\"\n");
+        let person = file("format = 1\n[appearance]\nwallpaper_dark = \"/p/dark.jpg\"\n");
+        assert_eq!(
+            Settings::from_files(Some(&machine), None).wallpaper_dark,
+            Some("/m/dark.jpg".to_string())
+        );
+        assert_eq!(
+            Settings::from_files(Some(&machine), Some(&person)).wallpaper_dark,
+            Some("/p/dark.jpg".to_string())
         );
     }
 
