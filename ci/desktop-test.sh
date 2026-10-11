@@ -188,6 +188,11 @@
 #               icon lies in the panel's tray; AT-SPI names it, a click
 #               and a right click reach it, and the icon goes with its app
 #               (M5.2e)
+#   settings-tour  Settings opened on each page edel settings lists (the page
+#               list is read from the tool), each drawn, scrolled with
+#               Page_Down and drawn again, and each again at 366 px, maximized,
+#               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
+#               and named in the PASS line
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1625,6 +1630,110 @@ case_settings_shape() {
 	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$reset" ||
 		fail "the compositor did not go back to shape gaps 8/8 after the six keys were taken out"
 	echo "PASS: Settings' Shape group took the gaps slider to 48 from the keyboard and wrote appearance.gaps = 48 to ci's file and the compositor laid its windows 48 apart (settings-shape.png), and shape mine default brought the gaps back to 8"
+}
+
+same_file() {
+	python3 -c 'import sys
+sys.exit(open(sys.argv[1], "rb").read() != open(sys.argv[2], "rb").read())' "$1" "$2"
+}
+
+# tour_open PAGE: starts Settings on PAGE by the service's `settings tour`
+# and waits for its window; returns 1 when this machine's Settings has no
+# such page (it refuses it before it draws anything, and the service says
+# so in its log).
+tour_open() {
+	asked=$(count 'DESKTOP-TEST: settings_tour ')
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest "settings tour $1"
+	wait_more 'DESKTOP-TEST: settings_tour ' "$asked" 30 || fail "the service did not start Settings on the $1 page"
+	case "$(value settings_tour)" in
+	"$1 refused") return 1 ;;
+	esac
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the $1 page: $(value windows)"
+}
+
+# tour_place: the last Settings window's place, X Y W H, from the log.
+tour_place() {
+	tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1
+}
+
+# tour_close: Super+Q on Settings, which must unmap.
+tour_close() {
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+}
+
+case_settings_tour() {
+	# Settings' pages, photographed (the tour, after settings-shape). The
+	# page list is what `edel settings` prints, read by the service
+	# (`settings pages`), never written here. Each page opens by
+	# `edel-settings --page NAME` (the service's `settings tour`) and is
+	# drawn after two seconds (settings-tour-NAME-1.png); a click in the
+	# page's empty right margin, 20 px in and half way down, gives it the
+	# keyboard, Page_Down scrolls it (-2.png), and once more (-3.png) only
+	# when -2.png differs from -1.png. A page this machine's Settings does
+	# not show yet is skipped: edel settings lists pages the Settings app
+	# has not built (region, shortcuts, default apps, startup, apps,
+	# add-ons and services, as the Settings app stood on 2026-10-11), and Settings refuses each one
+	# before drawing. Then every page that opened is drawn at Compact
+	# width, 366 logical px wide by scale 3.5 as the power case does, on
+	# an empty workspace (Super+4), maximized (Super+M), as
+	# settings-tour-NAME-narrow.png. The case fails only when Settings does
+	# not open on a page it has. Nothing is maximized in the first pass.
+	guest 'settings pages'
+	wait_for 'DESKTOP-TEST: settings_pages ' 20 || fail "the service did not list edel settings' pages"
+	pages=$(value settings_pages)
+	[ -n "$pages" ] || fail "edel settings lists no pages"
+	shown=
+	missing=
+	for page in $pages; do
+		if ! tour_open "$page"; then
+			missing="$missing $page"
+			continue
+		fi
+		shown="$shown $page"
+		sleep 2
+		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
+		set -- $(tour_place)
+		x=$1 y=$2 w=$3 h=$4
+		python3 ci/qmp.py click $((x + w - 20)) $((y + h / 2))
+		python3 ci/qmp.py key pgdn
+		sleep 1
+		python3 ci/qmp.py screendump "$dir/settings-tour-$page-2.png"
+		if ! same_file "$dir/settings-tour-$page-1.png" "$dir/settings-tour-$page-2.png"; then
+			python3 ci/qmp.py key pgdn
+			sleep 1
+			python3 ci/qmp.py screendump "$dir/settings-tour-$page-3.png"
+		fi
+		tour_close
+	done
+	# Compact, as the power case makes it: 366 logical px wide, Settings
+	# maximized on an empty workspace.
+	python3 ci/qmp.py key meta_l-4
+	i=0
+	while [ "$(value windows | cut -d" " -f1)" != 0 ]; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "Super+4 did not show an empty workspace: $(value windows)"
+		sleep 0.2
+	done
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 3.5')
+	guest 'scale 3.5'
+	wait_more 'edel-compositor: output Virtual-1 scale 3.5' "$scaled" || fail "displays.Virtual-1.scale = 3.5 was not followed"
+	for page in $shown; do
+		tour_open "$page" || fail "Settings no longer opens on the $page page at 366 px"
+		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 3
+		python3 ci/qmp.py screendump "$dir/settings-tour-$page-narrow.png"
+		tour_close
+	done
+	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
+	guest 'scale default'
+	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
+	python3 ci/qmp.py key meta_l-1
+	set -- $shown
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, with -2.png after Page_Down and -3.png when -2.png moved, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {
