@@ -136,6 +136,19 @@ pub const ROWS: &[Row] = &[
         key: "appearance.panel_opacity",
         title: n_("Panels' opacity"),
     },
+    // The text (M5.12b5): the fonts and the size, shown above the shape.
+    Row {
+        key: "appearance.font",
+        title: n_("Interface font"),
+    },
+    Row {
+        key: "appearance.monospace_font",
+        title: n_("Monospace font"),
+    },
+    Row {
+        key: "appearance.text_size",
+        title: n_("Text size"),
+    },
     Row {
         key: "appearance.switcher_look",
         title: n_("Switcher look"),
@@ -382,7 +395,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 13);
+        assert_eq!(on_page("appearance").count(), 16);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

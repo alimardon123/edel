@@ -23,30 +23,15 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{colours, panels, preview, rows, shape, tray, wallpaper, workspaces};
+use crate::{colours, panels, preview, rows, shape, text, tray, wallpaper, workspaces};
 
-const PANELS_INTRO: &str = n_(
-    "The panels and docks along the screen's edges and what they hold. Each \
-     choice here is also a line of your settings file and an edel settings \
-     set command.",
-);
+const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
-const WORKSPACES_INTRO: &str = n_(
-    "Workspaces keep windows apart, each a desktop of its own. Each choice \
-     here is also a line of your settings file and an edel settings set \
-     command.",
-);
+const WORKSPACES_INTRO: &str = n_("Desktops of their own, to keep windows apart.");
 
-const APPEARANCE_INTRO: &str = n_(
-    "How the desktop looks. Each choice here is also a line of your \
-     settings file and an edel settings set command.",
-);
+const APPEARANCE_INTRO: &str = n_("Colours, accent, shape and motion. Every change shows at once.");
 
-const INTRO: &str = n_(
-    "One preset sets up the whole desktop: its panels, where windows open \
-                     and how they tile. Each choice here is also a line of your settings \
-                     file and an edel settings set command.",
-);
+const INTRO: &str = n_("One preset sets up the whole desktop: its panels, windows and tiling.");
 
 /// A row's control: a switch for a flag, a list for one of a few values, or
 /// buttons in a row for a few values all in view (the workspaces' numbers).
@@ -179,6 +164,9 @@ struct Ui {
     /// The Appearance page's Shape group, which follows the files too
     /// (M5.12b2c).
     shape: Option<Rc<shape::Group>>,
+    /// The Appearance page's Text group, which follows the files too
+    /// (M5.12b5).
+    text: Option<Rc<text::Group>>,
 }
 
 impl Ui {
@@ -227,6 +215,9 @@ impl Ui {
         }
         if let Some(shape) = &self.shape {
             shape.show();
+        }
+        if let Some(text) = &self.text {
+            text.show();
         }
         let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
@@ -316,6 +307,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut wallpaper = None;
     let mut colour_group = None;
     let mut shape_group = None;
+    let mut text_group = None;
     match section {
         "layout" => {
             let source = widgets::section(&content, rows::title("layout.preset"));
@@ -483,8 +475,10 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             settings.push(style);
             // The accent and the colours after the Style row (M5.12b1c).
             colour_group = Some(colours::group(&content, theme, &problem));
-            // The windows' shape after the colours (M5.12b2c): corners, gaps,
+            // The text after the colours (M5.12b5): the fonts and the size,
+            // and the windows' shape after them (M5.12b2c): corners, gaps,
             // border, title bars and panels' opacity, with a picture.
+            text_group = Some(text::group(&content, &problem));
             shape_group = Some(shape::group(&content, theme, &problem));
             widgets::heading(&content, tr("Workspace switcher"));
             let switcher = widgets::group(&content);
@@ -539,6 +533,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         wallpaper: wallpaper.clone(),
         colours: colour_group.clone(),
         shape: shape_group.clone(),
+        text: text_group.clone(),
     });
     ui.update();
     if let Some(tray) = &tray {

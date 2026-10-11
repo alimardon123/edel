@@ -27,6 +27,10 @@
 #               border, sent to the VM, tiles foot and one 12 px apart as
 #               frames, with one's red border; tiling off and shape default
 #               put the release's shape back (M5.12b2b)
+#   text        appearance.text_size = 150 scales the title bars' and the
+#               panel's text by half, rounded half up, the title font is
+#               changed to Noto Sans and then to a font this system lacks
+#               (kept), and text default brings the release's back (M5.12b5)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -292,6 +296,14 @@ token() {
 	title_bar_focused) focused_bar "${2:-colour.light}" ;;
 	*) raw_token "$@" ;;
 	esac
+}
+
+# size_token NAME: the size NAME as design/tokens.toml's [size] table writes it.
+size_token() {
+	awk -v key="$1" '
+		/^\[/ { here = ($1 == "[size]"); next }
+		here && $1 == key { print $3; exit }
+	' design/tokens.toml
 }
 
 # raw_token NAME [TABLE]: the token NAME as design/tokens.toml writes it.
@@ -1746,13 +1758,24 @@ case_display() {
 	clamp=$((area < 704 ? area : 704))
 	left=$((x + 204 + (area - clamp) / 2 + 32))
 	right=$((left + clamp - 64))
-	# The first screen's Scale row, 314 px down the page; its 200% button
-	# 45 px in from the card's right edge, the chosen 100% button's left
-	# end 285 px in, and Reset 354 px in.
-	row=$((y + 314))
-	sleep 2
-	shot display $((right - 285)) "$row" "$(token accent)" >/dev/null ||
-		fail "the Displays page does not show Virtual-1's 100% scale chosen: $((right - 285)),$row is not the accent #$(token accent)"
+	# The first screen's Scale row: its 200% button 45 px in from the
+	# card's right edge, the chosen 100% button's left end 285 px in, and
+	# Reset 354 px in. The row's height on the page is found, not written:
+	# the first accent pixel down that column is the chosen 100% button's
+	# top, and the row's middle is 8 px under it (the page's intro, above
+	# it, changes length with its words).
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/display.png"
+		top=$(python3 ci/qmp.py find "$dir/display.png" $((right - 285)) $((y + 150)) $((y + 600)) "$(token accent)")
+		[ "$top" = none ] || break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	[ "$top" != none ] ||
+		fail "the Displays page does not show Virtual-1's 100% scale chosen: no accent #$(token accent) down x $((right - 285))"
+	row=$((top + 8))
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 2$')
 	python3 ci/qmp.py click $((right - 45)) "$row"
 	wait_more 'edel-compositor: output Virtual-1 scale 2$' "$scaled" ||
@@ -1767,7 +1790,7 @@ case_display() {
 	now=$(value windows | grep -o 'Settings@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1)
 	[ -n "$now" ] || fail "Settings is not in the windows line: $(value windows)"
 	set -- $(echo "$now" | sed 's/Settings@//; s/[,x]/ /g')
-	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + 314) * 2))
+	rx=$((($1 + right - 354 - x) * 2)) ry=$((($2 + row - y) * 2))
 	python3 ci/qmp.py screendump "$dir/display-scale2.png"
 	scaled=$(count 'edel-compositor: output Virtual-1 scale 1$')
 	python3 ci/qmp.py click "$rx" "$ry"
@@ -1824,12 +1847,13 @@ case_updates() {
 		fail "the Updates page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
 	# The card at the top (crates/settings, M5.8d): the page's cards are
 	# at most 704 px wide with 32 px margins, centred beside the 204 px
-	# sidebar; 80 px down is inside the card, above its words.
+	# sidebar; 120 px down is inside the card, under the page's one-line
+	# intro and above the card's words.
 	area=$((w - 204))
 	clamp=$((area < 704 ? area : 704))
 	card_x=$((x + 204 + (area - clamp) / 2 + 32 + clamp - 64 - 40))
-	shot updates $card_x $((y + 80)) "$(token card)" >/dev/null ||
-		fail "the Updates page has no card at the top at $card_x,$((y + 80)) in the card token's #$(token card)"
+	shot updates $card_x $((y + 120)) "$(token card)" >/dev/null ||
+		fail "the Updates page has no card at the top at $card_x,$((y + 120)) in the card token's #$(token card)"
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: updates_log ')
@@ -4514,6 +4538,40 @@ case_shape() {
 	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$shaped" ||
 		fail "the compositor did not go back to shape gaps 8/8, border 1 after shape default"
 	echo "PASS: appearance.gaps 12 and border_width 3 put foot and one 12 px apart as frames with a 3 px border, one's red focused border at $edge_x,$edge_y, and shape default gave the release's shape back"
+}
+
+case_text() {
+	# The text (M5.12b5), through the machine's settings file as Settings
+	# writes it: appearance.text_size = 150 scales every size of letters by
+	# half, rounded half up, so the title font and shell-ui's panel text are
+	# drawn at the sizes the tokens give at 150 percent (computed here from
+	# design/tokens.toml, not written). The title font then changes to Noto
+	# Sans; a family this system lacks (Nonesuch) keeps Noto Sans, logged;
+	# text default brings the release's font and size back.
+	title=$(size_token title_text)
+	panel=$(size_token panel_text)
+	wanted_title=$(((title * 150 + 50) / 100))
+	wanted_panel=$(((panel * 150 + 50) / 100))
+	guest 'text size 150'
+	wait_for 'DESKTOP-TEST: ran text size 150: 0' ||
+		fail "edel settings set appearance.text_size=150 did not run in the VM"
+	wait_for "edel-compositor: text Inter Variable at $wanted_title px" ||
+		fail "the compositor did not draw its title bars at $wanted_title px after text size 150: $(count 'edel-compositor: text')"
+	wait_for "edel-shell-ui: text Inter Variable at $wanted_panel px" ||
+		fail "shell-ui did not draw its panel text at $wanted_panel px after text size 150"
+	python3 ci/qmp.py screendump "$dir/text-150.png"
+	guest 'text font Noto Sans'
+	wait_for 'edel-compositor: text Noto Sans at' ||
+		fail "the compositor did not load Noto Sans for the title bars: $(count 'edel-compositor: no font')"
+	guest 'text font Nonesuch'
+	wait_for 'no font called "Nonesuch"' ||
+		fail "the compositor did not say it has no font called Nonesuch"
+	wait_for 'title bars keep "Noto Sans"' ||
+		fail "the title bars did not keep Noto Sans after Nonesuch"
+	guest 'text default'
+	wait_for "edel-compositor: text Inter Variable at $title px" ||
+		fail "text default did not bring the release's title font and size back"
+	echo "PASS: text size 150 drew the title bars at $wanted_title px and shell-ui's panel text at $wanted_panel px (text-150.png), text font Noto Sans took the title font, Nonesuch kept Noto Sans, and text default gave Inter Variable at $title px back"
 }
 
 case_styles() {

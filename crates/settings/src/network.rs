@@ -28,10 +28,7 @@ use edel::network::{self, Detail, Kind, Link, Snapshot, Summary, Wifi};
 
 use crate::{card, icon, widgets};
 
-const INTRO: &str = n_(
-    "Connect by cable or Wi-Fi. Wi-Fi passwords are kept safely by this computer and never go \
-     in your settings file.",
-);
+const INTRO: &str = n_("Wired and Wi-Fi. Passwords stay on this computer.");
 
 /// How often the page looks at the network while it is on screen.
 const FOLLOW: u32 = 4;
