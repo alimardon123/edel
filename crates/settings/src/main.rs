@@ -32,6 +32,7 @@ mod system;
 mod tray;
 mod updates;
 mod users;
+mod wallpaper;
 mod widgets;
 mod workspaces;
 

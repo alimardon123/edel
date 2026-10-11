@@ -664,6 +664,43 @@ pub fn log_row(group: &gtk::Box, title: &str, text: &str) {
     group.append(&expander);
 }
 
+/// A choice drawn as a picture (M5.10c4c): the picture above its name, and
+/// a check when it is the one chosen. The layout's presets and the
+/// wallpapers share it, so the cards look the same.
+pub fn picture_card(title: &str, picture: &gtk::Widget) -> (gtk::ToggleButton, gtk::Box) {
+    let label = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .hexpand(true)
+        .css_classes(["edel-preset-name"])
+        .build();
+    let check = icon::image("check", 12);
+    check.set_hexpand(true);
+    check.set_halign(gtk::Align::Center);
+    let badge = gtk::Box::builder()
+        .valign(gtk::Align::Center)
+        .halign(gtk::Align::End)
+        .hexpand(false)
+        .css_classes(["edel-badge"])
+        .build();
+    badge.append(&check);
+    let name_row = gtk::Box::builder().spacing(6).build();
+    name_row.append(&label);
+    name_row.append(&badge);
+    let inner = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .build();
+    inner.append(picture);
+    inner.append(&name_row);
+    let card = gtk::ToggleButton::builder()
+        .child(&inner)
+        .css_classes(["edel-preset"])
+        .build();
+    card.update_property(&[gtk::accessible::Property::Label(title)]);
+    (card, badge)
+}
+
 /// Shows that `button` copied: its icon a check for a moment.
 pub fn copied(button: &gtk::Button) {
     button.set_child(Some(&icon::image("check", 12)));

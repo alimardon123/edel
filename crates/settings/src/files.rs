@@ -118,6 +118,7 @@ fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
         "workspaces.names" => spaces.names.as_deref().map(list_text),
         "workspaces.apps" => spaces.apps.as_ref().map(apps_text),
         "workspaces.overview_strip" => spaces.overview_strip.clone(),
+        "appearance.wallpaper" => look.wallpaper.clone(),
         "appearance.mode" => look.mode.clone(),
         "appearance.switcher_look" => look.switcher_look.clone(),
         "appearance.switcher_shown" => look.switcher_shown.map(|n| n.to_string()),
