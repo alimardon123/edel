@@ -146,6 +146,9 @@ pub fn css(t: &Tokens) -> String {
     let accent = css_colour(t.accent);
     let accent_text = css_colour(t.accent_text);
     let shadow = css_colour(t.shadow);
+    // The badge over a lock's picture, in the lock's own colours.
+    let deep = css_colour(t.backdrop_deep);
+    let deep_text = css_colour(t.backdrop_text);
     let bar = css_colour(t.title_bar_focused);
     let bar_text = text.clone();
     // Shades of the text's colour, as the mockups have them: secondary
@@ -317,9 +320,10 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-current {{ padding: 16px; }}
 .edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
 .edel-current-button {{ min-height: 34px; padding: 0 16px; }}
-.edel-tag {{ color: {muted}; font-size: {tiny}px; }}
-.edel-tag-accent {{ background-color: alpha({accent}, 0.14); color: {accent}; font-size: {tiny}px; font-weight: 600;
-  border-radius: 999px; padding: 2px 8px; }}
+.edel-in-use {{ background-color: {accent}; color: {accent_text}; font-size: {tiny}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 9px 2px 7px; box-shadow: 0 1px 2px alpha({accent}, 0.35); }}
+.edel-built-in {{ background-color: alpha({deep}, 0.55); color: {deep_text}; font-size: {tiny}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 8px 2px 7px; box-shadow: inset 0 0 0 1px alpha({deep_text}, 0.22); }}
 .edel-new-card {{ padding: 7px; border-radius: {rw}px; background: none; background-image: none; box-shadow: none; border: none; }}
 .edel-new-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
 .edel-new-look {{ border: 1.5px dashed {line}; border-radius: {rw}px; }}

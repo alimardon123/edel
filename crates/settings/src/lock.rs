@@ -159,17 +159,18 @@ fn current_title(lock: &LockScreen) -> String {
     }
 }
 
-/// The word a card's tag shows: In use for the look that applies, else Built
-/// in for one of the three, else Yours.
-fn tag(name: &str, in_use: bool) -> String {
-    if in_use {
-        tr("In use")
-    } else if lock_screen::is_built_in(name) {
-        tr("Built in")
-    } else {
-        tr("Yours")
-    }
-    .to_string()
+/// A small pill of an icon and a word: In use (a check, in the accent) after
+/// a look's name, Built in (a lock, frosted) over a built-in look's picture.
+/// A look of the person's own carries no word: having no badge says it.
+fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
+    let pill = gtk::Box::builder()
+        .spacing(4)
+        .valign(gtk::Align::Center)
+        .css_classes([class])
+        .build();
+    pill.append(&icon::image(icon_name, 10));
+    pill.append(&gtk::Label::new(Some(words)));
+    pill
 }
 
 /// The line under the look in use: what the person can do with it. A look
@@ -308,7 +309,7 @@ struct LookCard {
     name: String,
     button: gtk::ToggleButton,
     badge: gtk::Box,
-    tag_label: gtk::Label,
+    in_use: gtk::Box,
 }
 
 /// The page's widgets, so every change shows everywhere on it.
@@ -421,13 +422,9 @@ impl Ui {
         for card in self.cards.borrow().iter() {
             let on = chosen.as_deref() == Some(card.name.as_str());
             card.button.set_active(on);
-            card.badge.set_visible(on);
-            card.tag_label.set_label(&tag(&card.name, on));
-            card.tag_label.set_css_classes(if on {
-                &["edel-tag-accent"]
-            } else {
-                &["edel-tag"]
-            });
+            // The In use pill says it, so the card's own check stays hidden.
+            card.badge.set_visible(false);
+            card.in_use.set_visible(on);
         }
     }
 
@@ -445,18 +442,29 @@ impl Ui {
             let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H);
             // The card may be wider than the picture's least size: the frame
             // keeps the screen's 16:10 shape at whatever width it is given.
+            // A built-in look wears its badge on the picture's corner.
+            let shown_picture = gtk::Overlay::builder().child(&picture).build();
+            if lock_screen::is_built_in(name) {
+                let built_in = pill("lock", tr("Built in"), "edel-built-in");
+                built_in.set_halign(gtk::Align::Start);
+                built_in.set_valign(gtk::Align::Start);
+                built_in.set_margin_start(8);
+                built_in.set_margin_top(8);
+                shown_picture.add_overlay(&built_in);
+            }
             let frame = gtk::AspectFrame::builder()
                 .ratio(SCREEN.0 / SCREEN.1)
                 .obey_child(false)
                 .hexpand(true)
-                .child(&picture)
+                .child(&shown_picture)
                 .build();
             let (button, badge) =
                 widgets::picture_card(&lock_screen::look_title(name), &frame.upcast());
-            // The tag sits after the name, before the check, on the same row.
-            let tag_label = gtk::Label::builder().css_classes(["edel-tag"]).build();
+            // In use sits after the name, on the same row.
+            let in_use = pill("check", tr("In use"), "edel-in-use");
+            in_use.set_visible(false);
             if let Some(row) = badge.parent().and_downcast::<gtk::Box>() {
-                row.insert_child_after(&tag_label, row.first_child().as_ref());
+                row.insert_child_after(&in_use, row.first_child().as_ref());
             }
             match &first {
                 Some(first) => button.set_group(Some(first)),
@@ -486,7 +494,7 @@ impl Ui {
                 name: name.clone(),
                 button,
                 badge,
-                tag_label,
+                in_use,
             });
         }
         let new = self.new_look_card();
@@ -796,13 +804,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     // The name with its In use tag, as the gallery's card says it.
     let name_row = gtk::Box::builder().spacing(8).build();
     name_row.append(&title);
-    name_row.append(
-        &gtk::Label::builder()
-            .label(tag("", true))
-            .valign(gtk::Align::Center)
-            .css_classes(["edel-tag-accent"])
-            .build(),
-    );
+    name_row.append(&pill("check", tr("In use"), "edel-in-use"));
     words.append(&name_row);
     words.append(&line);
     let keep = widgets::action(tr("Keep as a look"), false);
@@ -1397,15 +1399,6 @@ mod tests {
             ..LockScreen::default()
         };
         assert_eq!(current_title(&own), "Your own arrangement");
-    }
-
-    #[test]
-    fn the_tag_says_in_use_built_in_or_yours() {
-        assert_eq!(tag("home", true), "In use");
-        assert_eq!(tag("classic", true), "In use");
-        assert_eq!(tag("classic", false), "Built in");
-        assert_eq!(tag("minimal", false), "Built in");
-        assert_eq!(tag("home", false), "Yours");
     }
 
     #[test]

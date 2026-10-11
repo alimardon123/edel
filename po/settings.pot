@@ -398,15 +398,6 @@ msgstr ""
 msgid "Your own arrangement"
 msgstr ""
 
-msgid "In use"
-msgstr ""
-
-msgid "Built in"
-msgstr ""
-
-msgid "Yours"
-msgstr ""
-
 msgid "Changed over {look} on the command line."
 msgstr ""
 
@@ -423,6 +414,12 @@ msgid "More for {look}"
 msgstr ""
 
 msgid "Off hides the number of notifications that wait"
+msgstr ""
+
+msgid "Built in"
+msgstr ""
+
+msgid "In use"
 msgstr ""
 
 msgid "From the look in use"
