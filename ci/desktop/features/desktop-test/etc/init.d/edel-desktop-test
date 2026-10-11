@@ -670,9 +670,10 @@ commands() {
 		'lock parts') edel settings set 'lock_screen.parts=[{ part = "person", at = "centre", y = 0.21 }, { part = "clock", at = "top_left" }, { part = "message", at = "bottom", text = "If found, call 555 0100" }, { part = "player", at = "bottom_left" }]' ;;
 		'lock parts reset') edel settings reset lock_screen.parts ;;
 		# The lock screen's look (M5.10c5c): the minimal look over the
-		# blurred wallpaper, read when the screen locks; reset after the check.
-		'lock look') edel settings set lock_screen.look=minimal; edel settings set lock_screen.background=blurred ;;
-		'lock look reset') edel settings reset lock_screen.look; edel settings reset lock_screen.background ;;
+		# blurred wallpaper, the test picture, as the test image carries no
+		# wallpaper of its own; read when the screen locks, reset after.
+		'lock look') edel settings set lock_screen.look=minimal lock_screen.background=blurred "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
+		'lock look reset') edel settings reset lock_screen.look lock_screen.background appearance.wallpaper ;;
 		# The power menu's rules (M5.10c): doas answers what it would do
 		# for ci, in group seat, without running anything.
 		'power rules')
