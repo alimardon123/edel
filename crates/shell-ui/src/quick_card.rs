@@ -12,6 +12,7 @@
 //! with what it says. Dark style writes the person's settings file, as
 //! Settings does, which is quick and which the compositor follows.
 
+use edel::app_icons::Icons;
 use edel::i18n::tr;
 use edel::presets::Edge;
 use edel::{places, settings};
@@ -24,6 +25,7 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::popup::Popup;
 use crate::status::{self, Cmd, Msg};
+use crate::widgets::Pin;
 use crate::{MARGIN, QUICK, SETTINGS, Shell, a11y, messages, quick, settings_texts};
 use crate::{mpris, paint, player, widgets};
 
@@ -378,9 +380,11 @@ impl Shell {
 
     /// What plays changed while quick settings is open (M5.9d). A change
     /// that comes after the card closed is dropped: nothing is kept then.
-    /// The page shown stays on its player while it is there (M5.9i).
+    /// The page shown stays on its player while it is there (M5.9i). While
+    /// the screen is locked the same news goes to the lock's player card
+    /// (M5.10c4), which keeps its own page.
     pub fn player_changed(&mut self, event: mpris::Event) {
-        if self.quick.is_none() {
+        if self.quick.is_none() && self.lock.is_none() {
             return;
         }
         let mpris::Event::Players(players) = event;
@@ -393,7 +397,11 @@ impl Shell {
             );
         }
         self.live.players = players;
-        self.show_player_page(None);
+        if self.quick.is_some() {
+            self.show_player_page(None);
+        } else {
+            self.lock_players_changed();
+        }
     }
 
     /// The page of the player shown now: the one the card keeps (by its bus
@@ -457,25 +465,10 @@ impl Shell {
         }
     }
 
-    /// The shown player's app icon at `px` pixels: its desktop file's icon,
-    /// else an icon named as its desktop file or its app (M5.9i).
+    /// The shown player's app icon at `px` pixels (M5.9i).
     fn player_icon(&mut self, px: u32) -> Option<Pixmap> {
-        let player = self.shown_player()?;
-        let installed = self
-            .live
-            .installed
-            .iter()
-            .find(|pin| !player.desktop.is_empty() && pin.id.eq_ignore_ascii_case(&player.desktop))
-            .map(|pin| pin.icon.clone());
-        let names = [
-            installed.unwrap_or_default(),
-            player.desktop.clone(),
-            player.identity.to_lowercase().replace(' ', "-"),
-        ];
-        names
-            .iter()
-            .filter(|name| !name.is_empty())
-            .find_map(|name| self.icons.get(name, px).cloned())
+        let player = self.shown_player()?.clone();
+        player_icon(&player, &self.live.installed, &mut self.icons, px)
     }
 
     pub fn is_quick(&self, surface: &wl_surface::WlSurface) -> bool {
@@ -508,6 +501,8 @@ impl Shell {
             can_next: p.can_next,
             cover: None,
             app_icon: None,
+            position: None,
+            length: None,
         });
         view.player_below = self
             .panels
@@ -927,7 +922,31 @@ impl Shell {
 /// a PNG the app gave as a local file (M5.9d). Anything else, JPEG included,
 /// and a file that does not load give None, quietly: the card then shows the
 /// app's initial.
-fn load_cover(path: &str) -> Option<Pixmap> {
+/// `player`'s app icon at `px` pixels: its desktop file's icon, else an
+/// icon named as its desktop file or its app (M5.9i). Quick settings and
+/// the lock screen's card both find it here (M5.10c4).
+pub(crate) fn player_icon(
+    player: &mpris::Player,
+    installed: &[Pin],
+    icons: &mut Icons,
+    px: u32,
+) -> Option<Pixmap> {
+    let found = installed
+        .iter()
+        .find(|pin| !player.desktop.is_empty() && pin.id.eq_ignore_ascii_case(&player.desktop))
+        .map(|pin| pin.icon.clone());
+    let names = [
+        found.unwrap_or_default(),
+        player.desktop.clone(),
+        player.identity.to_lowercase().replace(' ', "-"),
+    ];
+    names
+        .iter()
+        .filter(|name| !name.is_empty())
+        .find_map(|name| icons.get(name, px).cloned())
+}
+
+pub(crate) fn load_cover(path: &str) -> Option<Pixmap> {
     let source = Pixmap::load_png(path).ok()?;
     let mut square = Pixmap::new(COVER_PX, COVER_PX)?;
     // Cropped from its middle to a square, never stretched, as album art

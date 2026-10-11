@@ -1,7 +1,8 @@
 //! `--mpris` (roadmap M5.9d): quick settings' test player. It claims
 //! `org.mpris.MediaPlayer2.edeltest` on the session's bus and serves MPRIS's
 //! two interfaces at `/org/mpris/MediaPlayer2`: it plays "Night Drive" by
-//! "Lumen" (identity "Edel test player"). Each command quick settings sends
+//! "Lumen", 3:41 long (`mpris:length`), at 1:24 (`Position`, M5.10c), with
+//! the identity "Edel test player". Each command quick settings sends
 //! prints its name into the output (`play pause` for `PlayPause`, which also
 //! switches between playing and paused and tells the bus so), and then it
 //! waits until it is killed. `--mpris NAME` (M5.9i) is a second player for
@@ -106,6 +107,11 @@ impl Player {
                 "xesam:artist".to_string(),
                 owned(Value::from(vec![self.artist.clone()])),
             ),
+            // 3:41 long, in microseconds (M5.10c).
+            (
+                "mpris:length".to_string(),
+                owned(Value::from(221_000_000i64)),
+            ),
         ])
     }
 
@@ -139,9 +145,10 @@ impl Player {
         false
     }
 
+    /// 1:24 in, in microseconds (M5.10c).
     #[zbus(property)]
     fn position(&self) -> i64 {
-        0
+        84_000_000
     }
 
     #[zbus(property)]

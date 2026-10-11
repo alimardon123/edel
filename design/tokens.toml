@@ -51,16 +51,17 @@ backdrop_deep = "#23272f"
 backdrop_text = "#f4f6fa"
 # The lock and login screens' frosted glass (M5.10c, docs/mockups/shell/
 # lock.jpg): the password field, the notifications' count and the
-# corner's buttons are this tint over the backdrop, edged with the
+# corner's buttons are this cool white over the backdrop (the mockups'
+# glass makes what lies behind it bluer), edged with the
 # second; the same in both schemes, as the backdrop is dark in both.
-lock_glass = "#ffffff1f"
-lock_glass_edge = "#ffffff30"
+lock_glass = "#b4c8ff24"
+lock_glass_edge = "#ffffff29"
 # What lies behind the lock and login screens while there is no
 # wallpaper (M5.10c): a deep navy from the first at the top to the second
 # at the bottom, lit by two soft glows, one at the upper left and one at
 # the right, as the mockup draws it; the same in both schemes.
 lock_backdrop = "#2f3c5e"
-lock_backdrop_deep = "#1a2039"
+lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
 lock_glow_second = "#454079"
 
@@ -86,10 +87,10 @@ edge = "#14182024"
 backdrop = "#8d9aba"
 backdrop_deep = "#3c4868"
 backdrop_text = "#f7f8fb"
-lock_glass = "#ffffff1f"
-lock_glass_edge = "#ffffff30"
+lock_glass = "#b4c8ff24"
+lock_glass_edge = "#ffffff29"
 lock_backdrop = "#2f3c5e"
-lock_backdrop_deep = "#1a2039"
+lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
 lock_glow_second = "#454079"
 
