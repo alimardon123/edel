@@ -245,6 +245,15 @@ msgstr ""
 msgid "Music"
 msgstr ""
 
+msgid "Built in: Done saves your changes as a new look."
+msgstr ""
+
+msgid "Done saves your changes in this look."
+msgstr ""
+
+msgid "the looks do not write as TOML"
+msgstr ""
+
 msgid "Parts"
 msgstr ""
 

@@ -141,6 +141,12 @@ pub struct View {
     /// A widget of a panel is dragged over the drawer: it gets an outline
     /// and the hint says it will be taken off the panel.
     pub taking: bool,
+    /// The heading's words when they are not the kind's (M5.10c7a: the look's
+    /// title in the lock screen's edit mode); None for the kind's own.
+    pub heading: Option<String>,
+    /// The hint's words in place of the kind's, when set and no tile is being
+    /// dragged over the drawer (M5.10c7a: what Done does to the look).
+    pub subtitle: Option<&'static str>,
 }
 
 /// Where a widget dragged to a panel would land there (M5.31b): the group,
@@ -552,6 +558,9 @@ fn thumbnail(layer: &mut Pixmap, picture: &Pixmap, w: f32, h: f32, s: f32) {
 /// The words a drawer's hint says (`paint`): the panels' and the lock
 /// screen's, and on the lock screen's tabs what their tiles do.
 fn hint_words(view: &View) -> &'static str {
+    if let (Some(words), false) = (view.subtitle, view.taking) {
+        return words;
+    }
     match (view.kind, view.taking) {
         (Kind::Panels, true) => tr("Drop here to take it off the panel"),
         (Kind::Panels, false) => tr(
@@ -603,9 +612,10 @@ pub fn paint(
     let heading = (tokens.panel_text_size + 2) as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
     if let Some(text) = text.as_deref_mut() {
-        let heading_words = match view.kind {
-            Kind::Panels => tr("Edit panels"),
-            Kind::LockScreen => tr("Edit lock screen"),
+        let heading_words = match (&view.heading, view.kind) {
+            (Some(words), _) => words.as_str(),
+            (None, Kind::Panels) => tr("Edit panels"),
+            (None, Kind::LockScreen) => tr("Edit lock screen"),
         };
         let mut line = text.line_in(heading_words, heading, Face::SEMIBOLD);
         let y = popup::middle(PAD, HEADING, heading, s);
@@ -811,6 +821,8 @@ mod tests {
             focus: None,
             lifted: None,
             taking: false,
+            heading: None,
+            subtitle: None,
         }
     }
 
@@ -1054,6 +1066,8 @@ mod tests {
                 focus: Some(Part::Done),
                 lifted: None,
                 taking: false,
+                heading: None,
+                subtitle: None,
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1117,6 +1131,8 @@ mod tests {
             focus: Some(Part::Tile(0)),
             lifted: None,
             taking: false,
+            heading: None,
+            subtitle: None,
         };
         let l = layout(&v);
         let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1165,6 +1181,8 @@ mod tests {
             focus: None,
             lifted: None,
             taking: false,
+            heading: None,
+            subtitle: None,
         }
     }
 
