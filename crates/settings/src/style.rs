@@ -146,6 +146,9 @@ pub fn css(t: &Tokens) -> String {
     let accent = css_colour(t.accent);
     let accent_text = css_colour(t.accent_text);
     let shadow = css_colour(t.shadow);
+    // The badge over a lock's picture, in the lock's own colours.
+    let deep = css_colour(t.backdrop_deep);
+    let deep_text = css_colour(t.backdrop_text);
     let bar = css_colour(t.title_bar_focused);
     let bar_text = text.clone();
     // Shades of the text's colour, as the mockups have them: secondary
@@ -322,7 +325,22 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-current {{ padding: 16px; }}
 .edel-current-title {{ font-size: {current}px; font-weight: 600; letter-spacing: -0.3px; }}
 .edel-current-button {{ min-height: 34px; padding: 0 16px; }}
-.edel-tile-blank {{ background-color: {card}; color: {muted}; border: 1px solid {line}; border-radius: {rs}px; }}
+.edel-in-use {{ background-color: {accent}; color: {accent_text}; font-size: {tiny}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 9px 2px 7px; box-shadow: 0 1px 2px alpha({accent}, 0.35); }}
+.edel-built-in {{ background-color: alpha({deep}, 0.55); color: {deep_text}; font-size: {tiny}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 8px 2px 7px; box-shadow: inset 0 0 0 1px alpha({deep_text}, 0.22); }}
+.edel-new-card {{ padding: 7px; border-radius: {rw}px; background: none; background-image: none; box-shadow: none; border: none; }}
+.edel-new-card:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
+.edel-new-look {{ border: 1.5px dashed {line}; border-radius: {rw}px; }}
+.edel-new-card:hover .edel-new-look {{ border-color: alpha({accent}, 0.5); }}
+.edel-new-circle {{ min-width: 36px; min-height: 36px; border-radius: 999px; background-color: alpha({accent}, 0.14); }}
+.edel-new-plus {{ color: {accent}; font-size: {hero}px; font-weight: 300; }}
+.edel-new-hint {{ color: {muted}; font-size: {small}px; }}
+.edel-more {{ min-width: 34px; min-height: 34px; padding: 0; border-radius: 999px; background-image: none;
+  background-color: {card}; border: 1px solid {line}; box-shadow: none; color: {text}; }}
+.edel-menu-item {{ min-height: 26px; padding: 0 10px; border-radius: {rs}px; background: none; background-image: none;
+  box-shadow: none; border: none; color: {text}; font-weight: 400; }}
+.edel-menu-item:hover {{ background-color: {accent}; color: {accent_text}; }}
 "#
     )
 }
