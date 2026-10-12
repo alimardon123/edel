@@ -205,13 +205,17 @@ impl Files {
                 .tiling
                 .or(machine.tiling)
                 .unwrap_or(preset.windows.policy == Policy::Tiling),
-            // Absent, every window has its bar (docs/settings.md).
+            // Absent, the preset's title bars, else every window has its bar
+            // (docs/settings.md, M5.18b).
             title_bars: known("layout.title_bars", title_bars)
+                .or_else(|| preset.windows.title_bars.map(|t| t.name().to_string()))
                 .unwrap_or_else(|| "always".to_string()),
             window_buttons: known("layout.window_buttons", buttons)
                 .unwrap_or_else(|| preset.windows.buttons.name().to_string()),
-            // Absent, tiling stacks (docs/settings.md).
+            // Absent, the preset's style, else tiling stacks (docs/settings.md,
+            // M5.18b).
             tiling_style: known("layout.tiling_style", style)
+                .or_else(|| preset.windows.tiling_style.clone())
                 .unwrap_or_else(|| "stack".to_string()),
             // Absent, every bar shows each button (docs/settings.md).
             close_button: person.close_button.or(machine.close_button).unwrap_or(true),

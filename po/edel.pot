@@ -536,6 +536,9 @@ msgstr ""
 msgid "{command} failed: {said}; the power service (upowerd) starts with the machine, so restart the computer if it is not running"
 msgstr ""
 
+msgid "{style} is not a tiling style; the styles are {styles}"
+msgstr ""
+
 msgid "{command} is not a command the session can start; write a program and its arguments on one line"
 msgstr ""
 
@@ -564,6 +567,9 @@ msgid "Windows-like"
 msgstr ""
 
 msgid "Hive"
+msgstr ""
+
+msgid "Zen"
 msgstr ""
 
 msgid "this release has no preset {name}; the Classic preset is used"
@@ -782,6 +788,9 @@ msgstr ""
 msgid "developer mode and profiles"
 msgstr ""
 
+msgid "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
 msgid "the file is not valid TOML"
 msgstr ""
 
@@ -948,6 +957,9 @@ msgid "{value} is not a channel name; use lowercase letters, digits and hyphens,
 msgstr ""
 
 msgid "a channel name in quotes, such as \"stable\""
+msgstr ""
+
+msgid "a cursor theme's name in quotes, such as \"default\""
 msgstr ""
 
 msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""

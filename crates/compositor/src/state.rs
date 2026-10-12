@@ -546,6 +546,7 @@ impl Edel {
             eprintln!("edel-compositor: {note}");
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
+        self.cursor_settings(new.cursor_theme.as_deref(), new.cursor_size);
         let (bindings, notes) = crate::shortcuts::bind(&new.shortcuts);
         for line in notes
             .iter()
@@ -584,7 +585,8 @@ impl Edel {
             || old.wallpaper != new.wallpaper
             || old.wallpaper_dark != new.wallpaper_dark
             || old.shape != new.shape
-            || old.text != new.text;
+            || old.text != new.text
+            || old.icons != new.icons;
         let mut tokens_changed = false;
         // The title font and its size (M5.12b5), as they were.
         let old_text = (self.tokens.font.clone(), self.tokens.title_text_size);
@@ -666,6 +668,8 @@ impl Edel {
         } else if tokens_changed {
             let why = if old.text != new.text {
                 "the text changed"
+            } else if old.icons != new.icons {
+                "the icons changed"
             } else {
                 "the colours changed"
             };

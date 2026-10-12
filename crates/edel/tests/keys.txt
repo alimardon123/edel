@@ -31,6 +31,7 @@ appearance.mode
 appearance.accent
 appearance.font
 appearance.cursor_size
+appearance.cursor_theme
 appearance.icon_size
 appearance.animations
 appearance.animation_speed

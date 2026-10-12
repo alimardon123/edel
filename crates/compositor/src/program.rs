@@ -45,6 +45,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
     let mut command = Command::new(&name);
     command
         .args(&program.argv[1..])
+        .envs(state.cursors.env())
         .env("WAYLAND_DISPLAY", wayland);
     match &state.x11 {
         Some(x11) => command.env("DISPLAY", format!(":{}", x11.number)),
@@ -109,7 +110,10 @@ pub fn run(state: &Edel, argv: &[String], name: &str) -> bool {
         return false;
     };
     let mut command = Command::new(program);
-    command.args(args).env("WAYLAND_DISPLAY", &state.socket);
+    command
+        .args(args)
+        .envs(state.cursors.env())
+        .env("WAYLAND_DISPLAY", &state.socket);
     if let Some(home) = std::env::var_os("HOME") {
         command.current_dir(home);
     }

@@ -35,6 +35,12 @@
 #               panel's text by half, rounded half up, the title font is
 #               changed to Noto Sans and then to a font this system lacks
 #               (kept), and text default brings the release's back (M5.12b5)
+#   cursor      appearance.cursor_size = 48 and icon_size = 150 through the
+#               machine's file: the compositor logs cursor default at 48 px,
+#               the arrow is drawn at 48 px (black where a 24 px one is not),
+#               shell-ui starts again with its icons at a new count, the
+#               Arabic and Hindi faces are on the image, and cursor default
+#               brings 24 px back (M5.12b5)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -3412,6 +3418,33 @@ case_presets() {
 		fail "the compositor did not restart shell-ui for the Hive preset"
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
 	shot preset-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
+	# Zen (M5.18b): tiling in the split style with no title bars, from the
+	# preset alone, and one slim bar along the top. Every window the test
+	# has open is then tiled with no title bar of its own (the state file's
+	# title_bar is false for each), and there is at least one.
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now zen')
+	top=$(count 'edel-shell-ui: panel edel-panel along the top')
+	guest 'preset zen'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now zen' "$restarts" ||
+		fail "edel settings set layout.preset=zen did not restart shell-ui"
+	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
+		fail "Zen did not bring shell-ui's bar to the top"
+	# Hive tiles too, so no policy switch is logged; the state file says it.
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/zen.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(windows)} windows, title bars {bars}")
+			sys.exit(0 if windows and not any(bars) else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
+		sleep 1
+	done
+	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -3422,7 +3455,7 @@ case_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_taskbar() {
@@ -5170,6 +5203,42 @@ case_text() {
 	echo "PASS: text size 150 drew the title bars at $wanted_title px and shell-ui's panel text at $wanted_panel px (text-150.png), text font Noto Sans took the title font, Nonesuch kept Noto Sans, and text default gave Inter Variable at $title px back"
 }
 
+case_cursor() {
+	# The cursor and the icons (M5.12b5 part A), through the machine's file as
+	# Settings writes it: appearance.cursor_size = 48 and icon_size = 150. The
+	# compositor logs its cursor at 48 px, and draws the arrow at that size
+	# (the release's default theme is the drawn arrow, as the pointer case
+	# logs). shell-ui starts again with a new `icons at` count: the panel's
+	# icon is 30 px at 150 percent, capped at 26 px under its 30 px button.
+	# The pointer's tip is at 100,700, and the arrow's body reaches 20 px
+	# below the tip at 24 px, so 106,723, 23 px below it, is black only at 48
+	# px: the arrow's point there is inside the body, 1.8 units from its
+	# outline, clear of the white edge. CI's session draws the cursor in
+	# software (EDEL_SOFTWARE_CURSOR=1), so the screendump holds it.
+	icons=$(count 'edel-shell-ui: icons at')
+	guest 'cursor big'
+	wait_for 'edel-compositor: cursor default at 48 px' ||
+		fail "the compositor did not take appearance.cursor_size = 48: $(count 'edel-compositor: cursor')"
+	wait_more 'edel-shell-ui: icons at' "$icons" ||
+		fail "shell-ui did not start again with the icons at 150 percent: $(count 'edel-shell-ui: icons at') icons lines"
+	python3 ci/qmp.py move 100 700
+	shot cursor-big 106 723 000000 >/dev/null ||
+		fail "no 48 px cursor at 100,700: 106,723 is not black, so the arrow does not reach past the 24 px one"
+	guest 'cursor default'
+	wait_for 'edel-compositor: cursor default at 24 px' ||
+		fail "cursor default did not bring the release's 24 px cursor back: $(count 'edel-compositor: cursor')"
+	# The Arabic and Hindi faces (M5.12b5 part A): fontconfig names a family
+	# for each script, so the image has a face to draw them with.
+	guest 'fonts scripts'
+	wait_for 'DESKTOP-TEST: fonts_hi ' ||
+		fail "fonts scripts did not run in the VM"
+	ar=$(value fonts_ar)
+	hi=$(value fonts_hi)
+	[ -n "$ar" ] || fail "the image has no font for Arabic"
+	[ -n "$hi" ] || fail "the image has no font for Hindi"
+	echo "PASS: cursor size 48 drew the arrow past the 24 px one at 106,723 (cursor-big.png) and logged cursor default at 48 px, the icons started again at 150 percent, cursor default gave 24 px back, and the image has fonts for Arabic ($ar) and Hindi ($hi)"
+}
+
 case_styles() {
 	# Tiling styles (M5.16a): layout.tiling_style = "split" changes how
 	# tiling lays windows out and leaves a floating workspace floating. On
@@ -5781,7 +5850,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

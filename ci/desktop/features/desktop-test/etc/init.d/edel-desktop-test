@@ -191,12 +191,25 @@ commands() {
 		'text size '*) edel settings set "appearance.text_size=${command#text size }" ;;
 		'text font '*) edel settings set "appearance.font=${command#text font }" ;;
 		'text default') edel settings reset appearance.font appearance.text_size ;;
+		# The cursor and the icons (M5.12b5 part A): a 48 px cursor and icons
+		# at 150 percent, through the machine's file, and back.
+		'cursor big') edel settings set appearance.cursor_size=48 appearance.icon_size=150 ;;
+		'cursor default') edel settings reset appearance.cursor_size appearance.icon_size ;;
+		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
+		# part A), said back as values.
+		'fonts scripts')
+			say "fonts_ar $(fc-list :lang=ar family | head -n 1)"
+			say "fonts_hi $(fc-list :lang=hi family | head -n 1)"
+			;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# layout.tiling, left false by the tiling case, would win over
 		# Hive's policy, so it goes first.
 		'preset hive') edel settings reset layout.tiling && edel settings set layout.preset=hive ;;
 		'preset windows-like') edel settings set layout.preset=windows-like ;;
 		'preset mac-like') edel settings set layout.preset=mac-like ;;
+		# Zen (M5.18b): tiling in the split style with no title bars, from the
+		# preset alone; the case unsets the key again with preset default.
+		'preset zen') edel settings set layout.preset=zen ;;
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'panels.list=[{ edge = "bottom", end = ["clock"] }]' ;;

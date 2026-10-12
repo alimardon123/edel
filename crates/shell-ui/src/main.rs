@@ -767,6 +767,9 @@ fn load_tokens(scheme: Scheme) -> Tokens {
         "edel-shell-ui: text {} at {} px",
         tokens.font, tokens.panel_text_size
     );
+    // The icons the panel draws with (M5.12b5 part A): the compositor starts
+    // shell-ui again when the icon size changes, so each start says it.
+    eprintln!("edel-shell-ui: icons at {} px", tokens.panel_icon);
     tokens
 }
 
@@ -1656,8 +1659,8 @@ impl Shell {
         let Some(&style) = styles::styles().get(row) else {
             return;
         };
-        let (machine, _) = settings_texts();
-        let without = styles::in_use(machine.as_deref(), None);
+        let (machine, person) = settings_texts();
+        let without = styles::in_use_without_key(machine.as_deref(), person.as_deref());
         let value = (row != without).then_some(style);
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, styles::KEY, value) {

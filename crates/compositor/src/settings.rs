@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+pub use edel::presets::TitleBars;
 use edel::presets::{self, Side};
 use edel::settings::{self, SettingsFile};
 pub use edel::tokens::Scheme;
@@ -18,14 +19,6 @@ use crate::animation::{Curve, Motion};
 use crate::frame::Shown;
 use crate::tiling::Style;
 
-/// Whether the compositor draws title bars in tiling too.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TitleBars {
-    #[default]
-    Always,
-    FloatingOnly,
-}
-
 /// The settings the compositor follows, all live.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Settings {
@@ -33,7 +26,10 @@ pub struct Settings {
     pub tiling: Option<bool>,
     /// `layout.preset`: absent means Classic.
     pub preset: Option<String>,
-    /// `layout.title_bars`: absent means always.
+    /// `layout.title_bars` as the files and the preset give it (M5.18b):
+    /// the person's over the machine's, else the preset's, else always.
+    /// Resolved by [`Settings::from_files`], so a window's frame reads it
+    /// without parsing a preset.
     pub title_bars: TitleBars,
     /// `layout.window_buttons` (M5.4b): absent means the preset's side.
     pub window_buttons: Option<Side>,
@@ -64,7 +60,9 @@ pub struct Settings {
     /// `region.language` (M5.24a): shell-ui reads its words in it, and
     /// the compositor only restarts it when it changes.
     pub language: Option<String>,
-    /// `layout.tiling_style` (M5.16a): absent means stack.
+    /// `layout.tiling_style` as the files and the preset give it (M5.16a,
+    /// M5.18b): the person's over the machine's, else the preset's, else
+    /// stack. Resolved by [`Settings::from_files`].
     pub tiling_style: Style,
     /// `workspaces.count` (M5.2i): absent means the preset's count.
     pub workspace_count: Option<usize>,
@@ -108,6 +106,22 @@ pub struct Settings {
     /// `text_size`), the person's over the machine's; the tokens follow them
     /// too, and the title bars' font is loaded again when they change.
     pub text: edel::tokens::Text,
+    /// `appearance.cursor_size` (M5.12b5 part A), logical pixels; absent is
+    /// the release's 24. The pointer follows it live.
+    pub cursor_size: Option<u32>,
+    /// `appearance.cursor_theme` (M5.12b5 part A), the person's over the
+    /// machine's; absent is the release's `default`.
+    pub cursor_theme: Option<String>,
+    /// The icon scale (M5.12b5 part A); the tokens read it, and a change
+    /// starts shell-ui again with them.
+    pub icons: edel::tokens::IconSize,
+}
+
+/// Whether `value` is in the key table's range for `key` (M5.12b5 part A); a
+/// value outside it is read as absent.
+fn in_range(key: &str, value: u32) -> bool {
+    edel::settings::whole_range(key)
+        .is_some_and(|(least, most)| (least..=most).contains(&i64::from(value)))
 }
 
 /// Whether `speed` is in the key table's range for `appearance.animation_speed`
@@ -142,8 +156,12 @@ impl Settings {
         let mut settings = Settings {
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),
+            icons: edel::tokens::IconSize::between(machine, person),
             ..Settings::default()
         };
+        // The keys the files set, before the preset fills in the rest.
+        let mut title_bars = None;
+        let mut tiling_style = None;
         for file in [machine, person].into_iter().flatten() {
             if file.layout.tiling.is_some() {
                 settings.tiling = file.layout.tiling;
@@ -151,10 +169,8 @@ impl Settings {
             if file.layout.preset.is_some() {
                 settings.preset.clone_from(&file.layout.preset);
             }
-            match file.layout.title_bars.as_deref() {
-                Some("always") => settings.title_bars = TitleBars::Always,
-                Some("floating-only") => settings.title_bars = TitleBars::FloatingOnly,
-                _ => {}
+            if let Some(bars) = file.layout.title_bars.as_deref().and_then(TitleBars::parse) {
+                title_bars = Some(bars);
             }
             if let Some(side) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
                 settings.window_buttons = Some(side);
@@ -172,7 +188,7 @@ impl Settings {
                 settings.panels.clone_from(&file.panels.list);
             }
             if let Some(style) = file.layout.tiling_style.as_deref().and_then(Style::parse) {
-                settings.tiling_style = style;
+                tiling_style = Some(style);
             }
             if let Some(count) = file.workspaces.count {
                 settings.workspace_count = usize::try_from(count).ok();
@@ -210,6 +226,21 @@ impl Settings {
                 .and_then(Motion::parse)
             {
                 settings.motion = motion;
+            }
+            if let Some(size) = file
+                .appearance
+                .cursor_size
+                .filter(|s| in_range(edel::settings::CURSOR_SIZE, *s))
+            {
+                settings.cursor_size = Some(size);
+            }
+            if let Some(theme) = file
+                .appearance
+                .cursor_theme
+                .as_deref()
+                .filter(|t| !t.is_empty() && !t.contains('/'))
+            {
+                settings.cursor_theme = Some(theme.to_string());
             }
             if let Some(speed) = file
                 .appearance
@@ -269,6 +300,19 @@ impl Settings {
                 }
             }
         }
+        // One rule for both: the files, then the preset the files name, then
+        // the release (M5.18b).
+        let preset = presets::named(settings.preset.as_deref()).0;
+        settings.title_bars = title_bars.or(preset.windows.title_bars).unwrap_or_default();
+        settings.tiling_style = tiling_style
+            .or_else(|| {
+                preset
+                    .windows
+                    .tiling_style
+                    .as_deref()
+                    .and_then(Style::parse)
+            })
+            .unwrap_or_default();
         settings
     }
 
@@ -359,9 +403,17 @@ impl Settings {
         }
     }
 
-    /// Whether windows under `policy` get the compositor's title bars.
+    /// Whether windows under `policy` get the compositor's title bars
+    /// (M5.18b): always, in both policies; floating only, in floating
+    /// alone; never, in neither. This is the one place that decides it:
+    /// a window's frame and its border's top follow it, and a window that
+    /// asks for our decorations gets none without it.
     pub fn bars_in(&self, policy: &str) -> bool {
-        self.title_bars == TitleBars::Always || policy == "floating"
+        match self.title_bars {
+            TitleBars::Always => true,
+            TitleBars::FloatingOnly => policy == "floating",
+            TitleBars::Never => false,
+        }
     }
 }
 
@@ -728,6 +780,89 @@ mod tests {
     }
 
     #[test]
+    fn the_title_bars_are_the_persons_then_the_machines_then_the_presets_then_always() {
+        // M5.18b: one rule, set in from_files. A key a file sets wins, the
+        // preset the files name comes next, and always is the release's.
+        let bars = |machine: Option<&str>, person: Option<&str>| {
+            let machine = machine.map(file);
+            let person = person.map(file);
+            Settings::from_files(machine.as_ref(), person.as_ref()).title_bars
+        };
+        assert_eq!(bars(None, None), TitleBars::Always);
+        assert_eq!(
+            bars(Some("format = 1\n[layout]\npreset = \"zen\"\n"), None),
+            TitleBars::Never,
+            "Zen has none"
+        );
+        let zen = "format = 1\n[layout]\npreset = \"zen\"\n";
+        let floating = "format = 1\n[layout]\ntitle_bars = \"floating-only\"\n";
+        assert_eq!(
+            bars(
+                Some(&format!("{zen}title_bars = \"floating-only\"\n")),
+                None
+            ),
+            TitleBars::FloatingOnly,
+            "the file's key wins over Zen's"
+        );
+        assert_eq!(bars(Some(zen), Some(floating)), TitleBars::FloatingOnly);
+        assert_eq!(
+            bars(Some(floating), Some(zen)),
+            TitleBars::FloatingOnly,
+            "the machine's key is set, so the person's Zen does not take it"
+        );
+        assert_eq!(
+            bars(
+                Some(zen),
+                Some("format = 1\n[layout]\npreset = \"classic\"\ntitle_bars = \"always\"\n")
+            ),
+            TitleBars::Always,
+            "the person's always wins over the machine's Zen"
+        );
+        assert_eq!(
+            bars(
+                Some(zen),
+                Some("format = 1\n[layout]\npreset = \"classic\"\n")
+            ),
+            TitleBars::Always,
+            "the person's preset is Classic, which has bars"
+        );
+        // Which windows get bars, per value and per policy.
+        for (value, floating_bars, tiling_bars) in [
+            (TitleBars::Always, true, true),
+            (TitleBars::FloatingOnly, true, false),
+            (TitleBars::Never, false, false),
+        ] {
+            let settings = Settings {
+                title_bars: value,
+                ..Settings::default()
+            };
+            assert_eq!(settings.bars_in("floating"), floating_bars, "{value:?}");
+            assert_eq!(settings.bars_in("tiling"), tiling_bars, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn zen_tiles_in_the_split_style_unless_the_files_say_otherwise() {
+        let zen = file("format = 1\n[layout]\npreset = \"zen\"\n");
+        let settings = Settings::from_files(None, Some(&zen));
+        assert_eq!(settings.policy(), "tiling");
+        assert_eq!(settings.tiling_style, Style::Split);
+        assert_eq!(settings.session_start(), edel::presets::SESSION_START);
+        let stack = file("format = 1\n[layout]\npreset = \"zen\"\ntiling_style = \"stack\"\n");
+        assert_eq!(
+            Settings::from_files(None, Some(&stack)).tiling_style,
+            Style::Stack,
+            "the person's style wins over Zen's"
+        );
+        let hive = file("format = 1\n[layout]\npreset = \"hive\"\n");
+        assert_eq!(
+            Settings::from_files(None, Some(&hive)).tiling_style,
+            Style::Stack,
+            "Hive names no style"
+        );
+    }
+
+    #[test]
     fn a_missing_or_broken_file_is_the_defaults_with_a_note() {
         let dir = std::env::temp_dir().join(format!("edel-settings-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -736,7 +871,7 @@ mod tests {
         let odd = dir.join("odd.toml");
         std::fs::write(
             &odd,
-            "format = 1\n[layout]\ntiling = \"yes\"\ntitle_bars = \"never\"\n",
+            "format = 1\n[layout]\ntiling = \"yes\"\ntitle_bars = \"sometimes\"\n",
         )
         .unwrap();
         let (settings, notes) = load(&dir.join("missing.toml"), Some(&broken));
