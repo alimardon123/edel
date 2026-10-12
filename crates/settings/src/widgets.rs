@@ -420,11 +420,12 @@ pub fn big_button(label: &str, main: bool) -> gtk::Button {
 /// below, which wrap on a narrow window.
 pub struct Hero {
     card: gtk::Box,
+    badge: gtk::Box,
     icon: gtk::Image,
     spinner: gtk::Spinner,
     title: gtk::Label,
     sub: gtk::Label,
-    buttons: gtk::FlowBox,
+    buttons: gtk::Box,
 }
 
 /// The card a hero and About's name sit on, appended to `content`.
@@ -493,53 +494,63 @@ fn add_to_flow(flow: &gtk::FlowBox, button: &gtk::Button) {
     flow.append(button);
 }
 
-/// The hero's icon, in logical pixels.
-const HERO_ICON: i32 = 52;
+/// The hero's badge, in logical pixels, and the icon in it.
+const HERO_BADGE: i32 = 64;
+const HERO_ICON: i32 = 28;
 
 impl Hero {
-    /// Appends an empty hero to `content`.
+    /// Appends an empty hero to `content`, as the board draws it: the icon
+    /// in a round badge, the headline and the line under it, centred, and
+    /// the buttons under those.
     pub fn new(content: &gtk::Box) -> Hero {
         let icon = icon::image("status-ok", HERO_ICON);
         icon.add_css_class("edel-hero-icon");
+        icon.set_hexpand(true);
+        icon.set_halign(gtk::Align::Center);
+        icon.set_valign(gtk::Align::Center);
         let spinner = gtk::Spinner::builder()
             .width_request(HERO_ICON)
             .height_request(HERO_ICON)
             .visible(false)
+            .hexpand(true)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Center)
             .css_classes(["edel-hero-icon"])
             .build();
-        let mark = gtk::Box::builder()
-            .valign(gtk::Align::Start)
-            .width_request(HERO_ICON)
+        let badge = gtk::Box::builder()
+            .width_request(HERO_BADGE)
+            .height_request(HERO_BADGE)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Center)
+            .css_classes(["edel-hero-badge", "edel-tone-accent"])
             .build();
-        mark.append(&icon);
-        mark.append(&spinner);
+        badge.append(&icon);
+        badge.append(&spinner);
         let title = gtk::Label::builder()
-            .xalign(0.0)
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
             .wrap(true)
             .css_classes(["edel-hero-title"])
             .build();
         let sub = gtk::Label::builder()
-            .xalign(0.0)
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
             .wrap(true)
             .css_classes(["edel-hero-sub"])
             .build();
-        let words = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(4)
-            .hexpand(true)
-            .valign(gtk::Align::Center)
+        let buttons = gtk::Box::builder()
+            .halign(gtk::Align::Center)
+            .margin_top(22)
             .build();
-        words.append(&title);
-        words.append(&sub);
-        let head = gtk::Box::builder().spacing(18).build();
-        head.append(&mark);
-        head.append(&words);
-        let buttons = button_flow();
         let card = hero_card(content);
-        card.append(&head);
+        card.set_spacing(10);
+        card.append(&badge);
+        card.append(&title);
+        card.append(&sub);
         card.append(&buttons);
         Hero {
             card,
+            badge,
             icon,
             spinner,
             title,
@@ -548,37 +559,60 @@ impl Hero {
         }
     }
 
-    /// Adds a big button after the others.
+    /// Adds a button under the line, after the others.
     pub fn add(&self, button: &gtk::Button) {
-        add_to_flow(&self.buttons, button);
-    }
-
-    /// Shows or hides `button`, with the place the card holds for it.
-    pub fn show_button(&self, button: &gtk::Button, shown: bool) {
-        if let Some(place) = button.parent() {
-            place.set_visible(shown);
-        }
-        button.set_visible(shown);
+        self.buttons.append(button);
     }
 
     /// Shows `icon` (or a spinner when `busy`), the headline and the line
-    /// under it; `problem` reads in the problem colour.
+    /// under it. The badge takes the colour of what the icon says: green
+    /// when it is ok, the accent for a new version or a sync, amber for a
+    /// restart and red for a problem.
     pub fn show(&self, icon_name: &str, busy: bool, problem: bool, title: &str, sub: &str) {
+        // Inside the round badge an ok is the bare check, as the board
+        // draws it; the status icons' own circle would be a ring in a ring.
+        let shown = if icon_name == "status-ok" {
+            "check"
+        } else {
+            icon_name
+        };
         self.icon
-            .set_paintable(Some(&icon::Icon::new(icon_name, HERO_ICON)));
+            .set_paintable(Some(&icon::Icon::new(shown, HERO_ICON)));
         self.icon.set_visible(!busy);
         self.spinner.set_visible(busy);
         self.spinner.set_spinning(busy);
         self.title.set_label(title);
         self.sub.set_label(sub);
-        if problem {
-            self.icon.add_css_class("edel-problem");
+        let tone = if problem {
+            "edel-tone-problem"
         } else {
-            self.icon.remove_css_class("edel-problem");
+            match icon_name {
+                "status-ok" => "edel-tone-ok",
+                "status-restart" => "edel-tone-restart",
+                _ => "edel-tone-accent",
+            }
+        };
+        for class in [
+            "edel-tone-ok",
+            "edel-tone-accent",
+            "edel-tone-restart",
+            "edel-tone-problem",
+        ] {
+            self.badge.remove_css_class(class);
         }
+        self.badge.add_css_class(tone);
         self.card
             .update_property(&[gtk::accessible::Property::Label(title)]);
     }
+}
+
+/// The primary button of a page's hero: an accent pill, as the board
+/// draws Check for updates.
+pub fn hero_button(label: &str) -> gtk::Button {
+    gtk::Button::builder()
+        .label(label)
+        .css_classes(["edel-hero-button"])
+        .build()
 }
 
 /// A fold-out in `content` that starts closed, for what only some people

@@ -1,16 +1,18 @@
-//! The Updates page (roadmap M5.8c, made plain and familiar in M5.8d, at
-//! Alimardon's ask of 2026-10-08): what a person expects of an updates
-//! page, in the order they expect it. A card at the top says in one
-//! headline whether Edel OS is up to date, an update waits, a restart is
-//! due or something failed (`status.rs` decides, from what `edel status`
-//! and `edel update --check` print), with big buttons under it:
-//! Check for updates, then Update now, then Restart now, and Go back to
-//! the version before. A card of What's new follows a check that found a
-//! newer version; a small Update settings section holds the channel
-//! (`updates.channel`, one line of the person's settings file like any
-//! other row, with Reset and Copy as command); and Details, closed, hold
-//! what technical people want: the two slots and the raw output of the
-//! last command. Only there does the word slot appear.
+//! The Updates page (roadmap M5.8c, made plain and familiar in M5.8d, and
+//! drawn as the approved board of 2026-10-11, M5.32): what a person expects
+//! of an updates page, in the order they expect it. A card at the top says
+//! in one headline whether Edel OS is up to date, an update waits, a restart
+//! is due or something failed (`status.rs` decides, from what `edel status`
+//! and `edel update --check` print), with one primary button under it: Check
+//! for updates, then Update now, then Restart now. A card under it keeps the
+//! version before ready, with Roll back, shown only when there is one. What's
+//! new is one card that follows a check which found a newer version. The
+//! Channel row has a card of its own: Stable and Preview as segments, or a
+//! choice for another channel name (`updates.channel`, one line of the
+//! person's settings file like any other row, with Reset and Copy as
+//! command). Details, closed, hold what technical people want: the two
+//! slots and the raw output of the last command. Only there does the word
+//! slot appear.
 //!
 //! The page runs nothing in the background: `edel status` is read when
 //! the page is shown and after each action, and every command runs on a
@@ -32,7 +34,7 @@ use edel::settings;
 
 use crate::files::Files;
 use crate::status::{self, Action, Doing, Found, Inputs, Phase, Status};
-use crate::{about, cmd, rows, widgets};
+use crate::{about, cmd, icon, rows, widgets};
 
 /// One line of `edel status`, as a row shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -118,8 +120,8 @@ const CONFIRM: Duration = Duration::from_secs(5);
 /// What the Channel row says under its title.
 fn blurb(channel: &str) -> &'static str {
     match channel {
-        "stable" => tr("Tested releases. Recommended."),
-        "preview" => tr("The newest features first; may have rough edges."),
+        "stable" => tr("Stable gets each release once it has settled"),
+        "preview" => tr("Preview gets each release first; it may have rough edges"),
         _ => tr("A channel this machine was set up to follow."),
     }
 }
@@ -135,8 +137,10 @@ struct State {
 struct Ui {
     hero: widgets::Hero,
     primary: gtk::Button,
+    /// The card under the hero that keeps the version before ready.
+    kept: gtk::Box,
+    kept_title: gtk::Label,
     rollback: gtk::Button,
-    news_head: gtk::Box,
     news: gtk::Box,
     facts: gtk::Box,
     last_group: gtk::Box,
@@ -144,6 +148,7 @@ struct Ui {
     problem: gtk::Label,
     holder: gtk::Box,
     choice: RefCell<Option<Rc<widgets::Choice>>>,
+    segments: RefCell<Option<Rc<widgets::Segments>>>,
     names: RefCell<Vec<String>>,
     channel_row: widgets::Row,
     /// The version running (os-release), read once.
@@ -162,27 +167,81 @@ struct Ui {
     monitors: RefCell<Vec<gio::FileMonitor>>,
 }
 
-const INTRO: &str = n_("Edel OS updates as a whole, and can always go back.");
+const INTRO: &str = n_("Edel OS updates as a whole, and can always roll back.");
 
 pub fn page() -> gtk::Widget {
     let (page, content, problem) = widgets::page(tr("Updates"), tr(INTRO));
 
     let hero = widgets::Hero::new(&content);
-    let primary = widgets::big_button(tr("Check for updates"), true);
-    let rollback = widgets::big_button("", false);
+    let primary = widgets::hero_button(tr("Check for updates"));
     hero.add(&primary);
-    hero.add(&rollback);
-    hero.show_button(&rollback, false);
 
-    // Seam: release notes (a `notes` field in release.toml) are shown here
-    // when releases carry them; today the card holds what the list says.
-    let news_head = widgets::heading(&content, tr("What's new"));
+    // The version before, kept ready to go back to (the board's card under
+    // the hero): its icon, its words and Roll back, shown when there is one.
+    let kept = widgets::group(&content);
+    kept.add_css_class("edel-kept");
+    kept.set_margin_top(12);
+    let kept_words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    let kept_title = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-kept-title"])
+        .build();
+    kept_words.append(&kept_title);
+    kept_words.append(
+        &gtk::Label::builder()
+            .label(tr(
+                "If an update fails to start, Edel OS rolls back to it by itself.",
+            ))
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-row-subtitle"])
+            .build(),
+    );
+    let kept_row = gtk::Box::builder()
+        .spacing(14)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+    let mark = gtk::Box::builder()
+        .width_request(36)
+        .height_request(36)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .hexpand(false)
+        .css_classes(["edel-kept-mark"])
+        .build();
+    let sync = icon::image("status-sync", 18);
+    sync.set_hexpand(true);
+    sync.set_halign(gtk::Align::Center);
+    sync.set_valign(gtk::Align::Center);
+    mark.append(&sync);
+    kept_row.append(&mark);
+    kept_row.append(&kept_words);
+    let rollback = gtk::Button::builder()
+        .css_classes(["edel-kept-button"])
+        .valign(gtk::Align::Center)
+        .build();
+    kept_row.append(&rollback);
+    kept.append(&kept_row);
+    kept.set_visible(false);
+
+    // What's new: one card, its title the version and its rows plain lines.
     let news = widgets::group(&content);
-    news_head.set_visible(false);
+    news.set_margin_top(12);
     news.set_visible(false);
 
-    widgets::heading(&content, tr("Update settings"));
+    // The Channel row in a card of its own, with its blurb under the title
+    // and the choice at its end.
     let group = widgets::group(&content);
+    group.set_margin_top(12);
     let holder = gtk::Box::builder().build();
     let channel_row = widgets::row(&group, rows::title("updates.channel"), holder.upcast_ref());
     // The automatic updates row (`updates.automatic` and
@@ -203,8 +262,9 @@ pub fn page() -> gtk::Widget {
     let ui = Rc::new(Ui {
         hero,
         primary,
+        kept,
+        kept_title,
         rollback,
-        news_head,
         news,
         facts,
         last_group,
@@ -212,6 +272,7 @@ pub fn page() -> gtk::Widget {
         problem,
         holder,
         choice: RefCell::new(None),
+        segments: RefCell::new(None),
         names: RefCell::new(Vec::new()),
         channel_row,
         version: about::os_release_field("VERSION_ID"),
@@ -275,40 +336,44 @@ impl Ui {
             while let Some(child) = self.holder.first_child() {
                 self.holder.remove(&child);
             }
-            let labels = names.iter().map(|n| rows::label(n)).collect();
-            let choice = widgets::Choice::new(labels);
-            let weak = Rc::downgrade(self);
-            let picked = Rc::downgrade(&choice);
-            choice.connect_changed(move || {
-                let (Some(ui), Some(choice)) = (weak.upgrade(), picked.upgrade()) else {
-                    return;
-                };
-                if ui.quiet.get() {
-                    return;
-                }
-                let name = ui.names.borrow().get(choice.selected()).cloned();
-                if let Some(name) = name {
-                    ui.report(
-                        Files::here().choose_over(
-                            "updates.channel",
-                            &name,
-                            Some(
-                                image_channel()
-                                    .as_deref()
-                                    .unwrap_or(settings::DEFAULT_CHANNEL),
-                            ),
-                        ),
-                    );
-                }
-                ui.update();
-            });
-            self.holder.append(&choice.widget());
-            *self.choice.borrow_mut() = Some(choice);
+            *self.choice.borrow_mut() = None;
+            *self.segments.borrow_mut() = None;
+            let labels: Vec<String> = names.iter().map(|n| rows::label(n)).collect();
+            // Stable and Preview are two segments that a click picks; any
+            // other channel name is a choice with its list.
+            if names == ["stable", "preview"] {
+                let segments = widgets::Segments::new(&labels);
+                let weak = Rc::downgrade(self);
+                let picked = Rc::downgrade(&segments);
+                segments.connect_changed(move || {
+                    let (Some(ui), Some(segments)) = (weak.upgrade(), picked.upgrade()) else {
+                        return;
+                    };
+                    ui.pick(segments.selected());
+                });
+                self.holder.append(&segments.widget());
+                *self.segments.borrow_mut() = Some(segments);
+            } else {
+                let choice = widgets::Choice::new(labels);
+                let weak = Rc::downgrade(self);
+                let picked = Rc::downgrade(&choice);
+                choice.connect_changed(move || {
+                    let (Some(ui), Some(choice)) = (weak.upgrade(), picked.upgrade()) else {
+                        return;
+                    };
+                    ui.pick(choice.selected());
+                });
+                self.holder.append(&choice.widget());
+                *self.choice.borrow_mut() = Some(choice);
+            }
             *self.names.borrow_mut() = names.clone();
         }
+        let at = names.iter().position(|n| *n == current).unwrap_or(0);
         if let Some(choice) = self.choice.borrow().as_ref() {
-            let at = names.iter().position(|n| *n == current).unwrap_or(0);
             choice.set_selected(at);
+        }
+        if let Some(segments) = self.segments.borrow().as_ref() {
+            segments.set_selected(at);
         }
         self.quiet.set(false);
         let source = files.source("updates.channel");
@@ -326,6 +391,29 @@ impl Ui {
         if changed {
             self.render();
         }
+    }
+
+    /// A person chose channel `at`: writes `updates.channel` as the choice
+    /// always has (`choose_over`, so the image's own channel is not written).
+    fn pick(self: &Rc<Self>, at: usize) {
+        if self.quiet.get() {
+            return;
+        }
+        let name = self.names.borrow().get(at).cloned();
+        if let Some(name) = name {
+            self.report(
+                Files::here().choose_over(
+                    "updates.channel",
+                    &name,
+                    Some(
+                        image_channel()
+                            .as_deref()
+                            .unwrap_or(settings::DEFAULT_CHANNEL),
+                    ),
+                ),
+            );
+        }
+        self.update();
     }
 
     /// Shows a refusal in the page's problem line, or clears it.
@@ -367,45 +455,58 @@ impl Ui {
             .set_tooltip_text(Some(&trf("Runs {command}", &[("command", &command)])));
         match &view.rollback {
             Some(version) => {
+                self.kept_title
+                    .set_label(&trf("{version} is kept ready", &[("version", version)]));
                 let label = if self.armed.get() {
-                    trf(
-                        "Click again to go back to {version}",
-                        &[("version", version)],
-                    )
+                    tr("Click again to roll back")
                 } else {
-                    trf("Go back to {version}", &[("version", version)])
+                    tr("Roll back…")
                 };
-                self.rollback.set_label(&label);
+                self.rollback.set_label(label);
                 self.rollback.set_sensitive(!view.busy);
                 self.rollback.set_tooltip_text(Some(&trf(
                     "Runs {command}",
                     &[("command", &cmd::line(&["rollback"]))],
                 )));
-                self.hero.show_button(&self.rollback, true);
+                self.kept.set_visible(true);
             }
             None => {
                 self.armed.set(false);
-                self.hero.show_button(&self.rollback, false);
+                self.kept.set_visible(false);
             }
         }
         self.show_news(view.news.as_ref());
     }
 
-    /// What's new: the version a check found, when it was made and its size.
+    /// What's new: one card titled with the version a check found, and
+    /// its release date and size as plain dim lines.
     fn show_news(&self, found: Option<&Found>) {
         while let Some(child) = self.news.first_child() {
             self.news.remove(&child);
         }
-        self.news_head.set_visible(found.is_some());
         self.news.set_visible(found.is_some());
         let Some(found) = found else { return };
-        widgets::value_row(&self.news, tr("Version"), &found.version);
+        let body = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .css_classes(["edel-news"])
+            .build();
+        body.append(
+            &gtk::Label::builder()
+                .label(trf("New in {version}", &[("version", &found.version)]))
+                .xalign(0.0)
+                .wrap(true)
+                .css_classes(["edel-news-title"])
+                .build(),
+        );
         if let Some(date) = &found.released {
-            widgets::value_row(&self.news, tr("Released"), date);
+            body.append(&news_line(&trf("Released {date}", &[("date", date)])));
         }
         if let Some(size) = found.size {
-            widgets::value_row(&self.news, tr("Size"), &rows::bytes_text(size));
+            let size = rows::bytes_text(size);
+            body.append(&news_line(&trf("Size {size}", &[("size", &size)])));
         }
+        self.news.append(&body);
     }
 
     fn set_phase(&self, phase: Phase) {
@@ -589,6 +690,16 @@ impl Ui {
             }
         });
     }
+}
+
+/// One plain dim line of What's new.
+fn news_line(text: &str) -> gtk::Label {
+    gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-row-subtitle"])
+        .build()
 }
 
 /// The phase after a command failed, with what it said.
