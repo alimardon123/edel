@@ -23,7 +23,7 @@ use edel::i18n::{n_, tr};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{colours, motion, panels, preview, rows, shape, text, themes, tray, workspaces};
+use crate::{colours, depth, motion, panels, preview, rows, shape, text, themes, tray, workspaces};
 
 const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
@@ -159,6 +159,9 @@ struct Ui {
     /// The Appearance page's Text group, which follows the files too
     /// (M5.12b5).
     text: Option<Rc<text::Group>>,
+    /// The Appearance page's Depth group, which follows the files too
+    /// (M5.12b3).
+    depth: Option<Rc<depth::Group>>,
     /// The Appearance page's Motion group, which follows the files too
     /// (M5.12b4).
     motion: Option<Rc<motion::Group>>,
@@ -213,6 +216,9 @@ impl Ui {
         }
         if let Some(text) = &self.text {
             text.show();
+        }
+        if let Some(depth) = &self.depth {
+            depth.show();
         }
         if let Some(motion) = &self.motion {
             motion.show();
@@ -305,6 +311,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut theme_card = None;
     let mut colour_group = None;
     let mut shape_group = None;
+    let mut depth_group = None;
     let mut text_group = None;
     let mut motion_group = None;
     match section {
@@ -469,7 +476,10 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             // border, title bars and panels' opacity, with a picture.
             text_group = Some(text::group(&content, &problem));
             shape_group = Some(shape::group(&content, theme, &problem));
-            // The motion after the shape (M5.12b4): how much, how fast and
+            // The depth after the shape (M5.12b3): how see-through the
+            // windows are and the shadow under them.
+            depth_group = Some(depth::group(&content, &problem));
+            // The motion after the depth (M5.12b4): how much, how fast and
             // with what feel things move.
             motion_group = Some(motion::group(&content, &problem));
             widgets::heading(&content, tr("Workspace switcher"));
@@ -526,6 +536,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         colours: colour_group.clone(),
         shape: shape_group.clone(),
         text: text_group.clone(),
+        depth: depth_group.clone(),
         motion: motion_group.clone(),
     });
     ui.update();

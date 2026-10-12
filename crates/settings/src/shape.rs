@@ -91,7 +91,7 @@ fn now(files: &Files) -> Shown {
 
 /// A settings file read leniently, as the desktop reads it; none when it
 /// is missing or not TOML.
-fn read_file(path: &Path) -> Option<settings::SettingsFile> {
+pub(crate) fn read_file(path: &Path) -> Option<settings::SettingsFile> {
     let text = std::fs::read_to_string(path).ok()?;
     settings::read(&text).ok().map(|read| read.file)
 }
@@ -339,7 +339,7 @@ pub enum Part {
     Line,
 }
 
-/// Where a cell lies in the grid: the row's index in `settings::SHAPE_KEYS`,
+/// Where a cell lies in the grid: the row's index in its group's keys,
 /// its column and grid row, and how many columns it spans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Place {
@@ -350,14 +350,14 @@ pub struct Place {
     pub span: i32,
 }
 
-/// Where every cell of the six rows lies. Wide: one line per row, the title
+/// Where every cell of `rows` rows lies. Wide: one line per row, the title
 /// in column 0, the slider in column 1 (`SLIDER` px), the value in column 2
 /// and the actions in column 3. Narrow: the title and its actions on one
 /// line, and the slider under the title at the full width with the value
 /// at its end.
-pub fn plan(narrow: bool) -> Vec<Place> {
+pub fn plan(narrow: bool, rows: usize) -> Vec<Place> {
     let mut places = Vec::new();
-    for index in 0..settings::SHAPE_KEYS.len() {
+    for index in 0..rows {
         let place = |cell, column, row, span| Place {
             cell,
             index,
@@ -389,7 +389,7 @@ pub fn plan(narrow: bool) -> Vec<Place> {
 }
 
 /// The figures of a value in tabular form, so the values line up.
-fn tabular() -> pango::AttrList {
+pub(crate) fn tabular() -> pango::AttrList {
     let attrs = pango::AttrList::new();
     attrs.insert(pango::AttrFontFeatures::new("tnum=1"));
     attrs
@@ -397,20 +397,96 @@ fn tabular() -> pango::AttrList {
 
 /// One slider: its scale, its value at the end, its row, the parts of the
 /// row the grid places, and the write it waits for while a drag goes on.
-struct Slider {
-    scale: gtk::Scale,
-    words: gtk::Label,
-    row: widgets::Row,
+pub(crate) struct Slider {
+    pub(crate) scale: gtk::Scale,
+    pub(crate) words: gtk::Label,
+    pub(crate) row: widgets::Row,
     title: gtk::Box,
     actions: gtk::Box,
     line: gtk::Box,
-    pending: RefCell<Option<glib::SourceId>>,
+    pub(crate) pending: RefCell<Option<glib::SourceId>>,
 }
 
-/// Puts the cells of the six rows in `grid` as `plan(narrow)` places them.
+/// The slider of `key`, over its key's whole range, with its title and the
+/// line under it, its value at the end, and Reset and Copy as command. The
+/// Shape and Depth groups both build their rows this way.
+pub(crate) fn slider(key: &str) -> Slider {
+    let (least, most) = settings::whole_range(key).expect("a slider's key has a whole range");
+    let scale =
+        gtk::Scale::with_range(gtk::Orientation::Horizontal, least as f64, most as f64, 1.0);
+    scale.set_digits(0);
+    scale.set_draw_value(false);
+    scale.set_valign(gtk::Align::Center);
+    let title = rows::title(key);
+    scale.update_property(&[gtk::accessible::Property::Label(title)]);
+    let words = gtk::Label::builder()
+        .width_request(VALUE)
+        .xalign(1.0)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-value"])
+        .build();
+    words.set_attributes(Some(&tabular()));
+
+    let title_label = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-row-title"])
+        .build();
+    let keys = gtk::Box::builder()
+        .spacing(3)
+        .valign(gtk::Align::Center)
+        .visible(false)
+        .build();
+    let heading = gtk::Box::builder().spacing(8).build();
+    heading.append(&title_label);
+    heading.append(&keys);
+    let subtitle = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-row-subtitle"])
+        .build();
+    let title_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    title_box.append(&heading);
+    title_box.append(&subtitle);
+
+    let widgets::Source { reset, copy, .. } = widgets::source();
+    let actions = gtk::Box::builder()
+        .spacing(4)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-shape-actions"])
+        .build();
+    actions.append(&reset);
+    actions.append(&copy);
+    let line = gtk::Box::builder()
+        .hexpand(true)
+        .css_classes(["edel-shape-line"])
+        .build();
+    Slider {
+        scale,
+        words,
+        row: widgets::Row {
+            subtitle,
+            keys,
+            reset,
+            copy,
+        },
+        title: title_box,
+        actions,
+        line,
+        pending: RefCell::new(None),
+    }
+}
+
+/// Puts the cells of the six rows in `grid` as `plan(narrow, settings::SHAPE_KEYS.len())` places them.
 /// The grid is emptied first, so it is laid out again at each breakpoint
 /// without any cell being built again.
-fn lay_out(grid: &gtk::Grid, sliders: &[Slider], narrow: bool) {
+pub(crate) fn lay_out(grid: &gtk::Grid, sliders: &[Slider], narrow: bool) {
     while let Some(child) = grid.first_child() {
         grid.remove(&child);
     }
@@ -420,7 +496,7 @@ fn lay_out(grid: &gtk::Grid, sliders: &[Slider], narrow: bool) {
             .scale
             .set_size_request(if narrow { -1 } else { SLIDER }, -1);
     }
-    for place in plan(narrow) {
+    for place in plan(narrow, sliders.len()) {
         let slider = &sliders[place.index];
         let widget: gtk::Widget = match place.cell {
             Part::Title => slider.title.clone().upcast(),
@@ -451,7 +527,7 @@ fn lay_out(grid: &gtk::Grid, sliders: &[Slider], narrow: bool) {
 
 /// Shows a row's Copy as command while the pointer is over any of its
 /// title, slider or value, as `widgets::row` does for the other rows.
-fn reveal_copy(slider: &Slider) {
+pub(crate) fn reveal_copy(slider: &Slider) {
     let cells: [gtk::Widget; 3] = [
         slider.title.clone().upcast(),
         slider.scale.clone().upcast(),
@@ -660,79 +736,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
     picture_row.set_can_target(false);
     card.append(&picture_row);
 
-    let mut sliders = Vec::new();
-    for key in settings::SHAPE_KEYS {
-        let (least, most) = settings::whole_range(key).expect("a shape key has a whole range");
-        let scale =
-            gtk::Scale::with_range(gtk::Orientation::Horizontal, least as f64, most as f64, 1.0);
-        scale.set_digits(0);
-        scale.set_draw_value(false);
-        scale.set_valign(gtk::Align::Center);
-        let title = rows::title(key);
-        scale.update_property(&[gtk::accessible::Property::Label(title)]);
-        let words = gtk::Label::builder()
-            .width_request(VALUE)
-            .xalign(1.0)
-            .valign(gtk::Align::Center)
-            .css_classes(["edel-value"])
-            .build();
-        words.set_attributes(Some(&tabular()));
-
-        let title_label = gtk::Label::builder()
-            .label(title)
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["edel-row-title"])
-            .build();
-        let keys = gtk::Box::builder()
-            .spacing(3)
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let heading = gtk::Box::builder().spacing(8).build();
-        heading.append(&title_label);
-        heading.append(&keys);
-        let subtitle = gtk::Label::builder()
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["edel-row-subtitle"])
-            .build();
-        let title_box = gtk::Box::builder()
-            .orientation(gtk::Orientation::Vertical)
-            .spacing(2)
-            .hexpand(true)
-            .valign(gtk::Align::Center)
-            .build();
-        title_box.append(&heading);
-        title_box.append(&subtitle);
-
-        let widgets::Source { reset, copy, .. } = widgets::source();
-        let actions = gtk::Box::builder()
-            .spacing(4)
-            .valign(gtk::Align::Center)
-            .css_classes(["edel-shape-actions"])
-            .build();
-        actions.append(&reset);
-        actions.append(&copy);
-        let line = gtk::Box::builder()
-            .hexpand(true)
-            .css_classes(["edel-shape-line"])
-            .build();
-        sliders.push(Slider {
-            scale,
-            words,
-            row: widgets::Row {
-                subtitle,
-                keys,
-                reset,
-                copy,
-            },
-            title: title_box,
-            actions,
-            line,
-            pending: RefCell::new(None),
-        });
-    }
+    let sliders: Vec<Slider> = settings::SHAPE_KEYS.iter().map(|key| slider(key)).collect();
     let sliders = Rc::new(sliders);
 
     let grid = gtk::Grid::builder()
@@ -760,7 +764,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         quiet: Cell::new(false),
     });
     wire(&group);
-    log_places(&card, scales);
+    log_places(&card, "shape", settings::SHAPE_KEYS, scales, None);
     group.show();
     group
 }
@@ -832,11 +836,18 @@ fn wire(group: &Rc<Group>) {
 }
 
 /// Logs where the sliders lie in the window, once the card is laid out, for
-/// CI, as `edel-settings: shape group places radius X+Y+WxH, gaps ...`
-/// (logical pixels). Asked for by one of the keys, the page first scrolls
-/// the group to the top and gives the keyboard to that slider; it logs once
-/// two frames agree.
-fn log_places(card: &gtk::Box, scales: Vec<gtk::Scale>) {
+/// CI, as `edel-settings: NAME group places radius X+Y+WxH, gaps ...`
+/// (logical pixels), with `reset X+Y+WxH` last when a `reset` is given. The
+/// sliders are `keys`' in order. Asked for by one of the keys, the page
+/// first scrolls the group to the top and gives the keyboard to that
+/// slider; it logs once two frames agree.
+pub(crate) fn log_places(
+    card: &gtk::Box,
+    name: &'static str,
+    keys: &'static [&'static str],
+    scales: Vec<gtk::Scale>,
+    reset: Option<gtk::Widget>,
+) {
     let scrolled = Cell::new(false);
     let last = RefCell::new(String::new());
     card.add_tick_callback(move |card, _| {
@@ -847,8 +858,8 @@ fn log_places(card: &gtk::Box, scales: Vec<gtk::Scale>) {
             return glib::ControlFlow::Continue;
         }
         if !scrolled.replace(true) {
-            let asked = widgets::asked_row()
-                .and_then(|row| settings::SHAPE_KEYS.iter().position(|key| *key == row));
+            let asked =
+                widgets::asked_row().and_then(|row| keys.iter().position(|key| *key == row));
             if let Some(index) = asked {
                 widgets::scroll_to_top(card.upcast_ref());
                 let page = std::iter::successors(
@@ -862,7 +873,7 @@ fn log_places(card: &gtk::Box, scales: Vec<gtk::Scale>) {
             }
             return glib::ControlFlow::Continue;
         }
-        let places: Vec<String> = settings::SHAPE_KEYS
+        let mut places: Vec<String> = keys
             .iter()
             .zip(&scales)
             .map(|(key, scale)| {
@@ -870,7 +881,13 @@ fn log_places(card: &gtk::Box, scales: Vec<gtk::Scale>) {
                 format!("{name} {}", widgets::place(scale.compute_bounds(&window)))
             })
             .collect();
-        let line = format!("edel-settings: shape group places {}", places.join(", "));
+        if let Some(reset) = &reset {
+            places.push(format!(
+                "reset {}",
+                widgets::place(reset.compute_bounds(&window))
+            ));
+        }
+        let line = format!("edel-settings: {name} group places {}", places.join(", "));
         // The view settles over a few frames, so the places are logged only
         // once two frames agree.
         if last.replace(line.clone()) != line {
@@ -968,7 +985,7 @@ mod tests {
     #[test]
     fn every_row_has_each_of_its_cells_once() {
         for narrow in [false, true] {
-            let places = plan(narrow);
+            let places = plan(narrow, settings::SHAPE_KEYS.len());
             for index in 0..settings::SHAPE_KEYS.len() {
                 for cell in [Part::Title, Part::Slider, Part::Value, Part::Actions] {
                     let count = places
@@ -983,7 +1000,7 @@ mod tests {
 
     #[test]
     fn the_sliders_start_at_one_x_and_their_values_end_at_one_x_when_wide() {
-        let places = plan(false);
+        let places = plan(false, settings::SHAPE_KEYS.len());
         let columns = |cell| {
             let found: Vec<i32> = places
                 .iter()
@@ -1008,7 +1025,7 @@ mod tests {
 
     #[test]
     fn narrow_the_slider_takes_the_row_under_its_title() {
-        let places = plan(true);
+        let places = plan(true, settings::SHAPE_KEYS.len());
         for place in places.iter().filter(|p| p.cell == Part::Slider) {
             assert_eq!((place.column, place.span), (0, 2));
             let title = places

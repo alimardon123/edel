@@ -175,6 +175,7 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
                 .iter()
                 .filter(|p| {
                     settings::SHAPE_KEYS.contains(&p.key.as_str())
+                        || settings::DEPTH_KEYS.contains(&p.key.as_str())
                         || settings::TEXT_KEYS.contains(&p.key.as_str())
                 })
                 .map(ToString::to_string)
@@ -607,6 +608,10 @@ pub struct Tokens {
     /// only the bars and docks are drawn with it, never the cards and menus
     /// that share the panel's colour.
     pub panel_opacity: u32,
+    /// The windows' opacity in percent (M5.12b3): the focused window, its
+    /// title bar and border, and every other window; 100 is opaque.
+    pub window_opacity: u32,
+    pub window_opacity_unfocused: u32,
     /// How much of the accent the focused title bar takes, in percent,
     /// laid on by [`Tokens::with_appearance`]; 0 keeps the bar neutral.
     pub title_tint: u32,
@@ -1015,6 +1020,8 @@ impl Tokens {
                 "text" => (&mut self.text_size, 100),
                 "lock_clock" => (&mut self.lock_clock, 400),
                 "panel_opacity" => (&mut self.panel_opacity, 100),
+                "window_opacity" => (&mut self.window_opacity, 100),
+                "window_opacity_unfocused" => (&mut self.window_opacity_unfocused, 100),
                 "title_tint" => (&mut self.title_tint, 30),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
@@ -1092,6 +1099,8 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "lock_clock",
                 "gap_outer",
                 "panel_opacity",
+                "window_opacity",
+                "window_opacity_unfocused",
                 "title_tint",
             ][..],
         ),
@@ -1171,6 +1180,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         lock_edit_glow: BLACK,
         lock_clock: 0,
         panel_opacity: 0,
+        window_opacity: 0,
+        window_opacity_unfocused: 0,
         title_tint: 0,
         lock_clock_weight: 0,
         shadow_blur: 0,
@@ -1200,6 +1211,12 @@ pub struct Shape {
     pub border_width: Option<u32>,
     pub title_bar_height: Option<u32>,
     pub panel_opacity: Option<u32>,
+    /// The windows' depth (M5.12b3): the two opacities, the shadow's blur
+    /// and its darkness, each as the person's file or the machine's sets it.
+    pub window_opacity: Option<u32>,
+    pub window_opacity_unfocused: Option<u32>,
+    pub shadow_size: Option<u32>,
+    pub shadow_darkness: Option<u32>,
 }
 
 impl Shape {
@@ -1218,6 +1235,10 @@ impl Shape {
             border_width: over(|a| a.border_width),
             title_bar_height: over(|a| a.title_bar_height),
             panel_opacity: over(|a| a.panel_opacity),
+            window_opacity: over(|a| a.window_opacity),
+            window_opacity_unfocused: over(|a| a.window_opacity_unfocused),
+            shadow_size: over(|a| a.shadow_size),
+            shadow_darkness: over(|a| a.shadow_darkness),
         }
     }
 }
@@ -1260,7 +1281,11 @@ impl Tokens {
     /// `radius_small` by it (from the release's own `radius_window`; to
     /// the radius itself when that is 0); the gaps set `gap` and
     /// `gap_outer`, and `gaps_outer` alone sets `gap_outer`; the border,
-    /// the title bar's height and the panels' opacity follow.
+    /// the title bar's height and the panels' opacity follow. The windows'
+    /// depth (M5.12b3) follows too: the two opacities set their tokens; the
+    /// shadow's size sets its blur and scales the release's drop by it (so
+    /// 0 is no shadow), and its darkness sets the shadow colour's alpha in
+    /// both schemes, its red, green and blue kept.
     /// Lenient (ADR-008): a value outside its key's range is noted and
     /// skipped.
     pub fn with_shape(mut self, shape: &Shape) -> (Tokens, Vec<String>) {
@@ -1306,6 +1331,43 @@ impl Tokens {
             in_shape_range("appearance.panel_opacity", shape.panel_opacity, &mut notes)
         {
             self.panel_opacity = percent;
+        }
+        if let Some(percent) = in_shape_range(
+            "appearance.window_opacity",
+            shape.window_opacity,
+            &mut notes,
+        ) {
+            self.window_opacity = percent;
+        }
+        if let Some(percent) = in_shape_range(
+            "appearance.window_opacity_unfocused",
+            shape.window_opacity_unfocused,
+            &mut notes,
+        ) {
+            self.window_opacity_unfocused = percent;
+        }
+        if let Some(blur) = in_shape_range("appearance.shadow_size", shape.shadow_size, &mut notes)
+        {
+            // The release's drop grows with the blur, rounded half up, so
+            // 48 doubles 24 and 6 to 12; with no release blur there is no
+            // drop to scale, and 0 is no shadow at all.
+            let (release_blur, release_drop) =
+                (u64::from(self.shadow_blur), u64::from(self.shadow_offset));
+            self.shadow_offset = if release_blur == 0 {
+                0
+            } else {
+                ((2 * release_drop * u64::from(blur) + release_blur) / (2 * release_blur)) as u32
+            };
+            self.shadow_blur = blur;
+        }
+        if let Some(percent) = in_shape_range(
+            "appearance.shadow_darkness",
+            shape.shadow_darkness,
+            &mut notes,
+        ) {
+            // The alpha in 255ths, rounded half up: 50 percent is 128.
+            let alpha = (percent * 255 + 50) / 100;
+            self.shadow.a = alpha as f32 / 255.0;
         }
         (self, notes)
     }
@@ -1951,6 +2013,77 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(tokens.panel_opacity, 50);
         assert_eq!(tokens.panel, release.panel);
+    }
+
+    #[test]
+    fn window_opacity_sets_its_two_tokens_and_leaves_the_rest() {
+        let release = Tokens::built_in();
+        assert_eq!(
+            (release.window_opacity, release.window_opacity_unfocused),
+            (100, 100)
+        );
+        let shape = Shape {
+            window_opacity: Some(90),
+            window_opacity_unfocused: Some(70),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&shape);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(
+            (tokens.window_opacity, tokens.window_opacity_unfocused),
+            (90, 70)
+        );
+        assert_eq!((tokens.shadow_blur, tokens.shadow_offset), (24, 6));
+        assert_eq!(tokens.window_border, release.window_border);
+    }
+
+    #[test]
+    fn shadow_size_scales_the_blur_and_the_drop_and_zero_is_none() {
+        let release = Tokens::built_in();
+        assert_eq!((release.shadow_blur, release.shadow_offset), (24, 6));
+        let big = Shape {
+            shadow_size: Some(48),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&big);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((tokens.shadow_blur, tokens.shadow_offset), (48, 12));
+        let none = Shape {
+            shadow_size: Some(0),
+            ..Shape::default()
+        };
+        let (tokens, _) = Tokens::built_in().with_shape(&none);
+        assert_eq!((tokens.shadow_blur, tokens.shadow_offset), (0, 0));
+    }
+
+    #[test]
+    fn shadow_darkness_sets_the_alpha_and_keeps_the_colour() {
+        let release = Tokens::built_in();
+        let half = Shape {
+            shadow_darkness: Some(50),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&half);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((tokens.shadow.a * 255.0).round() as u32, 128);
+        assert_eq!(
+            (tokens.shadow.r, tokens.shadow.g, tokens.shadow.b),
+            (release.shadow.r, release.shadow.g, release.shadow.b)
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_depth_value_is_noted_and_the_release_s_stays() {
+        let faint = Shape {
+            window_opacity: Some(10),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&faint);
+        assert_eq!(tokens.window_opacity, 100);
+        assert_eq!(
+            notes,
+            ["appearance.window_opacity 10 is less than 20; the release's is used"]
+        );
     }
 
     #[test]

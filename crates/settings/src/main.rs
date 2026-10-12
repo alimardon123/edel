@@ -15,6 +15,7 @@ mod bluetooth;
 mod card;
 mod cmd;
 mod colours;
+mod depth;
 mod display;
 mod files;
 mod icon;

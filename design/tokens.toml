@@ -203,6 +203,11 @@ lock_clock = 150
 # The panels' opacity in percent (M5.12b2, appearance.panel_opacity),
 # for the bars and docks alone, not the cards that share their colour.
 panel_opacity = 100
+# The windows' opacity in percent (M5.12b3, appearance.window_opacity and
+# appearance.window_opacity_unfocused): the focused window with its title
+# bar and border, and every other window; 100 is opaque.
+window_opacity = 100
+window_opacity_unfocused = 100
 # How much of the accent the focused window's title bar takes, in percent,
 # so the window with the keyboard reads at a glance; 0 keeps it neutral.
 # A person's own title_bar_focused colour replaces the tint.

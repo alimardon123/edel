@@ -172,10 +172,10 @@ fn backdrop_of(
 
 /// A painted picture, what it shows (to paint it again only when that
 /// changes) and its size in pixels.
-struct Painted {
-    shows: String,
-    buffer: MemoryRenderBuffer,
-    pixels: (i32, i32),
+pub(crate) struct Painted {
+    pub(crate) shows: String,
+    pub(crate) buffer: MemoryRenderBuffer,
+    pub(crate) pixels: (i32, i32),
 }
 
 /// A window or a small workspace picked up in the overview.
@@ -1382,7 +1382,7 @@ impl Edel {
 }
 
 /// `pixmap` as a buffer to draw, with what it shows.
-fn painted(shows: String, pixmap: &tiny_skia::Pixmap) -> Painted {
+pub(crate) fn painted(shows: String, pixmap: &tiny_skia::Pixmap) -> Painted {
     let pixels = (pixmap.width() as i32, pixmap.height() as i32);
     Painted {
         shows,

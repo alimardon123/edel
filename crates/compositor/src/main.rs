@@ -134,5 +134,6 @@ fn load_tokens() -> Tokens {
         eprintln!("edel-compositor: {}: {note}", tokens::PATH);
     }
     state::log_shape(&tokens);
+    state::log_depth(&tokens);
     tokens
 }

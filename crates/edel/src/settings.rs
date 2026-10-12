@@ -465,6 +465,15 @@ pub const KEYS: &[Key] = &[
     now("appearance.border_width", Kind::WholeFromTo(0, 10)),
     now("appearance.title_bar_height", Kind::WholeFromTo(24, 48)),
     now("appearance.panel_opacity", Kind::WholeFromTo(20, 100)),
+    // The windows' depth (M5.12b3): the opacity of the focused window and of
+    // the others, and the shadow's blur and darkness, each in its range.
+    now("appearance.window_opacity", Kind::WholeFromTo(20, 100)),
+    now(
+        "appearance.window_opacity_unfocused",
+        Kind::WholeFromTo(20, 100),
+    ),
+    now("appearance.shadow_size", Kind::WholeFromTo(0, 64)),
+    now("appearance.shadow_darkness", Kind::WholeFromTo(0, 100)),
     // The text (M5.12b5): the interface and monospace fonts by family name,
     // and every text size in percent of the release's.
     now(FONT, Kind::Text),
@@ -851,6 +860,22 @@ pub struct Appearance {
     /// The panels' opacity in percent, 20 to 100 (M5.12b2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel_opacity: Option<u32>,
+    /// The focused window's opacity in percent, 20 to 100, its title bar and
+    /// border with it (M5.12b3); absent is 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_opacity: Option<u32>,
+    /// Every other window's opacity in percent, 20 to 100 (M5.12b3); absent
+    /// is 100.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_opacity_unfocused: Option<u32>,
+    /// The shadow's blur in logical pixels, 0 to 64 (M5.12b3); 0 draws no
+    /// shadow. Absent is the release's 24.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadow_size: Option<u32>,
+    /// The shadow's darkness in percent, 0 to 100, in both schemes (M5.12b3);
+    /// absent is the scheme's own colour.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shadow_darkness: Option<u32>,
     /// The interface font's family (M5.12b5); absent is the tokens' own.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
@@ -968,6 +993,17 @@ pub const SHAPE_KEYS: &[&str] = &[
     "appearance.panel_opacity",
 ];
 
+/// The four keys of the windows' depth (M5.12b3), each a whole number in its
+/// key table range: the focused and the other windows' opacity, and the
+/// shadow's blur and darkness. Not in [`SHAPE_KEYS`], whose grid Settings
+/// draws for the six shape keys alone.
+pub const DEPTH_KEYS: &[&str] = &[
+    "appearance.window_opacity",
+    "appearance.window_opacity_unfocused",
+    "appearance.shadow_size",
+    "appearance.shadow_darkness",
+];
+
 /// The interface font's family, as fontconfig names it (M5.12b5).
 pub const FONT: &str = "appearance.font";
 /// The font apps use for code and terminals (M5.12b5); absent is
@@ -1008,6 +1044,10 @@ pub fn shape_changed(old: &Appearance, new: &Appearance) -> bool {
         || old.border_width != new.border_width
         || old.title_bar_height != new.title_bar_height
         || old.panel_opacity != new.panel_opacity
+        || old.window_opacity != new.window_opacity
+        || old.window_opacity_unfocused != new.window_opacity_unfocused
+        || old.shadow_size != new.shadow_size
+        || old.shadow_darkness != new.shadow_darkness
 }
 
 /// The Lock screen page (M5.10c5): the parts the lock and login screens

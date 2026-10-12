@@ -287,6 +287,48 @@ msgstr ""
 msgid "Colours"
 msgstr ""
 
+msgid "Opaque"
+msgstr ""
+
+msgid "{n} %"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "{n} px"
+msgstr ""
+
+msgid "The window you are using, with its title bar"
+msgstr ""
+
+msgid "Every other window"
+msgstr ""
+
+msgid "How far the shadow spreads. Full and Balanced effects only"
+msgstr ""
+
+msgid "How dark the shadow is"
+msgstr ""
+
+msgid "Your choice"
+msgstr ""
+
+msgid "Set by this machine"
+msgstr ""
+
+msgid "Automatic ({current})"
+msgstr ""
+
+msgid "the release"
+msgstr ""
+
+msgid "Depth"
+msgstr ""
+
+msgid "How see-through windows are and the shadow under them"
+msgstr ""
+
 msgid "Each screen's size, scale and place."
 msgstr ""
 
@@ -545,18 +587,6 @@ msgstr ""
 msgid "Faster"
 msgstr ""
 
-msgid "Your choice"
-msgstr ""
-
-msgid "Set by this machine"
-msgstr ""
-
-msgid "Automatic ({current})"
-msgstr ""
-
-msgid "the release"
-msgstr ""
-
 msgid "Motion"
 msgstr ""
 
@@ -749,9 +779,6 @@ msgstr ""
 msgid "Drag an app's icon on the panel to pin, move or unpin it"
 msgstr ""
 
-msgid "None"
-msgstr ""
-
 msgid "The desktop's panels are not running, so they cannot be edited now:\n{why}"
 msgstr ""
 
@@ -884,6 +911,18 @@ msgstr ""
 msgid "Panels' opacity"
 msgstr ""
 
+msgid "Window opacity"
+msgstr ""
+
+msgid "Unfocused windows"
+msgstr ""
+
+msgid "Shadow size"
+msgstr ""
+
+msgid "Shadow darkness"
+msgstr ""
+
 msgid "Interface font"
 msgstr ""
 
@@ -1014,12 +1053,6 @@ msgid "Square"
 msgstr ""
 
 msgid "Same as gaps"
-msgstr ""
-
-msgid "{n} %"
-msgstr ""
-
-msgid "{n} px"
 msgstr ""
 
 msgid "Its colours are in Colours: {name}"
