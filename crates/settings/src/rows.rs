@@ -136,6 +136,24 @@ pub const ROWS: &[Row] = &[
         key: "appearance.panel_opacity",
         title: n_("Panels' opacity"),
     },
+    // The Depth group (M5.12b3): how see-through the windows are and the
+    // shadow under them, shown after the shape.
+    Row {
+        key: "appearance.window_opacity",
+        title: n_("Window opacity"),
+    },
+    Row {
+        key: "appearance.window_opacity_unfocused",
+        title: n_("Unfocused windows"),
+    },
+    Row {
+        key: "appearance.shadow_size",
+        title: n_("Shadow size"),
+    },
+    Row {
+        key: "appearance.shadow_darkness",
+        title: n_("Shadow darkness"),
+    },
     // The text (M5.12b5): the fonts and the size, shown above the shape.
     Row {
         key: "appearance.font",
@@ -434,7 +452,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 19);
+        assert_eq!(on_page("appearance").count(), 23);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
