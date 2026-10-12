@@ -69,7 +69,7 @@ pub fn edel_as_admin(args: &[&str], password: String) -> Outcome {
     let mut all = vec!["-n", "edel"];
     all.extend_from_slice(args);
     all.push("--password-stdin");
-    with_password("doas", &all, password)
+    with_password(edel::places::AS_ROOT, &all, password)
 }
 
 /// Runs `program` with `args`, writing `password` and a newline to its
@@ -90,7 +90,7 @@ fn with_password(program: &str, args: &[&str], mut password: String) -> Outcome 
                 code: None,
                 out: String::new(),
                 err: trf(
-                    "could not run {program}: {why}; the doas rule comes with the machine feature",
+                    "could not run {program}: {why}; its rule for edel comes with the machine feature",
                     &[("program", program), ("why", &why.to_string())],
                 ),
             };

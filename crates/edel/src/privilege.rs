@@ -156,7 +156,9 @@ pub fn confirm(what: &str) -> Result<()> {
 /// prompt.
 fn enforce(need: Need, note: Option<&str>) -> Result<()> {
     let euid = users::current().unwrap_or(u32::MAX);
-    let doas = std::env::var("DOAS_USER").ok().filter(|u| !u.is_empty());
+    let doas = std::env::var(places::AS_ROOT_USER)
+        .ok()
+        .filter(|u| !u.is_empty());
     let is_admin = match (euid, doas.as_deref()) {
         (0, Some(user)) => admin(user)?,
         _ => false,

@@ -227,7 +227,7 @@ msgstr ""
 msgid "Keyboards that ask you to type a code on them cannot be paired here yet; pair them with bluetoothctl."
 msgstr ""
 
-msgid "could not run {program}: {why}; the doas rule comes with the machine feature"
+msgid "could not run {program}: {why}; its rule for edel comes with the machine feature"
 msgstr ""
 
 msgid "could not finish {program}: {why}"
