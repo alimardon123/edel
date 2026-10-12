@@ -198,6 +198,13 @@
 #               icon lies in the panel's tray; AT-SPI names it, a click
 #               and a right click reach it, and the icon goes with its app
 #               (M5.2e)
+#   settings-shortcuts  Settings' Shortcuts page opened on the close_window row:
+#               Change, then Super+W, which the dialog takes (the compositor
+#               logs `shortcuts inhibited for`) instead of opening the
+#               overview; Use anyway writes close_window = "Super+W" and the
+#               overview's line empty, which the compositor takes; the
+#               shortcut lines come out again and Super+Q closes Settings
+#               (M5.13b), kept as settings-shortcuts.png
 #   settings-tour  Settings opened on each page edel settings lists (the page
 #               list is read from the tool), each maximized and drawn,
 #               and each again at 366 px,
@@ -1965,6 +1972,95 @@ case_settings_shape() {
 	wait_more 'edel-compositor: shape gaps 8/8, border 1, title bar 28' "$reset" ||
 		fail "the compositor did not go back to shape gaps 8/8 after the six keys were taken out"
 	echo "PASS: Settings' Shape group took the gaps slider to 48 from the keyboard and wrote appearance.gaps = 48 to ci's file and the compositor laid its windows 48 apart (settings-shape.png), and shape mine default brought the gaps back to 8"
+}
+
+case_settings_shortcuts() {
+	# The Shortcuts page (M5.13b): Settings opened on the close_window row
+	# logs where each Change button lies. Change opens the dialog, which
+	# asks the compositor for the keys (`shortcuts inhibited for`), so
+	# Super+W reaches it and no overview opens. The chord is the overview's,
+	# so the dialog shows the conflict and Use anyway writes close_window =
+	# "Super+W" and the overview's line empty, in one write, which the
+	# compositor follows (`shortcut close_window is Super+W`). Then
+	# `shortcuts mine default` takes both lines out of ci's file, and Super+Q
+	# closes Settings again. Kept as settings-shortcuts.png.
+	# Super+1 shows the first workspace, as settings-accent does.
+	python3 ci/qmp.py key meta_l-1
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings shortcuts'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Shortcuts page by the close_window row: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	close=none
+	i=0
+	while [ "$close" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the close_window row lies: $(value settings_shortcuts_log)"
+		guest 'settings shortcuts log'
+		text=$(value settings_shortcuts_log)
+		# The places are ACTION X+Y+WxH pairs, as the other groups log them.
+		close=$(echo "$text" | sed -n 's/.*shortcuts group places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "close_window") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$close" ] || close=none
+		[ "$close" = none ] && sleep 1
+	done
+	set -- $close
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	sleep 2
+	mapped=$(count 'edel-compositor: mapped window Change shortcut')
+	inhibited=$(count 'edel-compositor: shortcuts inhibited for')
+	python3 ci/qmp.py click "$cx" "$cy"
+	wait_more 'edel-compositor: mapped window Change shortcut' "$mapped" 60 ||
+		fail "the Change button at $cx,$cy opened no dialog: $(value windows)"
+	wait_more 'edel-compositor: shortcuts inhibited for' "$inhibited" ||
+		fail "the Change dialog did not ask the compositor for its keys"
+	dialog=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Change shortcut at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -n 1)
+	set -- $dialog
+	dx=$1 dy=$2
+	overview=$(count 'edel-compositor: overview shown')
+	python3 ci/qmp.py key meta_l-w
+	use=none
+	i=0
+	while [ "$use" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "the dialog did not show the conflict for Super+W: $(value settings_shortcuts_log)"
+		guest 'settings shortcuts log'
+		text=$(value settings_shortcuts_log)
+		# `use X+Y+WxH, cancel X+Y+WxH`, relative to the dialog.
+		use=$(echo "$text" | sed -n 's/.*shortcut dialog places use //p' | tr ',;' '  ' |
+			sed 's/[+x]/ /g' | awk '{ print $1, $2, $3, $4 }')
+		[ -n "$use" ] && [ "$(echo "$use" | wc -w)" = 4 ] || use=none
+		[ "$use" = none ] && sleep 1
+	done
+	[ "$(count 'edel-compositor: overview shown')" = "$overview" ] ||
+		fail "Super+W opened the overview while the Change dialog held the keys"
+	set -- $use
+	ux=$((dx + $1 + $3 / 2)) uy=$((dy + $2 + $4 / 2))
+	said=$(count 'edel-compositor: shortcut close_window is Super\+W')
+	back=$(count 'edel-compositor: shortcuts back')
+	python3 ci/qmp.py click "$ux" "$uy"
+	wait_more 'edel-compositor: shortcut close_window is Super\+W' "$said" ||
+		fail "Use anyway at $ux,$uy did not make the compositor take close_window = Super+W: $(value settings_shortcuts_log)"
+	wait_more 'edel-compositor: shortcuts back' "$back" || fail "the compositor did not give the keys back after the dialog closed"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/settings-shortcuts.png"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'close_window = "Super+W"' ||
+		fail "ci's settings file does not hold close_window = \"Super+W\": $(value settings_file)"
+	value settings_file | grep -q 'show_workspaces = ""' ||
+		fail "ci's settings file does not clear the overview's Super+W: $(value settings_file)"
+	reset=$(count 'edel-compositor: shortcut close_window is Super\+Q')
+	guest 'shortcuts mine default'
+	wait_more 'edel-compositor: shortcut close_window is Super\+Q' "$reset" ||
+		fail "the compositor did not go back to close_window = Super+Q after the two lines were taken out"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings once its keys were back"
+	echo "PASS: the Shortcuts page's Change button at $cx,$cy opened a dialog that took Super+W (no overview), offered Use anyway at $ux,$uy and wrote close_window = \"Super+W\" and the overview's line empty to ci's file, which the compositor took (settings-shortcuts.png); shortcuts mine default brought Super+Q back and Super+Q closed Settings"
 }
 
 same_file() {
@@ -5934,7 +6030,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

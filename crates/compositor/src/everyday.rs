@@ -11,9 +11,15 @@
 //!   honours;
 //! - xdg-activation, so a link clicked in one app raises the browser that
 //!   opens it: the window comes forward, to its workspace if it is on
-//!   another, as a click in the window list does.
+//!   another, as a click in the window list does;
+//! - keyboard shortcuts inhibit (M5.13b), so the Shortcuts page's capture
+//!   gets Super+W and its like: an inhibitor the client asks for is
+//!   activated at once, and `input.rs` passes the keys over while the
+//!   focused surface's inhibitor is active (the terminals, Super+L and the lock
+//!   screen's keys aside).
 
 use smithay::delegate_idle_inhibit;
+use smithay::delegate_keyboard_shortcuts_inhibit;
 use smithay::delegate_pointer_constraints;
 use smithay::delegate_primary_selection;
 use smithay::delegate_relative_pointer;
@@ -23,6 +29,9 @@ use smithay::reexports::wayland_server::Resource as _;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
+use smithay::wayland::keyboard_shortcuts_inhibit::{
+    KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
+};
 use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, with_pointer_constraint};
 use smithay::wayland::selection::primary_selection::{
     PrimarySelectionHandler, PrimarySelectionState,
@@ -128,6 +137,29 @@ impl Edel {
     }
 }
 
+impl KeyboardShortcutsInhibitHandler for Edel {
+    fn keyboard_shortcuts_inhibit_state(&mut self) -> &mut KeyboardShortcutsInhibitState {
+        &mut self.keyboard_shortcuts_inhibit
+    }
+
+    /// A client asks to have its keys without ours. The Shortcuts page's
+    /// dialog does, while it takes a new chord (M5.13b); the compositor
+    /// says so in the log, which CI waits for.
+    fn new_inhibitor(&mut self, inhibitor: KeyboardShortcutsInhibitor) {
+        let surface = inhibitor.wl_surface().clone();
+        let title = self
+            .window_of(&surface)
+            .map(|window| crate::decoration::title(&window))
+            .unwrap_or_default();
+        inhibitor.activate();
+        eprintln!("edel-compositor: shortcuts inhibited for {title}");
+    }
+
+    fn inhibitor_destroyed(&mut self, _inhibitor: KeyboardShortcutsInhibitor) {
+        eprintln!("edel-compositor: shortcuts back");
+    }
+}
+
 impl XdgActivationHandler for Edel {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.activation
@@ -153,6 +185,7 @@ delegate_pointer_constraints!(Edel);
 delegate_relative_pointer!(Edel);
 delegate_primary_selection!(Edel);
 delegate_idle_inhibit!(Edel);
+delegate_keyboard_shortcuts_inhibit!(Edel);
 delegate_xdg_activation!(Edel);
 
 #[cfg(test)]

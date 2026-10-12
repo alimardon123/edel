@@ -1723,6 +1723,22 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
     write_text(path, &edited)
 }
 
+/// Sets or takes out several keys in the settings file at `path` in one
+/// write, in the order given, each checked as [`set`] and [`unset`] check
+/// it, so a change that clashes with one still to come must come after it.
+/// The Shortcuts page moves a chord and clears the action that held it this
+/// way (M5.13b).
+pub fn write_all(path: &Path, edits: &[(&str, Option<&str>)]) -> Result<()> {
+    let mut text = fs::read_to_string(path).unwrap_or_else(|_| format!("format = {FORMAT}\n"));
+    for (key, value) in edits {
+        text = match value {
+            Some(value) => set(&text, key, value)?,
+            None => unset(&text, key)?,
+        };
+    }
+    write_text(path, &text)
+}
+
 /// Writes a settings file's whole text to `path` (its folder made first),
 /// through a file beside it that is renamed over it, so a reader never sees
 /// half a file. The writers above and Settings' theme edits use it.
@@ -3079,6 +3095,43 @@ lock_after_minutes = 11
             developer.ends_with("[system]\ndeveloper_mode = false\n"),
             "{developer}"
         );
+    }
+
+    #[test]
+    fn a_moved_chord_and_its_cleared_holder_are_one_write() {
+        let dir = std::env::temp_dir().join(format!("edel-write-all-{}", std::process::id()));
+        let path = dir.join(crate::places::SETTINGS);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, "format = 1\n").unwrap();
+        // The holder is cleared first, so the chord it held is free to move to.
+        write_all(
+            &path,
+            &[
+                ("shortcuts.show_workspaces", Some("")),
+                ("shortcuts.close_window", Some("Super+W")),
+            ],
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text,
+            "format = 1\n\n[shortcuts]\nshow_workspaces = \"\"\nclose_window = \"Super+W\"\n"
+        );
+        // Taking one out again leaves the other line as it is.
+        write_all(&path, &[("shortcuts.close_window", None)]).unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("show_workspaces = \"\"")
+        );
+        // A clash that is not cleared first is refused, and nothing is written.
+        assert!(write_all(&path, &[("shortcuts.open_terminal", Some("Super+Q"))]).is_err());
+        assert!(
+            !std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("open_terminal")
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
