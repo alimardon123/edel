@@ -1,12 +1,13 @@
-//! The Users page (roadmap M5.8b): who has an account on this computer,
-//! as a familiar accounts page says it. The person at the machine comes
-//! first on a card, their name large with their login name and whether
-//! they are an administrator under it; Administrator, a key of the
-//! settings file (`users.NAME.admin`), follows as a row; the other people
-//! come next, and Details, closed, with the login name, user id, home
-//! folder and login shell for people who need them. A password is never
-//! shown, read or touched: the page reads `/etc/passwd` and `/etc/group`
-//! (`edel::users`) and nothing else.
+//! The Users page (roadmap M5.8b, drawn as the approved board of 2026-10-11,
+//! M5.32): who has an account on this computer. The person at the machine
+//! comes first, centred on a card: a round avatar with their first letter,
+//! their name large, and under it their login name and whether they are an
+//! administrator. Your account is their Administrator row, a key of the
+//! settings file (`users.NAME.admin`), in a card under it. Other people
+//! follow, each as a row with a small avatar, and Details, closed, holds the
+//! login name, user id, home folder and login shell for people who need them.
+//! A password is never shown, read or touched: the page reads `/etc/passwd`
+//! and `/etc/group` (`edel::users`) and nothing else.
 //!
 //! Adding and removing people wait for `doas` (M6.5), which lets Settings
 //! run the commands for them, so the page shows no such buttons until
@@ -53,6 +54,59 @@ fn in_the_file(person: &Person) -> bool {
     (1000..65534).contains(&person.uid)
 }
 
+/// A round avatar with the first letter of `name`: the person's on the
+/// card, or a smaller one in a row of other people.
+fn avatar(name: &str, small: bool) -> gtk::Label {
+    let letter: String = name
+        .chars()
+        .next()
+        .map_or(String::new(), |c| c.to_uppercase().collect());
+    let classes: &[&str] = if small {
+        &["edel-avatar", "edel-avatar-small"]
+    } else {
+        &["edel-avatar"]
+    };
+    gtk::Label::builder()
+        .label(letter)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(classes)
+        .build()
+}
+
+/// Another person as a row: a small avatar, the name and the line under it.
+fn person_row(group: &gtk::Box, person: &Person) {
+    let row = gtk::Box::builder()
+        .spacing(12)
+        .css_classes(["edel-row"])
+        .build();
+    row.append(&avatar(person.shown(), true));
+    let words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    words.append(
+        &gtk::Label::builder()
+            .label(person.shown())
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-row-name"])
+            .build(),
+    );
+    words.append(
+        &gtk::Label::builder()
+            .label(line(person))
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-row-subtitle"])
+            .build(),
+    );
+    row.append(&words);
+    group.append(&row);
+}
+
 pub fn page() -> gtk::Widget {
     let (page, content, _) = widgets::page(tr("Users"), tr(INTRO));
     let body = gtk::Box::builder()
@@ -86,46 +140,29 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         return;
     };
 
-    // The card: an initial in a circle, the name large, the line under it.
+    // The person at the machine, centred as the board draws them: a round
+    // avatar with the first letter, the name large, the line under it.
     let card = widgets::hero_card(body);
-    let head = gtk::Box::builder().spacing(18).build();
-    head.append(
-        &gtk::Label::builder()
-            .label(
-                you.shown()
-                    .chars()
-                    .next()
-                    .map_or(String::new(), |c| c.to_uppercase().collect()),
-            )
-            .valign(gtk::Align::Start)
-            .halign(gtk::Align::Center)
-            .css_classes(["edel-avatar"])
-            .build(),
-    );
-    let words = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(2)
-        .hexpand(true)
-        .valign(gtk::Align::Center)
-        .build();
-    words.append(
+    card.set_spacing(6);
+    card.append(&avatar(you.shown(), false));
+    card.append(
         &gtk::Label::builder()
             .label(you.shown())
-            .xalign(0.0)
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
             .wrap(true)
-            .css_classes(["edel-name"])
+            .css_classes(["edel-person-name"])
             .build(),
     );
-    words.append(
+    card.append(
         &gtk::Label::builder()
             .label(line(you))
-            .xalign(0.0)
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
             .wrap(true)
-            .css_classes(["edel-name-version"])
+            .css_classes(["edel-person-line"])
             .build(),
     );
-    head.append(&words);
-    card.append(&head);
     card.update_property(&[gtk::accessible::Property::Label(&format!(
         "{}. {}",
         you.shown(),
@@ -133,7 +170,6 @@ fn fill(body: &gtk::Box, people: &[Person]) {
     ))]);
 
     if in_the_file(you) {
-        widgets::heading(body, tr("Your account"));
         let group = widgets::group(body);
         let switch = gtk::Switch::builder().active(you.admin).build();
         switch.set_sensitive(false);
@@ -159,7 +195,7 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         widgets::note_row(&group, tr("No one else has an account on this computer."));
     }
     for person in others {
-        widgets::fact_row(&group, person.shown(), &line(person));
+        person_row(&group, person);
     }
 
     // Add a person and Remove a person come with doas (M6.5), as the module

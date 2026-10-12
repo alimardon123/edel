@@ -1112,10 +1112,10 @@ impl SessionLockHandler for Shell {
         });
         if let Some(card) = &mut self.lock {
             card.keyboard = keyboard;
-            eprintln!(
+            crate::log_line(&format!(
                 "edel-shell-ui: screen locked, {} screens",
                 card.screens.len()
-            );
+            ));
         }
     }
 

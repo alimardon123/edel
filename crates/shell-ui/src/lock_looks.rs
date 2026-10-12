@@ -26,10 +26,18 @@ use crate::popup::{self, Rect};
 pub const MIDDLE_SHARE: f32 = 0.62;
 pub const MIDDLE_MOST: f32 = 800.0;
 /// A neighbour's size, a share of the middle look's, and its gap from it.
-pub const SIDE_SHARE: f32 = 0.55;
+pub const SIDE_SHARE: f32 = 0.62;
 pub const SIDE_GAP: f32 = 28.0;
-/// How much a neighbour shows: its picture at this opacity.
-pub const SIDE_OPACITY: f32 = 0.7;
+/// How much a neighbour shows: its picture at this opacity, on its own
+/// shadow, with a white hairline at `SIDE_EDGE` round it, so it reads as a
+/// card waiting at the side (Alimardon, 2026-10-12: "clearly visible").
+pub const SIDE_OPACITY: f32 = 0.82;
+pub const SIDE_EDGE: f32 = 0.22;
+/// On a Compact screen (a phone) each look is drawn in the screen's own
+/// shape, a tall lock screen, its height this share of the screen's, and the
+/// neighbours peek in at the screen's edges, `PEEK` of them showing.
+pub const COMPACT_HEIGHT: f32 = 0.56;
+pub const PEEK: f32 = 30.0;
 /// The picture's corners, and the white ring round the middle one: 2 px
 /// wide, 3 px outside it, at 90 percent.
 pub const RADIUS: f32 = 14.0;
@@ -58,9 +66,8 @@ pub const ROW_BELOW: f32 = 18.0;
 pub const HINT_BELOW: f32 = 14.0;
 pub const HINT_SIZE: f32 = 11.5;
 pub const HINT_LINE: f32 = 16.0;
-/// The side margin of a Compact screen's middle look, and the gutter the
-/// hint keeps from each side (16 px, as the phone layouts keep).
-pub const COMPACT_MARGIN: f32 = 24.0;
+/// The gutter the hint keeps from each side (16 px, as the phone layouts
+/// keep).
 const HINT_GUTTER: f32 = 16.0;
 /// The part of a dot's row a press may land on, round the dot (logical px).
 const DOT_HIT: f32 = 7.0;
@@ -123,12 +130,18 @@ pub struct Layout {
 /// centred on the screen, with neighbours on each side.
 pub fn layout(view: &View) -> Layout {
     let (w, h) = view.screen;
-    let mw = if view.compact {
-        (w - 2.0 * COMPACT_MARGIN).max(1.0)
+    let (mw, mh) = if view.compact {
+        // The phone's own lock screen, as tall as it is (the phone's lock
+        // mockups), narrow enough that both neighbours peek in.
+        let mh = (h * COMPACT_HEIGHT).max(1.0);
+        let mw = (mh * w / h.max(1.0))
+            .min(w - 2.0 * (PEEK + SIDE_GAP / 2.0))
+            .max(1.0);
+        (mw, mw * h / w.max(1.0))
     } else {
-        (w * MIDDLE_SHARE).min(MIDDLE_MOST)
+        let mw = (w * MIDDLE_SHARE).min(MIDDLE_MOST);
+        (mw, mw * 10.0 / 16.0)
     };
-    let mh = mw * 10.0 / 16.0;
     let button_height = if view.compact {
         BUTTON_TOUCH
     } else {
@@ -189,9 +202,14 @@ pub fn layout(view: &View) -> Layout {
     let side_w = mw * SIDE_SHARE;
     let side_h = mh * SIDE_SHARE;
     let side_y = top + (mh - side_h) / 2.0;
-    let left = (view.shown > 0).then(|| Rect::new(mx - SIDE_GAP - side_w, side_y, side_w, side_h));
-    let right =
-        (view.shown + 1 < count).then(|| Rect::new(mx + mw + SIDE_GAP, side_y, side_w, side_h));
+    // On a phone the neighbours sit closer, half the gap, so they peek in.
+    let gap = if view.compact {
+        SIDE_GAP / 2.0
+    } else {
+        SIDE_GAP
+    };
+    let left = (view.shown > 0).then(|| Rect::new(mx - gap - side_w, side_y, side_w, side_h));
+    let right = (view.shown + 1 < count).then(|| Rect::new(mx + mw + gap, side_y, side_w, side_h));
     Layout {
         middle,
         left,
@@ -387,6 +405,20 @@ pub struct Kit<'a> {
 /// down to the cards, so nothing is cut).
 pub const PICTURE: (u32, u32) = (1280, 800);
 
+/// The size a look's picture is drawn at for a screen: `PICTURE`, or on a
+/// Compact screen the screen itself, so a phone's looks are its own tall
+/// lock screens.
+pub fn picture_size(screen: (f32, f32), compact: bool) -> (u32, u32) {
+    if compact {
+        (
+            screen.0.round().max(1.0) as u32,
+            screen.1.round().max(1.0) as u32,
+        )
+    } else {
+        PICTURE
+    }
+}
+
 /// A look's picture as the lock draws it, at `PICTURE` (the switcher's
 /// neighbours and middle are drawn from it): the look alone, as Settings'
 /// cards apply it (`lock_screen::applied` of that look). `view` is the lock's
@@ -394,6 +426,7 @@ pub const PICTURE: (u32, u32) = (1280, 800);
 pub fn look_picture(
     kit: Kit,
     name: &str,
+    screen: (f32, f32),
     compact: bool,
     view: &lock::View,
     battery: bool,
@@ -425,7 +458,7 @@ pub fn look_picture(
         kit.pictures,
         kit.backdrops,
         kit.wallpaper,
-        PICTURE,
+        picture_size(screen, compact),
         None,
     )
 }
@@ -460,10 +493,12 @@ pub fn paint(
         b: 1.0,
         a,
     };
-    // The neighbours: the look before and after, dimmed to 70 percent by
-    // laying the stage's colour over them, with no ring.
+    // The neighbours: the look before and after on their own soft shadow,
+    // dimmed a little by the stage's colour over them, and edged with a white
+    // hairline so they read as cards waiting at the side.
     for (rect, picture) in [(l.left, pictures[0]), (l.right, pictures[2])] {
         if let (Some(rect), Some(picture)) = (rect, picture) {
+            lock::lift(pixmap, rect, RADIUS, s, tokens);
             let (x, y, dw, dh) = rect.device(s);
             paint_kit::rounded_picture(pixmap, picture, (x, y, dw, dh), RADIUS * s);
             fill(
@@ -478,8 +513,19 @@ pub fn paint(
                     ..tokens.lock_edit_deep
                 },
             );
+            let half = 0.5 * s;
+            edit_kit::stroke(
+                pixmap,
+                (x + half, y + half, dw - 2.0 * half, dh - 2.0 * half),
+                RADIUS * s - half,
+                s,
+                white(SIDE_EDGE),
+                None,
+            );
         }
     }
+    // The middle look lifts off the stage too.
+    lock::lift(pixmap, l.middle, RADIUS, s, tokens);
     if let Some(picture) = pictures[1] {
         let (x, y, dw, dh) = l.middle.device(s);
         paint_kit::rounded_picture(pixmap, picture, (x, y, dw, dh), RADIUS * s);
@@ -787,7 +833,7 @@ mod tests {
             ("lock-looks-phone.png", (390.0, 844.0)),
         ] {
             let compact = screen.0 < lock::COMPACT_BELOW;
-            let shown = 0;
+            let shown = 1;
             let pics: Vec<Option<Pixmap>> = names
                 .iter()
                 .map(|n| {
@@ -799,7 +845,7 @@ mod tests {
                         backdrops: &mut backdrops,
                         wallpaper: &wallpaper,
                     };
-                    look_picture(kit, n, compact, &lock_view, false)
+                    look_picture(kit, n, screen, compact, &lock_view, false)
                 })
                 .collect();
             let v = View {

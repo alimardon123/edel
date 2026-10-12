@@ -324,6 +324,18 @@ struct Panel {
     reader: a11y::Reader,
 }
 
+/// Writes one log line to standard error in a single write, so another
+/// program writing to the same log cannot land in the middle of it:
+/// `eprintln!` writes each piece of its format separately, and CI once read
+/// `screen locked, edel-compositor: key 20x screens` (2026-10-12).
+pub(crate) fn log_line(line: &str) {
+    use std::io::Write;
+    let mut whole = String::with_capacity(line.len() + 1);
+    whole.push_str(line);
+    whole.push('\n');
+    let _ = std::io::stderr().lock().write_all(whole.as_bytes());
+}
+
 fn main() {
     // A look's picture for Settings' Lock screen page (M5.10c7c): drawn
     // without a compositor, so it is handed over before any connection, and
