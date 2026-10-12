@@ -16,6 +16,8 @@
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
 mod a11y;
+mod access;
+mod access_card;
 mod apps_drag;
 mod banner;
 mod calendar;
@@ -102,6 +104,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::collections::VecDeque;
 use std::path::Path;
 use std::time::Duration;
 
@@ -147,6 +150,8 @@ const BANNER: &str = "edel-notification";
 const CENTRE: &str = "edel-centre";
 /// The volume and brightness pop-up a media key shows (M5.9c).
 const OSD: &str = "edel-osd";
+/// The Access portal's dialog, "Allow this app?", over the screen (M6.3).
+const ACCESS: &str = "edel-access";
 /// The tray's grid of the apps behind its arrow (M5.9g).
 const TRAY_GRID: &str = "edel-tray";
 /// The tray's tooltip, a label over the arrow (M5.9h).
@@ -220,6 +225,10 @@ struct Shell {
     centre: Option<CentreCard>,
     /// The volume and brightness pop-up while it shows (M5.9c).
     osd: Option<OsdCard>,
+    /// The Access portal's dialog while it shows, and the questions queued
+    /// behind it (M6.3).
+    access: Option<access_card::AccessCard>,
+    asks: VecDeque<access::Ask>,
     /// The tray's grid of the apps behind its arrow while open (M5.9g),
     /// the number of apps behind the arrow as last logged, and a press on
     /// a kept icon that may become a drag: its panel, its item's id and
@@ -477,6 +486,8 @@ fn run() -> Result<()> {
         banner: None,
         centre: None,
         osd: None,
+        access: None,
+        asks: VecDeque::new(),
         tray_grid: None,
         tray_behind: 0,
         tray_press: None,
@@ -567,6 +578,7 @@ fn run() -> Result<()> {
                             eprintln!("edel-shell-ui: lock looks asked for over the bus");
                             shell.open_lock_looks();
                         }
+                        shell_bus::Edit::Access(ask) => shell.access_asked(ask),
                     }
                 }
             })
@@ -1812,6 +1824,8 @@ impl LayerShellHandler for Shell {
             self.hide_tooltip();
         } else if self.is_switcher(surface.wl_surface()) {
             self.hide_switcher();
+        } else if self.is_access(surface.wl_surface()) {
+            self.close_access();
         } else {
             self.exit = true;
         }
@@ -1825,6 +1839,12 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
+        if self.is_access(surface.wl_surface()) {
+            if let Some(card) = &mut self.access {
+                card.popup.configured();
+            }
+            return self.draw_access();
+        }
         if self.is_panel_menu(surface.wl_surface()) {
             if let Some(menu) = &mut self.panel_menu {
                 menu.popup.configured();
@@ -1920,6 +1940,12 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         factor: i32,
     ) {
+        if self.is_access(surface) {
+            if let Some(card) = &mut self.access {
+                card.popup.set_scale(factor);
+            }
+            return self.draw_access();
+        }
         if self.is_launcher(surface) {
             if let Some(menu) = &mut self.menu {
                 menu.popup.set_scale(factor);
@@ -2023,6 +2049,12 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         _: u32,
     ) {
+        if self.is_access(surface) {
+            if let Some(card) = &mut self.access {
+                card.popup.framed();
+            }
+            return self.draw_access();
+        }
         if self.is_launcher(surface) {
             if let Some(menu) = &mut self.menu {
                 menu.popup.framed();
@@ -2224,6 +2256,10 @@ impl PointerHandler for Shell {
         events: &[PointerEvent],
     ) {
         for event in events {
+            if self.is_access(&event.surface) {
+                self.access_pointer(event);
+                continue;
+            }
             if self.is_launcher(&event.surface) {
                 // From the card's corner, inside the shadow's room.
                 let room = self.menu.as_ref().map_or(0, |m| m.popup.room()) as f32;
@@ -2456,7 +2492,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.lock.is_some() {
+        if self.access.is_some() {
+            self.access_key(event);
+        } else if self.lock.is_some() {
             self.lock_key(event);
         } else if self.lock_editor.is_some() {
             self.lock_editor_key(event);
@@ -2487,7 +2525,9 @@ impl KeyboardHandler for Shell {
         _: u32,
         event: KeyEvent,
     ) {
-        if self.lock.is_some() {
+        if self.access.is_some() {
+            self.access_key(event);
+        } else if self.lock.is_some() {
             self.lock_key(event);
         } else if self.lock_editor.is_some() {
             self.lock_editor_key(event);
