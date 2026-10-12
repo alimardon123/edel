@@ -152,11 +152,10 @@ impl Edel {
                         // Keys where a Latin layout has them, whatever the
                         // layout.
                         let latin = keysym.raw_latin_sym_or_raw_current_sym();
-                        let bound = if inhibited {
-                            None
-                        } else {
-                            crate::shortcuts::find(&state.bindings, modifiers, latin)
-                        };
+                        // Locking the screen stays a person's own key, so no
+                        // app holding the keys can keep the screen unlocked.
+                        let bound = crate::shortcuts::find(&state.bindings, modifiers, latin)
+                            .filter(|act| !inhibited || matches!(act, Act::Lock));
                         // A modifier pressed alone and let go with nothing
                         // between is a tap (the launcher's Super); the app
                         // still hears both.

@@ -15,7 +15,7 @@
 //! - keyboard shortcuts inhibit (M5.13b), so the Shortcuts page's capture
 //!   gets Super+W and its like: an inhibitor the client asks for is
 //!   activated at once, and `input.rs` passes the keys over while the
-//!   focused surface's inhibitor is active (the terminals and the lock
+//!   focused surface's inhibitor is active (the terminals, Super+L and the lock
 //!   screen's keys aside).
 
 use smithay::delegate_idle_inhibit;
