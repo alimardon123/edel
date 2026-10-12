@@ -51,6 +51,7 @@ use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
 use smithay::reexports::wayland_server::Display;
+use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::{Clock, DeviceFd, Monotonic, Point, Size};
 use smithay::wayland::presentation::Refresh;
 
@@ -77,6 +78,9 @@ type Compositor = DrmCompositor<
 /// One lit screen.
 struct Screen {
     output: Output,
+    /// Its `wl_output` global, taken away when the screen goes dark, so
+    /// apps (grim, a screen chooser) never list a screen nothing draws.
+    global: GlobalId,
     connector: connector::Handle,
     compositor: Compositor,
     /// The mode it runs at, to notice a new `displays.NAME.resolution` and `refresh_rate`.
@@ -587,6 +591,7 @@ impl Gpu {
             if let Some(screen) = self.screens.remove(&crtc) {
                 eprintln!("edel-compositor: output {} off", screen.output.name());
                 state.space.unmap_output(&screen.output);
+                state.display.remove_global::<Edel>(screen.global);
             }
         }
         for info in &wanted {
@@ -670,7 +675,7 @@ impl Gpu {
         let wl_mode = Mode::from(mode);
         output.change_current_state(Some(wl_mode), None, None, None);
         output.set_preferred(wl_mode);
-        output.create_global::<Edel>(&state.display);
+        let global = output.create_global::<Edel>(&state.display);
         // Built-in panels are seen from closer than monitors (M4.6a).
         let built_in = matches!(
             info.interface(),
@@ -711,6 +716,7 @@ impl Gpu {
             crtc,
             Screen {
                 output,
+                global,
                 connector: info.handle(),
                 compositor,
                 mode,
