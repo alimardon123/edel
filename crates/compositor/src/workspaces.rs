@@ -18,7 +18,7 @@ use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 
 use edel::places;
-use edel::settings::{self, WORKSPACE_NAMES};
+use edel::settings::{self, WORKSPACE_NAMES, WORKSPACE_WALLPAPERS};
 use edel_compositor::desks::{MOST, dynamic_plan, names_to_write, reordered_names, slide_by};
 use edel_compositor::messages;
 
@@ -195,7 +195,8 @@ impl Edel {
             from + 1,
             to + 1
         );
-        keep_names(from, to, count);
+        keep_order(WORKSPACE_NAMES, from, to, count);
+        keep_order(WORKSPACE_WALLPAPERS, from, to, count);
         self.announce_workspaces();
         self.state_changed();
     }
@@ -498,31 +499,31 @@ impl Edel {
     }
 }
 
-/// Writes the person's `workspaces.names` in their new order after the
-/// workspace at place `from` moved to `to` among `count` (M5.2p), as
-/// Settings writes a key (ADR-008). Nothing is written when no file names
-/// a workspace; a failure says what stays as it was.
-fn keep_names(from: usize, to: usize, count: usize) {
+/// Writes the person's `key`, a list by workspace (`workspaces.names`,
+/// M5.2p, or `workspaces.wallpapers`, M5.12b5), in its new order after the
+/// workspace at place `from` moved to `to` among `count`, as Settings
+/// writes a key (ADR-008). Nothing is written when no file holds the
+/// list; a failure says what stays as it was.
+fn keep_order(key: &str, from: usize, to: usize, count: usize) {
     let read = |path: std::path::PathBuf| std::fs::read_to_string(places::found(&path)).ok();
     let machine = read(places::machine_settings());
     let person = places::person_settings().and_then(read);
-    let names =
-        settings::texts(WORKSPACE_NAMES, machine.as_deref(), person.as_deref()).unwrap_or_default();
+    let names = settings::texts(key, machine.as_deref(), person.as_deref()).unwrap_or_default();
     if names.is_empty() {
         return;
     }
-    let without = settings::texts(WORKSPACE_NAMES, machine.as_deref(), None).unwrap_or_default();
+    let without = settings::texts(key, machine.as_deref(), None).unwrap_or_default();
     let list = reordered_names(&names, count, from, to);
     let value = names_to_write(&list, &without);
     match places::person_settings().map(|p| places::found(&p)) {
         Some(path) => {
-            if let Err(e) = settings::write(&path, WORKSPACE_NAMES, value.as_deref()) {
+            if let Err(e) = settings::write(&path, key, value.as_deref()) {
                 eprintln!(
                     "edel-compositor: {}",
-                    messages::names_not_kept(format!("{e:#}"))
+                    messages::order_not_kept(key, format!("{e:#}"))
                 );
             }
         }
-        None => eprintln!("edel-compositor: {}", messages::NAMES_NO_HOME),
+        None => eprintln!("edel-compositor: {}", messages::order_no_home(key)),
     }
 }

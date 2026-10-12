@@ -322,6 +322,10 @@ commands() {
 		'wallpaper picture') edel settings set "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
 		'wallpaper colour') edel settings set 'appearance.wallpaper=#336699' ;;
 		'wallpaper default') edel settings reset appearance.wallpaper ;;
+		# Each workspace its own wallpaper (M5.12b5): workspace 2 a colour,
+		# and the list taken out again, which gives it Appearance's.
+		'wallpaper workspace 2') edel settings set 'workspaces.wallpapers=["", "#336699"]' ;;
+		'wallpaper workspaces default') edel settings reset workspaces.wallpapers ;;
 		# The glass (M5.12b3): a see-through bar at 40 percent over the
 		# wallpaper, its blur at 100 (frosted) or 0 (sharp), and the default.
 		'glass on') edel settings set appearance.panel_opacity=40 appearance.blur=100 ;;

@@ -4893,6 +4893,32 @@ case_wallpaper() {
 	[ "$backdrop" != 000000 ] || fail "the overview's backdrop at 1276,4 is black (wallpaper-backdrop.png)"
 	python3 ci/qmp.py key esc
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || fail "Escape did not leave the overview over the wallpaper"
+	# Each workspace its own wallpaper (M5.12b5): with the test picture as
+	# Appearance's, workspace 2 gets the colour #336699 from
+	# workspaces.wallpapers (`["", "#336699"]`), logged on the reload as
+	# `wallpaper on workspace 2: colour #336699`. Super+2 shows it at both
+	# top corners, which no window reaches (earlier cases may leave one on
+	# workspace 2, over the centre); Super+1 shows the picture again at its
+	# left half. The list is taken out last, which
+	# gives workspace 2 Appearance's picture back.
+	logged=$(count 'edel-compositor: wallpaper on workspace 2: colour #336699')
+	guest 'wallpaper workspace 2'
+	wait_more 'edel-compositor: wallpaper on workspace 2: colour #336699' "$logged" || fail "the compositor did not take workspace 2's colour #336699 from workspaces.wallpapers"
+	shown=$(count 'edel-compositor: workspace 2$')
+	python3 ci/qmp.py key meta_l-2
+	wait_more 'edel-compositor: workspace 2$' "$shown" || fail "Super+2 did not show workspace 2"
+	shot wallpaper-workspace-2 1276 4 336699 >/dev/null ||
+		fail "workspace 2's top right at 1276,4 is not its wallpaper colour #336699 (wallpaper-workspace-2.png)"
+	shot wallpaper-workspace-2-corner 4 4 336699 >/dev/null ||
+		fail "workspace 2's top left at 4,4 is not its wallpaper colour #336699 (wallpaper-workspace-2-corner.png)"
+	shown=$(count 'edel-compositor: workspace 1$')
+	python3 ci/qmp.py key meta_l-1
+	wait_more 'edel-compositor: workspace 1$' "$shown" || fail "Super+1 did not show workspace 1"
+	shot wallpaper-workspace-1 4 4 c0563a >/dev/null ||
+		fail "workspace 1's top left at 4,4 is not Appearance's picture, #c0563a (wallpaper-workspace-1.png)"
+	logged=$(count 'edel-compositor: wallpaper on workspace 2: /')
+	guest 'wallpaper workspaces default'
+	wait_more 'edel-compositor: wallpaper on workspace 2: /' "$logged" || fail "taking workspaces.wallpapers out did not give workspace 2 Appearance's picture back"
 	logged=$(count 'edel-compositor: wallpaper colour #336699')
 	guest 'wallpaper colour'
 	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" || fail "the compositor did not take the colour #336699 from appearance.wallpaper"

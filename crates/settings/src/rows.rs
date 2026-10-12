@@ -81,6 +81,11 @@ pub const ROWS: &[Row] = &[
         key: "workspaces.names",
         title: n_("Workspace names"),
     },
+    // One wallpaper per workspace (M5.12b5): its group sits under the names.
+    Row {
+        key: "workspaces.wallpapers",
+        title: n_("Wallpaper for each workspace"),
+    },
     Row {
         key: "workspaces.apps",
         title: n_("Apps on their workspace"),
@@ -653,7 +658,7 @@ mod tests {
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
         assert_eq!(titles.len(), 8);
         assert_eq!(on_page("panels").count(), 3);
-        assert_eq!(on_page("workspaces").count(), 6);
+        assert_eq!(on_page("workspaces").count(), 7);
         assert_eq!(
             values("workspaces.overview_strip"),
             ["left", "right", "top", "bottom"]
