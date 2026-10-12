@@ -474,6 +474,9 @@ pub const KEYS: &[Key] = &[
     ),
     now("appearance.shadow_size", Kind::WholeFromTo(0, 64)),
     now("appearance.shadow_darkness", Kind::WholeFromTo(0, 100)),
+    // The glass behind see-through panels (M5.12b3): how strongly the
+    // wallpaper blurs there, 0 showing it sharp.
+    now("appearance.blur", Kind::WholeFromTo(0, 100)),
     // The text (M5.12b5): the interface and monospace fonts by family name,
     // and every text size in percent of the release's.
     now(FONT, Kind::Text),
@@ -876,6 +879,10 @@ pub struct Appearance {
     /// absent is the scheme's own colour.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadow_darkness: Option<u32>,
+    /// How strongly the wallpaper blurs behind see-through panels, 0 to 100
+    /// (M5.12b3); 0 shows it sharp. Absent is the release's 50.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blur: Option<u32>,
     /// The interface font's family (M5.12b5); absent is the tokens' own.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub font: Option<String>,
@@ -993,15 +1000,16 @@ pub const SHAPE_KEYS: &[&str] = &[
     "appearance.panel_opacity",
 ];
 
-/// The four keys of the windows' depth (M5.12b3), each a whole number in its
-/// key table range: the focused and the other windows' opacity, and the
-/// shadow's blur and darkness. Not in [`SHAPE_KEYS`], whose grid Settings
-/// draws for the six shape keys alone.
+/// The five keys of the windows' depth (M5.12b3), each a whole number in its
+/// key table range: the focused and the other windows' opacity, the shadow's
+/// blur and darkness, and the glass behind see-through panels. Not in
+/// [`SHAPE_KEYS`], whose grid Settings draws for the six shape keys alone.
 pub const DEPTH_KEYS: &[&str] = &[
     "appearance.window_opacity",
     "appearance.window_opacity_unfocused",
     "appearance.shadow_size",
     "appearance.shadow_darkness",
+    "appearance.blur",
 ];
 
 /// The interface font's family, as fontconfig names it (M5.12b5).
@@ -1048,6 +1056,7 @@ pub fn shape_changed(old: &Appearance, new: &Appearance) -> bool {
         || old.window_opacity_unfocused != new.window_opacity_unfocused
         || old.shadow_size != new.shadow_size
         || old.shadow_darkness != new.shadow_darkness
+        || old.blur != new.blur
 }
 
 /// The Lock screen page (M5.10c5): the parts the lock and login screens

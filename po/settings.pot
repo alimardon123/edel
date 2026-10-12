@@ -299,6 +299,9 @@ msgstr ""
 msgid "{n} px"
 msgstr ""
 
+msgid "Sharp"
+msgstr ""
+
 msgid "The window you are using, with its title bar"
 msgstr ""
 
@@ -309,6 +312,9 @@ msgid "How far the shadow spreads. Full and Balanced effects only"
 msgstr ""
 
 msgid "How dark the shadow is"
+msgstr ""
+
+msgid "How much the wallpaper blurs behind see-through panels"
 msgstr ""
 
 msgid "Your choice"
@@ -921,6 +927,9 @@ msgid "Shadow size"
 msgstr ""
 
 msgid "Shadow darkness"
+msgstr ""
+
+msgid "Glass blur"
 msgstr ""
 
 msgid "Interface font"
