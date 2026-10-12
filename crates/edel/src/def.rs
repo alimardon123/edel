@@ -949,15 +949,17 @@ mod tests {
         for name in ["container", "vm"] {
             let text = fs::read_to_string(fixtures.join(format!("{name}.toml"))).unwrap();
             let old: toml::Table = toml::from_str(&text).unwrap();
-            let install: Vec<String> = old["packages"]["install"].clone().try_into().unwrap();
+            let mut install: Vec<String> = old["packages"]["install"].clone().try_into().unwrap();
             let services: Services = old
                 .get("services")
                 .map(|s| s.clone().try_into().unwrap())
                 .unwrap_or_default();
             let mut old_services: Vec<(&str, &str)> = services.entries();
             if name != "container" {
-                // Added since format 1: the machine feature's clock (M1.13).
+                // Added since format 1: the machine feature's clock (M1.13),
+                // and its doas and linux-pam, which login's doas moved to (M6.5).
                 old_services.push(("default", "edel-clock"));
+                install.extend(["doas", "linux-pam"].map(String::from));
             }
             let new = repo_def(name);
             assert_eq!(sorted(&new.packages), sorted(&install), "{name}: packages");

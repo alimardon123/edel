@@ -4,8 +4,8 @@
 //! under it and the buttons that fit. Every state of the page is a value
 //! here, so every state is tested; `updates.rs` only draws it.
 //!
-//! The words are a familiar updates page's: Check for updates, Update now,
-//! Restart now, and only the Details at the page's foot say "slot".
+//! The words are a familiar updates page's: Check for updates, Install the
+//! update, Restart now, and only the Details at the page's foot say "slot".
 
 use edel::i18n::{tr, trf};
 use edel::version::compare;
@@ -222,7 +222,7 @@ pub struct Inputs<'a> {
     pub version: Option<&'a str>,
     /// The channel followed, as a person reads it (`Stable`).
     pub channel: &'a str,
-    /// Whether Settings runs as root, which it does not until `doas` (M6.5).
+    /// Whether Settings runs as root (a test or an appliance does).
     pub root: bool,
 }
 
@@ -287,7 +287,7 @@ pub fn view(i: &Inputs) -> View {
                 "This takes a few minutes. You can keep using the computer; the new version starts after a restart.",
             )
             .into(),
-            primary: primary(Action::Install, tr("Update now")),
+            primary: primary(Action::Install, tr("Install the update")),
             ..base
         },
         Phase::GoingBack => View {
@@ -356,7 +356,7 @@ pub fn view(i: &Inputs) -> View {
                     &[("version", &found.version)],
                 ),
             },
-            primary: primary(Action::Install, tr("Update now")),
+            primary: primary(Action::Install, tr("Install the update")),
             news: Some(found.clone()),
             ..base
         },
@@ -418,22 +418,32 @@ fn failed(doing: Doing, message: &str, root: bool, base: View) -> View {
     }
 }
 
+/// Whether a failure's message is a refusal of rights: doas's, or edel's
+/// own words for a person outside the admin group (M6.5).
+fn refused_for_rights(message: &str) -> bool {
+    message.contains("Operation not permitted")
+        || message.contains("not in the group")
+        || message.contains("permission denied")
+}
+
 /// What a failure says to a person: what `edel` said as a sentence, or,
 /// for the two causes people meet, a sentence of its own. The command's
 /// own words stay in the page's Details.
 pub fn plain_failure(doing: Doing, message: &str, root: bool) -> String {
-    // Changing the machine needs root until `doas` (M6.5): a person's click
-    // reads this whatever the command said first.
-    if !root && doing != Doing::Check {
+    // A person who is not an administrator is refused by doas or by edel
+    // itself: the words say what to do about that, and any other failure
+    // (the network, a release that is not newer) keeps the command's own
+    // message (M6.5).
+    if !root && doing != Doing::Check && refused_for_rights(message) {
         return match doing {
             Doing::Install => tr(
-                "Installing needs administrator rights, which Settings cannot ask for yet. For now, run edel update as the administrator.",
+                "Installing needs administrator rights, and only an administrator can change the system. Ask an administrator to install the update.",
             ),
             Doing::GoBack => tr(
-                "Going back needs administrator rights, which Settings cannot ask for yet. For now, run edel rollback as the administrator.",
+                "Going back needs administrator rights, and only an administrator can change the system. Ask an administrator to go back.",
             ),
             _ => tr(
-                "Restarting needs administrator rights, which Settings cannot ask for yet. For now, restart from the power button.",
+                "Restarting needs administrator rights, or the power buttons of the login screen. Restart from the power button.",
             ),
         }
         .to_string();
@@ -616,7 +626,7 @@ mod tests {
         assert_eq!(v.title, "An update is available");
         assert_eq!(v.sub, "Version 2026.10.6 is ready to install (412 MB)");
         assert_eq!(v.icon, "status-new");
-        assert_eq!(v.primary.label, "Update now");
+        assert_eq!(v.primary.label, "Install the update");
         assert_eq!(v.primary.action, Action::Install);
         assert_eq!(v.news, Some(found(true)));
         // Not newer: the page is as it was.
@@ -632,7 +642,7 @@ mod tests {
         let v = view(&inputs(&Phase::Installing, None));
         assert!(v.busy);
         assert_eq!(v.title, "Installing the update...");
-        assert_eq!(v.primary.label, "Update now");
+        assert_eq!(v.primary.label, "Install the update");
     }
 
     #[test]
@@ -693,6 +703,27 @@ mod tests {
     }
 
     #[test]
+    fn a_failure_that_is_not_a_refusal_keeps_its_own_words_for_a_person() {
+        let phase = Phase::Failed {
+            doing: Doing::Install,
+            message: "could not download the release: the network is down".into(),
+        };
+        let mut i = inputs(&phase, None);
+        i.root = false;
+        assert_eq!(
+            view(&i).sub,
+            "Can't reach the update server. Check your internet connection and try again."
+        );
+        let phase = Phase::Failed {
+            doing: Doing::GoBack,
+            message: "refused: no version is kept ready".into(),
+        };
+        let mut i = inputs(&phase, None);
+        i.root = false;
+        assert_eq!(view(&i).sub, "Refused: no version is kept ready.");
+    }
+
+    #[test]
     fn changing_the_machine_as_a_person_says_what_is_missing() {
         let phase = Phase::Failed {
             doing: Doing::Install,
@@ -703,10 +734,10 @@ mod tests {
         let v = view(&i);
         assert_eq!(v.title, "Couldn't install the update");
         assert!(v.sub.contains("administrator rights"), "{}", v.sub);
-        assert!(v.sub.contains("edel update"), "{}", v.sub);
+        assert!(v.sub.contains("Ask an administrator"), "{}", v.sub);
         let phase = Phase::Failed {
             doing: Doing::Restart,
-            message: "reboot: must be run as root".into(),
+            message: "doas: Operation not permitted".into(),
         };
         let mut i = inputs(&phase, None);
         i.root = false;

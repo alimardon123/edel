@@ -89,6 +89,18 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Password for {user}"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Type your password first."
+msgstr ""
+
+msgid "Wrong password. Type it again."
+msgstr ""
+
 msgid "Headphones, speakers, mice and keyboards. Pairings stay on this computer."
 msgstr ""
 
@@ -213,6 +225,12 @@ msgid "Address"
 msgstr ""
 
 msgid "Keyboards that ask you to type a code on them cannot be paired here yet; pair them with bluetoothctl."
+msgstr ""
+
+msgid "could not run {program}: {why}; the doas rule comes with the machine feature"
+msgstr ""
+
+msgid "could not finish {program}: {why}"
 msgstr ""
 
 msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
@@ -753,9 +771,6 @@ msgid "Password for {ssid}"
 msgstr ""
 
 msgid "Join"
-msgstr ""
-
-msgid "Cancel"
 msgstr ""
 
 msgid "{device} {what}"
@@ -1310,7 +1325,7 @@ msgstr ""
 msgid "This takes a few minutes. You can keep using the computer; the new version starts after a restart."
 msgstr ""
 
-msgid "Update now"
+msgid "Install the update"
 msgstr ""
 
 msgid "Going back..."
@@ -1382,13 +1397,13 @@ msgstr ""
 msgid "Couldn't restart"
 msgstr ""
 
-msgid "Installing needs administrator rights, which Settings cannot ask for yet. For now, run edel update as the administrator."
+msgid "Installing needs administrator rights, and only an administrator can change the system. Ask an administrator to install the update."
 msgstr ""
 
-msgid "Going back needs administrator rights, which Settings cannot ask for yet. For now, run edel rollback as the administrator."
+msgid "Going back needs administrator rights, and only an administrator can change the system. Ask an administrator to go back."
 msgstr ""
 
-msgid "Restarting needs administrator rights, which Settings cannot ask for yet. For now, restart from the power button."
+msgid "Restarting needs administrator rights, or the power buttons of the login screen. Restart from the power button."
 msgstr ""
 
 msgid "Can't reach the update server. Check your internet connection and try again."
@@ -1571,6 +1586,18 @@ msgstr ""
 msgid "Its icon's name: {app}"
 msgstr ""
 
+msgid "Installing changes the system, so Edel OS asks for your password."
+msgstr ""
+
+msgid "Install"
+msgstr ""
+
+msgid "Go back"
+msgstr ""
+
+msgid "Going back changes the system, so Edel OS asks for your password."
+msgstr ""
+
 msgid "Running now"
 msgstr ""
 
@@ -1652,7 +1679,7 @@ msgstr ""
 msgid "Settings could not find your account in /etc/passwd, so there is no one to show."
 msgstr ""
 
-msgid "Can change the system. Changing it needs administrator rights, which Settings cannot ask for yet."
+msgid "Can change the system. Changing it needs administrator rights."
 msgstr ""
 
 msgid "Other people"

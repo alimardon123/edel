@@ -3,10 +3,12 @@
 //! `edel update --check` are one level (ADR-008) and a failure reads the
 //! same in both, in `edel`'s own words (`docs/MESSAGES.md`).
 //!
-//! The commands that change the machine need root until `doas` arrives
-//! (M6.5, which will make this module run them through it). Until then
-//! a person's click on one reads `edel`'s own refusal, as it is.
+//! The commands that change the machine run as root through `doas`
+//! (M6.5): `edel_as_admin` gives the administrator's password to
+//! `edel --password-stdin`, which checks it before it changes anything.
+//! The page asks for that password in its own dialog (`ask.rs`).
 
+use std::io::Write;
 use std::process::{Command, Stdio};
 
 use edel::i18n::trf;
@@ -51,12 +53,71 @@ pub fn restart() -> Outcome {
     edel(&["restart"])
 }
 
-/// Whether Settings runs as root, which only a test or an appliance does:
-/// the Updates page words a refusal differently for a person, who cannot
-/// install until `doas` (M6.5).
+/// Whether Settings runs as root, which only a test or an appliance does;
+/// a person's Settings runs the commands through doas instead (M6.5).
 pub fn is_root() -> bool {
     use std::os::unix::fs::MetadataExt;
     std::fs::metadata("/proc/self").is_ok_and(|m| m.uid() == 0)
+}
+
+/// Runs `doas -n edel ARGS --password-stdin` (M6.5): doas lets the
+/// administrators run `edel` as root, and `edel` checks `password` before
+/// it changes what can break the machine. The password goes in on one line,
+/// the pipe is closed after it, and the copy held here is cleared. Call it
+/// from a thread of its own.
+pub fn edel_as_admin(args: &[&str], password: String) -> Outcome {
+    let mut all = vec!["-n", "edel"];
+    all.extend_from_slice(args);
+    all.push("--password-stdin");
+    with_password("doas", &all, password)
+}
+
+/// Runs `program` with `args`, writing `password` and a newline to its
+/// standard input and then closing it, and waits for it.
+fn with_password(program: &str, args: &[&str], mut password: String) -> Outcome {
+    let started = Command::new(program)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    let mut child = match started {
+        Ok(child) => child,
+        Err(why) => {
+            password.clear();
+            return Outcome {
+                ok: false,
+                code: None,
+                out: String::new(),
+                err: trf(
+                    "could not run {program}: {why}; the doas rule comes with the machine feature",
+                    &[("program", program), ("why", &why.to_string())],
+                ),
+            };
+        }
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(password.as_bytes());
+        let _ = stdin.write_all(b"\n");
+    }
+    password.clear();
+    match child.wait_with_output() {
+        Ok(output) => Outcome {
+            ok: output.status.success(),
+            code: output.status.code(),
+            out: text(&output.stdout),
+            err: text(&output.stderr),
+        },
+        Err(why) => Outcome {
+            ok: false,
+            code: None,
+            out: String::new(),
+            err: trf(
+                "could not finish {program}: {why}",
+                &[("program", program), ("why", &why.to_string())],
+            ),
+        },
+    }
 }
 
 fn run(program: &str, args: &[&str]) -> Outcome {
@@ -135,6 +196,21 @@ mod tests {
             ),
             (false, Some(3), "hello", "trouble")
         );
+    }
+
+    #[test]
+    fn the_password_goes_in_on_one_line_and_the_program_sees_it() {
+        let got = with_password(
+            "sh",
+            &["-c", "read line && echo \"got $line\" && exit 3", "sh"],
+            "open".into(),
+        );
+        assert_eq!(
+            (got.ok, got.code, got.out.as_str()),
+            (false, Some(3), "got open")
+        );
+        let missing = with_password("edel-no-such-doas", &[], "open".into());
+        assert!(!missing.ok && missing.err.starts_with("could not run edel-no-such-doas"));
     }
 
     #[test]

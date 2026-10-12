@@ -15,6 +15,7 @@ mod installer;
 mod live;
 mod loader;
 mod machine;
+mod privilege;
 mod release;
 mod report;
 mod run;
@@ -37,6 +38,9 @@ use crate::run::Runner;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+    /// Read your password from standard input, for programs such as Settings that asked for it themselves
+    #[arg(long, global = true)]
+    password_stdin: bool,
 }
 
 /// `edel`'s command table, for what is written from it: the completion
@@ -439,12 +443,17 @@ fn main() -> std::process::ExitCode {
     // The language `region.language` names, for every word below.
     i18n::init("edel");
     let matches = translated(cli_command()).get_matches();
-    let command = match Cli::from_arg_matches(&matches) {
-        Ok(cli) => cli.command,
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
         Err(err) => err.exit(),
     };
-    let name = command.name();
-    match run(command) {
+    let name = cli.command.name();
+    // Who may change the machine, and their password, before anything runs (M6.5).
+    if let Err(err) = privilege::gate(&cli.command, cli.password_stdin) {
+        eprintln!("{}", failure_line(name, &err));
+        return std::process::ExitCode::FAILURE;
+    }
+    match run(cli.command) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{}", failure_line(name, &err));
@@ -958,8 +967,9 @@ mod tests {
              `edel` is the one tool of Edel OS: it updates and rolls back the system, \
              applies and describes the settings file, installs Edel OS on a disk and \
              reports on the hardware. Each command below says what `edel COMMAND --help` \
-             says. Commands that change the machine need root until `doas` arrives \
-             (roadmap M6.5).\n\n\
+             says. Commands that change the machine need root: an administrator runs \
+             them with `doas edel COMMAND`, and some ask the administrator's \
+             password first, as `edel rollback` does (roadmap M6.5).\n\n\
              | Command | What it does |\n|---|---|\n",
         );
         for sub in cli.get_subcommands().filter(|c| !c.is_hide_set()) {

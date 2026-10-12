@@ -122,3 +122,32 @@ assert r["feature_notes"] == [], "feature notes: %s" % r["feature_notes"]
 print("report:", r["version"], r["kernel"], len(r["pci"]), "PCI devices,", r["memory_in_use_mib"], "MiB in use, features", " ".join(r["features"]))
 ' || fail "edel report printed no valid report: $(head -c 400 out/report.toml)"
 echo "PASS: edel report printed the release, kernel, features, boot line, PCI devices and kernel log as TOML"
+
+# M6.5: doas and the administrator's password. As root: ci gets a password,
+# and guest is added with no admin rights. Each check then runs as the user
+# named, and a refusal must exit non-zero and say why.
+ssh_root sh -c 'echo "ci:edel-ci-test" | chpasswd && adduser -D guest' ||
+	fail "could not give ci a password and add the user guest"
+ssh_ci doas -n edel status >out/doas-status.log 2>&1 || fail "ci could not run doas -n edel status: $(cat out/doas-status.log)"
+grep -q '^running: ' out/doas-status.log || fail "doas -n edel status printed no status: $(cat out/doas-status.log)"
+echo "PASS: ci (in group admin) ran doas -n edel status with no password and got the status"
+if ssh_root su -s /bin/sh guest -c 'doas -n edel status' >out/doas-guest.log 2>&1; then
+	fail "guest, who is not in group admin, ran doas -n edel status"
+fi
+echo "PASS: guest, who is not in group admin, was refused by doas: $(head -c 200 out/doas-guest.log)"
+code=0
+ssh_ci 'echo wrong | doas -n edel rollback --password-stdin' >out/doas-wrong.log 2>&1 || code=$?
+[ "$code" = 1 ] || fail "a wrong password exited $code, not 1: $(cat out/doas-wrong.log)"
+grep -q 'wrong password for ci' out/doas-wrong.log || fail "a wrong password was not said: $(cat out/doas-wrong.log)"
+echo "PASS: rollback with a wrong password exited 1 and said wrong password for ci"
+code=0
+ssh_ci 'echo edel-ci-test | doas -n edel update --password-stdin /nonexistent/release.toml' >out/doas-update.log 2>&1 || code=$?
+[ "$code" != 0 ] || fail "update with a missing release exited 0"
+grep -qi 'release' out/doas-update.log && ! grep -qi 'password' out/doas-update.log ||
+	fail "update with the right password did not get as far as the release: $(cat out/doas-update.log)"
+echo "PASS: update with the right password got as far as reading the release, and failed there: $(head -c 200 out/doas-update.log)"
+code=0
+ssh_ci 'doas -n edel update --unsigned /nonexistent.img' >out/doas-unsigned.log 2>&1 || code=$?
+[ "$code" != 0 ] && grep -q 'developer mode' out/doas-unsigned.log ||
+	fail "update --unsigned without developer mode was not refused by name: $(cat out/doas-unsigned.log)"
+echo "PASS: update --unsigned was refused because developer mode is off"
