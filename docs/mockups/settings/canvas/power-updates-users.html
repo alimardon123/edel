@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings pages on one frame</title>
+
+</head>
+<body>
+
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+
+<div style="width: 1640px; height: 1700px; box-sizing: border-box; padding: 40px; font-family: 'Inter', sans-serif; background: #e9ecf1; color: #1c1e22; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px">
+
+<section aria-label="Power page" style="background: #ffffff; border-radius: 14px; border: 1px solid rgba(20,24,32,0.08); box-shadow: 0 1px 2px rgba(20,24,32,0.04), 0 8px 24px rgba(20,24,32,0.05); padding: 36px 44px; display: flex; flex-direction: column; gap: 26px">
+<header>
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Power</h1>
+<p style="margin: 4px 0 0; font-size: 13px; color: #5d636e">The battery, the lid and the power button.</p>
+</header>
+<!-- hero: the battery as it is, with its day -->
+<div style="border-radius: 18px; background: linear-gradient(180deg,#f7f9fc,#f1f4f9); border: 1px solid rgba(20,24,32,0.06); padding: 22px 24px 18px">
+<div style="display: flex; align-items: center; gap: 18px">
+<span style="position: relative; width: 58px; height: 30px; border-radius: 8px; border: 2px solid #1c1e22; box-sizing: border-box; padding: 3px"><span style="display: block; width: 82%; height: 100%; border-radius: 4px; background: #34a853"></span><span style="position: absolute; right: -6px; top: 8px; width: 3px; height: 10px; border-radius: 0 2px 2px 0; background: #1c1e22"></span></span>
+<div style="flex-grow: 1"><div style="font-size: 30px; font-weight: 650; letter-spacing: -0.02em; line-height: 1">82%</div><div style="font-size: 13px; color: #5d636e; margin-top: 6px">Charging · full in 45 minutes</div></div>
+<div style="text-align: right; font-size: 12px; color: #8d929b; line-height: 1.6">Battery health<br><span style="font-size: 15px; color: #1c1e22; font-weight: 600">96%</span></div>
+</div>
+<!-- the last 24 hours -->
+<div style="margin-top: 18px; height: 64px; display: flex; align-items: flex-end; gap: 3px">
+<span style="flex: 1; height: 90%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 84%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 76%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 68%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 60%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 51%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 43%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 36%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 30%; border-radius: 3px; background: #c9d6f2"></span><span style="flex: 1; height: 26%; border-radius: 3px; background: #f2c9c4"></span><span style="flex: 1; height: 40%; border-radius: 3px; background: #b6e0c1"></span><span style="flex: 1; height: 56%; border-radius: 3px; background: #b6e0c1"></span><span style="flex: 1; height: 70%; border-radius: 3px; background: #b6e0c1"></span><span style="flex: 1; height: 82%; border-radius: 3px; background: #34a853"></span>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 11px; color: #8d929b; margin-top: 6px"><span>24 hours ago</span><span>Now</span></div>
+</div>
+<!-- power mode -->
+<div>
+<h2 style="margin: 0 0 10px; font-size: 13px; font-weight: 600">Power mode</h2>
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px">
+<div style="border-radius: 14px; border: 1px solid rgba(20,24,32,0.08); background: #fafbfc; padding: 14px; text-align: center"><div style="color: #34a853; display: flex; justify-content: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13c0-6 4-9 10-10-1 6-4 10-10 10zM3 13l5-5"></path></svg></div><div style="font-size: 13px; font-weight: 600; margin-top: 6px">Saver</div><div style="font-size: 11.5px; color: #8d929b; margin-top: 2px">Longest battery</div></div>
+<div style="border-radius: 14px; border: 2px solid #2d6ae3; background: #f3f7ff; padding: 13px; text-align: center"><div style="color: #2d6ae3; display: flex; justify-content: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5a5.5 5.5 0 1 0 0 11zM8 2.5a5.5 5.5 0 1 1 0 11"></path></svg></div><div style="font-size: 13px; font-weight: 600; margin-top: 6px">Balanced</div><div style="font-size: 11.5px; color: #8d929b; margin-top: 2px">Automatic</div></div>
+<div style="border-radius: 14px; border: 1px solid rgba(20,24,32,0.08); background: #fafbfc; padding: 14px; text-align: center"><div style="color: #e08a00; display: flex; justify-content: center"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.75L4 9h4l-1 5.25L12 7H8z"></path></svg></div><div style="font-size: 13px; font-weight: 600; margin-top: 6px">Performance</div><div style="font-size: 11.5px; color: #8d929b; margin-top: 2px">Full speed</div></div>
+</div>
+</div>
+<!-- when -->
+<div style="border-radius: 14px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.07); overflow: hidden">
+<div style="display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 0 16px"><span style="width: 30px; height: 30px; border-radius: 8px; background: #eef2fc; color: #2d6ae3; display: flex; align-items: center; justify-content: center; font-size: 14px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10v6.5H3zM1.5 12.5h13"></path></svg></span><div style="flex-grow: 1"><div style="font-size: 13px">When the lid closes</div></div><span style="font-size: 13px; color: #5d636e">Sleep ›</span></div>
+<div style="display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 0 16px; border-top: 1px solid rgba(20,24,32,0.06)"><span style="width: 30px; height: 30px; border-radius: 8px; background: #fdeeee; color: #d0363f; display: flex; align-items: center; justify-content: center; font-size: 14px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v5.5M4.6 4.2a5 5 0 1 0 6.8 0"></path></svg></span><div style="flex-grow: 1"><div style="font-size: 13px">The power button</div></div><span style="font-size: 13px; color: #5d636e">Ask what to do ›</span></div>
+<div style="display: flex; align-items: center; gap: 14px; min-height: 54px; padding: 0 16px; border-top: 1px solid rgba(20,24,32,0.06)"><span style="width: 30px; height: 30px; border-radius: 8px; background: #f1ecfd; color: #7a4fe0; display: flex; align-items: center; justify-content: center; font-size: 13px"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 9.5A5.5 5.5 0 0 1 6.5 3 5.5 5.5 0 1 0 13 9.5z"></path></svg></span><div style="flex-grow: 1"><div style="font-size: 13px">Turn the screen off after</div></div><span style="font-size: 13px; color: #5d636e">5 minutes ›</span></div>
+</div>
+</section>
+
+<section aria-label="Updates page" style="background: #ffffff; border-radius: 14px; border: 1px solid rgba(20,24,32,0.08); box-shadow: 0 1px 2px rgba(20,24,32,0.04), 0 8px 24px rgba(20,24,32,0.05); padding: 36px 44px; display: flex; flex-direction: column; gap: 26px">
+<header>
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Updates</h1>
+<p style="margin: 4px 0 0; font-size: 13px; color: #5d636e">Edel OS updates as a whole, and can always roll back.</p>
+</header>
+<!-- hero: centred, calm -->
+<div style="border-radius: 18px; background: radial-gradient(120% 120% at 50% 0%, #eef6f0 0%, #f7f9fc 60%); border: 1px solid rgba(20,24,32,0.06); padding: 30px 24px 26px; text-align: center">
+<span style="display: inline-flex; width: 64px; height: 64px; border-radius: 32px; background: #34a853; color: #fff; align-items: center; justify-content: center; box-shadow: 0 8px 24px rgba(52,168,83,0.30)"><svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.25l3 3 6-6.5"></path></svg></span>
+<div style="font-size: 20px; font-weight: 650; letter-spacing: -0.01em; margin-top: 14px">Edel OS is up to date</div>
+<div style="font-size: 13px; color: #5d636e; margin-top: 4px">Version 2026.10 · checked 2 minutes ago</div>
+<div style="display: flex; gap: 10px; justify-content: center; margin-top: 18px">
+<button style="height: 36px; padding: 0 20px; border-radius: 18px; border: 0; background: #2d6ae3; color: #fff; font: inherit; font-size: 13px; font-weight: 600">Check for updates</button>
+</div>
+</div>
+<!-- the safety net: the version kept ready -->
+<div style="display: flex; align-items: center; gap: 14px; border-radius: 14px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.07); padding: 14px 16px"><span style="flex: none; width: 32px; height: 32px; border-radius: 9px; background: #eaf0fc; color: #2d6ae3; display: grid; place-items: center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v4h4"/><path d="M3.5 8A5 5 0 1 0 5 4.3"/></svg></span><div style="flex: 1; min-width: 0"><div style="font-size: 13px; font-weight: 600">2026.09 is kept ready</div><div style="font-size: 12px; color: #8d929b; margin-top: 2px">If an update fails to start, Edel OS rolls back to it by itself.</div></div><button style="flex: none; height: 30px; padding: 0 14px; border-radius: 15px; border: 0; background: rgba(20,24,32,0.06); color: #1c1e22; font: inherit; font-size: 12.5px; font-weight: 500">Roll back…</button></div>
+<!-- what this version brought -->
+<div style="border-radius: 14px; border: 1px solid rgba(20,24,32,0.07); background: #fafbfc; padding: 16px 18px">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-size: 13px; font-weight: 600">New in 2026.10</span><span style="font-size: 12px; color: #2d6ae3">All changes ›</span></div>
+<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px; font-size: 12.5px; color: #3a3f47">
+<span>✦ Lock screen looks you can make your own</span><span>✦ Settings grouped, and every page calmer</span><span>✦ Motion: speed and feel</span>
+</div>
+</div>
+<div style="border-radius: 14px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.07); overflow: hidden">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 54px; padding: 0 16px"><div><div style="font-size: 13px">Channel</div><div style="font-size: 12px; color: #8d929b; margin-top: 2px">Stable gets each release once it has settled</div></div>
+<div style="display: flex; padding: 2px; border-radius: 8px; background: #eef0f3"><span style="height: 26px; padding: 0 14px; border-radius: 6px; font-size: 12px; font-weight: 600; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.16); display: flex; align-items: center">Stable</span><span style="height: 26px; padding: 0 14px; font-size: 12px; color: #5d636e; display: flex; align-items: center">Preview</span></div></div>
+</div>
+</section>
+
+<section aria-label="Users page" style="background: #ffffff; border-radius: 14px; border: 1px solid rgba(20,24,32,0.08); box-shadow: 0 1px 2px rgba(20,24,32,0.04), 0 8px 24px rgba(20,24,32,0.05); padding: 36px 44px; display: flex; flex-direction: column; gap: 26px">
+<header>
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Users</h1>
+<p style="margin: 4px 0 0; font-size: 13px; color: #5d636e">The people who use this computer.</p>
+</header>
+<!-- hero: you -->
+<div style="border-radius: 18px; background: linear-gradient(180deg,#f7f9fc,#f1f4f9); border: 1px solid rgba(20,24,32,0.06); padding: 26px; display: flex; flex-direction: column; align-items: center; text-align: center">
+<span style="position: relative; width: 84px; height: 84px; border-radius: 42px; background: linear-gradient(140deg,#5b8cf0,#2d6ae3 55%,#7a4fe0); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 34px; font-weight: 600; box-shadow: 0 10px 26px rgba(45,106,227,0.32)">A<span style="position: absolute; right: -2px; bottom: -2px; width: 26px; height: 26px; border-radius: 13px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; font-size: 12px; color: #2d6ae3">✎</span></span>
+<div style="font-size: 20px; font-weight: 650; margin-top: 14px">Alimardon</div>
+<div style="font-size: 13px; color: #5d636e; margin-top: 3px">alimardon · Administrator</div>
+<div style="display: flex; gap: 10px; margin-top: 16px">
+<button style="height: 34px; padding: 0 16px; border-radius: 17px; border: 1px solid rgba(20,24,32,0.14); background: #fff; color: #1c1e22; font: inherit; font-size: 13px">Change password…</button>
+</div>
+</div>
+<div>
+<h2 style="margin: 0 0 10px; font-size: 13px; font-weight: 600">Other people</h2>
+<div style="border-radius: 14px; background: #fafbfc; border: 1px dashed rgba(20,24,32,0.14); padding: 22px 16px; display: flex; align-items: center; gap: 14px">
+<span style="width: 40px; height: 40px; border-radius: 20px; background: #eef0f3; color: #8d929b; display: flex; align-items: center; justify-content: center; font-size: 20px">+</span>
+<div style="flex-grow: 1"><div style="font-size: 13px">Add a person</div><div style="font-size: 12px; color: #8d929b; margin-top: 2px">Each person gets their own desktop, files and settings</div></div>
+</div>
+</div>
+<div style="border-radius: 14px; background: #fafbfc; border: 1px solid rgba(20,24,32,0.07); overflow: hidden">
+<div style="display: flex; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 16px"><span style="font-size: 13px">Log in without a password</span><span style="width: 36px; height: 20px; border-radius: 10px; background: #d5d9df; position: relative; display: block"><span style="position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #ffffff; display: block"></span></span></div>
+</div>
+</section>
+
+</div>
+
+
+</body>
+</html>

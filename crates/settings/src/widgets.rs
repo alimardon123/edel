@@ -788,68 +788,6 @@ pub fn menu_item(label: &str) -> gtk::Button {
         .build()
 }
 
-/// The New card (M5.10c7b): a dashed outline `width` by `height` with a
-/// round plus, a hint under the plus when there is one, and the caption
-/// under the outline. The lock's looks and the Appearance page's themes
-/// both show it; the caller connects the click.
-pub fn new_card(width: i32, height: i32, hint: &str, caption: &str) -> gtk::Button {
-    let plus = gtk::Label::builder()
-        .label("+")
-        .hexpand(true)
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .css_classes(["edel-new-plus"])
-        .build();
-    let circle = gtk::Box::builder()
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .css_classes(["edel-new-circle"])
-        .build();
-    circle.set_size_request(36, 36);
-    circle.append(&plus);
-    let area = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .valign(gtk::Align::Center)
-        .css_classes(["edel-new-look"])
-        .build();
-    area.set_size_request(width, height);
-    // The circle and the hint together, in the middle of the outline.
-    let middle = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .vexpand(true)
-        .valign(gtk::Align::Center)
-        .build();
-    middle.append(&circle);
-    if !hint.is_empty() {
-        let hint = gtk::Label::builder()
-            .label(hint)
-            .wrap(true)
-            .css_classes(["edel-new-hint"])
-            .build();
-        middle.append(&hint);
-    }
-    area.append(&middle);
-    let words = gtk::Label::builder()
-        .label(caption)
-        .xalign(0.0)
-        .css_classes(["edel-preset-name"])
-        .build();
-    let inner = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(8)
-        .build();
-    inner.append(&area);
-    inner.append(&words);
-    let button = gtk::Button::builder()
-        .child(&inner)
-        .css_classes(["edel-new-card"])
-        .build();
-    button.update_property(&[gtk::accessible::Property::Label(caption)]);
-    button
-}
-
 /// Asks for a name in a small dialog over `near`'s window: `text` above an
 /// entry holding `current`, Cancel and `action`. `check` gives the name's
 /// problem, shown under the entry, or Ok, when the dialog closes.

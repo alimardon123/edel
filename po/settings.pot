@@ -401,10 +401,49 @@ msgstr ""
 msgid "Changed over {look} on the command line."
 msgstr ""
 
-msgid "Built in. Edit it on the lock; your changes become a new look."
+msgid "clock"
 msgstr ""
 
-msgid "Yours. Edit it on the lock, where it is."
+msgid "date"
+msgstr ""
+
+msgid "music player"
+msgstr ""
+
+msgid "notification count"
+msgstr ""
+
+msgid "message"
+msgstr ""
+
+msgid "picture"
+msgstr ""
+
+msgid "battery"
+msgstr ""
+
+msgid "Only the sign in"
+msgstr ""
+
+msgid "and"
+msgstr ""
+
+msgid "the navy backdrop"
+msgstr ""
+
+msgid "your wallpaper, blurred"
+msgstr ""
+
+msgid "your wallpaper"
+msgstr ""
+
+msgid "a plain colour"
+msgstr ""
+
+msgid "a picture of yours"
+msgstr ""
+
+msgid "{parts} over {background}."
 msgstr ""
 
 msgid "There is a look called {look} already. Choose another name."

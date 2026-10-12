@@ -128,5 +128,22 @@ The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
 boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg`, `greeter-sessions.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
 
+## Settings (2026-10-11): Appearance with themes
+
+| Picture | What it shows |
+|---|---|
+| [settings/appearance.jpg](settings/appearance.jpg) | The Appearance page with themes (M5.12b6, approved by Alimardon on 2026-10-11): the theme in use on one line, its pictures and what changed, with Reset, Keep as new and a More menu; under it three equal pictures of the theme, Light, Dark and Automatic, which are the style; then the themes in one row, each its light and dark side split diagonally with a Built in badge, New last; then Accent, Text, Shape and Motion, open as before; the page's icon a paint palette |
+
+Its board is `settings/canvas/appearance.html`, plain HTML drawn from the design canvas board "Appearance with themes"; the canvas is Alimardon's private design artifact, and this is the copy every session reads.
+
+## Settings (2026-10-11): Power, Updates, Users and the lock looks
+
+| Picture | What it shows |
+|---|---|
+| [settings/power-updates-users.jpg](settings/power-updates-users.jpg) | Power, Updates and Users (M5.32, approved by Alimardon on 2026-10-11): Power's battery with its last day, the power modes and what the lid, the power button and the screen do; Updates' calm hero, the version kept ready to roll back to, what the release brought and the channel; Users' person with their picture, others to add and logging in without a password |
+| [settings/lock-looks.jpg](settings/lock-looks.jpg) | The lock looks (M5.10c7, approved by Alimardon on 2026-10-11): the Lock screen page's looks with In use and Built in, the card with Customize and its More menu; the looks side by side on the lock (Super+L); the editor with its bar, wallpaper panel, widget card and strip, and Preview |
+
+Their boards are `settings/canvas/power-updates-users.html` and `settings/canvas/lock-looks.html`, drawn from the design canvas as the Appearance board is.
+
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).

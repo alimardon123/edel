@@ -20,6 +20,7 @@ mod files;
 mod icon;
 mod layout;
 mod lock;
+mod look_pictures;
 mod motion;
 mod network;
 mod notifications;

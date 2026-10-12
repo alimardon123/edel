@@ -263,6 +263,15 @@ pub fn picture_not_read(path: &str, why: impl Display) -> String {
     )
 }
 
+/// `--look-picture` names a look this machine and the person do not have
+/// (M5.10c7c): the name and the looks there are.
+pub fn look_not_known(name: &str, known: &[String]) -> String {
+    format!(
+        "there is no lock look named {name:?}; the looks here are {}; name one of those, or a look of your own in lock_screen.looks",
+        known.join(", ")
+    )
+}
+
 /// A clock's time zone has no zone file on this machine, so the clock shows
 /// this machine's time (M5.10c7d): the zone's name and what happens.
 pub fn clock_zone_missing(zone: &str) -> String {
@@ -451,6 +460,7 @@ mod tests {
             NO_GLOBALS.to_string(),
             COMPOSITOR_GONE.to_string(),
             clock_not_started("x"),
+            look_not_known("x", &["classic".to_string()]),
             panel_not_drawn("x"),
             portal_not_said("x"),
             edit_bus_not_served("x"),

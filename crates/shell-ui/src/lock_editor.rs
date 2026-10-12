@@ -235,7 +235,9 @@ pub fn background_tiles(current: &Background) -> Vec<Tile> {
 /// A lock screen drawn small (M5.10c6c3): `parts` over `background` at
 /// `THUMB`, laid out and painted as the lock draws it, with the lock's
 /// `view` (the time and date) and the battery when the machine has one. The
-/// caller keeps the result, so each look is drawn once.
+/// caller keeps the result, so each look is drawn once. `playing` is the
+/// music player the lock shows over the look (M5.10c7c, the look pictures
+/// of Settings); the editor's tiles draw none.
 #[allow(clippy::too_many_arguments)]
 pub fn thumbnail(
     view: &lock::View,
@@ -248,6 +250,8 @@ pub fn thumbnail(
     pictures: &mut lock::Pictures,
     backdrops: &mut lock::Backdrops,
     wallpaper: &Wallpaper,
+    size: (u32, u32),
+    playing: Option<&player::PlayerView>,
 ) -> Option<Pixmap> {
     let look = lock::Look {
         parts,
@@ -257,8 +261,8 @@ pub fn thumbnail(
         battery,
         background: background.clone(),
     };
-    let at = lock::layout(THUMB.0 as f32, THUMB.1 as f32, tokens, true, &look, text);
-    let mut pixmap = Pixmap::new(THUMB.0, THUMB.1)?;
+    let at = lock::layout(size.0 as f32, size.1 as f32, tokens, true, &look, text);
+    let mut pixmap = Pixmap::new(size.0, size.1)?;
     lock::paint(
         &mut pixmap,
         view,
@@ -271,6 +275,9 @@ pub fn thumbnail(
         wallpaper,
         1.0,
     );
+    if let (Some(sample), Some(rect)) = (playing, at.player) {
+        draw_player(&mut pixmap, rect, false, tokens, text, 1.0, sample);
+    }
     Some(pixmap)
 }
 
@@ -910,26 +917,6 @@ pub fn draw_placeholders(
     s: f32,
 ) {
     let compact = view.screen.0 < lock::COMPACT_BELOW;
-    for (part, rect) in view.parts.iter().zip(&at.placed) {
-        if let (Part::Player, Some(rect)) = (part.part, rect) {
-            draw_player(pixmap, *rect, compact, tokens, text, s);
-        }
-    }
-}
-
-/// The player's card at `rect` (logical pixels), `draw_placeholders`' one part.
-fn draw_player(
-    pixmap: &mut Pixmap,
-    rect: Rect,
-    compact: bool,
-    tokens: &Tokens,
-    text: &mut Text,
-    s: f32,
-) {
-    let radius = rect.h / 2.0;
-    lock::lift(pixmap, rect, radius, s, tokens);
-    lock::glass(pixmap, rect.device(s), radius * s, s, tokens);
-    let parts = player::place_wide(rect, compact, 1, 0);
     let sample = player::PlayerView {
         title: tr("Now playing").into(),
         artist: String::new(),
@@ -942,12 +929,34 @@ fn draw_player(
         position: None,
         length: None,
     };
+    for (part, rect) in view.parts.iter().zip(&at.placed) {
+        if let (Part::Player, Some(rect)) = (part.part, rect) {
+            draw_player(pixmap, *rect, compact, tokens, text, s, &sample);
+        }
+    }
+}
+
+/// The player's card at `rect` (logical pixels), with `sample` in it:
+/// `draw_placeholders`' one part, and the look pictures' playing player.
+fn draw_player(
+    pixmap: &mut Pixmap,
+    rect: Rect,
+    compact: bool,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+    sample: &player::PlayerView,
+) {
+    let radius = rect.h / 2.0;
+    lock::lift(pixmap, rect, radius, s, tokens);
+    lock::glass(pixmap, rect.device(s), radius * s, s, tokens);
+    let parts = player::place_wide(rect, compact, 1, 0);
     let marks = player::Marks {
         hover: None,
         focus: None,
         page: 0,
     };
-    player::paint(pixmap, &sample, &parts, marks, tokens, Some(text), s);
+    player::paint(pixmap, sample, &parts, marks, tokens, Some(text), s);
 }
 
 /// Draws the drawer through `editor::paint` at its place on the edit mode's
@@ -2030,6 +2039,8 @@ mod tests {
                 &mut pictures,
                 &mut backdrops,
                 &wallpaper,
+                THUMB,
+                None,
             )
             .expect("a look's thumbnail draws");
             tile.picture = Some(Picture(Rc::new(pixmap)));
@@ -2073,6 +2084,8 @@ mod tests {
                 &mut pictures,
                 &mut backdrops,
                 &wallpaper,
+                THUMB,
+                None,
             )
             .expect("a background's thumbnail draws");
             tile.picture = Some(Picture(Rc::new(pixmap)));

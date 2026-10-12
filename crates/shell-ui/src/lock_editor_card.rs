@@ -765,6 +765,8 @@ impl Shell {
                         &mut le.pictures,
                         &mut le.backdrops,
                         &le.wallpaper,
+                        lock_editor::THUMB,
+                        None,
                     ) else {
                         continue;
                     };
