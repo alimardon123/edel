@@ -345,8 +345,6 @@ pub struct Group {
     /// The accent's source line, Reset and Copy as command.
     accent: widgets::Source,
     swatches: Vec<Swatch>,
-    /// The chosen accent's name, at the far right of the card.
-    name: gtk::Label,
     /// The custom colour chosen, which the custom pill's dialog starts from.
     custom: Rc<Cell<Option<Colour>>>,
     /// The box the colour rows are built in, and the keys they were built for.
@@ -371,7 +369,6 @@ impl Group {
             .label
             .set_label(&rows::describe(&source, &accent_title(&name)));
         self.accent.reset.set_visible(rows::resettable(&source));
-        self.name.set_label(&accent_title(&name));
         self.quiet.set(true);
         for swatch in &self.swatches {
             swatch.button.set_active(swatch.name == name);
@@ -642,7 +639,9 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
     let accent = widgets::section(content, rows::title(KEY));
     let custom = Rc::new(Cell::new(None));
     // One card: the nine accents, a divider, then the wallpaper's and the
-    // custom pills, and the chosen accent's name at the far right.
+    // custom pills. The accent's name is in the heading's line above, so
+    // the card has no words of its own and never makes the page wider
+    // than its window.
     let card = gtk::Box::builder()
         .spacing(12)
         .valign(gtk::Align::Start)
@@ -671,12 +670,6 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         card.append(&button);
         swatches.push(Swatch { name, button, area });
     }
-    let spacer = gtk::Box::builder().hexpand(true).build();
-    let name = gtk::Label::builder()
-        .css_classes(["edel-accent-name"])
-        .build();
-    card.append(&spacer);
-    card.append(&name);
     content.append(&card);
 
     widgets::heading(content, tr("Colours"));
@@ -691,7 +684,6 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         problem: problem.clone(),
         accent,
         swatches,
-        name,
         custom,
         list,
         keys_shown: RefCell::new(None),

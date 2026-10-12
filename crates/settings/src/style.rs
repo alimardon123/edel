@@ -433,7 +433,6 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-accent-pill:hover {{ background-color: {fill}; }}
 .edel-accent-pill:checked {{ border-color: {accent}; color: {accent}; }}
 .edel-accent-pill:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
-.edel-accent-name {{ color: {muted}; font-size: {small}px; }}
 /* The Text group's font rows (M5.12b6c): 48 px tall, the drop-down 30 px tall in regular weight. */
 .edel-font-row {{ min-height: 36px; }}
 .edel-font, .edel-font label {{ font-weight: 400; }}
