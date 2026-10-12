@@ -21,10 +21,14 @@ use smithay::input::pointer::CursorImageStatus;
 use smithay::output::Output;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
 
+use edel_compositor::effects::Tier;
 use edel_compositor::frame::{Border, Insets, Look};
+use edel_compositor::tokens::Tokens;
 
 use crate::animate::{Closing, Look as Seen};
 use crate::decoration::{data, title};
+use crate::glance::painted;
+use crate::glance_look;
 use crate::pointer::{SIZE, surface_hotspot};
 use crate::state::Edel;
 
@@ -76,6 +80,21 @@ pub fn border_places(
     ]
 }
 
+/// The opacity a window is drawn with (M5.12b3): the focused window's
+/// `window_opacity` or the others' `window_opacity_unfocused`, as a share
+/// of one. A fullscreen window is always opaque, as it covers the screen.
+pub fn window_opacity(focused: bool, fullscreen: bool, tokens: &Tokens) -> f32 {
+    if fullscreen {
+        return 1.0;
+    }
+    let percent = if focused {
+        tokens.window_opacity
+    } else {
+        tokens.window_opacity_unfocused
+    };
+    percent.min(100) as f32 / 100.0
+}
+
 /// The centre of `frame` on a screen at `screen`, in its pixels, moved by
 /// `shift`.
 pub(crate) fn centre_of(
@@ -89,6 +108,12 @@ pub(crate) fn centre_of(
 }
 
 impl Edel {
+    /// The opacity `window` is drawn with (M5.12b3), see [`window_opacity`].
+    fn opacity_of(&self, window: &Window) -> f32 {
+        let focused = self.focused_window().as_ref() == Some(window);
+        window_opacity(focused, self.is_fullscreen(window), &self.tokens)
+    }
+
     /// The cursor at the pointer, if it is on this screen.
     fn cursor_elements(
         &mut self,
@@ -198,7 +223,10 @@ impl Edel {
             let Some(place) = self.space.element_geometry(&window) else {
                 continue;
             };
-            let look = self.animations.look(&window, now);
+            let mut look = self.animations.look(&window, now);
+            // The window's opacity (M5.12b3) multiplies its own fade, so its
+            // picture, title bar and border all show it.
+            look.alpha *= self.opacity_of(&window);
             let shift = look.offset.to_physical(scale).to_i32_round::<i32>();
             let origin = (place.loc - window.geometry().loc - screen.loc)
                 .to_physical_precise_round(scale)
@@ -218,6 +246,9 @@ impl Edel {
             let outer = self.insets(&window).frame(place);
             let centre = centre_of(outer, screen.loc, scale, shift);
             elements.extend(parts.into_iter().map(|e| zoomed(e, centre, look.zoom)));
+            // Its shadow lies under the window's own parts (M5.12b3).
+            elements
+                .extend(self.shadow_elements(renderer, &window, outer, screen.loc, scale, look));
         }
         for (_, drawn) in &mut pictures {
             elements.append(drawn);
@@ -233,6 +264,72 @@ impl Edel {
         // The wallpaper lies under everything, so it comes last (M5.10c4b).
         elements.extend(self.wallpaper_elements(renderer, output, screen.size, scale));
         elements
+    }
+
+    /// The soft shadow under `window`'s frame `outer` (M5.12b3), drawn as
+    /// the window's own parts are: faded with its look and grown about its
+    /// centre. Only on Full and Balanced (ADR-002's tier table), never for a
+    /// fullscreen window, and none at all for a shadow of no blur. The
+    /// picture is painted again only when its size, scale or shadow changes.
+    fn shadow_elements(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        window: &Window,
+        outer: Rectangle<i32, Logical>,
+        screen: Point<i32, Logical>,
+        scale: f64,
+        look: Seen,
+    ) -> Vec<Drawn> {
+        if self.deadline.tier() == Tier::Lite
+            || self.is_fullscreen(window)
+            || self.tokens.shadow_blur == 0
+        {
+            return Vec::new();
+        }
+        let shows = format!(
+            "{:?} {scale} {:?} {} {}",
+            outer.size, self.tokens.shadow, self.tokens.shadow_blur, self.tokens.shadow_offset
+        );
+        if self
+            .window_shadows
+            .get(window)
+            .is_none_or(|(p, _)| p.shows != shows)
+        {
+            match glance_look::shadow(outer.size.w, outer.size.h, scale, &self.tokens) {
+                Some((pixmap, margin)) => {
+                    self.window_shadows
+                        .insert(window.clone(), (painted(shows, &pixmap), margin));
+                }
+                None => return Vec::new(),
+            }
+        }
+        let Some((picture, margin)) = self.window_shadows.get(window) else {
+            return Vec::new();
+        };
+        // The picture stands `margin` pixels out from the frame on each side.
+        let margin = f64::from(*margin);
+        let shift = look.offset.to_physical(scale);
+        let at = (outer.loc - screen).to_f64().to_physical(scale) + shift
+            - Point::from((margin, margin));
+        let pixels = (f64::from(picture.pixels.0), f64::from(picture.pixels.1));
+        let size = Size::<f64, Physical>::from(pixels);
+        let element = match MemoryRenderBufferRenderElement::from_buffer(
+            renderer,
+            at,
+            &picture.buffer,
+            Some(look.alpha),
+            Some(Rectangle::from_size(pixels.into())),
+            Some(size.to_logical(scale).to_i32_round()),
+            Kind::Unspecified,
+        ) {
+            Ok(element) => element,
+            Err(e) => {
+                eprintln!("edel-compositor: drawing a window's shadow failed: {e}");
+                return Vec::new();
+            }
+        };
+        let centre = centre_of(outer, screen, scale, shift.to_i32_round());
+        vec![zoomed(Element::Bar(element), centre, look.zoom)]
     }
 
     /// A closed window's last picture, fading out (M5.11b).
@@ -435,5 +532,35 @@ impl Edel {
             }
         }
         parts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_focused_and_the_other_windows_take_their_own_opacity() {
+        let mut tokens = Tokens::built_in();
+        tokens.window_opacity = 90;
+        tokens.window_opacity_unfocused = 70;
+        assert_eq!(window_opacity(true, false, &tokens), 0.9);
+        assert_eq!(window_opacity(false, false, &tokens), 0.7);
+    }
+
+    #[test]
+    fn a_fullscreen_window_is_always_opaque() {
+        let mut tokens = Tokens::built_in();
+        tokens.window_opacity = 20;
+        tokens.window_opacity_unfocused = 20;
+        assert_eq!(window_opacity(true, true, &tokens), 1.0);
+        assert_eq!(window_opacity(false, true, &tokens), 1.0);
+    }
+
+    #[test]
+    fn the_release_draws_every_window_opaque() {
+        let tokens = Tokens::built_in();
+        assert_eq!(window_opacity(true, false, &tokens), 1.0);
+        assert_eq!(window_opacity(false, false, &tokens), 1.0);
     }
 }

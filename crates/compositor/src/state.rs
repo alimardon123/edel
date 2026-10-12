@@ -135,6 +135,10 @@ pub struct Edel {
     pub overview: Option<crate::glance::Overview>,
     /// What the overview keeps between openings (its backdrops).
     pub overview_kept: crate::glance::Kept,
+    /// Each window's shadow, kept with what it shows and its margin in
+    /// pixels, painted again only when its size or the shadow changes
+    /// (`render.rs`, M5.12b3).
+    pub window_shadows: std::collections::HashMap<Window, (crate::glance::Painted, i32)>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
     /// The wallpaper and its picture for each screen (M5.10c4b).
@@ -298,6 +302,7 @@ impl Edel {
             switcher: None,
             overview: None,
             overview_kept: Default::default(),
+            window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
             app_icons: crate::decoration::AppIcons::new(),
@@ -586,6 +591,8 @@ impl Edel {
         // The shape (M5.12b2b) is read with the tokens, and the windows'
         // frames are measured before the tokens change.
         let old_sizes = sizes_of(&self.tokens);
+        // The windows' depth (M5.12b3) is logged when it changes.
+        let old_depth = depth_of(&self.tokens);
         let old_insets: Vec<(Window, Insets)> = self
             .space
             .elements()
@@ -598,12 +605,20 @@ impl Edel {
             }
             if tokens != self.tokens {
                 // Light or dark (M5.5c): the tokens' other colours, the title
-                // bars drawn again with them, and shell-ui started again.
+                // bars drawn again with them, and shell-ui started again,
+                // unless only the windows' opacity changed (M5.12b3), which
+                // shell-ui never draws.
+                let mut seen = tokens.clone();
+                seen.window_opacity = self.tokens.window_opacity;
+                seen.window_opacity_unfocused = self.tokens.window_opacity_unfocused;
+                let for_shell = seen != self.tokens;
                 self.tokens = tokens;
                 self.repaint = true;
                 self.dirty = true;
-                tokens_changed = true;
-                eprintln!("edel-compositor: accent {}", self.tokens.accent.hex());
+                if for_shell {
+                    tokens_changed = true;
+                    eprintln!("edel-compositor: accent {}", self.tokens.accent.hex());
+                }
             }
             if old.color_scheme != new.color_scheme {
                 eprintln!("edel-compositor: colour scheme {}", new.color_scheme.name());
@@ -611,6 +626,9 @@ impl Edel {
         }
         if sizes_of(&self.tokens) != old_sizes {
             self.shape_changed(old_insets);
+        }
+        if depth_of(&self.tokens) != old_depth {
+            log_depth(&self.tokens);
         }
         if old.text != new.text
             || old_text != (self.tokens.font.clone(), self.tokens.title_text_size)
@@ -743,6 +761,7 @@ impl Edel {
         eprintln!("edel-compositor: unmapped window {}", title(window));
         self.forget(window);
         self.animations.forget(window);
+        self.window_shadows.remove(window);
         let mut frame = data(window).borrow_mut();
         frame.restore = None;
         frame.before_fullscreen = None;
@@ -1414,6 +1433,49 @@ pub fn log_shape(tokens: &Tokens) {
         "edel-compositor: shape gaps {}/{}, border {border}, title bar {title_bar}",
         gaps.inner, gaps.outer
     );
+}
+
+/// The windows' depth the desktop draws with (M5.12b3): the focused and the
+/// other windows' opacity in percent, the shadow's blur in logical pixels
+/// and the shadow's alpha in percent, rounded.
+fn depth_of(tokens: &Tokens) -> (u32, u32, u32, u32) {
+    let alpha = (tokens.shadow.a * 100.0).round() as u32;
+    (
+        tokens.window_opacity,
+        tokens.window_opacity_unfocused,
+        tokens.shadow_blur,
+        alpha,
+    )
+}
+
+/// The line `log_depth` writes for `tokens`, for CI's desktop test.
+fn depth_line(tokens: &Tokens) -> String {
+    let (focused, other, blur, alpha) = depth_of(tokens);
+    format!("edel-compositor: depth windows {focused}/{other} %, shadow {blur} px at {alpha} %")
+}
+
+/// Logs the windows' depth at start and on each change (M5.12b3), for
+/// CI's desktop test.
+pub fn log_depth(tokens: &Tokens) {
+    eprintln!("{}", depth_line(tokens));
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::*;
+
+    #[test]
+    fn the_depth_line_names_both_opacities_the_shadow_and_its_alpha() {
+        let mut tokens = Tokens::built_in();
+        tokens.window_opacity = 90;
+        tokens.window_opacity_unfocused = 90;
+        tokens.shadow_blur = 48;
+        tokens.shadow.a = 0.9;
+        assert_eq!(
+            depth_line(&tokens),
+            "edel-compositor: depth windows 90/90 %, shadow 48 px at 90 %"
+        );
+    }
 }
 
 delegate_cursor_shape!(Edel);

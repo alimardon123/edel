@@ -27,6 +27,10 @@
 #               border, sent to the VM, tiles foot and one 12 px apart as
 #               frames, with one's red border; tiling off and shape default
 #               put the release's shape back (M5.12b2b)
+#   depth       appearance.window_opacity and window_opacity_unfocused at 90
+#               percent, sent to the VM: one's middle is its colour blended
+#               over the wallpaper colour at 90 percent; depth default
+#               brings 100 back (M5.12b3)
 #   text        appearance.text_size = 150 scales the title bars' and the
 #               panel's text by half, rounded half up, the title font is
 #               changed to Noto Sans and then to a font this system lacks
@@ -4966,6 +4970,71 @@ case_shape() {
 	echo "PASS: appearance.gaps 12 and border_width 3 put foot and one 12 px apart as frames with a 3 px border, one's red focused border at $edge_x,$edge_y, and shape default gave the release's shape back"
 }
 
+# near HEX R G B: whether the colour HEX (rrggbb) has each channel within 4
+# of R, G and B, in decimal, as a screenshot's pixel has after rounding.
+near() {
+	near_r=$(printf '%d' "0x$(echo "$1" | cut -c1-2)")
+	near_g=$(printf '%d' "0x$(echo "$1" | cut -c3-4)")
+	near_b=$(printf '%d' "0x$(echo "$1" | cut -c5-6)")
+	[ "$near_r" -ge $(($2 - 4)) ] && [ "$near_r" -le $(($2 + 4)) ] &&
+		[ "$near_g" -ge $(($3 - 4)) ] && [ "$near_g" -le $(($3 + 4)) ] &&
+		[ "$near_b" -ge $(($4 - 4)) ] && [ "$near_b" -le $(($4 + 4)) ]
+}
+
+case_depth() {
+	# The depth (M5.12b3), through the machine's settings file as Settings
+	# writes it: both windows at 90 percent opacity. Window one is #cc3333
+	# over the wallpaper colour #336699 (wallpaper colour), so its middle,
+	# clear of foot, is that blend at 90 percent: 189, 56 and 61, each
+	# within 4. CI's session draws at Lite, where windows have no shadow
+	# (ADR-002's tier table), so only the wallpaper lies under one. depth
+	# default takes the keys out, and the compositor logs 100/100 again.
+	# Kept as depth.png.
+	logged=$(count 'edel-compositor: wallpaper colour #336699')
+	guest 'wallpaper colour'
+	wait_more 'edel-compositor: wallpaper colour #336699' "$logged" ||
+		fail "the compositor did not take the colour #336699 from appearance.wallpaper"
+	shown=$(count 'edel-compositor: depth windows 90/90 %')
+	guest 'depth on'
+	wait_for 'DESKTOP-TEST: ran depth on: 0' ||
+		fail "edel settings set appearance.window_opacity=90 did not run in the VM"
+	wait_more 'edel-compositor: depth windows 90/90 %' "$shown" ||
+		fail "the compositor did not follow appearance.window_opacity=90 and window_opacity_unfocused=90"
+	# One's middle, from the windows line: its place and half its size.
+	place=$(python3 - "$(value windows)" <<-'EOF'
+		import re, sys
+		for name, x, y, w, h in re.findall(r"(\w+)@(\d+),(\d+),(\d+)x(\d+)", sys.argv[1]):
+		    if name == "one":
+		        print(int(x) + int(w) // 2, int(y) + int(h) // 2)
+		        break
+		else:
+		    sys.exit("no one in the windows line")
+		EOF
+	) || fail "window one is not on the screen: $(value windows)"
+	set -- $place
+	mid_x=$1 mid_y=$2
+	# The frame after the change may not be on screen yet, so a few tries.
+	i=0
+	while :; do
+		colour=$(shot depth "$mid_x" "$mid_y" '!336699') || true
+		near "$colour" 189 56 61 && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || break
+		sleep 1
+	done
+	near "$colour" 189 56 61 ||
+		fail "one's middle at $mid_x,$mid_y is #$colour, not the blend of #cc3333 over #336699 at 90 percent, #bd383d (189 56 61) within 4 (depth.png)"
+	reset=$(count 'edel-compositor: depth windows 100/100 %')
+	guest 'depth default'
+	wait_more 'edel-compositor: depth windows 100/100 %' "$reset" ||
+		fail "the compositor did not go back to depth windows 100/100 after depth default"
+	gone=$(count 'edel-compositor: wallpaper none')
+	guest 'wallpaper default'
+	wait_more 'edel-compositor: wallpaper none' "$gone" ||
+		fail "the compositor did not take the wallpaper back to none after wallpaper default"
+	echo "PASS: appearance.window_opacity 90 put one's middle at $mid_x,$mid_y at #$colour, the blend of #cc3333 over #336699 at 90 percent, and depth default gave the release's 100 back"
+}
+
 case_text() {
 	# The text (M5.12b5), through the machine's settings file as Settings
 	# writes it: appearance.text_size = 150 scales every size of letters by
@@ -5611,7 +5680,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
