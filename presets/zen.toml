@@ -1,0 +1,40 @@
+# Zen (M5.18b): tiling with nothing in the way, for people used to
+# Hyprland or niri. Windows tile from the start in the split style (each
+# new window halves the focused one, as Hyprland tiles), with no title
+# bars and no buttons on them, and one slim bar along the top holds the
+# menu button at its start and the workspace buttons and the clock at
+# its end. Close a window with Super+Q and move it with Super and a drag,
+# as in every preset; Super+T, or the toggle, still floats a workspace.
+# A person who wants title bars back sets layout.title_bars, which wins
+# over this preset's.
+format = 1
+
+[windows]
+policy = "tiling"
+buttons = "right"
+title_bars = "never"
+tiling_style = "split"
+
+[workspaces]
+count = 4
+
+[launcher]
+style = "menu"
+
+# The tiles of quick settings, which the status area's click opens
+# (M5.9a), in two columns in this order: wifi, bluetooth, airplane
+# (every radio off), do_not_disturb (notifications.do_not_disturb,
+# M5.9b) and dark_style (appearance.mode). A tile whose feature or
+# hardware this machine lacks is left out. Left out, the table shows
+# these five.
+[quick]
+tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "dark_style"]
+
+# A slim bar, as the size key's small height (M5.31c), with nothing in
+# its centre.
+[[panels]]
+edge = "top"
+size = "small"
+start = ["menu"]
+centre = []
+end = ["workspaces", "clock"]
