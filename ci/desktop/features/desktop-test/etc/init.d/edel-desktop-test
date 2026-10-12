@@ -924,6 +924,10 @@ commands() {
 		'greeter log')
 			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
 			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
+			# A mount left in a runtime directory keeps pam_rundir from
+			# making it again at the next login (M6.1).
+			grep ' /run/user' /proc/mounts | sed 's/^/DESKTOP-TEST: mount /' >/dev/console || true
+			ls -la /run/user 2>&1 | sed 's/^/DESKTOP-TEST: run-user /' >/dev/console
 			;;
 		# The session chip (M5.10c3b): the file ci-other's session left in
 		# ci's runtime directory, and the login screen's remembered choices.

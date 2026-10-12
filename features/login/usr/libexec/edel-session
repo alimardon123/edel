@@ -31,4 +31,21 @@ for signal in TERM KILL; do
 		i=$((i + 1))
 	done
 done
+
+# A FUSE mount the session left in its runtime directory, such as the
+# document portal's /run/user/UID/doc (Flatpak apps, M6.1), outlives the
+# process that served it, and pam_rundir cannot empty the directory past
+# it, so this person would get no runtime directory at the next login.
+# Each is unmounted lazily; a mount that is not ours is left alone.
+if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+	while read -r _ point type _; do
+		case "$point" in
+		"$XDG_RUNTIME_DIR"/*)
+			case "$type" in
+			fuse*) fusermount3 -uz "$point" 2>/dev/null || fusermount -uz "$point" 2>/dev/null ||
+				echo "edel-session: could not unmount $point; the next login may have no runtime directory" >&2 ;;
+			esac ;;
+		esac
+	done </proc/mounts
+fi
 exit "$status"
