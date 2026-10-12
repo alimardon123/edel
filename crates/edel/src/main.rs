@@ -185,6 +185,33 @@ enum Commands {
         #[command(subcommand)]
         command: ImageCommands,
     },
+    /// theme: a look as a set of pictures and appearance values, built in
+    /// or your own; the Appearance page of Settings shows the same ones
+    Theme {
+        #[command(subcommand)]
+        command: ThemeCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum ThemeCommands {
+    /// List the built-in themes, then yours, with the one in use marked
+    List,
+    /// Keep the theme in use as a theme of yours called NAME, with your
+    /// changes on top; the screen stays the same
+    Save {
+        /// A name of letters, digits and hyphens, such as my-aurora
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Delete one of your themes; the theme in use cannot be deleted
+    Delete {
+        /// The theme's name, as theme list shows it
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Take your changes off the theme in use, so it shows as it was made
+    Reset,
 }
 
 #[derive(Subcommand)]
@@ -407,6 +434,7 @@ impl Commands {
             Commands::Install { .. } => "install",
             Commands::Report { .. } => "report",
             Commands::Settings { .. } => "settings",
+            Commands::Theme { .. } => "theme",
         }
     }
 }
@@ -576,6 +604,12 @@ fn run(command: Commands) -> Result<()> {
             Some(SettingsCommands::Import { file }) => machine::import(&file),
             Some(SettingsCommands::Export) => machine::export(),
             Some(SettingsCommands::Check { file }) => check_system_file(&file),
+        },
+        Commands::Theme { command } => match command {
+            ThemeCommands::List => machine::theme_list(),
+            ThemeCommands::Save { name } => machine::theme_save(&name),
+            ThemeCommands::Delete { name } => machine::theme_delete(&name),
+            ThemeCommands::Reset => machine::theme_reset(),
         },
     }
 }

@@ -19,6 +19,7 @@ use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
 use edel::settings::{self, SettingsFile, User};
+use edel::themes;
 use edel::users::ADMIN_GROUP;
 
 use crate::boot::GRUB_PREFIX;
@@ -803,7 +804,18 @@ pub fn diff(file: Option<&Path>) -> Result<bool> {
 /// newer format the `.v<N>` beside it this release reads (ADR-008,
 /// writers). Never applies it.
 fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> Result<()> {
-    let _lock = Lock::take("settings", "edel settings")?;
+    edit_as("edel settings", what, keys, change)
+}
+
+/// [`edit`] for the command `command` (such as `edel theme`), which its
+/// messages name, as the command the person ran is named (MESSAGES.md).
+fn edit_as(
+    command: &str,
+    what: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    let _lock = Lock::take("settings", command)?;
     let machine = machine_file();
     let shown = machine.display().to_string();
     let mut path = machine.clone();
@@ -833,7 +845,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     let edited = change(&text)?;
     for problem in settings::read(&edited)?.problems {
         println!(
-            "edel settings: {}",
+            "{command}: {}",
             trf(
                 "kept, not used by this release: {problem}",
                 &[("problem", &problem.to_string())]
@@ -851,7 +863,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     println!(
-        "edel settings: {}",
+        "{command}: {}",
         trf(
             "{what} in {path}; {then}",
             &[
@@ -870,7 +882,7 @@ fn edit(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> R
     );
     if let Some(format) = newer {
         println!(
-            "edel settings: {}",
+            "{command}: {}",
             trf(
                 "{path} is format {format}, so the change applies to this release only",
                 &[("path", &shown), ("format", &format.to_string())]
@@ -928,6 +940,71 @@ pub fn reset(keys: &[String]) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
     let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
     edit(&what, &keys, |text| settings::unset_all(text, &keys))
+}
+
+/// The machine's settings file as it is, or the release's empty one, for
+/// the theme commands to read.
+fn theme_text() -> String {
+    fs::read_to_string(machine_file())
+        .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
+}
+
+/// `edel theme list`: the built-in themes, then the person's own, one a
+/// line with its name, its title and what it is (`edel theme` in the
+/// command table).
+pub fn theme_list() -> Result<()> {
+    let text = theme_text();
+    let file = settings::read(&text)
+        .with_context(|| could_not_read(&machine_file()))?
+        .file;
+    for row in themes::rows(&file) {
+        let mut marks = Vec::new();
+        if row.built_in {
+            marks.push(tr("(built in)"));
+        }
+        if row.in_use {
+            marks.push(tr("(in use)"));
+        }
+        let line = format!("{:<10} {:<16} {}", row.name, row.title, marks.join(" "));
+        println!("{}", line.trim_end());
+    }
+    Ok(())
+}
+
+/// `edel theme save NAME`: keeps the theme in use as a theme of the
+/// person's own, one write, and the screen stays the same.
+pub fn theme_save(name: &str) -> Result<()> {
+    let what = trf("saved the theme {name}", &[("name", name)]);
+    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+        themes::save_text(text, name)
+    })
+}
+
+/// `edel theme delete NAME`: removes one of the person's own themes, unless
+/// it is the theme in use.
+pub fn theme_delete(name: &str) -> Result<()> {
+    let what = trf("deleted the theme {name}", &[("name", name)]);
+    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+        themes::delete_text(text, name)
+    })
+}
+
+/// `edel theme reset`: takes the person's own changes off the theme in use,
+/// so it shows as it was made; says so and writes nothing when there are
+/// none.
+pub fn theme_reset() -> Result<()> {
+    let text = theme_text();
+    if themes::reset_text(&text)?.is_none() {
+        println!(
+            "edel theme: {}",
+            tr("nothing to reset; the theme in use shows as it was made")
+        );
+        return Ok(());
+    }
+    let what = tr("reset the theme in use");
+    edit_as("edel theme", what, &["appearance.theme"], |text| {
+        Ok(themes::reset_text(text)?.unwrap_or_else(|| text.to_string()))
+    })
 }
 
 /// A page's name as people type it: its title in lowercase, `_` for a

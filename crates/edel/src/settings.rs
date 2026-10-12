@@ -299,6 +299,14 @@ pub enum Kind {
     Accent,
     /// A colour, `#rrggbb` or `#rrggbbaa` (M5.12b1)
     Colour,
+    /// A theme's name: a built-in theme's or one of the file's own
+    /// `[themes]`, checked against the file by [`check`] and [`set`]
+    /// (M5.12b6a)
+    Theme,
+    /// A person's own theme, as a `[themes.NAME]` table: its title, its
+    /// pictures and the appearance values it sets ([`crate::themes`],
+    /// M5.12b6a)
+    OwnTheme,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -412,6 +420,9 @@ pub const KEYS: &[Key] = &[
     now("displays.*.refresh_rate", Kind::Number),
     now("displays.*.enabled", Kind::Flag),
     later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
+    // The theme in use (M5.12b6a): a built-in theme's name or one of the
+    // file's own `[themes]`; the theme's values apply under the ones here.
+    now("appearance.theme", Kind::Theme),
     now("appearance.wallpaper", Kind::Wallpaper),
     // What lies behind the windows in dark mode, when it differs from
     // `appearance.wallpaper` (M5.10c4d): a person's own pair is two paths.
@@ -477,6 +488,9 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(crate::lock_screen::NOTIFICATIONS),
     ),
     now("lock_screen.looks", Kind::LockLooks),
+    // The person's own themes (M5.12b6a), each a table of pictures and
+    // appearance values, checked as a whole by `normalize`.
+    now("themes.*", Kind::OwnTheme),
     now("shortcuts.*", Kind::Keys),
     later("default_apps.browser", Kind::Text),
     later("default_apps.files", Kind::Text),
@@ -548,6 +562,9 @@ pub struct SettingsFile {
     pub appearance: Appearance,
     #[serde(default, skip_serializing_if = "is_default")]
     pub lock_screen: LockScreen,
+    /// The person's own themes, each a `[themes.NAME]` table (M5.12b6a)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub themes: BTreeMap<String, OwnTheme>,
     /// Action name to keys, such as `close_window = "Super+Q"`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
@@ -589,6 +606,7 @@ impl Default for SettingsFile {
             displays: BTreeMap::new(),
             appearance: Appearance::default(),
             lock_screen: LockScreen::default(),
+            themes: BTreeMap::new(),
             shortcuts: BTreeMap::new(),
             region: Region::default(),
             users: BTreeMap::new(),
@@ -766,6 +784,12 @@ impl Display {
 /// The Appearance page.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Appearance {
+    /// The theme in use (M5.12b6a): a built-in theme's name, or one of the
+    /// file's own `[themes]`; absent is the release's own, `edel`. The
+    /// values the theme sets apply under the ones written here
+    /// ([`crate::themes::themed`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallpaper: Option<String>,
     /// What lies behind the windows in dark mode, when it differs from
@@ -853,6 +877,23 @@ pub struct Colours {
     pub light: Option<BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dark: Option<BTreeMap<String, String>>,
+}
+
+/// One of the person's own themes (M5.12b6a): a `[themes.NAME]` table, its
+/// pictures and the appearance values it sets, as the keys of the table
+/// itself (`accent = "wallpaper"`, `[themes.NAME.colours]`). A built-in
+/// theme is read the same way from its file ([`crate::themes`]).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct OwnTheme {
+    /// Shown instead of the name made readable; absent is that name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The wallpapers of the theme, each as `appearance.wallpaper` takes it;
+    /// a copy is never made, so a line here is the picture.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<String>,
+    #[serde(flatten)]
+    pub values: Appearance,
 }
 
 /// `over`'s colours laid over `under`'s, name by name, in the shared table
@@ -1125,6 +1166,9 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     lines.extend(look_problem(&read.file).map(|m| format!("lock_screen.look: {m}")));
     // Across keys: the colours name colour tokens and keep every pair readable (M5.12b1).
     lines.extend(colour_problems(&read.file));
+    // Across keys: each theme is a name of its own that no built-in takes,
+    // and the theme in use is one of them (M5.12b6a).
+    lines.extend(crate::themes::problems(&read.file));
     Ok(lines)
 }
 
@@ -1314,6 +1358,11 @@ pub fn choices(key: &str) -> &'static [&'static str] {
 /// `key`'s value as the files say it now: the person's file over the
 /// machine's, as a string; none when neither sets it.
 pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
+    // A value a theme gives comes first, as the tokens take it (M5.12b6a);
+    // with no theme in the files this is the value each file says.
+    if let Some(value) = crate::themes::chosen(key, machine, person) {
+        return Some(value);
+    }
     match source(key, machine, person) {
         Source::Person(value) | Source::Machine(value) => match value {
             Value::String(s) => Some(s),
@@ -1536,6 +1585,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
     // A colour names a colour token and keeps every pair readable (M5.12b1).
     if key == "appearance.accent" || key.starts_with("appearance.colours") {
         let lines = colour_problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
+    // A theme is named, and the theme in use is one of them (M5.12b6a).
+    if key == "appearance.theme" || key.starts_with("themes.") {
+        let lines = crate::themes::problems(&read(&text)?.file);
         if !lines.is_empty() {
             bail!("{}", lines.join("; "));
         }
@@ -1993,6 +2049,34 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::LockLooks, _) => fail(tr(
             "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }",
         )),
+        (Kind::Theme, Value::String(s)) if crate::themes::is_name(s) => Ok(value.clone()),
+        (Kind::Theme, Value::String(s)) => Err(trf(
+            "{value} is not a theme's name; use letters, digits and hyphens, such as \"aurora\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Theme, _) => fail(tr("a theme's name in quotes, such as \"aurora\"")),
+        (Kind::OwnTheme, Value::Table(table)) => {
+            crate::themes::check_table(table)?;
+            // The values are checked as the appearance keys are, so a
+            // theme's radius is the same whole number a file's would be.
+            let mut values = Table::new();
+            for (key, value) in table {
+                if key != "title" && key != "pictures" {
+                    values.insert(key.clone(), value.clone());
+                }
+            }
+            let mut wrapped = Table::new();
+            wrapped.insert("appearance".into(), Value::Table(values));
+            let (mut problems, mut later) = (Vec::new(), Vec::new());
+            clean(&wrapped, &[], &mut problems, &mut later);
+            match problems.first() {
+                Some(problem) => Err(problem.to_string()),
+                None => Ok(value.clone()),
+            }
+        }
+        (Kind::OwnTheme, _) => fail(tr(
+            "a theme as a table, such as { pictures = [\"aurora\"], accent = \"wallpaper\" }",
+        )),
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
         (Kind::Resolution, _) => fail(tr("a resolution such as \"1920x1080\"")),
         (Kind::Keyboard, Value::String(s)) => {
@@ -2255,6 +2339,8 @@ mod tests {
             Kind::LockBackground => Value::String("blurred".into()),
             Kind::Accent => Value::String("blue".into()),
             Kind::Colour => Value::String("#1e1e2e".into()),
+            Kind::Theme => Value::String("edel".into()),
+            Kind::OwnTheme => value_from_arg(r#"{ pictures = ["hills"], accent = "blue" }"#),
             Kind::LockLooks => {
                 value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
             }
@@ -2668,7 +2754,12 @@ cursor_size = 11
         assert_eq!(nearest_key("network.hostname"), None);
         // Every section is one page of the Settings app, and back.
         for key in KEYS {
-            let section = key.path.split('.').next().unwrap_or_default();
+            // Themes have no page of their own: they are the Appearance
+            // page's, as the roadmap's M5.12b6 says (M5.12b6a).
+            let section = match key.path.split('.').next().unwrap_or_default() {
+                "themes" => "appearance",
+                section => section,
+            };
             assert!(page(section).is_some(), "{section} is on no page");
         }
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));

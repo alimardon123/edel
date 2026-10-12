@@ -129,6 +129,11 @@ pub struct OutputSettings {
 impl Settings {
     /// The machine's file, then the person's over it.
     pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
+        // Each file with the theme in use applied, as the tokens read them
+        // (M5.12b6a); the readers below see the values a theme gives too.
+        let machine = machine.map(edel::themes::themed);
+        let person = person.map(edel::themes::themed);
+        let (machine, person) = (machine.as_ref(), person.as_ref());
         let mut settings = Settings {
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),

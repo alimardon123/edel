@@ -726,10 +726,12 @@ fn from_system_files() -> (presets::Preset, Scheme) {
         };
         match settings::read(&text) {
             Ok(read) => {
-                let layout = read.file.layout;
+                // The theme in use applies under the file's values (M5.12b6a).
+                let file = edel::themes::themed(&read.file);
+                let layout = file.layout;
                 name = layout.preset.or(name);
-                panels = read.file.panels.list.or(panels);
-                scheme = read.file.appearance.mode.or(scheme);
+                panels = file.panels.list.or(panels);
+                scheme = file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",

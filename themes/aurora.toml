@@ -1,0 +1,7 @@
+# The built-in theme Aurora: the aurora picture, tinting the desktop in its own colour (accent
+# "wallpaper"). Read by edel::themes (M5.12b6a); shown by edel theme list.
+title = "Aurora"
+pictures = ["aurora"]
+
+[appearance]
+accent = "wallpaper"
