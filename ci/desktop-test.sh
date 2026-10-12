@@ -398,8 +398,8 @@ background=$(token background)
 # foot's own background. Window frames open centred in the area above
 # shell-ui's 40 px panel (M5.1b), 1280x760, and cascade (M4.3), each a
 # 28 px title bar above the window and a 1 px border round the rest
-# (M4.4): foot, asked for 400x300, draws 396x288, whole character cells,
-# and opens first at 442,249; 460,530 is inside it but outside the test
+# (M4.4): foot, asked for 400x300, draws 400x288, whole character
+# cells of Noto Sans Mono at 13 px (M6.13), and opens first at 440,249; 460,530 is inside it but outside the test
 # clients opened after it. foot now takes the terminal's background from
 # the tokens (M6.13), in the scheme the desktop starts in, light.
 foot=$(raw_token background colour.light.terminal)
@@ -5448,7 +5448,7 @@ case_tiling() {
 	# Super+Y: this workspace floats again, each window where it was.
 	python3 ci/qmp.py key meta_l-y
 	wait_for 'edel-compositor: windows now floating' || fail "Super+Y did not switch back to floating"
-	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
+	wait_for 'DESKTOP-TEST: windows 2 foot@440,249,400x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+Y floated them back where they were"
 }
