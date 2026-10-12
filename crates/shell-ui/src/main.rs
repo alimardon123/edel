@@ -33,6 +33,7 @@ mod lock;
 mod lock_card;
 mod lock_editor;
 mod lock_editor_card;
+mod look_picture;
 mod messages;
 mod mpris;
 mod notice;
@@ -318,6 +319,17 @@ struct Panel {
 }
 
 fn main() {
+    // A look's picture for Settings' Lock screen page (M5.10c7c): drawn
+    // without a compositor, so it is handed over before any connection, and
+    // its failures say what they are, not that the shell stopped.
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    if words.first().is_some_and(|w| w == "--look-picture") {
+        if let Err(e) = look_picture::run(&words[1..]) {
+            eprintln!("edel-shell-ui: {e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Err(e) = run() {
         eprintln!("edel-shell-ui: {}", messages::stopped(format!("{e:#}")));
         std::process::exit(1);
@@ -729,10 +741,12 @@ fn from_system_files() -> (presets::Preset, Scheme) {
         };
         match settings::read(&text) {
             Ok(read) => {
-                let layout = read.file.layout;
+                // The theme in use applies under the file's values (M5.12b6a).
+                let file = edel::themes::themed(&read.file);
+                let layout = file.layout;
                 name = layout.preset.or(name);
-                panels = read.file.panels.list.or(panels);
-                scheme = read.file.appearance.mode.or(scheme);
+                panels = file.panels.list.or(panels);
+                scheme = file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",

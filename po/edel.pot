@@ -347,6 +347,24 @@ msgstr ""
 msgid "reset {keys}"
 msgstr ""
 
+msgid "(built in)"
+msgstr ""
+
+msgid "(in use)"
+msgstr ""
+
+msgid "saved the theme {name}"
+msgstr ""
+
+msgid "deleted the theme {name}"
+msgstr ""
+
+msgid "nothing to reset; the theme in use shows as it was made"
+msgstr ""
+
+msgid "reset the theme in use"
+msgstr ""
+
 msgid "Settings, page by page, as the Settings app shows them:"
 msgstr ""
 
@@ -881,6 +899,15 @@ msgstr ""
 msgid "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }"
 msgstr ""
 
+msgid "{value} is not a theme's name; use letters, digits and hyphens, such as \"aurora\""
+msgstr ""
+
+msgid "a theme's name in quotes, such as \"aurora\""
+msgstr ""
+
+msgid "a theme as a table, such as { pictures = [\"aurora\"], accent = \"wallpaper\" }"
+msgstr ""
+
 msgid "a resolution such as \"1920x1080\""
 msgstr ""
 
@@ -963,6 +990,51 @@ msgid "could not shut down: {program} exited with {status}"
 msgstr ""
 
 msgid "could not suspend: {program} exited with {status}"
+msgstr ""
+
+msgid "{key} is not kept in a theme; set it under [appearance] instead"
+msgstr ""
+
+msgid "a title in quotes, up to {most} characters, such as \"My aurora\""
+msgstr ""
+
+msgid "pictures as a list in quotes, such as [\"aurora\"]"
+msgstr ""
+
+msgid "a theme holds up to {most} pictures; move some to another theme"
+msgstr ""
+
+msgid "{value} is not a picture; give a wallpaper's name such as \"aurora\", a picture's full path, or a colour as \"#rrggbb\""
+msgstr ""
+
+msgid "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\""
+msgstr ""
+
+msgid "{name} is a built-in theme; name yours another way, such as \"my-theme\""
+msgstr ""
+
+msgid "{name} is not a theme; choose {builtins}"
+msgstr ""
+
+msgid "{name} is not a theme; choose {builtins}, or one of yours ({own})"
+msgstr ""
+
+msgid "{name} is a built-in theme and stays as it is; name yours another way, such as \"my-theme\""
+msgstr ""
+
+msgid "a theme of yours is already called {name}; pick another name, or make it the theme in use first"
+msgstr ""
+
+msgid "a theme could not be written as a table"
+msgstr ""
+
+msgid "{name} is a built-in theme, which stays as it is"
+msgstr ""
+
+msgid "there is no theme of yours called {name}; edel theme list shows them"
+msgstr ""
+
+msgid "{name} is the theme in use; pick another theme first: edel settings set appearance.theme=edel"
 msgstr ""
 
 msgid "accent {name} is not an accent or a colour; the release's is used"
@@ -1248,4 +1320,25 @@ msgid "Only show the plan: every step, changing nothing"
 msgstr ""
 
 msgid "Check an image definition without building it"
+msgstr ""
+
+msgid "theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones"
+msgstr ""
+
+msgid "List the built-in themes, then yours, with the one in use marked"
+msgstr ""
+
+msgid "Keep the theme in use as a theme of yours called NAME, with your changes on top; the screen stays the same"
+msgstr ""
+
+msgid "A name of letters, digits and hyphens, such as my-aurora"
+msgstr ""
+
+msgid "Delete one of your themes; the theme in use cannot be deleted"
+msgstr ""
+
+msgid "The theme's name, as theme list shows it"
+msgstr ""
+
+msgid "Take your changes off the theme in use, so it shows as it was made"
 msgstr ""

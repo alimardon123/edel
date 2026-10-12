@@ -18,6 +18,7 @@
 | `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs |
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
+| `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
 
 ## `edel update [RELEASE] [OPTIONS]`
 
@@ -162,3 +163,31 @@ Check an image definition without building it.
 | | What it does |
 |---|---|
 | `DEFINITION` | Image definition, for example images/vm.toml |
+
+## `edel theme`
+
+theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones.
+
+### `edel theme list`
+
+List the built-in themes, then yours, with the one in use marked.
+
+### `edel theme save NAME`
+
+Keep the theme in use as a theme of yours called NAME, with your changes on top; the screen stays the same.
+
+| | What it does |
+|---|---|
+| `NAME` | A name of letters, digits and hyphens, such as my-aurora |
+
+### `edel theme delete NAME`
+
+Delete one of your themes; the theme in use cannot be deleted.
+
+| | What it does |
+|---|---|
+| `NAME` | The theme's name, as theme list shows it |
+
+### `edel theme reset`
+
+Take your changes off the theme in use, so it shows as it was made.

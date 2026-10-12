@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lock looks as presets</title>
+
+</head>
+<body>
+
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+.lk-scene{position:relative;overflow:hidden;border-radius:12px}
+.lk-clock{position:absolute;left:0;right:0;text-align:center;color:#f4f6fa;font-weight:250;letter-spacing:-0.02em}
+.lk-date{position:absolute;left:0;right:0;text-align:center;color:rgba(244,246,250,0.78)}
+.lk-field{position:absolute;border-radius:999px;background:rgba(190,205,255,0.18);border:1px solid rgba(255,255,255,0.20)}
+.lk-chip{position:absolute;border-radius:8px;background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.16)}
+</style>
+
+<div style="width: 1880px; height: 2740px; box-sizing: border-box; padding: 40px; font-family: 'Inter', sans-serif; background: #e9ecf1; color: #1c1e22; display: grid; grid-template-columns: 900px 1fr; grid-template-rows: auto auto; gap: 40px">
+
+<!-- 1. Settings: the Lock screen page as a gallery of looks -->
+<section aria-label="Settings, Lock screen page" style="background: #ffffff; border-radius: 14px; border: 1px solid rgba(20,24,32,0.10); padding: 36px 44px; display: flex; flex-direction: column; gap: 28px">
+<header>
+<div style="font-size: 11px; font-weight: 600; color: #8d929b; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px">1 · Settings</div>
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em">Lock screen</h1>
+<p style="margin: 4px 0 0; font-size: 13px; color: #5d636e">Pick a look. Each look keeps its own parts and background.</p>
+</header>
+
+<div>
+<div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.01em">Looks</h2>
+</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+
+<!-- Home, in use, the person's own -->
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px; border: 2px solid #2d6ae3">
+<div class="lk-scene" style="height: 150px; background: radial-gradient(120% 90% at 20% 0%, #c98b6a 0%, #7a5a8c 45%, #2b2f52 100%)">
+<div class="lk-date" style="top: 22px; font-size: 9px">Sunday 11 October</div>
+<div class="lk-clock" style="top: 32px; font-size: 46px">9:41</div>
+<div class="lk-chip" style="left: 12px; bottom: 12px; width: 66px; height: 22px"></div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 18px; width: 72px; height: 16px"></div>
+</div>
+</div>
+<figcaption style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 600">Home</span>
+<span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: #fff; background: #2d6ae3; padding: 3px 9px 3px 7px; border-radius: 999px; box-shadow: 0 1px 2px rgba(45,106,227,0.35)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>In use</span>
+</figcaption>
+</figure>
+
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px; border: 2px solid transparent">
+<div class="lk-scene" style="height: 150px; background: linear-gradient(160deg,#33416a,#1f2b48)"><div style="position: absolute; top: 8px; left: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; color: rgba(255,255,255,0.94); background: rgba(16,22,38,0.38); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</div>
+<div class="lk-date" style="top: 22px; font-size: 9px">Sunday 11 October</div>
+<div class="lk-clock" style="top: 32px; font-size: 46px">9:41</div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 18px; width: 92px; height: 16px"></div>
+</div>
+</div>
+<figcaption style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 500">Classic</span>
+
+</figcaption>
+</figure>
+
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px; border: 2px solid transparent">
+<div class="lk-scene" style="height: 150px; background: linear-gradient(200deg,#8fa3c9,#46557d)"><div style="position: absolute; top: 8px; left: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; color: rgba(255,255,255,0.94); background: rgba(16,22,38,0.38); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</div>
+<div class="lk-clock" style="top: 26px; left: 18px; right: auto; text-align: left; font-size: 40px">9:41</div>
+<div class="lk-date" style="top: 78px; left: 20px; right: auto; text-align: left; font-size: 9px">Sunday 11 October</div>
+<div class="lk-chip" style="left: 20px; top: 96px; width: 64px; height: 14px"></div>
+<div class="lk-field" style="right: 18px; bottom: 34px; width: 84px; height: 16px"></div>
+</div>
+</div>
+<figcaption style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 500">Magazine</span>
+
+</figcaption>
+</figure>
+
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px; border: 2px solid transparent">
+<div class="lk-scene" style="height: 150px; background: linear-gradient(180deg,#9aa6bd,#5b6683)"><div style="position: absolute; top: 8px; left: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px 3px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.01em; color: rgba(255,255,255,0.94); background: rgba(16,22,38,0.38); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: inset 0 0 0 0.5px rgba(255,255,255,0.28)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Built in</div>
+<div class="lk-clock" style="top: 40px; font-size: 30px">9:41</div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 22px; width: 80px; height: 14px"></div>
+</div>
+</div>
+<figcaption style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 500">Minimal</span>
+
+</figcaption>
+</figure>
+
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px; border: 2px solid transparent">
+<div class="lk-scene" style="height: 150px; background: #3a6e5a">
+<div class="lk-clock" style="top: 34px; font-size: 42px; font-weight: 500">09:41</div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 18px; width: 92px; height: 16px"></div>
+</div>
+</div>
+<figcaption style="display: flex; align-items: center; justify-content: space-between">
+<span style="font-size: 13px; font-weight: 500">Work</span>
+
+</figcaption>
+</figure>
+
+<!-- New look -->
+<figure style="margin: 0; display: flex; flex-direction: column; gap: 8px">
+<div style="padding: 3px; border-radius: 15px">
+<div style="height: 150px; border-radius: 12px; border: 1.5px dashed rgba(20,24,32,0.22); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: #5d636e">
+<span style="width: 36px; height: 36px; border-radius: 50%; background: #eef2fc; color: #2d6ae3; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 300">+</span>
+<span style="font-size: 12px">From the look in use</span>
+</div>
+</div>
+<figcaption><span style="font-size: 13px; font-weight: 500">New look</span></figcaption>
+</figure>
+</div>
+</div>
+
+<!-- The look in use: what it holds, and what to do with it -->
+<div style="position: relative; margin-bottom: 96px">
+<div style="border-radius: 16px; background: linear-gradient(180deg,#f8fafd,#f2f5fa); border: 1px solid rgba(20,24,32,0.07); padding: 16px 18px; display: flex; align-items: center; gap: 16px">
+<span class="lk-scene" style="width: 96px; height: 60px; border-radius: 10px; flex-shrink: 0; background: radial-gradient(120% 90% at 20% 0%, #c98b6a 0%, #7a5a8c 45%, #2b2f52 100%); box-shadow: 0 4px 12px rgba(20,24,32,0.16)"><span class="lk-clock" style="top: 12px; font-size: 22px">9:41</span></span>
+<div style="flex-grow: 1">
+<div style="display: flex; align-items: center; gap: 8px"><span style="font-size: 16px; font-weight: 650">Home</span><span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: #fff; background: #2d6ae3; padding: 3px 9px 3px 7px; border-radius: 999px; box-shadow: 0 1px 2px rgba(45,106,227,0.35)"><svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5"/></svg>In use</span></div>
+<div style="font-size: 12.5px; color: #5d636e; margin-top: 4px">Clock, date, now playing and notifications over your wallpaper, blurred.</div>
+</div>
+<button style="height: 36px; padding: 0 18px 0 14px; border-radius: 18px; border: 0; background: #2d6ae3; color: #ffffff; font: inherit; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 12px rgba(45,106,227,0.28)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 2.5l2 2-8 8H3.5v-2z"></path></svg>Customize</button>
+<button aria-label="More" style="height: 36px; width: 36px; border-radius: 18px; border: 0; background: #ffffff; box-shadow: 0 0 0 1px rgba(20,24,32,0.12), 0 0 0 4px rgba(45,106,227,0.18); color: #1c1e22; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg></button>
+</div>
+<!-- its menu, open -->
+<div style="position: absolute; right: 0; top: 74px; width: 210px; border-radius: 14px; background: #ffffff; box-shadow: 0 0 0 1px rgba(20,24,32,0.08), 0 16px 40px rgba(20,24,32,0.16); padding: 6px; font-size: 13px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; background: #f2f5fa"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5.5h7v7h-7zM3.5 10.5v-7h7"></path></svg>Duplicate</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12.5h10M4.5 10l6.5-6.5 1.5 1.5L6 11.5H4.5z"></path></svg>Rename…</div>
+<div style="height: 1px; background: rgba(20,24,32,0.08); margin: 4px 6px"></div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; color: #d0363f"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 4.5h9M6 4.5V3h4v1.5M5 4.5l.6 8h4.8l.6-8"></path></svg>Delete…</div>
+</div>
+</div>
+
+<div>
+<h2 style="margin: 0 0 10px; font-size: 13px; font-weight: 600">On every look</h2>
+<div style="border-radius: 12px; border: 1px solid rgba(20,24,32,0.08); background: #fafbfc">
+<div style="display: flex; align-items: center; min-height: 52px; padding: 0 16px">
+<div style="flex-grow: 1"><div style="font-size: 13px">Unread notifications count</div></div>
+<span style="width: 40px; height: 22px; border-radius: 11px; background: #2d6ae3; position: relative"><span style="position: absolute; right: 2px; top: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff"></span></span>
+</div>
+</div>
+</div>
+
+<footer style="margin-top: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 14px 16px; border-radius: 12px; background: #f6f7f9; box-shadow: inset 0 0 0 1px rgba(20,24,32,0.06)"><div style="display: flex; gap: 10px; align-items: flex-start; min-width: 0"><span style="flex: none; width: 26px; height: 26px; border-radius: 8px; background: #eef2fc; color: #2d6ae3; display: grid; place-items: center"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg></span><div style="min-width: 0"><div style="font-size: 12.5px; font-weight: 600; color: #1d2129">Click to use</div><div style="font-size: 11.5px; color: #737a85; line-height: 1.45; margin-top: 2px">A look applies at once, on the lock and the login screen.</div></div></div><div style="display: flex; gap: 10px; align-items: flex-start; min-width: 0"><span style="flex: none; width: 26px; height: 26px; border-radius: 8px; background: #eef2fc; color: #2d6ae3; display: grid; place-items: center"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="10" height="7" rx="2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg></span><div style="min-width: 0"><div style="font-size: 12.5px; font-weight: 600; color: #1d2129">Built-in looks stay as made</div><div style="font-size: 11.5px; color: #737a85; line-height: 1.45; margin-top: 2px">Changing one saves a copy of yours, such as Classic 2.</div></div></div><div style="display: flex; gap: 10px; align-items: flex-start; min-width: 0"><span style="flex: none; width: 26px; height: 26px; border-radius: 8px; background: #eef2fc; color: #2d6ae3; display: grid; place-items: center"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h5l3 3v8H4z"/><path d="M9 2.5v3h3"/></svg></span><div style="min-width: 0"><div style="font-size: 12.5px; font-weight: 600; color: #1d2129">One line in your settings</div><div style="font-size: 11.5px; color: #737a85; line-height: 1.45; margin-top: 2px"><code style="font-size: 11px; background: #fff; padding: 1px 5px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(20,24,32,0.08)">lock_screen.look = "home"</code></div></div></div></footer>
+</section>
+
+<!-- 2. The editor on the lock: choosing a look -->
+<section aria-label="Lock editor, looks" style="border-radius: 14px; overflow: hidden; background: radial-gradient(90% 80% at 50% 0%, #34406a 0%, #1b2440 70%); padding: 28px 32px 30px; color: #f4f6fa; display: flex; flex-direction: column; justify-content: center; gap: 18px">
+<div style="font-size: 11px; font-weight: 600; color: rgba(244,246,250,0.55); letter-spacing: 0.06em; text-transform: uppercase">2 · On the lock: Super+L, or Edit look in Settings</div>
+<div style="display: flex; align-items: center; justify-content: center; gap: 22px; padding-top: 8px">
+<div style="opacity: 0.55; transform: scale(0.82)">
+<div class="lk-scene" style="width: 300px; height: 188px; background: linear-gradient(160deg,#33416a,#1f2b48); box-shadow: 0 10px 30px rgba(0,0,0,0.35)">
+<div class="lk-clock" style="top: 44px; font-size: 56px">9:41</div>
+</div>
+<div style="text-align: center; font-size: 12px; margin-top: 10px; color: rgba(244,246,250,0.8)">Classic</div>
+</div>
+<div>
+<div class="lk-scene" style="width: 540px; height: 338px; border-radius: 16px; background: radial-gradient(120% 90% at 20% 0%, #c98b6a 0%, #7a5a8c 45%, #2b2f52 100%); box-shadow: 0 0 0 2px #ffffff, 0 18px 50px rgba(0,0,0,0.45)">
+<div class="lk-date" style="top: 52px; font-size: 16px">Sunday 11 October</div>
+<div class="lk-clock" style="top: 70px; font-size: 108px">9:41</div>
+<div class="lk-chip" style="left: 26px; bottom: 26px; width: 140px; height: 46px"></div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 34px; width: 170px; height: 32px"></div>
+</div>
+<div style="text-align: center; margin-top: 14px; font-size: 17px; font-weight: 600">Home</div>
+<div style="display: flex; justify-content: center; gap: 10px; margin-top: 12px">
+<button style="height: 34px; padding: 0 20px; border-radius: 17px; border: 0; background: #ffffff; color: #1c1e22; font: inherit; font-size: 13px; font-weight: 600">Customize</button>
+<button style="height: 34px; padding: 0 20px; border-radius: 17px; border: 1px solid rgba(255,255,255,0.35); background: transparent; color: #f4f6fa; font: inherit; font-size: 13px">Use this look</button>
+</div>
+</div>
+<div style="opacity: 0.55; transform: scale(0.82)">
+<div class="lk-scene" style="width: 300px; height: 188px; background: linear-gradient(200deg,#8fa3c9,#46557d); box-shadow: 0 10px 30px rgba(0,0,0,0.35)">
+<div class="lk-clock" style="top: 30px; left: 22px; right: auto; text-align: left; font-size: 48px">9:41</div>
+</div>
+<div style="text-align: center; font-size: 12px; margin-top: 10px; color: rgba(244,246,250,0.8)">Magazine</div>
+</div>
+</div>
+<div style="display: flex; justify-content: center; align-items: center; gap: 7px; margin-top: 2px">
+<span style="width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35)"></span>
+<span style="width: 6px; height: 6px; border-radius: 50%; background: #ffffff"></span>
+<span style="width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35)"></span>
+<span style="width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35)"></span>
+<span style="width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.35)"></span>
+<span style="margin-left: 8px; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 300">+</span>
+</div>
+<div style="text-align: center; font-size: 12px; color: rgba(244,246,250,0.6)">← → or a swipe to move between looks · Return uses it · Escape leaves</div>
+</section>
+
+<!-- 3. Customize: the canvas in the middle, the wallpaper's panel on its left, the chosen widget's on its right, the film strip below -->
+<section aria-label="Lock editor, customizing one look" style="grid-column: 1 / -1; border-radius: 14px; background: #10151f; padding: 28px 40px 34px; color: #f4f6fa; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: baseline; justify-content: space-between">
+<div style="font-size: 11px; font-weight: 600; color: rgba(244,246,250,0.55); letter-spacing: 0.06em; text-transform: uppercase">3 · Customize: the canvas in the middle, the wallpaper on its left, the chosen widget on its right</div>
+<div style="font-size: 12px; color: rgba(244,246,250,0.55)">Editing (top) · Preview (bottom)</div>
+</div>
+
+<!-- 3a. Editing -->
+<figure style="margin: 0">
+<div style="width: 1120px; height: 700px; margin: 0 auto; border-radius: 18px; background: radial-gradient(80% 70% at 50% 35%, #2a3456 0%, #141a2b 75%); box-shadow: 0 30px 80px rgba(0,0,0,0.5); position: relative; overflow: hidden">
+<!-- top bar -->
+<div style="position: absolute; left: 22px; right: 22px; top: 14px; height: 36px; display: flex; align-items: center; justify-content: space-between">
+<span style="height: 32px; padding: 0 16px; border-radius: 16px; background: rgba(255,255,255,0.10); display: flex; align-items: center; font-size: 13px">Cancel</span>
+<span style="text-align: center; line-height: 1.25"><span style="display: block; font-size: 13.5px; font-weight: 600">Classic</span><span style="display: block; font-size: 11px; color: rgba(244,246,250,0.6)">Built in · Done saves a new look</span></span>
+<span style="display: flex; gap: 8px"><span style="height: 32px; padding: 0 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.28); display: flex; align-items: center; gap: 7px; font-size: 13px"><span style="width: 0; height: 0; border-left: 7px solid #f4f6fa; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent"></span>Preview</span><span style="height: 32px; padding: 0 18px; border-radius: 16px; background: #ffffff; color: #1c1e22; display: flex; align-items: center; font-size: 13px; font-weight: 600">Done</span></span>
+</div>
+
+<!-- left: the wallpaper, always there -->
+<div style="position: absolute; left: 22px; top: 66px; width: 176px; border-radius: 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); padding: 16px 14px; box-sizing: border-box">
+<div style="font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(244,246,250,0.5)">Wallpaper</div>
+<div style="margin-top: 12px; height: 92px; border-radius: 10px; background: linear-gradient(160deg,#33416a,#1f2b48); border: 1px solid rgba(255,255,255,0.16)"></div>
+<div style="margin-top: 10px; font-size: 13.5px; font-weight: 600">Navy</div>
+<div style="font-size: 11px; color: rgba(244,246,250,0.55); margin-top: 2px">Classic's own</div>
+<div style="font-size: 12px; color: rgba(244,246,250,0.75); margin: 18px 0 10px">Dim</div>
+<div style="height: 4px; border-radius: 2px; background: linear-gradient(90deg,#2d6ae3 35%, rgba(255,255,255,0.18) 35%); position: relative"><span style="position: absolute; left: 35%; top: -6px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transform: translateX(-50%)"></span></div>
+</div>
+
+<!-- the canvas -->
+<div class="lk-scene" style="position: absolute; left: 50%; transform: translateX(-50%); top: 64px; width: 672px; height: 420px; border-radius: 16px; background: linear-gradient(160deg,#33416a,#1f2b48); box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 20px 50px rgba(0,0,0,0.45)">
+<div class="lk-date" style="top: 48px; font-size: 13px">Sunday 11 October</div>
+<div class="lk-clock" style="top: 60px; font-size: 80px">9:41</div>
+<!-- a second clock, chosen -->
+<div style="position: absolute; right: 26px; top: 26px; width: 108px; height: 108px; border: 1.5px solid rgba(255,255,255,0.9); border-radius: 16px; box-shadow: 0 0 0 4px rgba(45,106,227,0.45)"></div>
+<div style="position: absolute; right: 40px; top: 40px; width: 80px; height: 80px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.9)"><span style="position: absolute; left: 39px; top: 14px; width: 2px; height: 26px; background: #fff"></span><span style="position: absolute; left: 39px; top: 38px; width: 20px; height: 2px; background: #fff; transform-origin: left; transform: rotate(-30deg)"></span></div>
+<div style="position: absolute; right: 50px; top: 140px; font-size: 10.5px; color: rgba(244,246,250,0.8)">Tokyo</div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 60px; width: 170px; height: 28px"></div>
+</div>
+
+<!-- right: the chosen widget, only while one is chosen -->
+<div style="position: absolute; right: 22px; top: 66px; width: 176px; border-radius: 18px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); padding: 16px 14px; box-sizing: border-box">
+<div style="display: flex; justify-content: space-between; align-items: baseline"><span style="font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(244,246,250,0.5)">Clock 2</span><span style="font-size: 11px; color: #ff8f8f">Remove</span></div>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px">
+<span style="height: 44px; border-radius: 10px; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; font-size: 12px">9:41</span>
+<span style="height: 44px; border-radius: 10px; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; font-size: 9.5px; line-height: 1"><span>09<br>41</span></span>
+<span style="height: 44px; border-radius: 10px; background: #2d6ae3; display: flex; align-items: center; justify-content: center"><span style="width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #fff"></span></span>
+<span style="height: 44px; border-radius: 10px; background: rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 200">9 41</span>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 12px; color: rgba(244,246,250,0.75); margin-top: 18px"><span>Time zone</span><span style="color: #f4f6fa">Tokyo ›</span></div>
+<div style="display: flex; justify-content: space-between; font-size: 12px; color: rgba(244,246,250,0.75); margin-top: 14px"><span>Size</span><span style="color: #f4f6fa">Small ›</span></div>
+</div>
+
+<!-- tabs -->
+<div style="position: absolute; left: 50%; transform: translateX(-50%); top: 504px; display: flex; padding: 4px; border-radius: 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.10)">
+<span style="width: 120px; text-align: center; padding: 8px 0; border-radius: 10px; background: #ffffff; color: #1c1e22; font-size: 13px; font-weight: 600">Widgets</span>
+<span style="width: 120px; text-align: center; padding: 8px 0; font-size: 13px; color: rgba(244,246,250,0.8)">Wallpaper</span>
+</div>
+<!-- the strip: only the widgets to add, each a clean tile -->
+<div style="position: absolute; left: 0; right: 0; top: 560px; height: 92px; display: flex; gap: 12px; justify-content: center">
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="font-size: 22px; font-weight: 250">9:41</span><span style="font-size: 11.5px">Clock</span></div>
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="font-size: 12px; color: rgba(244,246,250,0.85)">Sun 11 Oct</span><span style="font-size: 11.5px">Date</span></div>
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="width: 40px; height: 12px; border-radius: 6px; background: rgba(255,255,255,0.3)"></span><span style="font-size: 11.5px">Now playing</span></div>
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="font-size: 16px">82%</span><span style="font-size: 11.5px">Battery</span></div>
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="font-size: 12px; font-style: italic">"Hello"</span><span style="font-size: 11.5px">Message</span></div>
+<div style="width: 112px; border-radius: 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px"><span style="width: 30px; height: 22px; border-radius: 5px; background: linear-gradient(135deg,#c98b6a,#7a5a8c)"></span><span style="font-size: 11.5px">Picture</span></div>
+</div>
+</div>
+<figcaption style="width: 1120px; margin: 12px auto 0; font-size: 12px; color: rgba(244,246,250,0.6); line-height: 1.5">Each widget on the canvas is its own, with its own settings: here a second clock, analog, set to Tokyo. Click one and its panel shows on the right (and goes when nothing is chosen); the wallpaper's panel stays on the left. Both are quiet glass, lighter than the canvas, so the canvas stays the star. The strip below only adds: drag a widget up, or click to place it in the middle; the Wallpaper tab's strip picks the wallpaper the left panel then sets. The sign-in and the system buttons (power, accessibility, keyboard layout) are widgets too: they move, resize and have their own shape and style in the right panel, but they are required, so they have no Remove and are not in the strip.</figcaption>
+</figure>
+
+<!-- 3b. Preview -->
+<figure style="margin: 0">
+<div class="lk-scene" style="width: 1120px; height: 700px; margin: 0 auto; border-radius: 18px; background: linear-gradient(160deg,#33416a,#1f2b48); box-shadow: 0 30px 80px rgba(0,0,0,0.5)">
+<div style="position: absolute; left: 50%; transform: translateX(-50%); top: 16px; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 6px 0 14px; border-radius: 16px; background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.18); font-size: 12.5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #ffb547"></span><span style="font-weight: 600">Preview</span><span style="color: rgba(244,246,250,0.65)">Not locked · Esc to go back</span><span style="height: 24px; padding: 0 12px; border-radius: 12px; background: #fff; color: #1c1e22; display: flex; align-items: center; font-weight: 600">Back to editing</span></div>
+<div class="lk-date" style="top: 112px; font-size: 17px">Sunday 11 October</div>
+<div class="lk-clock" style="top: 130px; font-size: 140px">9:41</div>
+<div style="position: absolute; right: 60px; top: 70px; width: 110px; height: 110px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.9)"><span style="position: absolute; left: 54px; top: 18px; width: 2.5px; height: 37px; background: #fff"></span><span style="position: absolute; left: 54px; top: 53px; width: 28px; height: 2.5px; background: #fff; transform-origin: left; transform: rotate(-30deg)"></span></div>
+<div style="position: absolute; right: 94px; top: 190px; font-size: 13px; color: rgba(244,246,250,0.8)">Tokyo</div>
+<div class="lk-field" style="left: 50%; transform: translateX(-50%); bottom: 120px; width: 260px; height: 40px"></div>
+</div>
+<figcaption style="width: 1120px; margin: 12px auto 0; font-size: 12px; color: rgba(244,246,250,0.6); line-height: 1.5">Preview, beside Done, shows the look at its real size on the whole screen, with nothing of the editor. A pill at the top says Preview and Not locked, so it never reads as the real lock; Esc or Back to editing returns.</figcaption>
+</figure>
+</section>
+
+</div>
+
+
+</body>
+</html>

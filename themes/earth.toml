@@ -1,0 +1,8 @@
+# The built-in theme Earth: NASA's Earth pictures, tinting the desktop in their own colour, with
+# slightly rounder windows. Read by edel::themes (M5.12b6a); shown by edel theme list.
+title = "Earth"
+pictures = ["earth"]
+
+[appearance]
+accent = "wallpaper"
+radius = 12

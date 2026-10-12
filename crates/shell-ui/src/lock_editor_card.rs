@@ -911,6 +911,8 @@ impl Shell {
             &mut le.pictures,
             &mut le.backdrops,
             &le.wallpaper,
+            lock_editor::THUMB,
+            None,
         )?;
         let picture = Picture(Rc::new(pixmap));
         le.thumbs.insert(key, picture.clone());
