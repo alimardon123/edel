@@ -3418,13 +3418,12 @@ case_presets() {
 	# title_bar is false for each), and there is at least one.
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now zen')
 	top=$(count 'edel-shell-ui: panel edel-panel along the top')
-	tiled=$(count 'edel-compositor: windows now tiling')
 	guest 'preset zen'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now zen' "$restarts" ||
 		fail "edel settings set layout.preset=zen did not restart shell-ui"
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "Zen did not bring shell-ui's bar to the top"
-	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Zen preset did not tile the windows"
+	# Hive tiles too, so no policy switch is logged; the state file says it.
 	i=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
