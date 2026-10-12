@@ -995,6 +995,9 @@ msgstr ""
 msgid "Floating only"
 msgstr ""
 
+msgid "Never"
+msgstr ""
+
 msgid "Left"
 msgstr ""
 

@@ -1612,8 +1612,8 @@ impl Shell {
         let Some(&style) = styles::styles().get(row) else {
             return;
         };
-        let (machine, _) = settings_texts();
-        let without = styles::in_use(machine.as_deref(), None);
+        let (machine, person) = settings_texts();
+        let without = styles::in_use_without_key(machine.as_deref(), person.as_deref());
         let value = (row != without).then_some(style);
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, styles::KEY, value) {

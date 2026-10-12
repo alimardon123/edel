@@ -293,8 +293,9 @@ pub fn load_text(handle: &LoopHandle<'static, Edel>, family: &str, px: u32) {
 
 impl Edel {
     /// What the frame adds round `window`: nothing for a window that draws
-    /// its own, nor in tiling when `layout.title_bars = "floating-only"`,
-    /// nor while it is fullscreen.
+    /// its own, nor where `Settings::bars_in` gives no bars (M5.18b:
+    /// `layout.title_bars` `never`, or `floating-only` in tiling), nor
+    /// while it is fullscreen.
     pub fn insets(&self, window: &Window) -> Insets {
         if server_side(window) && self.bars_shown(window) && !self.is_fullscreen(window) {
             Insets::server_side(&self.tokens)

@@ -80,9 +80,38 @@ pub fn row_at(y: f32, tokens: &Tokens) -> Option<usize> {
 }
 
 /// The style the files choose now: the person's over the machine's, else
-/// the first, the release's default.
+/// the style the preset they name gives (M5.18b), else the first, the
+/// release's default.
 pub fn in_use(machine: Option<&str>, person: Option<&str>) -> usize {
-    edel::settings::chosen(KEY, machine, person)
+    position(chosen_style(machine, person, person))
+}
+
+/// The style that applies when the person's own key is taken out: the row
+/// a choice of it has to be to write nothing (as writers never write a
+/// default). The person's preset still counts, as it does in [`in_use`].
+pub fn in_use_without_key(machine: Option<&str>, person: Option<&str>) -> usize {
+    position(chosen_style(machine, None, person))
+}
+
+/// The style the key gives from `key_person` over `machine`, else the
+/// style of the preset `preset_person` and `machine` name.
+fn chosen_style(
+    machine: Option<&str>,
+    key_person: Option<&str>,
+    preset_person: Option<&str>,
+) -> Option<String> {
+    edel::settings::chosen(KEY, machine, key_person).or_else(|| {
+        let preset = edel::settings::chosen("layout.preset", machine, preset_person);
+        edel::presets::named(preset.as_deref())
+            .0
+            .windows
+            .tiling_style
+    })
+}
+
+/// The row of `style`, the first when it is none the menu offers.
+fn position(style: Option<String>) -> usize {
+    style
         .and_then(|s| styles().iter().position(|v| *v == s))
         .unwrap_or(0)
 }
@@ -192,6 +221,18 @@ mod tests {
             ),
             0
         );
+    }
+
+    #[test]
+    fn the_menu_marks_the_style_the_preset_gives_when_the_file_names_none() {
+        // Zen tiles in split (M5.18b): the menu says so, and a click on the
+        // style that applies without the key writes nothing.
+        let zen = "format = 1\n[layout]\npreset = \"zen\"\n";
+        let stack = "format = 1\n[layout]\ntiling_style = \"stack\"\n";
+        assert_eq!(in_use(Some(zen), None), 1, "split");
+        assert_eq!(in_use(Some(zen), Some(stack)), 0, "the person's stack");
+        assert_eq!(in_use_without_key(Some(zen), Some(stack)), 1);
+        assert_eq!(in_use_without_key(None, None), 0);
     }
 
     #[test]

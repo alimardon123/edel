@@ -17,7 +17,7 @@ pub const FORMAT: i64 = 1;
 
 /// The presets this release has, by name, the default first, in the order
 /// Settings shows them and messages list them (ADR-002's: Classic,
-/// Mac-like, Windows-like, Hive, then Zen, Tablet and Phone as they
+/// Mac-like, Windows-like, Hive, Zen, then Tablet and Phone as they
 /// come). A new one is a file under `presets/`, a line here and its name
 /// in [`NAMES`], in the same order; its name must be in
 /// [`crate::settings::PRESETS`].
@@ -29,11 +29,12 @@ pub const BUILT_IN: &[(&str, &str)] = &[
         include_str!("../../../presets/windows-like.toml"),
     ),
     ("hive", include_str!("../../../presets/hive.toml")),
+    ("zen", include_str!("../../../presets/zen.toml")),
 ];
 
 /// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,
 /// so `edel settings check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "mac-like", "windows-like", "hive"];
+pub const NAMES: &[&str] = &["classic", "mac-like", "windows-like", "hive", "zen"];
 
 /// The preset a missing `layout.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -174,6 +175,51 @@ pub struct Windows {
     /// `layout.window_buttons` is not set (M5.4b); absent is the right.
     #[serde(default)]
     pub buttons: Side,
+    /// Whether windows get title bars when `layout.title_bars` is not set
+    /// (M5.18b); absent is always.
+    #[serde(default)]
+    pub title_bars: Option<TitleBars>,
+    /// The style tiling starts in when `layout.tiling_style` is not set
+    /// (M5.18b), one of the key's values, as `layout.tiling_style` names
+    /// them; absent is stack. Checked against the key table by [`check`].
+    #[serde(default)]
+    pub tiling_style: Option<String>,
+}
+
+/// Whether windows get the compositor's title bars (M5.18), which
+/// `layout.title_bars` and a preset's `[windows] title_bars` name: always,
+/// in floating and tiling; floating only, as before; or never, which
+/// Zen uses. Its names are the key table's values (`settings::KEYS`), and a
+/// test holds the two to each other.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+pub enum TitleBars {
+    #[default]
+    #[serde(rename = "always")]
+    Always,
+    #[serde(rename = "floating-only")]
+    FloatingOnly,
+    #[serde(rename = "never")]
+    Never,
+}
+
+impl TitleBars {
+    /// Every value, in the key table's order.
+    pub const ALL: [TitleBars; 3] = [TitleBars::Always, TitleBars::FloatingOnly, TitleBars::Never];
+
+    /// The value as the settings file writes it.
+    pub fn name(self) -> &'static str {
+        match self {
+            TitleBars::Always => "always",
+            TitleBars::FloatingOnly => "floating-only",
+            TitleBars::Never => "never",
+        }
+    }
+
+    /// The value a name is, `always`, `floating-only` or `never`; anything
+    /// else is none.
+    pub fn parse(name: &str) -> Option<TitleBars> {
+        TitleBars::ALL.into_iter().find(|t| t.name() == name)
+    }
 }
 
 /// A side of the title bar.
@@ -386,6 +432,21 @@ pub fn check(text: &str) -> Result<Preset> {
     }
     check_panels(&preset.panels)?;
     check_quick(&preset.quick)?;
+    if let Some(style) = &preset.windows.tiling_style {
+        let styles = crate::settings::choices("layout.tiling_style");
+        if !styles.contains(&style.as_str()) {
+            bail!(
+                "{}",
+                trf(
+                    "{style} is not a tiling style; the styles are {styles}",
+                    &[
+                        ("style", &format!("{style:?}")),
+                        ("styles", &styles.join(", ")),
+                    ]
+                )
+            );
+        }
+    }
     for command in &preset.session.start {
         if command.trim().is_empty() || command.chars().any(char::is_control) {
             bail!(
@@ -488,6 +549,7 @@ pub fn title(name: &str) -> String {
         "mac-like" => tr(n_("Mac-like")).to_string(),
         "windows-like" => tr(n_("Windows-like")).to_string(),
         "hive" => tr(n_("Hive")).to_string(),
+        "zen" => tr(n_("Zen")).to_string(),
         _ => {
             let mut chars = name.chars();
             match chars.next() {
@@ -798,5 +860,69 @@ mod tests {
             &classic.replace("\"clock\"", "\"Clock Widget\""),
             "\"Clock Widget\" is not a widget name",
         );
+    }
+
+    #[test]
+    fn zen_tiles_in_the_split_style_with_no_title_bars_and_a_slim_bar_on_top() {
+        // M5.18b: the style and the bars come from the file, not the code.
+        let (zen, note) = named(Some("zen"));
+        assert_eq!(note, None);
+        assert_eq!(zen.windows.policy, Policy::Tiling);
+        assert_eq!(zen.windows.title_bars, Some(TitleBars::Never));
+        assert_eq!(zen.windows.tiling_style.as_deref(), Some("split"));
+        assert_eq!(zen.workspaces.count, 4, "as Hive's count");
+        assert_eq!(zen.launcher.style, LauncherStyle::Menu);
+        assert_eq!(zen.quick, named(Some("hive")).0.quick, "as Hive's tiles");
+        assert_eq!(zen.panels.len(), 1);
+        let panel = &zen.panels[0];
+        assert_eq!(panel.edge, Edge::Top);
+        assert_eq!(panel.size, Size::Small);
+        assert_eq!(panel.start, ["menu"]);
+        assert!(panel.centre.is_empty());
+        assert_eq!(panel.end, ["workspaces", "clock"]);
+        // The presets that say nothing keep the bars and the stack.
+        for name in ["classic", "mac-like", "windows-like", "hive"] {
+            let (preset, _) = named(Some(name));
+            assert_eq!(preset.windows.title_bars, None, "{name}");
+            assert_eq!(preset.windows.tiling_style, None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_preset_reads_its_title_bars_and_tiling_style_and_refuses_the_rest() {
+        let classic = BUILT_IN[0].1;
+        let set = classic.replace(
+            "buttons = \"right\"",
+            "buttons = \"right\"\ntitle_bars = \"floating-only\"\ntiling_style = \"scroll\"",
+        );
+        let windows = check(&set).unwrap().windows;
+        assert_eq!(windows.title_bars, Some(TitleBars::FloatingOnly));
+        assert_eq!(windows.tiling_style.as_deref(), Some("scroll"));
+        let bars = classic.replace(
+            "buttons = \"right\"",
+            "buttons = \"right\"\ntitle_bars = \"sometimes\"",
+        );
+        let e = format!("{:#}", check(&bars).unwrap_err());
+        assert!(e.contains("unknown variant `sometimes`"), "{e}");
+        let style = classic.replace(
+            "buttons = \"right\"",
+            "buttons = \"right\"\ntiling_style = \"spiral\"",
+        );
+        let e = format!("{:#}", check(&style).unwrap_err());
+        assert!(
+            e.contains("\"spiral\" is not a tiling style; the styles are stack, split, scroll"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn the_title_bars_values_are_the_key_tables() {
+        let names: Vec<&str> = TitleBars::ALL.iter().map(|t| t.name()).collect();
+        assert_eq!(names, crate::settings::choices("layout.title_bars"));
+        for t in TitleBars::ALL {
+            assert_eq!(TitleBars::parse(t.name()), Some(t));
+        }
+        assert_eq!(TitleBars::parse("sometimes"), None);
+        assert_eq!(TitleBars::default(), TitleBars::Always);
     }
 }

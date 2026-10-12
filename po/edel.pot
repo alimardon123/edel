@@ -536,6 +536,9 @@ msgstr ""
 msgid "{command} failed: {said}; the power service (upowerd) starts with the machine, so restart the computer if it is not running"
 msgstr ""
 
+msgid "{style} is not a tiling style; the styles are {styles}"
+msgstr ""
+
 msgid "{command} is not a command the session can start; write a program and its arguments on one line"
 msgstr ""
 
@@ -564,6 +567,9 @@ msgid "Windows-like"
 msgstr ""
 
 msgid "Hive"
+msgstr ""
+
+msgid "Zen"
 msgstr ""
 
 msgid "this release has no preset {name}; the Classic preset is used"

@@ -3412,6 +3412,34 @@ case_presets() {
 		fail "the compositor did not restart shell-ui for the Hive preset"
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
 	shot preset-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
+	# Zen (M5.18b): tiling in the split style with no title bars, from the
+	# preset alone, and one slim bar along the top. Every window the test
+	# has open is then tiled with no title bar of its own (the state file's
+	# title_bar is false for each), and there is at least one.
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now zen')
+	top=$(count 'edel-shell-ui: panel edel-panel along the top')
+	tiled=$(count 'edel-compositor: windows now tiling')
+	guest 'preset zen'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now zen' "$restarts" ||
+		fail "edel settings set layout.preset=zen did not restart shell-ui"
+	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
+		fail "Zen did not bring shell-ui's bar to the top"
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Zen preset did not tile the windows"
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/zen.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(windows)} windows, title bars {bars}")
+			sys.exit(0 if windows and not any(bars) else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
+		sleep 1
+	done
+	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -3422,7 +3450,7 @@ case_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows, and unsetting it brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_taskbar() {
