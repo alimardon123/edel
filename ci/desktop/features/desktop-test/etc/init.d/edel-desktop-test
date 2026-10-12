@@ -646,7 +646,10 @@ commands() {
 			status=$(as_ci wpctl status 2>&1)
 			# The compositor starts these before its log reaches the
 			# console, so their lines are read from the log itself.
-			say "sound_started $(grep -a -o 'edel-compositor: started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
+			# The line is matched without its "edel-compositor: " prefix: shell-ui
+			# writes to the same log as the compositor starts, and one line can land
+			# inside the other's.
+			say "sound_started $(grep -a -o 'started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
 			say "sound_said $(grep -a -E 'edel-compositor: (pipewire|wireplumber) ' "$session_log" | tail -n 3 | tr '\n' ';')"
 			# The PulseAudio server runs inside PipeWire: its socket, and
 			# no second process.
