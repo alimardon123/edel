@@ -229,10 +229,30 @@ impl Card {
 
 /// The group's card in `content` after its heading (M5.10c4c), with the
 /// cards in a flow box built as the presets' are.
-pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<Card> {
+pub fn card(
+    content: &gtk::Box,
+    problem: &gtk::Label,
+    theme: &Rc<Theme>,
+    title: &str,
+    first: &[String],
+) -> Rc<Card> {
     let dir = PathBuf::from(places::WALLPAPERS_DIR);
-    let source = widgets::section(content, rows::title(KEY));
-    let names = wallpapers::names(&dir);
+    let source = widgets::section(content, title);
+    // The theme's own pictures lead, as cards of their own, and every other
+    // wallpaper follows (M5.12b6b); a theme's picture that is a path, not a
+    // wallpaper's name, has no card.
+    let found = wallpapers::names(&dir);
+    let mut names: Vec<String> = first
+        .iter()
+        .filter(|name| found.contains(name))
+        .cloned()
+        .collect();
+    let split = names.len();
+    let rest: Vec<String> = found
+        .into_iter()
+        .filter(|name| !names.contains(name))
+        .collect();
+    names.extend(rest);
     let pairs = names.len();
 
     let colour_shown = Rc::new(Cell::new(None));
@@ -260,18 +280,28 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         colour_area.clone().upcast::<gtk::Widget>(),
     ));
 
-    let flow = gtk::FlowBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .homogeneous(true)
-        .min_children_per_line(1)
-        .max_children_per_line(3)
-        .column_spacing(12)
-        .row_spacing(12)
-        .build();
+    // Two flows when the theme has pictures of its own: those first, then a
+    // heading, then the rest with None, Your picture and Colour.
+    let flow = || {
+        gtk::FlowBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .homogeneous(true)
+            .min_children_per_line(1)
+            .max_children_per_line(3)
+            .column_spacing(12)
+            .row_spacing(12)
+            .build()
+    };
+    let (theme_flow, more_flow) = (flow(), flow());
+    if split > 0 {
+        content.append(&theme_flow);
+    }
+    widgets::heading(content, tr("More wallpapers"));
+    content.append(&more_flow);
     let mut first: Option<gtk::ToggleButton> = None;
     let mut cards = Vec::new();
-    for (key, title, picture) in &parts {
-        let (button, badge) = widgets::picture_card(title, picture);
+    for (index, (key, card_title, picture)) in parts.iter().enumerate() {
+        let (button, badge) = widgets::picture_card(card_title, picture);
         if key == PICTURE_CARD {
             button.set_tooltip_text(Some(tr("One picture, or two for light and dark")));
         }
@@ -279,14 +309,17 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
             Some(first) => button.set_group(Some(first)),
             None => first = Some(button.clone()),
         }
-        flow.append(&button);
+        if index < split {
+            theme_flow.append(&button);
+        } else {
+            more_flow.append(&button);
+        }
         // The card takes the focus, not the box the flow wraps it in.
         if let Some(child) = button.parent() {
             child.set_focusable(false);
         }
         cards.push((key.clone(), button, badge));
     }
-    content.append(&flow);
 
     let logged = cards.clone();
     let card = Rc::new(Card {
@@ -303,7 +336,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         quiet: Cell::new(false),
     });
     wire(&card);
-    log_places(&flow, logged, card.source.reset.clone());
+    log_places(content.upcast_ref(), logged, card.source.reset.clone());
     card.show(&Files::here());
     card
 }
@@ -639,7 +672,7 @@ fn swatch(theme: &Rc<Theme>, pick: impl Fn(&Tokens) -> Colour + 'static) -> gtk:
 /// the keyboard to the chosen card, as the Style group does; it logs once
 /// two frames agree.
 fn log_places(
-    flow: &gtk::FlowBox,
+    flow: &gtk::Widget,
     cards: Vec<(String, gtk::ToggleButton, gtk::Box)>,
     reset: gtk::Button,
 ) {

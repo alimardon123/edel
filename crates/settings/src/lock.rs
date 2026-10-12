@@ -177,20 +177,6 @@ fn current_title(lock: &LockScreen) -> String {
     }
 }
 
-/// A small pill of an icon and a word: In use (a check, in the accent) after
-/// a look's name, Built in (a lock, frosted) over a built-in look's picture.
-/// A look of the person's own carries no word: having no badge says it.
-fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
-    let pill = gtk::Box::builder()
-        .spacing(4)
-        .valign(gtk::Align::Center)
-        .css_classes([class])
-        .build();
-    pill.append(&icon::image(icon_name, 10));
-    pill.append(&gtk::Label::new(Some(words)));
-    pill
-}
-
 /// The line under the look in use (M5.10c7b, as the mockup words it): what
 /// the look shows and over what, such as "Clock, date, music player and
 /// notification count over your wallpaper, blurred." A look changed over
@@ -544,7 +530,7 @@ impl Ui {
                 .hexpand(true)
                 .build();
             if lock_screen::is_built_in(name) {
-                let built_in = pill("lock", tr("Built in"), "edel-built-in");
+                let built_in = widgets::pill("lock", tr("Built in"), "edel-built-in");
                 built_in.set_halign(gtk::Align::End);
                 built_in.set_valign(gtk::Align::Start);
                 built_in.set_margin_end(8);
@@ -554,7 +540,7 @@ impl Ui {
             // shell-ui's picture replaces the drawing once it is there.
             look_pictures::want(&shown_picture, name, key);
             // In use sits after the name, on the same row.
-            let in_use = pill("check", tr("In use"), "edel-in-use");
+            let in_use = widgets::pill("check", tr("In use"), "edel-in-use");
             in_use.set_visible(false);
             let button = look_card(&lock_screen::look_title(name), &badges.upcast(), &in_use);
             match &first {
@@ -1051,7 +1037,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     // The name with its In use tag, as the gallery's card says it.
     let name_row = gtk::Box::builder().spacing(8).build();
     name_row.append(&title);
-    name_row.append(&pill("check", tr("In use"), "edel-in-use"));
+    name_row.append(&widgets::pill("check", tr("In use"), "edel-in-use"));
     words.append(&name_row);
     words.append(&line);
     let keep = widgets::action(tr("Keep as a look"), false);
@@ -1076,9 +1062,9 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let items = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .build();
-    let duplicate = menu_item(tr("Duplicate"));
-    let rename = menu_item(tr("Rename…"));
-    let delete = menu_item(tr("Delete…"));
+    let duplicate = widgets::menu_item(tr("Duplicate"));
+    let rename = widgets::menu_item(tr("Rename…"));
+    let delete = widgets::menu_item(tr("Delete…"));
     for item in [&duplicate, &rename, &delete] {
         items.append(item);
     }
@@ -1201,15 +1187,6 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     page
 }
 
-/// A flat button of the More menu.
-fn menu_item(label: &str) -> gtk::Button {
-    gtk::Button::builder()
-        .label(label)
-        .halign(gtk::Align::Fill)
-        .css_classes(["edel-menu-item"])
-        .build()
-}
-
 /// Connects the page's controls, the More menu, and the Reset and Copy
 /// buttons of its rows and of the gallery's section.
 fn wire(ui: &Rc<Ui>) {
@@ -1329,120 +1306,57 @@ fn copy(button: &gtk::Button, text: impl Fn() -> String + 'static) {
 }
 
 /// Asks for a new name for the look `current` (Rename...), in a small
-/// dialog. The name is checked by the settings file's own rule for
-/// `lock_screen.looks`, whose message shows under the entry; a good name
-/// closes the dialog.
+/// dialog (`widgets::ask_name`). The name is checked by the settings file's
+/// own rule for `lock_screen.looks`; a name another look has is refused.
 fn ask_name(ui: &Rc<Ui>, near: &gtk::Widget, current: &str) {
-    let window = gtk::Window::builder()
-        .title(tr("Rename look"))
-        .modal(true)
-        .resizable(false)
-        .default_width(360)
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
-    let entry = gtk::Entry::builder()
-        .text(current)
-        .placeholder_text(tr("Name, such as home"))
-        .activates_default(true)
-        .build();
-    entry.update_property(&[gtk::accessible::Property::Label(tr("Name of the look"))]);
-    let error = gtk::Label::builder()
-        .xalign(0.0)
-        .wrap(true)
-        .visible(false)
-        .css_classes(["edel-error"])
-        .build();
-    let text = gtk::Label::builder()
-        .label(tr(
-            "Give this look another name. It keeps its parts and its background, and shows in the cards above.",
-        ))
-        .xalign(0.0)
-        .wrap(true)
-        .build();
-    let cancel = widgets::action(tr("Cancel"), false);
-    let save = widgets::action(tr("Rename"), true);
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&save);
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
-    body.append(&text);
-    body.append(&entry);
-    body.append(&error);
-    body.append(&buttons);
-    window.set_child(Some(&body));
-
-    let close = window.clone();
-    cancel.connect_clicked(move |_| close.close());
     let weak = Rc::downgrade(ui);
-    let (typed, shown, dialog) = (entry.clone(), error.clone(), window.clone());
     let old = current.to_string();
-    save.connect_clicked(move |_| {
-        let Some(ui) = weak.upgrade() else {
-            return;
-        };
-        let new = typed.text().to_string();
-        match rename_look(&old, &new) {
-            Ok(()) => {
-                eprintln!("edel-settings: lock look {old} renamed {new}");
-                dialog.close();
-                ui.update();
-            }
-            Err(why) => {
-                shown.set_label(&why);
-                shown.set_visible(true);
-            }
-        }
-    });
-    let save_again = save.clone();
-    entry.connect_activate(move |_| save_again.emit_clicked());
-    window.present();
-    entry.grab_focus();
-    entry.select_region(0, -1);
+    widgets::ask_name(
+        near,
+        tr("Rename look"),
+        tr(
+            "Give this look another name. It keeps its parts and its background, and shows in the cards above.",
+        ),
+        current,
+        tr("Name, such as home"),
+        tr("Rename"),
+        move |new| {
+            let Some(ui) = weak.upgrade() else {
+                return Ok(());
+            };
+            rename_look(&old, new)?;
+            eprintln!("edel-settings: lock look {old} renamed {new}");
+            ui.update();
+            Ok(())
+        },
+    );
 }
 
 /// Asks whether to delete the look `current` (Delete), with Cancel as the
 /// default and the escape key, and deletes it on Delete.
 fn ask_delete(ui: &Rc<Ui>, near: &gtk::Widget, current: &str) {
-    let parent = near.root().and_downcast::<gtk::Window>();
     let name = current.to_string();
-    let dialog = gtk::AlertDialog::builder()
-        .modal(true)
-        .message(trf(
+    let weak = Rc::downgrade(ui);
+    widgets::ask_delete(
+        near,
+        &trf(
             "Delete the look {look}?",
             &[("look", &lock_screen::look_title(current))],
-        ))
-        .detail(tr("It cannot be brought back."))
-        .buttons(vec![tr("Cancel"), tr("Delete")])
-        .cancel_button(0)
-        .default_button(0)
-        .build();
-    let weak = Rc::downgrade(ui);
-    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
-        if !matches!(answer, Ok(1)) {
-            return;
-        }
-        let Some(ui) = weak.upgrade() else {
-            return;
-        };
-        let result = delete_look(&name);
-        if result.is_ok() {
-            eprintln!("edel-settings: lock look {name} deleted");
-        }
-        ui.update();
-        ui.report(result);
-    });
+        ),
+        tr("It cannot be brought back."),
+        tr("Delete"),
+        move || {
+            let Some(ui) = weak.upgrade() else {
+                return;
+            };
+            let result = delete_look(&name);
+            if result.is_ok() {
+                eprintln!("edel-settings: lock look {name} deleted");
+            }
+            ui.update();
+            ui.report(result);
+        },
+    );
 }
 
 /// Logs where the looks' cards, the New look card and the section's Reset

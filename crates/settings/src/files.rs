@@ -304,6 +304,39 @@ impl Files {
         Self::file_of(self.person.as_ref())
     }
 
+    /// The person's file's text as it is, empty when there is none: what the
+    /// theme edits read, which must see the theme's own values unmixed.
+    pub fn person_text(&self) -> String {
+        self.person
+            .as_ref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default()
+    }
+
+    /// The machine's file's text as it is, empty when there is none.
+    pub fn machine_text(&self) -> String {
+        std::fs::read_to_string(&self.machine).unwrap_or_default()
+    }
+
+    /// Writes the person's whole file as `edit` makes it from its text
+    /// (ADR-008: the library's writers do the editing, a file never half
+    /// written); a file with no text starts with the format line.
+    pub fn edit_person<E: std::fmt::Display>(
+        &self,
+        edit: impl FnOnce(&str) -> Result<String, E>,
+    ) -> Result<(), String> {
+        let path = self
+            .person
+            .as_ref()
+            .ok_or("there is no home folder to keep your settings in")?;
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(_) => format!("format = {}\n", settings::FORMAT),
+        };
+        let edited = edit(&text).map_err(|e| format!("{e:#}"))?;
+        settings::write_text(path, &edited).map_err(|e| format!("{e:#}"))
+    }
+
     /// The panels that apply, as shell-ui draws them (M5.31d): the person's
     /// `panels.list` over the machine's, else the preset's.
     pub fn panels(&self) -> Vec<Panel> {

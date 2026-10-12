@@ -1516,6 +1516,13 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
         Some(value) => set(&text, key, value)?,
         None => unset(&text, key)?,
     };
+    write_text(path, &edited)
+}
+
+/// Writes a settings file's whole text to `path` (its folder made first),
+/// through a file beside it that is renamed over it, so a reader never sees
+/// half a file. The writers above and Settings' theme edits use it.
+pub fn write_text(path: &Path, edited: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| {
             trf(

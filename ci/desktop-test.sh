@@ -1535,6 +1535,23 @@ case_settings_wallpaper() {
 	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
 	set -- $place
 	x=$1 y=$2
+	# The wallpaper cards are in the pictures sheet (M5.12b6b), which the
+	# Appearance page's "N pictures" button opens: its place is on the
+	# appearance line, clicked first, and the sheet's cards are logged then.
+	pictures=none
+	i=0
+	while [ "$pictures" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the pictures button lies: $(value settings_wallpaper_log)"
+		guest 'settings wallpaper log'
+		text=$(value settings_wallpaper_log)
+		pictures=$(echo "$text" | sed -n 's/.*appearance group places .*pictures \([0-9+x]*\).*/\1/p' | sed 's/[+x]/ /g')
+		[ -n "$pictures" ] || pictures=none
+		[ "$pictures" = none ] && sleep 1
+	done
+	set -- $pictures
+	python3 ci/qmp.py click "$(($x + $1 + $3 / 2))" "$(($y + $2 + $4 / 2))"
+	sleep 2
 	card=none
 	i=0
 	while [ "$card" = none ]; do

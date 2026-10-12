@@ -531,6 +531,150 @@ pub fn reset_text(text: &str) -> Result<Option<String>> {
     Ok(Some(settings::unset_all(text, &keys)?))
 }
 
+/// A name for a new theme of the person's, from `base`: its letters in
+/// lower case with hyphens between the rest, then `-2`, `-3` ... for the
+/// first one no built-in theme and none of `taken` has (`my-theme`,
+/// `my-theme-2`). Settings' Blank tile names its theme with it.
+pub fn free_name(base: &str, taken: impl Fn(&str) -> bool) -> String {
+    let stem = slug(base);
+    let free = |name: &str| is_name(name) && !is_built_in(name) && !taken(name);
+    std::iter::once(stem.clone())
+        .chain((2..).map(|n| format!("{stem}-{n}")))
+        .find(|name| free(name))
+        .unwrap_or_else(|| format!("theme-{}", stem.len()))
+}
+
+/// A copy's name, from a theme's `title`: the title's slug with `-2`, `-3`
+/// ... counted on, so Aurora's copy is `aurora-2` (Duplicate, Keep as new).
+pub fn copy_name(title: &str, taken: impl Fn(&str) -> bool) -> String {
+    let stem = slug(title);
+    let free = |name: &str| is_name(name) && !is_built_in(name) && !taken(name);
+    (2..)
+        .map(|n| format!("{stem}-{n}"))
+        .find(|name| free(name))
+        .unwrap_or_else(|| format!("theme-{}", stem.len()))
+}
+
+/// `text` as a name: letters and digits in lower case, each run of other
+/// characters one hyphen, at most 24 characters, `theme` when none is left.
+fn slug(text: &str) -> String {
+    let mut out = String::new();
+    for c in text.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if !out.is_empty() && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    let short: String = out.trim_end_matches('-').chars().take(24).collect();
+    let short = short.trim_end_matches('-');
+    if short.is_empty() {
+        "theme".to_string()
+    } else {
+        short.to_string()
+    }
+}
+
+/// A new own theme with no values and the release's default picture, and
+/// `appearance.theme` set to it, on a file's text (Settings' Blank tile).
+pub fn blank_text(text: &str, name: &str) -> Result<String> {
+    let file = settings::read(text)?.file;
+    check_new_name(&file, name)?;
+    let theme = OwnTheme {
+        title: None,
+        pictures: vec![wallpapers::DEFAULT.to_string()],
+        values: Appearance::default(),
+    };
+    let Value::Table(theme) = Value::try_from(&theme)? else {
+        bail!("{}", tr("a theme could not be written as a table"));
+    };
+    let text = settings::set(
+        text,
+        &format!("themes.{name}"),
+        &Value::Table(theme).to_string(),
+    )?;
+    settings::set(&text, "appearance.theme", &format!("{name:?}"))
+}
+
+/// Renames one of the person's own themes on a file's text, its values and
+/// pictures kept, and the theme in use follows the new name. A built-in
+/// theme, a name that is no theme of the person's and a name taken are
+/// refused.
+pub fn rename_text(text: &str, old: &str, new: &str) -> Result<String> {
+    let file = settings::read(text)?.file;
+    if is_built_in(old) {
+        bail!(
+            "{}",
+            trf(
+                "{name} is a built-in theme, which stays as it is",
+                &[("name", &format!("{old:?}"))]
+            )
+        );
+    }
+    let Some(theme) = file.themes.get(old).cloned() else {
+        bail!(
+            "{}",
+            trf(
+                "there is no theme of yours called {name}; edel theme list shows them",
+                &[("name", &format!("{old:?}"))]
+            )
+        );
+    };
+    if new == old {
+        return Ok(text.to_string());
+    }
+    check_new_name(&file, new)?;
+    let Value::Table(table) = Value::try_from(&theme)? else {
+        bail!("{}", tr("a theme could not be written as a table"));
+    };
+    // The new theme first, then the theme in use moves to it, and only then
+    // the old one goes: each step leaves a file that checks.
+    let text = settings::set(
+        text,
+        &format!("themes.{new}"),
+        &Value::Table(table).to_string(),
+    )?;
+    let text = if file.appearance.theme.as_deref() == Some(old) {
+        settings::set(&text, "appearance.theme", &format!("{new:?}"))?
+    } else {
+        text
+    };
+    settings::unset(&text, &format!("themes.{old}"))
+}
+
+/// The checks a new name of one of the person's own themes meets: a valid
+/// name, not a built-in one and not one of theirs already.
+fn check_new_name(file: &SettingsFile, name: &str) -> Result<()> {
+    if !is_name(name) {
+        bail!(
+            "{}",
+            trf(
+                "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\"",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    if is_built_in(name) {
+        bail!(
+            "{}",
+            trf(
+                "{name} is a built-in theme and stays as it is; name yours another way, such as \"my-theme\"",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    if file.themes.contains_key(name) {
+        bail!(
+            "{}",
+            trf(
+                "a theme of yours is already called {name}; pick another name, or make it the theme in use first",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,5 +934,48 @@ mod tests {
             chosen("appearance.accent", None, Some("format = 1\n")),
             None
         );
+    }
+
+    #[test]
+    fn a_blank_theme_has_no_values_and_the_default_picture_and_is_chosen() {
+        let text = blank_text("format = 1\n", "my-blank").unwrap();
+        let file = file(&text);
+        let theme = file.themes.get("my-blank").unwrap();
+        assert_eq!(theme.pictures, vec![wallpapers::DEFAULT.to_string()]);
+        assert_eq!(theme.values, Appearance::default());
+        assert_eq!(file.appearance.theme.as_deref(), Some("my-blank"));
+        assert!(changed(&file).is_empty());
+    }
+
+    #[test]
+    fn a_blank_theme_refuses_a_built_in_name_and_one_of_theirs() {
+        assert!(blank_text("format = 1\n", "aurora").is_err());
+        let own = blank_text("format = 1\n", "mine").unwrap();
+        assert!(blank_text(&own, "mine").is_err());
+    }
+
+    #[test]
+    fn a_copy_is_named_from_the_title_and_counts_on_past_taken_names() {
+        assert_eq!(copy_name("Aurora", |_| false), "aurora-2");
+        assert_eq!(copy_name("My aurora", |_| false), "my-aurora-2");
+        assert_eq!(copy_name("Aurora", |name| name == "aurora-2"), "aurora-3");
+        assert_eq!(free_name("My theme", |_| false), "my-theme");
+        assert_eq!(
+            free_name("My theme", |name| name == "my-theme"),
+            "my-theme-2"
+        );
+        assert_eq!(free_name("Edel", |_| false), "edel-2");
+    }
+
+    #[test]
+    fn rename_keeps_the_values_and_follows_the_theme_in_use() {
+        let text = "format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine]\npictures = [\"hills\"]\nradius = 9\n";
+        let renamed = rename_text(text, "mine", "ours").unwrap();
+        let file = file(&renamed);
+        assert!(!file.themes.contains_key("mine"));
+        assert_eq!(file.themes["ours"].values.radius, Some(9));
+        assert_eq!(file.appearance.theme.as_deref(), Some("ours"));
+        assert!(rename_text(text, "aurora", "ours").is_err());
+        assert!(rename_text(text, "mine", "earth").is_err());
     }
 }
