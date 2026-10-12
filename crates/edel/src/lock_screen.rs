@@ -624,6 +624,15 @@ pub const COUNT_HIDDEN: &str = "none";
 /// The most characters a look's name may have.
 const MOST_LOOK: usize = 32;
 
+/// How much the built-in backgrounds are darkened, in percent, so the white
+/// words read (M5.10c7g): a blurred or a coloured background by `DIM`, a sharp
+/// one or a picture by `DIM_SHARP`. The lock picture's dim (`lock_screen.dim`)
+/// is the person's, else the look's, else these; shell-ui reads them here.
+pub const DIM: u32 = 30;
+pub const DIM_SHARP: u32 = 40;
+/// The most a dim may be, in percent (`lock_screen.dim`'s range from 0).
+pub const MOST_DIM: u32 = 80;
+
 /// What lies behind the lock screen's parts (M5.10c5c).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Background {
@@ -730,6 +739,16 @@ pub fn background_value(background: &Background) -> String {
     }
 }
 
+/// The dim a background gets when nothing names one (M5.10c7g): `DIM_SHARP`
+/// for a sharp picture or a picture of the person's, else `DIM`. Backdrop
+/// lies under no dim, so its value is never drawn.
+pub fn default_dim(background: &Background) -> u32 {
+    match background {
+        Background::Sharp | Background::Picture(_) => DIM_SHARP,
+        Background::Backdrop | Background::Blurred | Background::Colour(_) => DIM,
+    }
+}
+
 /// Whether a look's name is letters, digits and hyphens, not starting with a
 /// hyphen, up to 32 characters (M5.10c5c).
 pub fn is_look_name(name: &str) -> bool {
@@ -796,6 +815,16 @@ pub fn check_looks(looks: &BTreeMap<String, crate::settings::OwnLook>) -> Result
                 ));
             }
         }
+        if let Some(dim) = look.dim.filter(|dim| *dim > MOST_DIM) {
+            return Err(trf(
+                "the look {name} has the dim {dim}; use a whole number from 0 to {most}",
+                &[
+                    ("name", &shown),
+                    ("dim", &dim.to_string()),
+                    ("most", &MOST_DIM.to_string()),
+                ],
+            ));
+        }
         check(&look.parts).map_err(|why| {
             trf(
                 "the look {name} does not check: {why}",
@@ -859,6 +888,7 @@ pub fn as_own_look(lock: &crate::settings::LockScreen) -> crate::settings::OwnLo
         parts: applied.parts,
         background: (applied.background != Background::Blurred)
             .then(|| background_value(&applied.background)),
+        dim: (applied.dim != default_dim(&applied.background)).then_some(applied.dim),
     }
 }
 
@@ -892,6 +922,9 @@ pub fn looks_value(
 pub struct Applied {
     pub parts: Vec<Placed>,
     pub background: Background,
+    /// How much the background is darkened, in percent (M5.10c7g): the
+    /// person's `lock_screen.dim`, else the look's, else `default_dim`.
+    pub dim: u32,
     /// Whether the unread notifications' count shows
     pub notifications: bool,
 }
@@ -913,12 +946,21 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
     });
     // A look this file does not have is classic, so its background too.
     let look = if list.is_some() { name } else { CLASSIC };
-    let own_background = lock
-        .looks
-        .as_ref()
-        .and_then(|own| own.get(look))
+    let own = lock.looks.as_ref().and_then(|own| own.get(look));
+    let own_background = own
         .and_then(|own| own.background.as_deref())
         .and_then(parse_background);
+    let background = lock
+        .background
+        .as_deref()
+        .and_then(parse_background)
+        .or(own_background)
+        .unwrap_or_else(|| look_background(look));
+    let dim = lock
+        .dim
+        .or(own.and_then(|own| own.dim))
+        .unwrap_or_else(|| default_dim(&background))
+        .min(MOST_DIM);
     let parts = match (&lock.parts, list) {
         (Some(parts), _) => applying(Some(parts), compact),
         (None, Some(list)) => applying(Some(&list), compact),
@@ -926,12 +968,8 @@ pub fn applied(lock: &crate::settings::LockScreen, compact: bool) -> Applied {
     };
     Applied {
         parts,
-        background: lock
-            .background
-            .as_deref()
-            .and_then(parse_background)
-            .or(own_background)
-            .unwrap_or_else(|| look_background(look)),
+        background,
+        dim,
         notifications: lock.notifications.as_deref() != Some(COUNT_HIDDEN),
     }
 }
@@ -1354,6 +1392,10 @@ pub const LOOK: &str = "lock_screen.look";
 
 /// The settings key the background is written to (M5.10c5c, M5.10c6c3).
 pub const BACKGROUND: &str = "lock_screen.background";
+
+/// The settings key the dim is written to (M5.10c7g): a whole number of
+/// percent, `MOST_DIM` at most.
+pub const DIM_KEY: &str = "lock_screen.dim";
 
 /// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
 /// list of tables in one line, absent options left out (M5.10c6). Settings'
@@ -2149,6 +2191,7 @@ mod tests {
         let own = crate::settings::OwnLook {
             parts: vec![part_at(Part::Clock, Anchor::Top, 0.2), person(false)],
             background: None,
+            dim: None,
         };
         let lock = crate::settings::LockScreen {
             look: Some("home".into()),
@@ -2172,6 +2215,7 @@ mod tests {
         let own = crate::settings::OwnLook {
             parts: classic(false),
             background: Some("#336699".into()),
+            dim: None,
         };
         let mut lock = crate::settings::LockScreen {
             look: Some("home".into()),
@@ -2195,6 +2239,7 @@ mod tests {
             crate::settings::OwnLook {
                 parts: classic(false),
                 background: Some("purple".into()),
+                dim: None,
             },
         );
         assert!(check_looks(&looks).unwrap_err().contains("\"purple\""));
@@ -2217,10 +2262,80 @@ mod tests {
     }
 
     #[test]
+    fn dim_is_the_look_s_default_for_its_background_then_the_look_s_then_the_persons() {
+        // Classic is the navy scene, blurred and colour grounds take DIM, a
+        // sharp one or a picture of the person's DIM_SHARP.
+        let plain = crate::settings::LockScreen::default();
+        assert_eq!(applied(&plain, false).dim, DIM);
+        let minimal = crate::settings::LockScreen {
+            look: Some("minimal".into()),
+            ..Default::default()
+        };
+        assert_eq!(applied(&minimal, false).dim, DIM);
+        let sharp = crate::settings::LockScreen {
+            look: Some("minimal".into()),
+            background: Some("sharp".into()),
+            ..Default::default()
+        };
+        assert_eq!(applied(&sharp, false).dim, DIM_SHARP);
+        // The person's key wins over the look's own, and the look's own over the default.
+        let own = crate::settings::OwnLook {
+            parts: classic(false),
+            background: Some("#336699".into()),
+            dim: Some(55),
+        };
+        let mut lock = crate::settings::LockScreen {
+            look: Some("home".into()),
+            looks: Some([("home".to_string(), own)].into_iter().collect()),
+            ..Default::default()
+        };
+        assert_eq!(applied(&lock, false).dim, 55);
+        lock.dim = Some(12);
+        assert_eq!(applied(&lock, false).dim, 12);
+        // A value past the range is held to it.
+        lock.dim = Some(200);
+        assert_eq!(applied(&lock, false).dim, MOST_DIM);
+    }
+
+    #[test]
+    fn a_dim_the_default_does_not_give_is_saved_with_the_look() {
+        let mut lock = crate::settings::LockScreen {
+            look: Some("minimal".into()),
+            ..Default::default()
+        };
+        // The default for a blurred background is not written into a look.
+        assert_eq!(as_own_look(&lock).dim, None);
+        lock.dim = Some(70);
+        assert_eq!(as_own_look(&lock).dim, Some(70));
+        // Sharp's default is DIM_SHARP: the same value there is the default.
+        lock.background = Some("sharp".into());
+        lock.dim = Some(DIM_SHARP);
+        assert_eq!(as_own_look(&lock).dim, None);
+    }
+
+    #[test]
+    fn a_look_s_dim_must_be_within_the_range() {
+        let mut looks = BTreeMap::new();
+        looks.insert(
+            "home".to_string(),
+            crate::settings::OwnLook {
+                parts: classic(false),
+                background: None,
+                dim: Some(81),
+            },
+        );
+        let why = check_looks(&looks).unwrap_err();
+        assert!(why.contains("the dim 81"), "{why}");
+        looks.get_mut("home").unwrap().dim = Some(MOST_DIM);
+        assert!(check_looks(&looks).is_ok());
+    }
+
+    #[test]
     fn looks_value_adds_and_takes_out() {
         let look = crate::settings::OwnLook {
             parts: vec![person(false)],
             background: None,
+            dim: None,
         };
         let one = looks_value(None, "home", Some(look.clone())).unwrap();
         let text = format!("format = 1\n[lock_screen]\nlooks = {one}\n");
@@ -2242,6 +2357,7 @@ mod tests {
             crate::settings::OwnLook {
                 parts: classic(false),
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()

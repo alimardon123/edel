@@ -595,6 +595,10 @@ pub struct Tokens {
     pub lock_backdrop_deep: Colour,
     pub lock_glow: Colour,
     pub lock_glow_second: Colour,
+    /// The lock editor's stage: the deep navy it is filled with and the glow
+    /// that lights it behind the picture (M5.10c7f).
+    pub lock_edit_deep: Colour,
+    pub lock_edit_glow: Colour,
     /// The lock and login screens' clock: its size, logical pixels, and
     /// its weight, 100 (thin) to 900 (black).
     pub lock_clock: u32,
@@ -655,7 +659,7 @@ colour_tokens! {
     window, card, line, accent_text, edge, window_border, window_border_focused,
     window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
     lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
-    lock_glow_second,
+    lock_glow_second, lock_edit_deep, lock_edit_glow,
 }
 
 impl Tokens {
@@ -1163,6 +1167,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         lock_backdrop_deep: BLACK,
         lock_glow: BLACK,
         lock_glow_second: BLACK,
+        lock_edit_deep: BLACK,
+        lock_edit_glow: BLACK,
         lock_clock: 0,
         panel_opacity: 0,
         title_tint: 0,
@@ -1712,7 +1718,7 @@ mod tests {
     #[test]
     fn a_colour_token_is_read_and_named_by_one_list() {
         let tokens = Tokens::built_in();
-        assert_eq!(COLOUR_NAMES.len(), 28);
+        assert_eq!(COLOUR_NAMES.len(), 30);
         for name in COLOUR_NAMES {
             assert!(tokens.colour(name).is_some(), "{name}");
         }

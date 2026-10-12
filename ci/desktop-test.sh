@@ -4115,11 +4115,13 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'face = "analog"' ||
 		fail "ci's settings file does not hold the clock's analog face: $(value settings_file)"
-	# The look (M5.10c6c3): a right click on the lock's backdrop asks for the
-	# edit after unlock, ci's password unlocks and opens it. Its Looks tab
-	# shows the looks, Magazine is chosen, and Done writes look = "magazine"
-	# with the parts taken out, so the file holds no parts line
-	# (lock-editor-looks.png is kept). Escape would leave it as it was.
+	# The look (M5.10c6c3): Magazine is written into ci's file before the edit (M5.10c7e: the
+	# Looks tab is gone), a right click on the lock's backdrop asks for the
+	# edit after unlock, ci's password unlocks and opens it. Done keeps the
+	# look, which the file holds with no parts line (lock-editor-looks.png
+	# is kept). Escape would leave it as it was.
+	guest 'lock magazine set'
+	wait_for 'DESKTOP-TEST: ran lock magazine set: 0' || fail "ci's lock look could not be set to magazine"
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
 	compositor_locked=$(count 'edel-compositor: screen locked$')
 	python3 ci/qmp.py key meta_l-l
@@ -4143,31 +4145,15 @@ case_lock_edit() {
 		fail "ci's password did not ask for the edit after unlock: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
 	wait_more 'edel-shell-ui: lock editor shown' "$opened" ||
 		fail "the edit mode did not open after the password: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(editor_places)
-	tab=$(echo "$places" | sed -n 's/.*, tab1 looks \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
-	[ -n "$tab" ] || fail "the edit mode does not say where the Looks tab lies: $places"
-	set -- $tab
-	tabbed=$(count 'edel-shell-ui: lock editor tab looks')
-	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_more 'edel-shell-ui: lock editor tab looks' "$tabbed" ||
-		fail "a click on the Looks tab did not show it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
-	places=$(editor_places)
-	magazine=$(echo "$places" | sed -n 's/.*, tile[0-9]* magazine \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
-	[ -n "$magazine" ] || fail "the Looks tab does not offer Magazine: $places"
-	set -- $magazine
-	chose=$(count 'edel-shell-ui: lock editor look magazine')
-	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_more 'edel-shell-ui: lock editor look magazine' "$chose" ||
-		fail "a click on Magazine did not choose it: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	python3 ci/qmp.py screendump "$dir/lock-editor-looks.png"
 	places=$(editor_places)
 	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$done_at" ] || fail "the edit mode did not say where Done lies for the look: $places"
 	set -- $done_at
-	looked=$(count 'edel-shell-ui: lock editor done, lock_screen.look written')
+	looked=$(count 'edel-shell-ui: lock editor done, nothing to write')
 	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
-	wait_more 'edel-shell-ui: lock editor done, lock_screen.look written' "$looked" ||
-		fail "Done did not write the look: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
+	wait_more 'edel-shell-ui: lock editor done, nothing to write' "$looked" ||
+		fail "Done did not keep the look: $(tr -d '\r' <"$log" | grep -a 'lock editor' | tail -n 3)"
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
@@ -4176,7 +4162,7 @@ case_lock_edit() {
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
-	echo "PASS: the edit mode moved the clock to the top right and added a message, which Done saved as the look classic-2, used by the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done saved face = analog into classic-2; a right click on the lock asked for the edit, ci's password opened it, the Looks tab chose Magazine and Done wrote look = magazine with no parts line"
+	echo "PASS: the edit mode moved the clock to the top right and added a message, which Done saved as the look classic-2, used by the next lock and in ci's file; the keyboard nudged a part and left without writing; a click on the clock opened its card, Analog made the clock analog, Escape closed the card and Done saved face = analog into classic-2; a right click on the lock asked for the edit, ci's password opened it, Magazine was the look before the edit and Done kept it with no parts line"
 }
 
 case_scheme() {

@@ -150,6 +150,7 @@ pub fn render(
         &view,
         &applied.parts,
         &applied.background,
+        applied.dim,
         true,
         tokens,
         &mut text,

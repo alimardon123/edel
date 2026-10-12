@@ -91,3 +91,4 @@ appearance.monospace_font
 appearance.text_size
 appearance.theme
 themes.*
+lock_screen.dim
