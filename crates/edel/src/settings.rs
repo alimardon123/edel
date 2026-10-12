@@ -350,6 +350,7 @@ pub const PRESETS: &[&str] = &[
     "mac-like",
     "windows-like",
     "hive",
+    "zen",
     "tablet",
     "phone",
 ];
@@ -377,7 +378,7 @@ pub const KEYS: &[Key] = &[
     now("layout.tiling", Kind::Flag),
     now(
         "layout.title_bars",
-        Kind::OneOf(&["always", "floating-only"]),
+        Kind::OneOf(&["always", "floating-only", "never"]),
     ),
     later(
         "layout.device_type",
@@ -2777,20 +2778,38 @@ cursor_size = 11
     }
 
     #[test]
+    fn the_title_bars_key_takes_never_and_refuses_the_rest() {
+        // M5.18b: never is one of the key's values, as always and
+        // floating-only are, and any other word is refused with them.
+        let never = set("format = 1\n", "layout.title_bars", "never").unwrap();
+        assert_eq!(never, "format = 1\n\n[layout]\ntitle_bars = \"never\"\n");
+        assert!(check(&never).unwrap().is_empty());
+        let refused = set("format = 1\n", "layout.title_bars", "sometimes").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "layout.title_bars: unknown value \"sometimes\"; use always, floating-only or never"
+        );
+        assert_eq!(
+            choices("layout.title_bars"),
+            crate::presets::TitleBars::ALL.map(|t| t.name())
+        );
+    }
+
+    #[test]
     fn a_preset_this_release_lacks_is_refused_or_reported() {
         let file = "format = 1\n[layout]\npreset = \"tablet\"\n";
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
             [
-                "layout.preset: unknown value \"tablet\"; use classic, mac-like, windows-like or hive"
+                "layout.preset: unknown value \"tablet\"; use classic, mac-like, windows-like, hive or zen"
             ]
         );
         let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("use classic, mac-like, windows-like or hive"),
+                .contains("use classic, mac-like, windows-like, hive or zen"),
             "{error}"
         );
         let read = read(file).unwrap();

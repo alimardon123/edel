@@ -320,6 +320,7 @@ pub fn label(value: &str) -> String {
     let word = match value {
         "always" => n_("Always"),
         "floating-only" => n_("Floating only"),
+        "never" => n_("Never"),
         "left" => n_("Left"),
         "right" => n_("Right"),
         "top" => n_("Top"),
@@ -444,9 +445,13 @@ mod tests {
 
     #[test]
     fn a_row_offers_the_values_the_key_table_lists() {
-        assert_eq!(values("layout.title_bars"), ["always", "floating-only"]);
+        assert_eq!(
+            values("layout.title_bars"),
+            ["always", "floating-only", "never"]
+        );
         assert_eq!(values("layout.window_buttons"), ["left", "right"]);
         assert_eq!(label("floating-only"), "Floating only");
+        assert_eq!(label("never"), "Never");
         let titles: Vec<&str> = on_page("layout").map(|r| r.title).collect();
         assert_eq!(titles.len(), 8);
         assert_eq!(on_page("panels").count(), 3);
