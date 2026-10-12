@@ -135,6 +135,9 @@ ssh_root 'adduser -D visitor' >out/doas-setup.log 2>&1 ||
 ssh_ci doas -n edel status >out/doas-status.log 2>&1 || fail "ci could not run doas -n edel status: $(cat out/doas-status.log)"
 grep -q '^running: ' out/doas-status.log || fail "doas -n edel status printed no status: $(cat out/doas-status.log)"
 echo "PASS: ci (in group admin) ran doas -n edel status with no password and got the status"
+ssh_ci sudo -n edel status >out/sudo-status.log 2>&1 || fail "ci could not run sudo -n edel status: $(cat out/sudo-status.log)"
+grep -q '^running: ' out/sudo-status.log || fail "sudo -n edel status printed no status: $(cat out/sudo-status.log)"
+echo "PASS: sudo, doas's second name, ran edel status for ci with the same rule"
 if ssh_root "su -s /bin/sh visitor -c 'doas -n edel status'" >out/doas-visitor.log 2>&1; then
 	fail "visitor, who is not in group admin, ran doas -n edel status"
 fi
