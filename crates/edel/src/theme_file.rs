@@ -27,7 +27,6 @@ use anyhow::{Context, Result, bail};
 use toml::{Table, Value};
 
 use crate::i18n::{tr, trf};
-use crate::places;
 use crate::settings::{self, OwnTheme};
 use crate::themes;
 
@@ -343,14 +342,10 @@ pub struct Import {
 /// Plans the import of `theme` into the settings text `text` (an empty text
 /// is a file that does not exist yet): the name it takes, where its pictures
 /// go, and the check of the table, which fails for a theme the file refuses.
-pub fn plan(theme: Theme, text: &str) -> Result<Import> {
+pub fn plan(theme: Theme, text: &str, themes_dir: &Path) -> Result<Import> {
     let file = settings::read(&or_empty(text))?.file;
     let name = themes::import_name(&theme.name, |taken| file.themes.contains_key(taken));
-    let dir = places::person_themes_dir()
-        .with_context(|| {
-            tr("there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME")
-        })?
-        .join(&name);
+    let dir = themes_dir.join(&name);
     let table = theme.at(&dir);
     let import = Import {
         title: table
@@ -1256,12 +1251,12 @@ mod tests {
     fn a_plan_names_the_theme_and_is_checked_against_the_file() {
         let dir = scratch("plan");
         let theme = unpack(&pack("mine", &own_theme(&dir)).unwrap()).unwrap();
-        let fresh = plan(theme.clone(), "format = 1\n").unwrap();
+        let fresh = plan(theme.clone(), "format = 1\n", &dir).unwrap();
         assert_eq!(fresh.name, "mine");
         assert_eq!(fresh.title, "Mine");
         assert_eq!(fresh.pictures, 2);
         assert!(fresh.keys.contains(&"appearance.accent".to_string()));
-        let taken = plan(theme, &fresh.add("format = 1\n").unwrap()).unwrap();
+        let taken = plan(theme, &fresh.add("format = 1\n").unwrap(), &dir).unwrap();
         assert_eq!(taken.name, "mine-2");
         let _ = fs::remove_dir_all(&dir);
     }

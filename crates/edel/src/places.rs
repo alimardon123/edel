@@ -56,6 +56,10 @@ pub const GREETER_DIR: &str = data!("/edel/greeter");
 /// (M5.10c3b): `[people]` with a login name and the desktop file's id, the
 /// file name without `.desktop`. A default is never written.
 pub const GREETER_SESSIONS: &str = data!("/edel/greeter/sessions.toml");
+/// The pictures of themes `edel theme import` adds to the machine's settings
+/// file (M5.12b6), one folder per theme, so every person on the machine sees
+/// them; Settings imports into a person's own `person_themes_dir`.
+pub const MACHINE_THEMES_DIR: &str = data!("/edel/themes");
 
 /// Edel OS's directory for this boot only.
 pub const RUN_DIR: &str = run!("");

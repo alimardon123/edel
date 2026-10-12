@@ -1040,9 +1040,6 @@ msgstr ""
 msgid "{file} is there already; give another file name"
 msgstr ""
 
-msgid "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME"
-msgstr ""
-
 msgid "{name} is a link; a theme file holds only files and its pictures folder, so it is refused"
 msgstr ""
 

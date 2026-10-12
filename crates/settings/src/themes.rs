@@ -1135,8 +1135,15 @@ fn offer(card: &Rc<Card>, near: &gtk::Widget, path: PathBuf) {
         )));
         return;
     }
+    let Some(dir) = edel::places::person_themes_dir() else {
+        card.report(Err(tr(
+            "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME",
+        )
+        .to_string()));
+        return;
+    };
     let planned = theme_file::read(&path)
-        .and_then(|theme| theme_file::plan(theme, &Files::here().person_text()));
+        .and_then(|theme| theme_file::plan(theme, &Files::here().person_text(), &dir));
     match planned {
         Ok(plan) => {
             card.report(Ok(()));

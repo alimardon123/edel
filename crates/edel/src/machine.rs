@@ -1080,14 +1080,16 @@ pub fn theme_export(name: &str, file: Option<&Path>) -> Result<()> {
 }
 
 /// `edel theme import FILE`: checks a `.edeltheme` file, which writes nothing
-/// when it is refused, copies its pictures into the person's themes folder
-/// under the theme's name, and adds the theme to the settings file. The
+/// when it is refused, copies its pictures into the machine's themes folder
+/// (`places::MACHINE_THEMES_DIR`, as the theme goes into the machine's
+/// settings file, which every person reads) under the theme's name, and adds
+/// the theme to the settings file. The
 /// theme in use stays as it is: the line it prints says how to choose it.
 pub fn theme_import(file: &Path) -> Result<()> {
     let theme = theme_file::read(file)?;
     // The plan checks the theme against the file first, so a refused theme
     // writes no picture; the pictures come before the settings file names them.
-    let plan = theme_file::plan(theme, &theme_text())?;
+    let plan = theme_file::plan(theme, &theme_text(), Path::new(places::MACHINE_THEMES_DIR))?;
     plan.install()?;
     let written = write_edit("edel theme", &[], |text| plan.add(text))?;
     println!("{}", import_line(&plan.title, &plan.name, plan.pictures));

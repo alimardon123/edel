@@ -1211,6 +1211,9 @@ msgstr ""
 msgid "{file} is not a theme file; a theme file ends in .edeltheme"
 msgstr ""
 
+msgid "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME"
+msgstr ""
+
 msgid "No pictures"
 msgstr ""
 
