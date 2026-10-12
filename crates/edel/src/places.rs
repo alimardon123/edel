@@ -139,6 +139,14 @@ pub const SYSTEM_LOG: &str = "/var/log/messages";
 /// for a program they run, as the lock screen does (M5.10). Alpine puts it
 /// in `/sbin`; other systems in `/usr/sbin`, so the desktop runs there too.
 pub const PASSWORD_CHECKERS: &[&str] = &["/sbin/unix_chkpwd", "/usr/sbin/unix_chkpwd"];
+/// The program that runs a command as root for the people its rules allow
+/// (M6.5): OpenDoas, whose rules the machine and login features keep in
+/// `/etc/doas.d/`; the machine feature also answers to `sudo` through
+/// doas-sudo-shim. A base with another such program changes this,
+/// [`AS_ROOT_USER`] and those rule files, and nothing else (ADR-010).
+pub const AS_ROOT: &str = "doas";
+/// The variable [`AS_ROOT`] sets to the login name of the person who ran it.
+pub const AS_ROOT_USER: &str = "DOAS_USER";
 
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";

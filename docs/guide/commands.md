@@ -4,7 +4,7 @@
 
 # Commands
 
-`edel` is the one tool of Edel OS: it updates and rolls back the system, applies and describes the settings file, installs Edel OS on a disk and reports on the hardware. Each command below says what `edel COMMAND --help` says. Commands that change the machine need root until `doas` arrives (roadmap M6.5).
+`edel` is the one tool of Edel OS: it updates and rolls back the system, applies and describes the settings file, installs Edel OS on a disk and reports on the hardware. Each command below says what `edel COMMAND --help` says. Commands that change the machine need root: an administrator runs them with `doas edel COMMAND`, and some ask the administrator's password first, as `edel rollback` does (roadmap M6.5).
 
 | Command | What it does |
 |---|---|
