@@ -966,10 +966,11 @@ commands() {
 			say "flatpak_polkit $(pgrep polkitd || echo none)"
 			;;
 		# The key taken out again (never an uninstall: the app stays), ci's
-		# admin taken back, and mpv closed.
+		# admin taken back, and mpv closed by its app id: inside the sandbox
+		# its process is not named mpv, so pkill finds nothing.
 		'flatpak default')
 			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
-			pkill -x mpv
+			as_ci "flatpak kill io.mpv.Mpv"
 			;;
 		*)
 			say "unknown command $command"
