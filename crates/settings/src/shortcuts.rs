@@ -17,12 +17,17 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
-use edel::shortcuts::{ACTIONS, Action};
+use edel::shortcuts::{ACTIONS, Action, GROUPS};
 
 use crate::files::Files;
 use crate::{rows, widgets};
 
 const INTRO: &str = n_("The keys for each action. Change one and press the keys you want.");
+
+/// The title of the one closed row that holds the 18 numbered workspace
+/// keys, the first action of which is `go_to_workspace_1`.
+const NUMBERED: &str = n_("All 18 workspace keys");
+const FIRST_NUMBERED: &str = "go_to_workspace_1";
 
 /// What the dialog asks for, with the way out of it written beside the keys.
 const ASK: &str =
@@ -37,6 +42,8 @@ struct Line {
     place: gtk::Box,
     change: gtk::Button,
     error: gtk::Label,
+    /// The closed row this action sits in, for the numbered keys.
+    fold: Option<gtk::Expander>,
 }
 
 struct Ui {
@@ -98,37 +105,52 @@ fn show_keys(place: &gtk::Box, keys: Option<&str>) {
 
 pub fn page() -> gtk::Widget {
     let (page, content, _problem) = widgets::page(tr("Shortcuts"), tr(INTRO));
-    let group = widgets::group(&content);
     let mut lines = Vec::new();
-    for action in ACTIONS {
-        let Some(key) = rows::row_named(&format!("shortcuts.{}", action.name)) else {
-            continue;
-        };
-        let place = gtk::Box::builder()
-            .spacing(3)
-            .valign(gtk::Align::Center)
-            .visible(false)
-            .build();
-        let change = widgets::action(tr("Change"), false);
-        let control = gtk::Box::builder().spacing(10).build();
-        control.append(&place);
-        control.append(&change);
-        let row = widgets::row(&group, rows::title(key), &control.upcast());
-        let error = gtk::Label::builder()
-            .xalign(0.0)
-            .wrap(true)
-            .visible(false)
-            .css_classes(["edel-error"])
-            .build();
-        group.append(&error);
-        lines.push(Line {
-            action,
-            key,
-            row,
-            place,
-            change,
-            error,
-        });
+    for section in GROUPS {
+        widgets::heading(&content, tr(section.title()));
+        let group = widgets::group(&content);
+        // The rows that go in the closed row, once it is made.
+        let mut holder = group.clone();
+        let mut fold = None;
+        for action in ACTIONS.iter().filter(|a| a.group == section) {
+            let Some(key) = rows::row_named(&format!("shortcuts.{}", action.name)) else {
+                continue;
+            };
+            if action.name == FIRST_NUMBERED {
+                let inside = gtk::Box::builder()
+                    .orientation(gtk::Orientation::Vertical)
+                    .css_classes(["edel-group"])
+                    .build();
+                fold = Some(numbered_fold(&group, &inside));
+                holder = inside;
+            }
+            let place = gtk::Box::builder()
+                .spacing(3)
+                .valign(gtk::Align::Center)
+                .visible(false)
+                .build();
+            let change = widgets::action(tr("Change"), false);
+            let control = gtk::Box::builder().spacing(10).build();
+            control.append(&place);
+            control.append(&change);
+            let row = widgets::row(&holder, rows::title(key), &control.upcast());
+            let error = gtk::Label::builder()
+                .xalign(0.0)
+                .wrap(true)
+                .visible(false)
+                .css_classes(["edel-error"])
+                .build();
+            holder.append(&error);
+            lines.push(Line {
+                action,
+                key,
+                row,
+                place,
+                change,
+                error,
+                fold: fold.clone(),
+            });
+        }
     }
     let monitors = std::iter::once(&Files::here().machine)
         .chain(Files::here().person.as_ref())
@@ -180,6 +202,19 @@ pub fn page() -> gtk::Widget {
     page.upcast()
 }
 
+/// The closed row that holds the numbered workspace keys: its title and
+/// arrow, with `inside` (the keys' own card) open under it. It sits in
+/// the Workspaces card, after the rows before it.
+fn numbered_fold(group: &gtk::Box, inside: &gtk::Box) -> gtk::Expander {
+    let fold = gtk::Expander::builder()
+        .label(tr(NUMBERED))
+        .child(inside)
+        .css_classes(["edel-row"])
+        .build();
+    group.append(&fold);
+    fold
+}
+
 /// Logs where each Change button lies in the window, for CI to click, as
 /// `edel-settings: shortcuts group places ACTION X+Y+WxH, ...` once two
 /// frames agree (as the other groups do). Asked for by a row's key, the
@@ -200,18 +235,30 @@ fn log_places(page: &gtk::Widget, ui: &Rc<Ui>) {
         if !page.is_mapped() || page.width() == 0 {
             return glib::ControlFlow::Continue;
         }
-        if !asked_done.replace(true) {
+        if !asked_done.get() {
+            // A key asked for inside the closed row opens that row first,
+            // and waits until its Change button is shown to scroll to it.
             if let Some(line) = widgets::asked_row()
                 .and_then(|asked| ui.lines.iter().find(|line| line.key == asked))
             {
+                if let Some(fold) = &line.fold {
+                    fold.set_expanded(true);
+                }
+                if !line.change.is_mapped() {
+                    return glib::ControlFlow::Continue;
+                }
                 widgets::scroll_to_top(line.change.upcast_ref());
                 widgets::take_asked(page, &line.change);
             }
+            asked_done.set(true);
             return glib::ControlFlow::Continue;
         }
+        // A Change button in a closed row is not mapped, so it has no place
+        // yet and is left out.
         let places: Vec<String> = ui
             .lines
             .iter()
+            .filter(|line| line.change.is_mapped())
             .map(|line| {
                 format!(
                     "{} {}",

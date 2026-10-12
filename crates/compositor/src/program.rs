@@ -95,7 +95,7 @@ fn watch(
     Ok(())
 }
 
-/// Starts `name` in the session, as Ctrl+Alt+T does with the terminal
+/// Starts `name` in the session, as Super+T does with the terminal
 /// (M5.13a), with the session's Wayland socket and X11 display; a thread
 /// waits for it, so it leaves nothing behind when it exits.
 pub fn open(state: &Edel, name: &str) {

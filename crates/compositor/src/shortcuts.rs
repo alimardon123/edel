@@ -309,7 +309,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         let super_ = held(true, false, false, false);
         assert_eq!(find(&bindings, &super_, sym("q")), Some(Act::Close));
-        assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Tiling));
+        assert_eq!(find(&bindings, &super_, sym("y")), Some(Act::Tiling));
         assert_eq!(find(&bindings, &super_, sym("f")), Some(Act::Fullscreen));
         assert_eq!(find(&bindings, &super_, sym("h")), Some(Act::Minimize));
         assert_eq!(find(&bindings, &super_, sym("m")), Some(Act::Maximize));
@@ -317,8 +317,10 @@ mod tests {
             find(&bindings, &super_, sym("space")),
             Some(Act::NextLayout)
         );
+        assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Terminal));
+        // Ctrl+Alt+T is no default any more; it is free for anyone to bind.
         let ctrl_alt = held(false, true, true, false);
-        assert_eq!(find(&bindings, &ctrl_alt, sym("t")), Some(Act::Terminal));
+        assert_eq!(find(&bindings, &ctrl_alt, sym("t")), None);
         // Other modifiers, or none, leave the key to the app.
         assert_eq!(
             find(&bindings, &held(true, false, false, true), sym("q")),

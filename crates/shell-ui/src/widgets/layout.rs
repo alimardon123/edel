@@ -1,4 +1,4 @@
-//! The layout toggle (M5.3a): one button that does what Super+T does,
+//! The layout toggle (M5.3a): one button that does what Super+Y does,
 //! whose icon shows how the shown workspace places its windows: two
 //! overlapping windows when they float, a screen split in three when they
 //! tile, the button then filled with the accent. A click switches the

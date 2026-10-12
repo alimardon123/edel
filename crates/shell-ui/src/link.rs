@@ -46,7 +46,7 @@ impl Link {
         Link(link)
     }
 
-    /// Asks for the shown workspace's other policy, as Super+T.
+    /// Asks for the shown workspace's other policy, as Super+Y.
     pub fn toggle_policy(&self) {
         if let Some(link) = &self.0 {
             link.toggle_policy();
