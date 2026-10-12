@@ -254,6 +254,11 @@
 #               window maps in the session (flatpak-mpv.png); `edel settings
 #               diff` then says nothing, no polkitd runs, and the key taken
 #               out again leaves the app installed (M6.1)
+#   web-app     `edel web-app add https://example.org` makes it an app of
+#               ci's: the launcher lists one more app, typing example.com
+#               shows the Install row first (web-app-row.png); the desktop
+#               file runs Firefox with its own profile and id; `edel web-app
+#               remove` takes the file and the profile out again (M6.4)
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -6150,6 +6155,87 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
+case_web_app() {
+	# Web apps (M6.4, part 1): `edel web-app add` makes example.org an app of
+	# ci's, with a desktop file that runs Firefox with its own profile and
+	# app id. The desktop test image has no Firefox, so no window opens here;
+	# the launcher lists the new app (one more than before the add), typing
+	# example.com shows the Install row first, and `edel web-app remove` takes
+	# the file and the list entry back out.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher before the add"
+	before=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, \([0-9]*\) apps.*/\1/')
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher before the add"
+	guest 'web app add'
+	wait_for 'DESKTOP-TEST: web_app_add ' 60 || fail "the service did not run edel web-app add"
+	[ "$(value web_app_add | cut -d' ' -f1)" = 0 ] || fail "edel web-app add failed: $(value web_app_add)"
+	asked=$(count 'DESKTOP-TEST: web_app_list ')
+	guest 'web app list'
+	wait_more 'DESKTOP-TEST: web_app_list ' "$asked" || fail "the service did not run edel web-app list"
+	case "$(value web_app_list)" in
+	*'example.org  https://example.org;'*) ;;
+	*) fail "edel web-app list does not list example.org: $(value web_app_list)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: web_app_file ')
+	guest 'web app file'
+	wait_more 'DESKTOP-TEST: web_app_file ' "$asked" || fail "the service did not show the desktop file"
+	file=$(value web_app_file)
+	case "$file" in
+	*'--name edel-web-example-org'*'StartupWMClass=edel-web-example-org;'*'X-Edel-Web-App=https://example.org;'*) ;;
+	*) fail "the desktop file does not run Firefox with its own name, class and marker: $file" ;;
+	esac
+	# Super opens the launcher, which lists the app: one more than before.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher after the add"
+	after=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, \([0-9]*\) apps.*/\1/')
+	[ "$after" = "$((before + 1))" ] || fail "the launcher offers $after apps after the add, not $((before + 1)) (before the add: $before)"
+	python3 ci/qmp.py type example
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher after the search for example"
+	# A website typed in the launcher: the Install row comes first, and the
+	# screen shows it (web-app-row.png). Escape closes it, nothing is installed.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher for the website"
+	python3 ci/qmp.py type example.com
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/web-app-row.png"
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher after the website"
+	asked=$(count 'DESKTOP-TEST: web_app_remove ')
+	guest 'web app remove'
+	wait_more 'DESKTOP-TEST: web_app_remove ' "$asked" 60 || fail "the service did not run edel web-app remove"
+	[ "$(value web_app_remove | cut -d' ' -f1)" = 0 ] || fail "edel web-app remove failed: $(value web_app_remove)"
+	asked=$(count 'DESKTOP-TEST: web_app_list ')
+	guest 'web app list'
+	wait_more 'DESKTOP-TEST: web_app_list ' "$asked" || fail "the service did not list the web apps after the remove"
+	case "$(value web_app_list)" in
+	*example.org*) fail "example.org is still listed after edel web-app remove: $(value web_app_list)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: web_app_file ')
+	guest 'web app file'
+	wait_more 'DESKTOP-TEST: web_app_file ' "$asked" || fail "the service did not check the desktop file after the remove"
+	case "$(value web_app_file)" in
+	*'No such file'*) ;;
+	*) fail "the desktop file is still there after edel web-app remove: $(value web_app_file)" ;;
+	esac
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher after the remove"
+	gone=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, \([0-9]*\) apps.*/\1/')
+	[ "$gone" = "$before" ] || fail "the launcher offers $gone apps after the remove, not $before"
+	hidden=$(count 'edel-shell-ui: launcher hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher after the remove"
+	echo "PASS: edel web-app add made example.org an app (its desktop file runs Firefox with --name edel-web-example-org, StartupWMClass and X-Edel-Web-App=https://example.org), the launcher offered $after apps against $before before, typing example.com showed the Install row (web-app-row.png), and edel web-app remove took the file out again, the launcher back at $gone apps"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -6189,7 +6275,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale respawn workspaces-dynamic app-workspaces flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale respawn workspaces-dynamic app-workspaces web-app flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
