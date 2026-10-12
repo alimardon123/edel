@@ -470,12 +470,33 @@ impl Shell {
 
     /// A key while locked: Return checks the password, Backspace takes a
     /// letter back, Escape empties the field, and text is typed.
+    /// Asks for the edit after unlock, or takes that back: what a right press
+    /// on the backdrop does (M5.10c6c3), and Super+L (M5.10c7h).
+    fn toggle_edit_after(&mut self) {
+        let Some(card) = &mut self.lock else {
+            return;
+        };
+        if card.edit_after {
+            card.edit_after = false;
+            eprintln!("edel-shell-ui: lock: edit cancelled");
+        } else {
+            card.edit_after = true;
+            eprintln!("edel-shell-ui: lock: password to edit");
+        }
+        self.draw_lock();
+    }
+
     pub fn lock_key(&mut self, event: KeyEvent) {
         let Some(card) = &mut self.lock else {
             return;
         };
         if card.checking.is_some() {
             return;
+        }
+        // Super+L asks for the edit after unlock, as a right press on the
+        // backdrop does (M5.10c7h).
+        if self.logo && matches!(event.keysym, Keysym::l | Keysym::L) {
+            return self.toggle_edit_after();
         }
         if card.menu && matches!(event.keysym, Keysym::Escape) {
             return self.set_power_menu(false);
@@ -572,11 +593,12 @@ impl Shell {
         self.live.players.clear();
         eprintln!("edel-shell-ui: screen unlocked");
         self.draw_all();
-        // Asked for from the lock with a right press, the edit mode opens
-        // now that the person is in (M5.10c6c3).
+        // Asked for from the lock with a right press or Super+L, the looks
+        // side by side open now that the person is in (M5.10c7h; they used to
+        // open the lock editor, M5.10c6c3).
         if edit {
-            eprintln!("edel-shell-ui: lock editor asked for from the lock screen");
-            self.open_lock_editor();
+            eprintln!("edel-shell-ui: lock looks asked for from the lock screen");
+            self.open_lock_looks();
         }
     }
 }
@@ -690,14 +712,7 @@ impl Shell {
                     && !on_field
                     && player_now == PlayerAt::Away =>
             {
-                if card.edit_after {
-                    card.edit_after = false;
-                    eprintln!("edel-shell-ui: lock: edit cancelled");
-                } else {
-                    card.edit_after = true;
-                    eprintln!("edel-shell-ui: lock: password to edit");
-                }
-                self.draw_lock();
+                self.toggle_edit_after();
             }
             PointerEventKind::Press { button, .. } if button == BTN_LEFT => match hit {
                 Some(corner::Hit::Button(Button::Power)) => {

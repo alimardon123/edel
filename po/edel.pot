@@ -320,12 +320,6 @@ msgstr ""
 msgid "could not save {path}"
 msgstr ""
 
-msgid "{path} is format {format}, newer than this release, and there is no {older} beside it to change"
-msgstr ""
-
-msgid "kept, not used by this release: {problem}"
-msgstr ""
-
 msgid "{what} in {path}; {then}"
 msgstr ""
 
@@ -336,6 +330,12 @@ msgid "edel settings apply applies it"
 msgstr ""
 
 msgid "{path} is format {format}, so the change applies to this release only"
+msgstr ""
+
+msgid "{path} is format {format}, newer than this release, and there is no {older} beside it to change"
+msgstr ""
+
+msgid "kept, not used by this release: {problem}"
 msgstr ""
 
 msgid "{assignment}: write KEY=VALUE, such as network.hostname=lab-1"
@@ -363,6 +363,18 @@ msgid "nothing to reset; the theme in use shows as it was made"
 msgstr ""
 
 msgid "reset the theme in use"
+msgstr ""
+
+msgid "there is no theme called {name}; edel theme list shows them"
+msgstr ""
+
+msgid "exported the theme {name} to {file}"
+msgstr ""
+
+msgid "Added theme {title} as {name}, with 1 picture. Choose it with: edel settings set appearance.theme={name}"
+msgstr ""
+
+msgid "Added theme {title} as {name}, with {count} pictures. Choose it with: edel settings set appearance.theme={name}"
 msgstr ""
 
 msgid "Settings, page by page, as the Settings app shows them:"
@@ -992,6 +1004,117 @@ msgstr ""
 msgid "could not suspend: {program} exited with {status}"
 msgstr ""
 
+msgid "the theme file has data after its end; copy it again"
+msgstr ""
+
+msgid "the theme file has a damaged header; copy it again"
+msgstr ""
+
+msgid "{name} is in the file twice; a theme file holds each entry once"
+msgstr ""
+
+msgid "theme.toml is not the first entry; copy the file again"
+msgstr ""
+
+msgid "pictures/{file} is over 32 MiB; a theme picture is at most 32 MiB"
+msgstr ""
+
+msgid "pictures/{file} is not a JPEG or PNG picture; a theme holds only those"
+msgstr ""
+
+msgid "a theme file holds up to {most} pictures; take some out of the theme"
+msgstr ""
+
+msgid "theme.toml names pictures/{file}, which the file does not hold; export the theme again"
+msgstr ""
+
+msgid "pictures/{file} is in the file but no theme names it; export the theme again"
+msgstr ""
+
+msgid "a theme could not be written as a table"
+msgstr ""
+
+msgid "the theme would not read back as a theme file, so no file was written"
+msgstr ""
+
+msgid "{file} is there already; give another file name"
+msgstr ""
+
+msgid "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME"
+msgstr ""
+
+msgid "{name} is a link; a theme file holds only files and its pictures folder, so it is refused"
+msgstr ""
+
+msgid "{name} is a device or a pipe; a theme file holds only files, so it is refused"
+msgstr ""
+
+msgid "{name} is an absolute path; a theme file holds only its own entries, relative to it"
+msgstr ""
+
+msgid "{name} has .. in its path; a theme file holds only its own entries"
+msgstr ""
+
+msgid "{name} is a folder; a theme file holds theme.toml and the pictures/ folder only"
+msgstr ""
+
+msgid "{name} has a name a theme file may not have; a picture's file name uses only letters, digits, dots, hyphens and underscores"
+msgstr ""
+
+msgid "{name} is not part of a theme; a theme file holds theme.toml and pictures/ only"
+msgstr ""
+
+msgid "theme.toml is not text; copy the file again"
+msgstr ""
+
+msgid "theme.toml is not valid TOML: {err}"
+msgstr ""
+
+msgid "theme.toml is format {format}; this release reads format {current}"
+msgstr ""
+
+msgid "theme.toml has no format = 1 line; export the theme again"
+msgstr ""
+
+msgid "theme.toml has no name = \"NAME\" line"
+msgstr ""
+
+msgid "theme.toml names {value}, a picture's full path; a theme file names its pictures as pictures/FILE"
+msgstr ""
+
+msgid "theme.toml is not a theme this release reads: {problems}"
+msgstr ""
+
+msgid "theme.toml does not hold the theme"
+msgstr ""
+
+msgid "there is no picture at {path}, which the theme names; the theme cannot be exported until it is there"
+msgstr ""
+
+msgid "{path} is over 32 MiB; a theme picture is at most 32 MiB"
+msgstr ""
+
+msgid "{path} is not a JPEG or PNG picture; a theme holds only those"
+msgstr ""
+
+msgid "an entry's name is not text; copy the file again"
+msgstr ""
+
+msgid "the theme file is over {most} MiB, more than a theme holds; take some pictures out of the theme and export it again"
+msgstr ""
+
+msgid "not a theme file: it is not a tar archive; export the theme with edel theme export, or Export in Settings"
+msgstr ""
+
+msgid "the theme file is cut short; copy it again"
+msgstr ""
+
+msgid "the theme file has no theme.toml; export the theme again"
+msgstr ""
+
+msgid "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\""
+msgstr ""
+
 msgid "{key} is not kept in a theme; set it under [appearance] instead"
 msgstr ""
 
@@ -1007,9 +1130,6 @@ msgstr ""
 msgid "{value} is not a picture; give a wallpaper's name such as \"aurora\", a picture's full path, or a colour as \"#rrggbb\""
 msgstr ""
 
-msgid "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\""
-msgstr ""
-
 msgid "{name} is a built-in theme; name yours another way, such as \"my-theme\""
 msgstr ""
 
@@ -1023,9 +1143,6 @@ msgid "{name} is a built-in theme and stays as it is; name yours another way, su
 msgstr ""
 
 msgid "a theme of yours is already called {name}; pick another name, or make it the theme in use first"
-msgstr ""
-
-msgid "a theme could not be written as a table"
 msgstr ""
 
 msgid "{name} is a built-in theme, which stays as it is"
@@ -1341,4 +1458,16 @@ msgid "The theme's name, as theme list shows it"
 msgstr ""
 
 msgid "Take your changes off the theme in use, so it shows as it was made"
+msgstr ""
+
+msgid "Write a theme, built in or your own, as one NAME.edeltheme file with its pictures, to give to someone or keep; a file is never written over"
+msgstr ""
+
+msgid "The file to write; NAME.edeltheme in this folder when none is given"
+msgstr ""
+
+msgid "Add a theme from a .edeltheme file to your themes, with its pictures; the theme in use stays as it is, so choose it with settings set"
+msgstr ""
+
+msgid "The .edeltheme file to read; a file that does not check is refused"
 msgstr ""

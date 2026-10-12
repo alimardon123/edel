@@ -463,6 +463,8 @@ pub struct Card {
     new_card: gtk::Button,
     new_menu: gtk::Popover,
     import: gtk::Button,
+    /// The More menu's Import…, which does what the New card's does.
+    more_import: gtk::Button,
     // The pictures sheet.
     sheet: gtk::Revealer,
     sheet_content: gtk::Box,
@@ -556,9 +558,12 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     let duplicate = widgets::menu_item(tr("Duplicate"));
     let rename = widgets::menu_item(tr("Rename…"));
     let export = widgets::menu_item(tr("Export…"));
+    // Import beside Export, so a theme's file goes out and comes in from
+    // the same menu (Alimardon, 2026-10-12); the New card offers it too.
+    let more_import = widgets::menu_item(tr("Import…"));
     let delete = widgets::menu_item(tr("Delete…"));
     delete.add_css_class("edel-danger");
-    for item in [&duplicate, &rename, &export, &delete] {
+    for item in [&duplicate, &rename, &export, &more_import, &delete] {
         items.append(item);
     }
     menu.set_child(Some(&items));
@@ -722,6 +727,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         new_card: new_card.clone(),
         new_menu: new_menu.clone(),
         import: import.clone(),
+        more_import: more_import.clone(),
         sheet,
         sheet_content,
         sheet_key: RefCell::new(String::new()),
@@ -943,6 +949,13 @@ fn wire(card: &Rc<Card>, from_use: &gtk::Button, blank: &gtk::Button) {
     card.import.connect_clicked(move |button| {
         if let Some(card) = weak.upgrade() {
             card.new_menu.popdown();
+            pick_import(&card, button.upcast_ref());
+        }
+    });
+    let weak = Rc::downgrade(card);
+    card.more_import.connect_clicked(move |button| {
+        if let Some(card) = weak.upgrade() {
+            card.more.popdown();
             pick_import(&card, button.upcast_ref());
         }
     });

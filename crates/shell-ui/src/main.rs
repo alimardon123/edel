@@ -33,6 +33,8 @@ mod lock;
 mod lock_card;
 mod lock_editor;
 mod lock_editor_card;
+mod lock_looks;
+mod lock_looks_card;
 mod look_picture;
 mod messages;
 mod mpris;
@@ -200,6 +202,8 @@ struct Shell {
     editor: Option<editor_card::Editor>,
     /// The lock screen's edit mode while it is open (M5.10c6b).
     lock_editor: Option<lock_editor_card::LockEditor>,
+    /// The looks side by side over the lock (M5.10c7h), while open.
+    lock_looks: Option<lock_looks_card::LockLooks>,
     /// Done's Undo bar, while it shows (M5.31b).
     undo_bar: Option<editor_card::UndoBar>,
     /// Quick settings while open (M5.9a), the preset's tiles for it, and
@@ -233,6 +237,8 @@ struct Shell {
     shift: bool,
     /// Whether Control is held (M5.10c7f: Ctrl+Z puts a lock edit back).
     ctrl: bool,
+    /// Whether the logo key is held (M5.10c7h: Super+L on the lock).
+    logo: bool,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -441,6 +447,7 @@ fn run() -> Result<()> {
         panel_menu: None,
         editor: None,
         lock_editor: None,
+        lock_looks: None,
         undo_bar: None,
         quick: None,
         quick_tiles: preset.quick.tiles.clone(),
@@ -459,6 +466,7 @@ fn run() -> Result<()> {
         tooltip_timer: None,
         shift: false,
         ctrl: false,
+        logo: false,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -533,6 +541,10 @@ fn run() -> Result<()> {
                         shell_bus::Edit::LockScreen => {
                             eprintln!("edel-shell-ui: lock editor asked for over the bus");
                             shell.open_lock_editor();
+                        }
+                        shell_bus::Edit::LockLooks => {
+                            eprintln!("edel-shell-ui: lock looks asked for over the bus");
+                            shell.open_lock_looks();
                         }
                     }
                 }
@@ -1722,6 +1734,8 @@ impl LayerShellHandler for Shell {
             self.close_editor(false);
         } else if self.is_lock_editor(surface.wl_surface()) {
             self.close_lock_editor(false);
+        } else if self.is_lock_looks(surface.wl_surface()) {
+            self.close_lock_looks();
         } else if self.is_undo_bar(surface.wl_surface()) {
             self.hide_undo_bar();
         } else if self.is_quick(surface.wl_surface()) {
@@ -1765,6 +1779,9 @@ impl LayerShellHandler for Shell {
         }
         if self.is_lock_editor(surface.wl_surface()) {
             return self.lock_editor_configured(configure.new_size);
+        }
+        if self.is_lock_looks(surface.wl_surface()) {
+            return self.lock_looks_configured(configure.new_size);
         }
         if self.is_undo_bar(surface.wl_surface()) {
             if let Some(bar) = &mut self.undo_bar {
@@ -1867,6 +1884,9 @@ impl CompositorHandler for Shell {
         if self.is_lock_editor(surface) {
             return self.lock_editor_scaled(factor);
         }
+        if self.is_lock_looks(surface) {
+            return self.lock_looks_scaled(factor);
+        }
         if self.is_undo_bar(surface) {
             if let Some(bar) = &mut self.undo_bar {
                 bar.popup.set_scale(factor);
@@ -1966,6 +1986,9 @@ impl CompositorHandler for Shell {
         }
         if self.is_lock_editor(surface) {
             return self.lock_editor_framed();
+        }
+        if self.is_lock_looks(surface) {
+            return self.lock_looks_framed();
         }
         if self.is_undo_bar(surface) {
             if let Some(bar) = &mut self.undo_bar {
@@ -2182,6 +2205,10 @@ impl PointerHandler for Shell {
                 self.lock_editor_pointer(event);
                 continue;
             }
+            if self.is_lock_looks(&event.surface) {
+                self.lock_looks_pointer(event);
+                continue;
+            }
             if self.is_editor(&event.surface) {
                 self.editor_pointer(event);
                 continue;
@@ -2353,6 +2380,8 @@ impl KeyboardHandler for Shell {
             self.close_editor(false);
         } else if self.is_lock_editor(surface) {
             self.close_lock_editor(false);
+        } else if self.is_lock_looks(surface) {
+            self.close_lock_looks();
         } else if self.is_quick(surface) {
             self.close_quick();
         } else if self.is_centre(surface) {
@@ -2374,6 +2403,8 @@ impl KeyboardHandler for Shell {
             self.lock_key(event);
         } else if self.lock_editor.is_some() {
             self.lock_editor_key(event);
+        } else if self.lock_looks.is_some() {
+            self.lock_looks_key(event);
         } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
@@ -2403,6 +2434,8 @@ impl KeyboardHandler for Shell {
             self.lock_key(event);
         } else if self.lock_editor.is_some() {
             self.lock_editor_key(event);
+        } else if self.lock_looks.is_some() {
+            self.lock_looks_key(event);
         } else if self.editor.is_some() {
             self.editor_key(event);
         } else if self.panel_menu.is_some() {
@@ -2442,6 +2475,7 @@ impl KeyboardHandler for Shell {
     ) {
         self.shift = modifiers.shift;
         self.ctrl = modifiers.ctrl;
+        self.logo = modifiers.logo;
         self.lock_caps(modifiers.caps_lock);
     }
 }
