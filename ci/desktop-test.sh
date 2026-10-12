@@ -2027,10 +2027,10 @@ case_settings_shortcuts() {
 		fail "Super+W opened the overview while the Change dialog held the keys"
 	set -- $use
 	ux=$((dx + $1 + $3 / 2)) uy=$((dy + $2 + $4 / 2))
-	said=$(count 'edel-compositor: shortcut close_window is Super+W')
+	said=$(count 'edel-compositor: shortcut close_window is Super\+W')
 	back=$(count 'edel-compositor: shortcuts back')
 	python3 ci/qmp.py click "$ux" "$uy"
-	wait_more 'edel-compositor: shortcut close_window is Super+W' "$said" ||
+	wait_more 'edel-compositor: shortcut close_window is Super\+W' "$said" ||
 		fail "Use anyway at $ux,$uy did not make the compositor take close_window = Super+W: $(value settings_shortcuts_log)"
 	wait_more 'edel-compositor: shortcuts back' "$back" || fail "the compositor did not give the keys back after the dialog closed"
 	sleep 1
