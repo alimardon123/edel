@@ -16,12 +16,14 @@ use std::rc::Rc;
 use gtk::cairo::Context;
 use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::gdk_pixbuf::Pixbuf;
+use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::{tr, trf};
 use edel::places;
 use edel::settings::{self, SettingsFile};
+use edel::theme_file;
 use edel::themes;
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers;
@@ -446,6 +448,7 @@ pub struct Card {
     more: gtk::MenuButton,
     duplicate: gtk::Button,
     rename: gtk::Button,
+    export: gtk::Button,
     delete: gtk::Button,
     // The styles.
     style_buttons: Vec<gtk::ToggleButton>,
@@ -459,6 +462,9 @@ pub struct Card {
     tiles: RefCell<Vec<(String, gtk::ToggleButton)>>,
     new_card: gtk::Button,
     new_menu: gtk::Popover,
+    import: gtk::Button,
+    /// The More menu's Import…, which does what the New card's does.
+    more_import: gtk::Button,
     // The pictures sheet.
     sheet: gtk::Revealer,
     sheet_content: gtk::Box,
@@ -551,9 +557,13 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         .build();
     let duplicate = widgets::menu_item(tr("Duplicate"));
     let rename = widgets::menu_item(tr("Rename…"));
+    let export = widgets::menu_item(tr("Export…"));
+    // Import beside Export, so a theme's file goes out and comes in from
+    // the same menu (Alimardon, 2026-10-12); the New card offers it too.
+    let more_import = widgets::menu_item(tr("Import…"));
     let delete = widgets::menu_item(tr("Delete…"));
     delete.add_css_class("edel-danger");
-    for item in [&duplicate, &rename, &delete] {
+    for item in [&duplicate, &rename, &export, &more_import, &delete] {
         items.append(item);
     }
     menu.set_child(Some(&items));
@@ -676,8 +686,10 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         .build();
     let from_use = widgets::menu_item(tr("From the theme in use"));
     let blank = widgets::menu_item(tr("Blank"));
+    let import = widgets::menu_item(tr("Import from a file…"));
     new_items.append(&from_use);
     new_items.append(&blank);
+    new_items.append(&import);
     let new_menu = gtk::Popover::builder()
         .css_classes(["edel-choice-list"])
         .child(&new_items)
@@ -702,6 +714,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         more,
         duplicate: duplicate.clone(),
         rename: rename.clone(),
+        export: export.clone(),
         delete: delete.clone(),
         style_buttons,
         style_pictures,
@@ -713,12 +726,15 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         tiles: RefCell::new(Vec::new()),
         new_card: new_card.clone(),
         new_menu: new_menu.clone(),
+        import: import.clone(),
+        more_import: more_import.clone(),
         sheet,
         sheet_content,
         sheet_key: RefCell::new(String::new()),
         wallpapers: RefCell::new(None),
     });
     wire(&card, &from_use, &blank);
+    drop_file(&card, &row);
     card.show_now(&shown);
     // The tokens change with the scheme and the person's colours: the
     // styles' windows and panels are taken again then.
@@ -921,6 +937,29 @@ fn wire(card: &Rc<Card>, from_use: &gtk::Button, blank: &gtk::Button) {
         );
     });
     let weak = Rc::downgrade(card);
+    card.export.connect_clicked(move |button| {
+        let Some(card) = weak.upgrade() else {
+            return;
+        };
+        card.more.popdown();
+        let name = Shown::of(&Files::here()).in_use;
+        export(&card, button.upcast_ref(), name);
+    });
+    let weak = Rc::downgrade(card);
+    card.import.connect_clicked(move |button| {
+        if let Some(card) = weak.upgrade() {
+            card.new_menu.popdown();
+            pick_import(&card, button.upcast_ref());
+        }
+    });
+    let weak = Rc::downgrade(card);
+    card.more_import.connect_clicked(move |button| {
+        if let Some(card) = weak.upgrade() {
+            card.more.popdown();
+            pick_import(&card, button.upcast_ref());
+        }
+    });
+    let weak = Rc::downgrade(card);
     card.delete.connect_clicked(move |button| {
         let Some(card) = weak.upgrade() else {
             return;
@@ -980,6 +1019,244 @@ fn wire(card: &Rc<Card>, from_use: &gtk::Button, blank: &gtk::Button) {
             card.new_menu.popup();
         }
     });
+}
+
+/// Asks where to save theme `name` (More's Export…) and writes its
+/// `.edeltheme` file there, as `edel theme export` does; a refusal or a
+/// failure shows in the page's problem line, and nothing is written then.
+fn export(card: &Rc<Card>, near: &gtk::Widget, name: String) {
+    let weak = Rc::downgrade(card);
+    let near = near.clone();
+    glib::spawn_future_local(async move {
+        let dialog = gtk::FileDialog::builder()
+            .title(tr("Export theme"))
+            .modal(true)
+            .build();
+        dialog.set_initial_name(Some(&format!("{name}.{}", theme_file::EXTENSION)));
+        let window = near.root().and_downcast::<gtk::Window>();
+        let Some(path) = dialog
+            .save_future(window.as_ref())
+            .await
+            .ok()
+            .and_then(|file| file.path())
+        else {
+            return;
+        };
+        let Some(card) = weak.upgrade() else {
+            return;
+        };
+        let result = export_to(&name, &path);
+        if result.is_ok() {
+            eprintln!(
+                "edel-settings: themes exported {name} to {}",
+                path.display()
+            );
+        }
+        card.report(result);
+    });
+}
+
+/// Writes theme `name` of the person's, as the library exports it, to `path`.
+fn export_to(name: &str, path: &Path) -> Result<(), String> {
+    let shown = Shown::of(&Files::here());
+    let theme = themes::lookup(name, &shown.file.themes).ok_or_else(|| {
+        trf(
+            "there is no theme called {name}",
+            &[("name", &format!("{name:?}"))],
+        )
+    })?;
+    theme_file::export(name, &theme, path).map_err(|err| format!("{err:#}"))
+}
+
+/// Asks for a theme file (New's Import from a file…) in the system's file
+/// chooser, which shows only `.edeltheme` files, and offers what it holds.
+fn pick_import(card: &Rc<Card>, near: &gtk::Widget) {
+    let weak = Rc::downgrade(card);
+    let near = near.clone();
+    glib::spawn_future_local(async move {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some(tr("Edel OS themes")));
+        filter.add_pattern(&format!("*.{}", theme_file::EXTENSION));
+        let filters = gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        let dialog = gtk::FileDialog::builder()
+            .title(tr("Import a theme"))
+            .modal(true)
+            .filters(&filters)
+            .build();
+        let window = near.root().and_downcast::<gtk::Window>();
+        let Some(path) = dialog
+            .open_future(window.as_ref())
+            .await
+            .ok()
+            .and_then(|file| file.path())
+        else {
+            return;
+        };
+        let Some(card) = weak.upgrade() else {
+            return;
+        };
+        offer(&card, &near, path);
+    });
+}
+
+/// A file dropped on the themes row does what Import from a file… does
+/// with it (M5.12b6).
+fn drop_file(card: &Rc<Card>, row: &gtk::ScrolledWindow) {
+    let target = gtk::DropTarget::new(
+        <gio::File as glib::prelude::StaticType>::static_type(),
+        gtk::gdk::DragAction::COPY,
+    );
+    let weak = Rc::downgrade(card);
+    let near: gtk::Widget = row.clone().upcast();
+    target.connect_drop(move |_, value, _, _| {
+        let Some(card) = weak.upgrade() else {
+            return false;
+        };
+        let Some(path) = value.get::<gio::File>().ok().and_then(|file| file.path()) else {
+            return false;
+        };
+        offer(&card, &near, path);
+        true
+    });
+    row.add_controller(target);
+}
+
+/// Reads a theme file the person picked or dropped and checks it against
+/// the settings file (no write yet): a file that does not check shows its
+/// message in the problem line, and a good one opens the dialog that says
+/// what it brings.
+fn offer(card: &Rc<Card>, near: &gtk::Widget, path: PathBuf) {
+    if path.extension().and_then(|ext| ext.to_str()) != Some(theme_file::EXTENSION) {
+        let shown = path.display().to_string();
+        card.report(Err(trf(
+            "{file} is not a theme file; a theme file ends in .edeltheme",
+            &[("file", &shown)],
+        )));
+        return;
+    }
+    let Some(dir) = edel::places::person_themes_dir() else {
+        card.report(Err(tr(
+            "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME",
+        )
+        .to_string()));
+        return;
+    };
+    let planned = theme_file::read(&path)
+        .and_then(|theme| theme_file::plan(theme, &Files::here().person_text(), &dir));
+    match planned {
+        Ok(plan) => {
+            card.report(Ok(()));
+            eprintln!("edel-settings: themes import shown {}", plan.title);
+            import_dialog(card, near, plan);
+        }
+        Err(err) => card.report(Err(format!("{err:#}"))),
+    }
+}
+
+/// The words for a theme's pictures in the import dialog.
+fn pictures_text(count: usize) -> String {
+    match count {
+        0 => tr("No pictures").to_string(),
+        1 => tr("1 picture").to_string(),
+        count => trf("{count} pictures", &[("count", &count.to_string())]),
+    }
+}
+
+/// The words for the values an imported theme sets, or that it sets none.
+fn values_text(keys: &[String]) -> String {
+    if keys.is_empty() {
+        tr("It sets no values of its own.").to_string()
+    } else {
+        trf("It sets {what}.", &[("what", &changed_words(keys))])
+    }
+}
+
+/// The dialog an imported theme opens with: its title, what it brings and
+/// what it sets, Cancel and Add theme (the default), as `widgets::ask_name`
+/// builds its dialog.
+fn import_dialog(card: &Rc<Card>, near: &gtk::Widget, plan: theme_file::Import) {
+    let window = gtk::Window::builder()
+        .title(tr("Add theme"))
+        .modal(true)
+        .resizable(false)
+        .default_width(360)
+        .build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    let title = gtk::Label::builder()
+        .label(&plan.title)
+        .xalign(0.0)
+        .css_classes(["edel-theme-title"])
+        .build();
+    let pictures = gtk::Label::builder()
+        .label(pictures_text(plan.pictures))
+        .xalign(0.0)
+        .wrap(true)
+        .build();
+    let values = gtk::Label::builder()
+        .label(values_text(&plan.keys))
+        .xalign(0.0)
+        .wrap(true)
+        .build();
+    let cancel = widgets::action(tr("Cancel"), false);
+    let add = widgets::action(tr("Add theme"), true);
+    let buttons = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .build();
+    buttons.append(&cancel);
+    buttons.append(&add);
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    body.append(&title);
+    body.append(&pictures);
+    body.append(&values);
+    body.append(&buttons);
+    window.set_child(Some(&body));
+    window.set_default_widget(Some(&add));
+
+    let close = window.clone();
+    cancel.connect_clicked(move |_| close.close());
+    let weak = Rc::downgrade(card);
+    let plan = Rc::new(plan);
+    let close = window.clone();
+    add.connect_clicked(move |_| {
+        close.close();
+        if let Some(card) = weak.upgrade() {
+            add_import(&card, &plan);
+        }
+    });
+    window.present();
+    add.grab_focus();
+}
+
+/// Adds an imported theme and chooses it (the dialog's Add theme): its
+/// pictures go into the person's themes folder first, then one write names
+/// the theme in `appearance.theme` and adds its table, so the file never
+/// names a picture that is not there.
+fn add_import(card: &Rc<Card>, plan: &theme_file::Import) {
+    let result = plan
+        .install()
+        .map_err(|err| format!("{err:#}"))
+        .and_then(|_| {
+            Files::here().edit_person(|text| {
+                let text = plan.add(text)?;
+                settings::set(&text, THEME_KEY, &format!("{:?}", plan.name))
+            })
+        });
+    if result.is_ok() {
+        eprintln!("edel-settings: themes imported {}", plan.name);
+    }
+    card.report(result);
+    card.show_now(&Shown::of(&Files::here()));
 }
 
 impl Card {
@@ -1305,5 +1582,15 @@ mod tests {
         .collect();
         assert_eq!(changed_words(&keys), "colours and accent");
         assert_eq!(changed_words(&[]), "");
+    }
+
+    #[test]
+    fn the_import_dialog_counts_pictures_and_names_what_a_theme_sets() {
+        assert_eq!(pictures_text(0), "No pictures");
+        assert_eq!(pictures_text(1), "1 picture");
+        assert_eq!(pictures_text(3), "3 pictures");
+        assert_eq!(values_text(&[]), "It sets no values of its own.");
+        let keys = vec!["appearance.accent".to_string()];
+        assert_eq!(values_text(&keys), "It sets accent.");
     }
 }

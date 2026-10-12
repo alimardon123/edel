@@ -212,6 +212,23 @@ enum ThemeCommands {
     },
     /// Take your changes off the theme in use, so it shows as it was made
     Reset,
+    /// Write a theme, built in or your own, as one NAME.edeltheme file with
+    /// its pictures, to give to someone or keep; a file is never written over
+    Export {
+        /// The theme's name, as theme list shows it
+        #[arg(value_name = "NAME")]
+        name: String,
+        /// The file to write; NAME.edeltheme in this folder when none is given
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+    },
+    /// Add a theme from a .edeltheme file to your themes, with its pictures;
+    /// the theme in use stays as it is, so choose it with settings set
+    Import {
+        /// The .edeltheme file to read; a file that does not check is refused
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -610,6 +627,8 @@ fn run(command: Commands) -> Result<()> {
             ThemeCommands::Save { name } => machine::theme_save(&name),
             ThemeCommands::Delete { name } => machine::theme_delete(&name),
             ThemeCommands::Reset => machine::theme_reset(),
+            ThemeCommands::Export { name, file } => machine::theme_export(&name, file.as_deref()),
+            ThemeCommands::Import { file } => machine::theme_import(&file),
         },
     }
 }

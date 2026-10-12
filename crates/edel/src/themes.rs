@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use toml::{Table, Value};
 
 use crate::i18n::{tr, trf};
@@ -59,6 +59,15 @@ const MOST_TITLE: usize = 40;
 /// starting with a hyphen, up to 32 characters, the same rule as a look's.
 pub fn is_name(name: &str) -> bool {
     crate::lock_screen::is_look_name(name)
+}
+
+/// Why `name` is no theme's name, in the words every reader shows (the
+/// settings check, save, add and rename all say it the same way).
+pub fn name_message(name: &str) -> String {
+    trf(
+        "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\"",
+        &[("name", &format!("{name:?}"))],
+    )
 }
 
 /// Whether `name` is one of [`BUILT_IN`]'s, which never changes.
@@ -298,10 +307,7 @@ pub fn problems(file: &SettingsFile) -> Vec<String> {
     for name in file.themes.keys() {
         let shown = format!("themes.{name}");
         if !is_name(name) {
-            let message = trf(
-                "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\"",
-                &[("name", &format!("{name:?}"))],
-            );
+            let message = name_message(name);
             lines.push(format!("{shown}: {message}"));
         } else if is_built_in(name) {
             let message = trf(
@@ -421,13 +427,7 @@ fn value_of(file: &SettingsFile, key: &str) -> Option<Value> {
 pub fn save_text(text: &str, name: &str) -> Result<String> {
     let file = settings::read(text)?.file;
     if !is_name(name) {
-        bail!(
-            "{}",
-            trf(
-                "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\"",
-                &[("name", &format!("{name:?}"))]
-            )
-        );
+        bail!("{}", name_message(name));
     }
     if is_built_in(name) {
         bail!(
@@ -481,6 +481,40 @@ pub fn save_text(text: &str, name: &str) -> Result<String> {
         text = settings::unset_all(&text, &moved)?;
     }
     Ok(text)
+}
+
+/// `edel theme import` and Settings' Add theme, on a file's text: adds
+/// `[themes.NAME]` with `theme`'s table as it is, and leaves the theme in use
+/// as it is, since importing never chooses a theme. A name that is no
+/// theme's, a built-in's and one of the person's own are refused, as
+/// [`save_text`] refuses them, and so is a table [`check_table`] refuses.
+pub fn add_text(text: &str, name: &str, theme: &OwnTheme) -> Result<String> {
+    let file = settings::read(text)?.file;
+    check_new_name(&file, name)?;
+    let Value::Table(table) = Value::try_from(theme)? else {
+        bail!("{}", tr("a theme could not be written as a table"));
+    };
+    check_table(&table).map_err(|message| anyhow!(message))?;
+    settings::set(
+        text,
+        &format!("themes.{name}"),
+        &Value::Table(table).to_string(),
+    )
+}
+
+/// The appearance keys a theme sets, as `appearance.accent` and
+/// `appearance.colours.panel`, its pictures left out: what an import's
+/// dialog says the theme changes.
+pub fn value_keys(theme: &OwnTheme) -> Vec<String> {
+    let Ok(value) = Value::try_from(&theme.values) else {
+        return Vec::new();
+    };
+    let mut values = BTreeMap::new();
+    flatten("", &value, &mut values);
+    values
+        .keys()
+        .map(|path| format!("appearance.{path}"))
+        .collect()
 }
 
 /// `edel theme delete NAME`, on a file's text: removes `[themes.NAME]`. A
@@ -542,6 +576,16 @@ pub fn free_name(base: &str, taken: impl Fn(&str) -> bool) -> String {
         .chain((2..).map(|n| format!("{stem}-{n}")))
         .find(|name| free(name))
         .unwrap_or_else(|| format!("theme-{}", stem.len()))
+}
+
+/// The name an imported theme takes (M5.12b6): its own name when it is a
+/// valid one and free, else the nearest free one by [`free_name`], so an
+/// import never replaces a built-in theme or one of the person's own.
+pub fn import_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    if is_name(name) && !is_built_in(name) && !taken(name) {
+        return name.to_string();
+    }
+    free_name(name, taken)
 }
 
 /// A copy's name, from a theme's `title`: the title's slug with `-2`, `-3`
@@ -646,13 +690,7 @@ pub fn rename_text(text: &str, old: &str, new: &str) -> Result<String> {
 /// name, not a built-in one and not one of theirs already.
 fn check_new_name(file: &SettingsFile, name: &str) -> Result<()> {
     if !is_name(name) {
-        bail!(
-            "{}",
-            trf(
-                "{name} is not a theme's name; use letters, digits and hyphens, such as \"my-aurora\"",
-                &[("name", &format!("{name:?}"))]
-            )
-        );
+        bail!("{}", name_message(name));
     }
     if is_built_in(name) {
         bail!(
@@ -945,6 +983,76 @@ mod tests {
         assert_eq!(theme.values, Appearance::default());
         assert_eq!(file.appearance.theme.as_deref(), Some("my-blank"));
         assert!(changed(&file).is_empty());
+    }
+
+    #[test]
+    fn add_writes_the_table_and_leaves_the_theme_in_use_alone() {
+        let text = "format = 1\n[appearance]\nradius = 4\n";
+        let theme = OwnTheme {
+            title: Some("Lilac".into()),
+            pictures: vec!["aurora".into(), "#102030".into()],
+            values: Appearance {
+                accent: Some("blue".into()),
+                ..Appearance::default()
+            },
+        };
+        let added = add_text(text, "lilac", &theme).unwrap();
+        let file = file(&added);
+        let own = file.themes.get("lilac").unwrap();
+        assert_eq!(own.title.as_deref(), Some("Lilac"));
+        assert_eq!(own.pictures, vec!["aurora", "#102030"]);
+        assert_eq!(own.values.accent.as_deref(), Some("blue"));
+        assert_eq!(file.appearance.theme, None);
+        assert_eq!(file.appearance.radius, Some(4));
+    }
+
+    #[test]
+    fn add_refuses_a_built_in_name_a_taken_one_and_a_bad_picture() {
+        let theme = OwnTheme::default();
+        assert!(add_text("format = 1\n", "aurora", &theme).is_err());
+        let own = add_text("format = 1\n", "mine", &theme).unwrap();
+        assert!(add_text(&own, "mine", &theme).is_err());
+        let bad = OwnTheme {
+            pictures: vec!["pictures/a.jpg".into()],
+            ..OwnTheme::default()
+        };
+        assert!(add_text("format = 1\n", "fresh", &bad).is_err());
+    }
+
+    #[test]
+    fn an_import_keeps_its_name_when_free_and_takes_the_next_when_not() {
+        assert_eq!(import_name("lilac", |_| false), "lilac");
+        assert_eq!(import_name("lilac", |name| name == "lilac"), "lilac-2");
+        assert_eq!(import_name("aurora", |_| false), "aurora-2");
+        assert_eq!(import_name("not a name", |_| false), "not-a-name");
+    }
+
+    #[test]
+    fn value_keys_name_each_value_a_theme_sets() {
+        let theme = OwnTheme {
+            values: Appearance {
+                accent: Some("blue".into()),
+                radius: Some(9),
+                ..Appearance::default()
+            },
+            ..OwnTheme::default()
+        };
+        assert_eq!(
+            value_keys(&theme),
+            vec!["appearance.accent", "appearance.radius"]
+        );
+        assert!(value_keys(&OwnTheme::default()).is_empty());
+    }
+
+    #[test]
+    fn a_name_message_is_the_one_every_reader_shows() {
+        assert!(name_message("my theme").contains("is not a theme's name"));
+        assert!(
+            save_text("format = 1\n", "my theme")
+                .unwrap_err()
+                .to_string()
+                .contains("is not a theme's name")
+        );
     }
 
     #[test]

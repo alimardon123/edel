@@ -19,6 +19,7 @@ use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
 use edel::settings::{self, SettingsFile, User};
+use edel::theme_file;
 use edel::themes;
 use edel::users::ADMIN_GROUP;
 
@@ -815,6 +816,66 @@ fn edit_as(
     keys: &[&str],
     change: impl Fn(&str) -> Result<String>,
 ) -> Result<()> {
+    let written = write_edit(command, keys, change)?;
+    report_written(command, what, &written);
+    Ok(())
+}
+
+/// What [`write_edit`] wrote: the machine's file, the file it wrote (a newer
+/// format's `.v<N>` beside it when there is one), whether the desktop
+/// follows it at once, and the newer format a file had, if any.
+struct Written {
+    machine: String,
+    path: PathBuf,
+    desktop: bool,
+    newer: Option<i64>,
+}
+
+/// Says what was written, one line, and the newer-format note when there is one.
+fn report_written(command: &str, what: &str, written: &Written) {
+    println!(
+        "{command}: {}",
+        trf(
+            "{what} in {path}; {then}",
+            &[
+                ("what", what),
+                ("path", &written.path.display().to_string()),
+                (
+                    "then",
+                    if written.desktop {
+                        tr("the desktop follows it at once")
+                    } else {
+                        tr("edel settings apply applies it")
+                    }
+                )
+            ]
+        )
+    );
+    note_newer(command, written);
+}
+
+/// Says that the machine's file is a newer format and the change went to
+/// the `.v<N>` this release reads, when it did.
+fn note_newer(command: &str, written: &Written) {
+    if let Some(format) = written.newer {
+        println!(
+            "{command}: {}",
+            trf(
+                "{path} is format {format}, so the change applies to this release only",
+                &[("path", &written.machine), ("format", &format.to_string())]
+            )
+        );
+    }
+}
+
+/// Changes the machine's settings file as `change` makes it from its text,
+/// through a file beside it that is renamed over it, under the settings
+/// lock; the caller says what was written.
+fn write_edit(
+    command: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<Written> {
     let _lock = Lock::take("settings", command)?;
     let machine = machine_file();
     let shown = machine.display().to_string();
@@ -862,34 +923,12 @@ fn edit_as(
         .map_err(|err| io_failure(err, &doing))?;
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
-    println!(
-        "{command}: {}",
-        trf(
-            "{what} in {path}; {then}",
-            &[
-                ("what", what),
-                ("path", &path.display().to_string()),
-                (
-                    "then",
-                    if desktop {
-                        tr("the desktop follows it at once")
-                    } else {
-                        tr("edel settings apply applies it")
-                    }
-                )
-            ]
-        )
-    );
-    if let Some(format) = newer {
-        println!(
-            "{command}: {}",
-            trf(
-                "{path} is format {format}, so the change applies to this release only",
-                &[("path", &shown), ("format", &format.to_string())]
-            )
-        );
-    }
-    Ok(())
+    Ok(Written {
+        machine: shown,
+        path,
+        desktop,
+        newer,
+    })
 }
 
 /// `edel settings set KEY=VALUE...`: every assignment is checked before
@@ -1005,6 +1044,77 @@ pub fn theme_reset() -> Result<()> {
     edit_as("edel theme", what, &["appearance.theme"], |text| {
         Ok(themes::reset_text(text)?.unwrap_or_else(|| text.to_string()))
     })
+}
+
+/// `edel theme export NAME [FILE]`: writes the theme NAME, built in or the
+/// person's own, as one `.edeltheme` file with its pictures in it, NAME.edeltheme
+/// in this folder when no FILE is given. A file that is there is never
+/// written over, and a theme that would not read back is not written at all.
+pub fn theme_export(name: &str, file: Option<&Path>) -> Result<()> {
+    let text = theme_text();
+    let read = settings::read(&text)
+        .with_context(|| could_not_read(&machine_file()))?
+        .file;
+    let Some(theme) = themes::lookup(name, &read.themes) else {
+        bail!(
+            "{}",
+            trf(
+                "there is no theme called {name}; edel theme list shows them",
+                &[("name", name)]
+            )
+        );
+    };
+    let target = file
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from(format!("{name}.{}", theme_file::EXTENSION)));
+    let shown = target.display().to_string();
+    theme_file::export(name, &theme, &target)?;
+    println!(
+        "edel theme: {}",
+        trf(
+            "exported the theme {name} to {file}",
+            &[("name", name), ("file", &shown)]
+        )
+    );
+    Ok(())
+}
+
+/// `edel theme import FILE`: checks a `.edeltheme` file, which writes nothing
+/// when it is refused, copies its pictures into the machine's themes folder
+/// (`places::MACHINE_THEMES_DIR`, as the theme goes into the machine's
+/// settings file, which every person reads) under the theme's name, and adds
+/// the theme to the settings file. The
+/// theme in use stays as it is: the line it prints says how to choose it.
+pub fn theme_import(file: &Path) -> Result<()> {
+    let theme = theme_file::read(file)?;
+    // The plan checks the theme against the file first, so a refused theme
+    // writes no picture; the pictures come before the settings file names them.
+    let plan = theme_file::plan(theme, &theme_text(), Path::new(places::MACHINE_THEMES_DIR))?;
+    plan.install()?;
+    let written = write_edit("edel theme", &[], |text| plan.add(text))?;
+    println!("{}", import_line(&plan.title, &plan.name, plan.pictures));
+    note_newer("edel theme", &written);
+    Ok(())
+}
+
+/// What `edel theme import` prints when a theme is added (its pictures
+/// counted in words, and how to choose it).
+fn import_line(title: &str, name: &str, pictures: usize) -> String {
+    if pictures == 1 {
+        trf(
+            "Added theme {title} as {name}, with 1 picture. Choose it with: edel settings set appearance.theme={name}",
+            &[("title", title), ("name", name)],
+        )
+    } else {
+        trf(
+            "Added theme {title} as {name}, with {count} pictures. Choose it with: edel settings set appearance.theme={name}",
+            &[
+                ("title", title),
+                ("name", name),
+                ("count", &pictures.to_string()),
+            ],
+        )
+    }
 }
 
 /// A page's name as people type it: its title in lowercase, `_` for a

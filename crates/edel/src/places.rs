@@ -56,6 +56,10 @@ pub const GREETER_DIR: &str = data!("/edel/greeter");
 /// (M5.10c3b): `[people]` with a login name and the desktop file's id, the
 /// file name without `.desktop`. A default is never written.
 pub const GREETER_SESSIONS: &str = data!("/edel/greeter/sessions.toml");
+/// The pictures of themes `edel theme import` adds to the machine's settings
+/// file (M5.12b6), one folder per theme, so every person on the machine sees
+/// them; Settings imports into a person's own `person_themes_dir`.
+pub const MACHINE_THEMES_DIR: &str = data!("/edel/themes");
 
 /// Edel OS's directory for this boot only.
 pub const RUN_DIR: &str = run!("");
@@ -221,6 +225,19 @@ pub fn person_state_dir() -> Option<PathBuf> {
     match var("XDG_STATE_HOME") {
         Some(state) => Some(PathBuf::from(state).join("edel")),
         None => var("HOME").map(|home| PathBuf::from(home).join(STATE_IN_HOME)),
+    }
+}
+
+/// A person's own themes' pictures (M5.12b6): `$XDG_DATA_HOME/edel/themes`,
+/// else `~/.local/share/edel/themes`, one folder per imported theme, named
+/// by the theme. A theme's values are in the settings file; these are only
+/// the pictures an imported theme brought, so it keeps working without its
+/// `.edeltheme` file. None without either variable.
+pub fn person_themes_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_DATA_HOME") {
+        Some(data) => Some(PathBuf::from(data).join("edel").join("themes")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(".local/share/edel/themes")),
     }
 }
 

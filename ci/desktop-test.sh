@@ -193,6 +193,11 @@
 #               and each again at 366 px,
 #               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
 #               and named in the PASS line
+#   theme       edel theme save, export, delete and import round trip as
+#               root: a theme saved as mine is written under [themes],
+#               exported as a tar archive of theme.toml, taken out and
+#               imported back, and a hand-made archive with an extra run.sh
+#               is refused, the entry named (M5.12b6)
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
@@ -1516,6 +1521,52 @@ case_settings_appearance() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened on its Appearance page, a click on Dark at $cx,$cy wrote appearance.mode = \"dark\" to ci's file and the compositor took the dark scheme (settings-appearance.png), and taking the line out brought light back"
+}
+
+case_theme() {
+	# Themes (M5.12b6, step 12b6), as root on the machine's file: the theme
+	# in use saved as mine, which writes it under [themes] as settings set
+	# does, exported as one .edeltheme file that tar reads and holds only
+	# theme.toml, taken out and imported back, chosen by settings set, and a
+	# hand-made archive with an extra run.sh refused, the entry named.
+	asked() {
+		n=$(count "DESKTOP-TEST: $1 ")
+		guest "$2"
+		wait_more "DESKTOP-TEST: $1 " "$n" || fail "the service did not answer $2"
+	}
+	guest 'theme clean'
+	asked theme_save 'theme save'
+	value theme_save | grep -q '^0 ' || fail "edel theme save mine failed: $(value theme_save)"
+	asked theme_machine 'theme machine'
+	value theme_machine | grep -q '\[themes\];mine = ' ||
+		fail "edel theme save mine did not write mine under [themes]: $(value theme_machine)"
+	asked theme_export 'theme export'
+	value theme_export | grep -q '^0 ' || fail "edel theme export mine failed: $(value theme_export)"
+	asked theme_archive 'theme archive'
+	value theme_archive | grep -q '^theme.toml $' ||
+		fail "the exported file is not a theme.toml archive: $(value theme_archive)"
+	asked theme_delete 'theme delete'
+	value theme_delete | grep -q '^0 ' || fail "edel theme delete mine failed: $(value theme_delete)"
+	asked theme_machine 'theme machine'
+	if value theme_machine | grep -q '\[themes\];mine = '; then
+		fail "edel theme delete mine left mine in the machine's file: $(value theme_machine)"
+	fi
+	asked theme_import 'theme import'
+	value theme_import | grep -q '^0 ' || fail "edel theme import of the exported file failed: $(value theme_import)"
+	value theme_import | grep -q 'Added theme .* as mine,' ||
+		fail "edel theme import did not add mine: $(value theme_import)"
+	asked theme_machine 'theme machine'
+	value theme_machine | grep -q '\[themes\];mine = ' ||
+		fail "edel theme import did not bring mine back under [themes]: $(value theme_machine)"
+	asked theme_chosen 'theme choose'
+	value theme_chosen | grep -q 'mine' || fail "edel settings set appearance.theme=mine did not take: $(value theme_chosen)"
+	guest 'theme reset'
+	asked theme_bad 'theme bad'
+	value theme_bad | grep -q '^0 ' && fail "a theme file with an extra run.sh was imported: $(value theme_bad)"
+	value theme_bad | grep -q 'run.sh is not part of a theme' ||
+		fail "the refused archive does not name run.sh: $(value theme_bad)"
+	guest 'theme clean'
+	echo "PASS: edel theme save mine wrote mine under [themes]; edel theme export wrote mine as a tar archive holding theme.toml alone; after edel theme delete and edel theme import of that file, mine is back under [themes] and edel settings set appearance.theme=mine took; a file with an extra run.sh was refused with a non-zero exit, naming run.sh"
 }
 
 case_settings_wallpaper() {
@@ -5343,7 +5394,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

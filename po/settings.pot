@@ -1157,6 +1157,12 @@ msgstr ""
 msgid "Keep as new"
 msgstr ""
 
+msgid "Export…"
+msgstr ""
+
+msgid "Import…"
+msgstr ""
+
 msgid "Themes"
 msgstr ""
 
@@ -1172,6 +1178,9 @@ msgstr ""
 msgid "Blank"
 msgstr ""
 
+msgid "Import from a file…"
+msgstr ""
+
 msgid "Give the theme a name. It keeps the changes you made over it, and the theme in use becomes it."
 msgstr ""
 
@@ -1185,6 +1194,42 @@ msgid "Give this theme another name. It keeps its values and its pictures."
 msgstr ""
 
 msgid "Delete the theme {theme}?"
+msgstr ""
+
+msgid "Export theme"
+msgstr ""
+
+msgid "there is no theme called {name}"
+msgstr ""
+
+msgid "Edel OS themes"
+msgstr ""
+
+msgid "Import a theme"
+msgstr ""
+
+msgid "{file} is not a theme file; a theme file ends in .edeltheme"
+msgstr ""
+
+msgid "there is no home folder for a theme's pictures; set HOME or XDG_DATA_HOME"
+msgstr ""
+
+msgid "No pictures"
+msgstr ""
+
+msgid "1 picture"
+msgstr ""
+
+msgid "{count} pictures"
+msgstr ""
+
+msgid "It sets no values of its own."
+msgstr ""
+
+msgid "It sets {what}."
+msgstr ""
+
+msgid "Add theme"
 msgstr ""
 
 msgid "Built in theme"
