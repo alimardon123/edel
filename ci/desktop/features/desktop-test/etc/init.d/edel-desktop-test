@@ -959,6 +959,10 @@ commands() {
 		'greeter log')
 			tail -n 40 /tmp/greeter.log | sed 's/^/DESKTOP-TEST: greeter.log /' >/dev/console
 			tail -n 40 /var/log/greetd.log 2>/dev/null | sed 's/^/DESKTOP-TEST: greetd.log /' >/dev/console
+			# A mount left in a runtime directory keeps pam_rundir from
+			# making it again at the next login (M6.1).
+			grep ' /run/user' /proc/mounts | sed 's/^/DESKTOP-TEST: mount /' >/dev/console || true
+			ls -la /run/user 2>&1 | sed 's/^/DESKTOP-TEST: run-user /' >/dev/console
 			;;
 		# The session chip (M5.10c3b): the file ci-other's session left in
 		# ci's runtime directory, and the login screen's remembered choices.
@@ -973,6 +977,35 @@ commands() {
 			before=$(cut -d' ' -f1 /proc/uptime)
 			pkill -9 -x edel-compositor
 			respawned "$before" &
+			;;
+		# Flatpak apps (M6.1): io.mpv.Mpv in apps.installed, with ci made an
+		# admin for the install (apps install for admins only), then apply,
+		# which adds Flathub for ci and installs the app with flatpak --user.
+		# The download takes minutes, so the command's verdict is its status
+		# and the last lines of its log.
+		'flatpak apps')
+			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
+				edel settings apply >>/tmp/flatpak-apply.log 2>&1
+			status=$?
+			say "flatpak_apply $status $(tail -n 5 /tmp/flatpak-apply.log | tr '\n' ';')"
+			;;
+		# mpv as ci, in the session, with no file, so its window stays idle
+		# on the screen until the case closes it.
+		'flatpak run')
+			as_ci "flatpak run io.mpv.Mpv --vo=wlshm --force-window=immediate --idle=yes" </dev/null >/tmp/flatpak-run.log 2>&1 &
+			;;
+		'flatpak diff')
+			say "flatpak_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		'flatpak polkit')
+			say "flatpak_polkit $(pgrep polkitd || echo none)"
+			;;
+		# The key taken out again (never an uninstall: the app stays), ci's
+		# admin taken back, and mpv closed by its app id: inside the sandbox
+		# its process is not named mpv, so pkill finds nothing.
+		'flatpak default')
+			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
+			as_ci "flatpak kill io.mpv.Mpv"
 			;;
 		*)
 			say "unknown command $command"

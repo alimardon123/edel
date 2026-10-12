@@ -27,6 +27,29 @@ pub struct App {
     keywords: Vec<String>,
 }
 
+/// Flathub, the one remote Edel OS installs apps from (M6.1): `edel
+/// settings apply` adds it for each admin person who has none, as that
+/// person, with `flatpak --user remote-add --if-not-exists`.
+pub const FLATHUB_REMOTE: &str = "https://dl.flathub.org/repo/flathub.flatpakrepo";
+
+/// Whether `id` is a Flatpak app id (M6.1): reverse-DNS, three or more
+/// dot-separated parts, each starting with a letter or `_` and holding
+/// only letters, digits, `_` and `-`, the last part with no `-`, and under
+/// 256 characters, such as `io.mpv.Mpv`.
+pub fn is_flatpak_id(id: &str) -> bool {
+    let parts: Vec<&str> = id.split('.').collect();
+    id.len() < 256
+        && parts.len() >= 3
+        && parts.iter().all(|part| {
+            let mut chars = part.chars();
+            chars
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        })
+        && !parts[parts.len() - 1].contains('-')
+}
+
 /// The directories `.desktop` files are read from, first wins.
 pub fn dirs() -> Vec<PathBuf> {
     data_dirs()
@@ -452,5 +475,40 @@ mod tests {
         let top =
             parse("[Desktop Entry]\nType=Application\nName=top\nExec=htop\nTerminal=true").unwrap();
         assert_eq!(command(&top), ["foot", "--", "htop"]);
+    }
+
+    #[test]
+    fn a_flatpak_id_is_reverse_dns_with_no_dash_in_its_last_part() {
+        for good in [
+            "io.mpv.Mpv",
+            "org.gnome.Calculator",
+            "com.github.user-name.app",
+            "_x.y.z_1",
+        ] {
+            assert!(is_flatpak_id(good), "{good} is a Flatpak id");
+        }
+        for bad in [
+            "",
+            "mpv",
+            "io.mpv",
+            "io..mpv",
+            "1o.mpv.Mpv",
+            "io.mpv.Mpv-x",
+            "io.mp v.Mpv",
+            "io.mpv.Mp/v",
+            ".io.mpv",
+        ] {
+            assert!(!is_flatpak_id(bad), "{bad:?} is not a Flatpak id");
+        }
+        let long = format!("a.b.{}", "c".repeat(256));
+        assert!(!is_flatpak_id(&long), "256 characters or more is too long");
+    }
+
+    #[test]
+    fn flathub_is_added_from_the_one_constant() {
+        assert_eq!(
+            FLATHUB_REMOTE,
+            "https://dl.flathub.org/repo/flathub.flatpakrepo"
+        );
     }
 }

@@ -281,6 +281,15 @@ msgstr ""
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
 msgstr ""
 
+msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
+msgstr ""
+
+msgid "could not install {apps} from Flathub for {user}; check the network and run edel settings apply again, the other apps were installed"
+msgstr ""
+
+msgid "flatpak apps for {user} wait for the network; edel settings apply installs them"
+msgstr ""
+
 msgid "seeded {path} from {from}"
 msgstr ""
 
@@ -1005,6 +1014,12 @@ msgid "expected one to {most} host names, not {count} (to use the release's, run
 msgstr ""
 
 msgid "a list of host names, such as [\"pool.ntp.org\"]"
+msgstr ""
+
+msgid "{item} is not a Flatpak app id; an id is the app's reverse-DNS name, three or more parts joined by dots, such as \"io.mpv.Mpv\""
+msgstr ""
+
+msgid "a list of Flatpak app ids, such as [\"io.mpv.Mpv\"]"
 msgstr ""
 
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
