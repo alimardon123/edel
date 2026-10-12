@@ -18,13 +18,14 @@ client=target/release/edel-testclient
 	exit 1
 }
 rm -rf "$work" "$repo"
-mkdir -p "$work/runtime/files/lib"
+mkdir -p "$work/runtime/usr/lib"
 
-# The runtime is mounted at /usr in the sandbox, where Flatpak links /lib
-# to /usr/lib, so musl's loader and the client's libraries go in lib.
-cp -L /lib/ld-musl-x86_64.so.1 "$work/runtime/files/lib/"
+# A runtime keeps its files in usr/ (an app keeps its own in files/), which
+# the sandbox mounts at /usr, where Flatpak links /lib to /usr/lib, so
+# musl's loader and the client's libraries go in usr/lib.
+cp -L /lib/ld-musl-x86_64.so.1 "$work/runtime/usr/lib/"
 ldd "$client" | awk '/=> \// { print $3 }' | while read -r lib; do
-	cp -L "$lib" "$work/runtime/files/lib/"
+	cp -L "$lib" "$work/runtime/usr/lib/"
 done
 cat >"$work/runtime/metadata" <<'META'
 [Runtime]
