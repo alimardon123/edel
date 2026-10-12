@@ -218,7 +218,7 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 | `updates.version` | text, a release to stay on; missing follows the channel | M3.4 |
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |
-| `apps.installed` | list of Flathub app ids, installed per admin user | M6.1 |
+| `apps.installed` | a list of Flatpak app ids from Flathub, such as `["io.mpv.Mpv"]` (an id is reverse-DNS: three or more parts joined by dots, the last with no `-`). For each admin person, apply adds Flathub if they have no remote and installs, with `flatpak --user` as that person, each id they lack; the boot leaves the installs to an apply, and says so. Taking an id out leaves its app installed, as the store (M6.4) removes apps. On the command line `edel settings set 'apps.installed=["io.mpv.Mpv"]'`, then `edel settings apply`; the file line is `apps.installed = ["io.mpv.Mpv"]` under `[apps]`. No Settings row yet: the store (M6.4) is this key's page | M6.1 |
 | `addons.installed` | list of add-on names (ADR-007) | M7.2b |
 
 ## System: `[system]`

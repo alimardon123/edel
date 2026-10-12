@@ -10,11 +10,15 @@
 # through sh, so the log can go to /tmp, where the test service reads it;
 # EDEL_LOG_KEYS=1 logs each key the compositor sees, for the overview
 # case's failures (M5.2j-b3), in this test session alone.
+# Both sessions run the login feature's own session script, as a person's
+# do, so what it ends and unmounts when a session ends (M6.1: the
+# document portal's FUSE mount, which would leave ci with no runtime
+# directory at the respawn case's login) is what CI tests.
 [terminal]
 vt = 7
 
 [initial_session]
-command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 XDG_CURRENT_DESKTOP=Edel dbus-run-session -- edel-compositor 2>/tmp/compositor.log"
+command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 /usr/libexec/edel-session 2>/tmp/compositor.log"
 user = "ci"
 
 # The login feature's greeter (M4.7b, shell-ui's since M5.10b), with the
@@ -22,5 +26,5 @@ user = "ci"
 # logged too, and its log added to /tmp/greeter.log (a greeter that
 # starts again keeps what the one before said), for the respawn case.
 [default_session]
-command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 edel-compositor -- edel-shell-ui --greeter --cmd 'env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 XDG_CURRENT_DESKTOP=Edel dbus-run-session -- edel-compositor' 2>>/tmp/greeter.log"
+command = "env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 edel-compositor -- edel-shell-ui --greeter --cmd 'env LIBGL_ALWAYS_SOFTWARE=1 LP_NUM_THREADS=0 EDEL_SOFTWARE_CURSOR=1 EDEL_LOG_KEYS=1 /usr/libexec/edel-session' 2>>/tmp/greeter.log"
 user = "greetd"

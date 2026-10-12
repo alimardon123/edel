@@ -245,6 +245,12 @@
 #               compositor that only fails into slot B and restarts; no
 #               frame, so the guard lets the watchdog restart slot B, and
 #               GRUB, out of tries, starts slot A, which says so (M4.8)
+#   flatpak     last: `edel settings set apps.installed` lists io.mpv.Mpv
+#               and `edel settings apply` installs it for ci from Flathub
+#               with flatpak --user (up to 900 s for the download); mpv's
+#               window maps in the session (flatpak-mpv.png); `edel settings
+#               diff` then says nothing, no polkitd runs, and the key taken
+#               out again leaves the app installed (M6.1)
 #
 # Screenshots and the serial log are kept in out/desktop-test/. The VM
 # gets 2 GiB and 4 CPUs; the VM and server tests keep 512 MiB and 2, so
@@ -6056,7 +6062,46 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+case_flatpak() {
+	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
+	# apps.installed and makes ci an admin, as apps install for admins only,
+	# and `edel settings apply` adds Flathub for ci and installs the app with
+	# flatpak --user, which the download takes up to 900 s for. Then mpv runs
+	# as ci in the session, and its window maps on the compositor (kept as
+	# flatpak-mpv.png). `edel settings diff` has nothing left to apply, no
+	# polkitd runs, and the key taken out again leaves the app installed.
+	asked=$(count 'DESKTOP-TEST: flatpak_apply ')
+	start=$(date +%s)
+	guest 'flatpak apps'
+	wait_more 'DESKTOP-TEST: flatpak_apply ' "$asked" 900 ||
+		fail "the Flatpak install did not finish in 900 s: edel settings apply never printed its status"
+	status=$(value flatpak_apply | cut -d' ' -f1)
+	[ "$status" = 0 ] || fail "edel settings apply ended with status $status: $(value flatpak_apply)"
+	applied=$(date +%s)
+	asked=$(count 'edel-compositor: mapped window .*mpv')
+	guest 'flatpak run'
+	wait_more 'edel-compositor: mapped window .*mpv' "$asked" 120 ||
+		fail "mpv's window did not map within 120 s of flatpak run; the log is $(tr -d '\r' <"$log" | grep -a 'edel-compositor: mapped window' | tail -n 3 | tr '\n' '|')"
+	mapped=$(date +%s)
+	python3 ci/qmp.py screendump "$dir/flatpak-mpv.png"
+	asked=$(count 'DESKTOP-TEST: flatpak_diff ')
+	guest 'flatpak diff'
+	wait_more 'DESKTOP-TEST: flatpak_diff ' "$asked" || fail "the service did not run edel settings diff"
+	[ -z "$(value flatpak_diff)" ] ||
+		fail "edel settings diff still has changes after the install: $(value flatpak_diff)"
+	asked=$(count 'DESKTOP-TEST: flatpak_polkit ')
+	guest 'flatpak polkit'
+	wait_more 'DESKTOP-TEST: flatpak_polkit ' "$asked" || fail "the service did not check for polkitd"
+	[ "$(value flatpak_polkit)" = none ] || fail "polkitd runs after a Flatpak install: $(value flatpak_polkit)"
+	asked=$(count 'DESKTOP-TEST: ran flatpak default: ')
+	closed=$(count 'edel-compositor: unmapped window .*mpv')
+	guest 'flatpak default'
+	wait_more 'DESKTOP-TEST: ran flatpak default: ' "$asked" || fail "the service did not reset apps.installed"
+	wait_more 'edel-compositor: unmapped window .*mpv' "$closed" || fail "mpv's window did not close after flatpak default"
+	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
+}
+
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -6165,6 +6210,14 @@ if [ "$*" = live ]; then
 	exit 0
 fi
 
+# The VM boots a sparse copy grown by 4 GiB, so the data partition, which
+# grows to the end of the disk at boot, has room for Flathub's downloads
+# (the flatpak case); the copy is removed when the script ends.
+grown="$dir/edel-desktop-grown.img"
+cp --sparse=always "$dir/edel-desktop-x86_64.img" "$grown"
+truncate -s +4G "$grown"
+trap 'rm -f "$grown"' EXIT
+
 # Any restart ends the VM, so a crash is never missed, except in rollback,
 # whose VM restarts on purpose and fetches the update from this host, the
 # guest's 10.0.2.2, on a port of its own (ab-test.sh has 8000).
@@ -6173,7 +6226,7 @@ if [ "$*" = rollback ]; then
 	restart=''
 	python3 -m http.server 8001 --bind 127.0.0.1 --directory "$dir/update" >out/desktop-http.log 2>&1 &
 	server=$!
-	trap 'kill "$server" 2>/dev/null || true' EXIT
+	trap 'kill "$server" 2>/dev/null || true; rm -f "$grown"' EXIT
 fi
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
@@ -6182,7 +6235,7 @@ keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300
 	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
-	-drive if=none,id=disk0,format=raw,file="$dir/edel-desktop-x86_64.img" \
+	-drive if=none,id=disk0,format=raw,file="$grown" \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 grep 'DESKTOP-TEST' "$log" | tr -d '\r' || true
 if [ "$found" = 0 ] || grep -q 'DESKTOP-TEST: FAIL' "$log"; then

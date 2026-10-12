@@ -6,6 +6,7 @@
 //! changes, and never deletes a user (ADR-006).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io::{Read as _, Write as _};
@@ -15,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use edel::apps::FLATHUB_REMOTE;
 use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
@@ -257,6 +259,12 @@ enum Change {
     Developer(bool),
     /// May use the screen and input: a person in the file, or the greeter
     Seat(String),
+    /// Flatpak apps from Flathub for an admin person, installed as that
+    /// person with `flatpak --user` (M6.1)
+    Flatpak {
+        name: String,
+        ids: Vec<String>,
+    },
 }
 
 impl fmt::Display for Change {
@@ -282,6 +290,9 @@ impl fmt::Display for Change {
                 )
             }
             Change::Seat(name) => write!(f, "group {SEAT_GROUP}: add {name}"),
+            Change::Flatpak { name, ids } => {
+                write!(f, "apps.installed for {name}: install {}", ids.join(", "))
+            }
         }
     }
 }
@@ -303,13 +314,27 @@ struct Machine {
     /// New people's login shell here ([`default_shell`])
     default_shell: String,
     developer: bool,
+    /// The Flatpak apps each admin person has (M6.1), by login name
+    flatpak: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Machine {
     fn read(file: &SettingsFile) -> Result<Machine> {
         let passwd = fs::read_to_string("/etc/passwd")?;
         let mut keys = BTreeMap::new();
+        let mut flatpak = BTreeMap::new();
+        // Asked only when the file lists apps, so a machine without any
+        // never starts flatpak (M6.1).
+        let lists_apps = file.apps.installed.as_ref().is_some_and(|l| !l.is_empty());
         for account in accounts(&passwd) {
+            if lists_apps
+                && file
+                    .users
+                    .get(&account.name)
+                    .is_some_and(|u| u.admin == Some(true))
+            {
+                flatpak.insert(account.name.clone(), installed_apps(&account));
+            }
             if file.users.contains_key(&account.name) {
                 if let Some(text) = read_keys(&account) {
                     keys.insert(account.name, text);
@@ -334,6 +359,7 @@ impl Machine {
             shells,
             default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
+            flatpak,
         })
     }
 }
@@ -406,6 +432,25 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
                 name: name.clone(),
                 on: admin,
             });
+        }
+        // The Flatpak apps the file lists, for each admin person: the ones
+        // they lack, in one change (M6.1). Nothing is ever uninstalled.
+        if admin {
+            let have = machine.flatpak.get(name);
+            let ids: BTreeSet<String> = file
+                .apps
+                .installed
+                .iter()
+                .flatten()
+                .filter(|id| !have.is_some_and(|h| h.contains(*id)))
+                .cloned()
+                .collect();
+            if !ids.is_empty() {
+                changes.push(Change::Flatpak {
+                    name: name.clone(),
+                    ids: ids.into_iter().collect(),
+                });
+            }
         }
         // Absent ssh_keys leaves the file alone: keys a person added by
         // hand are theirs.
@@ -570,8 +615,121 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
         Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
+        Change::Flatpak { name, ids } => install_apps(&find_account(name)?, ids)?,
     }
     Ok(())
+}
+
+/// `program` with `args`, run as `account` in its own home, with only its
+/// name, home and path as environment, as `su` gives them and `write_keys`
+/// runs its shell: root starts it, and the person owns everything it
+/// writes (M6.1).
+fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.args(args)
+        .env_clear()
+        .env("HOME", &account.home)
+        .env("USER", &account.name)
+        .env("LOGNAME", &account.name)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(&account.home)
+        .uid(account.uid)
+        .gid(account.gid);
+    cmd
+}
+
+/// The Flatpak apps `account` has, from `flatpak --user list` run as that
+/// person (M6.1). A machine with no flatpak, or a list that fails, has none.
+fn installed_apps(account: &Account) -> BTreeSet<String> {
+    let listed = as_user(
+        account,
+        "flatpak",
+        &["--user", "list", "--app", "--columns=application"],
+    )
+    .stderr(Stdio::null())
+    .output();
+    match listed {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+/// The `flatpak` argument lists that add Flathub and then install each of
+/// `ids`, the remote first (M6.1). Pure, so tests read the one constant.
+fn flatpak_commands(ids: &[String]) -> Vec<Vec<String>> {
+    let mut commands = vec![
+        [
+            "--user",
+            "remote-add",
+            "--if-not-exists",
+            "flathub",
+            FLATHUB_REMOTE,
+        ]
+        .map(String::from)
+        .to_vec(),
+    ];
+    for id in ids {
+        commands.push(
+            [
+                "--user",
+                "install",
+                "--noninteractive",
+                "flathub",
+                id.as_str(),
+            ]
+            .map(String::from)
+            .to_vec(),
+        );
+    }
+    commands
+}
+
+/// Adds Flathub for `account` and installs each of `ids` it lacks, as that
+/// person (M6.1). One app that fails does not stop the others; the error
+/// names those that failed, and the next apply tries them again.
+fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
+    let mut commands = flatpak_commands(ids).into_iter();
+    let remote = commands.next().unwrap_or_default();
+    run(&mut as_user(account, "flatpak", &remote)).with_context(|| {
+        trf(
+            "could not add Flathub for {user}; check the network and run edel settings apply again",
+            &[("user", &account.name)],
+        )
+    })?;
+    let mut failed = Vec::new();
+    for (command, id) in commands.zip(ids) {
+        if run(&mut as_user(account, "flatpak", &command)).is_err() {
+            failed.push(id.as_str());
+        }
+    }
+    if failed.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "{}",
+        trf(
+            "could not install {apps} from Flathub for {user}; check the network and run edel settings apply again, the other apps were installed",
+            &[("apps", &failed.join(", ")), ("user", &account.name)]
+        )
+    )
+}
+
+/// What apply says in place of `change` when it runs at boot (M6.1): the
+/// boot never waits on a download, so Flatpak apps wait for an apply that
+/// may use the network (M7.2b). None for every other change.
+fn deferred(change: &Change, boot: bool) -> Option<String> {
+    match change {
+        Change::Flatpak { name, .. } if boot => Some(trf(
+            "flatpak apps for {user} wait for the network; edel settings apply installs them",
+            &[("user", name)],
+        )),
+        _ => None,
+    }
 }
 
 /// The file to apply or diff, read leniently, with its problems and the
@@ -703,6 +861,10 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     // reported, and apply fails at the end.
     let mut failed = 0;
     for change in &changes {
+        if let Some(note) = deferred(change, boot) {
+            println!("edel settings: {note}");
+            continue;
+        }
         match execute(change, boot) {
             Ok(()) => println!("edel settings: {change}"),
             Err(err) => {
@@ -1734,6 +1896,7 @@ mod tests {
             shells: BTreeSet::from(["/bin/ash".into()]),
             default_shell: DEFAULT_SHELL.into(),
             developer: false,
+            flatpak: BTreeMap::new(),
         }
     }
 
@@ -1769,6 +1932,107 @@ mod tests {
                 "system.developer_mode: on",
             ]
         );
+    }
+
+    #[test]
+    fn each_admin_gets_the_flatpak_apps_it_lacks_in_one_change() {
+        // Only the Flatpak changes are compared: the other users' changes
+        // are the other tests' concern.
+        fn flatpak(changes: &[Change]) -> Vec<Change> {
+            changes
+                .iter()
+                .filter(|c| matches!(c, Change::Flatpak { .. }))
+                .map(|c| match c {
+                    Change::Flatpak { name, ids } => Change::Flatpak {
+                        name: name.clone(),
+                        ids: ids.clone(),
+                    },
+                    _ => unreachable!(),
+                })
+                .collect()
+        }
+        let file = settings::read(
+            "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\", \"org.gnome.Calculator\"]\n[users.ci]\nadmin = true\n[users.ali]\nadmin = false\n",
+        )
+        .unwrap()
+        .file;
+        let mut machine = machine();
+        // ci has one of the two; ali is not an admin, so gets nothing.
+        machine
+            .flatpak
+            .insert("ci".into(), BTreeSet::from(["io.mpv.Mpv".to_string()]));
+        let (changes, _) = plan(&file, &machine);
+        assert_eq!(
+            flatpak(&changes),
+            [Change::Flatpak {
+                name: "ci".into(),
+                ids: vec!["org.gnome.Calculator".into()],
+            }]
+        );
+        assert_eq!(
+            flatpak(&changes)[0].to_string(),
+            "apps.installed for ci: install org.gnome.Calculator"
+        );
+        // All there: no change.
+        machine.flatpak.insert(
+            "ci".into(),
+            BTreeSet::from(["io.mpv.Mpv".to_string(), "org.gnome.Calculator".to_string()]),
+        );
+        assert_eq!(flatpak(&plan(&file, &machine).0), []);
+        // Nothing installed and a repeated id: one change, the id once.
+        let file = settings::read(
+            "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\", \"io.mpv.Mpv\"]\n[users.ci]\nadmin = true\n",
+        )
+        .unwrap()
+        .file;
+        machine.flatpak.clear();
+        assert_eq!(
+            flatpak(&plan(&file, &machine).0),
+            [Change::Flatpak {
+                name: "ci".into(),
+                ids: vec!["io.mpv.Mpv".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn a_boot_apply_says_the_install_waits_for_the_network() {
+        let change = Change::Flatpak {
+            name: "ali".into(),
+            ids: vec!["io.mpv.Mpv".into()],
+        };
+        assert_eq!(
+            deferred(&change, true).as_deref(),
+            Some("flatpak apps for ali wait for the network; edel settings apply installs them")
+        );
+        assert_eq!(deferred(&change, false), None);
+        assert_eq!(deferred(&Change::AdminGroup, true), None);
+    }
+
+    #[test]
+    fn flathub_is_added_by_the_one_remote_constant_before_each_install() {
+        let commands = flatpak_commands(&["io.mpv.Mpv".to_string()]);
+        assert_eq!(
+            commands[0],
+            [
+                "--user",
+                "remote-add",
+                "--if-not-exists",
+                "flathub",
+                "https://dl.flathub.org/repo/flathub.flatpakrepo",
+            ]
+        );
+        assert_eq!(
+            commands[1],
+            [
+                "--user",
+                "install",
+                "--noninteractive",
+                "flathub",
+                "io.mpv.Mpv"
+            ]
+        );
+        assert_eq!(commands.len(), 2);
     }
 
     #[test]

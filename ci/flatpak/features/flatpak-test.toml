@@ -2,8 +2,8 @@
 # the steps it runs as user ci.
 format = 1
 summary = "CI only: install and run Flathub runtimes on the musl base"
-why = "The Flatpak spike needs flatpak and the dbus it talks over; the test service installs the newest and oldest org.freedesktop.Platform and reports."
-packages = ["dbus", "flatpak"]
+why = "The Flatpak spike needs the dbus it talks over (flatpak itself is the flatpak feature, M6.1); the test service installs the newest and oldest org.freedesktop.Platform and reports."
+packages = ["dbus"]
 
 [services]
 default = ["edel-flatpak-test"]
