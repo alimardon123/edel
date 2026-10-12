@@ -128,8 +128,9 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.font` | text, the interface font's family as fontconfig names it, such as `"Noto Sans"`; missing is the release's (Inter Variable). The title bars and everything the panels and apps draw follow it at once | M5.12b5 |
 | `appearance.monospace_font` | text, the family apps use for code and terminals; missing is `"Noto Sans Mono"` | M5.12b5 |
 | `appearance.text_size` | a whole number from 80 to 150, in percent of the release's sizes; missing is 100. `edel settings set appearance.text_size=150` makes every text size a half bigger, and the title bars, panels and apps follow | M5.12b5 |
-| `appearance.cursor_size` | a whole number, in pixels | M5.12 |
-| `appearance.icon_size` | a whole number, in pixels | M5.12 |
+| `appearance.cursor_size` | a whole number from 16 to 96, the cursor's height in logical pixels; missing is 24. The compositor draws the pointer at it at once, and the programs it starts get it as `XCURSOR_SIZE`; apps already open keep theirs | M5.12b5 |
+| `appearance.cursor_theme` | a cursor theme's folder name, one this machine has under `/usr/share/icons` or `/usr/local/share/icons` (one with a `cursors` folder); missing is `default`, the drawn arrow when no such theme is installed. The check refuses a name the machine lacks and lists the ones it has | M5.12b5 |
+| `appearance.icon_size` | a whole number from 75 to 150, in percent of the release's icons; missing is 100. The panel's icons and the apps' icons in the bar and the dock follow it, the panel's height does not change | M5.12b5 |
 | `appearance.animations` | `full`, `reduced` (fades only) or `off`; missing is `full`. The desktop follows it at once | M5.11b |
 | `appearance.animation_speed` | a whole number from 25 to 400: how fast things move, as a percent of the release's speed; 200 halves every length, 50 doubles it; missing is 100. The desktop follows it at once | M5.12b4 |
 | `appearance.animation_curve` | `smooth`, `snappy` (quicker, settles sooner) or `springy` (overshoots a little, then rests); missing is `smooth`. One curve for every animation, windows and popups alike. The desktop follows it at once | M5.12b4 |

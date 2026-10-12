@@ -52,18 +52,22 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         return;
     }
     state.services.started = true;
+    let env = state.cursors.env();
     for command in state.settings.session_start() {
-        spawn(handle, command, 1);
+        spawn(handle, command, 1, env.clone());
     }
 }
 
-fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32) {
+/// The cursor's variables the programs are given (M5.12b5 part A).
+type Env = [(&'static str, String); 2];
+
+fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, env: Env) {
     let mut words = command.split_whitespace();
     let Some(name) = words.next().map(str::to_string) else {
         return;
     };
     let mut process = Command::new(&name);
-    process.args(words).stdin(Stdio::null());
+    process.args(words).envs(env.clone()).stdin(Stdio::null());
     // SAFETY: the closure only makes the prctl system call, which is safe
     // between fork and exec. The kernel then ends the program with the
     // thread that started it, the compositor's main thread, where every
@@ -97,7 +101,7 @@ fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32) {
     let again = handle.clone();
     let inserted = handle.insert_source(receiver, move |event, _, _: &mut Edel| {
         if let Event::Msg(status) = event {
-            ended(&again, command.clone(), run, began, status);
+            ended(&again, command.clone(), run, began, status, env.clone());
         }
     });
     if let Err(e) = inserted {
@@ -122,6 +126,7 @@ fn ended(
     run: u32,
     began: Instant,
     status: Option<ExitStatus>,
+    env: Env,
 ) {
     let name = command
         .split_whitespace()
@@ -151,7 +156,7 @@ fn ended(
     eprintln!("edel-compositor: {name} {how}; starting it again");
     let later = handle.clone();
     let timer = handle.insert_source(Timer::from_duration(AGAIN), move |_, _, _: &mut Edel| {
-        spawn(&later, command.clone(), run + 1);
+        spawn(&later, command.clone(), run + 1, env.clone());
         TimeoutAction::Drop
     });
     if let Err(e) = timer {

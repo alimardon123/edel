@@ -845,7 +845,7 @@ pub(crate) fn log_places(
     card: &gtk::Box,
     name: &'static str,
     keys: &'static [&'static str],
-    scales: Vec<gtk::Scale>,
+    controls: Vec<impl IsA<gtk::Widget>>,
     reset: Option<gtk::Widget>,
 ) {
     let scrolled = Cell::new(false);
@@ -868,17 +868,17 @@ pub(crate) fn log_places(
                 )
                 .find(|w| w.has_css_class(widgets::ASKED));
                 if let Some(page) = page {
-                    widgets::take_asked(&page, &scales[index]);
+                    widgets::take_asked(&page, &controls[index]);
                 }
             }
             return glib::ControlFlow::Continue;
         }
         let mut places: Vec<String> = keys
             .iter()
-            .zip(&scales)
-            .map(|(key, scale)| {
+            .zip(&controls)
+            .map(|(key, control)| {
                 let name = key.trim_start_matches("appearance.");
-                format!("{name} {}", widgets::place(scale.compute_bounds(&window)))
+                format!("{name} {}", widgets::place(control.compute_bounds(&window)))
             })
             .collect();
         if let Some(reset) = &reset {

@@ -278,6 +278,9 @@ pub enum Kind {
     Hosts,
     /// A release channel's name, such as `"stable"` ([`is_channel`], M5.8c)
     Channel,
+    /// An xcursor theme's folder name, one this machine has under
+    /// [`crate::places::ICON_THEME_DIRS`] (M5.12b5, [`cursor_themes`])
+    CursorTheme,
     /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
     AppWorkspaces,
     /// A wallpaper: a wallpaper's name such as `"hills"`, a picture's
@@ -483,8 +486,11 @@ pub const KEYS: &[Key] = &[
     now(FONT, Kind::Text),
     now(MONOSPACE_FONT, Kind::Text),
     now(TEXT_SIZE, Kind::WholeFromTo(80, 150)),
-    later("appearance.cursor_size", Kind::Whole),
-    later("appearance.icon_size", Kind::Whole),
+    // The pointer and the icons (M5.12b5 part A): the cursor's size in
+    // logical pixels, its theme, and the icons' size in percent.
+    now(CURSOR_SIZE, Kind::WholeFromTo(16, 96)),
+    now(CURSOR_THEME, Kind::CursorTheme),
+    now(ICON_SIZE, Kind::WholeFromTo(75, 150)),
     now(
         "appearance.animations",
         Kind::OneOf(&["full", "reduced", "off"]),
@@ -894,8 +900,16 @@ pub struct Appearance {
     /// Every text size in percent, 80 to 150 (M5.12b5); absent is 100.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_size: Option<u32>,
+    /// The cursor's height in logical pixels, 16 to 96 (M5.12b5 part A);
+    /// absent is [`CURSOR_SIZE_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_size: Option<u32>,
+    /// The cursor's xcursor theme (M5.12b5 part A); absent is
+    /// [`CURSOR_THEME_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_theme: Option<String>,
+    /// The icons' size in percent, 75 to 150 (M5.12b5 part A); absent is
+    /// [`ICON_SIZE_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon_size: Option<u32>,
     /// Full, reduced or off
@@ -1020,9 +1034,59 @@ pub const FONT: &str = "appearance.font";
 pub const MONOSPACE_FONT: &str = "appearance.monospace_font";
 /// Every text size in percent of the release's, 80 to 150 (M5.12b5).
 pub const TEXT_SIZE: &str = "appearance.text_size";
+/// The cursor's height in logical pixels, 16 to 96; absent is
+/// [`CURSOR_SIZE_DEFAULT`] (M5.12b5 part A).
+pub const CURSOR_SIZE: &str = "appearance.cursor_size";
+/// The cursor's xcursor theme, a folder name [`cursor_themes`] lists;
+/// absent is [`CURSOR_THEME_DEFAULT`] (M5.12b5 part A).
+pub const CURSOR_THEME: &str = "appearance.cursor_theme";
+/// The icons' size in percent of the release's, 75 to 150; absent is 100
+/// (M5.12b5 part A).
+pub const ICON_SIZE: &str = "appearance.icon_size";
+/// The cursor's size when no file sets it, in logical pixels.
+pub const CURSOR_SIZE_DEFAULT: u32 = 24;
+/// The cursor theme when no file sets it: the xcursor standard's own.
+pub const CURSOR_THEME_DEFAULT: &str = "default";
+/// The icons' size when no file sets it, in percent of the release's.
+pub const ICON_SIZE_DEFAULT: u32 = 100;
 
 /// The three keys of the text (M5.12b5), read by [`crate::tokens::Text`].
 pub const TEXT_KEYS: &[&str] = &[FONT, MONOSPACE_FONT, TEXT_SIZE];
+
+/// The cursor's theme names this machine has, `default` first, then the
+/// others under [`crate::places::ICON_THEME_DIRS`] that have a `cursors`
+/// folder, sorted and without repeats (M5.12b5 part A). Settings lists them
+/// and the checker takes a theme only from this list.
+pub fn cursor_themes() -> Vec<String> {
+    let mut names: Vec<String> = crate::places::ICON_THEME_DIRS
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().join("cursors").is_dir())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name != CURSOR_THEME_DEFAULT)
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup();
+    names.insert(0, CURSOR_THEME_DEFAULT.to_string());
+    names
+}
+
+/// What is wrong with `name` as a cursor theme on this machine, if anything:
+/// a name with a `/` or a leading dot is never a folder name; a theme this
+/// machine lacks is refused with the ones it has (the names come from
+/// [`cursor_themes`]). `default` is always taken, as the release's own.
+pub fn cursor_theme_problem(name: &str) -> Option<String> {
+    if name == CURSOR_THEME_DEFAULT || cursor_themes().iter().any(|t| t == name) {
+        return None;
+    }
+    let names = cursor_themes().join(", ");
+    Some(trf(
+        "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)",
+        &[("name", &format!("{name:?}")), ("names", &names)],
+    ))
+}
 
 /// The least and most a whole-number key takes, from its entry in [`KEYS`]
 /// (M5.12b2): the one place a reader finds a range, so the tokens and the
@@ -2234,6 +2298,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::Channel, _) => fail(tr("a channel name in quotes, such as \"stable\"")),
+        (Kind::CursorTheme, Value::String(s)) => match cursor_theme_problem(s) {
+            None => Ok(value.clone()),
+            Some(problem) => Err(problem),
+        },
+        (Kind::CursorTheme, _) => fail(tr("a cursor theme's name in quotes, such as \"default\"")),
         (Kind::Wallpaper, Value::String(s)) if crate::wallpapers::is_form(s) => Ok(value.clone()),
         (Kind::Wallpaper, Value::String(s)) => Err(trf(
             "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)",
@@ -2464,6 +2533,7 @@ mod tests {
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::Channel => Value::String("stable".into()),
+            Kind::CursorTheme => Value::String("default".into()),
             Kind::Wallpaper => Value::String("hills".into()),
             Kind::Pictures => value_from_arg(r#"["hills"]"#),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
@@ -2520,6 +2590,9 @@ hostname = "lab-1"
 acent = "red"
 mode = "sepia"
 cursor_size = 11
+
+[power]
+lock_after_minutes = 11
 "#;
 
     #[test]
@@ -2552,7 +2625,7 @@ cursor_size = 11
         assert!(lines.contains(
             &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
         ));
-        assert!(lines.contains(&"appearance.cursor_size: not supported yet".to_string()));
+        assert!(lines.contains(&"power.lock_after_minutes: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
 
@@ -2568,9 +2641,16 @@ cursor_size = 11
         let read = read(MIXED).unwrap();
         assert_eq!(read.file.network.hostname.as_deref(), Some("lab-1"));
         assert_eq!(read.file.appearance.mode, None);
-        assert_eq!(read.file.appearance.cursor_size, Some(11));
+        assert_eq!(read.file.appearance.cursor_size, None);
         let keys: Vec<&str> = read.problems.iter().map(|p| p.key.as_str()).collect();
-        assert_eq!(keys, ["appearance.acent", "appearance.mode"]);
+        assert_eq!(
+            keys,
+            [
+                "appearance.acent",
+                "appearance.cursor_size",
+                "appearance.mode"
+            ]
+        );
     }
 
     #[test]
@@ -2956,8 +3036,8 @@ cursor_size = 11
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
-            error("appearance.cursor_size", "11"),
-            "appearance.cursor_size: not supported yet; this release does not act on it, so it cannot be set"
+            error("power.lock_after_minutes", "11"),
+            "power.lock_after_minutes: not supported yet; this release does not act on it, so it cannot be set"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }
@@ -3623,6 +3703,40 @@ cursor_size = 11
         assert!(set("format = 1\n", "appearance.border_width", "10").is_ok());
         assert_eq!(whole_range("appearance.gaps"), Some((0, 64)));
         assert_eq!(whole_range("appearance.mode"), None);
+    }
+
+    #[test]
+    fn the_cursor_and_icon_sizes_take_their_ranges() {
+        let cursor = |value: &str| set("format = 1\n", "appearance.cursor_size", value);
+        assert!(cursor("48").unwrap().contains("cursor_size = 48"));
+        assert!(cursor("16").is_ok() && cursor("96").is_ok());
+        assert!(cursor("15").is_err() && cursor("97").is_err());
+        let icon = |value: &str| set("format = 1\n", "appearance.icon_size", value);
+        assert!(icon("150").unwrap().contains("icon_size = 150"));
+        assert!(icon("75").is_ok());
+        let wide = icon("151").unwrap_err().to_string();
+        assert!(wide.contains("a whole number from 75 to 150"), "{wide}");
+        assert_eq!(whole_range("appearance.cursor_size"), Some((16, 96)));
+        assert_eq!(whole_range("appearance.icon_size"), Some((75, 150)));
+    }
+
+    #[test]
+    fn a_cursor_theme_is_one_this_machine_has_and_default_always_is() {
+        let themes = cursor_themes();
+        assert_eq!(themes.first().map(String::as_str), Some("default"));
+        assert!(cursor_theme_problem("default").is_none());
+        let theme = |value: &str| set("format = 1\n", "appearance.cursor_theme", value);
+        let refused = theme("no-such-cursor-theme").unwrap_err().to_string();
+        assert!(
+            refused.contains("is not a cursor theme this machine has"),
+            "{refused}"
+        );
+        assert!(refused.contains("the ones it has are default"), "{refused}");
+        assert!(
+            theme("default")
+                .unwrap()
+                .contains("cursor_theme = \"default\"")
+        );
     }
 
     #[test]
