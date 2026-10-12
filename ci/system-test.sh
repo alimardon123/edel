@@ -126,14 +126,17 @@ echo "PASS: edel report printed the release, kernel, features, boot line, PCI de
 # M6.5: doas and the administrator's password. As root: ci gets a password,
 # and guest is added with no admin rights. Each check then runs as the user
 # named, and a refusal must exit non-zero and say why.
-ssh_root sh -c 'echo "ci:edel-ci-test" | chpasswd && adduser -D guest' ||
+# ssh joins its arguments into one command line for the remote shell, so
+# each command that needs quoting goes as one quoted string.
+ssh_root 'echo "ci:edel-ci-test" | chpasswd && adduser -D guest' ||
 	fail "could not give ci a password and add the user guest"
 ssh_ci doas -n edel status >out/doas-status.log 2>&1 || fail "ci could not run doas -n edel status: $(cat out/doas-status.log)"
 grep -q '^running: ' out/doas-status.log || fail "doas -n edel status printed no status: $(cat out/doas-status.log)"
 echo "PASS: ci (in group admin) ran doas -n edel status with no password and got the status"
-if ssh_root su -s /bin/sh guest -c 'doas -n edel status' >out/doas-guest.log 2>&1; then
+if ssh_root "su -s /bin/sh guest -c 'doas -n edel status'" >out/doas-guest.log 2>&1; then
 	fail "guest, who is not in group admin, ran doas -n edel status"
 fi
+grep -q 'not permitted' out/doas-guest.log || fail "guest's doas -n edel status failed, but not by doas's refusal: $(cat out/doas-guest.log)"
 echo "PASS: guest, who is not in group admin, was refused by doas: $(head -c 200 out/doas-guest.log)"
 code=0
 ssh_ci 'echo wrong | doas -n edel rollback --password-stdin' >out/doas-wrong.log 2>&1 || code=$?
