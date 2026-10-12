@@ -12,22 +12,20 @@
 //! choice goes through `widgets::choose_colour`.
 
 use std::cell::{Cell, RefCell};
-use std::f64::consts::{FRAC_PI_2, TAU};
-use std::path::{Path, PathBuf};
+use std::f64::consts::TAU;
+use std::path::Path;
 use std::rc::{Rc, Weak};
 
 use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::tr;
-use edel::places;
 use edel::settings::{self, Colours};
 use edel::tokens::{self, Colour, Scheme, Tokens};
-use edel::wallpapers::{self, Wallpaper};
 
 use crate::files::Files;
 use crate::style::Theme;
-use crate::{rows, wallpaper, widgets};
+use crate::{rows, widgets};
 
 /// The key the accent swatches choose.
 const KEY: &str = "appearance.accent";
@@ -41,30 +39,18 @@ fn release() -> String {
 }
 /// The table of colours a person sets, `appearance.colours`, and its schemes.
 const COLOURS: &str = "appearance.colours";
-/// The wallpaper keys the Wallpaper swatch's colour is read from.
-const WALLPAPER_KEY: &str = "appearance.wallpaper";
-const WALLPAPER_DARK_KEY: &str = "appearance.wallpaper_dark";
-/// The swatch names that are not accents: the wallpaper's colour, and a
-/// colour chosen in the system's dialog.
+/// The swatch names that are not accents: the wallpaper's colour, a pill
+/// now (M5.12b6c), and a colour chosen in the system's dialog.
 const WALLPAPER_SWATCH: &str = tokens::WALLPAPER_ACCENT;
 const CUSTOM_SWATCH: &str = "custom";
-/// The token whose colour in each scheme is the mid grey the Wallpaper
-/// swatch shows while the wallpaper's colour is not known.
-const GREY_TOKEN: &str = "graphite";
-/// A swatch's circle in logical pixels, and the space it leaves to the next
-/// one, so two circles lie 42 px apart with 10 px between them.
-const SWATCH: i32 = 32;
-const SWATCH_GAP: i32 = 10;
-const CELL: i32 = SWATCH + SWATCH_GAP;
-/// The swatches in one line at most: the nine accents and the two others.
-const PER_LINE: u32 = 11;
-/// The ring of the chosen swatch: its width, and its gap from the circle.
+/// A swatch's button in logical pixels, 28 px, and the circle drawn in it,
+/// 20 px across: the chosen one's ring lies at the button's edge.
+const SWATCH: i32 = 28;
+const CIRCLE: f64 = 20.0;
+/// The width of the chosen swatch's ring.
 const RING_WIDTH: f64 = 2.0;
-const RING_GAP: f64 = 3.0;
 /// The arms of the plus in a swatch with no colour, as a part of its radius.
 const PLUS: f64 = 0.5;
-/// How much darker the second half of the wallpaper's swatch is, as a part.
-const SHADE: f32 = 0.35;
 /// The intro line of the colours, and the line when there are none yet.
 const COLOURS_INTRO: &str =
     "Your own colour for any part; a colour that would make text hard to read is refused";
@@ -169,7 +155,7 @@ pub fn accent_title(name: &str) -> String {
         "green" => tr("Green").to_string(),
         "teal" => tr("Teal").to_string(),
         "graphite" => tr("Graphite").to_string(),
-        WALLPAPER_SWATCH => tr("Wallpaper").to_string(),
+        WALLPAPER_SWATCH => tr("From wallpaper").to_string(),
         CUSTOM_SWATCH => tr("Custom").to_string(),
         other => other.to_string(),
     }
@@ -207,36 +193,14 @@ pub fn swatch_of(value: Option<&str>) -> String {
 enum Fill {
     /// One colour.
     One(Colour),
-    /// Two halves: the left colour, then the right.
-    Halves(Colour, Colour),
     /// No colour: a ring with a plus in the text's colour.
     Empty,
 }
 
-/// What the swatch `name` is filled with in `scheme`: an accent's shade, the
-/// wallpaper's colour in two halves (the mid grey alone while it is not
-/// known), or the custom colour.
-fn fill_of(name: &str, scheme: Scheme, wallpaper: Option<Colour>, custom: Option<Colour>) -> Fill {
-    match name {
-        WALLPAPER_SWATCH => match (wallpaper, tokens::accent_named(GREY_TOKEN, scheme)) {
-            (Some(colour), _) => Fill::Halves(colour, shade(colour)),
-            (None, Some(grey)) => Fill::One(grey),
-            (None, None) => Fill::Empty,
-        },
-        CUSTOM_SWATCH => custom.map_or(Fill::Empty, Fill::One),
-        accent => tokens::accent_named(accent, scheme).map_or(Fill::Empty, Fill::One),
-    }
-}
-
-/// A colour darkened by [`SHADE`] towards black, its alpha kept.
-fn shade(colour: Colour) -> Colour {
-    let keep = 1.0 - SHADE;
-    Colour {
-        r: colour.r * keep,
-        g: colour.g * keep,
-        b: colour.b * keep,
-        a: colour.a,
-    }
+/// What the accent swatch `name` is filled with in `scheme`: its shade, or
+/// the empty ring when the tokens have no such accent.
+fn fill_of(name: &str, scheme: Scheme) -> Fill {
+    tokens::accent_named(name, scheme).map_or(Fill::Empty, Fill::One)
 }
 
 /// The scheme the desktop shows now, as the portal says.
@@ -251,21 +215,6 @@ fn scheme_now() -> Scheme {
 /// Whether the portal says dark.
 fn is_dark() -> bool {
     adw::StyleManager::default().is_dark()
-}
-
-/// The colour the Wallpaper swatch shows: the colour of the wallpaper that
-/// applies in `dark`, a picture's accent or a colour's own; none when the
-/// wallpaper is the background or its picture has no accent.
-fn wallpaper_colour(files: &Files, dark: bool) -> Option<Colour> {
-    let dir = PathBuf::from(places::WALLPAPERS_DIR);
-    let shown = wallpaper::shown(files.chosen(WALLPAPER_KEY), &dir);
-    let dark_picture = files.chosen(WALLPAPER_DARK_KEY);
-    let applies = wallpapers::value_for(Some(shown.as_str()), dark_picture.as_deref(), dark);
-    match wallpapers::on_this_machine(applies, dark) {
-        Wallpaper::Background => None,
-        Wallpaper::Colour(colour) => Some(colour),
-        Wallpaper::Picture(path) => edel::pictures::accent_of(&path),
-    }
 }
 
 /// The colours a settings file names, read leniently; none when the file
@@ -325,26 +274,16 @@ fn set_source(cr: &gtk::cairo::Context, colour: Colour) {
     );
 }
 
-/// Draws a swatch of `w` by `h` pixels: its circle filled as `fill` says,
-/// or a ring with a plus, and, when `chosen`, the ring of the chosen one
-/// (2 px in the text's colour, 3 px outside the circle).
+/// Draws a swatch of `w` by `h` pixels: its circle of `CIRCLE` pixels filled
+/// as `fill` says, or a ring with a plus, and, when `chosen`, the ring of the
+/// chosen one (2 px in the text's colour, at the button's edge).
 fn paint(cr: &gtk::cairo::Context, w: f64, h: f64, fill: Fill, chosen: bool, text: Colour) {
     let (cx, cy) = (w / 2.0, h / 2.0);
-    let radius = f64::from(SWATCH) / 2.0;
+    let radius = CIRCLE / 2.0;
     match fill {
         Fill::One(colour) => {
             set_source(cr, colour);
             cr.arc(cx, cy, radius, 0.0, TAU);
-            let _ = cr.fill();
-        }
-        Fill::Halves(left, right) => {
-            set_source(cr, left);
-            cr.arc(cx, cy, radius, FRAC_PI_2, 3.0 * FRAC_PI_2);
-            cr.close_path();
-            let _ = cr.fill();
-            set_source(cr, right);
-            cr.arc(cx, cy, radius, -FRAC_PI_2, FRAC_PI_2);
-            cr.close_path();
             let _ = cr.fill();
         }
         Fill::Empty => {
@@ -363,17 +302,18 @@ fn paint(cr: &gtk::cairo::Context, w: f64, h: f64, fill: Fill, chosen: bool, tex
     if chosen {
         set_source(cr, text);
         cr.set_line_width(RING_WIDTH);
-        cr.arc(cx, cy, radius + RING_GAP + RING_WIDTH / 2.0, 0.0, TAU);
+        cr.arc(cx, cy, f64::from(SWATCH) / 2.0 - RING_WIDTH / 2.0, 0.0, TAU);
         let _ = cr.stroke();
     }
 }
 
-/// One accent swatch: its name, its toggle button and its drawing.
+/// One swatch: its name, its toggle button and, for an accent, its drawing.
+/// The wallpaper's and the custom choice are pills with words (M5.12b6c).
 struct Swatch {
     /// The accent's name, `wallpaper` or `custom`.
     name: String,
     button: gtk::ToggleButton,
-    area: gtk::DrawingArea,
+    area: Option<gtk::DrawingArea>,
 }
 
 /// One colour row: its key, the colour it shows (read again at each show),
@@ -405,8 +345,9 @@ pub struct Group {
     /// The accent's source line, Reset and Copy as command.
     accent: widgets::Source,
     swatches: Vec<Swatch>,
-    /// The wallpaper's colour, when known, and the custom colour chosen.
-    wallpaper: Rc<Cell<Option<Colour>>>,
+    /// The chosen accent's name, at the far right of the card.
+    name: gtk::Label,
+    /// The custom colour chosen, which the custom pill's dialog starts from.
     custom: Rc<Cell<Option<Colour>>>,
     /// The box the colour rows are built in, and the keys they were built for.
     list: gtk::Box,
@@ -423,7 +364,6 @@ impl Group {
     /// The rows are built again only when the set of colours changes, so a
     /// colour changed in place keeps the keyboard where it was.
     pub fn show(&self, files: &Files) {
-        let dark = is_dark();
         let chosen = files.chosen(KEY);
         let name = swatch_of(chosen.as_deref());
         let source = files.source(KEY);
@@ -431,15 +371,17 @@ impl Group {
             .label
             .set_label(&rows::describe(&source, &accent_title(&name)));
         self.accent.reset.set_visible(rows::resettable(&source));
+        self.name.set_label(&accent_title(&name));
         self.quiet.set(true);
         for swatch in &self.swatches {
             swatch.button.set_active(swatch.name == name);
         }
         self.quiet.set(false);
-        self.wallpaper.set(wallpaper_colour(files, dark));
         self.custom.set(chosen.as_deref().and_then(Colour::parse));
         for swatch in &self.swatches {
-            swatch.area.queue_draw();
+            if let Some(area) = &swatch.area {
+                area.queue_draw();
+            }
         }
 
         let machine = read_colours(&files.machine);
@@ -643,40 +585,52 @@ fn add_row(theme: &Rc<Theme>, group: &gtk::Box) -> AddRow {
     }
 }
 
-/// The accent swatch of `name`: a toggle button with a tooltip and an
-/// accessible label, its circle drawn by [`swatch_area`].
-fn swatch_button(
-    theme: &Rc<Theme>,
-    name: &str,
-    wallpaper: Rc<Cell<Option<Colour>>>,
-    custom: Rc<Cell<Option<Colour>>>,
-) -> (gtk::ToggleButton, gtk::DrawingArea) {
+/// The accent swatch of `name`: a toggle button of the swatch's size with a
+/// tooltip and an accessible label, its circle drawn by [`swatch_area`].
+fn swatch_button(theme: &Rc<Theme>, name: &str) -> (gtk::ToggleButton, gtk::DrawingArea) {
     let title = accent_title(name);
     let button = gtk::ToggleButton::builder()
         .tooltip_text(title.as_str())
         .css_classes(["edel-swatch"])
         .build();
     button.update_property(&[gtk::accessible::Property::Label(title.as_str())]);
-    let area = swatch_area(theme, name, button.downgrade(), wallpaper, custom);
+    let area = swatch_area(theme, name, button.downgrade());
     button.set_child(Some(&area));
     (button, area)
 }
 
-/// The drawing of a swatch: its fill from the tokens' scheme and the colours
-/// the group holds, and the chosen ring while its button is on.
+/// The drawing of a swatch: its fill from the tokens' scheme, and the
+/// chosen ring while its button is on.
 fn swatch_area(
     theme: &Rc<Theme>,
     name: &str,
     button: glib::WeakRef<gtk::ToggleButton>,
-    wallpaper: Rc<Cell<Option<Colour>>>,
-    custom: Rc<Cell<Option<Colour>>>,
 ) -> gtk::DrawingArea {
     let name = name.to_string();
-    drawn_area(theme, CELL, move |t, cr, w, h| {
+    drawn_area(theme, SWATCH, move |t, cr, w, h| {
         let chosen = button.upgrade().is_some_and(|button| button.is_active());
-        let fill = fill_of(&name, scheme_now(), wallpaper.get(), custom.get());
+        let fill = fill_of(&name, scheme_now());
         paint(cr, w, h, fill, chosen, t.title_text);
     })
+}
+
+/// The pill of the wallpaper's or the custom accent (M5.12b6c): an outlined
+/// toggle with its words, chosen as a swatch is and, for custom, asking for
+/// a colour on every click.
+fn pill_button(name: &str) -> gtk::ToggleButton {
+    let words = if name == WALLPAPER_SWATCH {
+        tr("From wallpaper")
+    } else {
+        tr("Custom…")
+    };
+    let title = accent_title(name);
+    let button = gtk::ToggleButton::builder()
+        .label(words)
+        .tooltip_text(title.as_str())
+        .css_classes(["edel-accent-pill"])
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label(title.as_str())]);
+    button
 }
 
 /// The Accent and Colours groups of the Appearance page, after its Style
@@ -686,32 +640,44 @@ fn swatch_area(
 /// and logs their places for CI.
 pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<Group> {
     let accent = widgets::section(content, rows::title(KEY));
-    let wallpaper = Rc::new(Cell::new(None));
     let custom = Rc::new(Cell::new(None));
-    let flow = gtk::FlowBox::builder()
-        .selection_mode(gtk::SelectionMode::None)
-        .homogeneous(true)
-        .min_children_per_line(1)
-        .max_children_per_line(PER_LINE)
-        .column_spacing(0)
-        .row_spacing(0)
+    // One card: the nine accents, a divider, then the wallpaper's and the
+    // custom pills, and the chosen accent's name at the far right.
+    let card = gtk::Box::builder()
+        .spacing(12)
+        .valign(gtk::Align::Start)
+        .css_classes(["edel-group", "edel-accent-card"])
         .build();
     let mut first: Option<gtk::ToggleButton> = None;
     let mut swatches = Vec::new();
     for name in swatch_names() {
-        let (button, area) = swatch_button(theme, &name, wallpaper.clone(), custom.clone());
+        let (button, area) = if name == WALLPAPER_SWATCH || name == CUSTOM_SWATCH {
+            if name == WALLPAPER_SWATCH {
+                let divider = gtk::Box::builder()
+                    .valign(gtk::Align::Center)
+                    .css_classes(["edel-accent-divider"])
+                    .build();
+                card.append(&divider);
+            }
+            (pill_button(&name), None)
+        } else {
+            let (button, area) = swatch_button(theme, &name);
+            (button, Some(area))
+        };
         match &first {
             Some(first) => button.set_group(Some(first)),
             None => first = Some(button.clone()),
         }
-        flow.append(&button);
-        // The swatch takes the focus, not the box the flow wraps it in.
-        if let Some(child) = button.parent() {
-            child.set_focusable(false);
-        }
+        card.append(&button);
         swatches.push(Swatch { name, button, area });
     }
-    content.append(&flow);
+    let spacer = gtk::Box::builder().hexpand(true).build();
+    let name = gtk::Label::builder()
+        .css_classes(["edel-accent-name"])
+        .build();
+    card.append(&spacer);
+    card.append(&name);
+    content.append(&card);
 
     widgets::heading(content, tr("Colours"));
     widgets::note_row(content, tr(COLOURS_INTRO));
@@ -725,7 +691,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         problem: problem.clone(),
         accent,
         swatches,
-        wallpaper,
+        name,
         custom,
         list,
         keys_shown: RefCell::new(None),
@@ -739,7 +705,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         .iter()
         .map(|swatch| (swatch.name.clone(), swatch.button.clone()))
         .collect();
-    log_places(&flow, places, group.accent.reset.clone());
+    log_places(&card, places, group.accent.reset.clone());
     group.show(&Files::here());
     group
 }
@@ -846,7 +812,7 @@ fn pick_custom(group: Weak<Group>, button: gtk::ToggleButton) {
 /// accent group places NAME X+Y+WxH ..., reset X+Y+WxH`. Asked for by
 /// `appearance.accent`, the page first scrolls the group to the top and
 /// gives the keyboard to the chosen swatch; it logs once two frames agree.
-fn log_places(flow: &gtk::FlowBox, swatches: Vec<(String, gtk::ToggleButton)>, reset: gtk::Button) {
+fn log_places(flow: &gtk::Box, swatches: Vec<(String, gtk::ToggleButton)>, reset: gtk::Button) {
     let scrolled = Cell::new(false);
     let last = RefCell::new(String::new());
     flow.add_tick_callback(move |flow, _| {
@@ -964,24 +930,16 @@ mod tests {
     #[test]
     fn the_swatches_are_the_accents_then_the_wallpaper_and_custom() {
         let names = swatch_names();
-        assert_eq!(names.len(), PER_LINE as usize);
+        assert_eq!(names.len(), tokens::accents().len() + 2);
         assert_eq!(names[0], "blue");
         assert_eq!(names[names.len() - 2], "wallpaper");
         assert_eq!(names[names.len() - 1], "custom");
     }
 
     #[test]
-    fn a_swatch_without_a_known_colour_is_a_mid_grey_or_the_custom_colour() {
-        let grey = tokens::accent_named(GREY_TOKEN, Scheme::Light).unwrap();
-        assert_eq!(
-            fill_of(WALLPAPER_SWATCH, Scheme::Light, None, None),
-            Fill::One(grey)
-        );
-        assert_eq!(
-            fill_of(CUSTOM_SWATCH, Scheme::Light, None, None),
-            Fill::Empty
-        );
+    fn an_accent_is_its_shade_and_one_without_a_colour_is_the_empty_ring() {
         let red = tokens::accent_named("red", Scheme::Dark).unwrap();
-        assert_eq!(fill_of("red", Scheme::Dark, None, None), Fill::One(red));
+        assert_eq!(fill_of("red", Scheme::Dark), Fill::One(red));
+        assert_eq!(fill_of("nonesuch", Scheme::Light), Fill::Empty);
     }
 }

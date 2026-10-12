@@ -1519,9 +1519,9 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
     write_text(path, &edited)
 }
 
-/// Writes a whole settings file's text to `path` through a rename, as
-/// [`write`] does after its one key (M5.10c7h): the look writers of the
-/// library and Settings write their edited text this way.
+/// Writes a settings file's whole text to `path` (its folder made first),
+/// through a file beside it that is renamed over it, so a reader never sees
+/// half a file. The writers above and Settings' theme edits use it.
 pub fn write_text(path: &Path, edited: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| {

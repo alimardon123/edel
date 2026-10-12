@@ -155,10 +155,21 @@ fn family(
     for name in &names {
         model.append(name);
     }
+    // Each name in its own face, and "Default" in muted words after the
+    // release's (M5.12b6c, the board's), not in brackets.
     let factory = gtk::SignalListItemFactory::new();
     factory.connect_setup(|_, item| {
         if let Some(item) = item.downcast_ref::<gtk::ListItem>() {
-            item.set_child(Some(&gtk::Label::builder().xalign(0.0).build()));
+            let name = gtk::Label::builder().xalign(0.0).build();
+            let default = gtk::Label::builder()
+                .label(tr("Default"))
+                .visible(false)
+                .css_classes(["edel-source"])
+                .build();
+            let shown = gtk::Box::builder().spacing(6).build();
+            shown.append(&name);
+            shown.append(&default);
+            item.set_child(Some(&shown));
         }
     });
     let default = release.clone();
@@ -166,29 +177,36 @@ fn family(
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
         };
-        let label = item.child().and_downcast::<gtk::Label>();
+        let shown = item.child().and_downcast::<gtk::Box>();
         let string = item.item().and_downcast::<gtk::StringObject>();
-        let (Some(label), Some(string)) = (label, string) else {
+        let (Some(shown), Some(string)) = (shown, string) else {
             return;
         };
-        let name = string.string().to_string();
-        let shown = if name == default {
-            trf("{name} (default)", &[("name", &name)])
-        } else {
-            name.clone()
+        let (Some(name), Some(default_word)) = (
+            shown.first_child().and_downcast::<gtk::Label>(),
+            shown.last_child().and_downcast::<gtk::Label>(),
+        ) else {
+            return;
         };
-        label.set_label(&shown);
-        label.set_attributes(Some(&face(&name)));
+        let text = string.string().to_string();
+        name.set_label(&text);
+        name.set_attributes(Some(&face(&text)));
+        default_word.set_visible(text == default);
     });
     let dropdown = gtk::DropDown::builder()
         .model(&model)
         .enable_search(true)
         .valign(gtk::Align::Center)
+        .css_classes(["edel-font"])
         .build();
     dropdown.set_factory(Some(&factory));
     dropdown.set_list_factory(Some(&factory));
     dropdown.update_property(&[gtk::accessible::Property::Label(title)]);
     let row = widgets::row(card, title, dropdown.upcast_ref());
+    // The row is 48 px tall, the board's font rows.
+    if let Some(line) = dropdown.parent() {
+        line.add_css_class("edel-font-row");
+    }
     Family {
         key,
         release,
@@ -300,7 +318,6 @@ impl Group {
         let source = files.source(settings::TEXT_SIZE);
         self.size.row.reset.set_visible(rows::resettable(&source));
         self.size.row.subtitle.set_label(&note_line(&source));
-        self.size.row.subtitle.set_visible(true);
         self.quiet.set(false);
         self.sample_now();
         self.source.label.set_label(&self.source_text(&files));
@@ -328,7 +345,6 @@ impl Group {
         let source = files.source(family.key);
         family.row.reset.set_visible(rows::resettable(&source));
         family.row.subtitle.set_label(&note_line(&source));
-        family.row.subtitle.set_visible(true);
     }
 
     /// The text size the files choose, else the release's 100.

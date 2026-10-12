@@ -245,7 +245,7 @@ msgstr ""
 msgid "Graphite"
 msgstr ""
 
-msgid "Wallpaper"
+msgid "From wallpaper"
 msgstr ""
 
 msgid "Custom"
@@ -279,6 +279,9 @@ msgid "Pick this colour"
 msgstr ""
 
 msgid "Add a colour"
+msgstr ""
+
+msgid "Custom…"
 msgstr ""
 
 msgid "Colours"
@@ -329,7 +332,7 @@ msgstr ""
 msgid "Desktops of their own, to keep windows apart."
 msgstr ""
 
-msgid "Colours, accent, shape and motion. Every change shows at once."
+msgid "Your theme in light and dark, and how everything is drawn."
 msgstr ""
 
 msgid "One preset sets up the whole desktop: its panels, windows and tiling."
@@ -375,9 +378,6 @@ msgid "Each screen shows its own workspace"
 msgstr ""
 
 msgid "Which side of the screen the workspace overview shows its strip of workspaces on"
-msgstr ""
-
-msgid "The colours of the panels, title bars and apps"
 msgstr ""
 
 msgid "Workspace switcher"
@@ -503,16 +503,10 @@ msgstr ""
 msgid "Rename look"
 msgstr ""
 
-msgid "Name, such as home"
-msgstr ""
-
-msgid "Name of the look"
-msgstr ""
-
 msgid "Give this look another name. It keeps its parts and its background, and shows in the cards above."
 msgstr ""
 
-msgid "Cancel"
+msgid "Name, such as home"
 msgstr ""
 
 msgid "Rename"
@@ -695,6 +689,9 @@ msgstr ""
 msgid "Join"
 msgstr ""
 
+msgid "Cancel"
+msgstr ""
+
 msgid "{device} {what}"
 msgstr ""
 
@@ -792,6 +789,9 @@ msgid "Apps on their workspace"
 msgstr ""
 
 msgid "Side of the strip in the workspace overview"
+msgstr ""
+
+msgid "Wallpaper"
 msgstr ""
 
 msgid "Style"
@@ -1139,13 +1139,73 @@ msgstr ""
 msgid "Default"
 msgstr ""
 
-msgid "{name} (default)"
-msgstr ""
-
 msgid "Text"
 msgstr ""
 
 msgid "A sample of the text in the chosen font and size"
+msgstr ""
+
+msgid "{first} and {second}"
+msgstr ""
+
+msgid "{first}, {second} and {more} more"
+msgstr ""
+
+msgid "Reset"
+msgstr ""
+
+msgid "Keep as new"
+msgstr ""
+
+msgid "Themes"
+msgstr ""
+
+msgid "Light and dark in each"
+msgstr ""
+
+msgid "New"
+msgstr ""
+
+msgid "From the theme in use"
+msgstr ""
+
+msgid "Blank"
+msgstr ""
+
+msgid "Give the theme a name. It keeps the changes you made over it, and the theme in use becomes it."
+msgstr ""
+
+msgid "Name, such as my-aurora"
+msgstr ""
+
+msgid "Rename theme"
+msgstr ""
+
+msgid "Give this theme another name. It keeps its values and its pictures."
+msgstr ""
+
+msgid "Delete the theme {theme}?"
+msgstr ""
+
+msgid "Built in theme"
+msgstr ""
+
+msgid "Your theme"
+msgstr ""
+
+msgid "1 picture ›"
+msgstr ""
+
+msgid "{count} pictures ›"
+msgstr ""
+
+msgid "Changed: {what}"
+msgstr ""
+
+msgid "More for {theme}"
+msgstr ""
+
+msgid "Pictures in {theme}"
 msgstr ""
 
 msgid "No app has put an icon in the tray yet"
@@ -1268,6 +1328,9 @@ msgstr ""
 msgid "Your picture"
 msgstr ""
 
+msgid "More wallpapers"
+msgstr ""
+
 msgid "One picture, or two for light and dark"
 msgstr ""
 
@@ -1296,9 +1359,6 @@ msgid "Put this page back as it was when Settings opened"
 msgstr ""
 
 msgid "Keep"
-msgstr ""
-
-msgid "Reset"
 msgstr ""
 
 msgid "Take your choice out, so this machine or the release decides"

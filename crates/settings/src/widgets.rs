@@ -294,11 +294,15 @@ pub fn row(group: &gtk::Box, title: &str, control: &gtk::Widget) -> Row {
     let heading = gtk::Box::builder().spacing(8).build();
     heading.append(&title_label);
     heading.append(&keys);
+    // The line under the title is there only while it has words, so a row
+    // without one keeps its title centred on its control (M5.12b6c).
     let subtitle = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
+        .visible(false)
         .css_classes(["edel-row-subtitle"])
         .build();
+    subtitle.connect_label_notify(|label| label.set_visible(!label.label().is_empty()));
     words.append(&heading);
     words.append(&subtitle);
     row.append(&words);
@@ -759,6 +763,131 @@ pub fn picture_card(title: &str, picture: &gtk::Widget) -> (gtk::ToggleButton, g
         .build();
     card.update_property(&[gtk::accessible::Property::Label(title)]);
     (card, badge)
+}
+
+/// A small pill of an icon and a word: In use (a check, in the accent) after
+/// a look's or a theme's name, Built in (a lock, frosted) over a built-in
+/// one's picture.
+pub fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
+    let pill = gtk::Box::builder()
+        .spacing(4)
+        .valign(gtk::Align::Center)
+        .css_classes([class])
+        .build();
+    pill.append(&icon::image(icon_name, 10));
+    pill.append(&gtk::Label::new(Some(words)));
+    pill
+}
+
+/// A flat button of a popover menu (the More menus).
+pub fn menu_item(label: &str) -> gtk::Button {
+    gtk::Button::builder()
+        .label(label)
+        .halign(gtk::Align::Fill)
+        .css_classes(["edel-menu-item"])
+        .build()
+}
+
+/// Asks for a name in a small dialog over `near`'s window: `text` above an
+/// entry holding `current`, Cancel and `action`. `check` gives the name's
+/// problem, shown under the entry, or Ok, when the dialog closes.
+pub fn ask_name(
+    near: &gtk::Widget,
+    title: &str,
+    text: &str,
+    current: &str,
+    placeholder: &str,
+    save_label: &str,
+    check: impl Fn(&str) -> Result<(), String> + 'static,
+) {
+    let window = gtk::Window::builder()
+        .title(title)
+        .modal(true)
+        .resizable(false)
+        .default_width(360)
+        .build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    let entry = gtk::Entry::builder()
+        .text(current)
+        .placeholder_text(placeholder)
+        .activates_default(true)
+        .build();
+    entry.update_property(&[gtk::accessible::Property::Label(title)]);
+    let error = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .visible(false)
+        .css_classes(["edel-error"])
+        .build();
+    let text = gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .wrap(true)
+        .build();
+    let cancel = action(tr("Cancel"), false);
+    let save = action(save_label, true);
+    let buttons = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .build();
+    buttons.append(&cancel);
+    buttons.append(&save);
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    body.append(&text);
+    body.append(&entry);
+    body.append(&error);
+    body.append(&buttons);
+    window.set_child(Some(&body));
+
+    let close = window.clone();
+    cancel.connect_clicked(move |_| close.close());
+    let (typed, shown, dialog) = (entry.clone(), error.clone(), window.clone());
+    save.connect_clicked(move |_| match check(&typed.text()) {
+        Ok(()) => dialog.close(),
+        Err(why) => {
+            shown.set_label(&why);
+            shown.set_visible(true);
+        }
+    });
+    let save_again = save.clone();
+    entry.connect_activate(move |_| save_again.emit_clicked());
+    window.present();
+    entry.grab_focus();
+    entry.select_region(0, -1);
+}
+
+/// Asks whether to delete `message` (Delete), with Cancel as the default and
+/// the escape key, and runs `delete` on Delete.
+pub fn ask_delete(
+    near: &gtk::Widget,
+    message: &str,
+    detail: &str,
+    delete: &str,
+    done: impl FnOnce() + 'static,
+) {
+    let parent = near.root().and_downcast::<gtk::Window>();
+    let dialog = gtk::AlertDialog::builder()
+        .modal(true)
+        .message(message)
+        .detail(detail)
+        .buttons(vec![tr("Cancel"), delete])
+        .cancel_button(0)
+        .default_button(0)
+        .build();
+    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
+        if matches!(answer, Ok(1)) {
+            done();
+        }
+    });
 }
 
 /// Shows that `button` copied: its icon a check for a moment.

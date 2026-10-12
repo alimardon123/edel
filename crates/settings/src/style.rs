@@ -115,7 +115,7 @@ fn watch_files(theme: &Rc<Theme>) -> Vec<gio::FileMonitor> {
 /// The image's tokens in the dark or the light scheme, as this machine's
 /// people see them (M5.12b1); what could not be read is said on standard
 /// error, and the built-in value is used.
-fn load(dark: bool) -> Tokens {
+pub fn load(dark: bool) -> Tokens {
     let scheme = if dark { Scheme::Dark } else { Scheme::Light };
     let (tokens, notes) = edel::tokens::on_this_machine(scheme);
     for note in notes {
@@ -163,12 +163,18 @@ pub fn css(t: &Tokens) -> String {
     let small = size.saturating_sub(1).max(1);
     let tiny = format!("{:.1}", f64::from(size) - 1.5);
     let key = format!("{:.1}", f64::from(size) - 2.5);
+    // The board's 12.5 px and 9.5 px words: the text size less half a point and less 3.5.
+    let caption = format!("{:.1}", f64::from(size) - 0.5);
+    let badge = format!("{:.1}", f64::from(size) - 3.5);
+    let badge_deep = css_colour(t.lock_backdrop_deep);
     let heading = size * 20 / 13;
     let hero = size * 22 / 13;
     let current = size * 17 / 13;
     let big = size + 1;
     let name = size * 34 / 13;
     let (rw, rc, rs) = (t.radius_window, t.radius_control, t.radius_small);
+    // A frame's corners outside its picture's: the window's radius plus its padding and border.
+    let rw_plus = rw + 4;
     // A look's picture corners and its ring (M5.10c7b): the menus' radius.
     let rm = t.radius_menu;
     format!(
@@ -352,6 +358,56 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-menu-item {{ min-height: 26px; padding: 0 10px; border-radius: {rs}px; background: none; background-image: none;
   box-shadow: none; border: none; color: {text}; font-weight: 400; }}
 .edel-menu-item:hover {{ background-color: {accent}; color: {accent_text}; }}
+.edel-menu-item.edel-danger {{ color: {error}; }}
+/* The Appearance page's theme (M5.12b6b, drawn to the board's sizes in M5.12b6c): the theme line, the three styles, the themes row and the accent's row. Radii are the window's and the small one's tokens; the 12.5 px and 9.5 px sizes are the text size less half a point and less three and a half, as the board draws them at 13 px. */
+.edel-appearance .edel-section {{ font-size: {size}px; font-weight: 600; }}
+.edel-theme-title {{ font-size: {heading}px; font-weight: 700; letter-spacing: -0.4px; }}
+.edel-theme-tag {{ color: {muted}; font-size: {small}px; }}
+.edel-theme-changed {{ color: {secondary}; font-size: {caption}px; }}
+.edel-changed-dot {{ min-width: 6px; min-height: 6px; border-radius: 999px; background-color: {accent}; }}
+.edel-pictures-link {{ min-height: 24px; padding: 0 4px; background: none; box-shadow: none; border: none; color: {secondary}; font-size: {caption}px; font-weight: 400; }}
+.edel-pictures-link:hover {{ background-color: {fill}; }}
+.edel-pictures-arrow {{ color: {muted}; }}
+.edel-theme-reset {{ min-height: 30px; padding: 0 12px; border-radius: 15px; background: none; background-image: none; box-shadow: none; border: none; color: {accent}; font-size: {caption}px; font-weight: 400; }}
+.edel-theme-keep {{ min-height: 30px; padding: 0 14px; border-radius: 15px; background-color: {accent}; background-image: none; box-shadow: none; border: none; color: {accent_text}; font-size: {caption}px; font-weight: 600; }}
+.edel-theme-more {{ background: none; background-image: none; box-shadow: none; border: none; padding: 0; min-width: 30px; min-height: 30px; }}
+.edel-theme-more > button {{ min-width: 30px; min-height: 30px; padding: 0; border-radius: 999px; background: none; background-color: transparent; background-image: none; box-shadow: none; border: 1px solid {line}; color: {text}; }}
+/* A style and a tile are toggles: the one chosen is :checked, and its frame's border is the ring (3 px out for a style, 2 px for a tile, as the mockup draws them). */
+.edel-style, .edel-tile {{ padding: 0; min-width: 0; min-height: 0; background: none; background-image: none; box-shadow: none; border: none; color: {text}; }}
+.edel-style:checked, .edel-tile:checked {{ background: none; background-image: none; box-shadow: none; }}
+.edel-style-frame {{ padding: 3px; border: 2px solid transparent; border-radius: {rw_plus}px; }}
+.edel-style:checked .edel-style-frame {{ border-color: {accent}; }}
+.edel-style-picture {{ border-radius: {rw}px; box-shadow: 0 1px 2px alpha({shadow}, 0.08), 0 10px 24px alpha({shadow}, 0.14); }}
+.edel-style-name {{ font-size: {size}px; font-weight: 400; }}
+.edel-style:checked .edel-style-name {{ font-weight: 600; }}
+.edel-tile-frame {{ padding: 2px; border: 2px solid transparent; border-radius: {rw_plus}px; }}
+.edel-tile:checked .edel-tile-frame {{ border-color: {accent}; }}
+.edel-tile-picture {{ border-radius: {rw}px; box-shadow: 0 4px 12px alpha({shadow}, 0.12); }}
+.edel-tile-name {{ font-size: {caption}px; font-weight: 400; }}
+.edel-tile:checked .edel-tile-name {{ font-weight: 600; }}
+.edel-theme-built-in {{ background-color: alpha({badge_deep}, 0.38); color: rgba(255, 255, 255, 0.94); font-size: {badge}px; font-weight: 600;
+  border-radius: 999px; padding: 2px 6px; box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.28); }}
+.edel-theme-thumb {{ border-radius: 4px; box-shadow: 0 0 0 1.5px {window}; }}
+.edel-pictures-sheet {{ padding: 12px; }}
+.edel-theme-new {{ padding: 0; min-width: 0; min-height: 0; background: none; background-image: none; box-shadow: none; border: none; color: {text}; }}
+.edel-theme-new:focus-visible {{ outline: 2px solid alpha({accent}, 0.45); outline-offset: 2px; }}
+.edel-theme-new-look {{ border: 1.5px dashed {line}; border-radius: {rw}px; }}
+.edel-theme-new:hover .edel-theme-new-look {{ border-color: alpha({accent}, 0.5); }}
+.edel-theme-new-plus {{ color: {accent}; font-size: {heading}px; font-weight: 300; }}
+.edel-theme-new-name {{ color: {muted}; font-size: {caption}px; font-weight: 400; }}
+/* The accent's row: the swatches and the two pills in the card, the chosen name at the far right. */
+.edel-accent-card {{ padding: 16px; }}
+.edel-accent-divider {{ min-width: 1px; min-height: 22px; background-color: alpha({text}, 0.14); }}
+.edel-accent-pill {{ min-height: 28px; padding: 0 12px; border-radius: 14px; background: none; background-image: none; box-shadow: none;
+  border: 1px solid {line}; color: {text}; font-size: {small}px; font-weight: 400; }}
+.edel-accent-pill:hover {{ background-color: {fill}; }}
+.edel-accent-pill:checked {{ border-color: {accent}; color: {accent}; }}
+.edel-accent-pill:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
+.edel-accent-name {{ color: {muted}; font-size: {small}px; }}
+/* The Text group's font rows (M5.12b6c): 48 px tall, the drop-down 30 px tall in regular weight. */
+.edel-font-row {{ min-height: 36px; }}
+.edel-font, .edel-font label {{ font-weight: 400; }}
+.edel-font > button {{ min-height: 30px; padding-top: 0; padding-bottom: 0; }}
 "#
     )
 }

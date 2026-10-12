@@ -35,6 +35,7 @@ mod status;
 mod style;
 mod system;
 mod text;
+mod themes;
 mod tray;
 mod updates;
 mod users;
