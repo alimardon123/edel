@@ -11,6 +11,7 @@
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
 mod about;
+mod ask;
 mod bluetooth;
 mod card;
 mod cmd;

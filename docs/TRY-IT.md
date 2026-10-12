@@ -85,7 +85,7 @@ EOF
 mkfs.vfat -C seed.img 1024 -n EDEL-SEED && mcopy -i seed.img settings.toml ::/
 ```
 
-Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel settings export` works as `me`. Commands that change the machine, such as `edel status`, `edel update` and `edel settings set network.hostname=mine`, need root until `doas` arrives (roadmap M6.5): log in for them with `ssh -p 2222 root@127.0.0.1`.
+Add `-drive file=seed.img,format=raw,if=virtio` to the QEMU line, start it, and log in with `ssh -p 2222 me@127.0.0.1`; `edel settings export` works as `me`. Commands that change the machine, such as `edel update` and `edel settings set network.hostname=mine`, need root: as an administrator, run them with `doas`, such as `doas edel settings set network.hostname=mine`; `edel update` and `edel rollback` then ask your password first (roadmap M6.5). Or log in as root with `ssh -p 2222 root@127.0.0.1`.
 
 ## Updates
 

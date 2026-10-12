@@ -27,6 +27,7 @@ use edel::themes;
 use edel::users::ADMIN_GROUP;
 
 use crate::boot::GRUB_PREFIX;
+use crate::privilege;
 use crate::release::os_release_value;
 use crate::update::{Disk, Lock, io_failure, run};
 
@@ -144,7 +145,7 @@ pub fn add_live_account(name: &str) -> Result<()> {
 }
 
 /// The members of `group` in `/etc/group`, or `None` without the group.
-fn members(group_file: &str, group: &str) -> Option<Vec<String>> {
+pub(crate) fn members(group_file: &str, group: &str) -> Option<Vec<String>> {
     group_file.lines().find_map(|line| {
         let f: Vec<&str> = line.split(':').collect();
         (f.len() == 4 && f[0] == group).then(|| {
@@ -857,6 +858,19 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     for note in &notes {
         println!("edel settings: {note}");
     }
+    // Root's ssh keys: an import compares the two files, apply the plan (M6.5).
+    let root_keys = match file {
+        Some(path) => privilege::root_keys_change(
+            &fs::read_to_string(machine_file()).unwrap_or_default(),
+            &fs::read_to_string(path).unwrap_or_default(),
+        ),
+        None => changes
+            .iter()
+            .any(|c| matches!(c, Change::Keys { name, .. } if name == "root")),
+    };
+    if root_keys {
+        privilege::confirm("changing root's ssh keys")?;
+    }
     // One change that fails never stops the others (Reliable): each is
     // reported, and apply fails at the end.
     let mut failed = 0;
@@ -1067,6 +1081,10 @@ fn write_edit(
         ),
     };
     let edited = change(&text)?;
+    // A change of root's ssh keys is the one a person must confirm (M6.5).
+    if privilege::root_keys_change(&text, &edited) {
+        privilege::confirm("changing root's ssh keys")?;
+    }
     for problem in settings::read(&edited)?.problems {
         println!(
             "{command}: {}",
