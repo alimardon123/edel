@@ -3013,6 +3013,55 @@ case_notify() {
 	hidden=$(count 'edel-shell-ui: notification centre hidden')
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the list at the left"
+	# Where the list opens (M5.9l): notifications.list = right makes the
+	# clock's list a sheet along the screen's right side, as tall as the
+	# screen leaves it (the panels keep their places), with the calendar at
+	# its foot; the clock's places still name the calendar's parts.
+	guest 'list right'
+	wait_for 'edel-shell-ui: notifications list right$' || fail "notifications.list = right did not reach shell-ui: $(tr -d '\r' <"$log" | grep -a 'ran list right' | tail -n 1)"
+	set -- $(clock)
+	clock_x=$(($1 + $2 / 2))
+	placed=$(count 'edel-shell-ui: notification centre placed right')
+	python3 ci/qmp.py click "$clock_x" 780
+	wait_more 'edel-shell-ui: notification centre placed right' "$placed" || fail "with notifications.list = right, a click on the clock at $clock_x,780 did not place the list on the right: $(tr -d '\r' <"$log" | grep -a 'centre placed' | tail -n 1)"
+	i=0
+	while :; do
+		set -- $(value layers | grep -o 'edel-centre@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-centre@//; s/[,x]/ /g')
+		[ "${4:-0}" -ge 600 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the sheet with notifications.list = right is not tall: $(value layers)"
+		sleep 0.2
+	done
+	right=$(($1 + $3))
+	sheet_h=$4
+	[ "$right" -ge 1240 ] && [ "$right" -le 1320 ] || fail "the sheet with notifications.list = right ends at $right, not at the screen's right edge: $(value layers)"
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: centre places' | tail -n 1)
+	echo "$line" | grep -q 'prev ' && echo "$line" | grep -q 'next ' || fail "the sheet's places name no calendar: $line"
+	python3 ci/qmp.py screendump "$dir/notify-right.png"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the sheet on the right"
+	# Back to the button: the list hangs by the clock again, shorter than
+	# the sheet (a hung list with four notifications is about 600 px).
+	guest 'list default'
+	wait_for 'edel-shell-ui: notifications list button$' || fail "taking notifications.list out did not reach shell-ui"
+	set -- $(clock)
+	clock_x=$(($1 + $2 / 2))
+	placed=$(count 'edel-shell-ui: notification centre placed button')
+	python3 ci/qmp.py click "$clock_x" 780
+	wait_more 'edel-shell-ui: notification centre placed button' "$placed" || fail "with notifications.list back to its default, a click on the clock did not place the list by the button"
+	i=0
+	while :; do
+		set -- $(value layers | grep -o 'edel-centre@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-centre@//; s/[,x]/ /g')
+		[ -n "${4:-}" ] && [ "$4" -gt 0 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the hung list shows no surface: $(value layers)"
+		sleep 0.2
+	done
+	[ "$4" -lt "$sheet_h" ] || fail "the list hung by the button is $4 px tall, not shorter than the sheet's $sheet_h: $(value layers)"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the list hung by the button"
 	ten=$(count 'edel-shell-ui: panels now bottom \(10 widgets\)')
 	guest 'badge default'
 	guest 'panels default'

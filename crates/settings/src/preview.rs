@@ -192,6 +192,85 @@ pub fn panels_area(theme: &Rc<Theme>, shown: Rc<RefCell<Vec<Panel>>>) -> gtk::Dr
     area
 }
 
+/// The picture's size on a Notifications page card, logical pixels (M5.9l).
+pub const LIST_WIDTH: i32 = 96;
+pub const LIST_HEIGHT: i32 = 60;
+
+/// Where the notification list opens (M5.9l), as a picture: a screen with
+/// its panel along the bottom and the bell at its right, and the list hung
+/// over the bell (`button`), or a tall card along the left or the right.
+/// Drawn in the tokens' colours, again when they change.
+pub fn list_area(theme: &Rc<Theme>, place: &'static str) -> gtk::DrawingArea {
+    let area = gtk::DrawingArea::builder()
+        .content_width(LIST_WIDTH)
+        .content_height(LIST_HEIGHT)
+        .build();
+    let drawn = theme.clone();
+    area.set_draw_func(move |_, cr, w, h| {
+        list_picture(cr, f64::from(w), f64::from(h), place, &drawn.tokens());
+    });
+    let weak = area.downgrade();
+    theme.watch(move || {
+        if let Some(area) = weak.upgrade() {
+            area.queue_draw();
+        }
+    });
+    area
+}
+
+fn list_picture(cr: &Context, w: f64, h: f64, place: &str, t: &Tokens) {
+    screen(cr, w, h, t);
+    let bar = 7.0;
+    let top = h - bar;
+    fill(cr, t.title_bar.with(0.9), 0.0, top, w, bar, 0.0);
+    // The bell: a small dot in the accent on the bar.
+    let (bell, r) = (w - 24.0, 2.5);
+    fill(
+        cr,
+        t.accent,
+        bell - r,
+        top + bar / 2.0 - r,
+        2.0 * r,
+        2.0 * r,
+        r,
+    );
+    let card = match place {
+        "left" => Rect {
+            x: 6.0,
+            y: 6.0,
+            w: 30.0,
+            h: top - 10.0,
+        },
+        "right" => Rect {
+            x: w - 36.0,
+            y: 6.0,
+            w: 30.0,
+            h: top - 10.0,
+        },
+        _ => Rect {
+            x: bell - 21.0,
+            y: 6.0,
+            w: 42.0,
+            h: top - 12.0,
+        },
+    };
+    window(cr, t, card);
+    // Lines for the notifications in it.
+    let lines = ((card.h - 10.0) / 8.0).floor().min(4.0) as i32;
+    for i in 0..lines {
+        let y = card.y + 6.0 + f64::from(i) * 8.0;
+        fill(
+            cr,
+            t.panel_text.with(0.22),
+            card.x + 5.0,
+            y,
+            card.w - 10.0,
+            2.5,
+            1.25,
+        );
+    }
+}
+
 /// The screen a picture draws on: its corners rounded, lit from above and
 /// the background below.
 fn screen(cr: &Context, w: f64, h: f64, t: &Tokens) {

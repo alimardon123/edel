@@ -716,6 +716,18 @@ msgstr ""
 msgid "Banners stay away; notifications still collect in the list the clock opens"
 msgstr ""
 
+msgid "Where the list opens, from the clock or the bell"
+msgstr ""
+
+msgid "Left side"
+msgstr ""
+
+msgid "Right side"
+msgstr ""
+
+msgid "By the button"
+msgstr ""
+
 msgid "Automatic puts them by the status area; a banner keeps clear of panels"
 msgstr ""
 
@@ -927,6 +939,9 @@ msgid "Where notifications appear"
 msgstr ""
 
 msgid "Unread badge"
+msgstr ""
+
+msgid "Notification list"
 msgstr ""
 
 msgid "Channel"
