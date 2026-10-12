@@ -61,10 +61,9 @@
 #               bottom) lies above shell-ui's along the bottom in its
 #               colour, keeps its height free of tiled windows, and goes
 #               when closed (M5.1a)
-#   capture     a screenshot through xdg-desktop-portal, which first asks
-#               the person in shell-ui's Access dialog: Allow is clicked,
-#               the PNG is written, and a second screenshot does not ask
-#               again (M6.3)
+#   capture     shell-ui's Access dialog, asked over D-Bus, answers 0 when
+#               Allow is clicked; a screenshot through xdg-desktop-portal
+#               writes a PNG; a screencast gives a 1280x800 stream (M6.3)
 #   panel       shell-ui's panel along the bottom in the token colour with
 #               its clock drawn, within its memory budget, and back after
 #               kill -9 (M5.1b); its layout toggle tiles the windows and
@@ -4270,15 +4269,16 @@ case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
 	# for a screenshot gets the URI of a PNG the compositor copied (its log
 	# says so, once per client), and asking to share the screen gets a stream
-	# of the screen's size, 1280x800 here. xdg-desktop-portal asks the person
-	# first, through shell-ui's Access dialog (M6.3): the call waits for an
-	# answer, so it runs in the background and its answer is read back. The
-	# dialog's place is on the log; its Allow button is clicked, a second
-	# screenshot does not ask again (the answer is kept), and the picture of
-	# the first is what the rest of the case checks.
-	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
-	guest 'capture screenshot'
-	wait_for 'edel-shell-ui: access places ' 20 || fail "shell-ui showed no dialog asking to allow the screenshot"
+	# of the screen's size, 1280x800 here. xdg-desktop-portal offers the
+	# screenshot only beside an Access backend, shell-ui's dialog, which it
+	# asks only through a screenshot backend of version 2 or later; the wlr
+	# backend's is older, so the dialog is asked here as the portal would ask
+	# it, over D-Bus as ci: the call waits for the person, its place is on
+	# the log, Allow is clicked and the call must answer 0.
+	before=$(count 'DESKTOP-TEST: access_result .*uint32')
+	guest 'access ask'
+	wait_for 'edel-shell-ui: access places ' 20 ||
+		fail "shell-ui showed no dialog for the Access portal's question: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
 	# The newest place: the surface's top left on the screen, then the
 	# card's size and Allow's rectangle, all in logical pixels (CI's is 1:1).
 	places=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: access places \([0-9]*\),\([0-9]*\) card [0-9]*x[0-9]*, deny [0-9]*+[0-9]*+[0-9]*x[0-9]*, allow \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p' | tail -n 1)
@@ -4290,23 +4290,21 @@ case_capture() {
 	# accent, not the background).
 	shot access "$allow_x" "$allow_y" "!$background" >/dev/null || true
 	python3 ci/qmp.py click "$allow_x" "$allow_y"
-	wait_for 'edel-shell-ui: access allowed for ' 10 ||
+	wait_for 'edel-shell-ui: access allowed for ci-test' 10 ||
 		fail "clicking Allow did not answer the dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access ' | tail -n 1)"
-	asked=$(count 'edel-shell-ui: access places ')
-	capture_result 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
-		fail "the screenshot portal did not answer after Allow was clicked"
-	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
-	[ -n "$shot" ] || fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1)"
-	# A second screenshot right after: the answer is stored, so it is not
-	# asked again and gives a picture at once.
+	poll_result 'access result' 'DESKTOP-TEST: access_result .*uint32' "$before" ||
+		fail "the Access call did not return after Allow was clicked"
+	answer=$(value access_result)
+	case "$answer" in
+	"(uint32 0,"*) ;;
+	*) fail "the Access call answered \"$answer\", not 0 for allowed" ;;
+	esac
 	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
 	guest 'capture screenshot'
-	capture_result 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
-		fail "the second screenshot gave no answer"
-	[ "$(count 'edel-shell-ui: access places ')" -eq "$asked" ] ||
-		fail "the second screenshot asked again: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access ' | tail -n 1)"
-	tr -d '\r' <"$log" | grep -aE 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' | tail -n 1 | grep -q 'screenshot URI file:' ||
-		fail "the second screenshot gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1)"
+	poll_result 'capture screenshot result' 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
+		fail "the screenshot portal did not answer in 30 s"
+	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
+	[ -n "$shot" ] || fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1)"
 	guest 'capture file'
 	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
 	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)
@@ -4324,17 +4322,17 @@ case_capture() {
 	[ -n "$stream" ] || fail "the screencast gave no stream: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screencast ' | tail -n 1)"
 	size=${stream#* }
 	[ "$size" = 1280x800 ] || fail "the screencast's stream is $size, not the screen's 1280x800"
-	echo "PASS: a screenshot portal call asked shell-ui, Allow was clicked and it gave $shot, a PNG of $bytes bytes the compositor copied (access.png), and a second one did not ask again; a screencast gave stream ${stream% *} of $size"
+	echo "PASS: the Access portal's question showed shell-ui's dialog (access.png) and Allow answered 0; a screenshot portal call gave $shot, a PNG of $bytes bytes the compositor copied; a screencast gave stream ${stream% *} of $size"
 }
 
-# capture_result PATTERN BEFORE: asks the service for the screenshot's answer
-# until PATTERN has more lines than BEFORE (up to 30 s), as the answer comes
-# only once the person has answered the dialog.
-capture_result() {
+# poll_result COMMAND PATTERN BEFORE: asks the service with COMMAND until
+# PATTERN has more lines than BEFORE (up to 30 s), for a call that answers
+# only once someone has acted.
+poll_result() {
 	i=0
 	while :; do
-		guest 'capture screenshot result'
-		wait_more "$1" "$2" 2 && return 0
+		guest "$1"
+		wait_more "$2" "$3" 2 && return 0
 		i=$((i + 1))
 		[ "$i" -lt 15 ] || return 1
 	done

@@ -289,10 +289,16 @@ commands() {
 		# Screenshots and screen sharing (M6.3), asked as ci through the
 		# portals: the screenshot's URI is kept for `capture file`, which
 		# says the file's size and its first four bytes (a PNG's magic).
-		# The screenshot waits for shell-ui's Access dialog (M6.3), which the
-		# person answers, so the call runs in the background, its output
-		# kept in a file, and 'capture screenshot result' says it once it is
-		# there (CI clicks Allow in between).
+		# The call runs in the background, its output kept in a file, and
+		# 'capture screenshot result' says it once it is there. `access ask`
+		# asks shell-ui's Access dialog what xdg-desktop-portal would ask,
+		# over D-Bus as ci; the call waits for the person (CI clicks Allow),
+		# and `access result` says its answer, (uint32 0, ...) for allowed.
+		'access ask')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --timeout 120 --dest org.freedesktop.impl.portal.desktop.edel --object-path /org/freedesktop/portal/desktop --method org.freedesktop.impl.portal.Access.AccessDialog /org/freedesktop/portal/desktop/request/1_1/ci ci-test '' 'Allow ci-test to take screenshots?' 'ci-test wants a picture of the screen' '' '{}'" </dev/null >/tmp/access-ask.txt 2>&1 &
+			;;
+		'access result') say "access_result $(tr '\n' ' ' </tmp/access-ask.txt 2>/dev/null)" ;;
 		'capture screenshot')
 			bus=$(session_bus)
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screenshot" </dev/null >/tmp/capture-shot.txt 2>&1 &

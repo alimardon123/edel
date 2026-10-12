@@ -83,6 +83,14 @@ pub fn portal_not_said(why: impl Display) -> String {
     )
 }
 
+/// D-Bus could not be told the session's Wayland display, so a service it
+/// starts for an app (a portal's backend) cannot reach the screen.
+pub fn display_not_told(why: impl Display) -> String {
+    format!(
+        "could not tell D-Bus the session's Wayland display: {why}; screenshots and screen sharing fail until the next login"
+    )
+}
+
 /// The tray cannot be served.
 pub fn tray_not_served(why: impl Display) -> String {
     format!(
@@ -473,6 +481,7 @@ mod tests {
             look_not_known("x", &["classic".to_string()]),
             panel_not_drawn("x"),
             portal_not_said("x"),
+            display_not_told("x"),
             edit_bus_not_served("x"),
             tray_not_served("x"),
             tray_not_said("x"),

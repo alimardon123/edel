@@ -168,6 +168,27 @@ impl Asking {
     }
 }
 
+/// Tells the session bus the compositor's Wayland display (M6.3), as other
+/// desktops do at their start: the bus started before the compositor made
+/// its socket, so a service it starts for an app, such as the screenshot
+/// portal's backend, would otherwise not know which display to reach.
+fn tell_display(connection: &zbus::blocking::Connection) {
+    let Ok(display) = std::env::var("WAYLAND_DISPLAY") else {
+        return;
+    };
+    let told = connection.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "UpdateActivationEnvironment",
+        &HashMap::from([("WAYLAND_DISPLAY", display.as_str())]),
+    );
+    match told {
+        Ok(_) => eprintln!("edel-shell-ui: told D-Bus the Wayland display {display}"),
+        Err(e) => eprintln!("edel-shell-ui: {}", crate::messages::display_not_told(e)),
+    }
+}
+
 /// The text of a string option, when the portal gave a non-empty one.
 fn text_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
     let value = options.get(key)?.try_clone().ok()?;
@@ -250,6 +271,7 @@ pub fn serve(tokens: &Tokens, edits: channel::Sender<Edit>) -> Option<zbus::bloc
         eprintln!("edel-shell-ui: {}", crate::messages::edit_bus_not_served(e));
     }
     eprintln!("edel-shell-ui: serving the settings portal as {NAME}");
+    tell_display(&connection);
     let said = connection
         .object_server()
         .interface::<_, Backend>(PATH)
