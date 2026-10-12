@@ -22,6 +22,7 @@ use edel::pictures::box_blur;
 use edel::presets::{Edge, Size, Style};
 use edel::tokens::{Colour, Tokens};
 
+use crate::glass;
 use crate::popup;
 use crate::widgets::{Canvas, Live, Widget};
 
@@ -794,7 +795,10 @@ fn edit_tile(
 /// Draws `look` into `pixmap`, which is `look.width` by `look.height`,
 /// with `row`'s widgets showing `look.shown`; returns where each widget
 /// lies, start to end, and where the empty groups are while editing. A
-/// dock or a floating bar is drawn as a card (M5.31c).
+/// dock or a floating bar is drawn as a card (M5.31c). `glass` is the
+/// screen's glass, the scale that stretches it over the screen, and this
+/// buffer's top left on the screen, in device pixels (M5.12b3): under a
+/// see-through fill it shows the wallpaper blurred, as frosted glass.
 pub fn paint(
     pixmap: &mut Pixmap,
     look: &Look,
@@ -802,6 +806,7 @@ pub fn paint(
     text: Option<&mut Text>,
     icons: Option<&mut edel::app_icons::Icons>,
     row: &Row,
+    glass: Option<glass::Behind<'_>>,
 ) -> Places {
     let s = look.scale.max(1) as f32;
     let (w, h) = (look.width as f32, look.height as f32);
@@ -821,21 +826,25 @@ pub fn paint(
     // widgets, which may draw bigger there.
     let dock = look.style == Style::Dock;
     let card = dock || look.floating;
+    // The glass goes under the fill's own shape, where the panel is see-
+    // through (M5.12b3); an opaque panel never shows it.
+    let glass = glass.filter(|_| tokens.panel_opacity < 100);
     if card {
         // A card rounded all round, with the tokens' hairline inside its
         // edge, so it reads on any background.
         let r = DOCK_RADIUS * s;
         fill(pixmap, 0.0, top, w, panel_h, r, tokens.edge);
-        fill(
-            pixmap,
-            s,
-            top + s,
-            w - 2.0 * s,
-            panel_h - 2.0 * s,
-            r - s,
-            faded,
-        );
+        let (x, y, cw, ch, cr) = (s, top + s, w - 2.0 * s, panel_h - 2.0 * s, r - s);
+        if let (Some((picture, scale, origin)), Some(shape)) = (glass, rounded(x, y, cw, ch, cr)) {
+            glass::under(pixmap, picture, scale, origin, &shape);
+        }
+        fill(pixmap, x, y, cw, ch, cr, faded);
     } else if let Some(rect) = Rect::from_xywh(0.0, top, w, panel_h) {
+        if let (Some((picture, scale, origin)), Some(shape)) =
+            (glass, rounded(0.0, top, w, panel_h, 0.0))
+        {
+            glass::under(pixmap, picture, scale, origin, &shape);
+        }
         pixmap.fill_rect(rect, &panel, Transform::identity(), None);
         // A hairline along the edge that faces the windows, as the
         // mockups draw it, one screen pixel at any scale.
@@ -1055,7 +1064,7 @@ mod tests {
             caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        paint(&mut pixmap, &look, &tokens, None, None, row);
+        paint(&mut pixmap, &look, &tokens, None, None, row, None);
         (pixmap, tokens)
     }
 
@@ -1072,6 +1081,71 @@ mod tests {
         assert!(
             (i32::from(alpha) - 128).abs() <= 1,
             "half of 255, got {alpha}"
+        );
+    }
+
+    /// A see-through bar draws the glass under its fill (M5.12b3): over a
+    /// red glass the bar's pixel is the panel colour laid on red, opaque;
+    /// with no glass it is the faded panel colour over nothing.
+    #[test]
+    fn a_see_through_bar_shows_the_glass_under_its_fill() {
+        let row = classic();
+        let mut tokens = Tokens::built_in();
+        tokens.panel_opacity = 50;
+        let look = Look {
+            width: 1280,
+            height: tokens.panel_height + fillet_height(&tokens),
+            scale: 1,
+            edge: Edge::Bottom,
+            style: Style::Bar,
+            size: Size::Medium,
+            floating: false,
+            fillets: false,
+            shown: row.shows(&Live::default()),
+            editing: false,
+            lifted: None,
+            caret: None,
+        };
+        let mut red = Pixmap::new(1280, 800).unwrap();
+        red.fill(tiny_skia::Color::from_rgba8(255, 0, 0, 255));
+        let origin = (0.0, 800.0 - look.height as f32);
+        let top = panel_top(look.edge, look.style, look.floating, &tokens) as f32;
+        let at = (
+            640,
+            (top + height(look.style, look.size, &tokens) as f32 / 2.0) as u32,
+        );
+        let mut with = Pixmap::new(look.width, look.height).unwrap();
+        paint(
+            &mut with,
+            &look,
+            &tokens,
+            None,
+            None,
+            &row,
+            Some((&red, (1.0, 1.0), origin)),
+        );
+        let mut without = Pixmap::new(look.width, look.height).unwrap();
+        paint(&mut without, &look, &tokens, None, None, &row, None);
+        let laid = pixel(&with, at.0, at.1);
+        let a = tokens.panel.a * 0.5;
+        let want = [
+            (tokens.panel.r * a + (1.0 - a)) * 255.0,
+            tokens.panel.g * a * 255.0,
+            tokens.panel.b * a * 255.0,
+        ];
+        assert_eq!(laid[3], 255, "the glass makes the bar opaque there");
+        for k in 0..3 {
+            assert!(
+                (f32::from(laid[k]) - want[k]).abs() <= 2.0,
+                "channel {k}: {} against {}",
+                laid[k],
+                want[k]
+            );
+        }
+        let alone = pixel(&without, at.0, at.1);
+        assert!(
+            (i32::from(alone[3]) - (a * 255.0) as i32).abs() <= 1,
+            "the faded colour alone, {alone:?}"
         );
     }
 
@@ -1154,7 +1228,7 @@ mod tests {
             caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        paint(&mut pixmap, &look, &tokens, None, None, &row);
+        paint(&mut pixmap, &look, &tokens, None, None, &row, None);
         assert_eq!(pixel(&pixmap, 0, 0)[3], 0, "its corners are round");
         assert_eq!(pixel(&pixmap, 320, 1), tokens.panel.bytes());
         assert_ne!(
@@ -1193,7 +1267,7 @@ mod tests {
             caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
+        let places = paint(&mut pixmap, &look, &tokens, None, None, &row, None).widgets;
         assert_eq!(places, [(DOCK_PAD, each), (DOCK_PAD + each, each)]);
         assert_eq!(pixel(&pixmap, width / 2, 1), tokens.panel.bytes());
         assert_ne!(
@@ -1412,6 +1486,7 @@ mod tests {
             Some(&mut text),
             Some(&mut icons),
             &row,
+            None,
         );
         // Over a screen's colour, as it would lie.
         let mut screen = Pixmap::new(look.width, look.height).unwrap();
@@ -1485,6 +1560,7 @@ mod tests {
             Some(&mut text),
             Some(&mut icons),
             &row,
+            None,
         );
         let bar_mid = (panel_top(spec.edge, spec.style, spec.floating, &tokens)
             + height(spec.style, spec.size, &tokens) / 2) as i32;

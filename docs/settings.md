@@ -124,6 +124,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.window_opacity_unfocused` | a whole number from 20 to 100, in percent: every other window's opacity; missing is 100 | M5.12b3 |
 | `appearance.shadow_size` | a whole number from 0 to 64 logical pixels: the shadow's blur under each window, 0 for none; missing is the release's 24 | M5.12b3 |
 | `appearance.shadow_darkness` | a whole number from 0 to 100, in percent: the shadow's darkness in both colour schemes; missing is the scheme's own shadow | M5.12b3 |
+| `appearance.blur` | a whole number from 0 to 100, in percent: how strongly the wallpaper blurs behind see-through panels, frosted glass; 0 shows it sharp; missing is the release's 50 | M5.12b3 |
 | `appearance.font` | text, the interface font's family as fontconfig names it, such as `"Noto Sans"`; missing is the release's (Inter Variable). The title bars and everything the panels and apps draw follow it at once | M5.12b5 |
 | `appearance.monospace_font` | text, the family apps use for code and terminals; missing is `"Noto Sans Mono"` | M5.12b5 |
 | `appearance.text_size` | a whole number from 80 to 150, in percent of the release's sizes; missing is 100. `edel settings set appearance.text_size=150` makes every text size a half bigger, and the title bars, panels and apps follow | M5.12b5 |

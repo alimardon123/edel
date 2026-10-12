@@ -25,6 +25,7 @@ mod corner;
 mod edit_kit;
 mod editor;
 mod editor_card;
+mod glass;
 mod greetd;
 mod greeter;
 mod launcher;
@@ -256,6 +257,11 @@ struct Shell {
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
     tokens: Tokens,
+    /// The wallpaper behind the panels in the shown scheme, as the settings
+    /// files name it (M5.12b3), read at start and when they change, and the
+    /// glass made from it for the main screen.
+    wallpaper: edel::wallpapers::Wallpaper,
+    glass: glass::Glass,
     /// The settings portal's backend on the session's bus (M5.5a), and
     /// the tray's watcher (M5.2e), served while this lives.
     _portal: Option<zbus::blocking::Connection>,
@@ -494,6 +500,8 @@ fn run() -> Result<()> {
         _portal: portal::serve(&tokens, edits),
         player_tx: None,
         tokens,
+        wallpaper: read_wallpaper(),
+        glass: glass::Glass::default(),
         fillets: fillets(),
         session_lock: smithay_client_toolkit::session_lock::SessionLockState::new(&globals, &qh),
         lock: None,
@@ -739,6 +747,14 @@ fn make_panel(
     }
 }
 
+/// The wallpaper behind the panels in the scheme the settings files pick,
+/// the person's over the machine's, as the lock screen reads it (M5.12b3).
+fn read_wallpaper() -> edel::wallpapers::Wallpaper {
+    let (machine, person) = settings_texts();
+    let dark = quick::is_dark(machine.as_deref(), person.as_deref());
+    lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark)
+}
+
 /// The image's tokens in `scheme` if it has them, else the built-in ones;
 /// anything skipped is reported, never fatal (ADR-008).
 fn load_tokens(scheme: Scheme) -> Tokens {
@@ -887,6 +903,17 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
 }
 
 impl Shell {
+    /// Whether panel `i` lies on the main screen (M5.12b3): one with no
+    /// output of its own, or one on the first screen the compositor lists.
+    /// The glass is made for that screen alone until each screen has its own.
+    fn on_main_screen(&self, i: usize) -> bool {
+        match (&self.panels[i].output, self.outputs.outputs().next()) {
+            (None, _) => true,
+            (Some(output), Some(first)) => *output == first,
+            (Some(_), None) => false,
+        }
+    }
+
     /// Draws panel `i` if anything it shows changed, once the compositor
     /// has shown its last drawing.
     fn draw(&mut self, i: usize) {
@@ -1003,6 +1030,20 @@ impl Shell {
     }
 
     fn show(&mut self, i: usize, look: &Look) -> Result<()> {
+        // The glass behind a see-through panel on the main screen (M5.12b3):
+        // the whole screen's, drawn at the panel's place on it.
+        let scale = look.scale.max(1) as f32;
+        let (x, y, _, _) = self.panel_rect(i);
+        let (sw, sh) = self.screen_size();
+        let screen = ((sw * scale).round() as u32, (sh * scale).round() as u32);
+        let glass = if self.tokens.panel_opacity < 100 && self.on_main_screen(i) && screen.0 > 0 {
+            let blur = self.tokens.blur;
+            self.glass
+                .get(&self.wallpaper, screen, blur)
+                .map(|(picture, stretch)| (picture, stretch, (x * scale, y * scale)))
+        } else {
+            None
+        };
         let panel = &self.panels[i];
         let mut pixmap = Pixmap::new(look.width, look.height).context("a panel of no size")?;
         let placed = paint::paint(
@@ -1012,6 +1053,7 @@ impl Shell {
             Some(&mut self.text),
             Some(&mut self.icons),
             &panel.row,
+            glass,
         );
         if placed.widgets != panel.places {
             // Where each widget lies, for the tests that click them.
@@ -1049,8 +1091,10 @@ impl Shell {
         let panel_h = paint::height(panel.style, panel.size, &self.tokens) as i32;
         if let Ok(region) = Region::new(&self.compositor) {
             region.add(0, top, panel.width as i32, panel_h);
-            // A floating bar's corners are round, as a dock's are.
-            if panel.style == Style::Bar && !panel.floating {
+            // A floating bar's corners are round, as a dock's are. A
+            // see-through bar is not opaque: what lies behind shows through
+            // it (M5.12b3).
+            if panel.style == Style::Bar && !panel.floating && self.tokens.panel_opacity == 100 {
                 surface.set_opaque_region(Some(region.wl_region()));
             }
             surface.set_input_region(Some(region.wl_region()));

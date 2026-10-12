@@ -493,6 +493,16 @@ impl Shell {
     /// at once. shell-ui's own writes come back here too and change
     /// nothing more.
     pub fn settings_changed(&mut self) {
+        // The glass follows the wallpaper the files name (M5.12b3): the
+        // panels draw again when it changes, as their glass is drawn.
+        let wallpaper = crate::read_wallpaper();
+        if wallpaper != self.wallpaper {
+            self.wallpaper = wallpaper;
+            for panel in &mut self.panels {
+                panel.drawn = None;
+            }
+            self.draw_all();
+        }
         let now = crate::tray_in_panel();
         if now != self.live.tray_in_panel {
             self.live.tray_in_panel = now;

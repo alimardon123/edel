@@ -309,6 +309,11 @@ commands() {
 		'wallpaper picture') edel settings set "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
 		'wallpaper colour') edel settings set 'appearance.wallpaper=#336699' ;;
 		'wallpaper default') edel settings reset appearance.wallpaper ;;
+		# The glass (M5.12b3): a see-through bar at 40 percent over the
+		# wallpaper, its blur at 100 (frosted) or 0 (sharp), and the default.
+		'glass on') edel settings set appearance.panel_opacity=40 appearance.blur=100 ;;
+		'glass sharp') edel settings set appearance.panel_opacity=40 appearance.blur=0 ;;
+		'glass default') edel settings reset appearance.panel_opacity appearance.blur ;;
 		# A light and dark pair (M5.10c4d): the test pair beside the share
 		# directory's wallpapers, dark mode, then light, then back to the
 		# release's mode and no dark picture.
@@ -641,7 +646,10 @@ commands() {
 			status=$(as_ci wpctl status 2>&1)
 			# The compositor starts these before its log reaches the
 			# console, so their lines are read from the log itself.
-			say "sound_started $(grep -a -o 'edel-compositor: started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
+			# The line is matched without its "edel-compositor: " prefix: shell-ui
+			# writes to the same log as the compositor starts, and one line can land
+			# inside the other's.
+			say "sound_started $(grep -a -o 'started [a-z-]*, pid' "$session_log" | sed 's/.*started //; s/, pid//' | sort -u | tr '\n' ' ')"
 			say "sound_said $(grep -a -E 'edel-compositor: (pipewire|wireplumber) ' "$session_log" | tail -n 3 | tr '\n' ';')"
 			# The PulseAudio server runs inside PipeWire: its socket, and
 			# no second process.

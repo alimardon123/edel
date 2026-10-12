@@ -135,7 +135,7 @@ mod tests {
             caret: None,
         };
         let mut pixmap = Pixmap::new(look.width, look.height).unwrap();
-        paint(&mut pixmap, &look, &tokens, None, None, &row);
+        paint(&mut pixmap, &look, &tokens, None, None, &row, None);
         (pixmap, tokens)
     }
 

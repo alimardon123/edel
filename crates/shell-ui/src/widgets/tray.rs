@@ -643,7 +643,7 @@ mod tests {
             caret: None,
         };
         let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
-        let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
+        let places = paint(&mut pixmap, &look, &tokens, None, None, &row, None).widgets;
         let (x, w) = places[0];
         assert_eq!(w, logical_width(1, false));
         let strip = fillet_height(&tokens);
@@ -681,7 +681,7 @@ mod tests {
                 caret: None,
             };
             let mut pixmap = tiny_skia::Pixmap::new(look.width, look.height).unwrap();
-            let places = paint(&mut pixmap, &look, &tokens, None, None, &row).widgets;
+            let places = paint(&mut pixmap, &look, &tokens, None, None, &row, None).widgets;
             (pixmap, places[0].0)
         };
         let rgb = |pixmap: &tiny_skia::Pixmap, x: u32, y: u32| {

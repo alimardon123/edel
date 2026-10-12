@@ -4686,6 +4686,81 @@ case_wallpaper() {
 	echo "PASS: appearance.wallpaper drew the test picture behind the windows, its left half #c0563a and right half #3a8fc0 on the 1280x800 screen, then the colour #336699; then the pair ci-light.png and ci-dark.png, #2e6fd0 in dark mode and #d08a2e in light (appearance.wallpaper_dark, M5.10c4d); then, reset, the background colour; the overview's backdrop was the picture, $tier, and its top right corner at 1276,4 was $backdrop, neither the background nor black (wallpaper-backdrop.png)"
 }
 
+# glass_step COMMAND [BLUR]: runs COMMAND in the VM and waits for what the
+# change of the glass makes: the compositor restarts shell-ui (the tokens
+# changed), shell-ui draws its panel, and with BLUR, the glass is made at
+# that blur on 1280x800 (M5.12b3). The restart and the panel are logged
+# after each count, so a run before this one does not satisfy the wait.
+glass_step() {
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	places=$(count 'edel-shell-ui: panel places')
+	glassed=$(count "edel-shell-ui: glass blur ${2:-x} on 1280x800")
+	guest "$1"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "'$1' did not restart edel-shell-ui (the colours changed)"
+	wait_more 'edel-shell-ui: panel places' "$places" ||
+		fail "shell-ui did not draw its panel after '$1'"
+	[ -z "${2:-}" ] ||
+		wait_more "edel-shell-ui: glass blur $2 on 1280x800" "$glassed" ||
+		fail "shell-ui did not make the glass at blur $2 on 1280x800 after '$1'"
+	# The places are logged as the panel is drawn, before its buffer is on
+	# screen; a second lets the frame land.
+	sleep 1
+}
+
+case_glass() {
+	# The glass (M5.12b3, ADR-002's glass decision): appearance.panel_opacity
+	# 40 makes the bar see-through, and appearance.blur sets how strongly the
+	# wallpaper blurs behind it. The test picture's left half is #c0563a and
+	# its right half #3a8fc0 (wallpaper picture), so the bar's pixel just
+	# right of their meeting, 642,790, is the right half's colour under the
+	# panel's colour at 40 percent when sharp (blur 0), and when blur is 100
+	# the left half's colour mixes into it. Each change restarts shell-ui,
+	# which logs the glass it made. Kept as glass-sharp.png and glass.png.
+	panel=$(token panel)
+	logged=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
+	guest 'wallpaper picture'
+	wait_more 'edel-compositor: wallpaper on Virtual-1 1280x800' "$logged" ||
+		fail "the compositor did not draw the picture on Virtual-1 at 1280x800"
+	glass_step 'glass sharp' 0
+	sharp=$(shot glass-sharp 642 790 '!000000') ||
+		fail "the bar at 642,790 is not drawn (glass-sharp.png)"
+	glass_step 'glass on' 100
+	frosted=$(shot glass 642 790 '!000000') ||
+		fail "the bar at 642,790 is not drawn (glass.png)"
+	# The sharp pixel is the right half under the panel at 40 percent, a
+	# little of the left half in it where the upscale mixes the halves (a
+	# bicubic filter reaches 0.3 px over the edge), so it is within 16 in
+	# each channel and nearer the right half than the left. The frosted one
+	# must differ from the sharp one by 8 or more in some channel.
+	verdict=$(python3 - "$sharp" "$frosted" "$panel" <<-'EOF'
+		import sys
+		def rgb(h):
+		    return [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+		def over(panel, under):
+		    return [0.4 * p + 0.6 * u for p, u in zip(panel, under)]
+		def near(a, b):
+		    return max(abs(x - y) for x, y in zip(a, b))
+		sharp, frosted, panel = rgb(sys.argv[1]), rgb(sys.argv[2]), rgb(sys.argv[3])
+		right, left = over(panel, rgb("3a8fc0")), over(panel, rgb("c0563a"))
+		if near(sharp, right) > 16 or near(sharp, right) > near(sharp, left):
+		    print("not sharp")
+		elif near(sharp, frosted) < 8:
+		    print("not frosted")
+		else:
+		    print("ok")
+		EOF
+	)
+	[ "$verdict" = ok ] ||
+		fail "the bar at 642,790 is #$sharp with blur 0 (glass-sharp.png) and #$frosted with blur 100 (glass.png); sharp should be the right half #3a8fc0 under the panel at 40 percent, and frosted should differ from it by 8 or more in a channel: $verdict"
+	glass_step 'glass default'
+	none=$(count 'edel-compositor: wallpaper none')
+	guest 'wallpaper default'
+	wait_more 'edel-compositor: wallpaper none' "$none" ||
+		fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
+	echo "PASS: appearance.panel_opacity 40 with blur 0 drew the bar at 642,790 #$sharp, the right half #3a8fc0 under the panel at 40 percent (glass-sharp.png), and blur 100 drew #$frosted there, the left half's colour mixed in (glass.png); glass default brought the release's opaque bar back, and the wallpaper went"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with layout.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
