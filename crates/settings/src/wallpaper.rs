@@ -86,7 +86,7 @@ fn kind(value: &str) -> Kind {
 
 /// A value as its line names it: a wallpaper's name with a capital, None,
 /// the file name of the person's picture, or the colour.
-fn title_of(value: &str) -> String {
+pub fn title_of(value: &str) -> String {
     match kind(value) {
         Kind::Pair(name) => files::title(&name),
         Kind::None => tr("None").to_string(),
@@ -172,7 +172,7 @@ impl Card {
             self.slot.remove(&child);
         }
         match &pair {
-            Some((light, dark)) => self.slot.append(&halves(light, dark)),
+            Some((light, dark)) => self.slot.append(&halves(light, dark, WIDTH, HEIGHT)),
             None => self.slot.append(&prompt()),
         }
         *self.paired.borrow_mut() = pair;
@@ -382,21 +382,27 @@ pub fn card(
 /// A reference's card picture (M5.12b6, part c2): a wallpaper's pair of
 /// halves, a picture's path on both halves, or a colour over the card.
 fn reference_picture(dir: &Path, reference: &str) -> gtk::Widget {
+    reference_picture_at(dir, reference, WIDTH, HEIGHT)
+}
+
+/// [`reference_picture`] at `width` by `height` logical pixels, for the
+/// workspaces' small thumbnails (M5.12b5).
+pub fn reference_picture_at(dir: &Path, reference: &str, width: i32, height: i32) -> gtk::Widget {
     match kind(reference) {
-        Kind::Pair(name) => thumbnail(dir, &name),
-        Kind::Picture(path) => halves(&path, &path),
-        Kind::Colour(hex) => colour_picture(&hex),
-        Kind::None => frame().upcast(),
+        Kind::Pair(name) => thumbnail(dir, &name, width, height),
+        Kind::Picture(path) => halves(&path, &path, width, height),
+        Kind::Colour(hex) => colour_picture(&hex, width, height),
+        Kind::None => frame_at(width, height).upcast(),
     }
 }
 
 /// A colour's card picture: the colour over the whole card, or an empty
 /// card when the colour does not parse.
-fn colour_picture(hex: &str) -> gtk::Widget {
+fn colour_picture(hex: &str, width: i32, height: i32) -> gtk::Widget {
     let colour = Colour::parse(hex);
     let area = gtk::DrawingArea::builder()
-        .content_width(WIDTH)
-        .content_height(HEIGHT)
+        .content_width(width)
+        .content_height(height)
         .css_classes(["edel-wallpaper-thumb"])
         .build();
     area.set_draw_func(move |_, cr, w, h| {
@@ -768,11 +774,16 @@ fn pick_colour(card: Weak<Card>, button: gtk::ToggleButton) {
 /// An empty picture the card's size, which the thumbnails and the prompt
 /// share.
 fn frame() -> gtk::Box {
+    frame_at(WIDTH, HEIGHT)
+}
+
+/// [`frame`] at `width` by `height`.
+fn frame_at(width: i32, height: i32) -> gtk::Box {
     let frame = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .css_classes(["edel-wallpaper-thumb"])
         .build();
-    frame.set_size_request(WIDTH, HEIGHT);
+    frame.set_size_request(width, height);
     frame
 }
 
@@ -798,35 +809,35 @@ fn prompt() -> gtk::Label {
 /// dark picture on the right, each scaled to the card. A name with only one
 /// picture uses it for both halves; a picture that will not load leaves an
 /// empty card.
-fn thumbnail(dir: &Path, name: &str) -> gtk::Widget {
+fn thumbnail(dir: &Path, name: &str, width: i32, height: i32) -> gtk::Widget {
     match (
         wallpapers::find(dir, name, false),
         wallpapers::find(dir, name, true),
     ) {
-        (Some(light), Some(dark)) => halves(&light, &dark),
-        (Some(one), None) | (None, Some(one)) => halves(&one, &one),
-        (None, None) => frame().upcast(),
+        (Some(light), Some(dark)) => halves(&light, &dark, width, height),
+        (Some(one), None) | (None, Some(one)) => halves(&one, &one, width, height),
+        (None, None) => frame_at(width, height).upcast(),
     }
 }
 
 /// Two pictures' card picture: the light one on the left half and the dark
 /// one on the right, each scaled to the card (M5.10c4d). A picture that
 /// will not load leaves an empty card.
-fn halves(light: &Path, dark: &Path) -> gtk::Widget {
-    let load = |path: &Path| Pixbuf::from_file_at_scale(path, WIDTH, HEIGHT, false).ok();
+fn halves(light: &Path, dark: &Path, width: i32, height: i32) -> gtk::Widget {
+    let load = |path: &Path| Pixbuf::from_file_at_scale(path, width, height, false).ok();
     let (Some(light), Some(dark)) = (load(light), load(dark)) else {
-        return frame().upcast();
+        return frame_at(width, height).upcast();
     };
-    let Some(both) = Pixbuf::new(Colorspace::Rgb, false, 8, WIDTH, HEIGHT) else {
-        return frame().upcast();
+    let Some(both) = Pixbuf::new(Colorspace::Rgb, false, 8, width, height) else {
+        return frame_at(width, height).upcast();
     };
-    let half = WIDTH / 2;
-    light.copy_area(0, 0, half, HEIGHT, &both, 0, 0);
-    dark.copy_area(half, 0, half, HEIGHT, &both, half, 0);
+    let half = width / 2;
+    light.copy_area(0, 0, half, height, &both, 0, 0);
+    dark.copy_area(half, 0, half, height, &both, half, 0);
     let picture = gtk::Picture::for_paintable(&gdk::Texture::for_pixbuf(&both));
     picture.set_can_shrink(false);
     picture.set_content_fit(gtk::ContentFit::Cover);
-    picture.set_size_request(WIDTH, HEIGHT);
+    picture.set_size_request(width, height);
     picture.add_css_class("edel-wallpaper-thumb");
     picture.set_overflow(gtk::Overflow::Hidden);
     picture.upcast()

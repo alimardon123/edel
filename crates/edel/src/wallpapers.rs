@@ -53,6 +53,24 @@ pub fn value_for<'a>(
     }
 }
 
+/// The value workspace `index` (from 0) shows in the scheme `dark` names
+/// (M5.12b5): its entry of `workspaces.wallpapers` when that is not empty,
+/// else the value [`value_for`] gives from `wallpaper` and `wallpaper_dark`,
+/// Appearance's. The compositor and Settings both read the list through
+/// this one function.
+pub fn for_workspace<'a>(
+    entries: &'a [String],
+    index: usize,
+    wallpaper: Option<&'a str>,
+    wallpaper_dark: Option<&'a str>,
+    dark: bool,
+) -> Option<&'a str> {
+    match entries.get(index).map(|e| e.trim()) {
+        Some(entry) if !entry.is_empty() => Some(entry),
+        _ => value_for(wallpaper, wallpaper_dark, dark),
+    }
+}
+
 /// What `value` shows in the scheme `dark` names, the pairs looked for in
 /// `dir` ([`places::WALLPAPERS_DIR`] on a machine). A name or a path whose
 /// picture is not there is the background colour: a reader is lenient
@@ -262,6 +280,26 @@ mod tests {
             Some("/a/dark.jpg")
         );
         assert_eq!(value_for(None, None, true), None);
+    }
+
+    #[test]
+    fn a_workspace_shows_its_entry_else_appearances_value() {
+        let entries: Vec<String> = ["", "#336699"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            for_workspace(&entries, 1, Some("hills"), None, false),
+            Some("#336699")
+        );
+        assert_eq!(
+            for_workspace(&entries, 0, Some("hills"), Some("earth"), true),
+            Some("earth"),
+            "an empty entry is Appearance's, in dark mode its dark key"
+        );
+        assert_eq!(
+            for_workspace(&entries, 5, Some("hills"), None, false),
+            Some("hills"),
+            "a workspace past the list is Appearance's"
+        );
+        assert_eq!(for_workspace(&[], 0, None, None, false), None);
     }
 
     #[test]

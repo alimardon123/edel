@@ -70,6 +70,7 @@ workspaces.count
 workspaces.dynamic
 workspaces.per_screen
 workspaces.names
+workspaces.wallpapers
 workspaces.apps
 workspaces.overview_strip
 appearance.switcher_look

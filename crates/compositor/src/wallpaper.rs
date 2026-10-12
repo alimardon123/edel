@@ -38,11 +38,25 @@ pub struct Screen {
     pub colour: SolidColorBuffer,
 }
 
-/// What the wallpaper shows, and each screen's picture of it.
+/// What the wallpaper shows, and each screen's picture of it. Each
+/// workspace has its own choice (M5.12b5, `workspaces.wallpapers`), made
+/// by `edel::wallpapers::for_workspace`; a screen draws the choice of the
+/// workspace it shows, and two workspaces that show one value share its
+/// picture.
 pub struct Shown {
+    /// What Appearance shows: a workspace with no entry of its own.
     pub what: Wallpaper,
-    /// By output name.
-    pub screens: HashMap<String, Screen>,
+    /// What each workspace shows, from the first, made when the settings
+    /// load; a workspace past this list shows `what`.
+    pub choices: Vec<Wallpaper>,
+    /// Whether each workspace has an entry of its own in the list.
+    pub own: Vec<bool>,
+    /// Each workspace's value as last logged: its own value, or empty for
+    /// Appearance's, so a change to or from its own is logged once.
+    logged: Vec<String>,
+    /// By output name and the value shown there (`describe`): each
+    /// screen's picture of each value, made once.
+    pub screens: HashMap<(String, String), Screen>,
     /// Whether the first settings load has said what is shown.
     pub announced: bool,
 }
@@ -51,9 +65,17 @@ impl Shown {
     pub fn new(what: Wallpaper) -> Shown {
         Shown {
             what,
+            choices: Vec::new(),
+            own: Vec::new(),
+            logged: Vec::new(),
             screens: HashMap::new(),
             announced: false,
         }
+    }
+
+    /// What workspace `index` (from 0) shows.
+    pub fn on(&self, index: usize) -> &Wallpaper {
+        self.choices.get(index).unwrap_or(&self.what)
     }
 }
 
@@ -79,23 +101,61 @@ fn painted(pixmap: &Pixmap) -> MemoryRenderBuffer {
     )
 }
 
+/// The workspaces the wallpaper keeps a choice for: the most there may be.
+const WORKSPACES: usize = edel::presets::MOST_WORKSPACES;
+
 impl Edel {
-    /// Shows the wallpaper the settings name (M5.10c4b), logging it, and
-    /// makes every screen's picture again.
+    /// Shows the wallpapers the settings name (M5.10c4b, M5.12b5): each
+    /// workspace's choice, logged when it is its own, and Appearance's,
+    /// logged as before. Makes every screen's picture again.
     pub fn apply_wallpaper(&mut self, settings: &Settings) {
         let dark = settings.color_scheme == Scheme::Dark;
-        let value = edel::wallpapers::value_for(
+        let (light, dark_value) = (
             settings.wallpaper.as_deref(),
             settings.wallpaper_dark.as_deref(),
-            dark,
         );
+        let value = edel::wallpapers::value_for(light, dark_value, dark);
         let what = edel::wallpapers::on_this_machine(value, dark);
         eprintln!("edel-compositor: wallpaper {}", describe(&what));
+        let entries = &settings.workspace_wallpapers;
+        self.wallpaper.choices = (0..WORKSPACES)
+            .map(|index| {
+                let value =
+                    edel::wallpapers::for_workspace(entries, index, light, dark_value, dark);
+                edel::wallpapers::on_this_machine(value, dark)
+            })
+            .collect();
+        self.wallpaper.own = (0..WORKSPACES)
+            .map(|index| entries.get(index).is_some_and(|e| !e.trim().is_empty()))
+            .collect();
         self.wallpaper.what = what;
         self.wallpaper.screens.clear();
         self.wallpaper.announced = true;
+        for index in 0..self.desks.count() {
+            self.note_workspace(index);
+        }
         self.repaint = true;
         self.dirty = true;
+    }
+
+    /// Logs workspace `index`'s wallpaper as `wallpaper on workspace N:
+    /// VALUE` when it is its own and was not logged as it is now, and once
+    /// more when a workspace goes back to Appearance's (M5.12b5).
+    pub fn note_workspace(&mut self, index: usize) {
+        let own = self.wallpaper.own.get(index).copied().unwrap_or(false);
+        let value = describe(self.wallpaper.on(index));
+        if self.wallpaper.logged.len() <= index {
+            self.wallpaper.logged.resize(index + 1, String::new());
+        }
+        let kept = if own { value.clone() } else { String::new() };
+        if self.wallpaper.logged[index] == kept {
+            return;
+        }
+        eprintln!(
+            "edel-compositor: wallpaper on workspace {}: {value}",
+            index + 1
+        );
+        self.wallpaper.logged[index] = kept;
     }
 
     /// The wallpaper of `output`, drawn behind everything (M5.10c4b).
@@ -108,10 +168,15 @@ impl Edel {
         logical: Size<i32, Logical>,
         scale: f64,
     ) -> Vec<Drawn> {
-        match self.wallpaper.what.clone() {
+        let name = output.name();
+        let index = self.desks.shown_on(&name);
+        self.note_workspace(index);
+        let what = self.wallpaper.on(index).clone();
+        let key = (name, describe(&what));
+        match what {
             Wallpaper::Background => Vec::new(),
             Wallpaper::Colour(colour) => {
-                let screen = self.wallpaper.screens.entry(output.name()).or_default();
+                let screen = self.wallpaper.screens.entry(key).or_default();
                 screen.colour.update(logical, colour.rgba());
                 let solid = SolidColorRenderElement::from_buffer(
                     &screen.colour,
@@ -122,7 +187,9 @@ impl Edel {
                 );
                 vec![Drawn::Plain(Element::Border(solid))]
             }
-            Wallpaper::Picture(path) => self.picture_elements(renderer, output, &path, logical),
+            Wallpaper::Picture(path) => {
+                self.picture_elements(renderer, output, key, &path, logical)
+            }
         }
     }
 
@@ -132,6 +199,7 @@ impl Edel {
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
+        key: (String, String),
         path: &Path,
         logical: Size<i32, Logical>,
     ) -> Vec<Drawn> {
@@ -143,16 +211,16 @@ impl Edel {
         if self
             .wallpaper
             .screens
-            .get(&name)
+            .get(&key)
             .is_none_or(|s| s.size != size)
         {
             let screen = load_screen(path, &name, size);
-            self.wallpaper.screens.insert(name.clone(), screen);
+            self.wallpaper.screens.insert(key.clone(), screen);
         }
         let Some(buffer) = self
             .wallpaper
             .screens
-            .get(&name)
+            .get(&key)
             .and_then(|s| s.picture.as_ref())
         else {
             return Vec::new();

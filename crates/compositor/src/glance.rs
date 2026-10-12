@@ -933,17 +933,19 @@ impl Edel {
             (f64::from(area.size.h) * scale / BACKDROP_SHRINK).ceil() as u32,
         );
         let blurred = self.deadline.tier() != Tier::Lite;
+        // The backdrop is the wallpaper of the workspace this screen shows
+        // (M5.12b5), as the desktop behind the windows is.
+        let what = self.wallpaper.on(self.desks.shown_on(&name)).clone();
         let shows = format!(
             "{pixels:?} {:?} {:?} {:?} {} {blurred}",
             tokens.backdrop,
             tokens.backdrop_deep,
             tokens.backdrop_text,
-            crate::wallpaper::describe(&self.wallpaper.what)
+            crate::wallpaper::describe(&what)
         );
         let kept = &mut self.overview_kept.backdrops;
         if kept.get(&name).is_none_or(|p| p.shows != shows) {
-            if let Some(pixmap) = backdrop_of(&self.wallpaper.what, pixels, blurred, &name, &tokens)
-            {
+            if let Some(pixmap) = backdrop_of(&what, pixels, blurred, &name, &tokens) {
                 kept.insert(name.clone(), painted(shows, &pixmap));
             }
         }
