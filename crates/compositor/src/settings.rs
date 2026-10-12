@@ -76,6 +76,11 @@ pub struct Settings {
     /// `workspaces.names` (M5.2i), the first workspace's first; an
     /// empty text is no name.
     pub workspace_names: Vec<String>,
+    /// `workspaces.wallpapers` (M5.12b5), the first workspace's first, each
+    /// as `appearance.wallpaper` takes it and `""` for Appearance's; the
+    /// person's list replaces the machine's whole. Empty is Appearance's
+    /// for every workspace.
+    pub workspace_wallpapers: Vec<String>,
     /// `workspaces.apps` (M5.2l): each app id and the workspace it
     /// opens on, from 0, in the file's order; absent opens every app on
     /// the workspace in use.
@@ -180,6 +185,9 @@ impl Settings {
             }
             if let Some(names) = &file.workspaces.names {
                 settings.workspace_names.clone_from(names);
+            }
+            if let Some(wallpapers) = &file.workspaces.wallpapers {
+                settings.workspace_wallpapers.clone_from(wallpapers);
             }
             if file.workspaces.overview_strip.is_some() {
                 settings

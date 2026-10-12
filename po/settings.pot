@@ -884,6 +884,9 @@ msgstr ""
 msgid "Workspace names"
 msgstr ""
 
+msgid "Wallpaper for each workspace"
+msgstr ""
+
 msgid "Apps on their workspace"
 msgstr ""
 
@@ -1553,13 +1556,19 @@ msgstr ""
 msgid "Workspace"
 msgstr ""
 
+msgid "Each workspace can show its own wallpaper; an empty choice is Appearance's"
+msgstr ""
+
+msgid "Same as Appearance"
+msgstr ""
+
+msgid "Workspace {n}"
+msgstr ""
+
 msgid "A name shows in the panel's switcher instead of the number"
 msgstr ""
 
 msgid "No name"
-msgstr ""
-
-msgid "Workspace {n}"
 msgstr ""
 
 msgid "These apps always open on their workspace"

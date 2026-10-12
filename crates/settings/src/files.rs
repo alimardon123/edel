@@ -40,6 +40,9 @@ pub struct Layout {
     pub workspaces_ends: String,
     /// The workspaces' names, the first workspace's first (`workspaces.names`).
     pub workspace_names: Vec<String>,
+    /// The wallpaper of each workspace, the first workspace's first, an
+    /// empty text Appearance's (`workspaces.wallpapers`, M5.12b5).
+    pub workspace_wallpapers: Vec<String>,
     /// Apps and the workspace each always opens on (`workspaces.apps`).
     pub app_workspaces: BTreeMap<String, i64>,
     /// The side the overview's strip of workspaces lies on
@@ -90,6 +93,7 @@ impl Layout {
             "appearance.switcher_shown" => Some(self.workspaces_shown.to_string()),
             "appearance.switcher_ends" => Some(self.workspaces_ends.clone()),
             "workspaces.names" => Some(list_text(&self.workspace_names)),
+            "workspaces.wallpapers" => Some(list_text(&self.workspace_wallpapers)),
             "workspaces.apps" => Some(apps_text(&self.app_workspaces)),
             "workspaces.overview_strip" => Some(self.overview_strip.clone()),
             "appearance.mode" => Some(self.mode.clone()),
@@ -116,6 +120,7 @@ fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
         "workspaces.dynamic" => flag(spaces.dynamic),
         "workspaces.per_screen" => flag(spaces.per_screen),
         "workspaces.names" => spaces.names.as_deref().map(list_text),
+        "workspaces.wallpapers" => spaces.wallpapers.as_deref().map(list_text),
         "workspaces.apps" => spaces.apps.as_ref().map(apps_text),
         "workspaces.overview_strip" => spaces.overview_strip.clone(),
         "appearance.wallpaper" => look.wallpaper.clone(),
@@ -258,6 +263,13 @@ impl Files {
                 .clone()
                 .or_else(|| machine_spaces.names.clone())
                 .unwrap_or_default(),
+            // The same whole list rule, for each workspace's wallpaper
+            // (M5.12b5); absent is Appearance's for every workspace.
+            workspace_wallpapers: person_spaces
+                .wallpapers
+                .clone()
+                .or_else(|| machine_spaces.wallpapers.clone())
+                .unwrap_or_default(),
             app_workspaces: person_spaces
                 .apps
                 .clone()
@@ -392,6 +404,7 @@ impl Files {
             "appearance.switcher_shown" => person.appearance.switcher_shown.take().is_some(),
             "appearance.switcher_ends" => person.appearance.switcher_ends.take().is_some(),
             "workspaces.names" => person.workspaces.names.take().is_some(),
+            "workspaces.wallpapers" => person.workspaces.wallpapers.take().is_some(),
             "workspaces.apps" => person.workspaces.apps.take().is_some(),
             "workspaces.overview_strip" => person.workspaces.overview_strip.take().is_some(),
             "appearance.mode" => person.appearance.mode.take().is_some(),
