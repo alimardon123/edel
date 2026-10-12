@@ -171,6 +171,19 @@ pub const ROWS: &[Row] = &[
         key: "appearance.text_size",
         title: n_("Text size"),
     },
+    // The pointer and the icons (M5.12b5 part A), after the text.
+    Row {
+        key: "appearance.cursor_size",
+        title: n_("Cursor size"),
+    },
+    Row {
+        key: "appearance.cursor_theme",
+        title: n_("Cursor"),
+    },
+    Row {
+        key: "appearance.icon_size",
+        title: n_("Icon size"),
+    },
     // The Motion group (M5.12b4): how much things move, how fast, and the
     // feel, whose values (Springy and the rest) search finds too.
     Row {
@@ -456,7 +469,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 24);
+        assert_eq!(on_page("appearance").count(), 27);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

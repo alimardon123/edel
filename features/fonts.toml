@@ -1,7 +1,7 @@
 format = 1
 summary = "Fonts: Inter for the interface, Noto for the rest and the terminal"
-why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks; its other scripts arrive in M5.12."
-packages = ["font-inter", "font-noto"]
+why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks. Arabic and Hindi (Devanagari) come first, with their regular and bold sans faces (M5.12b5); the other scripts come when a language needs them (M5.30)."
+packages = ["font-inter", "font-noto", "font-noto-arabic", "font-noto-devanagari"]
 
 # What the image keeps of the fonts (M5.30b): Inter as its variable files
 # alone, which hold every weight (Inter.ttc, its static weights, is 12.6
@@ -23,4 +23,9 @@ files = [
   "NotoSansSymbols-Regular.ttf",
   "NotoSansSymbols-Bold.ttf",
   "NotoSansSymbols2-Regular.ttf",
+  # Arabic and Hindi (M5.12b5): the sans faces' regular and bold weights.
+  "NotoSansArabic-Regular.ttf",
+  "NotoSansArabic-Bold.ttf",
+  "NotoSansDevanagari-Regular.ttf",
+  "NotoSansDevanagari-Bold.ttf",
 ]

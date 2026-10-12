@@ -782,6 +782,9 @@ msgstr ""
 msgid "developer mode and profiles"
 msgstr ""
 
+msgid "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
 msgid "the file is not valid TOML"
 msgstr ""
 
@@ -948,6 +951,9 @@ msgid "{value} is not a channel name; use lowercase letters, digits and hyphens,
 msgstr ""
 
 msgid "a channel name in quotes, such as \"stable\""
+msgstr ""
+
+msgid "a cursor theme's name in quotes, such as \"default\""
 msgstr ""
 
 msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"

@@ -103,6 +103,22 @@ pub struct Settings {
     /// `text_size`), the person's over the machine's; the tokens follow them
     /// too, and the title bars' font is loaded again when they change.
     pub text: edel::tokens::Text,
+    /// `appearance.cursor_size` (M5.12b5 part A), logical pixels; absent is
+    /// the release's 24. The pointer follows it live.
+    pub cursor_size: Option<u32>,
+    /// `appearance.cursor_theme` (M5.12b5 part A), the person's over the
+    /// machine's; absent is the release's `default`.
+    pub cursor_theme: Option<String>,
+    /// The icon scale (M5.12b5 part A); the tokens read it, and a change
+    /// starts shell-ui again with them.
+    pub icons: edel::tokens::IconSize,
+}
+
+/// Whether `value` is in the key table's range for `key` (M5.12b5 part A); a
+/// value outside it is read as absent.
+fn in_range(key: &str, value: u32) -> bool {
+    edel::settings::whole_range(key)
+        .is_some_and(|(least, most)| (least..=most).contains(&i64::from(value)))
 }
 
 /// Whether `speed` is in the key table's range for `appearance.animation_speed`
@@ -137,6 +153,7 @@ impl Settings {
         let mut settings = Settings {
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),
+            icons: edel::tokens::IconSize::between(machine, person),
             ..Settings::default()
         };
         for file in [machine, person].into_iter().flatten() {
@@ -202,6 +219,21 @@ impl Settings {
                 .and_then(Motion::parse)
             {
                 settings.motion = motion;
+            }
+            if let Some(size) = file
+                .appearance
+                .cursor_size
+                .filter(|s| in_range(edel::settings::CURSOR_SIZE, *s))
+            {
+                settings.cursor_size = Some(size);
+            }
+            if let Some(theme) = file
+                .appearance
+                .cursor_theme
+                .as_deref()
+                .filter(|t| !t.is_empty() && !t.contains('/'))
+            {
+                settings.cursor_theme = Some(theme.to_string());
             }
             if let Some(speed) = file
                 .appearance

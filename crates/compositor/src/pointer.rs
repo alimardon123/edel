@@ -1,9 +1,10 @@
 //! The pointer on screen (roadmap M4.6b): the cursor a window sets, a
 //! surface or a named shape (`wp_cursor_shape_v1`), drawn at the pointer.
-//! A named shape comes from the xcursor theme (`XCURSOR_THEME`, else
-//! `default`) when one is installed, else it is the arrow `cursor.rs`
-//! draws, so there is always a pointer to see. The cursor goes on the
-//! GPU's cursor plane, so moving it redraws nothing, unless
+//! A named shape comes from the xcursor theme (`appearance.cursor_theme`,
+//! else `XCURSOR_THEME`, else `default`) when one is installed, at the size
+//! `appearance.cursor_size` gives (M5.12b5 part A), else it is the arrow
+//! `cursor.rs` draws, so there is always a pointer to see. The cursor goes
+//! on the GPU's cursor plane, so moving it redraws nothing, unless
 //! `EDEL_SOFTWARE_CURSOR=1` asks for it to be drawn into the frame, as
 //! screenshots need and as GPUs with a broken cursor plane do.
 
@@ -26,9 +27,9 @@ use edel_compositor::cursor;
 
 use crate::state::Edel;
 
-/// The cursor's height in logical pixels, until `appearance.cursor_size`
-/// (M5.5).
-pub const SIZE: u32 = 24;
+/// The cursor's height in logical pixels when no file sets
+/// `appearance.cursor_size` (M5.5, M5.12b5 part A).
+pub const SIZE: u32 = edel::settings::CURSOR_SIZE_DEFAULT;
 
 /// One cursor image, ready to draw.
 pub struct Image {
@@ -44,6 +45,13 @@ pub struct Cursors {
     pub status: CursorImageStatus,
     /// Draw the cursor into the frame instead of on the cursor plane.
     pub software: bool,
+    /// The xcursor theme in use and the cursor's height in logical pixels,
+    /// from the settings file (M5.12b5 part A).
+    pub name: String,
+    pub size: u32,
+    /// Whether the log has said which cursor is in use (at start, then on
+    /// each change).
+    pub announced: bool,
     theme: xcursor::CursorTheme,
     /// By shape name and size in pixels.
     images: HashMap<(String, u32), Image>,
@@ -52,17 +60,44 @@ pub struct Cursors {
 
 impl Cursors {
     pub fn new() -> Cursors {
-        let name = std::env::var("XCURSOR_THEME")
-            .ok()
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| "default".into());
+        let name = theme_name(None);
         Cursors {
             status: CursorImageStatus::default_named(),
             software: std::env::var_os("EDEL_SOFTWARE_CURSOR").is_some_and(|v| v == "1"),
             theme: xcursor::CursorTheme::load(&name),
+            name,
+            size: SIZE,
+            announced: false,
             images: HashMap::new(),
             told: false,
         }
+    }
+
+    /// The theme and size the settings file asks for (M5.12b5 part A); the
+    /// image cache is dropped when the theme changes. Returns whether either
+    /// changed.
+    pub fn set(&mut self, theme: Option<&str>, size: Option<u32>) -> bool {
+        let name = theme_name(theme);
+        let size = size.unwrap_or(SIZE);
+        let changed = name != self.name || size != self.size;
+        if name != self.name {
+            self.theme = xcursor::CursorTheme::load(&name);
+            self.images.clear();
+            self.told = false;
+        }
+        self.name = name;
+        self.size = size;
+        changed
+    }
+
+    /// The variables the programs the compositor starts are given, so their
+    /// own cursors match the compositor's (M5.12b5 part A). The size is in
+    /// logical pixels; apps already running keep theirs.
+    pub fn env(&self) -> [(&'static str, String); 2] {
+        [
+            ("XCURSOR_THEME", self.name.clone()),
+            ("XCURSOR_SIZE", self.size.to_string()),
+        ]
     }
 
     /// The image for the shape `name` at `px` pixels tall: the theme's
@@ -119,6 +154,35 @@ impl Cursors {
             self.status = CursorImageStatus::default_named();
         }
         None
+    }
+}
+
+/// The theme a settings file names, else `XCURSOR_THEME` when a session
+/// sets it, else the release's (M5.12b5 part A).
+fn theme_name(key: Option<&str>) -> String {
+    key.map(str::to_string)
+        .or_else(|| {
+            std::env::var("XCURSOR_THEME")
+                .ok()
+                .filter(|n| !n.is_empty())
+        })
+        .unwrap_or_else(|| edel::settings::CURSOR_THEME_DEFAULT.into())
+}
+
+impl Edel {
+    /// The cursor the settings files ask for (M5.12b5 part A), at start and
+    /// on each change: logged as `cursor THEME at N px`, and drawn again.
+    /// Apps already running keep the cursor they had.
+    pub fn cursor_settings(&mut self, theme: Option<&str>, size: Option<u32>) {
+        let changed = self.cursors.set(theme, size);
+        if changed || !self.cursors.announced {
+            self.cursors.announced = true;
+            eprintln!(
+                "edel-compositor: cursor {} at {} px",
+                self.cursors.name, self.cursors.size
+            );
+            self.dirty = true;
+        }
     }
 }
 
