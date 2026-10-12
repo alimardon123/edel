@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gtk::cairo::Context;
+use gtk::gdk;
 use gtk::gdk::prelude::GdkCairoContextExt;
 use gtk::gdk_pixbuf::Pixbuf;
 use gtk::gio;
@@ -31,6 +32,23 @@ use edel::wallpapers;
 use crate::files::Files;
 use crate::style::{self, Theme};
 use crate::{icon, rows, wallpaper, widgets};
+
+/// What a picture's menu, its drag or the sheet's Add pictures tile does to
+/// the person's file (M5.12b6, part c2). `Card::edit` writes it through the
+/// library's writers and shows the result.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Edit {
+    /// Adds pictures to the theme in use (Add pictures, Add to this theme).
+    Add(Vec<String>),
+    /// Adds a picture to another of the person's own themes (Add to theme,
+    /// and a drop on its tile).
+    AddTo { theme: String, picture: String },
+    /// Moves a picture of the theme in use to another of the person's own
+    /// themes (Move to theme).
+    MoveTo { theme: String, picture: String },
+    /// Takes a picture out of the theme in use (Remove).
+    Remove(String),
+}
 
 /// The keys this card chooses.
 const STYLE_KEY: &str = "appearance.mode";
@@ -370,11 +388,10 @@ impl Shown {
         if file.appearance.theme.is_none() {
             file.appearance.theme = Some(in_use.clone());
         }
-        let theme = themes::lookup(&in_use, &file.themes);
         Shown {
             title: themes::title(&in_use, &file.themes),
             built_in: themes::is_built_in(&in_use),
-            pictures: theme.map(|theme| theme.pictures).unwrap_or_default(),
+            pictures: themes::pictures_of(&file, &in_use),
             changed: themes::changed(&file),
             in_use,
             file,
@@ -390,7 +407,7 @@ impl Shown {
 /// The New tile of the themes row (M5.12b6c): a dashed outline the size of
 /// a tile with a plus in the accent, and its name under it. The lock's New
 /// card is `widgets::new_card`, which this page does not share.
-fn new_tile(caption: &str) -> gtk::Button {
+pub fn new_tile(caption: &str) -> gtk::Button {
     let plus = gtk::Label::builder()
         .label("+")
         .hexpand(true)
@@ -1385,9 +1402,7 @@ impl Card {
         let key: String = rows
             .iter()
             .map(|row| {
-                let pictures = themes::lookup(&row.name, &shown.file.themes)
-                    .map(|theme| theme.pictures)
-                    .unwrap_or_default();
+                let pictures = themes::pictures_of(&shown.file, &row.name);
                 format!("{}|{}|{pictures:?}|{}", row.name, row.title, row.built_in)
             })
             .collect::<Vec<_>>()
@@ -1400,9 +1415,7 @@ impl Card {
             let mut first: Option<gtk::ToggleButton> = None;
             let mut column = 0;
             for row in &rows {
-                let pictures = themes::lookup(&row.name, &shown.file.themes)
-                    .map(|theme| theme.pictures)
-                    .unwrap_or_default();
+                let pictures = themes::pictures_of(&shown.file, &row.name);
                 let tile = self.tile(&row.name, &row.title, row.built_in, &pictures);
                 match &first {
                     Some(first) => tile.set_group(Some(first)),
@@ -1495,6 +1508,31 @@ impl Card {
             .hexpand(true)
             .build();
         tile.update_property(&[gtk::accessible::Property::Label(title)]);
+        // A picture dropped on one of the person's own themes is added to it;
+        // the built-in ones take no drop (M5.12b6, part c2).
+        if !built_in {
+            let target = gtk::DropTarget::new(
+                <String as glib::prelude::StaticType>::static_type(),
+                gdk::DragAction::COPY,
+            );
+            let weak = Rc::downgrade(self);
+            let to = name.to_string();
+            target.connect_drop(move |_, value, _, _| {
+                let Ok(picture) = value.get::<String>() else {
+                    return false;
+                };
+                if let Some(card) = weak.upgrade() {
+                    let edit = Edit::AddTo {
+                        theme: to.clone(),
+                        picture,
+                    };
+                    // Written once the drop is over: the write builds the tiles again.
+                    glib::idle_add_local_once(move || card.edit(edit));
+                }
+                true
+            });
+            tile.add_controller(target);
+        }
         let weak = Rc::downgrade(self);
         let chosen = name.to_string();
         tile.connect_toggled(move |tile| {
@@ -1518,18 +1556,33 @@ impl Card {
     /// title, then every other wallpaper, as `wallpaper.rs` builds them.
     /// Built again when the theme's pictures change.
     fn show_sheet(self: &Rc<Self>, shown: &Shown) {
-        let key = format!("{}\n{}", shown.title, shown.pictures.join("\n"));
+        let others: Vec<(String, String)> = themes::rows(&shown.file)
+            .into_iter()
+            .filter(|row| !row.built_in && !row.in_use)
+            .map(|row| (row.name, row.title))
+            .collect();
+        let key = format!("{}\n{}\n{others:?}", shown.title, shown.pictures.join("\n"));
         if *self.sheet_key.borrow() != key {
             while let Some(child) = self.sheet_content.first_child() {
                 self.sheet_content.remove(&child);
             }
             let title = trf("Pictures in {theme}", &[("theme", &shown.title)]);
+            let weak = Rc::downgrade(self);
+            let sheet = wallpaper::Sheet {
+                others,
+                run: Rc::new(move |edit| {
+                    if let Some(card) = weak.upgrade() {
+                        card.edit(edit);
+                    }
+                }),
+            };
             let card = wallpaper::card(
                 &self.sheet_content,
                 &self.problem,
                 &self.theme,
                 &title,
                 &shown.pictures,
+                &sheet,
             );
             *self.wallpapers.borrow_mut() = Some(card);
             *self.sheet_key.borrow_mut() = key;
@@ -1538,6 +1591,55 @@ impl Card {
         if let Some(card) = self.wallpapers.borrow().as_ref() {
             card.show(&files);
         }
+    }
+
+    /// Writes one edit of the pictures (M5.12b6, part c2) to the person's
+    /// file through the library's writers, logs what it did for CI and shows
+    /// the files as they are now. A refusal shows in the problem line.
+    fn edit(self: &Rc<Self>, edit: Edit) {
+        let files = Files::here();
+        let shown = Shown::of(&files);
+        let in_use = shown.in_use.clone();
+        // How many of `pictures` the theme `to` did not hold yet.
+        let new_in = |to: &str, pictures: &[String]| {
+            let have = themes::pictures_of(&shown.file, to);
+            pictures
+                .iter()
+                .filter(|picture| !have.contains(picture))
+                .count()
+        };
+        let mut log: Option<String> = None;
+        let result = files.edit_person(|text| match &edit {
+            Edit::Add(pictures) => {
+                log = Some(format!(
+                    "themes pictures added {} to {in_use}",
+                    new_in(&in_use, pictures)
+                ));
+                themes::add_pictures_text(text, &in_use, pictures)
+            }
+            Edit::AddTo { theme, picture } => {
+                log = Some(format!(
+                    "themes pictures added {} to {theme}",
+                    new_in(theme, std::slice::from_ref(picture))
+                ));
+                themes::add_pictures_text(text, theme, std::slice::from_ref(picture))
+            }
+            Edit::MoveTo { theme, picture } => {
+                log = Some(format!("themes picture moved from {in_use} to {theme}"));
+                themes::move_picture_text(text, &in_use, theme, picture)
+            }
+            Edit::Remove(picture) => {
+                log = Some(format!("themes picture removed from {in_use}"));
+                themes::remove_picture_text(text, &in_use, picture)
+            }
+        });
+        if result.is_ok() {
+            if let Some(line) = log {
+                eprintln!("edel-settings: {line}");
+            }
+        }
+        self.report(result);
+        self.show_now(&Shown::of(&Files::here()));
     }
 
     /// Shows why a change was not written, or takes an old message away.

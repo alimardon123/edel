@@ -1430,6 +1430,18 @@ msgstr ""
 msgid "One picture, or two for light and dark"
 msgstr ""
 
+msgid "Add pictures…"
+msgstr ""
+
+msgid "Add to this theme"
+msgstr ""
+
+msgid "Add to theme"
+msgstr ""
+
+msgid "Move to theme"
+msgstr ""
+
 msgid "Choose one picture, or two for light and dark mode"
 msgstr ""
 

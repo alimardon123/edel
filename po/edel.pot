@@ -956,6 +956,12 @@ msgstr ""
 msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""
 msgstr ""
 
+msgid "a list of pictures in quotes, such as [\"aurora\"]"
+msgstr ""
+
+msgid "a list of pictures in quotes, such as [\"aurora\", \"/home/you/sea.jpg\"]"
+msgstr ""
+
 msgid "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]"
 msgstr ""
 
@@ -1136,6 +1142,12 @@ msgstr ""
 msgid "{value} is not a picture; give a wallpaper's name such as \"aurora\", a picture's full path, or a colour as \"#rrggbb\""
 msgstr ""
 
+msgid "a theme holds up to {most} pictures; remove some first"
+msgstr ""
+
+msgid "{value} is listed twice; a theme holds each picture once"
+msgstr ""
+
 msgid "{name} is a built-in theme; name yours another way, such as \"my-theme\""
 msgstr ""
 
@@ -1158,6 +1170,12 @@ msgid "there is no theme of yours called {name}; edel theme list shows them"
 msgstr ""
 
 msgid "{name} is the theme in use; pick another theme first: edel settings set appearance.theme=edel"
+msgstr ""
+
+msgid "{name} is built in; choose it first, or keep it as new to change it"
+msgstr ""
+
+msgid "{picture} is not a picture of {name}, so there is nothing to remove"
 msgstr ""
 
 msgid "accent {name} is not an accent or a colour; the release's is used"

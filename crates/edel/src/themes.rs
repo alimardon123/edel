@@ -49,8 +49,8 @@ pub const NOT_IN_A_THEME: &[&str] = &[
     "switcher_ends",
 ];
 
-/// The most pictures a theme holds.
-const MOST_PICTURES: usize = 32;
+/// The most pictures a theme holds (`appearance.pictures` included).
+pub const MOST_PICTURES: usize = 32;
 
 /// The most characters a theme's title may have.
 const MOST_TITLE: usize = 40;
@@ -176,16 +176,27 @@ fn filled(own: &Appearance, theme: &Appearance) -> Appearance {
 /// `appearance.theme`, or naming no theme, comes back unchanged. Pure, and
 /// the one function every reader calls (ADR-010).
 pub fn themed(file: &SettingsFile) -> SettingsFile {
-    let Some(name) = file.appearance.theme.as_deref() else {
-        return file.clone();
-    };
-    let Some(theme) = lookup(name, &file.themes) else {
-        return file.clone();
+    let theme = match file.appearance.theme.as_deref() {
+        Some(name) => match lookup(name, &file.themes) {
+            Some(theme) => Some(theme),
+            None => return file.clone(),
+        },
+        None => None,
     };
     let mut out = file.clone();
-    out.appearance = filled(&file.appearance, &theme.values);
+    if let Some(theme) = &theme {
+        out.appearance = filled(&file.appearance, &theme.values);
+    }
     if out.appearance.wallpaper.is_none() {
-        out.appearance.wallpaper = theme.pictures.first().cloned();
+        // The person's pictures lie on top of the theme, so the first of
+        // them is the wallpaper, and an empty list shows none (M5.12b6, c2).
+        out.appearance.wallpaper = match &file.appearance.pictures {
+            Some(pictures) => pictures.first().cloned(),
+            None => theme
+                .as_ref()
+                .and_then(|theme| theme.pictures.first())
+                .cloned(),
+        };
     }
     out
 }
@@ -219,22 +230,34 @@ fn top(path: &str) -> &str {
 /// `appearance.colours.panel`; the page's "Changed: WHAT" says these. The
 /// theme in use is `edel` while no `appearance.theme` names one.
 pub fn changed(file: &SettingsFile) -> Vec<String> {
-    let name = file.appearance.theme.as_deref().unwrap_or(DEFAULT);
-    let theme = lookup(name, &file.themes)
-        .map(|theme| theme.values)
+    let theme = lookup(in_use_name(file), &file.themes);
+    let theme_pictures = theme
+        .as_ref()
+        .map(|theme| theme.pictures.clone())
         .unwrap_or_default();
-    let (Ok(own), Ok(theme)) = (Value::try_from(&file.appearance), Value::try_from(&theme)) else {
+    let theme_values = theme.map(|theme| theme.values).unwrap_or_default();
+    let (Ok(own), Ok(theme)) = (
+        Value::try_from(&file.appearance),
+        Value::try_from(&theme_values),
+    ) else {
         return Vec::new();
     };
     let (mut own_values, mut theme_values) = (BTreeMap::new(), BTreeMap::new());
     flatten("", &own, &mut own_values);
     flatten("", &theme, &mut theme_values);
-    own_values
+    let mut keys: Vec<String> = own_values
         .iter()
-        .filter(|(path, _)| !NOT_IN_A_THEME.contains(&top(path)))
+        .filter(|(path, _)| !NOT_IN_A_THEME.contains(&top(path)) && top(path) != "pictures")
         .filter(|(path, value)| theme_values.get(*path) != Some(*value))
         .map(|(path, _)| format!("appearance.{path}"))
-        .collect()
+        .collect();
+    // The pictures are changed when they differ from the theme's own list.
+    if let Some(pictures) = &file.appearance.pictures {
+        if *pictures != theme_pictures {
+            keys.push("appearance.pictures".to_string());
+        }
+    }
+    keys
 }
 
 /// The appearance keys the file sets outside its wallpapers and style: what
@@ -283,16 +306,45 @@ pub fn check_table(table: &Table) -> Result<(), String> {
                 &[("most", &MOST_PICTURES.to_string())],
             ));
         }
+        let mut list = Vec::new();
         for item in items {
             match item.as_str() {
-                Some(value) if wallpapers::is_form(value) => {}
-                _ => {
-                    return Err(trf(
-                        "{value} is not a picture; give a wallpaper's name such as \"aurora\", a picture's full path, or a colour as \"#rrggbb\"",
-                        &[("value", &item.to_string())],
-                    ));
-                }
+                Some(value) => list.push(value.to_string()),
+                None => return Err(not_a_picture(&item.to_string())),
             }
+        }
+        check_pictures(&list)?;
+    }
+    Ok(())
+}
+
+/// The words for a value that is no picture.
+fn not_a_picture(value: &str) -> String {
+    trf(
+        "{value} is not a picture; give a wallpaper's name such as \"aurora\", a picture's full path, or a colour as \"#rrggbb\"",
+        &[("value", value)],
+    )
+}
+
+/// The check of a list of pictures, the person's on top of a theme or a
+/// theme's own (`Kind::Pictures` and the writers): each a picture's form,
+/// at most [`MOST_PICTURES`], none twice.
+pub fn check_pictures(pictures: &[String]) -> Result<(), String> {
+    if pictures.len() > MOST_PICTURES {
+        return Err(trf(
+            "a theme holds up to {most} pictures; remove some first",
+            &[("most", &MOST_PICTURES.to_string())],
+        ));
+    }
+    for (index, picture) in pictures.iter().enumerate() {
+        if !wallpapers::is_form(picture) {
+            return Err(not_a_picture(&format!("{picture:?}")));
+        }
+        if pictures[..index].contains(picture) {
+            return Err(trf(
+                "{value} is listed twice; a theme holds each picture once",
+                &[("value", &format!("{picture:?}"))],
+            ));
         }
     }
     Ok(())
@@ -383,16 +435,17 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
     key.strip_prefix("appearance.")?;
     // Most files name no theme, and then nothing is parsed: this is asked at
     // each drawing of a menu, so the common case costs a search of the text.
-    let names_some_theme = |text: Option<&str>| text.is_some_and(|text| text.contains("theme"));
+    let names_some_theme = |text: Option<&str>| {
+        text.is_some_and(|text| text.contains("theme") || text.contains("pictures"))
+    };
     if !names_some_theme(machine) && !names_some_theme(person) {
         return None;
     }
     let read = |text: Option<&str>| text.and_then(|text| settings::read(text).ok());
     let (machine, person) = (read(machine), read(person));
-    let names_a_theme = [&machine, &person]
-        .into_iter()
-        .flatten()
-        .any(|read| read.file.appearance.theme.is_some());
+    let names_a_theme = [&machine, &person].into_iter().flatten().any(|read| {
+        read.file.appearance.theme.is_some() || read.file.appearance.pictures.is_some()
+    });
     if !names_a_theme {
         return None;
     }
@@ -450,7 +503,12 @@ pub fn save_text(text: &str, name: &str) -> Result<String> {
         );
     }
     let base = lookup(in_use_name, &file.themes).unwrap_or_default();
-    let mut pictures = base.pictures.clone();
+    // The person's pictures on top move into the new theme (M5.12b6, c2).
+    let mut pictures = file
+        .appearance
+        .pictures
+        .clone()
+        .unwrap_or_else(|| base.pictures.clone());
     if let Some(wallpaper) = file.appearance.wallpaper.as_deref() {
         if !pictures.iter().any(|picture| picture == wallpaper) {
             pictures.insert(0, wallpaper.to_string());
@@ -460,6 +518,8 @@ pub fn save_text(text: &str, name: &str) -> Result<String> {
     for key in NOT_IN_A_THEME {
         table.remove(*key);
     }
+    // The theme's own pictures are its `pictures`, written once below.
+    table.remove("pictures");
     let values: Appearance = Value::Table(table).try_into()?;
     let theme = OwnTheme {
         title: None,
@@ -550,6 +610,149 @@ pub fn delete_text(text: &str, name: &str) -> Result<String> {
         );
     }
     settings::unset(text, &format!("themes.{name}"))
+}
+
+/// The pictures `name` shows now (M5.12b6, part c2): for the theme in use,
+/// the person's `appearance.pictures` when the file sets them, else the
+/// theme's own list; for any other theme, its own. Empty for a name that no
+/// theme has.
+pub fn pictures_of(file: &SettingsFile, name: &str) -> Vec<String> {
+    if in_use_name(file) == name {
+        if let Some(pictures) = &file.appearance.pictures {
+            return pictures.clone();
+        }
+    }
+    lookup(name, &file.themes)
+        .map(|theme| theme.pictures)
+        .unwrap_or_default()
+}
+
+/// The name of the theme in use: `appearance.theme`, else the release's own.
+fn in_use_name(file: &SettingsFile) -> &str {
+    file.appearance.theme.as_deref().unwrap_or(DEFAULT)
+}
+
+/// `pictures` as a TOML list, such as `["aurora", "/home/you/a.jpg"]`.
+fn list_value(pictures: &[String]) -> String {
+    let items: Vec<String> = pictures
+        .iter()
+        .map(|picture| format!("{picture:?}"))
+        .collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// Sets the pictures `name` shows (M5.12b6, part c2), on a file's text. A
+/// built-in theme is changed only while it is in use, and then through
+/// `appearance.pictures` on top of it, which is taken out again when the
+/// list equals the built-in's, so a built-in never changes. The theme in
+/// use, when the file already sets `appearance.pictures`, is changed the
+/// same way; any other of the person's own themes gets its `pictures` in
+/// its table, which an empty list leaves out. Refused over
+/// [`MOST_PICTURES`], for a picture that is no picture's form and for one
+/// listed twice, and for a name that is no theme.
+pub fn set_pictures_text(text: &str, name: &str, pictures: &[String]) -> Result<String> {
+    let file = settings::read(text)?.file;
+    check_pictures(pictures).map_err(|message| anyhow!(message))?;
+    let in_use = in_use_name(&file) == name;
+    let on_top = file.appearance.pictures.is_some();
+    if is_built_in(name) && !in_use {
+        bail!("{}", built_in_not_in_use(name));
+    }
+    if !is_built_in(name) && !file.themes.contains_key(name) {
+        bail!(
+            "{}",
+            trf(
+                "there is no theme of yours called {name}; edel theme list shows them",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    if is_built_in(name) || (in_use && on_top) {
+        let base = lookup(name, &file.themes)
+            .map(|theme| theme.pictures)
+            .unwrap_or_default();
+        if pictures == base.as_slice() {
+            return if on_top {
+                settings::unset(text, "appearance.pictures")
+            } else {
+                Ok(text.to_string())
+            };
+        }
+        return settings::set(text, "appearance.pictures", &list_value(pictures));
+    }
+    let mut theme = file.themes.get(name).cloned().unwrap_or_default();
+    theme.pictures = pictures.to_vec();
+    let Value::Table(table) = Value::try_from(&theme)? else {
+        bail!("{}", tr("a theme could not be written as a table"));
+    };
+    settings::set(
+        text,
+        &format!("themes.{name}"),
+        &Value::Table(table).to_string(),
+    )
+}
+
+/// The words for a change to a built-in theme that is not in use.
+fn built_in_not_in_use(name: &str) -> String {
+    trf(
+        "{name} is built in; choose it first, or keep it as new to change it",
+        &[("name", &format!("{name:?}"))],
+    )
+}
+
+/// Adds `new` to the pictures `name` shows, after those it has, skipping
+/// those already there, on a file's text (`add to theme`, a drop on a
+/// tile). Adding to a built-in theme that is not in use is refused even
+/// when the picture is there already, as the change is not the person's
+/// to make. Nothing new leaves the text as it is.
+pub fn add_pictures_text(text: &str, name: &str, new: &[String]) -> Result<String> {
+    let file = settings::read(text)?.file;
+    if !new.is_empty() && is_built_in(name) && in_use_name(&file) != name {
+        bail!("{}", built_in_not_in_use(name));
+    }
+    let mut pictures = pictures_of(&file, name);
+    let before = pictures.len();
+    for picture in new {
+        if !pictures.contains(picture) {
+            pictures.push(picture.clone());
+        }
+    }
+    if pictures.len() == before {
+        return Ok(text.to_string());
+    }
+    set_pictures_text(text, name, &pictures)
+}
+
+/// Takes `picture` out of the pictures `name` shows, on a file's text
+/// (Remove). A picture the theme lacks is refused.
+pub fn remove_picture_text(text: &str, name: &str, picture: &str) -> Result<String> {
+    let file = settings::read(text)?.file;
+    let mut pictures = pictures_of(&file, name);
+    let Some(at) = pictures.iter().position(|listed| listed == picture) else {
+        bail!(
+            "{}",
+            trf(
+                "{picture} is not a picture of {name}, so there is nothing to remove",
+                &[
+                    ("picture", &format!("{picture:?}")),
+                    ("name", &format!("{name:?}"))
+                ]
+            )
+        );
+    };
+    pictures.remove(at);
+    set_pictures_text(text, name, &pictures)
+}
+
+/// Moves `picture` from the pictures of theme `from` to those of `to`, in
+/// one edit of a file's text (Move to theme): removed from `from` first,
+/// then added to `to`, each refused as its writer refuses it.
+pub fn move_picture_text(text: &str, from: &str, to: &str, picture: &str) -> Result<String> {
+    if from == to {
+        return Ok(text.to_string());
+    }
+    let text = remove_picture_text(text, from, picture)?;
+    add_pictures_text(&text, to, &[picture.to_string()])
 }
 
 /// `edel theme reset`, on a file's text: takes out the appearance values the
@@ -1085,5 +1288,211 @@ mod tests {
         assert_eq!(file.appearance.theme.as_deref(), Some("ours"));
         assert!(rename_text(text, "aurora", "ours").is_err());
         assert!(rename_text(text, "mine", "earth").is_err());
+    }
+
+    const OWN: &str = "format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine]\npictures = [\"earth\", \"aurora\"]\n";
+
+    #[test]
+    fn pictures_of_gives_the_theme_its_own_unless_the_file_sets_them() {
+        let mine = file(OWN);
+        assert_eq!(pictures_of(&mine, "mine"), ["earth", "aurora"]);
+        assert_eq!(pictures_of(&mine, "aurora"), ["aurora"]);
+        assert!(pictures_of(&mine, "nope").is_empty());
+        let on_top = file(
+            "format = 1\n[appearance]\ntheme = \"mine\"\npictures = [\"hills\"]\n[themes.mine]\npictures = [\"earth\"]\n",
+        );
+        assert_eq!(pictures_of(&on_top, "mine"), ["hills"]);
+        assert_eq!(pictures_of(&on_top, "aurora"), ["aurora"]);
+    }
+
+    #[test]
+    fn the_wallpaper_is_the_first_of_the_pictures_on_top_even_when_none() {
+        let on_top = file(
+            "format = 1\n[appearance]\ntheme = \"mine\"\npictures = [\"hills\"]\n[themes.mine]\npictures = [\"earth\"]\n",
+        );
+        assert_eq!(
+            themed(&on_top).appearance.wallpaper.as_deref(),
+            Some("hills")
+        );
+        let none = file(
+            "format = 1\n[appearance]\ntheme = \"mine\"\npictures = []\n[themes.mine]\npictures = [\"earth\"]\n",
+        );
+        assert_eq!(themed(&none).appearance.wallpaper, None);
+        let without_theme = file("format = 1\n[appearance]\npictures = [\"aurora\"]\n");
+        assert_eq!(
+            themed(&without_theme).appearance.wallpaper.as_deref(),
+            Some("aurora")
+        );
+    }
+
+    #[test]
+    fn changed_lists_pictures_set_on_top_of_a_theme_that_differ_from_its_own() {
+        let on_top = file("format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\"]\n");
+        assert_eq!(changed(&on_top), ["appearance.pictures"]);
+        let same = file("format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"aurora\"]\n");
+        assert!(changed(&same).is_empty());
+    }
+
+    #[test]
+    fn set_pictures_writes_an_own_themes_table_and_an_empty_list_leaves_the_key_out() {
+        let text = set_pictures_text(OWN, "mine", &["hills".to_string()]).unwrap();
+        assert_eq!(pictures_of(&file(&text), "mine"), ["hills"]);
+        assert!(!text.contains("appearance.pictures") && !text.contains("pictures = [\"earth\""));
+        let empty = set_pictures_text(OWN, "mine", &[]).unwrap();
+        assert!(pictures_of(&file(&empty), "mine").is_empty());
+        assert!(!empty.contains("pictures"));
+    }
+
+    #[test]
+    fn set_pictures_on_a_built_in_in_use_goes_on_top_and_equal_to_its_own_takes_it_out() {
+        let aurora = "format = 1\n[appearance]\ntheme = \"aurora\"\n";
+        let changed_text = set_pictures_text(aurora, "aurora", &["earth".to_string()]).unwrap();
+        assert_eq!(pictures_of(&file(&changed_text), "aurora"), ["earth"]);
+        assert!(changed_text.contains("pictures = [\"earth\"]"));
+        let back = set_pictures_text(&changed_text, "aurora", &["aurora".to_string()]).unwrap();
+        assert!(!back.contains("pictures"));
+        assert_eq!(back, aurora.to_string());
+        // An empty list is a change: the theme shows no picture.
+        let none = set_pictures_text(aurora, "aurora", &[]).unwrap();
+        assert!(pictures_of(&file(&none), "aurora").is_empty());
+    }
+
+    #[test]
+    fn a_built_in_not_in_use_is_refused_with_the_way_out() {
+        let error = set_pictures_text(OWN, "aurora", &["earth".to_string()]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("choose it first, or keep it as new")
+        );
+        assert!(add_pictures_text(OWN, "earth", &["aurora".to_string()]).is_err());
+        assert!(move_picture_text(OWN, "mine", "earth", "earth").is_err());
+        // Nothing new to add is no change, so it is no refusal either.
+        assert_eq!(add_pictures_text(OWN, "aurora", &[]).unwrap(), OWN);
+    }
+
+    #[test]
+    fn add_appends_the_new_pictures_and_skips_those_already_there() {
+        let text = add_pictures_text(
+            OWN,
+            "mine",
+            &[
+                "aurora".to_string(),
+                "hills".to_string(),
+                "hills".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            pictures_of(&file(&text), "mine"),
+            ["earth", "aurora", "hills"]
+        );
+        let same = add_pictures_text(OWN, "mine", &["earth".to_string()]).unwrap();
+        assert_eq!(same, OWN);
+    }
+
+    #[test]
+    fn add_on_the_theme_in_use_while_it_is_built_in_sets_the_pictures_on_top() {
+        let aurora = "format = 1\n[appearance]\ntheme = \"aurora\"\n";
+        let text = add_pictures_text(aurora, "aurora", &["/home/ali/sea.jpg".to_string()]).unwrap();
+        assert_eq!(
+            pictures_of(&file(&text), "aurora"),
+            ["aurora", "/home/ali/sea.jpg"]
+        );
+        assert!(text.contains("pictures = [\"aurora\", \"/home/ali/sea.jpg\"]"));
+    }
+
+    #[test]
+    fn remove_takes_one_picture_out_and_refuses_one_the_theme_lacks() {
+        let text = remove_picture_text(OWN, "mine", "earth").unwrap();
+        assert_eq!(pictures_of(&file(&text), "mine"), ["aurora"]);
+        let last = remove_picture_text(&text, "mine", "aurora").unwrap();
+        assert!(pictures_of(&file(&last), "mine").is_empty());
+        let error = remove_picture_text(OWN, "mine", "hills").unwrap_err();
+        assert!(error.to_string().contains("nothing to remove"));
+    }
+
+    #[test]
+    fn move_takes_a_picture_from_one_own_theme_to_another_in_one_edit() {
+        let two = "format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine]\npictures = [\"earth\"]\n[themes.yours]\npictures = [\"hills\"]\n";
+        let moved = move_picture_text(two, "mine", "yours", "earth").unwrap();
+        assert!(pictures_of(&file(&moved), "mine").is_empty());
+        assert_eq!(pictures_of(&file(&moved), "yours"), ["hills", "earth"]);
+        assert_eq!(
+            move_picture_text(two, "mine", "mine", "earth").unwrap(),
+            two
+        );
+    }
+
+    #[test]
+    fn set_refuses_a_duplicate_a_bad_picture_and_too_many() {
+        let twice = set_pictures_text(OWN, "mine", &["hills".to_string(), "hills".to_string()]);
+        assert!(twice.unwrap_err().to_string().contains("listed twice"));
+        let bad = set_pictures_text(OWN, "mine", &["Not A Picture".to_string()]);
+        assert!(bad.unwrap_err().to_string().contains("is not a picture"));
+        let many: Vec<String> = (0..=MOST_PICTURES).map(|n| format!("p{n}")).collect();
+        let over = set_pictures_text(OWN, "mine", &many);
+        assert!(
+            over.unwrap_err()
+                .to_string()
+                .contains("holds up to 32 pictures")
+        );
+        let sixteen: Vec<String> = (0..MOST_PICTURES).map(|n| format!("p{n}")).collect();
+        assert!(set_pictures_text(OWN, "mine", &sixteen).is_ok());
+    }
+
+    #[test]
+    fn set_refuses_a_name_that_is_no_theme() {
+        let error = set_pictures_text(OWN, "nope", &["hills".to_string()]).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("there is no theme of yours called")
+        );
+    }
+
+    #[test]
+    fn save_moves_the_pictures_on_top_into_the_new_theme_and_takes_the_key_out() {
+        let on_top =
+            "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\", \"hills\"]\n";
+        let saved = save_text(on_top, "mine").unwrap();
+        assert!(!saved.contains("appearance.pictures"));
+        assert!(!saved.contains("[appearance]\npictures"));
+        let read = file(&saved);
+        assert!(read.appearance.pictures.is_none());
+        assert_eq!(read.themes["mine"].pictures, ["earth", "hills"]);
+        assert_eq!(pictures_of(&read, "mine"), ["earth", "hills"]);
+        assert_eq!(read.appearance.theme.as_deref(), Some("mine"));
+        // The screen is the same after saving: its first picture is the wallpaper.
+        assert_eq!(themed(&read).appearance.wallpaper.as_deref(), Some("earth"));
+    }
+
+    #[test]
+    fn reset_takes_the_pictures_on_top_out_and_the_theme_shows_as_made() {
+        let on_top = "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\"]\n";
+        let reset = reset_text(on_top).unwrap().unwrap();
+        assert!(!reset.contains("pictures"));
+        assert_eq!(pictures_of(&file(&reset), "aurora"), ["aurora"]);
+    }
+
+    #[test]
+    fn the_pictures_key_is_checked_as_a_list_of_wallpapers() {
+        assert!(
+            settings::set(
+                "format = 1\n",
+                "appearance.pictures",
+                "[\"aurora\", \"#1e1e2e\"]"
+            )
+            .is_ok()
+        );
+        assert!(settings::set("format = 1\n", "appearance.pictures", "[]").is_ok());
+        let twice = settings::set(
+            "format = 1\n",
+            "appearance.pictures",
+            "[\"aurora\", \"aurora\"]",
+        );
+        assert!(twice.unwrap_err().to_string().contains("listed twice"));
+        let not_list = settings::set("format = 1\n", "appearance.pictures", "\"aurora\"");
+        assert!(not_list.is_err());
     }
 }

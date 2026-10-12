@@ -92,3 +92,4 @@ appearance.text_size
 appearance.theme
 themes.*
 lock_screen.dim
+appearance.pictures

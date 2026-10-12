@@ -303,6 +303,10 @@ pub enum Kind {
     /// `[themes]`, checked against the file by [`check`] and [`set`]
     /// (M5.12b6a)
     Theme,
+    /// The person's pictures on top of the theme in use: a list of
+    /// wallpaper references, each as `appearance.wallpaper` takes it, at
+    /// most [`crate::themes::MOST_PICTURES`], none twice (M5.12b6, part c2)
+    Pictures,
     /// A person's own theme, as a `[themes.NAME]` table: its title, its
     /// pictures and the appearance values it sets ([`crate::themes`],
     /// M5.12b6a)
@@ -427,6 +431,9 @@ pub const KEYS: &[Key] = &[
     // What lies behind the windows in dark mode, when it differs from
     // `appearance.wallpaper` (M5.10c4d): a person's own pair is two paths.
     now("appearance.wallpaper_dark", Kind::Wallpaper),
+    // The person's pictures on top of the theme in use (M5.12b6, part c2):
+    // references as `appearance.wallpaper` takes them, never copies.
+    now("appearance.pictures", Kind::Pictures),
     // The panel's workspace switcher: its look, how many numbers show at
     // once and what the strip's ends show where more lie (M5.2m, on the
     // Appearance page since M5.2q).
@@ -802,6 +809,12 @@ pub struct Appearance {
     /// `wallpaper`: a person's own pair is two paths (M5.10c4d).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wallpaper_dark: Option<String>,
+    /// The person's pictures on top of the theme in use, as references
+    /// (M5.12b6, part c2): a wallpaper's name, a picture's path or a colour,
+    /// each as `wallpaper` takes it. Absent is the theme's own list, and an
+    /// empty list shows no picture ([`crate::themes::pictures_of`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pictures: Option<Vec<String>>,
     /// Light, dark or automatic
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -2147,6 +2160,20 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::Wallpaper, _) => fail(tr(
             "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\"",
         )),
+        (Kind::Pictures, Value::Array(items)) => {
+            let mut pictures = Vec::new();
+            for item in items {
+                match item.as_str() {
+                    Some(picture) => pictures.push(picture.to_string()),
+                    None => return fail(tr("a list of pictures in quotes, such as [\"aurora\"]")),
+                }
+            }
+            crate::themes::check_pictures(&pictures)?;
+            Ok(value.clone())
+        }
+        (Kind::Pictures, _) => fail(tr(
+            "a list of pictures in quotes, such as [\"aurora\", \"/home/you/sea.jpg\"]",
+        )),
         (Kind::Panels, _) => fail(tr(
             "a list of panels, such as [{ edge = \"bottom\", end = [\"clock\"] }]",
         )),
@@ -2356,6 +2383,7 @@ mod tests {
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::Channel => Value::String("stable".into()),
             Kind::Wallpaper => Value::String("hills".into()),
+            Kind::Pictures => value_from_arg(r#"["hills"]"#),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
             Kind::LockLook => Value::String("minimal".into()),
             Kind::LockBackground => Value::String("blurred".into()),
