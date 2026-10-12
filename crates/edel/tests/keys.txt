@@ -92,6 +92,7 @@ appearance.window_opacity
 appearance.window_opacity_unfocused
 appearance.shadow_size
 appearance.shadow_darkness
+appearance.blur
 appearance.monospace_font
 appearance.text_size
 appearance.theme

@@ -208,6 +208,10 @@ panel_opacity = 100
 # bar and border, and every other window; 100 is opaque.
 window_opacity = 100
 window_opacity_unfocused = 100
+# How strongly the wallpaper blurs behind see-through panels, in percent
+# (M5.12b3, appearance.blur): frosted glass, made once from the wallpaper
+# at a quarter of the screen's size; 0 shows the wallpaper sharp.
+blur = 50
 # How much of the accent the focused window's title bar takes, in percent,
 # so the window with the keyboard reads at a glance; 0 keeps it neutral.
 # A person's own title_bar_focused colour replaces the tint.

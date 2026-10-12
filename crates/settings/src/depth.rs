@@ -2,7 +2,8 @@
 //! window is and the others are (`appearance.window_opacity` and
 //! `appearance.window_opacity_unfocused`, 20 to 100 percent) and the shadow
 //! under the windows (`appearance.shadow_size`, its blur from 0 to 64 px,
-//! and `appearance.shadow_darkness`, 0 to 100 percent). Four sliders over
+//! and `appearance.shadow_darkness`, 0 to 100 percent), and the glass behind
+//! see-through panels (`appearance.blur`, 0 to 100 percent). Five sliders over
 //! their keys' ranges (`settings::whole_range`), built and laid out as the
 //! Shape group's are (`shape::slider`, `shape::lay_out`), with their values
 //! at the end. Each is one key of the person's settings file, read from the
@@ -32,16 +33,17 @@ use crate::{rows, widgets};
 /// How long after the last move of a slider its value is written.
 const SETTLE: Duration = Duration::from_millis(250);
 
-/// The four sliders, in `settings::DEPTH_KEYS`' order.
+/// The five sliders, in `settings::DEPTH_KEYS`' order.
 const FOCUSED: usize = 0;
 const UNFOCUSED: usize = 1;
 const SIZE: usize = 2;
 const DARKNESS: usize = 3;
+const BLUR: usize = 4;
 
-/// The four values a slider shows, in `settings::DEPTH_KEYS`' order.
-pub type Shown = [u32; 4];
+/// The five values a slider shows, in `settings::DEPTH_KEYS`' order.
+pub type Shown = [u32; 5];
 
-/// The release's four values, from the tokens (`Tokens::built_in()`); the
+/// The release's five values, from the tokens (`Tokens::built_in()`); the
 /// darkness is the shadow colour's alpha as a percent, rounded.
 fn values_of(t: &Tokens) -> Shown {
     [
@@ -49,6 +51,7 @@ fn values_of(t: &Tokens) -> Shown {
         t.window_opacity_unfocused,
         t.shadow_blur,
         (t.shadow.a * 100.0).round() as u32,
+        t.blur,
     ]
 }
 
@@ -63,7 +66,7 @@ fn now(files: &Files) -> Shown {
 
 /// What a slider's end shows for its value: `Opaque` for a window at 100
 /// percent and `90 %` below it, `None` for no shadow and `24 px` for its
-/// blur, `None` or `45 %` for its darkness.
+/// blur, `None` or `45 %` for its darkness, `Sharp` or `50 %` for the glass.
 pub fn words(index: usize, value: u32) -> String {
     let number = value.to_string();
     match index {
@@ -73,7 +76,9 @@ pub fn words(index: usize, value: u32) -> String {
         SIZE => trf("{n} px", &[("n", &number)]),
         DARKNESS if value == 0 => tr("None").to_string(),
         DARKNESS => trf("{n} %", &[("n", &number)]),
-        _ => unreachable!("a depth slider has one of four indices"),
+        BLUR if value == 0 => tr("Sharp").to_string(),
+        BLUR => trf("{n} %", &[("n", &number)]),
+        _ => unreachable!("a depth slider has one of five indices"),
     }
 }
 
@@ -83,7 +88,8 @@ fn line(index: usize) -> &'static str {
         FOCUSED => tr("The window you are using, with its title bar"),
         UNFOCUSED => tr("Every other window"),
         SIZE => tr("How far the shadow spreads. Full and Balanced effects only"),
-        _ => tr("How dark the shadow is"),
+        DARKNESS => tr("How dark the shadow is"),
+        _ => tr("How much the wallpaper blurs behind see-through panels"),
     }
 }
 
@@ -134,7 +140,7 @@ impl Group {
     }
 
     /// The group's source line: your choice when the person sets any of the
-    /// four, else this machine's, else the release's.
+    /// five, else this machine's, else the release's.
     fn source_text(&self, files: &Files) -> String {
         let sources: Vec<Source> = settings::DEPTH_KEYS
             .iter()
@@ -149,9 +155,9 @@ impl Group {
         }
     }
 
-    /// The four values the sliders are at now.
+    /// The five values the sliders are at now.
     fn scale_values(&self) -> Shown {
-        let mut values = [0u32; 4];
+        let mut values = [0u32; 5];
         for (value, slider) in values.iter_mut().zip(self.sliders.iter()) {
             *value = slider.scale.value().round() as u32;
         }
@@ -215,7 +221,7 @@ impl Group {
 
 /// Builds the Depth group in `content`, after the Shape group: the section
 /// with its line and source line, Reset and Copy as command, then one card
-/// of four sliders.
+/// of five sliders.
 pub fn group(content: &gtk::Box, problem: &gtk::Label) -> Rc<Group> {
     let source = widgets::section(content, tr("Depth"));
     let card = widgets::group(content);
@@ -341,11 +347,14 @@ mod tests {
         assert_eq!(words(DARKNESS, 0), "None");
         assert_eq!(words(DARKNESS, 45), "45 %");
         assert_eq!(words(DARKNESS, 100), "100 %");
+        assert_eq!(words(BLUR, 0), "Sharp");
+        assert_eq!(words(BLUR, 50), "50 %");
+        assert_eq!(words(BLUR, 100), "100 %");
     }
 
     #[test]
     fn the_sliders_take_their_ranges_from_the_key_table() {
-        let expected = [(20, 100), (20, 100), (0, 64), (0, 100)];
+        let expected = [(20, 100), (20, 100), (0, 64), (0, 100), (0, 100)];
         for (key, want) in settings::DEPTH_KEYS.iter().zip(expected) {
             assert_eq!(settings::whole_range(key), Some(want), "{key}");
         }
@@ -353,7 +362,7 @@ mod tests {
 
     #[test]
     fn the_release_values_are_the_tokens_the_sliders_start_at() {
-        assert_eq!(values_of(&Tokens::built_in()), [100, 100, 24, 45]);
+        assert_eq!(values_of(&Tokens::built_in()), [100, 100, 24, 45, 50]);
     }
 
     #[test]

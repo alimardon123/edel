@@ -40,6 +40,7 @@ use tiny_skia::{
 };
 
 use crate::corner;
+use crate::glass;
 use crate::messages;
 use crate::paint::{self, Face, Text, fill, fill_vertical, mix, outline};
 use crate::popup::{self, Rect};
@@ -340,10 +341,8 @@ const BATTERY_ICON: f32 = 22.0;
 const GAP_SMALL: f32 = 6.0;
 /// The width of the widest percent the battery is sized for.
 const BATTERY_WIDEST: &str = "100%";
-/// The backgrounds (M5.10c5c): a blurred picture is made at a quarter of
-/// the screen's size, blurred with `BLUR_RADIUS` in those pixels, and drawn
-/// up to the screen again.
-const BLUR_SHRINK: u32 = 4;
+/// The blurred backgrounds (M5.10c5c) are made by `glass`, the glass behind
+/// the panels too (M5.12b3): this radius in a quarter-size picture's pixels.
 const BLUR_RADIUS: f32 = 12.0;
 // How much of the deep backdrop colour lies over the background, so the white
 // words stay readable: `edel::lock_screen::DIM` and `DIM_SHARP` are the
@@ -884,11 +883,7 @@ impl Backdrops {
 /// behind it (a picture's path or a colour), so a changed wallpaper or dim
 /// makes a new one.
 fn backdrop_key(background: &Background, dim: u32, wallpaper: &Wallpaper) -> String {
-    let behind = match wallpaper {
-        Wallpaper::Background => String::new(),
-        Wallpaper::Colour(colour) => colour.hex(),
-        Wallpaper::Picture(path) => path.display().to_string(),
-    };
+    let behind = glass::behind(wallpaper);
     match background {
         Background::Blurred | Background::Sharp => {
             format!(
@@ -917,10 +912,12 @@ fn make_backdrop(
         | (Background::Blurred | Background::Sharp, Wallpaper::Background) => return None,
         // A blurred or sharp background with no picture shows the colour.
         (Background::Blurred | Background::Sharp, Wallpaper::Colour(colour))
-        | (Background::Colour(colour), _) => (solid(size, *colour)?, "colour"),
-        (Background::Blurred, Wallpaper::Picture(path)) => (blurred(path, size)?, "blurred"),
-        (Background::Sharp, Wallpaper::Picture(path)) => (sharp(path, size)?, "sharp"),
-        (Background::Picture(path), _) => (sharp(path, size)?, "picture"),
+        | (Background::Colour(colour), _) => (glass::solid(size, *colour)?, "colour"),
+        (Background::Blurred, Wallpaper::Picture(path)) => {
+            (glass::blurred(path, size, BLUR_RADIUS)?, "blurred")
+        }
+        (Background::Sharp, Wallpaper::Picture(path)) => (glass::sharp(path, size)?, "sharp"),
+        (Background::Picture(path), _) => (glass::sharp(path, size)?, "picture"),
     };
     let (w, h) = size;
     fill(
@@ -937,53 +934,6 @@ fn make_backdrop(
     );
     eprintln!("edel-shell-ui: lock backdrop {w}x{h} {name}");
     Some(made)
-}
-
-/// A pixmap of `size` device pixels filled with `colour`.
-fn solid(size: (u32, u32), colour: Colour) -> Option<Pixmap> {
-    let mut pixmap = Pixmap::new(size.0, size.1)?;
-    pixmap.fill(tiny_skia::Color::from_rgba(
-        colour.r, colour.g, colour.b, 1.0,
-    )?);
-    Some(pixmap)
-}
-
-/// The picture at `path` covering `size`, or None when it cannot be read,
-/// which is logged.
-fn sharp(path: &Path, size: (u32, u32)) -> Option<Pixmap> {
-    pictures::load(path, size)
-        .inspect_err(|why| picture_failed(path, why))
-        .ok()
-}
-
-/// The picture at `path` blurred for glass: made at a quarter of `size`,
-/// blurred with `BLUR_RADIUS` in those pixels, then drawn up to `size` with
-/// smooth edges. None when it cannot be read, which is logged.
-fn blurred(path: &Path, size: (u32, u32)) -> Option<Pixmap> {
-    let small = ((size.0 / BLUR_SHRINK).max(1), (size.1 / BLUR_SHRINK).max(1));
-    let mut low = pictures::load(path, small)
-        .inspect_err(|why| picture_failed(path, why))
-        .ok()?;
-    pictures::blur(&mut low, BLUR_RADIUS);
-    let mut out = Pixmap::new(size.0, size.1)?;
-    let smooth = PixmapPaint {
-        quality: tiny_skia::FilterQuality::Bilinear,
-        ..PixmapPaint::default()
-    };
-    let up = Transform::from_scale(
-        size.0 as f32 / small.0 as f32,
-        size.1 as f32 / small.1 as f32,
-    );
-    out.draw_pixmap(0, 0, low.as_ref(), &smooth, up, None);
-    Some(out)
-}
-
-/// Logs a picture of the lock screen's background that cannot be read.
-fn picture_failed(path: &Path, why: &str) {
-    eprintln!(
-        "edel-shell-ui: {}",
-        messages::picture_not_read(&path.display().to_string(), why)
-    );
 }
 
 /// Whether a point lies on the go button, the shake left aside.

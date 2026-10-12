@@ -309,6 +309,11 @@ commands() {
 		'wallpaper picture') edel settings set "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
 		'wallpaper colour') edel settings set 'appearance.wallpaper=#336699' ;;
 		'wallpaper default') edel settings reset appearance.wallpaper ;;
+		# The glass (M5.12b3): a see-through bar at 40 percent over the
+		# wallpaper, its blur at 100 (frosted) or 0 (sharp), and the default.
+		'glass on') edel settings set appearance.panel_opacity=40 appearance.blur=100 ;;
+		'glass sharp') edel settings set appearance.panel_opacity=40 appearance.blur=0 ;;
+		'glass default') edel settings reset appearance.panel_opacity appearance.blur ;;
 		# A light and dark pair (M5.10c4d): the test pair beside the share
 		# directory's wallpapers, dark mode, then light, then back to the
 		# release's mode and no dark picture.

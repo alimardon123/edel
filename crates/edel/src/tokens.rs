@@ -612,6 +612,9 @@ pub struct Tokens {
     /// title bar and border, and every other window; 100 is opaque.
     pub window_opacity: u32,
     pub window_opacity_unfocused: u32,
+    /// How strongly the wallpaper blurs behind see-through panels, in
+    /// percent (M5.12b3, `appearance.blur`); 0 shows it sharp.
+    pub blur: u32,
     /// How much of the accent the focused title bar takes, in percent,
     /// laid on by [`Tokens::with_appearance`]; 0 keeps the bar neutral.
     pub title_tint: u32,
@@ -1022,6 +1025,7 @@ impl Tokens {
                 "panel_opacity" => (&mut self.panel_opacity, 100),
                 "window_opacity" => (&mut self.window_opacity, 100),
                 "window_opacity_unfocused" => (&mut self.window_opacity_unfocused, 100),
+                "blur" => (&mut self.blur, 100),
                 "title_tint" => (&mut self.title_tint, 30),
                 _ => {
                     notes.push(format!("unknown key size.{key} ignored"));
@@ -1101,6 +1105,7 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel_opacity",
                 "window_opacity",
                 "window_opacity_unfocused",
+                "blur",
                 "title_tint",
             ][..],
         ),
@@ -1182,6 +1187,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         panel_opacity: 0,
         window_opacity: 0,
         window_opacity_unfocused: 0,
+        blur: 0,
         title_tint: 0,
         lock_clock_weight: 0,
         shadow_blur: 0,
@@ -1217,6 +1223,9 @@ pub struct Shape {
     pub window_opacity_unfocused: Option<u32>,
     pub shadow_size: Option<u32>,
     pub shadow_darkness: Option<u32>,
+    /// The glass behind see-through panels (M5.12b3): how strongly the
+    /// wallpaper blurs there.
+    pub blur: Option<u32>,
 }
 
 impl Shape {
@@ -1239,6 +1248,7 @@ impl Shape {
             window_opacity_unfocused: over(|a| a.window_opacity_unfocused),
             shadow_size: over(|a| a.shadow_size),
             shadow_darkness: over(|a| a.shadow_darkness),
+            blur: over(|a| a.blur),
         }
     }
 }
@@ -1285,7 +1295,8 @@ impl Tokens {
     /// depth (M5.12b3) follows too: the two opacities set their tokens; the
     /// shadow's size sets its blur and scales the release's drop by it (so
     /// 0 is no shadow), and its darkness sets the shadow colour's alpha in
-    /// both schemes, its red, green and blue kept.
+    /// both schemes, its red, green and blue kept. The glass behind
+    /// see-through panels (M5.12b3) sets `blur`.
     /// Lenient (ADR-008): a value outside its key's range is noted and
     /// skipped.
     pub fn with_shape(mut self, shape: &Shape) -> (Tokens, Vec<String>) {
@@ -1368,6 +1379,9 @@ impl Tokens {
             // The alpha in 255ths, rounded half up: 50 percent is 128.
             let alpha = (percent * 255 + 50) / 100;
             self.shadow.a = alpha as f32 / 255.0;
+        }
+        if let Some(percent) = in_shape_range("appearance.blur", shape.blur, &mut notes) {
+            self.blur = percent;
         }
         (self, notes)
     }
@@ -2070,6 +2084,32 @@ mod tests {
             (tokens.shadow.r, tokens.shadow.g, tokens.shadow.b),
             (release.shadow.r, release.shadow.g, release.shadow.b)
         );
+    }
+
+    #[test]
+    fn the_glass_blur_sets_its_token_and_101_is_refused() {
+        let release = Tokens::built_in();
+        assert_eq!(release.blur, 50);
+        let sharp = Shape {
+            blur: Some(0),
+            ..Shape::default()
+        };
+        let (tokens, notes) = Tokens::built_in().with_shape(&sharp);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.blur, 0);
+        let (tokens, notes) = Tokens::built_in().with_shape(&Shape {
+            blur: Some(100),
+            ..Shape::default()
+        });
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(tokens.blur, 100);
+        let (tokens, notes) = Tokens::built_in().with_shape(&Shape {
+            blur: Some(101),
+            ..Shape::default()
+        });
+        assert_eq!(tokens.blur, 50);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("appearance.blur"), "{notes:?}");
     }
 
     #[test]
