@@ -34,7 +34,7 @@ Download sizes were not measured on their own; the times above include the downl
 ## What it means for the plan
 
 - **M6.1** keeps `flatpak --user` per admin user: it needs no root and no polkit daemon, and its data sits on `/data` with the rest of `/home`, so it survives every update and rollback.
-- **M6.2** (default apps in the slot) and **M3.2** (budgets) must count runtimes: these two took 2.7 GB on disk, and old apps keep old branches around.
+- **M6.2** (default apps, on the data partition since 2026-10-12) and **M3.2** (budgets) must count runtimes: these two took 2.7 GB on disk, and old apps keep old branches around.
 - **M10** has a working start: the oldest runtime still runs on today's base. Graphics drivers for old runtimes (M10.2) remain the open question, since this spike drew nothing.
 
 ## Principles check
