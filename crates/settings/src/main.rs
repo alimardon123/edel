@@ -331,7 +331,7 @@ fn all_pages() -> Vec<Page> {
                 title: tr(page.title),
                 icon: "bell",
                 section: Some(page.section),
-                build: |_| notifications::page(),
+                build: |theme| notifications::page(theme),
                 needs: Some("shell"),
                 group: Some(page.group),
             }),

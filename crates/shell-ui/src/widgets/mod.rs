@@ -125,6 +125,9 @@ pub struct Live {
     /// `notifications.badge` (`dot`, `count` or `none`; empty is `dot`).
     pub unread: usize,
     pub badge: String,
+    /// `notifications.list` (`button`, `left` or `right`; empty is `button`),
+    /// where the notification list opens (M5.9l).
+    pub list: String,
     /// How the machine is connected, how loud it is and how full its
     /// battery is (M5.9a); each part only where the machine has it.
     pub status: crate::status::Status,
