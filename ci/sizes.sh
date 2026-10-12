@@ -92,6 +92,9 @@ fi
 		for part in lib/firmware usr/share/fonts; do
 			[ -d "$d/$part" ] && echo "| $image /$part | $(sudo du -sh "$d/$part" | cut -f1) |"
 		done
+		# The default apps (M6.2), on the data partition, not in the slot.
+		apps="$(dirname "$d")/data"
+		[ -d "$apps" ] && echo "| $image default apps, on the data partition | $(sudo du -sh "$apps" | cut -f1) |"
 	done
 } >>"$summary"
 

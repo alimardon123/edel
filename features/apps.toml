@@ -1,0 +1,8 @@
+# The default apps (roadmap M6.2): Flatpak apps installed once into the
+# data partition's installation, never into a slot, by edel image build,
+# and kept up to date by edel update. An id taken out of `flatpak` moves
+# to `flatpak_dropped`, so each person who used it keeps it.
+format = 1
+summary = "The default apps: a web browser, installed once on the data partition"
+why = "People expect a browser on a new computer, working offline on the stick and right after an install. Firefox (Alimardon's choice, 2026-10-12) for its site compatibility and privacy, from Flathub, about 130 MB to download and 340 MB installed with its runtime shared by later apps; on the data partition it is paid for once, not in both slots, and edel update keeps it current. The text editor, the files app and the store (M6.4) join this list in their own steps."
+flatpak = ["org.mozilla.firefox"]
