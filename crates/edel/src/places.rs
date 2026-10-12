@@ -224,6 +224,19 @@ pub fn person_state_dir() -> Option<PathBuf> {
     }
 }
 
+/// A person's own themes' pictures (M5.12b6): `$XDG_DATA_HOME/edel/themes`,
+/// else `~/.local/share/edel/themes`, one folder per imported theme, named
+/// by the theme. A theme's values are in the settings file; these are only
+/// the pictures an imported theme brought, so it keeps working without its
+/// `.edeltheme` file. None without either variable.
+pub fn person_themes_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_DATA_HOME") {
+        Some(data) => Some(PathBuf::from(data).join("edel").join("themes")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(".local/share/edel/themes")),
+    }
+}
+
 /// The folder of a person's lock screen pictures (M5.10c7c): one PNG for
 /// each look Settings' Lock screen page shows, drawn by `edel-shell-ui
 /// --look-picture` and named by a hash of what the picture shows. Settings

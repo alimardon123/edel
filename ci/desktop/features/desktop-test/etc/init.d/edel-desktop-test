@@ -702,6 +702,47 @@ commands() {
 		'channel reset') edel settings reset updates.channel ;;
 		'channel get') say "channel_value $(edel settings get updates.channel 2>&1 | tr '\n' ' ')" ;;
 		'channel update') say "channel_update $(timeout 30 edel update --check 2>&1 | tr '\n' ' ')" ;;
+		# Themes (M5.12b6, step 12b6), as root, the machine's file, like every
+		# command here: a theme saved and exported as one file, taken out of
+		# the machine's file and imported back, chosen, and a hand-made archive
+		# with an extra run.sh refused, the entry named in the message.
+		'theme clean')
+			edel settings reset appearance.theme >/dev/null 2>&1
+			edel theme delete mine >/dev/null 2>&1
+			rm -rf /tmp/mine.edeltheme /tmp/bad.edeltheme /tmp/badtheme
+			;;
+		'theme save')
+			out=$(edel theme save mine 2>&1); status=$?
+			say "theme_save $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'theme export')
+			out=$(edel theme export mine /tmp/mine.edeltheme 2>&1); status=$?
+			say "theme_export $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'theme archive') say "theme_archive $(tar -tf /tmp/mine.edeltheme 2>&1 | tr '\n' ' ')" ;;
+		'theme machine') say "theme_machine $(tr '\n' ';' <"$data_dir/$settings_name" 2>/dev/null)" ;;
+		'theme delete')
+			edel settings reset appearance.theme >/dev/null 2>&1
+			out=$(edel theme delete mine 2>&1); status=$?
+			say "theme_delete $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'theme import')
+			out=$(edel theme import /tmp/mine.edeltheme 2>&1); status=$?
+			say "theme_import $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'theme choose')
+			edel settings set appearance.theme=mine >/dev/null 2>&1
+			say "theme_chosen $(edel settings get appearance.theme 2>&1 | tr '\n' ' ')"
+			;;
+		'theme reset') edel settings reset appearance.theme >/dev/null 2>&1 ;;
+		'theme bad')
+			rm -rf /tmp/badtheme && mkdir /tmp/badtheme
+			printf 'format = 1\nname = "bad"\n' >/tmp/badtheme/theme.toml
+			printf 'echo hello\n' >/tmp/badtheme/run.sh
+			(cd /tmp/badtheme && busybox tar -cf /tmp/bad.edeltheme theme.toml run.sh)
+			out=$(edel theme import /tmp/bad.edeltheme 2>&1); status=$?
+			say "theme_bad $status $(echo "$out" | tr '\n' ' ')"
+			;;
 		'updates window')
 			as_ci edel-settings --page updates </dev/null >/tmp/updates.log 2>&1 &
 			;;
