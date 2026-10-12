@@ -5,8 +5,8 @@
 //! them; its edges resize it. Super with the left button moves any window,
 //! with the right button resizes it from the nearest corner, and the
 //! keyboard shortcuts of `[shortcuts]` act (`shortcuts.rs`, M5.13a: by
-//! default Super+Q closes the focused window, Super+T switches the
-//! workspace between floating and tiling and Ctrl+Alt+T opens a terminal).
+//! default Super+Q closes the focused window, Super+Y switches the
+//! workspace between floating and tiling and Super+T opens a terminal).
 //! Wheels and touchpads scroll the window
 //! under the pointer, and pens reach windows through `zwp_tablet_v2`
 //! (M4.6b). Ctrl+Alt+F1 to F12 ask for a virtual terminal,

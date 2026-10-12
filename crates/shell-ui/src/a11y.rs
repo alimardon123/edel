@@ -159,7 +159,7 @@ impl ActivationHandler for Latest {
 }
 
 /// The panel's widgets take no actions from a reader yet; the keyboard
-/// reaches the launcher (Super) and the layout (Super+T).
+/// reaches the launcher (Super) and the layout (Super+Y).
 struct Nothing;
 
 impl ActionHandler for Nothing {

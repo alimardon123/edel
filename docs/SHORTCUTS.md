@@ -2,15 +2,43 @@
 
 Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a cargo test holds this file to it. Change a shortcut with `edel settings set shortcuts.ACTION=KEYS`, such as `edel settings set shortcuts.close_window=Super+X`, or in `[shortcuts]` of the settings file; `""` unbinds an action, and `edel settings reset shortcuts.ACTION` brings its default back. Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. An action whose step has not landed yet leaves its keys to the app that has the keyboard.
 
+## Windows
+
 | Action | Keys | What it does | Way out |
 |---|---|---|---|
 | `close_window` | `Super+Q` | Close the focused window | yes |
-| `open_launcher` | `Super` | Open or close the launcher, Super tapped alone | yes |
+| `minimize_window` | `Super+H` | Minimize the focused window; the window list or Alt+Tab brings it back |  |
+| `toggle_maximize` | `Super+M` | Maximize the focused window, or give it its size back |  |
+| `toggle_fullscreen` | `Super+F` | Make the focused window fill its screen, or leave fullscreen |  |
 | `switch_windows` | `Alt+Tab` | Switch windows, the most recently used first, while the modifiers are held; with Shift, back |  |
-| `toggle_tiling` | `Super+T` | Switch this workspace between floating and tiling |  |
-| `open_terminal` | `Ctrl+Alt+T` | Open a terminal |  |
+| `toggle_tiling` | `Super+Y` | Switch this workspace between floating and tiling |  |
+| `focus_window_left` | `Super+Left` | Focus the window to the left of the focused one |  |
+| `focus_window_right` | `Super+Right` | Focus the window to the right of the focused one |  |
+| `focus_window_up` | `Super+Up` | Focus the window above the focused one |  |
+| `focus_window_down` | `Super+Down` | Focus the window below the focused one |  |
+| `move_window_left` | `Super+Shift+Left` | Swap the focused window with the one to its left, when tiled |  |
+| `move_window_right` | `Super+Shift+Right` | Swap the focused window with the one to its right, when tiled |  |
+| `move_window_up` | `Super+Shift+Up` | Swap the focused window with the one above it, when tiled |  |
+| `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled |  |
+| `cycle_column_width` | `Super+R` | Make the focused column a third, a half or two thirds of the screen wide, in the scroll style |  |
+
+## Apps
+
+| Action | Keys | What it does | Way out |
+|---|---|---|---|
+| `open_launcher` | `Super` | Open or close the launcher, Super tapped alone | yes |
+| `open_terminal` | `Super+T` | Open a terminal |  |
 | `take_screenshot` | `Print` | Take a screenshot |  |
-| `lock_screen` | `Super+L` | Lock the screen | yes |
+
+## Workspaces
+
+| Action | Keys | What it does | Way out |
+|---|---|---|---|
+| `show_workspaces` | `Super+W` | Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it |  |
+| `next_workspace` | `Super+Ctrl+Right` | Show the workspace after the shown one; stops at the last |  |
+| `previous_workspace` | `Super+Ctrl+Left` | Show the workspace before the shown one; stops at the first |  |
+| `move_to_next_workspace` | `Super+Ctrl+Shift+Right` | Move the focused window to the workspace after the shown one, and follow it |  |
+| `move_to_previous_workspace` | `Super+Ctrl+Shift+Left` | Move the focused window to the workspace before the shown one, and follow it |  |
 | `go_to_workspace_1` | `Super+1` | Go to workspace 1 |  |
 | `go_to_workspace_2` | `Super+2` | Go to workspace 2 |  |
 | `go_to_workspace_3` | `Super+3` | Go to workspace 3 |  |
@@ -29,22 +57,11 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `move_to_workspace_7` | `Super+Shift+7` | Move the focused window to workspace 7 |  |
 | `move_to_workspace_8` | `Super+Shift+8` | Move the focused window to workspace 8 |  |
 | `move_to_workspace_9` | `Super+Shift+9` | Move the focused window to workspace 9 |  |
-| `toggle_fullscreen` | `Super+F` | Make the focused window fill its screen, or leave fullscreen |  |
+
+## System
+
+| Action | Keys | What it does | Way out |
+|---|---|---|---|
+| `lock_screen` | `Super+L` | Lock the screen | yes |
 | `next_keyboard_layout` | `Super+Space` | Switch to the next keyboard layout of region.keyboard |  |
-| `minimize_window` | `Super+H` | Minimize the focused window; the window list or Alt+Tab brings it back |  |
-| `toggle_maximize` | `Super+M` | Maximize the focused window, or give it its size back |  |
-| `focus_window_left` | `Super+Left` | Focus the window to the left of the focused one |  |
-| `focus_window_right` | `Super+Right` | Focus the window to the right of the focused one |  |
-| `focus_window_up` | `Super+Up` | Focus the window above the focused one |  |
-| `focus_window_down` | `Super+Down` | Focus the window below the focused one |  |
-| `move_window_left` | `Super+Shift+Left` | Swap the focused window with the one to its left, when tiled |  |
-| `move_window_right` | `Super+Shift+Right` | Swap the focused window with the one to its right, when tiled |  |
-| `move_window_up` | `Super+Shift+Up` | Swap the focused window with the one above it, when tiled |  |
-| `move_window_down` | `Super+Shift+Down` | Swap the focused window with the one below it, when tiled |  |
-| `cycle_column_width` | `Super+R` | Make the focused column a third, a half or two thirds of the screen wide, in the scroll style |  |
 | `show_tray` | `Super+B` | Open or close the tray's apps behind its arrow, with the keyboard on them |  |
-| `show_workspaces` | `Super+W` | Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it |  |
-| `next_workspace` | `Super+Ctrl+Right` | Show the workspace after the shown one; stops at the last |  |
-| `previous_workspace` | `Super+Ctrl+Left` | Show the workspace before the shown one; stops at the first |  |
-| `move_to_next_workspace` | `Super+Ctrl+Shift+Right` | Move the focused window to the workspace after the shown one, and follow it |  |
-| `move_to_previous_workspace` | `Super+Ctrl+Shift+Left` | Move the focused window to the workspace before the shown one, and follow it |  |

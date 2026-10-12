@@ -203,7 +203,7 @@ pub enum Action {
     Activate(usize),
     /// Minimize the window at this place in [`Live::windows`].
     Minimize(usize),
-    /// Switch the shown workspace's policy, as Super+T.
+    /// Switch the shown workspace's policy, as Super+Y.
     /// Show the overview, or leave it, as Super+W (M5.2j-b): a click on
     /// the switcher's lit workspace.
     Overview,

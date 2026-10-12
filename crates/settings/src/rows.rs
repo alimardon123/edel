@@ -282,8 +282,16 @@ pub const ROWS: &[Row] = &[
         title: n_("Close window"),
     },
     Row {
-        key: "shortcuts.open_launcher",
-        title: n_("Open launcher"),
+        key: "shortcuts.minimize_window",
+        title: n_("Minimize window"),
+    },
+    Row {
+        key: "shortcuts.toggle_maximize",
+        title: n_("Maximize window"),
+    },
+    Row {
+        key: "shortcuts.toggle_fullscreen",
+        title: n_("Fullscreen"),
     },
     Row {
         key: "shortcuts.switch_windows",
@@ -294,6 +302,46 @@ pub const ROWS: &[Row] = &[
         title: n_("Floating or tiling"),
     },
     Row {
+        key: "shortcuts.focus_window_left",
+        title: n_("Focus window to the left"),
+    },
+    Row {
+        key: "shortcuts.focus_window_right",
+        title: n_("Focus window to the right"),
+    },
+    Row {
+        key: "shortcuts.focus_window_up",
+        title: n_("Focus window up"),
+    },
+    Row {
+        key: "shortcuts.focus_window_down",
+        title: n_("Focus window down"),
+    },
+    Row {
+        key: "shortcuts.move_window_left",
+        title: n_("Move window left"),
+    },
+    Row {
+        key: "shortcuts.move_window_right",
+        title: n_("Move window right"),
+    },
+    Row {
+        key: "shortcuts.move_window_up",
+        title: n_("Move window up"),
+    },
+    Row {
+        key: "shortcuts.move_window_down",
+        title: n_("Move window down"),
+    },
+    Row {
+        key: "shortcuts.cycle_column_width",
+        title: n_("Column width"),
+    },
+    Row {
+        key: "shortcuts.open_launcher",
+        title: n_("Open launcher"),
+    },
+    Row {
         key: "shortcuts.open_terminal",
         title: n_("Open terminal"),
     },
@@ -302,8 +350,24 @@ pub const ROWS: &[Row] = &[
         title: n_("Take screenshot"),
     },
     Row {
-        key: "shortcuts.lock_screen",
-        title: n_("Lock screen"),
+        key: "shortcuts.show_workspaces",
+        title: n_("Workspace overview"),
+    },
+    Row {
+        key: "shortcuts.next_workspace",
+        title: n_("Next workspace"),
+    },
+    Row {
+        key: "shortcuts.previous_workspace",
+        title: n_("Previous workspace"),
+    },
+    Row {
+        key: "shortcuts.move_to_next_workspace",
+        title: n_("Move window to next workspace"),
+    },
+    Row {
+        key: "shortcuts.move_to_previous_workspace",
+        title: n_("Move window to previous workspace"),
     },
     Row {
         key: "shortcuts.go_to_workspace_1",
@@ -378,80 +442,16 @@ pub const ROWS: &[Row] = &[
         title: n_("Move window to workspace 9"),
     },
     Row {
-        key: "shortcuts.toggle_fullscreen",
-        title: n_("Fullscreen"),
+        key: "shortcuts.lock_screen",
+        title: n_("Lock screen"),
     },
     Row {
         key: "shortcuts.next_keyboard_layout",
         title: n_("Next keyboard layout"),
     },
     Row {
-        key: "shortcuts.minimize_window",
-        title: n_("Minimize window"),
-    },
-    Row {
-        key: "shortcuts.toggle_maximize",
-        title: n_("Maximize window"),
-    },
-    Row {
-        key: "shortcuts.focus_window_left",
-        title: n_("Focus window to the left"),
-    },
-    Row {
-        key: "shortcuts.focus_window_right",
-        title: n_("Focus window to the right"),
-    },
-    Row {
-        key: "shortcuts.focus_window_up",
-        title: n_("Focus window up"),
-    },
-    Row {
-        key: "shortcuts.focus_window_down",
-        title: n_("Focus window down"),
-    },
-    Row {
-        key: "shortcuts.move_window_left",
-        title: n_("Move window left"),
-    },
-    Row {
-        key: "shortcuts.move_window_right",
-        title: n_("Move window right"),
-    },
-    Row {
-        key: "shortcuts.move_window_up",
-        title: n_("Move window up"),
-    },
-    Row {
-        key: "shortcuts.move_window_down",
-        title: n_("Move window down"),
-    },
-    Row {
-        key: "shortcuts.cycle_column_width",
-        title: n_("Column width"),
-    },
-    Row {
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
-    },
-    Row {
-        key: "shortcuts.show_workspaces",
-        title: n_("Workspace overview"),
-    },
-    Row {
-        key: "shortcuts.next_workspace",
-        title: n_("Next workspace"),
-    },
-    Row {
-        key: "shortcuts.previous_workspace",
-        title: n_("Previous workspace"),
-    },
-    Row {
-        key: "shortcuts.move_to_next_workspace",
-        title: n_("Move window to next workspace"),
-    },
-    Row {
-        key: "shortcuts.move_to_previous_workspace",
-        title: n_("Move window to previous workspace"),
     },
 ];
 

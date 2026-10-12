@@ -4,7 +4,7 @@
 # bars and no buttons on them, and one slim bar along the top holds the
 # menu button at its start and the workspace buttons and the clock at
 # its end. Close a window with Super+Q and move it with Super and a drag,
-# as in every preset; Super+T, or the toggle, still floats a workspace.
+# as in every preset; Super+Y, or the toggle, still floats a workspace.
 # A person who wants title bars back sets layout.title_bars, which wins
 # over this preset's.
 format = 1

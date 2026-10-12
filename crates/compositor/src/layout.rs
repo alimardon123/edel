@@ -53,7 +53,7 @@ impl Gaps {
     }
 }
 
-/// Every policy, the default first: what `layout.tiling` and Super+T choose
+/// Every policy, the default first: what `layout.tiling` and Super+Y choose
 /// between. Their names are what people see (ADR-008), never the
 /// algorithm's, so a later tiling algorithm keeps everyone's setting.
 pub fn policies<W: Clone + PartialEq + 'static>(gaps: Gaps) -> Vec<Box<dyn WindowPolicy<W>>> {
@@ -181,7 +181,7 @@ impl<W: Clone + PartialEq + 'static> Workspace<W> {
         }
     }
 
-    /// The next policy after the active one, for Super+T.
+    /// The next policy after the active one, for Super+Y.
     pub fn next(&self) -> &'static str {
         self.kinds[(self.active + 1) % self.kinds.len()].0
     }

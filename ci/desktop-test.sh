@@ -21,7 +21,7 @@
 #               title on it; a click on two's close button closes it, and
 #               dragging one's bar moves it
 #   tiling      edel settings set layout.tiling=true, sent to the VM, tiles
-#               foot and one side by side with their bars; Super+T puts
+#               foot and one side by side with their bars; Super+Y puts
 #               them back where they floated, overlapping
 #   shape       appearance.gaps=12 and border_width=3 with a red focused
 #               border, sent to the VM, tiles foot and one 12 px apart as
@@ -72,12 +72,12 @@
 #               picks keep the frame budget (M5.11b)
 #   shortcuts   edel settings set shortcuts.close_window=Super+X, sent to the VM,
 #               moves close_window: Super+Q then leaves a window open and Super+X
-#               closes it; Ctrl+Alt+T opens a terminal; removing the key
+#               closes it; Super+T opens a terminal; removing the key
 #               brings Super+Q back (M5.13a)
 #   workspaces  Super+Shift+2 sends a new window to workspace 2, which
 #               the state file says while workspace 1 stays shown;
 #               Super+2 shows it tiled, as layout.tiling from the tiling
-#               case says, Super+T floats that workspace alone, Super+1
+#               case says, Super+Y floats that workspace alone, Super+1
 #               brings workspace 1 back as it was, and the window closed
 #               while hidden leaves the state file (M5.2a); then
 #               edel-testclient --workspace 3, over ext-workspace-v1, sees
@@ -133,7 +133,7 @@
 #   switcher    with Alt held, Tab shows the window switcher with the
 #               window used before chosen; letting go switches (M5.3c)
 #   styles      layout.tiling_style = "split" leaves workspace 4 floating;
-#               Super+T tiles four windows there, each halving the one
+#               Super+Y tiles four windows there, each halving the one
 #               before; Super+Shift+Left swaps the last two, and stack
 #               lays them out as master and stack (M5.16a); the layout
 #               button's right-click menu chooses split (M5.16b)
@@ -688,13 +688,13 @@ case_layers() {
 	wait_for 'DESKTOP-TEST: layers 2 .*edel-testclient@0,720,1280x40' ||
 		fail "the test panel is not above shell-ui's along the bottom in the state file: $(value layers)"
 	shot layers 640 740 2f343f >/dev/null || fail "640,740 is not the test panel's #2f343f"
-	# Windows tile, and would maximize, in the area above both. Super+T
+	# Windows tile, and would maximize, in the area above both. Super+Y
 	# switches whatever the settings file says: the tiling case leaves
 	# layout.tiling at true with the windows floating.
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	wait_for 'DESKTOP-TEST: windows 1 one@9,36,1262x675' ||
 		fail "one did not tile above the panels: $(value windows)"
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	i=0
 	while [ "$(value windows)" != '1 one@722,145,300x200' ]; do
 		i=$((i + 1))
@@ -765,7 +765,7 @@ case_panel() {
 	[ "$between" = "uniform $panel" ] || fail "the rows between the clock's time and date, at 1226,781 46x2, are $between, not the panel's #$panel"
 	cp "$dir/panel.png" "$dir/panel-polished.png"
 	# The layout toggle (M5.3a): a click switches the shown workspace's
-	# policy over edel-shell-v1, as Super+T, and fills the button, 30 px
+	# policy over edel-shell-v1, as Super+Y, and fills the button, 30 px
 	# wide after 2 px of room, with the accent; another switches it back.
 	# The checked pixel is left of where the cursor lies after a click.
 	toggle=$(panel_places | sed -n 's/.*layout \([0-9]*\)+.*/\1/p')
@@ -966,10 +966,10 @@ case_shortcuts() {
 		fail "Super+Q still closed keys after close_window moved to Super+X"
 	python3 ci/qmp.py key meta_l-x
 	wait_more 'edel-compositor: unmapped window keys' 0 || fail "Super+X did not close keys: $(value windows)"
-	# Ctrl+Alt+T opens a terminal, which Super+X closes in turn.
+	# Super+T opens a terminal, which Super+X closes in turn.
 	opened=$(count 'edel-compositor: mapped window foot')
-	python3 ci/qmp.py key ctrl-alt-t
-	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T opened no terminal: $(value windows)"
 	closed=$(count 'edel-compositor: unmapped window foot')
 	sleep 1
 	python3 ci/qmp.py key meta_l-x
@@ -978,7 +978,7 @@ case_shortcuts() {
 	guest 'shortcuts default'
 	wait_for 'edel-compositor: shortcut close_window is Super\+Q' ||
 		fail "removing shortcuts.close_window did not bring Super+Q back"
-	echo "PASS: shortcuts.close_window = \"Super+X\" moved close off Super+Q at once, Super+X closed keys, Ctrl+Alt+T opened foot, and removing the key brought Super+Q back"
+	echo "PASS: shortcuts.close_window = \"Super+X\" moved close off Super+Q at once, Super+X closed keys, Super+T opened foot, and removing the key brought Super+Q back"
 }
 
 case_settings() {
@@ -2351,8 +2351,8 @@ case_keyboard() {
 	wait_more 'edel-compositor: keyboard layout now German' "$switched" ||
 		fail "Super+Space did not go back to German after the click"
 	opened=$(count 'edel-compositor: mapped window foot')
-	python3 ci/qmp.py key ctrl-alt-t
-	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T opened no terminal: $(value windows)"
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T opened no terminal: $(value windows)"
 	sleep 2
 	python3 ci/qmp.py type 'cd'
 	python3 ci/qmp.py key ret
@@ -2389,15 +2389,15 @@ case_workspaces() {
 	wait_for 'DESKTOP-TEST: hidden on 1, 1 away@2$' || fail "the state file does not keep away on workspace 2: $(value hidden)"
 	shot workspaces 640 393 '!7744aa' >/dev/null || fail "away is still drawn on workspace 1"
 	# Super+2 shows it tiled, as layout.tiling = true from the tiling case
-	# says for every workspace; Super+T floats this one alone, with away
+	# says for every workspace; Super+Y floats this one alone, with away
 	# centred where its floating policy put it.
 	python3 ci/qmp.py key meta_l-2
 	wait_for 'edel-compositor: workspace 2' || fail "Super+2 did not show workspace 2"
 	wait_for 'DESKTOP-TEST: windows 1 away@9,36,1262x715' || fail "away does not fill workspace 2, tiled: $(value windows)"
 	shot workspaces 640 393 7744aa >/dev/null || fail "away is not drawn on workspace 2"
 	floated=$(count 'edel-compositor: windows now floating')
-	python3 ci/qmp.py key meta_l-t
-	wait_more 'edel-compositor: windows now floating' "$floated" || fail "Super+T did not float workspace 2"
+	python3 ci/qmp.py key meta_l-y
+	wait_more 'edel-compositor: windows now floating' "$floated" || fail "Super+Y did not float workspace 2"
 	wait_for 'DESKTOP-TEST: windows 1 away@540,318,200x150' || fail "away is not centred on workspace 2, floating: $(value windows)"
 	# Super+1 brings the first back as it was, floating.
 	back=$(count "DESKTOP-TEST: windows $first\$")
@@ -2545,7 +2545,7 @@ case_workspaces() {
 	guest 'away off'
 	wait_more 'edel-compositor: unmapped window away' "$closed" || fail "away did not close"
 	wait_for "DESKTOP-TEST: windows $first\$" || fail "the first workspace is not back as it was: $(value windows)"
-	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+T floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with workspaces.names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", appearance.switcher_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back; dragging workspace 3's button onto the first moved it first with away, and dragging it back put them as they were"
+	echo "PASS: Super+Shift+2 sent away to workspace 2, Super+2 showed it tiled, Super+Y floated that workspace alone, Super+1 brought back $first, and away, closed while hidden, left the state file; over ext-workspace-v1 a client saw four workspaces and showed the third, then the first; the panel's switcher showed 1 as the accent pill, and a click on its 3 showed the third; with workspaces.names = [\"Mail\"] AT-SPI held \"Workspaces: Mail shown, 1 of 4\", appearance.switcher_look = button drew its underline at $x, a click at $((x + middle)),780 on its third segment showed workspace 3 (switcher-button.png), and the reset brought the numbers back; dragging workspace 3's button onto the first moved it first with away, and dragging it back put them as they were"
 }
 
 # state_is WANT: asks the test service for the workspaces the state file holds
@@ -2628,15 +2628,15 @@ case_workspaces_dynamic() {
 	wait_more 'edel-compositor: 4 workspaces$' "$fours" || fail "the preset's four workspaces did not come back"
 	state_is 'shown 1 count 4 names ["", "", "", ""]' || fail "the reset did not give four unnamed workspaces: $(value workspace_state)"
 	# Workspaces added here start in layout.tiling's policy, tiling since
-	# the tiling case, and the floated first closed while empty: Super+T
+	# the tiling case, and the floated first closed while empty: Super+Y
 	# floats the first again, as the cases after this one expect.
 	toggled=$(count 'edel-compositor: windows now (tiling|floating)$')
-	python3 ci/qmp.py key meta_l-t
-	wait_more 'edel-compositor: windows now (tiling|floating)$' "$toggled" || fail "Super+T did not switch the first workspace's policy"
+	python3 ci/qmp.py key meta_l-y
+	wait_more 'edel-compositor: windows now (tiling|floating)$' "$toggled" || fail "Super+Y did not switch the first workspace's policy"
 	if tr -d '\r' <"$log" | grep -aE 'edel-compositor: windows now (tiling|floating)$' | tail -n 1 | grep -q tiling; then
 		toggled=$(count 'edel-compositor: windows now floating$')
-		python3 ci/qmp.py key meta_l-t
-		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+T did not float the first workspace again"
+		python3 ci/qmp.py key meta_l-y
+		wait_more 'edel-compositor: windows now floating$' "$toggled" || fail "Super+Y did not float the first workspace again"
 	fi
 	echo "PASS: with workspaces.dynamic on and no window, one workspace was left; away added a second, Super+Ctrl+Right and Left showed it and stopped at both ends, Super+Ctrl+Shift+Right sent away there and followed it, so the empty first closed and away's workspace was the first of two; closing away left one; workspaces.names = [\"Mail\"] kept Mail with one empty after it; both keys' reset brought back the four unnamed workspaces"
 }
@@ -2701,7 +2701,7 @@ case_overview() {
 	wait_more 'edel-compositor: mapped window lap ' "$opened" || fail "the test client lap did not open: $(value windows)"
 	# Tiled, the overview moves no window: the windows line before and
 	# after it is the same.
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	sleep 1
 	before=$(value windows)
 	shown=$(count 'edel-compositor: overview shown$')
@@ -2712,7 +2712,7 @@ case_overview() {
 	wait_more 'edel-compositor: overview hidden$' "$hidden" || overview_fail "Escape did not leave the overview"
 	sleep 1
 	[ "$(value windows)" = "$before" ] || fail "the overview moved windows on a tiled workspace: $before, then $(value windows)"
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	sleep 1
 	# Open again, floating, and read where its parts lie.
 	shown=$(count 'edel-compositor: overview shown$')
@@ -4109,8 +4109,8 @@ case_fullscreen() {
 	wait_more 'edel-compositor: unmapped window full' "$closed" || fail "Super+Q did not close full"
 	shot fullscreen-left 640 790 "$panel" >/dev/null || fail "the panel did not come back after full closed"
 	opened=$(count 'edel-compositor: mapped window foot')
-	python3 ci/qmp.py key ctrl-alt-t
-	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Ctrl+Alt+T did not open foot"
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T did not open foot"
 	went=$(count 'edel-compositor: window foot fullscreen')
 	python3 ci/qmp.py key meta_l-f
 	wait_more 'edel-compositor: window foot fullscreen' "$went" || fail "Super+F did not make foot fullscreen"
@@ -5132,12 +5132,12 @@ case_tiling() {
 		fail "foot's tile's bar is #$colour at 14,12, not a title bar colour"
 	colour=$(shot tiling 650 12 "$bar|$focused") ||
 		fail "one's tile's bar is #$colour at 650,12, not a title bar colour"
-	# Super+T: this workspace floats again, each window where it was.
-	python3 ci/qmp.py key meta_l-t
-	wait_for 'edel-compositor: windows now floating' || fail "Super+T did not switch back to floating"
+	# Super+Y: this workspace floats again, each window where it was.
+	python3 ci/qmp.py key meta_l-y
+	wait_for 'edel-compositor: windows now floating' || fail "Super+Y did not switch back to floating"
 	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
-	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+T floated them back where they were"
+	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+Y floated them back where they were"
 }
 
 case_shape() {
@@ -5154,12 +5154,12 @@ case_shape() {
 		fail "edel settings set appearance.gaps=12 and the border did not run in the VM"
 	wait_for 'edel-compositor: shape gaps 12/12, border 3, title bar 28' ||
 		fail "the compositor did not follow the shape: appearance.gaps and border_width"
-	# Super+T tiles this workspace whatever layout.tiling says (the tiling
-	# case leaves the file at true with the workspace floated by Super+T).
+	# Super+Y tiles this workspace whatever layout.tiling says (the tiling
+	# case leaves the file at true with the workspace floated by Super+Y).
 	tiling=$(count 'edel-compositor: windows now tiling')
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	wait_more 'edel-compositor: windows now tiling' "$tiling" ||
-		fail "Super+T did not tile the workspace for the shape"
+		fail "Super+Y did not tile the workspace for the shape"
 	wait_for 'DESKTOP-TEST: windows 2 foot@15,42,[0-9]+x[0-9]+ one@649,42,616x703' ||
 		fail "foot and one are not tiled inside 12 px gaps and a 3 px border: $(value windows)"
 	tiled=$(value windows)
@@ -5188,9 +5188,9 @@ case_shape() {
 	# Back to the release's shape: 8 px gaps, 1 px border, the release's
 	# border colours, and floating again.
 	floated=$(count 'edel-compositor: windows now floating')
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	wait_more 'edel-compositor: windows now floating' "$floated" ||
-		fail "Super+T did not float the windows again after the shape"
+		fail "Super+Y did not float the windows again after the shape"
 	shaped=$(count 'edel-compositor: shape gaps 8/8, border 1, title bar 28')
 	guest 'shape default'
 	wait_for 'DESKTOP-TEST: ran shape default: 0' ||
@@ -5338,7 +5338,7 @@ case_cursor() {
 case_styles() {
 	# Tiling styles (M5.16a): layout.tiling_style = "split" changes how
 	# tiling lays windows out and leaves a floating workspace floating. On
-	# workspace 4, empty, four windows open floating; Super+T tiles them
+	# workspace 4, empty, four windows open floating; Super+Y tiles them
 	# as split: s1 on the left half, s2 top right, s3 and s4 sharing the
 	# bottom right quarter side by side. Super+Shift+Left swaps s4, the
 	# focused one, with s3; stack then lays the same windows out as master
@@ -5356,8 +5356,8 @@ case_styles() {
 		sleep 0.2
 	done
 	floated=$(value windows)
-	python3 ci/qmp.py key meta_l-t
-	wait_for 'edel-compositor: windows now tiling' || fail "Super+T did not tile workspace 4"
+	python3 ci/qmp.py key meta_l-y
+	wait_for 'edel-compositor: windows now tiling' || fail "Super+Y did not tile workspace 4"
 	# places WINDOWS: each of s1 to s4 as name x y w h, from the windows line.
 	places() {
 		echo "$1" | grep -oE 's[1-4]@[0-9]+,[0-9]+,[0-9]+x[0-9]+' | tr '@,x' '   '
@@ -5380,7 +5380,7 @@ case_styles() {
 	done
 	split=$(value windows)
 	echo "$floated" | grep -qE 's1@[0-9]+,[0-9]+,200x150' ||
-		fail "the style tiled a floating workspace before Super+T: $floated"
+		fail "the style tiled a floating workspace before Super+Y: $floated"
 	closed=$(count 'edel-compositor: swapped s4 and s3')
 	python3 ci/qmp.py key meta_l-shift-left
 	wait_more 'edel-compositor: swapped s4 and s3' "$closed" ||
@@ -5402,7 +5402,7 @@ case_styles() {
 	stacked=$(value windows)
 	guest 'four off'
 	guest 'style default'
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	python3 ci/qmp.py key meta_l-1
 	# The layout button's menu (M5.16b): a right click opens it above the
 	# button in the menus' colour with stack in use; a click on its second
@@ -5444,7 +5444,7 @@ case_styles() {
 	guest 'style mine default'
 	wait_more 'edel-compositor: tiling style stack' "$styled" || fail "taking layout.tiling_style out of ci's file did not bring stack back"
 	echo "PASS: the layout button's right-click menu showed stack in use, its Split row wrote layout.tiling_style = \"split\" and the compositor followed with workspace 1 still floating"
-	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+T tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
+	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+Y tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
 
 case_scroll() {
@@ -5459,8 +5459,8 @@ case_scroll() {
 	wait_more 'edel-compositor: tiling style scroll' "$styled" ||
 		fail "the compositor did not follow layout.tiling_style = \"scroll\""
 	tiled=$(count 'edel-compositor: windows now tiling')
-	python3 ci/qmp.py key meta_l-t
-	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "Super+T did not tile workspace 4"
+	python3 ci/qmp.py key meta_l-y
+	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "Super+Y did not tile workspace 4"
 	guest 'four windows'
 	# column NAME: the window's x and width from the windows line.
 	column() {
@@ -5508,7 +5508,7 @@ case_scroll() {
 	back=$(value windows)
 	guest 'four off'
 	guest 'style default'
-	python3 ci/qmp.py key meta_l-t
+	python3 ci/qmp.py key meta_l-y
 	python3 ci/qmp.py key meta_l-1
 	echo "PASS: with scroll, four windows opened as columns with s4 whole and s1 off screen ($opened), Super+Left three times brought s1 whole, and a click on s4 in the window list scrolled back to it ($back)"
 }

@@ -680,9 +680,6 @@ msgstr ""
 msgid "Tray: {names}, {count} hidden"
 msgstr ""
 
-msgid "Windows"
-msgstr ""
-
 msgid "{title} (focused)"
 msgstr ""
 

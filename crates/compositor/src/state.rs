@@ -535,7 +535,7 @@ impl Edel {
         }
     }
 
-    /// Super+T: the other policy, for this workspace only; the settings file
+    /// Super+Y: the other policy, for this workspace only; the settings file
     /// is left as it is.
     pub fn toggle_tiling(&mut self) {
         let next = self.desks.layout().next();

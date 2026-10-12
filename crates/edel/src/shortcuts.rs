@@ -12,6 +12,36 @@ use std::fmt;
 
 use crate::i18n::n_;
 
+/// A part of the Shortcuts page and of `docs/SHORTCUTS.md`, in the order
+/// people see them ([`GROUPS`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Group {
+    Windows,
+    Apps,
+    Workspaces,
+    System,
+}
+
+impl Group {
+    /// The heading people read for the group, in English before translation.
+    pub fn title(self) -> &'static str {
+        match self {
+            Group::Windows => n_("Windows"),
+            Group::Apps => n_("Apps"),
+            Group::Workspaces => n_("Workspaces"),
+            Group::System => n_("System"),
+        }
+    }
+}
+
+/// Every group, in the order the Shortcuts page shows them.
+pub const GROUPS: [Group; 4] = [
+    Group::Windows,
+    Group::Apps,
+    Group::Workspaces,
+    Group::System,
+];
+
 /// One action keys can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Action {
@@ -21,6 +51,8 @@ pub struct Action {
     pub default: &'static str,
     /// Whether it must always have keys: a way out of anything on screen.
     pub rescue: bool,
+    /// The group it is listed under.
+    pub group: Group,
     /// What it does, for `docs/SHORTCUTS.md` and Settings.
     pub what: &'static str,
 }
@@ -29,247 +61,157 @@ const fn action(
     name: &'static str,
     default: &'static str,
     rescue: bool,
+    group: Group,
     what: &'static str,
 ) -> Action {
     Action {
         name,
         default,
         rescue,
+        group,
         what,
     }
 }
 
 /// Every action, with the Classic preset's keys (the defaults until the
-/// presets ship their own, M5.4). Append only: a name is a key of the
-/// settings file.
+/// presets ship their own, M5.4). The order is the order people see, by
+/// group; a name is a key of the settings file, so names never change.
 pub const ACTIONS: &[Action] = &[
     action(
         "close_window",
         "Super+Q",
         true,
+        Group::Windows,
         n_("Close the focused window"),
-    ),
-    action(
-        "open_launcher",
-        "Super",
-        true,
-        n_("Open or close the launcher, Super tapped alone"),
-    ),
-    action(
-        "switch_windows",
-        "Alt+Tab",
-        false,
-        n_(
-            "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
-        ),
-    ),
-    action(
-        "toggle_tiling",
-        "Super+T",
-        false,
-        n_("Switch this workspace between floating and tiling"),
-    ),
-    action("open_terminal", "Ctrl+Alt+T", false, n_("Open a terminal")),
-    action("take_screenshot", "Print", false, n_("Take a screenshot")),
-    action("lock_screen", "Super+L", true, n_("Lock the screen")),
-    action(
-        "go_to_workspace_1",
-        "Super+1",
-        false,
-        n_("Go to workspace 1"),
-    ),
-    action(
-        "go_to_workspace_2",
-        "Super+2",
-        false,
-        n_("Go to workspace 2"),
-    ),
-    action(
-        "go_to_workspace_3",
-        "Super+3",
-        false,
-        n_("Go to workspace 3"),
-    ),
-    action(
-        "go_to_workspace_4",
-        "Super+4",
-        false,
-        n_("Go to workspace 4"),
-    ),
-    action(
-        "go_to_workspace_5",
-        "Super+5",
-        false,
-        n_("Go to workspace 5"),
-    ),
-    action(
-        "go_to_workspace_6",
-        "Super+6",
-        false,
-        n_("Go to workspace 6"),
-    ),
-    action(
-        "go_to_workspace_7",
-        "Super+7",
-        false,
-        n_("Go to workspace 7"),
-    ),
-    action(
-        "go_to_workspace_8",
-        "Super+8",
-        false,
-        n_("Go to workspace 8"),
-    ),
-    action(
-        "go_to_workspace_9",
-        "Super+9",
-        false,
-        n_("Go to workspace 9"),
-    ),
-    action(
-        "move_to_workspace_1",
-        "Super+Shift+1",
-        false,
-        n_("Move the focused window to workspace 1"),
-    ),
-    action(
-        "move_to_workspace_2",
-        "Super+Shift+2",
-        false,
-        n_("Move the focused window to workspace 2"),
-    ),
-    action(
-        "move_to_workspace_3",
-        "Super+Shift+3",
-        false,
-        n_("Move the focused window to workspace 3"),
-    ),
-    action(
-        "move_to_workspace_4",
-        "Super+Shift+4",
-        false,
-        n_("Move the focused window to workspace 4"),
-    ),
-    action(
-        "move_to_workspace_5",
-        "Super+Shift+5",
-        false,
-        n_("Move the focused window to workspace 5"),
-    ),
-    action(
-        "move_to_workspace_6",
-        "Super+Shift+6",
-        false,
-        n_("Move the focused window to workspace 6"),
-    ),
-    action(
-        "move_to_workspace_7",
-        "Super+Shift+7",
-        false,
-        n_("Move the focused window to workspace 7"),
-    ),
-    action(
-        "move_to_workspace_8",
-        "Super+Shift+8",
-        false,
-        n_("Move the focused window to workspace 8"),
-    ),
-    action(
-        "move_to_workspace_9",
-        "Super+Shift+9",
-        false,
-        n_("Move the focused window to workspace 9"),
-    ),
-    action(
-        "toggle_fullscreen",
-        "Super+F",
-        false,
-        n_("Make the focused window fill its screen, or leave fullscreen"),
-    ),
-    action(
-        "next_keyboard_layout",
-        "Super+Space",
-        false,
-        n_("Switch to the next keyboard layout of region.keyboard"),
     ),
     action(
         "minimize_window",
         "Super+H",
         false,
+        Group::Windows,
         n_("Minimize the focused window; the window list or Alt+Tab brings it back"),
     ),
     action(
         "toggle_maximize",
         "Super+M",
         false,
+        Group::Windows,
         n_("Maximize the focused window, or give it its size back"),
+    ),
+    action(
+        "toggle_fullscreen",
+        "Super+F",
+        false,
+        Group::Windows,
+        n_("Make the focused window fill its screen, or leave fullscreen"),
+    ),
+    action(
+        "switch_windows",
+        "Alt+Tab",
+        false,
+        Group::Windows,
+        n_(
+            "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
+        ),
+    ),
+    action(
+        "toggle_tiling",
+        "Super+Y",
+        false,
+        Group::Windows,
+        n_("Switch this workspace between floating and tiling"),
     ),
     action(
         "focus_window_left",
         "Super+Left",
         false,
+        Group::Windows,
         n_("Focus the window to the left of the focused one"),
     ),
     action(
         "focus_window_right",
         "Super+Right",
         false,
+        Group::Windows,
         n_("Focus the window to the right of the focused one"),
     ),
     action(
         "focus_window_up",
         "Super+Up",
         false,
+        Group::Windows,
         n_("Focus the window above the focused one"),
     ),
     action(
         "focus_window_down",
         "Super+Down",
         false,
+        Group::Windows,
         n_("Focus the window below the focused one"),
     ),
     action(
         "move_window_left",
         "Super+Shift+Left",
         false,
+        Group::Windows,
         n_("Swap the focused window with the one to its left, when tiled"),
     ),
     action(
         "move_window_right",
         "Super+Shift+Right",
         false,
+        Group::Windows,
         n_("Swap the focused window with the one to its right, when tiled"),
     ),
     action(
         "move_window_up",
         "Super+Shift+Up",
         false,
+        Group::Windows,
         n_("Swap the focused window with the one above it, when tiled"),
     ),
     action(
         "move_window_down",
         "Super+Shift+Down",
         false,
+        Group::Windows,
         n_("Swap the focused window with the one below it, when tiled"),
     ),
     action(
         "cycle_column_width",
         "Super+R",
         false,
+        Group::Windows,
         n_(
             "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style",
         ),
     ),
     action(
-        "show_tray",
-        "Super+B",
+        "open_launcher",
+        "Super",
+        true,
+        Group::Apps,
+        n_("Open or close the launcher, Super tapped alone"),
+    ),
+    action(
+        "open_terminal",
+        "Super+T",
         false,
-        n_("Open or close the tray's apps behind its arrow, with the keyboard on them"),
+        Group::Apps,
+        n_("Open a terminal"),
+    ),
+    action(
+        "take_screenshot",
+        "Print",
+        false,
+        Group::Apps,
+        n_("Take a screenshot"),
     ),
     action(
         "show_workspaces",
         "Super+W",
         false,
+        Group::Workspaces,
         n_(
             "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it",
         ),
@@ -278,25 +220,176 @@ pub const ACTIONS: &[Action] = &[
         "next_workspace",
         "Super+Ctrl+Right",
         false,
+        Group::Workspaces,
         n_("Show the workspace after the shown one; stops at the last"),
     ),
     action(
         "previous_workspace",
         "Super+Ctrl+Left",
         false,
+        Group::Workspaces,
         n_("Show the workspace before the shown one; stops at the first"),
     ),
     action(
         "move_to_next_workspace",
         "Super+Ctrl+Shift+Right",
         false,
+        Group::Workspaces,
         n_("Move the focused window to the workspace after the shown one, and follow it"),
     ),
     action(
         "move_to_previous_workspace",
         "Super+Ctrl+Shift+Left",
         false,
+        Group::Workspaces,
         n_("Move the focused window to the workspace before the shown one, and follow it"),
+    ),
+    action(
+        "go_to_workspace_1",
+        "Super+1",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 1"),
+    ),
+    action(
+        "go_to_workspace_2",
+        "Super+2",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 2"),
+    ),
+    action(
+        "go_to_workspace_3",
+        "Super+3",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 3"),
+    ),
+    action(
+        "go_to_workspace_4",
+        "Super+4",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 4"),
+    ),
+    action(
+        "go_to_workspace_5",
+        "Super+5",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 5"),
+    ),
+    action(
+        "go_to_workspace_6",
+        "Super+6",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 6"),
+    ),
+    action(
+        "go_to_workspace_7",
+        "Super+7",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 7"),
+    ),
+    action(
+        "go_to_workspace_8",
+        "Super+8",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 8"),
+    ),
+    action(
+        "go_to_workspace_9",
+        "Super+9",
+        false,
+        Group::Workspaces,
+        n_("Go to workspace 9"),
+    ),
+    action(
+        "move_to_workspace_1",
+        "Super+Shift+1",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 1"),
+    ),
+    action(
+        "move_to_workspace_2",
+        "Super+Shift+2",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 2"),
+    ),
+    action(
+        "move_to_workspace_3",
+        "Super+Shift+3",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 3"),
+    ),
+    action(
+        "move_to_workspace_4",
+        "Super+Shift+4",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 4"),
+    ),
+    action(
+        "move_to_workspace_5",
+        "Super+Shift+5",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 5"),
+    ),
+    action(
+        "move_to_workspace_6",
+        "Super+Shift+6",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 6"),
+    ),
+    action(
+        "move_to_workspace_7",
+        "Super+Shift+7",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 7"),
+    ),
+    action(
+        "move_to_workspace_8",
+        "Super+Shift+8",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 8"),
+    ),
+    action(
+        "move_to_workspace_9",
+        "Super+Shift+9",
+        false,
+        Group::Workspaces,
+        n_("Move the focused window to workspace 9"),
+    ),
+    action(
+        "lock_screen",
+        "Super+L",
+        true,
+        Group::System,
+        n_("Lock the screen"),
+    ),
+    action(
+        "next_keyboard_layout",
+        "Super+Space",
+        false,
+        Group::System,
+        n_("Switch to the next keyboard layout of region.keyboard"),
+    ),
+    action(
+        "show_tray",
+        "Super+B",
+        false,
+        Group::System,
+        n_("Open or close the tray's apps behind its arrow, with the keyboard on them"),
     ),
 ];
 
@@ -564,17 +657,25 @@ pub fn markdown() -> String {
          Modifiers are `Super`, `Ctrl`, `Alt` and `Shift`; the other key is a letter, a digit or one of `Return`, `Tab`, `Space`, \
          `Escape`, `Print`, `BackSpace`, `Delete`, `Insert`, `Home`, `End`, `Page_Up`, `Page_Down`, `Up`, `Down`, `Left`, `Right` \
          and `F1` to `F12`; one modifier alone, such as the launcher's `Super`, is that key tapped with nothing else. A way out (close, launcher, lock) always keeps keys, and no two actions share keys. \
-         An action whose step has not landed yet leaves its keys to the app that has the keyboard.\n\n\
-         | Action | Keys | What it does | Way out |\n|---|---|---|---|\n",
+         An action whose step has not landed yet leaves its keys to the app that has the keyboard.\n\n",
     );
-    for a in ACTIONS {
+    for group in GROUPS {
+        if group != GROUPS[0] {
+            text.push('\n');
+        }
         text.push_str(&format!(
-            "| `{}` | `{}` | {} | {} |\n",
-            a.name,
-            a.default,
-            a.what,
-            if a.rescue { "yes" } else { "" }
+            "## {}\n\n| Action | Keys | What it does | Way out |\n|---|---|---|---|\n",
+            group.title()
         ));
+        for a in ACTIONS.iter().filter(|a| a.group == group) {
+            text.push_str(&format!(
+                "| `{}` | `{}` | {} | {} |\n",
+                a.name,
+                a.default,
+                a.what,
+                if a.rescue { "yes" } else { "" }
+            ));
+        }
     }
     text
 }
@@ -686,11 +787,11 @@ mod tests {
         // A way out unbound gets its default back; an action the file set
         // wins a default's keys.
         let (resolved, notes) =
-            resolve(&file(&[("lock_screen", ""), ("switch_windows", "Super+T")]));
+            resolve(&file(&[("lock_screen", ""), ("switch_windows", "Super+Y")]));
         assert_eq!(keys(&resolved, "lock_screen").as_deref(), Some("Super+L"));
         assert_eq!(
             keys(&resolved, "switch_windows").as_deref(),
-            Some("Super+T")
+            Some("Super+Y")
         );
         assert_eq!(keys(&resolved, "toggle_tiling"), None);
         assert_eq!(notes.len(), 2, "{notes:?}");
@@ -741,6 +842,24 @@ mod tests {
         // Once the overview gives its keys up, Super+W is free.
         let freed = file(&[("show_workspaces", "")]);
         assert_eq!(clash(&freed, "close_window", &superw), None);
+    }
+
+    #[test]
+    fn every_group_has_actions_and_the_table_is_listed_by_group() {
+        for group in GROUPS {
+            assert!(
+                ACTIONS.iter().any(|a| a.group == group),
+                "{group:?} has no action"
+            );
+        }
+        let rank: Vec<usize> = ACTIONS
+            .iter()
+            .map(|a| GROUPS.iter().position(|g| *g == a.group).unwrap())
+            .collect();
+        assert!(
+            rank.windows(2).all(|pair| pair[0] <= pair[1]),
+            "ACTIONS is not sorted by group, in GROUPS order"
+        );
     }
 
     #[test]

@@ -1007,10 +1007,19 @@ msgstr ""
 msgid "{others} or {last}"
 msgstr ""
 
+msgid "Windows"
+msgstr ""
+
 msgid "Close the focused window"
 msgstr ""
 
-msgid "Open or close the launcher, Super tapped alone"
+msgid "Minimize the focused window; the window list or Alt+Tab brings it back"
+msgstr ""
+
+msgid "Maximize the focused window, or give it its size back"
+msgstr ""
+
+msgid "Make the focused window fill its screen, or leave fullscreen"
 msgstr ""
 
 msgid "Switch windows, the most recently used first, while the modifiers are held; with Shift, back"
@@ -1019,13 +1028,55 @@ msgstr ""
 msgid "Switch this workspace between floating and tiling"
 msgstr ""
 
+msgid "Focus the window to the left of the focused one"
+msgstr ""
+
+msgid "Focus the window to the right of the focused one"
+msgstr ""
+
+msgid "Focus the window above the focused one"
+msgstr ""
+
+msgid "Focus the window below the focused one"
+msgstr ""
+
+msgid "Swap the focused window with the one to its left, when tiled"
+msgstr ""
+
+msgid "Swap the focused window with the one to its right, when tiled"
+msgstr ""
+
+msgid "Swap the focused window with the one above it, when tiled"
+msgstr ""
+
+msgid "Swap the focused window with the one below it, when tiled"
+msgstr ""
+
+msgid "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style"
+msgstr ""
+
+msgid "Open or close the launcher, Super tapped alone"
+msgstr ""
+
 msgid "Open a terminal"
 msgstr ""
 
 msgid "Take a screenshot"
 msgstr ""
 
-msgid "Lock the screen"
+msgid "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it"
+msgstr ""
+
+msgid "Show the workspace after the shown one; stops at the last"
+msgstr ""
+
+msgid "Show the workspace before the shown one; stops at the first"
+msgstr ""
+
+msgid "Move the focused window to the workspace after the shown one, and follow it"
+msgstr ""
+
+msgid "Move the focused window to the workspace before the shown one, and follow it"
 msgstr ""
 
 msgid "Go to workspace 1"
@@ -1082,61 +1133,13 @@ msgstr ""
 msgid "Move the focused window to workspace 9"
 msgstr ""
 
-msgid "Make the focused window fill its screen, or leave fullscreen"
+msgid "Lock the screen"
 msgstr ""
 
 msgid "Switch to the next keyboard layout of region.keyboard"
 msgstr ""
 
-msgid "Minimize the focused window; the window list or Alt+Tab brings it back"
-msgstr ""
-
-msgid "Maximize the focused window, or give it its size back"
-msgstr ""
-
-msgid "Focus the window to the left of the focused one"
-msgstr ""
-
-msgid "Focus the window to the right of the focused one"
-msgstr ""
-
-msgid "Focus the window above the focused one"
-msgstr ""
-
-msgid "Focus the window below the focused one"
-msgstr ""
-
-msgid "Swap the focused window with the one to its left, when tiled"
-msgstr ""
-
-msgid "Swap the focused window with the one to its right, when tiled"
-msgstr ""
-
-msgid "Swap the focused window with the one above it, when tiled"
-msgstr ""
-
-msgid "Swap the focused window with the one below it, when tiled"
-msgstr ""
-
-msgid "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style"
-msgstr ""
-
 msgid "Open or close the tray's apps behind its arrow, with the keyboard on them"
-msgstr ""
-
-msgid "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it"
-msgstr ""
-
-msgid "Show the workspace after the shown one; stops at the last"
-msgstr ""
-
-msgid "Show the workspace before the shown one; stops at the first"
-msgstr ""
-
-msgid "Move the focused window to the workspace after the shown one, and follow it"
-msgstr ""
-
-msgid "Move the focused window to the workspace before the shown one, and follow it"
 msgstr ""
 
 msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"
