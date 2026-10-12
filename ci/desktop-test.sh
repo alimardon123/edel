@@ -4657,9 +4657,10 @@ case_wallpaper() {
 	# Each workspace its own wallpaper (M5.12b5): with the test picture as
 	# Appearance's, workspace 2 gets the colour #336699 from
 	# workspaces.wallpapers (`["", "#336699"]`), logged on the reload as
-	# `wallpaper on workspace 2: colour #336699`. Super+2 shows it at the
-	# centre (no window is open on workspace 2) and at 4,4; Super+1 shows
-	# the picture again at its left half. The list is taken out last, which
+	# `wallpaper on workspace 2: colour #336699`. Super+2 shows it at both
+	# top corners, which no window reaches (earlier cases may leave one on
+	# workspace 2, over the centre); Super+1 shows the picture again at its
+	# left half. The list is taken out last, which
 	# gives workspace 2 Appearance's picture back.
 	logged=$(count 'edel-compositor: wallpaper on workspace 2: colour #336699')
 	guest 'wallpaper workspace 2'
@@ -4667,8 +4668,8 @@ case_wallpaper() {
 	shown=$(count 'edel-compositor: workspace 2$')
 	python3 ci/qmp.py key meta_l-2
 	wait_more 'edel-compositor: workspace 2$' "$shown" || fail "Super+2 did not show workspace 2"
-	shot wallpaper-workspace-2 640 400 336699 >/dev/null ||
-		fail "workspace 2's centre at 640,400 is not its wallpaper colour #336699 (wallpaper-workspace-2.png)"
+	shot wallpaper-workspace-2 1276 4 336699 >/dev/null ||
+		fail "workspace 2's top right at 1276,4 is not its wallpaper colour #336699 (wallpaper-workspace-2.png)"
 	shot wallpaper-workspace-2-corner 4 4 336699 >/dev/null ||
 		fail "workspace 2's top left at 4,4 is not its wallpaper colour #336699 (wallpaper-workspace-2-corner.png)"
 	shown=$(count 'edel-compositor: workspace 1$')
