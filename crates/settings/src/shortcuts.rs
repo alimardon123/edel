@@ -173,6 +173,10 @@ pub fn page() -> gtk::Widget {
         });
     }
     log_places(&page, &ui);
+    // The callbacks hold the page's state weakly; the page holds it.
+    page.connect_destroy(move |_| {
+        let _ = &ui;
+    });
     page.upcast()
 }
 
