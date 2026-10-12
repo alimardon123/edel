@@ -599,11 +599,6 @@ pub struct Tokens {
     /// that lights it behind the picture (M5.10c7f).
     pub lock_edit_deep: Colour,
     pub lock_edit_glow: Colour,
-    /// The Power page's battery fill: charging or above 20 percent, low,
-    /// and empty (M5.32).
-    pub battery_ok: Colour,
-    pub battery_low: Colour,
-    pub battery_empty: Colour,
     /// The lock and login screens' clock: its size, logical pixels, and
     /// its weight, 100 (thin) to 900 (black).
     pub lock_clock: u32,
@@ -664,8 +659,7 @@ colour_tokens! {
     window, card, line, accent_text, edge, window_border, window_border_focused,
     window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
     lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
-    lock_glow_second, lock_edit_deep, lock_edit_glow, battery_ok, battery_low,
-    battery_empty,
+    lock_glow_second, lock_edit_deep, lock_edit_glow,
 }
 
 impl Tokens {
@@ -1175,9 +1169,6 @@ pub fn check(text: &str) -> Result<Tokens> {
         lock_glow_second: BLACK,
         lock_edit_deep: BLACK,
         lock_edit_glow: BLACK,
-        battery_ok: BLACK,
-        battery_low: BLACK,
-        battery_empty: BLACK,
         lock_clock: 0,
         panel_opacity: 0,
         title_tint: 0,
@@ -1727,7 +1718,7 @@ mod tests {
     #[test]
     fn a_colour_token_is_read_and_named_by_one_list() {
         let tokens = Tokens::built_in();
-        assert_eq!(COLOUR_NAMES.len(), 33);
+        assert_eq!(COLOUR_NAMES.len(), 30);
         for name in COLOUR_NAMES {
             assert!(tokens.colour(name).is_some(), "{name}");
         }
