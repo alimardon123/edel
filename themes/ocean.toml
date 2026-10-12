@@ -1,0 +1,8 @@
+# The built-in theme Ocean: the sea under a sky, from the horizon, from the still water and
+# from under the surface, tinting the desktop in its own colour (accent "wallpaper"). Read by
+# edel::themes (M5.12b6d); shown by edel theme list.
+title = "Ocean"
+pictures = ["ocean", "ocean-calm", "ocean-deep"]
+
+[appearance]
+accent = "wallpaper"
