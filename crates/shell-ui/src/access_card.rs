@@ -136,7 +136,6 @@ impl Shell {
     /// Draws the dialog if it may draw and what it shows changed. Its first
     /// drawing logs where its parts lie, which CI reads.
     pub fn draw_access(&mut self) {
-        let (sw, sh) = self.screen_size();
         let Some(card) = &mut self.access else {
             return;
         };
@@ -169,13 +168,9 @@ impl Shell {
         );
         if !card.logged {
             card.logged = true;
-            // The surface is centred on the screen the panels lie on.
-            let x = ((sw - surface.0) / 2.0).max(0.0).round();
-            let y = ((sh - surface.1) / 2.0).max(0.0).round();
-            eprintln!(
-                "edel-shell-ui: access places {x:.0},{y:.0} {}",
-                access::places(&layout)
-            );
+            // In the surface's own coordinates: the compositor centres it in
+            // the area the panels leave, which only it knows.
+            eprintln!("edel-shell-ui: access places {}", access::places(&layout));
         }
     }
 

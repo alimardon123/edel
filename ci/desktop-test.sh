@@ -4285,11 +4285,19 @@ case_capture() {
 	guest 'access ask'
 	wait_for 'edel-shell-ui: access places ' 20 ||
 		fail "shell-ui showed no dialog for the Access portal's question: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
-	# The newest place: the surface's top left on the screen, then the
-	# card's size and Allow's rectangle, all in logical pixels (CI's is 1:1).
-	places=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: access places \([0-9]*\),\([0-9]*\) card [0-9]*x[0-9]*, deny [0-9]*+[0-9]*+[0-9]*x[0-9]*, allow \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4 \5 \6/p' | tail -n 1)
-	[ -n "$places" ] || fail "shell-ui did not say where the dialog lies: $(tr -d '\r' <"$log" | grep -a 'access places' | tail -n 1)"
-	set -- $places
+	# Allow's rectangle in the surface's own logical pixels, from shell-ui,
+	# and the surface's place on the screen, from the compositor's state
+	# file (it centres the dialog in the area the panels leave).
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: access places card [0-9]*x[0-9]*, deny [0-9]*+[0-9]*+[0-9]*x[0-9]*, allow \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	[ -n "$places" ] || fail "shell-ui did not say where the dialog's buttons lie: $(tr -d '\r' <"$log" | grep -a 'access places' | tail -n 1)"
+	i=0
+	until value layers | grep -q 'edel-access@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no access dialog surface: $(value layers)"
+		sleep 0.2
+	done
+	at=$(value layers | grep -o 'edel-access@[0-9]*,[0-9]*' | sed 's/edel-access@//; s/,/ /')
+	set -- $at $places
 	allow_x=$(($1 + $3 + $5 / 2))
 	allow_y=$(($2 + $4 + $6 / 2))
 	# The dialog kept for the record, once its Allow button is drawn (the
