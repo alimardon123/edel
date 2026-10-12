@@ -128,8 +128,10 @@ echo "PASS: edel report printed the release, kernel, features, boot line, PCI de
 # named, and a refusal must exit non-zero and say why.
 # ssh joins its arguments into one command line for the remote shell, so
 # each command that needs quoting goes as one quoted string.
-ssh_root 'echo "ci:edel-ci-test" | chpasswd && adduser -D guest' ||
-	fail "could not give ci a password and add the user guest"
+ssh_root 'echo "ci:edel-ci-test" | chpasswd' >out/doas-setup.log 2>&1 ||
+	fail "could not give ci a password: $(cat out/doas-setup.log)"
+ssh_root 'adduser -D guest' >out/doas-setup.log 2>&1 ||
+	fail "could not add the user guest: $(cat out/doas-setup.log)"
 ssh_ci doas -n edel status >out/doas-status.log 2>&1 || fail "ci could not run doas -n edel status: $(cat out/doas-status.log)"
 grep -q '^running: ' out/doas-status.log || fail "doas -n edel status printed no status: $(cat out/doas-status.log)"
 echo "PASS: ci (in group admin) ran doas -n edel status with no password and got the status"
