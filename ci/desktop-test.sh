@@ -4318,7 +4318,11 @@ case_capture() {
 	poll_result 'capture screenshot result' 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
 		fail "the screenshot portal did not answer in 30 s"
 	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
-	[ -n "$shot" ] || fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1)"
+	if [ -z "$shot" ]; then
+		guest 'capture debug'
+		wait_for 'DESKTOP-TEST: capture_debug grim ' 30 || true
+		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug ' | tail -n 32 | tr '\n' '|')"
+	fi
 	guest 'capture file'
 	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
 	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)

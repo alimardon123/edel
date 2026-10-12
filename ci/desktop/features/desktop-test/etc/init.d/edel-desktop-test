@@ -299,6 +299,15 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --timeout 120 --dest org.freedesktop.impl.portal.desktop.edel --object-path /org/freedesktop/portal/desktop --method org.freedesktop.impl.portal.Access.AccessDialog /org/freedesktop/portal/desktop/request/1_1/ci ci-test '' 'Allow ci-test to take screenshots?' 'ci-test wants a picture of the screen' '' '{}'" </dev/null >/tmp/access-ask.txt 2>&1 &
 			;;
 		'access result') say "access_result $(tr '\n' ' ' </tmp/access-ask.txt 2>/dev/null)" ;;
+		# What the portal's backend said, for a failed screenshot: D-Bus
+		# starts it with the session bus's output, which is CI's
+		# /tmp/compositor.log, and grim run directly as ci.
+		'capture debug')
+			say "capture_debug portals $(pgrep -a xdg-desktop-portal | tr '\n' ';')"
+			grep -a -i 'xdpw\|wlroots\|grim\|screenshot\|portal' /tmp/compositor.log 2>/dev/null | tail -n 30 | sed 's/^/DESKTOP-TEST: capture_debug log /' >/dev/console
+			bus=$(session_bus)
+			say "capture_debug grim $(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' grim /tmp/ci-grim.png" </dev/null 2>&1 | tr '\n' ' ') exit $? $(ls -l /tmp/ci-grim.png 2>&1)"
+			;;
 		'capture screenshot')
 			bus=$(session_bus)
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screenshot" </dev/null >/tmp/capture-shot.txt 2>&1 &
