@@ -377,6 +377,12 @@ msgstr ""
 msgid "Added theme {title} as {name}, with {count} pictures. Choose it with: edel settings set appearance.theme={name}"
 msgstr ""
 
+msgid "saved the preset {name}"
+msgstr ""
+
+msgid "deleted the preset {name}"
+msgstr ""
+
 msgid "Settings, page by page, as the Settings app shows them:"
 msgstr ""
 
@@ -573,6 +579,42 @@ msgid "Zen"
 msgstr ""
 
 msgid "this release has no preset {name}; the Classic preset is used"
+msgstr ""
+
+msgid "{name} is not a preset's name; use letters, digits and hyphens, such as \"my-hive\""
+msgstr ""
+
+msgid "a layout could not be written as a table"
+msgstr ""
+
+msgid "{name} is a built-in preset; name yours another way, such as \"my-hive\""
+msgstr ""
+
+msgid "{name} starts from {base}, which is one of yours; start from a built-in preset: {builtins}"
+msgstr ""
+
+msgid "{name} is not a preset; did you mean {near}?"
+msgstr ""
+
+msgid "{name} is not a preset; choose {builtins}"
+msgstr ""
+
+msgid "{name} is not a preset; choose {builtins}, or one of yours ({own})"
+msgstr ""
+
+msgid "{name} is a built-in preset and stays as it is; name yours another way, such as \"my-hive\""
+msgstr ""
+
+msgid "a preset could not be written as a table"
+msgstr ""
+
+msgid "{name} is a built-in preset, which stays as it is"
+msgstr ""
+
+msgid "there is no preset of yours called {name}; edel preset list shows them"
+msgstr ""
+
+msgid "{name} is the preset in use; pick another preset first: edel settings set layout.preset=classic"
 msgstr ""
 
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
@@ -857,10 +899,13 @@ msgstr ""
 msgid "the key table and the structs disagree"
 msgstr ""
 
+msgid "expected a table"
+msgstr ""
+
 msgid "not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _"
 msgstr ""
 
-msgid "expected a table"
+msgid "a built-in preset's name in quotes, such as \"hive\""
 msgstr ""
 
 msgid "expected {expected}, not {value}"
@@ -936,6 +981,15 @@ msgid "a theme's name in quotes, such as \"aurora\""
 msgstr ""
 
 msgid "a theme as a table, such as { pictures = [\"aurora\"], accent = \"wallpaper\" }"
+msgstr ""
+
+msgid "{value} is not a preset's name; use letters, digits and hyphens, such as \"my-hive\""
+msgstr ""
+
+msgid "a preset's name in quotes, such as \"hive\""
+msgstr ""
+
+msgid "a preset as a table, such as { preset = \"hive\", window_buttons = \"left\" }"
 msgstr ""
 
 msgid "a resolution such as \"1920x1080\""
@@ -1647,4 +1701,22 @@ msgid "Add a theme from a .edeltheme file to your themes, with its pictures; the
 msgstr ""
 
 msgid "The .edeltheme file to read; a file that does not check is refused"
+msgstr ""
+
+msgid "preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones"
+msgstr ""
+
+msgid "List the built-in presets, then yours, with the one in use marked"
+msgstr ""
+
+msgid "Keep the layout in use as a preset of yours called NAME, with your changes on top; the screen stays the same"
+msgstr ""
+
+msgid "A name of letters, digits and hyphens, such as my-hive"
+msgstr ""
+
+msgid "Delete one of your presets; the preset in use cannot be deleted"
+msgstr ""
+
+msgid "The preset's name, as preset list shows it"
 msgstr ""

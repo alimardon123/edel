@@ -9,8 +9,11 @@
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use toml::{Table, Value};
 
 use crate::i18n::{n_, tr, trf};
+use crate::settings::{self, Layout, OwnPreset, SettingsFile};
+use crate::themes;
 
 /// The only preset format so far.
 pub const FORMAT: i64 = 1;
@@ -565,16 +568,306 @@ pub fn title(name: &str) -> String {
 pub fn named(name: Option<&str>) -> (Preset, Option<String>) {
     let wanted = name.unwrap_or(DEFAULT);
     let found = BUILT_IN.iter().find(|(n, _)| *n == wanted);
-    let note = found.is_none().then(|| {
-        trf(
-            "this release has no preset {name}; the Classic preset is used",
-            &[("name", &format!("{wanted:?}"))],
-        )
-    });
+    let note = found.is_none().then(|| lacks_note(wanted));
     let (_, text) = found.unwrap_or(&BUILT_IN[0]);
     // Every built-in preset is checked by the tests.
     let preset = check(text).expect("the built-in presets are checked by the tests");
     (preset, note)
+}
+
+/// The words for a preset this release lacks, as the reader and the
+/// compositor give them: Classic is used instead.
+pub fn lacks_note(name: &str) -> String {
+    trf(
+        "this release has no preset {name}; the Classic preset is used",
+        &[("name", &format!("{name:?}"))],
+    )
+}
+
+/// Whether `name` is one of [`BUILT_IN`]'s, which never changes.
+pub fn is_built_in(name: &str) -> bool {
+    BUILT_IN.iter().any(|(built_in, _)| *built_in == name)
+}
+
+/// Why `name` is no preset's name, in the words every reader shows (the
+/// checks, save and the commands say it the same way).
+pub fn name_message(name: &str) -> String {
+    trf(
+        "{name} is not a preset's name; use letters, digits and hyphens, such as \"my-hive\"",
+        &[("name", &format!("{name:?}"))],
+    )
+}
+
+/// The built-in preset an own preset starts from: its `preset` when this
+/// release has it, else Classic (the note of [`lacks_note`] says so).
+fn base_of(own: &OwnPreset) -> String {
+    if is_built_in(&own.preset) {
+        own.preset.clone()
+    } else {
+        DEFAULT.to_string()
+    }
+}
+
+/// The name of the preset in use: `layout.preset`, else the default.
+fn in_use_name(file: &SettingsFile) -> &str {
+    file.layout.preset.as_deref().unwrap_or(DEFAULT)
+}
+
+/// The `[layout]` keys of `file` as a table, `preset` left out.
+fn layout_table(layout: &Layout) -> Result<Table> {
+    let Value::Table(mut table) = Value::try_from(layout)? else {
+        bail!("{}", tr("a layout could not be written as a table"));
+    };
+    table.remove("preset");
+    Ok(table)
+}
+
+/// The file with its own preset in use applied (M5.17): when `layout.preset`
+/// names one of the file's own, each `[layout]` key the file leaves unset is
+/// the own preset's, and `layout.preset` becomes its base built-in preset, a
+/// base this release lacks becoming Classic. A file that names no own preset
+/// comes back unchanged. Pure, and read through [`crate::settings::in_use`]
+/// (ADR-010).
+pub fn applied(file: &SettingsFile) -> SettingsFile {
+    let Some(own) = file
+        .layout
+        .preset
+        .as_deref()
+        .and_then(|n| file.presets.get(n))
+    else {
+        return file.clone();
+    };
+    let (Ok(mut layout), Ok(values)) = (layout_table(&file.layout), layout_table(&own.layout))
+    else {
+        return file.clone();
+    };
+    themes::merge(&mut layout, values);
+    layout.insert("preset".into(), Value::String(base_of(own)));
+    let mut out = file.clone();
+    if let Ok(layout) = Value::Table(layout).try_into() {
+        out.layout = layout;
+    }
+    out
+}
+
+/// The value a preset in use gives `key` (a `layout.*` key), as the desktop
+/// applies it, the person's file over the machine's; None when no file names
+/// an own preset, so the caller reads each file's own value as before.
+pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
+    let path = key.strip_prefix("layout.")?;
+    // Most files name no own preset, and then nothing is parsed: this is asked
+    // at each drawing of a menu.
+    let names_some_preset = |text: Option<&str>| text.is_some_and(|text| text.contains("presets"));
+    if !names_some_preset(machine) && !names_some_preset(person) {
+        return None;
+    }
+    let read = |text: Option<&str>| text.and_then(|text| settings::read(text).ok());
+    let (machine, person) = (read(machine), read(person));
+    let names_one = [&machine, &person]
+        .into_iter()
+        .flatten()
+        .any(|read| !read.file.presets.is_empty());
+    if !names_one {
+        return None;
+    }
+    let person = person.map(|read| settings::in_use(&read.file));
+    let machine = machine.map(|read| settings::in_use(&read.file));
+    let value = [person, machine]
+        .into_iter()
+        .flatten()
+        .find_map(|file| settings::value_at(&file.layout, path))?;
+    Some(match value {
+        Value::String(text) => text,
+        other => other.to_string(),
+    })
+}
+
+/// What the file's own presets and the preset in use say wrong, one line each,
+/// as `edel settings check` gives them: a preset's name, a built-in name taken
+/// by a person's own preset, a preset based on another of the person's own
+/// (a preset is one level deep), and a `layout.preset` that names no preset.
+/// A base this release lacks is a note of the reader, not a problem here.
+pub fn problems(file: &SettingsFile) -> Vec<String> {
+    let mut lines = Vec::new();
+    for (name, own) in &file.presets {
+        let shown = format!("presets.{name}");
+        if !themes::is_name(name) {
+            lines.push(format!("{shown}: {}", name_message(name)));
+        } else if is_built_in(name) {
+            let message = trf(
+                "{name} is a built-in preset; name yours another way, such as \"my-hive\"",
+                &[("name", &format!("{name:?}"))],
+            );
+            lines.push(format!("{shown}: {message}"));
+        }
+        if !is_built_in(&own.preset) && file.presets.contains_key(&own.preset) {
+            let message = trf(
+                "{name} starts from {base}, which is one of yours; start from a built-in preset: {builtins}",
+                &[
+                    ("name", &format!("{name:?}")),
+                    ("base", &format!("{:?}", own.preset)),
+                    ("builtins", &settings::or_list(NAMES)),
+                ],
+            );
+            lines.push(format!("{shown}: {message}"));
+        }
+    }
+    let in_use = in_use_name(file);
+    if !is_built_in(in_use) && !file.presets.contains_key(in_use) {
+        let builtins = settings::or_list(NAMES);
+        let message = if let Some(near) = settings::nearest_value(in_use, NAMES) {
+            trf(
+                "{name} is not a preset; did you mean {near}?",
+                &[("name", &format!("{in_use:?}")), ("near", near)],
+            )
+        } else if file.presets.is_empty() {
+            trf(
+                "{name} is not a preset; choose {builtins}",
+                &[("name", &format!("{in_use:?}")), ("builtins", &builtins)],
+            )
+        } else {
+            let own: Vec<&str> = file.presets.keys().map(String::as_str).collect();
+            trf(
+                "{name} is not a preset; choose {builtins}, or one of yours ({own})",
+                &[
+                    ("name", &format!("{in_use:?}")),
+                    ("builtins", &builtins),
+                    ("own", &settings::or_list(&own)),
+                ],
+            )
+        };
+        lines.push(format!("layout.preset: {message}"));
+    }
+    lines
+}
+
+/// One preset as `edel preset list` shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Row {
+    pub name: String,
+    pub title: String,
+    pub built_in: bool,
+    pub in_use: bool,
+    /// The built-in preset it lays out from: its own name for a built-in one.
+    pub base: String,
+}
+
+/// The presets in the order `edel preset list` and Settings show them: the
+/// built-in ones in [`NAMES`]' order, then the person's own by name, the one
+/// in use marked. An own preset's title is its name.
+pub fn rows(file: &SettingsFile) -> Vec<Row> {
+    let in_use = in_use_name(file);
+    let built_in = BUILT_IN
+        .iter()
+        .map(|(name, _)| (name.to_string(), title(name), true, name.to_string()));
+    let own = file
+        .presets
+        .iter()
+        .filter(|(name, _)| !is_built_in(name))
+        .map(|(name, own)| (name.clone(), name.clone(), false, base_of(own)));
+    built_in
+        .chain(own)
+        .map(|(name, title, built_in, base)| Row {
+            in_use: name == in_use,
+            name,
+            title,
+            built_in,
+            base,
+        })
+        .collect()
+}
+
+/// The layout keys a file sets besides its preset, as `layout.KEY` (M5.17):
+/// what Save as preset moves into the preset of the person's own.
+pub fn changed(file: &SettingsFile) -> Vec<String> {
+    layout_table(&file.layout)
+        .map(|table| table.keys().map(|key| format!("layout.{key}")).collect())
+        .unwrap_or_default()
+}
+
+/// `edel preset save NAME`, on a file's text (Save as, M5.17): makes
+/// `[presets.NAME]` from the layout in use, its keys the file's own on top
+/// of the preset in use, and its base the built-in preset in use (an own
+/// preset in use keeps its base), then sets `layout.preset` to it and takes
+/// the moved keys out of `[layout]`, so the screen is the same. A name of
+/// the person's own that exists is replaced; a built-in's is refused.
+pub fn save_text(text: &str, name: &str) -> Result<String> {
+    let file = settings::read(text)?.file;
+    if !themes::is_name(name) {
+        bail!("{}", name_message(name));
+    }
+    if is_built_in(name) {
+        bail!(
+            "{}",
+            trf(
+                "{name} is a built-in preset and stays as it is; name yours another way, such as \"my-hive\"",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    let in_use = in_use_name(&file);
+    let (base, mut table) = match file.presets.get(in_use) {
+        Some(own) => (base_of(own), layout_table(&file.layout)?),
+        None => (
+            if is_built_in(in_use) { in_use } else { DEFAULT }.to_string(),
+            layout_table(&file.layout)?,
+        ),
+    };
+    if let Some(own) = file.presets.get(in_use) {
+        themes::merge(&mut table, layout_table(&own.layout)?);
+    }
+    table.insert("preset".into(), Value::String(base));
+    let own: OwnPreset = Value::Table(table).try_into()?;
+    let Value::Table(table) = Value::try_from(&own)? else {
+        bail!("{}", tr("a preset could not be written as a table"));
+    };
+    let mut text = settings::set(
+        text,
+        &format!("presets.{name}"),
+        &Value::Table(table).to_string(),
+    )?;
+    text = settings::set(&text, "layout.preset", &format!("{name:?}"))?;
+    let moved = changed(&file);
+    if !moved.is_empty() {
+        let moved: Vec<&str> = moved.iter().map(String::as_str).collect();
+        text = settings::unset_all(&text, &moved)?;
+    }
+    Ok(text)
+}
+
+/// `edel preset delete NAME`, on a file's text: removes `[presets.NAME]`. A
+/// built-in preset, a name that is no preset of the person's and the preset in
+/// use are refused, the last with the way to pick another first.
+pub fn delete_text(text: &str, name: &str) -> Result<String> {
+    let file = settings::read(text)?.file;
+    if is_built_in(name) {
+        bail!(
+            "{}",
+            trf(
+                "{name} is a built-in preset, which stays as it is",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    if !file.presets.contains_key(name) {
+        bail!(
+            "{}",
+            trf(
+                "there is no preset of yours called {name}; edel preset list shows them",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    if in_use_name(&file) == name {
+        bail!(
+            "{}",
+            trf(
+                "{name} is the preset in use; pick another preset first: edel settings set layout.preset=classic",
+                &[("name", &format!("{name:?}"))]
+            )
+        );
+    }
+    settings::unset(text, &format!("presets.{name}"))
 }
 
 #[cfg(test)]
@@ -924,5 +1217,223 @@ mod tests {
         }
         assert_eq!(TitleBars::parse("sometimes"), None);
         assert_eq!(TitleBars::default(), TitleBars::Always);
+    }
+
+    fn file(text: &str) -> SettingsFile {
+        settings::read(text).unwrap().file
+    }
+
+    /// The screen a file gives: the preset it lays out from and its layout
+    /// keys, the preset's name left out of the keys.
+    fn screen(text: &str) -> (Preset, Layout) {
+        let applied = settings::in_use(&file(text));
+        let mut layout = applied.layout.clone();
+        layout.preset = None;
+        (named(applied.layout.preset.as_deref()).0, layout)
+    }
+
+    const MINE: &str = "format = 1\n# my desk\n[appearance]\naccent = \"blue\"\n\n[layout]\npreset = \"mine\"\ntiling = true\n\n[presets.mine]\npreset = \"hive\"\nwindow_buttons = \"left\"\n";
+
+    #[test]
+    fn an_own_preset_lays_its_keys_under_the_files_and_names_its_base() {
+        let laid = applied(&file(MINE));
+        assert_eq!(laid.layout.preset.as_deref(), Some("hive"));
+        assert_eq!(laid.layout.window_buttons.as_deref(), Some("left"));
+        assert_eq!(laid.layout.tiling, Some(true), "the file's own key stays");
+        let over = file(&MINE.replace(
+            "tiling = true\n",
+            "tiling = true\nwindow_buttons = \"right\"\n",
+        ));
+        assert_eq!(
+            applied(&over).layout.window_buttons.as_deref(),
+            Some("right"),
+            "the person's value wins over the preset's"
+        );
+        // A file naming no own preset comes back unchanged.
+        let plain = file("format = 1\n[layout]\npreset = \"zen\"\n");
+        assert_eq!(applied(&plain), plain);
+    }
+
+    #[test]
+    fn save_moves_the_layout_keys_and_keeps_every_other_byte() {
+        let text = "format = 1\n# my desk\n[appearance]\naccent = \"blue\"\n\n[layout]\nwindow_buttons = \"left\"\ntiling = true # keep\n\n[network]\nhostname = \"lab\"\n";
+        let saved = save_text(text, "mine").unwrap();
+        for line in [
+            "# my desk\n",
+            "[appearance]\naccent = \"blue\"\n",
+            "[network]\nhostname = \"lab\"\n",
+        ] {
+            assert!(saved.contains(line), "{saved}");
+        }
+        let read = file(&saved);
+        assert_eq!(read.layout.preset.as_deref(), Some("mine"));
+        assert_eq!(read.layout.window_buttons, None);
+        assert_eq!(read.presets["mine"].preset, "classic");
+        assert_eq!(
+            read.presets["mine"].layout.window_buttons.as_deref(),
+            Some("left")
+        );
+        assert_eq!(read.presets["mine"].layout.tiling, Some(true));
+    }
+
+    #[test]
+    fn saved_shows_the_same_screen() {
+        let text = "format = 1\n[layout]\nwindow_buttons = \"left\"\ntiling = true\n";
+        let saved = save_text(text, "mine").unwrap();
+        assert_eq!(screen(text), screen(&saved));
+        assert_eq!(
+            screen(&saved).0,
+            named(None).0,
+            "plain Classic under the name"
+        );
+        // Picking Classic afterwards gives plain Classic, as it did before.
+        let back = settings::set(&saved, "layout.preset", "\"classic\"").unwrap();
+        assert_eq!(screen(&back).0, named(None).0);
+    }
+
+    #[test]
+    fn save_refuses_a_built_in_name_and_a_bad_one() {
+        let text = "format = 1\n[layout]\npreset = \"hive\"\n";
+        let refused = save_text(text, "hive").unwrap_err().to_string();
+        assert!(refused.contains("built-in preset"), "{refused}");
+        assert!(save_text(text, "My Desk").is_err());
+    }
+
+    #[test]
+    fn save_from_an_own_preset_keeps_its_base_and_keys() {
+        let saved = save_text(MINE, "other").unwrap();
+        let read = file(&saved);
+        assert_eq!(read.presets["other"].preset, "hive");
+        assert_eq!(
+            read.presets["other"].layout.window_buttons.as_deref(),
+            Some("left")
+        );
+        assert_eq!(read.layout.preset.as_deref(), Some("other"));
+        assert_eq!(screen(MINE), screen(&saved));
+        // Saving over the one in use updates it, and keeps its base.
+        let updated = save_text(MINE, "mine").unwrap();
+        assert_eq!(file(&updated).presets["mine"].preset, "hive");
+    }
+
+    #[test]
+    fn delete_refuses_the_preset_in_use_and_built_ins() {
+        let refused = delete_text(MINE, "mine").unwrap_err().to_string();
+        assert!(refused.contains("preset in use"), "{refused}");
+        assert!(
+            refused.contains("edel settings set layout.preset=classic"),
+            "{refused}"
+        );
+        assert!(delete_text(MINE, "hive").is_err());
+        let other = MINE.replace("preset = \"mine\"", "preset = \"classic\"");
+        let gone = file(&delete_text(&other, "mine").unwrap());
+        assert!(gone.presets.is_empty());
+    }
+
+    #[test]
+    fn a_base_this_release_lacks_gives_classic_and_a_report() {
+        let text = "format = 1\n[layout]\npreset = \"old\"\n[presets.old]\npreset = \"tablet\"\nwindow_buttons = \"left\"\n";
+        let read = settings::read(text).unwrap();
+        assert!(
+            read.problems
+                .iter()
+                .any(|p| p.key == "presets.old.preset"
+                    && p.message.contains("has no preset \"tablet\"")),
+            "{:?}",
+            read.problems
+        );
+        assert_eq!(
+            applied(&read.file).layout.preset.as_deref(),
+            Some("classic")
+        );
+        assert_eq!(screen(text).0, named(None).0);
+        assert_eq!(screen(text).1.window_buttons.as_deref(), Some("left"));
+        // The strict checker refuses nothing a reader only notes.
+        assert!(problems(&read.file).is_empty());
+    }
+
+    #[test]
+    fn a_key_this_release_lacks_in_an_own_preset_is_left_out_and_reported() {
+        let text = "format = 1\n[presets.mine]\npreset = \"hive\"\nwindow_colour = \"red\"\nwindow_buttons = \"left\"\n";
+        let read = settings::read(text).unwrap();
+        assert!(
+            read.problems
+                .iter()
+                .any(|p| p.key == "presets.mine.window_colour")
+        );
+        assert_eq!(
+            read.file.presets["mine"].layout.window_buttons.as_deref(),
+            Some("left")
+        );
+    }
+
+    #[test]
+    fn layout_preset_names_an_own_preset_only_when_its_table_exists() {
+        let named_only = "format = 1\n[layout]\npreset = \"mine\"\n";
+        let lines = problems(&file(named_only));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].starts_with("layout.preset: \"mine\" is not a preset;"),
+            "{lines:?}"
+        );
+        let set_it = settings::set(named_only, "layout.preset", "\"mine\"");
+        assert!(set_it.is_err());
+        let with_table = format!("{named_only}\n[presets.mine]\n");
+        assert!(problems(&file(&with_table)).is_empty());
+        assert!(settings::set(&with_table, "layout.preset", "\"mine\"").is_ok());
+    }
+
+    #[test]
+    fn the_checker_refuses_an_own_preset_named_as_a_built_in_or_based_on_another() {
+        let hive = problems(&file(
+            "format = 1\n[presets.hive]\nwindow_buttons = \"left\"\n",
+        ));
+        assert!(
+            hive.iter()
+                .any(|line| line.contains("is a built-in preset")),
+            "{hive:?}"
+        );
+        let based = problems(&file(
+            "format = 1\n[presets.a]\npreset = \"hive\"\n[presets.b]\npreset = \"a\"\n",
+        ));
+        assert!(
+            based
+                .iter()
+                .any(|line| line.starts_with("presets.b: ") && line.contains("starts from")),
+            "{based:?}"
+        );
+    }
+
+    #[test]
+    fn rows_list_the_built_ins_then_the_own_with_the_one_in_use() {
+        let rows = rows(&file(MINE));
+        let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["classic", "mac-like", "windows-like", "hive", "zen", "mine"]
+        );
+        assert!(rows[5].in_use && !rows[5].built_in);
+        assert_eq!(rows[5].title, "mine");
+        assert_eq!(rows[5].base, "hive");
+        assert!(rows[0].built_in && !rows[0].in_use);
+    }
+
+    #[test]
+    fn chosen_gives_an_own_presets_layout_value_and_none_without_one() {
+        assert_eq!(
+            chosen("layout.window_buttons", None, Some(MINE)).as_deref(),
+            Some("left")
+        );
+        assert_eq!(
+            chosen("layout.preset", None, Some(MINE)).as_deref(),
+            Some("hive")
+        );
+        assert_eq!(
+            chosen(
+                "layout.window_buttons",
+                None,
+                Some("format = 1\n[layout]\nwindow_buttons = \"right\"\n")
+            ),
+            None
+        );
     }
 }

@@ -819,6 +819,34 @@ commands() {
 			out=$(edel theme import /tmp/bad.edeltheme 2>&1); status=$?
 			say "theme_bad $status $(echo "$out" | tr '\n' ' ')"
 			;;
+		# Your own presets (M5.17), as root on the machine's file, as the theme
+		# commands are: a clean start, Hive with the buttons on the left, that
+		# saved as mine, the file it leaves, the list, the cards Settings logs,
+		# and the delete the case checks while mine is in use.
+		'own preset clean')
+			edel settings reset layout.preset layout.window_buttons >/dev/null 2>&1
+			edel preset delete mine >/dev/null 2>&1
+			;;
+		'own preset hive')
+			edel settings reset layout.tiling >/dev/null 2>&1
+			edel settings set layout.preset=hive layout.window_buttons=left >/dev/null 2>&1
+			;;
+		'own preset save')
+			out=$(edel preset save mine 2>&1); status=$?
+			say "own_preset_save $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'own preset machine') say "own_preset_machine $(tr '\n' ';' <"$data_dir/$settings_name" 2>/dev/null)" ;;
+		'own preset list') say "own_preset_list $(edel preset list 2>&1 | tr '\n' ';')" ;;
+		'own preset classic') edel settings set layout.preset=classic >/dev/null 2>&1 ;;
+		'own preset mine') edel settings set layout.preset=mine >/dev/null 2>&1 ;;
+		'own preset delete')
+			out=$(edel preset delete mine 2>&1); status=$?
+			say "own_preset_delete $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'settings layout')
+			as_ci edel-settings --page layout </dev/null >/tmp/settings-layout.log 2>&1 &
+			;;
+		'settings layout log') say "settings_layout_log $(tr '\n' ';' </tmp/settings-layout.log 2>/dev/null)" ;;
 		'updates window')
 			as_ci edel-settings --page updates </dev/null >/tmp/updates.log 2>&1 &
 			;;

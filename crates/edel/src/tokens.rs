@@ -185,7 +185,7 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
                 .map(ToString::to_string)
                 .collect();
             // The theme in use applies under the file's own values (M5.12b6a).
-            (Some(crate::themes::themed(&read.file)), notes)
+            (Some(crate::settings::in_use(&read.file)), notes)
         }
         Err(_) => (None, Vec::new()),
     }

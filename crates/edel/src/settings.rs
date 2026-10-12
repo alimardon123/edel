@@ -314,6 +314,14 @@ pub enum Kind {
     /// pictures and the appearance values it sets ([`crate::themes`],
     /// M5.12b6a)
     OwnTheme,
+    /// A layout preset's name: a built-in preset's, or one of the file's own
+    /// `[presets]`, checked against the file by [`crate::presets::problems`]
+    /// (M5.17)
+    Preset,
+    /// A person's own layout preset, as a `[presets.NAME]` table: the built-in
+    /// preset it starts from and the `[layout]` keys it sets ([`crate::presets`],
+    /// M5.17)
+    OwnPreset,
     /// One wallpaper per workspace, in order: each entry a wallpaper as
     /// `appearance.wallpaper` takes it, or `""` for Appearance's
     /// (M5.12b5, `workspaces.wallpapers`)
@@ -381,7 +389,7 @@ pub const KEYS: &[Key] = &[
     later("region.timezone", Kind::Text),
     // The servers the clock is set from (M1.13); `pool.ntp.org` without.
     now("region.time_servers", Kind::Hosts),
-    now("layout.preset", Kind::OneOf(crate::presets::NAMES)),
+    now("layout.preset", Kind::Preset),
     now("layout.tiling", Kind::Flag),
     now(
         "layout.title_bars",
@@ -529,6 +537,9 @@ pub const KEYS: &[Key] = &[
     // The person's own themes (M5.12b6a), each a table of pictures and
     // appearance values, checked as a whole by `normalize`.
     now("themes.*", Kind::OwnTheme),
+    // The person's own layout presets (M5.17), each a table of `[layout]`'s keys
+    // and the built-in preset it starts from.
+    now("presets.*", Kind::OwnPreset),
     now("shortcuts.*", Kind::Keys),
     later("default_apps.browser", Kind::Text),
     later("default_apps.files", Kind::Text),
@@ -609,6 +620,9 @@ pub struct SettingsFile {
     /// The person's own themes, each a `[themes.NAME]` table (M5.12b6a)
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub themes: BTreeMap<String, OwnTheme>,
+    /// The person's own layout presets, each a `[presets.NAME]` table (M5.17)
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub presets: BTreeMap<String, OwnPreset>,
     /// Action name to keys, such as `close_window = "Super+Q"`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
@@ -651,6 +665,7 @@ impl Default for SettingsFile {
             appearance: Appearance::default(),
             lock_screen: LockScreen::default(),
             themes: BTreeMap::new(),
+            presets: BTreeMap::new(),
             shortcuts: BTreeMap::new(),
             region: Region::default(),
             users: BTreeMap::new(),
@@ -742,6 +757,22 @@ pub struct Layout {
     /// How tiling lays windows out (M5.16a); absent is `stack`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiling_style: Option<String>,
+}
+
+/// One of the person's own layout presets (M5.17): a `[presets.NAME]` table,
+/// the built-in preset it starts from (`preset`, absent is Classic) and the
+/// `[layout]` keys it sets, as the table's own keys. The keys a reader
+/// applies are [`Layout`]'s, checked the same way ([`crate::presets`]).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OwnPreset {
+    #[serde(default = "own_preset_base")]
+    pub preset: String,
+    #[serde(flatten)]
+    pub layout: Layout,
+}
+
+fn own_preset_base() -> String {
+    crate::presets::DEFAULT.to_string()
 }
 
 /// The Panels page (M5.2q).
@@ -1333,6 +1364,9 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     // Across keys: each theme is a name of its own that no built-in takes,
     // and the theme in use is one of them (M5.12b6a).
     lines.extend(crate::themes::problems(&read.file));
+    // Across keys: each own preset names a name of its own and a built-in
+    // preset to start from, and the preset in use is one of them (M5.17).
+    lines.extend(crate::presets::problems(&read.file));
     Ok(lines)
 }
 
@@ -1515,8 +1549,31 @@ pub fn choices(key: &str) -> &'static [&'static str] {
             kind: Kind::OneOf(values),
             ..
         }) => values,
+        // The built-in presets; the person's own come from the file (M5.17).
+        Some(Key {
+            kind: Kind::Preset, ..
+        }) => crate::presets::NAMES,
         _ => &[],
     }
+}
+
+/// The value at the dotted `path` of `part`'s table form (`window_buttons`,
+/// `colours.panel`); none when a name on the way is missing.
+pub fn value_at(part: &impl Serialize, path: &str) -> Option<Value> {
+    let mut value = Value::try_from(part).ok()?;
+    for name in path.split('.') {
+        value = value.as_table()?.get(name)?.clone();
+    }
+    Some(value)
+}
+
+/// The file as the desktop applies it (M5.17, M5.12b6a): its own layout
+/// preset in use laid under its keys ([`crate::presets::applied`]), then its
+/// theme ([`crate::themes::themed`]). Every reader of a file's layout or
+/// appearance values calls this on each file it reads, before it reads
+/// (ADR-010); the writers never do, so they write the file as it is.
+pub fn in_use(file: &SettingsFile) -> SettingsFile {
+    crate::themes::themed(&crate::presets::applied(file))
 }
 
 /// `key`'s value as the files say it now: the person's file over the
@@ -1525,6 +1582,10 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
     // A value a theme gives comes first, as the tokens take it (M5.12b6a);
     // with no theme in the files this is the value each file says.
     if let Some(value) = crate::themes::chosen(key, machine, person) {
+        return Some(value);
+    }
+    // A layout value an own preset gives, as the preset in use applies it (M5.17).
+    if let Some(value) = crate::presets::chosen(key, machine, person) {
         return Some(value);
     }
     match source(key, machine, person) {
@@ -1792,6 +1853,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             bail!("{}", lines.join("; "));
         }
     }
+    // A preset is named, and the preset in use is one of them (M5.17).
+    if key == "layout.preset" || key.starts_with("presets.") {
+        let lines = crate::presets::problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
     Ok(text)
 }
 
@@ -1939,7 +2007,7 @@ pub fn nearest_key(key: &str) -> Option<String> {
 }
 
 /// The value among `allowed` nearest to the mistyped `value`.
-fn nearest_value<'a>(value: &str, allowed: &[&'a str]) -> Option<&'a str> {
+pub(crate) fn nearest_value<'a>(value: &str, allowed: &[&'a str]) -> Option<&'a str> {
     allowed
         .iter()
         .map(|a| (distance(value, a), *a))
@@ -2035,6 +2103,16 @@ fn read_table(table: &Table) -> Result<Read> {
         message: unknown_key(&key),
         key,
     }));
+    // A preset starting from a built-in preset this release lacks is read as
+    // Classic, and the file says so (M5.17).
+    for (name, own) in &file.presets {
+        if !crate::presets::is_built_in(&own.preset) && !file.presets.contains_key(&own.preset) {
+            problems.push(Problem {
+                key: format!("presets.{name}.preset"),
+                message: crate::presets::lacks_note(&own.preset),
+            });
+        }
+    }
     Ok(Read {
         file,
         problems,
@@ -2057,6 +2135,30 @@ fn clean(
         let shown = path.join(".");
         if at.is_empty() && name == "format" {
             kept.insert(name.clone(), value.clone());
+        } else if at.is_empty() && name == "presets" {
+            // The person's own layout presets, each checked as its own table (M5.17).
+            match value {
+                Value::Table(inner) => {
+                    let mut own = Table::new();
+                    for (preset, value) in inner {
+                        match value {
+                            Value::Table(table) => {
+                                let table = clean_own(preset, table, problems, later);
+                                own.insert(preset.clone(), Value::Table(table));
+                            }
+                            _ => problems.push(Problem {
+                                key: format!("presets.{preset}"),
+                                message: tr("expected a table").into(),
+                            }),
+                        }
+                    }
+                    kept.insert(name.clone(), Value::Table(own));
+                }
+                _ => problems.push(Problem {
+                    key: shown,
+                    message: tr("expected a table").into(),
+                }),
+            }
         } else if at == ["users"] && !is_user_name(name) {
             problems.push(Problem {
                 key: shown,
@@ -2105,6 +2207,49 @@ fn clean(
             });
         }
     }
+    kept
+}
+
+/// Keeps the keys of one of the person's own presets (`[presets.NAME]`, M5.17):
+/// `preset`, the built-in it starts from, and the `[layout]` keys, which
+/// [`clean`] checks as the layout's own, so a preset's value gets the same
+/// check a layout's does. `name` names the table in the problems' keys.
+fn clean_own(
+    name: &str,
+    table: &Table,
+    problems: &mut Vec<Problem>,
+    later: &mut Vec<String>,
+) -> Table {
+    let mut kept = Table::new();
+    let mut layout = Table::new();
+    for (key, value) in table {
+        if key != "preset" {
+            layout.insert(key.clone(), value.clone());
+        } else if value.as_str().is_some_and(crate::themes::is_name) {
+            kept.insert(key.clone(), value.clone());
+        } else {
+            problems.push(Problem {
+                key: format!("presets.{name}.preset"),
+                message: tr("a built-in preset's name in quotes, such as \"hive\"").into(),
+            });
+        }
+    }
+    let mut wrapped = Table::new();
+    wrapped.insert("layout".into(), Value::Table(layout));
+    let mut found = Vec::new();
+    if let Some(Value::Table(cleaned)) = clean(&wrapped, &[], &mut found, later).remove("layout") {
+        for (key, value) in cleaned {
+            kept.insert(key, value);
+        }
+    }
+    problems.extend(found.into_iter().map(|problem| {
+        Problem {
+            key: problem
+                .key
+                .replacen("layout.", &format!("presets.{name}."), 1),
+            message: problem.message,
+        }
+    }));
     kept
 }
 
@@ -2272,6 +2417,23 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         }
         (Kind::OwnTheme, _) => fail(tr(
             "a theme as a table, such as { pictures = [\"aurora\"], accent = \"wallpaper\" }",
+        )),
+        (Kind::Preset, Value::String(s)) if crate::themes::is_name(s) => Ok(value.clone()),
+        (Kind::Preset, Value::String(s)) => Err(trf(
+            "{value} is not a preset's name; use letters, digits and hyphens, such as \"my-hive\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Preset, _) => fail(tr("a preset's name in quotes, such as \"hive\"")),
+        (Kind::OwnPreset, Value::Table(table)) => {
+            let mut problems = Vec::new();
+            clean_own("", table, &mut problems, &mut Vec::new());
+            match problems.first() {
+                Some(problem) => Err(problem.message.clone()),
+                None => Ok(value.clone()),
+            }
+        }
+        (Kind::OwnPreset, _) => fail(tr(
+            "a preset as a table, such as { preset = \"hive\", window_buttons = \"left\" }",
         )),
         (Kind::Resolution, Value::String(r)) if is_resolution(r) => Ok(value.clone()),
         (Kind::Resolution, _) => fail(tr("a resolution such as \"1920x1080\"")),
@@ -2594,6 +2756,8 @@ mod tests {
             Kind::Colour => Value::String("#1e1e2e".into()),
             Kind::Theme => Value::String("edel".into()),
             Kind::OwnTheme => value_from_arg(r#"{ pictures = ["hills"], accent = "blue" }"#),
+            Kind::Preset => Value::String("hive".into()),
+            Kind::OwnPreset => value_from_arg(r#"{ preset = "hive", window_buttons = "left" }"#),
             Kind::LockLooks => {
                 value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
             }
@@ -2949,19 +3113,20 @@ lock_after_minutes = 11
         assert_eq!(
             lines,
             [
-                "layout.preset: unknown value \"tablet\"; use classic, mac-like, windows-like, hive or zen"
+                "layout.preset: \"tablet\" is not a preset; choose classic, mac-like, windows-like, hive or zen"
             ]
         );
         let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("use classic, mac-like, windows-like, hive or zen"),
+                .contains("choose classic, mac-like, windows-like, hive or zen"),
             "{error}"
         );
+        // A name is read as written; the check names the preset it is not (M5.17).
         let read = read(file).unwrap();
-        assert_eq!(read.file.layout.preset, None);
-        assert_eq!(read.problems[0].key, "layout.preset");
+        assert_eq!(read.file.layout.preset.as_deref(), Some("tablet"));
+        assert!(read.problems.is_empty(), "{:?}", read.problems);
         let set_hive = set("format = 1\n", "layout.preset", "hive").unwrap();
         assert_eq!(set_hive, "format = 1\n\n[layout]\npreset = \"hive\"\n");
         assert!(check(&set_hive).unwrap().is_empty());
@@ -3078,8 +3243,10 @@ lock_after_minutes = 11
         for key in KEYS {
             // Themes have no page of their own: they are the Appearance
             // page's, as the roadmap's M5.12b6 says (M5.12b6a).
+            // Presets are the Layout page's, as themes are the Appearance page's.
             let section = match key.path.split('.').next().unwrap_or_default() {
                 "themes" => "appearance",
+                "presets" => "layout",
                 section => section,
             };
             assert!(page(section).is_some(), "{section} is on no page");

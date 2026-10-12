@@ -16,7 +16,13 @@ use edel::{panel_edit, places, settings};
 /// machine's, the preset or the release.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Layout {
+    /// The built-in preset the desktop lays out from: the preset in use, or
+    /// the one an own preset starts from (M5.17).
     pub preset: String,
+    /// The preset's name as the files say it, the person's over the
+    /// machine's: a built-in preset's, or one of the files' own (M5.17).
+    /// The Layout page marks its card by this one.
+    pub named: String,
     pub tiling: bool,
     pub title_bars: String,
     pub window_buttons: String,
@@ -78,7 +84,7 @@ impl Layout {
     /// `key`'s value as `edel settings set` writes it.
     pub fn value(&self, key: &str) -> Option<String> {
         match key {
-            "layout.preset" => Some(self.preset.clone()),
+            "layout.preset" => Some(self.named.clone()),
             "layout.tiling" => Some(self.tiling.to_string()),
             "layout.title_bars" => Some(self.title_bars.clone()),
             "layout.window_buttons" => Some(self.window_buttons.clone()),
@@ -132,6 +138,28 @@ fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
     }
 }
 
+/// The preset's name as the files say it, the person's over the machine's:
+/// a built-in preset's, or one of the files' own `[presets]`; the default
+/// when neither names one (M5.17). The files are read as they are, not with
+/// the preset in use applied, so the name is the one written.
+fn named_preset(machine: &settings::SettingsFile, person: &settings::SettingsFile) -> String {
+    let said = person
+        .layout
+        .preset
+        .as_ref()
+        .or(machine.layout.preset.as_ref());
+    match said {
+        Some(name)
+            if presets::is_built_in(name)
+                || person.presets.contains_key(name)
+                || machine.presets.contains_key(name) =>
+        {
+            name.clone()
+        }
+        _ => presets::DEFAULT.to_string(),
+    }
+}
+
 pub struct Files {
     pub machine: PathBuf,
     pub person: Option<PathBuf>,
@@ -153,12 +181,21 @@ impl Files {
     fn read(path: Option<&PathBuf>) -> Option<settings::SettingsFile> {
         path.and_then(|path| std::fs::read_to_string(path).ok())
             .and_then(|text| settings::read(&text).ok())
-            .map(|read| edel::themes::themed(&read.file))
+            .map(|read| edel::settings::in_use(&read.file))
     }
 
     /// One file as the desktop reads it, empty when there is no file.
     fn file_of(path: Option<&PathBuf>) -> settings::SettingsFile {
         Self::read(path).unwrap_or_default()
+    }
+
+    /// One file as it is written, read leniently, empty when there is none
+    /// (M5.17): the preset's name and its own presets are read this way.
+    fn raw_file_of(path: Option<&PathBuf>) -> settings::SettingsFile {
+        path.and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| settings::read(&text).ok())
+            .map(|read| read.file)
+            .unwrap_or_default()
     }
 
     /// The layout from the machine's keys with `person`'s laid over them,
@@ -201,6 +238,8 @@ impl Files {
         let in_range = |n: u32| (1..=most).contains(&n);
         Layout {
             preset: name,
+            // Filled in from the files as they say it (`named_preset`).
+            named: String::new(),
             tiling: person
                 .tiling
                 .or(machine.tiling)
@@ -293,7 +332,40 @@ impl Files {
     pub fn layout(&self) -> Layout {
         let machine = Self::file_of(Some(&self.machine));
         let person = Self::file_of(self.person.as_ref());
-        Self::layout_from(&machine, &person)
+        let mut layout = Self::layout_from(&machine, &person);
+        layout.named = named_preset(
+            &Self::raw_file_of(Some(&self.machine)),
+            &Self::raw_file_of(self.person.as_ref()),
+        );
+        layout
+    }
+
+    /// The own presets the Layout page offers: the machine's and the
+    /// person's, the person's of a name over the machine's (M5.17), as the
+    /// files write them.
+    pub fn own_presets(&self) -> BTreeMap<String, settings::OwnPreset> {
+        let mut all = Self::raw_file_of(Some(&self.machine)).presets;
+        all.extend(Self::raw_file_of(self.person.as_ref()).presets);
+        all
+    }
+
+    /// The layout keys the person's own file sets besides its preset, as
+    /// `edel::presets::changed` names them (M5.17): Save as preset is offered
+    /// while there are any.
+    pub fn changed_layout(&self) -> Vec<String> {
+        presets::changed(&Self::raw_file_of(self.person.as_ref()))
+    }
+
+    /// Saves the layout in use as the person's own preset `name`
+    /// (`presets::save_text`, Save as preset, M5.17), one write.
+    pub fn save_preset(&self, name: &str) -> Result<(), String> {
+        self.edit_person(|text| presets::save_text(text, name))
+    }
+
+    /// Deletes the person's own preset `name` (M5.17), one write; refused
+    /// for the preset in use, as the library says.
+    pub fn delete_preset(&self, name: &str) -> Result<(), String> {
+        self.edit_person(|text| presets::delete_text(text, name))
     }
 
     /// The lock screen as the desktop reads it (M5.10c5c): each key the
@@ -390,10 +462,12 @@ impl Files {
     /// file, or taken out of it when it is what would apply without it,
     /// as writers never write a default (ADR-008).
     pub fn choose(&self, key: &str, value: &str) -> Result<(), String> {
+        if key == "layout.preset" {
+            return self.choose_preset(value);
+        }
         let machine = Self::file_of(Some(&self.machine));
         let mut person = Self::file_of(self.person.as_ref());
         let had = match key {
-            "layout.preset" => person.layout.preset.take().is_some(),
             "layout.tiling" => person.layout.tiling.take().is_some(),
             "layout.title_bars" => person.layout.title_bars.take().is_some(),
             "layout.window_buttons" => person.layout.window_buttons.take().is_some(),
@@ -418,6 +492,20 @@ impl Files {
         match (without.value(key).as_deref() != Some(value), had) {
             (true, _) => self.set(key, Some(value)),
             (false, true) => self.set(key, None),
+            (false, false) => Ok(()),
+        }
+    }
+
+    /// Chooses the preset `value` names, a built-in one or the person's own
+    /// (M5.17): written to the person's file, or taken out of it when the
+    /// preset the files name without it is the same.
+    fn choose_preset(&self, value: &str) -> Result<(), String> {
+        let machine = Self::raw_file_of(Some(&self.machine));
+        let mut person = Self::raw_file_of(self.person.as_ref());
+        let had = person.layout.preset.take().is_some();
+        match (named_preset(&machine, &person) != value, had) {
+            (true, _) => self.set("layout.preset", Some(value)),
+            (false, true) => self.set("layout.preset", None),
             (false, false) => Ok(()),
         }
     }

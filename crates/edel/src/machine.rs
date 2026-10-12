@@ -18,6 +18,7 @@ use anyhow::{Context, Result, bail};
 use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
+use edel::presets;
 use edel::settings::{self, SettingsFile, User};
 use edel::theme_file;
 use edel::themes;
@@ -982,7 +983,7 @@ pub fn reset(keys: &[String]) -> Result<()> {
 }
 
 /// The machine's settings file as it is, or the release's empty one, for
-/// the theme commands to read.
+/// the theme and preset commands to read.
 fn theme_text() -> String {
     fs::read_to_string(machine_file())
         .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
@@ -1115,6 +1116,45 @@ fn import_line(title: &str, name: &str, pictures: usize) -> String {
             ],
         )
     }
+}
+
+/// `edel preset list`: the built-in presets, then the person's own, one a
+/// line with its name, its title, its base and what it is (`edel preset` in
+/// the command table).
+pub fn preset_list() -> Result<()> {
+    let file = settings::read(&theme_text())
+        .with_context(|| could_not_read(&machine_file()))?
+        .file;
+    for row in presets::rows(&file) {
+        let mut marks = Vec::new();
+        if row.built_in {
+            marks.push(tr("(built in)"));
+        }
+        if row.in_use {
+            marks.push(tr("(in use)"));
+        }
+        let line = format!("{:<12} {:<16} {}", row.name, row.title, marks.join(" "));
+        println!("{}", line.trim_end());
+    }
+    Ok(())
+}
+
+/// `edel preset save NAME`: keeps the layout in use as a preset of the
+/// person's own, one write, and the screen stays the same.
+pub fn preset_save(name: &str) -> Result<()> {
+    let what = trf("saved the preset {name}", &[("name", name)]);
+    edit_as("edel preset", &what, &["layout.preset"], |text| {
+        presets::save_text(text, name)
+    })
+}
+
+/// `edel preset delete NAME`: removes one of the person's own presets, unless
+/// it is the preset in use.
+pub fn preset_delete(name: &str) -> Result<()> {
+    let what = trf("deleted the preset {name}", &[("name", name)]);
+    edit_as("edel preset", &what, &["layout.preset"], |text| {
+        presets::delete_text(text, name)
+    })
 }
 
 /// A page's name as people type it: its title in lowercase, `_` for a

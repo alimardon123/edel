@@ -191,6 +191,12 @@ enum Commands {
         #[command(subcommand)]
         command: ThemeCommands,
     },
+    /// preset: a layout, built in or your own, kept as the layout in use; the
+    /// Layout page of Settings shows the same ones
+    Preset {
+        #[command(subcommand)]
+        command: PresetCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -228,6 +234,25 @@ enum ThemeCommands {
         /// The .edeltheme file to read; a file that does not check is refused
         #[arg(value_name = "FILE")]
         file: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum PresetCommands {
+    /// List the built-in presets, then yours, with the one in use marked
+    List,
+    /// Keep the layout in use as a preset of yours called NAME, with your
+    /// changes on top; the screen stays the same
+    Save {
+        /// A name of letters, digits and hyphens, such as my-hive
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Delete one of your presets; the preset in use cannot be deleted
+    Delete {
+        /// The preset's name, as preset list shows it
+        #[arg(value_name = "NAME")]
+        name: String,
     },
 }
 
@@ -452,6 +477,7 @@ impl Commands {
             Commands::Report { .. } => "report",
             Commands::Settings { .. } => "settings",
             Commands::Theme { .. } => "theme",
+            Commands::Preset { .. } => "preset",
         }
     }
 }
@@ -629,6 +655,11 @@ fn run(command: Commands) -> Result<()> {
             ThemeCommands::Reset => machine::theme_reset(),
             ThemeCommands::Export { name, file } => machine::theme_export(&name, file.as_deref()),
             ThemeCommands::Import { file } => machine::theme_import(&file),
+        },
+        Commands::Preset { command } => match command {
+            PresetCommands::List => machine::preset_list(),
+            PresetCommands::Save { name } => machine::preset_save(&name),
+            PresetCommands::Delete { name } => machine::preset_delete(&name),
         },
     }
 }

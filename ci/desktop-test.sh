@@ -210,6 +210,11 @@
 #               and each again at 366 px,
 #               as settings-tour-PAGE-*.png; a page Settings refuses is skipped
 #               and named in the PASS line
+#   own-presets edel preset save of Hive with the buttons on the left as
+#               mine, which leaves [layout] with preset = "mine" and nothing
+#               moved on screen; Classic and mine again; Settings' Layout
+#               page with mine after zen, kept as settings-own-presets.png;
+#               edel preset delete refused while mine is in use (M5.17)
 #   theme       edel theme save, export, delete and import round trip as
 #               root: a theme saved as mine is written under [themes],
 #               exported as a tar archive of theme.toml, taken out and
@@ -3554,6 +3559,111 @@ case_presets() {
 	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
+case_own_presets() {
+	# Your own presets (M5.17), as root on the machine's file, as the theme
+	# commands are: Hive with the buttons on the left, saved as mine, writes
+	# [presets.mine] with preset = "hive" and window_buttons = "left" and
+	# leaves [layout] with preset = "mine", so nothing moves on screen and the
+	# compositor logs no preset but hive. Then Classic (its buttons go right,
+	# the buttons' key having moved into mine), mine again (Hive's bar on top,
+	# the buttons on the left), Settings' Layout page with a card per preset,
+	# mine after zen, kept as settings-own-presets.png. Super+Q closes it,
+	# delete is refused while mine is in use and then deletes it, and the
+	# layout keys are reset for the cases after this one.
+	asked() {
+		n=$(count "DESKTOP-TEST: $1 ")
+		guest "$2"
+		wait_more "DESKTOP-TEST: $1 " "$n" || fail "the service did not answer $2"
+	}
+	guest 'own preset clean'
+	panel=$(token panel)
+	top=$(count 'edel-shell-ui: panel edel-panel along the top')
+	left=$(count 'edel-compositor: window buttons on the left')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now hive')
+	guest 'own preset hive'
+	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
+		fail "layout.preset=hive did not bring shell-ui's bar to the top"
+	wait_more 'edel-compositor: window buttons on the left' "$left" ||
+		fail "layout.window_buttons = \"left\" did not put the buttons on the left"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now hive' "$restarts" ||
+		fail "the compositor did not restart shell-ui for the Hive preset"
+	shot own-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
+	asked own_preset_save 'own preset save'
+	value own_preset_save | grep -q '^0 ' || fail "edel preset save mine failed: $(value own_preset_save)"
+	asked own_preset_machine 'own preset machine'
+	value own_preset_machine | grep -q '\[presets\];mine = { preset = "hive", window_buttons = "left" }' ||
+		fail "edel preset save mine did not write mine from Hive with the buttons on the left: $(value own_preset_machine)"
+	value own_preset_machine | grep -q '\[layout\];preset = "mine"' ||
+		fail "edel preset save mine did not leave [layout] with preset = \"mine\": $(value own_preset_machine)"
+	# Saving moves nothing on screen: the compositor logs no preset change
+	# after Hive's, and Hive's bar is still on top.
+	changes=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now')
+	sleep 2
+	[ "$(count 'edel-compositor: restarting edel-shell-ui: the preset is now')" = "$changes" ] ||
+		fail "saving mine restarted shell-ui: $(tr -d '\r' <"$log" | grep -a 'the preset is now' | tail -n 1)"
+	shot own-saved 640 12 "$panel" >/dev/null || fail "after saving mine, Hive's bar is not at 640,12"
+	asked own_preset_list 'own preset list'
+	value own_preset_list | grep -q 'mine .*(in use)' || fail "edel preset list does not mark mine in use: $(value own_preset_list)"
+	# Classic: the buttons go right, the key they had having moved into mine.
+	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
+	right=$(count 'edel-compositor: window buttons on the right')
+	guest 'own preset classic'
+	wait_more 'edel-shell-ui: panel edel-panel along the bottom' "$bottom" ||
+		fail "layout.preset=classic did not bring Classic's panel along the bottom"
+	wait_more 'edel-compositor: window buttons on the right' "$right" ||
+		fail "Classic did not put the buttons on the right"
+	shot own-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
+	# Mine again: Hive's bar on top, the buttons on the left.
+	top=$(count 'edel-shell-ui: panel edel-panel along the top')
+	left=$(count 'edel-compositor: window buttons on the left')
+	guest 'own preset mine'
+	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
+		fail "layout.preset=mine did not bring Hive's bar back on top"
+	wait_more 'edel-compositor: window buttons on the left' "$left" ||
+		fail "layout.preset=mine did not put the buttons on the left"
+	shot own-mine 640 12 "$panel" >/dev/null || fail "mine's bar is not at 640,12 in the panel's colour"
+	# Settings' Layout page: one card per preset, mine last, logged where
+	# each card lies once the window is settled.
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings layout'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on its Layout page: $(value windows)"
+	i=0
+	places=none
+	while [ "$places" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the preset cards lie: $(value settings_layout_log)"
+		guest 'settings layout log'
+		places=$(value settings_layout_log | sed -n 's/.*layout presets places //p' | tr ',;' '  ' |
+			awk '{ s = ""; for (i = 1; i < NF; i += 2) s = s " " $i; print s }')
+		[ -n "$places" ] || places=none
+		[ "$places" = none ] && sleep 1
+	done
+	case "$places" in
+	*" zen mine") ;;
+	*) fail "Settings' Layout page does not list mine after zen: $places" ;;
+	esac
+	python3 ci/qmp.py screendump "$dir/settings-own-presets.png"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" 30 || fail "Super+Q did not close Settings"
+	# Mine is in use, so delete is refused, and says how to pick another.
+	asked own_preset_delete 'own preset delete'
+	refused=$(value own_preset_delete)
+	case "$refused" in
+	'1 '*'is the preset in use'*) ;;
+	*) fail "edel preset delete mine while in use was not refused: $refused" ;;
+	esac
+	guest 'own preset classic'
+	asked own_preset_delete 'own preset delete'
+	value own_preset_delete | grep -q '^0 ' || fail "edel preset delete mine with Classic in use failed: $(value own_preset_delete)"
+	guest 'own preset clean'
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Own presets (M5.17): settings-own-presets.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after zen, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
+}
+
 case_taskbar() {
 	# Windows-like (M5.4c): edel settings set layout.preset=windows-like
 	# restarts shell-ui with one taskbar along the bottom, the menu button
@@ -5946,7 +6056,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
