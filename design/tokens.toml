@@ -180,6 +180,10 @@ panel_text_small = 11
 panel_control = 30
 panel_icon = 20
 panel_glyph = 18
+# The app icons the apps widget draws in a bar and in a dock, logical pixels
+# (M5.12b5 part A); appearance.icon_size scales them with panel_icon.
+app_icon = 24
+dock_icon = 40
 # Corner radii (M5.5e, the mockups' second round): windows (M5.14); menus
 # such as the launcher (M5.3b) and the fillets where the panel meets the
 # screen (M5.1b); and controls: the panel's buttons and a menu's rows.

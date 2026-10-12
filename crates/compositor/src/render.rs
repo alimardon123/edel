@@ -29,7 +29,7 @@ use crate::animate::{Closing, Look as Seen};
 use crate::decoration::{data, title};
 use crate::glance::painted;
 use crate::glance_look;
-use crate::pointer::{SIZE, surface_hotspot};
+use crate::pointer::surface_hotspot;
 use crate::state::Edel;
 
 smithay::backend::renderer::element::render_elements! {
@@ -149,7 +149,7 @@ impl Edel {
         let CursorImageStatus::Named(icon) = self.cursors.status.clone() else {
             return Vec::new();
         };
-        let px = (f64::from(SIZE) * scale).round() as u32;
+        let px = (f64::from(self.cursors.size) * scale).round() as u32;
         let image = self.cursors.image(icon.name(), px);
         let origin = at.to_physical(scale).to_i32_round::<i32>() - image.hotspot;
         // Drawn in the screen's own pixels, as title bars are.

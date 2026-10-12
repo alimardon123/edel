@@ -142,6 +142,12 @@ pub const ESP_DIR: &str = "/EFI/edel";
 /// login screen offers (M5.10c3b). The standard place, not Edel OS's.
 pub const WAYLAND_SESSIONS: &str = "/usr/share/wayland-sessions";
 
+/// The folders cursor and icon themes are installed in, in the order they
+/// are read (M5.12b5): the system's, then the local administrator's. A
+/// cursor theme is a folder in one of them with a `cursors` folder in it,
+/// as the xcursor standard lays them out.
+pub const ICON_THEME_DIRS: &[&str] = &["/usr/share/icons", "/usr/local/share/icons"];
+
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
