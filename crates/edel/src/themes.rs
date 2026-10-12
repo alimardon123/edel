@@ -146,8 +146,9 @@ fn merged_table(own: &Appearance, theme: &Appearance) -> Option<Table> {
     Some(merged)
 }
 
-/// Lays `theme` under `own`, table by table: a key `own` has stays.
-fn merge(own: &mut Table, theme: Table) {
+/// Lays `theme` under `own`, table by table: a key `own` has stays. Also
+/// how an own preset's keys lay under the file's (M5.17).
+pub(crate) fn merge(own: &mut Table, theme: Table) {
     for (key, value) in theme {
         match own.get_mut(&key) {
             Some(Value::Table(inner)) => {
@@ -450,8 +451,8 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
     if !names_a_theme {
         return None;
     }
-    let person = person.map(|read| themed(&read.file));
-    let machine = machine.map(|read| themed(&read.file));
+    let person = person.map(|read| settings::in_use(&read.file));
+    let machine = machine.map(|read| settings::in_use(&read.file));
     let value = person
         .as_ref()
         .and_then(|file| value_of(file, key))
@@ -464,12 +465,7 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
 
 /// The value of an `appearance.*` key in `file`, by its path.
 fn value_of(file: &SettingsFile, key: &str) -> Option<Value> {
-    let key = key.strip_prefix("appearance.")?;
-    let mut value = Value::try_from(&file.appearance).ok()?;
-    for part in key.split('.') {
-        value = value.as_table()?.get(part)?.clone();
-    }
-    Some(value)
+    settings::value_at(&file.appearance, key.strip_prefix("appearance.")?)
 }
 
 /// `edel theme save NAME`, on a file's text: makes `[themes.NAME]` from the

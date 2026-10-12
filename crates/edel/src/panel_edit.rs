@@ -312,12 +312,13 @@ pub fn set_screens(panels: &[Panel], panel: usize, screens: Screens) -> Result<V
 
 /// The panels that apply, the rule shell-ui's `from_system_files` follows:
 /// `panels.list`, the person's file over the machine's, else the preset
-/// `layout.preset` names (the person's over the machine's). A file that
+/// `layout.preset` names (the person's over the machine's, an own preset
+/// applied as the desktop applies it, M5.17). A file that
 /// does not read, or is not in this release's format, counts as absent.
 pub fn applying(machine: Option<&str>, person: Option<&str>) -> Vec<Panel> {
     let file = |text: Option<&str>| {
         text.and_then(|t| settings::read(t).ok())
-            .map(|read| read.file)
+            .map(|read| settings::in_use(&read.file))
             .unwrap_or_default()
     };
     let (machine, person) = (file(machine), file(person));
@@ -368,7 +369,7 @@ pub fn to_write(
 pub fn pins_applying(machine: Option<&str>, person: Option<&str>) -> Vec<String> {
     let read = |text: Option<&str>| {
         text.and_then(|t| settings::read(t).ok())
-            .map(|read| read.file)
+            .map(|read| settings::in_use(&read.file))
             .unwrap_or_default()
     };
     let (machine, person) = (read(machine), read(person));

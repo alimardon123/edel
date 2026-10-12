@@ -64,6 +64,8 @@ fn values(kind: Kind) -> Option<Vec<String>> {
         Kind::Flag => Some(vec!["true".into(), "false".into()]),
         Kind::OneOf(allowed) => Some(allowed.iter().map(|v| v.to_string()).collect()),
         Kind::WholeOf(allowed) => Some(allowed.iter().map(|v| v.to_string()).collect()),
+        // The built-in presets; the person's own are in the file, not here (M5.17).
+        Kind::Preset => Some(edel::presets::NAMES.iter().map(|v| v.to_string()).collect()),
         _ => None,
     }
 }

@@ -19,6 +19,7 @@
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
 | `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
+| `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
 
 ## `edel update [RELEASE] [OPTIONS]`
 
@@ -208,3 +209,27 @@ Add a theme from a .edeltheme file to your themes, with its pictures; the theme 
 | | What it does |
 |---|---|
 | `FILE` | The .edeltheme file to read; a file that does not check is refused |
+
+## `edel preset`
+
+preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones.
+
+### `edel preset list`
+
+List the built-in presets, then yours, with the one in use marked.
+
+### `edel preset save NAME`
+
+Keep the layout in use as a preset of yours called NAME, with your changes on top; the screen stays the same.
+
+| | What it does |
+|---|---|
+| `NAME` | A name of letters, digits and hyphens, such as my-hive |
+
+### `edel preset delete NAME`
+
+Delete one of your presets; the preset in use cannot be deleted.
+
+| | What it does |
+|---|---|
+| `NAME` | The preset's name, as preset list shows it |

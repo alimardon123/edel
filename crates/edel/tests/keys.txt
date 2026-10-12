@@ -99,3 +99,4 @@ appearance.theme
 themes.*
 lock_screen.dim
 appearance.pictures
+presets.*

@@ -8,9 +8,10 @@
 //! follows at once, and each says where its value comes from, with Reset
 //! for the person's own choice and Copy as command (ADR-008). The page
 //! follows the files, so a change from the panel or `edel settings set`
-//! shows here too. Later keys join as their steps land: Never (M5.18b)
-//! as a row here, a person's own presets as cards after the built-in
-//! ones, with Save as (M5.17).
+//! shows here too. Never (M5.18b) is a row here. A person's own presets
+//! are cards after the built-in ones (M5.17): a right click deletes one,
+//! and Save as preset, under the cards while the person's file sets layout
+//! keys of its own, keeps the layout in use as one.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -18,7 +19,7 @@ use std::rc::Rc;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::{n_, tr};
+use edel::i18n::{n_, tr, trf};
 
 use crate::files::{self, Files};
 use crate::style::Theme;
@@ -122,11 +123,31 @@ struct Setting {
     row: widgets::Row,
 }
 
+/// The Layout page's own presets (M5.17): the cards' flow, the line of the
+/// layout's changes under them with Save as preset, and the note under the
+/// cards for a change that was refused.
+struct Own {
+    cards: gtk::FlowBox,
+    /// The names the cards show, in order, so they are rebuilt only when
+    /// the presets change.
+    names: std::cell::RefCell<Vec<String>>,
+    changes: gtk::Box,
+    changed: gtk::Label,
+    save: gtk::Button,
+    note: gtk::Label,
+}
+
 /// The page's widgets, so every change shows everywhere on it.
 struct Ui {
     /// The settings file's section the page shows (M5.2q).
     section: &'static str,
-    presets: Vec<(&'static str, gtk::ToggleButton, gtk::Box)>,
+    /// The preset cards, built-in then own, by name (M5.17); rebuilt when
+    /// the presets change, through `sync_cards`.
+    presets: std::cell::RefCell<Vec<(String, gtk::ToggleButton, gtk::Box)>>,
+    /// The Layout page's own presets (M5.17): the cards' box and the line of
+    /// changes under them.
+    own: Option<Own>,
+    theme: Rc<Theme>,
     preset_source: Option<widgets::Source>,
     settings: Vec<Setting>,
     /// A title bar as the compositor draws it with these choices.
@@ -174,9 +195,9 @@ impl Ui {
         let files = Files::here();
         let now = files.layout();
         self.quiet.set(true);
-        for (name, card, badge) in &self.presets {
-            card.set_active(*name == now.preset);
-            badge.set_visible(*name == now.preset);
+        for (name, card, badge) in self.presets.borrow().iter() {
+            card.set_active(*name == now.named);
+            badge.set_visible(*name == now.named);
         }
         for setting in &self.settings {
             setting.control.show(setting.key, &now);
@@ -196,9 +217,17 @@ impl Ui {
                 [now.minimize_button, now.maximize_button, now.close_button],
             );
         }
+        if let Some(own) = &self.own {
+            let changed = files.changed_layout();
+            own.changes.set_visible(!changed.is_empty());
+            own.changed.set_label(&trf(
+                "Changed: {what}",
+                &[("what", &themes::changed_words(&changed))],
+            ));
+        }
         if let Some(source) = &self.preset_source {
             let preset = files.source("layout.preset");
-            let title = edel::presets::title(&now.preset);
+            let title = edel::presets::title(&now.named);
             source.label.set_label(&rows::describe(&preset, &title));
             source.reset.set_visible(rows::resettable(&preset));
         }
@@ -256,6 +285,19 @@ impl Ui {
         }
     }
 
+    /// Shows why a preset change was not made, under the cards, or takes an
+    /// old message away (M5.17).
+    fn report_preset(&self, result: Result<(), String>) {
+        let Some(own) = &self.own else { return };
+        match result {
+            Ok(()) => own.note.set_visible(false),
+            Err(e) => {
+                own.note.set_label(&e);
+                own.note.set_visible(true);
+            }
+        }
+    }
+
     /// Shows why a change was not written, or takes an old message away.
     fn report(&self, result: Result<(), String>) {
         match result {
@@ -303,7 +345,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         _ => (tr("Layout"), tr(INTRO)),
     };
     let (page, content, problem) = widgets::page(title, intro);
-    let mut presets = Vec::new();
+    let mut own = None;
     let mut preset_source = None;
     let mut settings = Vec::new();
     let mut bar = None;
@@ -317,6 +359,8 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     match section {
         "layout" => {
             let source = widgets::section(&content, rows::title("layout.preset"));
+            // The cards are the built-in presets, then the person's own
+            // (M5.17), filled in by `sync_cards` once the page exists.
             let cards = gtk::FlowBox::builder()
                 .selection_mode(gtk::SelectionMode::None)
                 .homogeneous(true)
@@ -325,21 +369,38 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
                 .column_spacing(12)
                 .row_spacing(12)
                 .build();
-            let mut first: Option<gtk::ToggleButton> = None;
-            for name in edel::presets::NAMES {
-                let (card, badge) = card(name, theme);
-                match &first {
-                    Some(first) => card.set_group(Some(first)),
-                    None => first = Some(card.clone()),
-                }
-                cards.append(&card);
-                // The card takes the focus, not the box the flow wraps it in.
-                if let Some(child) = card.parent() {
-                    child.set_focusable(false);
-                }
-                presets.push((*name, card, badge));
-            }
             content.append(&cards);
+            // Under them, while the person's file sets layout keys of its
+            // own: what changed, and Save as preset (M5.17).
+            let changed = gtk::Label::builder()
+                .xalign(0.0)
+                .hexpand(true)
+                .css_classes(["edel-theme-changed"])
+                .build();
+            let save = widgets::action(tr("Save as preset"), false);
+            let changes = gtk::Box::builder()
+                .spacing(14)
+                .margin_top(10)
+                .visible(false)
+                .build();
+            changes.append(&changed);
+            changes.append(&save);
+            content.append(&changes);
+            let note = gtk::Label::builder()
+                .xalign(0.0)
+                .wrap(true)
+                .visible(false)
+                .css_classes(["edel-error"])
+                .build();
+            content.append(&note);
+            own = Some(Own {
+                cards,
+                names: std::cell::RefCell::new(Vec::new()),
+                changes,
+                changed,
+                save,
+                note,
+            });
 
             let group = widgets::group(&content);
             group.set_margin_top(20);
@@ -520,7 +581,9 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     }
     let ui = Rc::new(Ui {
         section,
-        presets,
+        presets: std::cell::RefCell::new(Vec::new()),
+        own,
+        theme: theme.clone(),
         preset_source,
         settings,
         bar,
@@ -539,6 +602,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         depth: depth_group.clone(),
         motion: motion_group.clone(),
     });
+    sync_cards(&ui);
     ui.update();
     if let Some(tray) = &tray {
         tray.refresh();
@@ -547,19 +611,17 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         let weak = Rc::downgrade(&ui);
         monitor.connect_changed(move |_, _, _, _| {
             if let Some(ui) = weak.upgrade() {
+                sync_cards(&ui);
                 ui.update();
             }
         });
     }
-
-    for (name, card, _) in &ui.presets {
-        let (name, weak) = (*name, Rc::downgrade(&ui));
-        card.connect_toggled(move |card| {
-            let Some(ui) = weak.upgrade() else { return };
-            if card.is_active() && !ui.quiet.get() {
-                ui.report(Files::here().choose("layout.preset", name));
-                // A preset brings its own policy and buttons unless set.
-                ui.update();
+    if let Some(own) = &ui.own {
+        log_preset_places(&own.cards, Rc::downgrade(&ui));
+        let weak = Rc::downgrade(&ui);
+        own.save.connect_clicked(move |button| {
+            if let Some(ui) = weak.upgrade() {
+                ask_save_as(&ui, button.upcast_ref());
             }
         });
     }
@@ -602,6 +664,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         if let Some(ui) = weak.upgrade() {
             let before = ui.before.borrow().clone();
             ui.report(Files::here().restore(&before));
+            sync_cards(&ui);
             ui.update();
         }
     });
@@ -620,10 +683,176 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     page
 }
 
-/// A preset's card: its picture, its name and, when chosen, a check.
-fn card(name: &str, theme: &Rc<Theme>) -> (gtk::ToggleButton, gtk::Box) {
-    let title = edel::presets::title(name);
-    widgets::picture_card(&title, &preview::area(name, theme).upcast())
+/// Rebuilds the preset cards when the presets the files hold changed (M5.17):
+/// one per row of `edel::presets::rows`, the built-in ones first, each card
+/// a click that chooses it, and the person's own ones a right click that
+/// deletes them. Nothing is rebuilt while the names stay the same.
+fn sync_cards(ui: &Rc<Ui>) {
+    let Some(own) = &ui.own else { return };
+    let file = edel::settings::SettingsFile {
+        presets: Files::here().own_presets(),
+        ..Default::default()
+    };
+    let rows = edel::presets::rows(&file);
+    // A card's picture is its base's, so the base is part of what it shows.
+    let names: Vec<String> = rows
+        .iter()
+        .map(|row| format!("{} {}", row.name, row.base))
+        .collect();
+    if *own.names.borrow() == names {
+        return;
+    }
+    *own.names.borrow_mut() = names;
+    while let Some(child) = own.cards.first_child() {
+        own.cards.remove(&child);
+    }
+    let mut cards = Vec::new();
+    let mut first: Option<gtk::ToggleButton> = None;
+    for row in rows {
+        // An own preset's picture is its base's, under its own name.
+        let picture = preview::area(&row.base, &ui.theme).upcast::<gtk::Widget>();
+        let (card, badge) = widgets::picture_card(&row.title, &picture);
+        match &first {
+            Some(first) => card.set_group(Some(first)),
+            None => first = Some(card.clone()),
+        }
+        own.cards.append(&card);
+        // The card takes the focus, not the box the flow wraps it in.
+        if let Some(child) = card.parent() {
+            child.set_focusable(false);
+        }
+        if !row.built_in {
+            attach_delete(ui, &card, &row.name);
+        }
+        let (name, weak) = (row.name.clone(), Rc::downgrade(ui));
+        card.connect_toggled(move |card| {
+            let Some(ui) = weak.upgrade() else { return };
+            if card.is_active() && !ui.quiet.get() {
+                ui.report(Files::here().choose("layout.preset", &name));
+                // A preset brings its own policy and buttons unless set.
+                ui.update();
+            }
+        });
+        cards.push((row.name, card, badge));
+    }
+    *ui.presets.borrow_mut() = cards;
+}
+
+/// Gives an own preset's card its right click menu with Delete (M5.17). The
+/// preset in use is refused first, with the library's words under the cards,
+/// and any other is asked about in a dialog, as the theme's Delete is.
+fn attach_delete(ui: &Rc<Ui>, card: &gtk::ToggleButton, name: &str) {
+    let menu = gtk::Popover::builder()
+        .css_classes(["edel-choice-list"])
+        .build();
+    let items = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .build();
+    let delete = widgets::menu_item(tr("Delete…"));
+    delete.add_css_class("edel-danger");
+    items.append(&delete);
+    menu.set_child(Some(&items));
+    menu.set_parent(card);
+    let click = gtk::GestureClick::builder().button(3).build();
+    let open = menu.clone();
+    click.connect_pressed(move |_, _, x, y| {
+        open.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        open.popup();
+    });
+    card.add_controller(click);
+    let (name, weak, close) = (name.to_string(), Rc::downgrade(ui), menu.clone());
+    delete.connect_clicked(move |button| {
+        close.popdown();
+        let Some(ui) = weak.upgrade() else { return };
+        if let Err(why) = edel::presets::delete_text(&Files::here().person_text(), &name)
+            .map(|_| ())
+            .map_err(|e| format!("{e:#}"))
+        {
+            ui.report_preset(Err(why));
+            return;
+        }
+        let (weak, asked) = (Rc::downgrade(&ui), name.clone());
+        widgets::ask_delete(
+            button.upcast_ref(),
+            &trf("Delete the preset {preset}?", &[("preset", &asked)]),
+            tr("It cannot be brought back."),
+            tr("Delete"),
+            move || {
+                let Some(ui) = weak.upgrade() else { return };
+                let result = Files::here().delete_preset(&asked);
+                if result.is_ok() {
+                    eprintln!("edel-settings: preset {asked} deleted");
+                }
+                ui.report_preset(result);
+                sync_cards(&ui);
+                ui.update();
+            },
+        );
+    });
+}
+
+/// Asks for the name of the layout in use kept as a preset of the person's
+/// own (Save as preset, M5.17): the name is checked by the library, and a
+/// name it refuses is said in the dialog. The layout keeps its values, as
+/// `edel settings` says the screen stays the same.
+fn ask_save_as(ui: &Rc<Ui>, near: &gtk::Widget) {
+    let files = Files::here();
+    let mut taken: Vec<String> = files.own_presets().into_keys().collect();
+    taken.extend(edel::presets::NAMES.iter().map(|name| name.to_string()));
+    let suggestion = edel::themes::free_name("my preset", |name| taken.iter().any(|t| t == name));
+    let weak = Rc::downgrade(ui);
+    widgets::ask_name(
+        near,
+        tr("Save as preset"),
+        tr(
+            "Give the preset a name. It keeps the layout you changed, and the preset in use becomes it.",
+        ),
+        &suggestion,
+        tr("Name, such as my-hive"),
+        tr("Save as preset"),
+        move |name| {
+            let Some(ui) = weak.upgrade() else {
+                return Ok(());
+            };
+            Files::here().save_preset(name)?;
+            eprintln!("edel-settings: preset {name} saved");
+            sync_cards(&ui);
+            ui.update();
+            Ok(())
+        },
+    );
+}
+
+/// Logs where each preset card lies in the window, once the cards are laid
+/// out and two frames agree, as `edel-settings: layout presets places NAME
+/// X+Y+WxH, ...`, for CI to click the cards by (logical pixels).
+fn log_preset_places(cards: &gtk::FlowBox, ui: std::rc::Weak<Ui>) {
+    let last = std::cell::RefCell::new(String::new());
+    cards.add_tick_callback(move |cards, _| {
+        let Some(window) = cards.root().and_downcast::<gtk::Window>() else {
+            return glib::ControlFlow::Continue;
+        };
+        if cards.width() == 0 || !cards.is_mapped() {
+            return glib::ControlFlow::Continue;
+        }
+        let Some(ui) = ui.upgrade() else {
+            return glib::ControlFlow::Break;
+        };
+        let places: Vec<String> = ui
+            .presets
+            .borrow()
+            .iter()
+            .map(|(name, card, _)| {
+                format!("{name} {}", widgets::place(card.compute_bounds(&window)))
+            })
+            .collect();
+        let line = format!("edel-settings: layout presets places {}", places.join(", "));
+        if last.replace(line.clone()) != line {
+            return glib::ControlFlow::Continue;
+        }
+        eprintln!("{line}");
+        glib::ControlFlow::Break
+    });
 }
 
 /// Appends a row for `key` to `group`: what it does, the shortcut action

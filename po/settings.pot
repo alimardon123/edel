@@ -386,7 +386,13 @@ msgstr ""
 msgid "One preset sets up the whole desktop: its panels, windows and tiling."
 msgstr ""
 
+msgid "Changed: {what}"
+msgstr ""
+
 msgid "Dynamic workspaces decide how many"
+msgstr ""
+
+msgid "Save as preset"
 msgstr ""
 
 msgid "Or the panel's toggle"
@@ -438,6 +444,24 @@ msgid "How many numbers the switcher shows at once"
 msgstr ""
 
 msgid "What shows where more workspaces lie"
+msgstr ""
+
+msgid "Delete…"
+msgstr ""
+
+msgid "Delete the preset {preset}?"
+msgstr ""
+
+msgid "It cannot be brought back."
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Give the preset a name. It keeps the layout you changed, and the preset in use becomes it."
+msgstr ""
+
+msgid "Name, such as my-hive"
 msgstr ""
 
 msgid "Pick a look. Each look keeps its own arrangement and background."
@@ -533,9 +557,6 @@ msgstr ""
 msgid "Rename…"
 msgstr ""
 
-msgid "Delete…"
-msgstr ""
-
 msgid "On every look"
 msgstr ""
 
@@ -561,12 +582,6 @@ msgid "Rename"
 msgstr ""
 
 msgid "Delete the look {look}?"
-msgstr ""
-
-msgid "It cannot be brought back."
-msgstr ""
-
-msgid "Delete"
 msgstr ""
 
 msgid "--page needs the name of a page, such as --page displays"
@@ -1356,9 +1371,6 @@ msgid "1 picture ›"
 msgstr ""
 
 msgid "{count} pictures ›"
-msgstr ""
-
-msgid "Changed: {what}"
 msgstr ""
 
 msgid "More for {theme}"
