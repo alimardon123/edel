@@ -45,7 +45,7 @@ impl Theme {
         }
         theme
             .provider
-            .load_from_string(&css(&theme.tokens.borrow()));
+            .load_from_string(&css(&theme.tokens.borrow(), manager.is_dark()));
         let weak = Rc::downgrade(&theme);
         manager.connect_dark_notify(move |manager| {
             if let Some(theme) = weak.upgrade() {
@@ -65,7 +65,8 @@ impl Theme {
             return;
         }
         *self.tokens.borrow_mut() = tokens;
-        self.provider.load_from_string(&css(&self.tokens.borrow()));
+        self.provider
+            .load_from_string(&css(&self.tokens.borrow(), dark));
         for watcher in self.watchers.borrow().iter() {
             watcher();
         }
@@ -135,9 +136,10 @@ fn css_colour(c: edel::tokens::Colour) -> String {
     }
 }
 
-/// The app's stylesheet from `t`: the window and its sidebar, the search
-/// field, the pages' titles, the preset cards and the grouped rows.
-pub fn css(t: &Tokens) -> String {
+/// The app's stylesheet from `t`, drawn in the dark or the light scheme
+/// `dark` names: the window and its sidebar, the search field, the pages'
+/// titles, the preset cards and the grouped rows.
+pub fn css(t: &Tokens, dark: bool) -> String {
     let window = css_colour(t.window);
     let card = css_colour(t.card);
     let line = css_colour(t.line);
@@ -182,6 +184,18 @@ pub fn css(t: &Tokens) -> String {
     let rw_plus = rw + 4;
     // A look's picture corners and its ring (M5.10c7b): the menus' radius.
     let rm = t.radius_menu;
+    // The accents the Updates page's badge and the Users page's avatars
+    // take, each in the scheme drawn: green is ok, yellow is a restart's
+    // amber and red a problem's (the accent's own shade otherwise).
+    let scheme = if dark {
+        edel::tokens::Scheme::Dark
+    } else {
+        edel::tokens::Scheme::Light
+    };
+    let named = |name: &str| {
+        edel::tokens::accent_named(name, scheme).map_or_else(|| accent.clone(), css_colour)
+    };
+    let (ok, amber, problem) = (named("green"), named("yellow"), named("red"));
     format!(
         r#"/* Written from design/tokens.toml by edel-settings (style.rs), after the mockups' own CSS. */
 window.edel {{ background-color: {window}; color: {text}; font-family: "{font}"; font-size: {size}px; letter-spacing: -0.08px; }}
@@ -297,8 +311,6 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-spin > button {{ background: none; box-shadow: none; border: none; color: {text}; }}
 .edel-arrangement {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
 .edel-hero {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; padding: 24px 26px 26px; }}
-.edel-hero-icon {{ color: {accent}; }}
-.edel-hero-icon.edel-problem {{ color: {error}; }}
 .edel-hero-title {{ font-size: {hero}px; font-weight: 650; letter-spacing: -0.4px; }}
 .edel-hero-sub {{ color: {secondary}; }}
 .edel-buttons {{ background: none; }}
@@ -315,8 +327,6 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-big-main:hover {{ background-color: alpha({accent}, 0.88); }}
 .edel-name {{ font-size: {name}px; font-weight: 650; letter-spacing: -0.6px; }}
 .edel-name-version {{ color: {secondary}; font-size: {big}px; }}
-.edel-avatar {{ min-width: 56px; min-height: 56px; border-radius: 999px; background-color: {accent}; color: {accent_text};
-  font-size: {hero}px; font-weight: 650; }}
 .edel-details > title {{ margin: 0 0 10px; padding: 4px 0; }}
 .edel-details > title label {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
 .edel-details > title arrow {{ color: {muted}; }}
@@ -431,6 +441,35 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-font-row {{ min-height: 36px; }}
 .edel-font, .edel-font label {{ font-weight: 400; }}
 .edel-font > button {{ min-height: 30px; padding-top: 0; padding-bottom: 0; }}
+/* The Updates and Users pages as the approved board (M5.32, docs/mockups/settings/power-updates-users.jpg): the cards in the card's
+   colour (no gradient: CI reads the card token at the hero's top), the hero's round badge (green when ok, the accent for new and sync, amber for a
+   restart, red for a problem) with its white icon, the accent pill, the kept-ready card, What's new, and the people's avatars. */
+.edel-hero-badge {{ border-radius: 999px; }}
+.edel-hero-badge.edel-tone-ok {{ background-color: {ok}; box-shadow: 0 0 22px alpha({ok}, 0.45); }}
+.edel-hero-badge.edel-tone-accent {{ background-color: {accent}; box-shadow: 0 0 22px alpha({accent}, 0.4); }}
+.edel-hero-badge.edel-tone-restart {{ background-color: {amber}; box-shadow: 0 0 22px alpha({amber}, 0.4); }}
+.edel-hero-badge.edel-tone-problem {{ background-color: {problem}; box-shadow: 0 0 22px alpha({problem}, 0.4); }}
+.edel-hero-badge image, .edel-hero-badge spinner {{ color: {accent_text}; }}
+.edel-hero-button {{ min-height: 36px; padding: 0 22px; border-radius: 999px; background-image: none; background-color: {accent};
+  box-shadow: none; border: none; color: {accent_text}; font-weight: 600; }}
+.edel-hero-button:hover {{ background-color: alpha({accent}, 0.88); }}
+.edel-hero-button:disabled {{ opacity: 0.5; }}
+.edel-hero-button:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 2px; }}
+.edel-kept-mark {{ border-radius: {rs}px; background-color: alpha({accent}, 0.14); color: {accent}; }}
+.edel-kept-title {{ font-weight: 600; }}
+.edel-kept-button {{ min-height: 28px; padding: 0 16px; border-radius: 999px; background-image: none; background-color: {fill};
+  box-shadow: none; border: none; color: {text}; font-weight: 500; }}
+.edel-kept-button:hover {{ background-color: {fill_strong}; }}
+.edel-kept-button:disabled {{ opacity: 0.5; }}
+.edel-kept-button:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 2px; }}
+.edel-news {{ padding: 14px 16px; }}
+.edel-news-title {{ font-weight: 600; }}
+.edel-avatar {{ min-width: 84px; min-height: 84px; border-radius: 999px; background-image: linear-gradient(135deg, {accent}, shade({accent}, 0.8));
+  color: {accent_text}; font-size: {name}px; font-weight: 650; }}
+.edel-avatar-small {{ min-width: 32px; min-height: 32px; font-size: {big}px; font-weight: 650; }}
+.edel-person-name {{ font-size: {hero}px; font-weight: 650; letter-spacing: -0.3px; margin-top: 6px; }}
+.edel-person-line {{ color: {secondary}; font-size: {big}px; }}
+.edel-row-name {{ font-weight: 600; }}
 "#
     )
 }
@@ -442,13 +481,13 @@ mod tests {
     #[test]
     fn the_stylesheet_is_the_tokens() {
         let mut t = Tokens::built_in();
-        let css = css(&t);
+        let css = css(&t, false);
         assert!(css.contains(&format!("background-color: {};", css_colour(t.window))));
         assert!(css.contains(&format!("font-family: \"{}\";", t.font)));
         // A changed token changes the sheet: no colour is written here.
         t.accent = edel::tokens::Colour::parse("#e5484d").unwrap();
         t.radius_window = 3;
-        let changed = super::css(&t);
+        let changed = super::css(&t, false);
         assert!(changed.contains("background-color: #e5484d;"));
         assert!(changed.contains("border-radius: 3px;"));
         assert!(!changed.contains(&Tokens::built_in().accent.hex()));

@@ -1301,40 +1301,40 @@ msgstr ""
 msgid "{version}, {state}"
 msgstr ""
 
-msgid "Tested releases. Recommended."
+msgid "Stable gets each release once it has settled"
 msgstr ""
 
-msgid "The newest features first; may have rough edges."
+msgid "Preview gets each release first; it may have rough edges"
 msgstr ""
 
 msgid "A channel this machine was set up to follow."
 msgstr ""
 
-msgid "Edel OS updates as a whole, and can always go back."
+msgid "Edel OS updates as a whole, and can always roll back."
 msgstr ""
 
-msgid "What's new"
-msgstr ""
-
-msgid "Update settings"
+msgid "If an update fails to start, Edel OS rolls back to it by itself."
 msgstr ""
 
 msgid "Runs {command}"
 msgstr ""
 
-msgid "Click again to go back to {version}"
+msgid "{version} is kept ready"
 msgstr ""
 
-msgid "Go back to {version}"
+msgid "Click again to roll back"
 msgstr ""
 
-msgid "Version"
+msgid "Roll back…"
 msgstr ""
 
-msgid "Released"
+msgid "New in {version}"
 msgstr ""
 
-msgid "Size"
+msgid "Released {date}"
+msgstr ""
+
+msgid "Size {size}"
 msgstr ""
 
 msgid "the command stopped without an answer; try again"
@@ -1353,9 +1353,6 @@ msgid "{name} · {role}"
 msgstr ""
 
 msgid "Settings could not find your account in /etc/passwd, so there is no one to show."
-msgstr ""
-
-msgid "Your account"
 msgstr ""
 
 msgid "Can change the system. Changing it needs administrator rights, which Settings cannot ask for yet."
