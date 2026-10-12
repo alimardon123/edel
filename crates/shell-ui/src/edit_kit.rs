@@ -57,11 +57,14 @@ pub enum State {
     Lifted,
 }
 
-/// A button's kind: the accent filled, or a quiet line with no fill.
+/// A button's kind: the accent filled, a quiet line with no fill, or (M5.10c7f)
+/// the glass text filled with the stage's dark words, the lock editor's Done
+/// and its preview's Back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
     Accent,
     Quiet,
+    Light,
 }
 
 /// The margin round a placed part's outline, logical pixels.
@@ -100,9 +103,37 @@ const CHOSEN: f32 = 0.5;
 /// The sheet's glass base, and the desktop's sheet opacity.
 const GLASS_BASE: f32 = 0.7;
 const DESKTOP_SHEET: f32 = 0.96;
-/// The stage's glow, as a share of the picture's width, and its strength.
-const GLOW_REACH: f32 = 0.8;
-const GLOW: f32 = 0.12;
+/// The glass stage (M5.10c7f, the mockup's edit screen): one glow of
+/// `lock_edit_glow` centred 35 percent down the screen, reaching 75 percent of
+/// its width, at full strength so its centre reads as the token.
+const GLASS_GLOW_DOWN: f32 = 0.35;
+const GLASS_GLOW_REACH: f32 = 0.75;
+const GLASS_GLOW: f32 = 1.0;
+/// Where the stage's lower shade starts (a share of the screen's height) and
+/// how strong it is at the foot (the shadow colour's alpha there).
+const SHADE_FROM: f32 = 0.45;
+const SHADE: f32 = 0.5;
+/// The corners of the glass picture, and of a glass side panel (M5.10c7f).
+const STAGE_RADIUS: f32 = 16.0;
+const SIDE_RADIUS: f32 = 18.0;
+/// A side panel's fill and hairline, white at these shares (M5.10c7f).
+const SIDE_FILL: f32 = 0.05;
+const SIDE_EDGE: f32 = 0.09;
+/// The glass picture's hairline, white at this share (M5.10c7f).
+const STAGE_EDGE: f32 = 0.12;
+/// The chosen part's ring on the glass (M5.10c7f): 1.5 px of white at 90
+/// percent on the part's own corners, with a 4 px halo of the accent at 45
+/// percent just outside it.
+const MARK_RING: f32 = 1.5;
+const MARK_HALO: f32 = 4.0;
+const MARK_RADIUS: f32 = 16.0;
+const MARK_RING_SHARE: f32 = 0.9;
+/// The glass slider's track (`slider`, M5.10c7g): 4 px high, its rest white at
+/// 18 percent, and its knob 16 px across.
+pub const TRACK: f32 = 4.0;
+pub const TRACK_REST: f32 = 0.18;
+pub const KNOB: f32 = 16.0;
+const MARK_HALO_SHARE: f32 = 0.45;
 
 /// The colours an editor draws its parts in, for its style: the text, the
 /// raised surface, the light of a hovered row, the outline, the accent and
@@ -174,7 +205,7 @@ pub fn vacate(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, s: f32) {
 
 /// Strokes the rounded rectangle `rect` (device pixels) inside its edge,
 /// `width` device pixels wide, dashed when `dash` (device pixels) is given.
-fn stroke(
+pub(crate) fn stroke(
     pixmap: &mut Pixmap,
     rect: (f32, f32, f32, f32),
     radius: f32,
@@ -203,11 +234,12 @@ fn stroke(
 }
 
 /// The stage round the lock screen's picture in the edit mode (M5.10c6c3):
-/// the screen filled with the deep backdrop, a soft glow of the accent at
-/// `GLOW` centred on the picture (the backdrop's own glow helper), and the
-/// picture's shadow, cast from `preview` (logical pixels on the screen).
-/// Desktop: the panel's colour instead, with no glow. The picture itself is
-/// drawn by `stage_frame`, over this.
+/// the screen filled with the deep backdrop, a soft glow centred on the picture
+/// (the backdrop's own glow helper), and the picture's shadow, cast from
+/// `preview` (logical pixels on the screen). On the glass (M5.10c7f) the fill is
+/// `lock_edit_deep` and the glow `lock_edit_glow`, 35 percent down the screen,
+/// reaching 75 percent of its width. Desktop: the panel's colour, no glow. The
+/// picture itself is drawn by `stage_frame`, over this.
 pub fn stage(
     pixmap: &mut Pixmap,
     screen: Rect,
@@ -218,20 +250,61 @@ pub fn stage(
 ) {
     let ph = pixmap.height() as f32;
     let base = if style.glass {
-        tokens.lock_backdrop_deep
+        tokens.lock_edit_deep
     } else {
         tokens.panel
     };
     fill(pixmap, 0.0, 0.0, screen.w * s, screen.h * s, 0.0, base);
     if style.glass {
-        let centre = (
-            (preview.x + preview.w / 2.0) * s,
-            (preview.y + preview.h / 2.0) * s,
-        );
-        let reach = (preview.w.max(preview.h) * GLOW_REACH * s).max(1.0);
-        lock::glow(pixmap, centre, reach, tokens.accent, GLOW, ph);
+        let centre = (screen.w / 2.0 * s, screen.h * GLASS_GLOW_DOWN * s);
+        let reach = (screen.w * GLASS_GLOW_REACH * s).max(1.0);
+        lock::glow(pixmap, centre, reach, tokens.lock_edit_glow, GLASS_GLOW, ph);
+        shade_below(pixmap, screen, tokens, s);
     }
-    lock::lift(pixmap, preview, PREVIEW_RADIUS * style.scale, s, tokens);
+    lock::lift(pixmap, preview, picture_corner(style), s, tokens);
+}
+
+/// Darkens the stage's lower part, as the mockup's backdrop settles there
+/// (Alimardon, 2026-10-11): from `SHADE_FROM` of the screen's height down,
+/// the tokens' shadow colour grows to `SHADE` of its strength at the foot.
+/// The stage only: the picture is drawn over it afterwards.
+fn shade_below(pixmap: &mut Pixmap, screen: Rect, tokens: &Tokens, s: f32) {
+    let (w, h) = (screen.w * s, screen.h * s);
+    let ink = tokens.shadow;
+    let at = |a: f32| tiny_skia::Color::from_rgba(ink.r, ink.g, ink.b, a.clamp(0.0, 1.0));
+    let (Some(clear), Some(dark)) = (at(0.0), at(SHADE)) else {
+        return;
+    };
+    let stops = vec![
+        tiny_skia::GradientStop::new(0.0, clear),
+        tiny_skia::GradientStop::new(1.0, dark),
+    ];
+    if let (Some(shader), Some(rect)) = (
+        tiny_skia::LinearGradient::new(
+            tiny_skia::Point::from_xy(0.0, h * SHADE_FROM),
+            tiny_skia::Point::from_xy(0.0, h),
+            stops,
+            tiny_skia::SpreadMode::Pad,
+            Transform::identity(),
+        ),
+        tiny_skia::Rect::from_xywh(0.0, h * SHADE_FROM, w, h * (1.0 - SHADE_FROM)),
+    ) {
+        let paint = tiny_skia::Paint {
+            shader,
+            ..tiny_skia::Paint::default()
+        };
+        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+    }
+}
+
+/// The corners of the picture in `style` (logical pixels): `STAGE_RADIUS` on
+/// the glass, `PREVIEW_RADIUS` on the desktop.
+fn picture_corner(style: Style) -> f32 {
+    if style.glass {
+        STAGE_RADIUS * style.scale
+    } else {
+        PREVIEW_RADIUS * style.scale
+    }
 }
 
 /// The picture round its corners, over the stage (M5.10c6c3): `picture`, a
@@ -260,7 +333,7 @@ pub fn stage_frame(
         ..tiny_skia::PixmapPaint::default()
     };
     layer.draw_pixmap(0, 0, picture.as_ref(), &smooth, scale, None);
-    let radius = style.corner(PREVIEW_RADIUS, s);
+    let radius = picture_corner(style) * s;
     if let Some(mut mask) = tiny_skia::Mask::new(pw, ph) {
         if let Some(path) = paint::rounded(0.0, 0.0, pw as f32, ph as f32, radius) {
             mask.fill_path(&path, FillRule::Winding, true, Transform::identity());
@@ -276,11 +349,66 @@ pub fn stage_frame(
         None,
     );
     let edge = if style.glass {
-        tokens.lock_glass_edge
+        Colour {
+            a: STAGE_EDGE,
+            ..tokens.backdrop_text
+        }
     } else {
         tokens.edge
     };
     stroke(pixmap, (x, y, w, h), radius, LINE * s, edge, None);
+}
+
+/// A side panel of the glass edit mode (M5.10c7f, the mockup's wallpaper and
+/// clock panels): `SIDE_RADIUS` corners, white at `SIDE_FILL`, a 1 px hairline
+/// of white at `SIDE_EDGE`, and no shadow. Draws nothing outside `r`.
+pub fn side_panel(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, s: f32) {
+    let (x, y, w, h) = r.device(s);
+    let radius = SIDE_RADIUS * s;
+    let fill_colour = Colour {
+        a: SIDE_FILL,
+        ..tokens.backdrop_text
+    };
+    fill(pixmap, x, y, w, h, radius, fill_colour);
+    let edge = Colour {
+        a: SIDE_EDGE,
+        ..tokens.backdrop_text
+    };
+    stroke(pixmap, (x, y, w, h), radius, LINE * s, edge, None);
+}
+
+/// The track of a glass slider (M5.10c7g, the Dim of the wallpaper panel):
+/// `TRACK` logical pixels high with round ends, its rest white at
+/// `TRACK_REST`, filled in the accent from its left end to `share` (0 to 1)
+/// of the knob's travel, and a white `KNOB` at that point. `track` is the
+/// whole slider; the knob's centre travels from half a knob in from its left
+/// to half a knob in from its right, so the knob never leaves it.
+pub fn slider(pixmap: &mut Pixmap, track: Rect, share: f32, tokens: &Tokens, s: f32) {
+    let ink = inks(Style::GLASS, tokens);
+    let share = share.clamp(0.0, 1.0);
+    let bar_y = track.y + (track.h - TRACK) / 2.0;
+    let centre_y = track.y + track.h / 2.0;
+    let travel = track.w - KNOB;
+    let knob_x = track.x + KNOB / 2.0 + travel * share;
+    let (x, y, w, h) = Rect::new(track.x, bar_y, track.w, TRACK).device(s);
+    let rest = Colour {
+        a: TRACK_REST,
+        ..ink.text
+    };
+    fill(pixmap, x, y, w, h, TRACK / 2.0 * s, rest);
+    let filled = (knob_x - track.x).max(0.0);
+    if filled > 0.0 {
+        fill(pixmap, x, y, filled * s, h, TRACK / 2.0 * s, ink.accent);
+    }
+    if let Some(path) = PathBuilder::from_circle(knob_x * s, centre_y * s, KNOB / 2.0 * s) {
+        pixmap.fill_path(
+            &path,
+            &paint_of(ink.text),
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
 }
 
 /// A part's outline (M5.10c6c3): `PART_PAD` outside the part `r` (logical
@@ -565,6 +693,14 @@ pub fn button(
             );
             ink.text
         }
+        ButtonKind::Light => {
+            fill(pixmap, x, y, w, h, radius, ink.text);
+            if style.glass {
+                tokens.lock_edit_deep
+            } else {
+                tokens.panel
+            }
+        }
     };
     if let Some(text) = text {
         let size = tokens.panel_text_size as f32 * s;
@@ -575,6 +711,71 @@ pub fn button(
     }
     if state == State::Focus {
         popup::focus_ring(pixmap, r, r.h / 2.0, s, tokens);
+    }
+}
+
+/// A part's mark in the lock editor (M5.10c7f), the canvas as the mockup draws
+/// it: at rest nothing; under the pointer (`Hover`) a faint 1 px solid outline,
+/// the glass text at 25 percent, `PART_PAD` out; with the keyboard's focus or a
+/// card open on it (`Focus`) a 1.5 px white ring at 90 percent on the part's own
+/// corners, with a 4 px halo of the accent at 45 percent just outside it. The
+/// corners scale with `style.scale`, the picture's scale. `Lifted` is
+/// `outline_part`'s. The panel editor keeps `outline_part`.
+pub fn mark_part(
+    pixmap: &mut Pixmap,
+    r: Rect,
+    state: State,
+    tokens: &Tokens,
+    style: Style,
+    s: f32,
+) {
+    let ink = inks(style, tokens);
+    let radius = MARK_RADIUS * style.scale;
+    match state {
+        State::Rest => {}
+        State::Hover => {
+            let (x, y, w, h) = part_area(r).device(s);
+            let faint = Colour {
+                a: 0.25,
+                ..ink.text
+            };
+            let corners = PART_RADIUS * style.scale * s;
+            stroke(pixmap, (x, y, w, h), corners, LINE * s, faint, None);
+        }
+        State::Focus => {
+            // Each stroke's rectangle is its outer edge: the halo's outer edge
+            // lies `MARK_HALO` past the ring's, so its inner edge meets the
+            // ring's outer edge; the ring is centred on the part's edge.
+            let ring_out = MARK_RING / 2.0;
+            let halo_out = ring_out + MARK_HALO;
+            let (x, y, w, h) = grown(r, halo_out).device(s);
+            let halo = Colour {
+                a: MARK_HALO_SHARE,
+                ..tokens.accent
+            };
+            stroke(
+                pixmap,
+                (x, y, w, h),
+                (radius + halo_out) * s,
+                MARK_HALO * s,
+                halo,
+                None,
+            );
+            let (x, y, w, h) = grown(r, ring_out).device(s);
+            let ring = Colour {
+                a: MARK_RING_SHARE,
+                ..tokens.backdrop_text
+            };
+            stroke(
+                pixmap,
+                (x, y, w, h),
+                (radius + ring_out) * s,
+                MARK_RING * s,
+                ring,
+                None,
+            );
+        }
+        State::Lifted => outline_part(pixmap, r, State::Lifted, tokens, style, s),
     }
 }
 
@@ -683,6 +884,42 @@ mod tests {
             (corner.red(), corner.green(), corner.blue()),
             "the glow lies over the middle"
         );
+    }
+
+    /// The glass stage is the mockup's deep navy at the corner, lit by
+    /// `lock_edit_glow` at 35 percent down the screen (M5.10c7f).
+    #[test]
+    fn the_glass_stage_is_the_deep_navy_at_the_corner_and_glows_in_the_middle() {
+        let t = tokens();
+        let mut pixmap = surface(1280, 800);
+        let screen = Rect::new(0.0, 0.0, 1280.0, 800.0);
+        let preview = Rect::new(256.0, 108.0, 768.0, 480.0);
+        stage(&mut pixmap, screen, preview, &t, Style::GLASS, 1.0);
+        // Each channel within `within` of the token, in 8 bits.
+        let close = |got: Colour, want: Colour, within: f32| {
+            [(got.r, want.r), (got.g, want.g), (got.b, want.b)]
+                .iter()
+                .all(|(g, w)| ((g * 255.0).round() - (w * 255.0).round()).abs() <= within)
+        };
+        let corner = pixmap.pixel(0, 0).unwrap().demultiply();
+        let corner = Colour {
+            r: f32::from(corner.red()) / 255.0,
+            g: f32::from(corner.green()) / 255.0,
+            b: f32::from(corner.blue()) / 255.0,
+            a: 1.0,
+        };
+        // The glow's falloff (`lock::glow`) reaches the corner faintly: at
+        // 1280 by 800 the corner is 6, 5 and 9 of 255 up in red, green and blue.
+        assert!(close(corner, t.lock_edit_deep, 10.0), "{corner:?}");
+        let (cx, cy) = (1280 / 2, (800.0 * GLASS_GLOW_DOWN) as u32);
+        let mid = pixmap.pixel(cx, cy).unwrap().demultiply();
+        let mid = Colour {
+            r: f32::from(mid.red()) / 255.0,
+            g: f32::from(mid.green()) / 255.0,
+            b: f32::from(mid.blue()) / 255.0,
+            a: 1.0,
+        };
+        assert!(close(mid, t.lock_edit_glow, 6.0), "{mid:?}");
     }
 
     #[test]

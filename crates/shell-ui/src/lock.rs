@@ -166,7 +166,16 @@ pub fn zoned_times(
     now: &jiff::Zoned,
     warned: &RefCell<Vec<String>>,
 ) -> Vec<(String, When)> {
-    let parts = lock_screen::applied(lock, false).parts;
+    zoned_of_parts(&lock_screen::applied(lock, false).parts, now, warned)
+}
+
+/// `zoned_times` for the parts themselves, as the edit mode shows them
+/// (M5.10c7f): the clocks' zones of `parts`, each once.
+pub fn zoned_of_parts(
+    parts: &[Placed],
+    now: &jiff::Zoned,
+    warned: &RefCell<Vec<String>>,
+) -> Vec<(String, When)> {
     let mut out: Vec<(String, When)> = Vec::new();
     for zone in parts
         .iter()
@@ -232,6 +241,8 @@ pub struct Layout {
     /// What lies behind the parts (M5.10c5c); `paint` draws it through
     /// `Backdrops`.
     pub background: Background,
+    /// How much it is darkened, in percent (M5.10c7g).
+    pub dim: u32,
     /// Each part of `Look::parts`, in the list's order: its rectangle, or None
     /// when it is not drawn (a count with no notices, a player with no card,
     /// a battery the machine lacks, a part `arrange` left out). The edit mode
@@ -278,6 +289,9 @@ pub struct Look<'a> {
     /// What lies behind the parts (M5.10c5c), as the look or the person's
     /// `background` says.
     pub background: Background,
+    /// How much the background is darkened, in percent (M5.10c7g), as
+    /// `lock_screen::applied` gives it.
+    pub dim: u32,
 }
 
 /// The screen's width below which it is Compact (M5.6c's size classes).
@@ -331,10 +345,10 @@ const BATTERY_WIDEST: &str = "100%";
 /// up to the screen again.
 const BLUR_SHRINK: u32 = 4;
 const BLUR_RADIUS: f32 = 12.0;
-/// How much of the deep backdrop colour lies over a blurred or a coloured
-/// background, and over a sharp picture, so the white words stay readable.
-const DIM: f32 = 0.3;
-const DIM_SHARP: f32 = 0.4;
+// How much of the deep backdrop colour lies over the background, so the white
+// words stay readable: `edel::lock_screen::DIM` and `DIM_SHARP` are the
+// built-in amounts, and the lock's dim (`lock_screen.dim`, M5.10c7g) is the
+// applied one, in percent.
 
 /// The one function that places everything on a screen `w` by `h` (M5.10c5):
 /// each part of `look.parts` at its anchor and offset, sized as it is drawn
@@ -383,6 +397,7 @@ pub fn screen_layout(
         keep_out: keep_out(corner_at),
         battery,
         background: applied.background,
+        dim: applied.dim,
     };
     let notices = notices && applied.notifications;
     layout(w, h, tokens, notices, &look, text)
@@ -676,6 +691,7 @@ fn place_all(
         pictures,
         battery,
         background: look.background.clone(),
+        dim: look.dim,
         placed,
     };
     (layout, clear)
@@ -800,6 +816,7 @@ pub fn lock_settings(machine: Option<&str>, person: Option<&str>) -> LockScreen 
         parts: person.parts.or(machine.parts),
         look: person.look.or(machine.look),
         background: person.background.or(machine.background),
+        dim: person.dim.or(machine.dim),
         notifications: person.notifications.or(machine.notifications),
         looks,
     }
@@ -866,6 +883,7 @@ impl Backdrops {
     pub fn get(
         &mut self,
         background: &Background,
+        dim: u32,
         wallpaper: &Wallpaper,
         size: (u32, u32),
         tokens: &Tokens,
@@ -873,18 +891,19 @@ impl Backdrops {
         if *background == Background::Backdrop {
             return None;
         }
-        let key = (backdrop_key(background, wallpaper), size.0, size.1);
+        let key = (backdrop_key(background, dim, wallpaper), size.0, size.1);
         self.made
             .entry(key)
-            .or_insert_with(|| make_backdrop(background, wallpaper, size, tokens))
+            .or_insert_with(|| make_backdrop(background, dim, wallpaper, size, tokens))
             .as_ref()
     }
 }
 
-/// What a made background is kept under: the background's own text, and for
-/// a blurred or a sharp one the wallpaper behind it (a picture's path or a
-/// colour), so a changed wallpaper makes a new one.
-fn backdrop_key(background: &Background, wallpaper: &Wallpaper) -> String {
+/// What a made background is kept under: the background's own text, the dim
+/// it is drawn at (M5.10c7g), and for a blurred or a sharp one the wallpaper
+/// behind it (a picture's path or a colour), so a changed wallpaper or dim
+/// makes a new one.
+fn backdrop_key(background: &Background, dim: u32, wallpaper: &Wallpaper) -> String {
     let behind = match wallpaper {
         Wallpaper::Background => String::new(),
         Wallpaper::Colour(colour) => colour.hex(),
@@ -892,9 +911,12 @@ fn backdrop_key(background: &Background, wallpaper: &Wallpaper) -> String {
     };
     match background {
         Background::Blurred | Background::Sharp => {
-            format!("{}|{behind}", lock_screen::background_value(background))
+            format!(
+                "{}|{behind}|{dim}",
+                lock_screen::background_value(background)
+            )
         }
-        _ => lock_screen::background_value(background),
+        _ => format!("{}|{dim}", lock_screen::background_value(background)),
     }
 }
 
@@ -905,19 +927,20 @@ fn backdrop_key(background: &Background, wallpaper: &Wallpaper) -> String {
 /// logged once.
 fn make_backdrop(
     background: &Background,
+    dim: u32,
     wallpaper: &Wallpaper,
     size: (u32, u32),
     tokens: &Tokens,
 ) -> Option<Pixmap> {
-    let (mut made, name, dim) = match (background, wallpaper) {
+    let (mut made, name) = match (background, wallpaper) {
         (Background::Backdrop, _)
         | (Background::Blurred | Background::Sharp, Wallpaper::Background) => return None,
         // A blurred or sharp background with no picture shows the colour.
         (Background::Blurred | Background::Sharp, Wallpaper::Colour(colour))
-        | (Background::Colour(colour), _) => (solid(size, *colour)?, "colour", DIM),
-        (Background::Blurred, Wallpaper::Picture(path)) => (blurred(path, size)?, "blurred", DIM),
-        (Background::Sharp, Wallpaper::Picture(path)) => (sharp(path, size)?, "sharp", DIM_SHARP),
-        (Background::Picture(path), _) => (sharp(path, size)?, "picture", DIM_SHARP),
+        | (Background::Colour(colour), _) => (solid(size, *colour)?, "colour"),
+        (Background::Blurred, Wallpaper::Picture(path)) => (blurred(path, size)?, "blurred"),
+        (Background::Sharp, Wallpaper::Picture(path)) => (sharp(path, size)?, "sharp"),
+        (Background::Picture(path), _) => (sharp(path, size)?, "picture"),
     };
     let (w, h) = size;
     fill(
@@ -928,7 +951,7 @@ fn make_backdrop(
         h as f32,
         0.0,
         Colour {
-            a: dim,
+            a: dim.min(lock_screen::MOST_DIM) as f32 / 100.0,
             ..tokens.lock_backdrop_deep
         },
     );
@@ -1148,7 +1171,7 @@ pub fn paint(
     // What lies behind: the made background, else the navy backdrop, so the
     // screen always has one (Reliable).
     let size = (pixmap.width(), pixmap.height());
-    match backdrops.get(&at.background, wallpaper, size, tokens) {
+    match backdrops.get(&at.background, at.dim, wallpaper, size, tokens) {
         Some(made) => pixmap.draw_pixmap(
             0,
             0,
@@ -2515,6 +2538,7 @@ mod tests {
             keep_out: keep_out(&corner_at),
             battery: false,
             background: Background::Backdrop,
+            dim: lock_screen::DIM,
         };
         let fallback = layout(360.0, 740.0, &tokens, false, &broken, &mut text);
         assert_eq!(fallback.field, at.field);
@@ -2688,16 +2712,34 @@ mod tests {
         let wallpaper = Wallpaper::Picture(picture.clone());
         let mut backdrops = Backdrops::default();
         let first = backdrops
-            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .get(
+                &Background::Blurred,
+                lock_screen::DIM,
+                &wallpaper,
+                (128, 96),
+                &tokens,
+            )
             .map(|p| p as *const Pixmap);
         let again = backdrops
-            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .get(
+                &Background::Blurred,
+                lock_screen::DIM,
+                &wallpaper,
+                (128, 96),
+                &tokens,
+            )
             .map(|p| p as *const Pixmap);
         assert!(first.is_some());
         assert_eq!(first, again);
         assert_eq!(backdrops.made.len(), 1);
         let made = backdrops
-            .get(&Background::Blurred, &wallpaper, (128, 96), &tokens)
+            .get(
+                &Background::Blurred,
+                lock_screen::DIM,
+                &wallpaper,
+                (128, 96),
+                &tokens,
+            )
             .unwrap();
         let mid = made.pixel(64, 48).unwrap();
         assert!(mid.red() > 40 && mid.blue() > 40, "{mid:?}");
@@ -2710,7 +2752,13 @@ mod tests {
         let picture = red_and_blue("sharp");
         let wallpaper = Wallpaper::Picture(picture.clone());
         let made = Backdrops::default()
-            .get(&Background::Sharp, &wallpaper, (128, 96), &tokens)
+            .get(
+                &Background::Sharp,
+                lock_screen::DIM_SHARP,
+                &wallpaper,
+                (128, 96),
+                &tokens,
+            )
             .map(|p| p.pixel(2, 48).unwrap())
             .expect("the sharp picture is made");
         assert!(made.red() > made.blue() + 60, "{made:?}");
@@ -2724,6 +2772,7 @@ mod tests {
         let made = Backdrops::default()
             .get(
                 &Background::Colour(red),
+                lock_screen::DIM,
                 &Wallpaper::Background,
                 (64, 48),
                 &tokens,
@@ -2731,7 +2780,8 @@ mod tests {
             .map(|p| p.pixel(10, 10).unwrap())
             .expect("the colour is made");
         // Red under the deep colour at 30 percent.
-        let want = 1.0 * (1.0 - DIM) + DIM * tokens.lock_backdrop_deep.r;
+        let dim = lock_screen::DIM as f32 / 100.0;
+        let want = 1.0 * (1.0 - dim) + dim * tokens.lock_backdrop_deep.r;
         assert!((made.red() as f32 / 255.0 - want).abs() < 0.02, "{made:?}");
     }
 
@@ -2740,26 +2790,39 @@ mod tests {
         let tokens = Tokens::built_in();
         let mut backdrops = Backdrops::default();
         let size = (128, 96);
+        let dim = lock_screen::DIM;
         assert!(
             backdrops
-                .get(&Background::Backdrop, &Wallpaper::Background, size, &tokens)
+                .get(
+                    &Background::Backdrop,
+                    dim,
+                    &Wallpaper::Background,
+                    size,
+                    &tokens
+                )
                 .is_none()
         );
         let missing = Background::Picture(PathBuf::from("/nonexistent/edel-lock-test.png"));
         assert!(
             backdrops
-                .get(&missing, &Wallpaper::Background, size, &tokens)
+                .get(&missing, dim, &Wallpaper::Background, size, &tokens)
                 .is_none()
         );
         let gone = Wallpaper::Picture(PathBuf::from("/nonexistent/edel-lock-test.jpg"));
         assert!(
             backdrops
-                .get(&Background::Sharp, &gone, size, &tokens)
+                .get(&Background::Sharp, dim, &gone, size, &tokens)
                 .is_none()
         );
         assert!(
             backdrops
-                .get(&Background::Blurred, &Wallpaper::Background, size, &tokens)
+                .get(
+                    &Background::Blurred,
+                    dim,
+                    &Wallpaper::Background,
+                    size,
+                    &tokens
+                )
                 .is_none()
         );
     }

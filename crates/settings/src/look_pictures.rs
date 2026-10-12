@@ -64,13 +64,14 @@ impl Inputs {
 }
 
 /// The name of a look's picture (without `.png`): a hash of its parts, its
-/// background and the inputs, so a picture is kept for as long as it would
+/// background, its dim and the inputs, so a picture is kept for as long as it would
 /// draw the same. FNV-1a, which does not change between runs.
-pub fn key(parts: &[Placed], background: &Background, inputs: &Inputs) -> String {
+pub fn key(parts: &[Placed], background: &Background, dim: u32, inputs: &Inputs) -> String {
     let text = format!(
-        "{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}",
         lock_screen::parts_value(parts).unwrap_or_default(),
         lock_screen::background_value(background),
+        dim,
         inputs.wallpaper,
         inputs.dark,
         inputs.tokens,
@@ -256,20 +257,24 @@ mod tests {
     fn a_picture_is_named_by_what_it_shows() {
         let parts = lock_screen::classic(false);
         let inputs = Inputs::default();
-        let blurred = key(&parts, &Background::Blurred, &inputs);
-        assert_eq!(blurred, key(&parts, &Background::Blurred, &inputs));
+        let blurred = key(&parts, &Background::Blurred, 30, &inputs);
+        assert_eq!(blurred, key(&parts, &Background::Blurred, 30, &inputs));
         assert_eq!(blurred.len(), 16, "a hash of 16 hex digits");
-        assert_ne!(blurred, key(&parts, &Background::Sharp, &inputs));
+        assert_ne!(blurred, key(&parts, &Background::Sharp, 30, &inputs));
+        assert_ne!(blurred, key(&parts, &Background::Blurred, 50, &inputs));
         let dark = Inputs {
             dark: true,
             ..Inputs::default()
         };
-        assert_ne!(blurred, key(&parts, &Background::Blurred, &dark));
+        assert_ne!(blurred, key(&parts, &Background::Blurred, 30, &dark));
         let other_wallpaper = Inputs {
             wallpaper: "hills".into(),
             ..Inputs::default()
         };
-        assert_ne!(blurred, key(&parts, &Background::Blurred, &other_wallpaper));
+        assert_ne!(
+            blurred,
+            key(&parts, &Background::Blurred, 30, &other_wallpaper)
+        );
     }
 
     #[test]

@@ -71,6 +71,11 @@ lock_backdrop = "#2f3c5e"
 lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
 lock_glow_second = "#454079"
+# The lock editor's stage behind its picture (M5.10c7f, the mockup's edit
+# screen): the deep navy it is filled with and the soft glow that lights it;
+# the same in both schemes, as the lock is dark in both.
+lock_edit_deep = "#141a2b"
+lock_edit_glow = "#2a3456"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -104,6 +109,11 @@ lock_backdrop = "#2f3c5e"
 lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
 lock_glow_second = "#454079"
+# The lock editor's stage behind its picture (M5.10c7f, the mockup's edit
+# screen): the deep navy it is filled with and the soft glow that lights it;
+# the same in both schemes, as the lock is dark in both.
+lock_edit_deep = "#141a2b"
+lock_edit_glow = "#2a3456"
 
 # The accents a person picks from (M5.12b1, appearance.accent): each name
 # has the light scheme's shade and the dark scheme's. `blue` is the

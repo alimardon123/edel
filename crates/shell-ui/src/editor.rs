@@ -11,12 +11,13 @@ use std::rc::Rc;
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::panel_edit::Group;
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item as Node;
 use crate::edit_kit;
-use crate::paint::{EDIT_PAD, Face, LIFTED, Text, outline};
+use crate::lock_editor;
+use crate::paint::{EDIT_PAD, Face, LIFTED, Text, fill, outline};
 use crate::popup::{self, Card, Rect, wrap};
 use crate::trayview::Key;
 use crate::widgets::{Canvas, Widget};
@@ -33,6 +34,34 @@ pub const WIDTH: f32 = 560.0;
 const SIDE: f32 = 32.0;
 /// A tile's size on a desktop; a compact drawer shrinks its width to fit.
 pub const TILE: (f32, f32) = (104.0, 84.0);
+/// A tile of a bare strip (the lock screen's, M5.10c7f): 112 by 92 logical
+/// pixels, the mockup's, with its live preview and its title stacked in it.
+pub const BARE_TILE: (f32, f32) = (112.0, 92.0);
+/// A tab's width in a bare drawer (the lock screen's strip), logical pixels
+/// (M5.10c7e): each tab's segment is this wide, the tabs centred under the bar.
+pub const TAB_W: f32 = 120.0;
+/// The bare strip's tabs (M5.10c7f): each segment 32 px high, the track round
+/// them `BARE_TAB_PAD` (4 px) wide, its corners `BARE_TRACK_RADIUS`.
+const BARE_TAB_H: f32 = 32.0;
+const BARE_TAB_PAD: f32 = 4.0;
+const BARE_TRACK_RADIUS: f32 = 14.0;
+const BARE_SEGMENT_RADIUS: f32 = 10.0;
+/// The bare strip's tile (M5.10c7f): its corners, its fill (white at 6 percent,
+/// 10 under the pointer), its hairline (white at 10 percent), the gap between
+/// its preview and its title, and the title's size.
+const BARE_RADIUS: f32 = 16.0;
+const BARE_FILL: f32 = 0.06;
+const BARE_HOVER: f32 = 0.10;
+const BARE_EDGE: f32 = 0.10;
+const BARE_GAP: f32 = 6.0;
+const BARE_TITLE: f32 = 11.5;
+const BARE_TITLE_LINE: f32 = 14.0;
+/// The tab words' shares: the others white at 80 percent (the chosen is dark).
+const BARE_OTHER_SHARE: f32 = 0.80;
+/// The tab track's fill, white at 8 percent, and its hairline at 10.
+const BARE_TRACK_FILL: f32 = 0.08;
+const BARE_TRACK_EDGE: f32 = 0.10;
+const BARE_LINE: f32 = 1.0;
 /// The opacity of a tile a panel already holds (its picture and words alike).
 const CHOSEN_OPACITY: f32 = 0.5;
 /// The room between tiles, rows and columns alike, and between the buttons.
@@ -147,6 +176,10 @@ pub struct View {
     /// The hint's words in place of the kind's, when set and no tile is being
     /// dragged over the drawer (M5.10c7a: what Done does to the look).
     pub subtitle: Option<&'static str>,
+    /// A bare strip (M5.10c7e, the lock screen's edit mode): no sheet, no
+    /// heading, no hint and no footer, as the edit's bar holds those; the tabs
+    /// row first at the top, then the tiles, and Undo and Done are not reached.
+    pub bare: bool,
 }
 
 /// Where a widget dragged to a panel would land there (M5.31b): the group,
@@ -273,6 +306,9 @@ fn widget_of(name: &str) -> Option<&'static Widget> {
 /// the screen less `SIDE` when that is narrower.
 fn card_width(view: &View) -> f32 {
     let screen = view.width as f32;
+    if view.bare && screen > 0.0 {
+        return screen - 2.0 * crate::lock::MARGIN;
+    }
     match (view.compact, screen > 0.0) {
         (true, true) => screen,
         (_, true) => WIDTH.min(screen - SIDE),
@@ -286,20 +322,20 @@ fn columns(view: &View) -> usize {
         return COLUMNS_COMPACT;
     }
     let inner = card_width(view) - 2.0 * PAD;
-    ((inner + GAP) / (TILE.0 + GAP)).floor().max(1.0) as usize
+    let tile = if view.bare { BARE_TILE.0 } else { TILE.0 };
+    ((inner + GAP) / (tile + GAP)).floor().max(1.0) as usize
 }
 
 /// The drawer's size and where each part lies: the one function that
 /// places everything. Tiles fill rows from the top, centred across the
 /// card; the footer holds Undo and Done at the right.
 pub fn layout(view: &View) -> Layout {
+    if view.bare {
+        return layout_bare(view);
+    }
     let width = card_width(view);
     let columns = columns(view);
-    let tile_w = if view.compact {
-        (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
-    } else {
-        TILE.0
-    };
+    let tile_w = tile_width(view, width, columns);
     // The drawer keeps the height of its tallest tab, so changing tabs never
     // makes it jump (M5.10c6c3).
     let counted = view.tiles.len().max(view.tallest);
@@ -320,24 +356,7 @@ pub fn layout(view: &View) -> Layout {
     } else {
         tabs_row.y + button + SPACE
     };
-    // Each row's tiles are centred across the card on their own, so a short
-    // row (the last one) sits in the middle too.
-    let row_left = |row: usize| {
-        let n = (counted - row * columns).min(columns) as f32;
-        let used = n * tile_w + (n - 1.0) * TILE_GAP;
-        ((width - used) / 2.0).round()
-    };
-    let tiles = (0..view.tiles.len())
-        .map(|i| {
-            let (row, column) = (i / columns, i % columns);
-            Rect::new(
-                row_left(row) + column as f32 * (tile_w + TILE_GAP),
-                top + row as f32 * (TILE.1 + TILE_GAP),
-                tile_w,
-                TILE.1,
-            )
-        })
-        .collect();
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted, TILE.1);
     let tiles_bottom = top + rows as f32 * TILE.1 + (rows - 1) as f32 * TILE_GAP;
     // The footer holds the buttons, with the card's padding under them.
     let footer_top = tiles_bottom + SPACE;
@@ -351,6 +370,96 @@ pub fn layout(view: &View) -> Layout {
         tiles,
         undo,
         done,
+        tabs_row,
+        tabs,
+    }
+}
+
+/// A tile's width: the desktop's `TILE` width, or on a Compact screen the
+/// card's width shared out across the columns.
+fn tile_width(view: &View, width: f32, columns: usize) -> f32 {
+    if view.compact {
+        (width - 2.0 * PAD - (columns - 1) as f32 * TILE_GAP) / columns as f32
+    } else if view.bare {
+        BARE_TILE.0
+    } else {
+        TILE.0
+    }
+}
+
+/// The tiles' places from `top`, `columns` across: each row's tiles centred
+/// across the card on their own, so a short row (the last one) sits in the
+/// middle too. `counted` is the most tiles any tab holds, which keeps the
+/// card's height (`tallest`).
+fn place_tiles(
+    view: &View,
+    width: f32,
+    columns: usize,
+    tile_w: f32,
+    top: f32,
+    counted: usize,
+    tile_h: f32,
+) -> Vec<Rect> {
+    let row_left = |row: usize| {
+        let n = (counted - row * columns).min(columns) as f32;
+        let used = n * tile_w + (n - 1.0) * TILE_GAP;
+        ((width - used) / 2.0).round()
+    };
+    (0..view.tiles.len())
+        .map(|i| {
+            let (row, column) = (i / columns, i % columns);
+            Rect::new(
+                row_left(row) + column as f32 * (tile_w + TILE_GAP),
+                top + row as f32 * (tile_h + TILE_GAP),
+                tile_w,
+                tile_h,
+            )
+        })
+        .collect()
+}
+
+/// A bare strip's size and places (M5.10c7e): the tabs' row at the top, the
+/// tiles under it, then no padding below. Undo and Done have no place here
+/// (the edit's bar holds them), so their rectangles are empty at the corner.
+fn layout_bare(view: &View) -> Layout {
+    let width = card_width(view);
+    let columns = columns(view);
+    let tile_w = tile_width(view, width, columns);
+    let counted = view.tiles.len().max(view.tallest);
+    let rows = counted.max(1).div_ceil(columns);
+    let (tabs_row, tabs) = if view.tabs.is_empty() {
+        (Rect::new(0.0, 0.0, 0.0, 0.0), Vec::new())
+    } else {
+        let n = view.tabs.len() as f32;
+        let w = n * TAB_W + 2.0 * BARE_TAB_PAD;
+        let h = BARE_TAB_H + 2.0 * BARE_TAB_PAD;
+        let row = Rect::new(((width - w) / 2.0).round(), 0.0, w, h);
+        let tabs = (0..view.tabs.len())
+            .map(|i| {
+                Rect::new(
+                    row.x + BARE_TAB_PAD + i as f32 * TAB_W,
+                    row.y + BARE_TAB_PAD,
+                    TAB_W,
+                    BARE_TAB_H,
+                )
+            })
+            .collect();
+        (row, tabs)
+    };
+    let top = if view.tabs.is_empty() {
+        0.0
+    } else {
+        tabs_row.y + tabs_row.h + SPACE
+    };
+    let tiles = place_tiles(view, width, columns, tile_w, top, counted, BARE_TILE.1);
+    let height = top + rows as f32 * BARE_TILE.1 + (rows - 1) as f32 * TILE_GAP;
+    let none = Rect::new(0.0, 0.0, 0.0, 0.0);
+    Layout {
+        size: (width.ceil() as u32, height.ceil() as u32),
+        card: Rect::new(0.0, 0.0, width, height),
+        tiles,
+        undo: none,
+        done: none,
         tabs_row,
         tabs,
     }
@@ -396,8 +505,10 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Part> {
 pub fn ring(view: &View) -> Vec<Part> {
     let mut out: Vec<Part> = (0..view.tabs.len()).map(Part::Tab).collect();
     out.extend((0..view.tiles.len()).map(Part::Tile));
-    out.push(Part::Undo);
-    out.push(Part::Done);
+    if !view.bare {
+        out.push(Part::Undo);
+        out.push(Part::Done);
+    }
     out
 }
 
@@ -437,7 +548,7 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
         }
         (Key::Up, Some(Part::Tile(i))) => Step::Focus(Part::Tile(i.saturating_sub(columns))),
         (Key::Down, Some(Part::Tile(i))) if i + columns < n => Step::Focus(Part::Tile(i + columns)),
-        (Key::Down, Some(Part::Tile(_))) => Step::Focus(Part::Undo),
+        (Key::Down, Some(Part::Tile(_))) if !view.bare => Step::Focus(Part::Undo),
         (Key::Left | Key::Up, Some(Part::Done)) => Step::Focus(Part::Undo),
         (Key::Right | Key::Down, Some(Part::Undo)) => Step::Focus(Part::Done),
         (Key::Left | Key::Up, Some(Part::Undo)) if n > 0 => Step::Focus(Part::Tile(n - 1)),
@@ -457,7 +568,9 @@ pub fn places(l: &Layout, view: &View) -> String {
     for (tile, rect) in view.tiles.iter().zip(&l.tiles) {
         out.push_str(&format!(", tile {} {}", tile.name, at(*rect)));
     }
-    out.push_str(&format!(", undo {}, done {}", at(l.undo), at(l.done)));
+    if !view.bare {
+        out.push_str(&format!(", undo {}, done {}", at(l.undo), at(l.done)));
+    }
     out
 }
 
@@ -557,7 +670,7 @@ fn thumbnail(layer: &mut Pixmap, picture: &Pixmap, w: f32, h: f32, s: f32) {
 
 /// The words a drawer's hint says (`paint`): the panels' and the lock
 /// screen's, and on the lock screen's tabs what their tiles do.
-fn hint_words(view: &View) -> &'static str {
+pub(crate) fn hint_words(view: &View) -> &'static str {
     if let (Some(words), false) = (view.subtitle, view.taking) {
         return words;
     }
@@ -567,10 +680,10 @@ fn hint_words(view: &View) -> &'static str {
             "Drag a widget along the panels or onto another, from here to add it, or here to take it away",
         ),
         (Kind::LockScreen, true) => tr("Drop here to take it away"),
-        (Kind::LockScreen, false) if view.tab == 1 => {
+        (Kind::LockScreen, false) if view.tab == 2 => {
             tr("Choose a look, which brings its parts and its background")
         }
-        (Kind::LockScreen, false) if view.tab == 2 => {
+        (Kind::LockScreen, false) if view.tab == 1 => {
             tr("Choose what lies behind the lock screen's parts")
         }
         (Kind::LockScreen, false) => {
@@ -598,7 +711,9 @@ pub fn paint(
     let mut text = text;
     let style = style(view.kind);
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
-    edit_kit::sheet(pixmap, l.card, tokens, style, s);
+    if !view.bare {
+        edit_kit::sheet(pixmap, l.card, tokens, style, s);
+    }
     if view.taking {
         let (x, y, w, h) = l.card.device(s);
         outline(
@@ -611,7 +726,9 @@ pub fn paint(
     }
     let heading = (tokens.panel_text_size + 2) as f32 * s;
     let small = tokens.panel_text_small_size as f32 * s;
-    if let Some(text) = text.as_deref_mut() {
+    if view.bare {
+        // The strip has no heading or hint: the edit's bar holds them.
+    } else if let Some(text) = text.as_deref_mut() {
         let heading_words = match (&view.heading, view.kind) {
             (Some(words), _) => words.as_str(),
             (None, Kind::Panels) => tr("Edit panels"),
@@ -625,6 +742,7 @@ pub fn paint(
     let hint_words = hint_words(view);
     let room = l.card.w - 2.0 * PAD;
     let lines = match text.as_deref_mut() {
+        _ if view.bare => Vec::new(),
         Some(text) => wrap(hint_words, hint_lines(view), room * s, |t| {
             text.line(t, small).width
         }),
@@ -635,7 +753,14 @@ pub fn paint(
         let rect = Rect::new(PAD, top, room, HINT_LINE);
         edit_kit::hint(pixmap, words, rect, tokens, text.as_deref_mut(), style, s);
     }
-    if !view.tabs.is_empty() {
+    if view.bare && !view.tabs.is_empty() {
+        paint_bare_tabs(pixmap, view, l, tokens, text.as_deref_mut(), s);
+        if let Some(Part::Tab(i)) = view.focus {
+            if let Some(segment) = l.tabs.get(i) {
+                popup::focus_ring(pixmap, *segment, tokens.radius_small as f32, s, tokens);
+            }
+        }
+    } else if !view.tabs.is_empty() {
         let ink = edit_kit::inks(style, tokens);
         popup::segmented_with(
             pixmap,
@@ -667,34 +792,51 @@ pub fn paint(
         } else {
             edit_kit::State::Rest
         };
-        let tile_rect = Rect::new(0.0, 0.0, rect.w, rect.h);
-        edit_kit::tile(
-            &mut layer,
-            tile_rect,
-            tile.icon,
-            &tile.title,
-            state,
-            false,
-            tokens,
-            text.as_deref_mut(),
-            style,
-            s,
-        );
-        // A panel's tile shows the widget as it is on a panel; a lock
-        // screen's tile has its icon and title only.
-        if let Some(Picture(picture)) = &tile.picture {
-            thumbnail(&mut layer, picture, rect.w, rect.h, s);
-        }
-        if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(&tile.name)) {
-            picture(
+        if view.bare {
+            // The strip's own tile (M5.10c7f): its preview and title stacked.
+            let preview = tile.picture.as_ref().map(|Picture(p)| p.as_ref());
+            let hover = state == edit_kit::State::Hover;
+            bare_tile(
                 &mut layer,
-                widget,
-                &tile.shown,
+                rect.w,
+                rect.h,
+                &tile.title,
+                preview,
+                hover,
                 tokens,
                 text.as_deref_mut(),
-                icons.as_deref_mut(),
                 s,
             );
+        } else {
+            let tile_rect = Rect::new(0.0, 0.0, rect.w, rect.h);
+            edit_kit::tile(
+                &mut layer,
+                tile_rect,
+                tile.icon,
+                &tile.title,
+                state,
+                false,
+                tokens,
+                text.as_deref_mut(),
+                style,
+                s,
+            );
+            // A panel's tile shows the widget as it is on a panel; a lock
+            // screen's tile has its icon and title only.
+            if let Some(Picture(picture)) = &tile.picture {
+                thumbnail(&mut layer, picture, rect.w, rect.h, s);
+            }
+            if let (Kind::Panels, Some(widget)) = (view.kind, widget_of(&tile.name)) {
+                picture(
+                    &mut layer,
+                    widget,
+                    &tile.shown,
+                    tokens,
+                    text.as_deref_mut(),
+                    icons.as_deref_mut(),
+                    s,
+                );
+            }
         }
         let opacity = if view.lifted == Some(i) {
             LIFTED
@@ -722,7 +864,10 @@ pub fn paint(
     for (part, rect, words, kind) in [
         (Part::Undo, l.undo, tr("Undo"), edit_kit::ButtonKind::Quiet),
         (Part::Done, l.done, tr("Done"), edit_kit::ButtonKind::Accent),
-    ] {
+    ]
+    .into_iter()
+    .filter(|_| !view.bare)
+    {
         let state = if view.focus == Some(part) {
             edit_kit::State::Focus
         } else if view.hover == Some(part) {
@@ -742,6 +887,136 @@ pub fn paint(
             s,
         );
     }
+}
+
+/// The bare strip's tabs (M5.10c7f), as the mockup's segmented control: a track
+/// of white at 8 percent with a 1 px hairline of white at 10, the chosen tab a
+/// white pill with dark words (`lock_edit_deep`, semibold), the others regular
+/// at 80 percent white. The keyboard's focus ring is drawn by the caller.
+fn paint_bare_tabs(
+    pixmap: &mut Pixmap,
+    view: &View,
+    l: &Layout,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let white = tokens.backdrop_text;
+    let (x, y, w, h) = l.tabs_row.device(s);
+    fill(
+        pixmap,
+        x,
+        y,
+        w,
+        h,
+        BARE_TRACK_RADIUS * s,
+        Colour {
+            a: BARE_TRACK_FILL,
+            ..white
+        },
+    );
+    edit_kit::stroke(
+        pixmap,
+        (x, y, w, h),
+        BARE_TRACK_RADIUS * s,
+        BARE_LINE * s,
+        Colour {
+            a: BARE_TRACK_EDGE,
+            ..white
+        },
+        None,
+    );
+    if let Some(segment) = l.tabs.get(view.tab) {
+        let (x, y, w, h) = segment.device(s);
+        fill(pixmap, x, y, w, h, BARE_SEGMENT_RADIUS * s, white);
+    }
+    let Some(text) = text else {
+        return;
+    };
+    let size = tokens.panel_text_size as f32 * s;
+    for (j, (word, segment)) in view.tabs.iter().zip(&l.tabs).enumerate() {
+        let chosen = j == view.tab;
+        let (face, colour) = if chosen {
+            (Face::SEMIBOLD, tokens.lock_edit_deep)
+        } else {
+            (
+                Face::REGULAR,
+                Colour {
+                    a: BARE_OTHER_SHARE,
+                    ..white
+                },
+            )
+        };
+        let mut line = text.fit_in(word, size, segment.w * s, face);
+        let x = segment.x * s + ((segment.w * s - line.width) / 2.0).round();
+        let y = popup::middle(segment.y, segment.h, size, s);
+        text.draw(pixmap, &mut line, x, y, colour);
+    }
+}
+
+/// A bare strip's tile (M5.10c7f, the mockup's strip) drawn into its own layer
+/// of `w` by `h` logical pixels: a rounded tile of white at 6 percent (10 under
+/// the pointer) with a 1 px hairline of white at 10 percent, and its live
+/// preview and its title stacked and centred together, `BARE_GAP` apart, the
+/// title 11.5 px regular. The preview is drawn at `PREVIEW_SCALE`, so it is
+/// scaled back to its own box of `PREVIEW_BOX`.
+#[allow(clippy::too_many_arguments)]
+fn bare_tile(
+    layer: &mut Pixmap,
+    w: f32,
+    h: f32,
+    title: &str,
+    preview: Option<&Pixmap>,
+    hover: bool,
+    tokens: &Tokens,
+    text: Option<&mut Text>,
+    s: f32,
+) {
+    let white = tokens.backdrop_text;
+    let (x, y, dw, dh) = Rect::new(0.0, 0.0, w, h).device(s);
+    let share = if hover { BARE_HOVER } else { BARE_FILL };
+    let fill_colour = Colour { a: share, ..white };
+    fill(layer, x, y, dw, dh, BARE_RADIUS * s, fill_colour);
+    let edge = Colour {
+        a: BARE_EDGE,
+        ..white
+    };
+    edit_kit::stroke(
+        layer,
+        (x, y, dw, dh),
+        BARE_RADIUS * s,
+        BARE_LINE * s,
+        edge,
+        None,
+    );
+    let (box_w, box_h) = lock_editor::PREVIEW_BOX;
+    let (preview_h, gap) = if preview.is_some() {
+        (box_h, BARE_GAP)
+    } else {
+        (0.0, 0.0)
+    };
+    let group = preview_h + gap + BARE_TITLE_LINE;
+    let top = ((h - group) / 2.0).round();
+    if let Some(preview) = preview {
+        // The preview's pixmap is drawn at `PREVIEW_SCALE`; this puts it at its
+        // own box, centred across the tile.
+        let k = s / lock_editor::PREVIEW_SCALE;
+        let left = ((w - box_w) / 2.0).round();
+        let transform = Transform::from_row(k, 0.0, 0.0, k, left * s, top * s);
+        let paint = PixmapPaint {
+            quality: FilterQuality::Bilinear,
+            ..PixmapPaint::default()
+        };
+        layer.draw_pixmap(0, 0, preview.as_ref(), &paint, transform, None);
+    }
+    let Some(text) = text else {
+        return;
+    };
+    let size = BARE_TITLE * s;
+    let mut line = text.fit_in(title, size, (w - 2.0 * BARE_GAP) * s, Face::REGULAR);
+    let at = ((w * s - line.width) / 2.0).round();
+    let baseline = popup::middle(top + preview_h + gap, BARE_TITLE_LINE, size, s);
+    text.draw(layer, &mut line, at, baseline, white);
 }
 
 /// What a screen reader finds: each tile as a button, named by its title
@@ -788,8 +1063,10 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         };
         button(label, at(*rect))
     }));
-    out.push(button(tr("Undo").into(), at(l.undo)));
-    out.push(button(tr("Done").into(), at(l.done)));
+    if !view.bare {
+        out.push(button(tr("Undo").into(), at(l.undo)));
+        out.push(button(tr("Done").into(), at(l.done)));
+    }
     out
 }
 
@@ -823,6 +1100,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         }
     }
 
@@ -1068,6 +1346,7 @@ mod tests {
                 taking: false,
                 heading: None,
                 subtitle: None,
+                bare: false,
             };
             let l = layout(&v);
             let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1133,6 +1412,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         };
         let l = layout(&v);
         let mut pixmap = Pixmap::new(l.size.0 * 2, l.size.1 * 2).unwrap();
@@ -1183,6 +1463,7 @@ mod tests {
             taking: false,
             heading: None,
             subtitle: None,
+            bare: false,
         }
     }
 

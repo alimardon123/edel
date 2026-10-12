@@ -483,6 +483,12 @@ pub const KEYS: &[Key] = &[
     // shows, and the person's own looks made by Save as.
     now("lock_screen.look", Kind::LockLook),
     now("lock_screen.background", Kind::LockBackground),
+    // How much the background is darkened, in percent (M5.10c7g): absent is
+    // the look's own, else the background's default.
+    now(
+        "lock_screen.dim",
+        Kind::WholeFromTo(0, crate::lock_screen::MOST_DIM as i64),
+    ),
     now(
         "lock_screen.notifications",
         Kind::OneOf(crate::lock_screen::NOTIFICATIONS),
@@ -1002,6 +1008,11 @@ pub struct LockScreen {
     /// absent is the look's.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// How much the background is darkened, in percent, 0 to 80 (M5.10c7g);
+    /// absent is the look's own, else the background's default
+    /// ([`crate::lock_screen::default_dim`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dim: Option<u32>,
     /// `count`, the unread notifications' number, or `none`; absent is `count`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notifications: Option<String>,
@@ -1021,6 +1032,10 @@ pub struct OwnLook {
     /// wallpaper, as for every look but classic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
+    /// As `lock_screen.dim` takes it (M5.10c7g); absent is the background's
+    /// default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dim: Option<u32>,
 }
 
 /// The Default apps page.
@@ -2598,6 +2613,8 @@ cursor_size = 11
             "\"/home/you/lock.jpg\"",
         );
         assert_eq!(picture.background.as_deref(), Some("/home/you/lock.jpg"));
+        let dim = set_then_read("format = 1\n", "lock_screen.dim", "40");
+        assert_eq!(dim.dim, Some(40));
         let count = set_then_read("format = 1\n", "lock_screen.notifications", "none");
         assert_eq!(count.notifications.as_deref(), Some("none"));
         let own = set_then_read(
@@ -2647,6 +2664,8 @@ cursor_size = 11
                 r#"{ minimal = { parts = [{ part = "person", at = "centre" }] } }"#,
                 "\"minimal\" is a built-in look",
             ),
+            ("lock_screen.dim", "81", "a whole number from 0 to 80"),
+            ("lock_screen.dim", "\"40\"", "a whole number from 0 to 80"),
             ("lock_screen.looks", "\"home\"", "looks as tables"),
         ] {
             let error = set("format = 1\n", key, bad).unwrap_err();

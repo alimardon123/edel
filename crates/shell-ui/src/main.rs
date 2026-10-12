@@ -231,6 +231,8 @@ struct Shell {
     tooltip_timer: Option<RegistrationToken>,
     /// Whether Shift is held, for Shift+F10 on the tray's grid.
     shift: bool,
+    /// Whether Control is held (M5.10c7f: Ctrl+Z puts a lock edit back).
+    ctrl: bool,
     /// The status area's reading (M5.9a): whether a panel holds it, how
     /// many threads read or run something, whether another reading is
     /// wanted when they end (and whether with Bluetooth), the way back to
@@ -456,6 +458,7 @@ fn run() -> Result<()> {
         tooltip: None,
         tooltip_timer: None,
         shift: false,
+        ctrl: false,
         status_wanted,
         status_busy: 0,
         status_again: None,
@@ -2438,6 +2441,7 @@ impl KeyboardHandler for Shell {
         _: u32,
     ) {
         self.shift = modifiers.shift;
+        self.ctrl = modifiers.ctrl;
         self.lock_caps(modifiers.caps_lock);
     }
 }

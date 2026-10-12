@@ -155,7 +155,7 @@ fn card_list(lock: &LockScreen, inputs: &Inputs) -> Vec<(String, LookShown, Stri
                 ..LockScreen::default()
             };
             let applied = lock_screen::applied(&look, false);
-            let key = look_pictures::key(&applied.parts, &applied.background, inputs);
+            let key = look_pictures::key(&applied.parts, &applied.background, applied.dim, inputs);
             let shown = (applied.parts, applied.background == Background::Backdrop);
             (name, shown, key)
         })
@@ -428,7 +428,7 @@ impl Ui {
             },
             false,
         );
-        let current_key = look_pictures::key(&alone.parts, &alone.background, &inputs);
+        let current_key = look_pictures::key(&alone.parts, &alone.background, alone.dim, &inputs);
         look_pictures::show_drawn(&self.current_view);
         if lock.parts.is_none() && lock.background.is_none() {
             look_pictures::want(&self.current_view, &look, &current_key);
@@ -1497,6 +1497,7 @@ mod tests {
             OwnLook {
                 parts: parts.clone(),
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()
@@ -1513,6 +1514,7 @@ mod tests {
             OwnLook {
                 parts,
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()
@@ -1536,6 +1538,7 @@ mod tests {
         let own = OwnLook {
             parts: lock_screen::classic(false),
             background: None,
+            dim: None,
         };
         let lock = LockScreen {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
@@ -1555,6 +1558,7 @@ mod tests {
         let own = OwnLook {
             parts: lock_screen::classic(false),
             background: Some("backdrop".to_string()),
+            dim: None,
         };
         let lock = LockScreen {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
@@ -1614,6 +1618,7 @@ mod tests {
                 OwnLook {
                     parts: parts.clone(),
                     background: None,
+                    dim: None,
                 },
             ),
             (
@@ -1621,6 +1626,7 @@ mod tests {
                 OwnLook {
                     parts: lock_screen::classic(true),
                     background: None,
+                    dim: None,
                 },
             ),
         ]
@@ -1643,6 +1649,7 @@ mod tests {
             OwnLook {
                 parts: lock_screen::classic(false),
                 background: None,
+                dim: None,
             },
         )]
         .into_iter()
