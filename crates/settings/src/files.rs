@@ -457,6 +457,46 @@ impl Files {
             .map(|keys| keys.to_string())
     }
 
+    /// The whole `[shortcuts]` as the desktop follows it: the machine's
+    /// lines, the person's over them (M5.13b, the page's conflicts and
+    /// the chords it writes).
+    pub fn shortcut_table(&self) -> BTreeMap<String, String> {
+        let shortcuts = |path| Self::read(path).map(|f| f.shortcuts).unwrap_or_default();
+        let mut table = shortcuts(Some(&self.machine));
+        table.extend(shortcuts(self.person.as_ref()));
+        table
+    }
+
+    /// The value to write for `action`'s line once `keys` are chosen: the
+    /// keys, or `None` when they are what applies without the person's
+    /// line (the machine's, else the release's default), so the line is
+    /// taken out and never written (ADR-008).
+    pub fn shortcut_line(&self, action: &str, keys: &str) -> Option<String> {
+        let key = format!("shortcuts.{action}");
+        let read = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        let without = settings::chosen(&key, read(Some(&self.machine)).as_deref(), None)
+            .or_else(|| edel::shortcuts::find(action).map(|a| a.default.to_string()));
+        match without {
+            Some(without) if same_value(&without, keys) => None,
+            _ => Some(keys.to_string()),
+        }
+    }
+
+    /// Writes `[shortcuts]` lines of the person's file in one write, in the
+    /// order given (a chord's old holder is cleared before the chord moves
+    /// to it); `None` takes a line out.
+    pub fn write_shortcuts(&self, edits: &[(String, Option<String>)]) -> Result<(), String> {
+        let path = self
+            .person
+            .as_ref()
+            .ok_or("there is no home folder to keep your settings in")?;
+        let pairs: Vec<(&str, Option<&str>)> = edits
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_deref()))
+            .collect();
+        settings::write_all(path, &pairs).map_err(|e| format!("{e:#}"))
+    }
+
     /// Whether banners are kept away (M5.9b): the person's file over the
     /// machine's, off when neither says.
     pub fn do_not_disturb(&self) -> bool {

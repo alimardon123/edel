@@ -27,6 +27,7 @@ use smithay::input::pointer::{
 };
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Serial};
+use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat;
 use smithay::wayland::tablet_manager::{TabletDescriptor, TabletSeatTrait};
 
 use edel_compositor::frame::{self, Button, Hit};
@@ -100,6 +101,14 @@ impl Edel {
                 let mut tapped = None;
                 let mut ending = None;
                 let keyboard = self.seat.get_keyboard()?;
+                // The focused surface may ask for its keys without ours
+                // (M5.13b): then no shortcut acts, only the terminals and
+                // the keys every keyboard has.
+                let inhibited = keyboard.current_focus().is_some_and(|surface| {
+                    self.seat
+                        .keyboard_shortcuts_inhibitor_for_surface(&surface)
+                        .is_some_and(|inhibitor| inhibitor.is_active())
+                });
                 let action = keyboard.input(
                     self,
                     event.key_code(),
@@ -143,6 +152,11 @@ impl Edel {
                         // Keys where a Latin layout has them, whatever the
                         // layout.
                         let latin = keysym.raw_latin_sym_or_raw_current_sym();
+                        let bound = if inhibited {
+                            None
+                        } else {
+                            crate::shortcuts::find(&state.bindings, modifiers, latin)
+                        };
                         // A modifier pressed alone and let go with nothing
                         // between is a tap (the launcher's Super); the app
                         // still hears both.
@@ -170,7 +184,7 @@ impl Edel {
                         // windows: Escape leaves it, shortcuts still work.
                         if pressed
                             && state.overview.is_some()
-                            && crate::shortcuts::find(&state.bindings, modifiers, latin).is_none()
+                            && bound.is_none()
                             && !vts.contains(&sym)
                             && crate::shortcuts::media_key(sym).is_none()
                         {
@@ -188,17 +202,16 @@ impl Edel {
                             ))
                         } else if let Some(name) = crate::shortcuts::media_key(sym) {
                             FilterResult::Intercept(Action::Media(name))
-                        } else if let Some(act) =
-                            crate::shortcuts::find(&state.bindings, modifiers, latin)
-                        {
+                        } else if let Some(act) = bound {
                             FilterResult::Intercept(Action::Shortcut(act))
                         } else {
                             FilterResult::Forward
                         }
                     },
                 );
-                if let Some(act) =
-                    tapped.and_then(|sym| crate::shortcuts::tapped(&self.bindings, sym))
+                if let Some(act) = tapped
+                    .filter(|_| !inhibited)
+                    .and_then(|sym| crate::shortcuts::tapped(&self.bindings, sym))
                 {
                     self.shortcut(act);
                 }

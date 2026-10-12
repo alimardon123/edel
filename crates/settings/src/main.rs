@@ -31,6 +31,7 @@ mod preview;
 mod rows;
 mod screens;
 mod shape;
+mod shortcuts;
 mod sound;
 mod status;
 mod style;
@@ -334,6 +335,16 @@ fn all_pages() -> Vec<Page> {
                 section: Some(page.section),
                 build: |theme| notifications::page(theme),
                 needs: Some("shell"),
+                group: Some(page.group),
+            }),
+            // The keys of each action, which `edel::shortcuts` holds; no
+            // feature, as every image has them (M5.13b).
+            "shortcuts" => Some(Page {
+                title: tr(page.title),
+                icon: "gear",
+                section: Some(page.section),
+                build: |_| shortcuts::page(),
+                needs: None,
                 group: Some(page.group),
             }),
             // Updates and System run `edel`, which every image has.
@@ -702,6 +713,7 @@ mod tests {
                 "Sound",
                 "Power",
                 "Notifications",
+                "Shortcuts",
                 "Users",
                 "Updates",
                 "System",
@@ -812,6 +824,7 @@ mod tests {
                 "Sound",
                 "Power",
                 "Notifications",
+                "Shortcuts",
                 "Users",
                 "Updates",
                 "System",
@@ -835,7 +848,11 @@ mod tests {
         assert_eq!(titles("pinned"), ["Panels"]);
         assert_eq!(titles("dynamic"), ["Workspaces"]);
         assert_eq!(titles("switcher"), ["Appearance"]);
-        assert_eq!(titles("lock"), ["Lock screen"], "its title");
+        assert_eq!(
+            titles("lock"),
+            ["Lock screen", "Shortcuts"],
+            "its title, and the lock key in Shortcuts"
+        );
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
         assert!(titles("nothing like this").is_empty());
@@ -856,18 +873,18 @@ mod tests {
         assert_eq!(at("display"), Some(7), "the start of one name");
         assert_eq!(at("sound"), Some(8));
         assert_eq!(at("Sound"), Some(8));
-        assert_eq!(at("users"), Some(11));
+        assert_eq!(at("users"), Some(12));
         assert_eq!(at("network"), Some(5));
         assert_eq!(at("bluetooth"), Some(6));
         assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
-        assert_eq!(at("updates"), Some(12));
-        assert_eq!(at("system"), Some(13));
-        assert_eq!(at("sy"), Some(13));
-        assert_eq!(at("about"), Some(14));
-        assert_eq!(at("abo"), Some(14));
+        assert_eq!(at("updates"), Some(13));
+        assert_eq!(at("system"), Some(14));
+        assert_eq!(at("sy"), Some(14));
+        assert_eq!(at("about"), Some(15));
+        assert_eq!(at("abo"), Some(15));
         assert_eq!(at(""), None);
         assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
@@ -895,11 +912,11 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(14));
-        assert_eq!(start(&["--page=about"]), Ok(14));
-        assert_eq!(start(&["--page", "updates"]), Ok(12));
+        assert_eq!(start(&["--page", "about"]), Ok(15));
+        assert_eq!(start(&["--page=about"]), Ok(15));
+        assert_eq!(start(&["--page", "updates"]), Ok(13));
         assert_eq!(start(&["--page", "sound"]), Ok(8));
-        assert_eq!(start(&["--page", "users"]), Ok(11));
+        assert_eq!(start(&["--page", "users"]), Ok(12));
         assert_eq!(start(&["--page", "notifications"]), Ok(10));
         assert_eq!(start(&["--page", "network"]), Ok(5));
         assert_eq!(start(&["--page", "bluetooth"]), Ok(6));
@@ -932,7 +949,10 @@ mod tests {
         };
         // Users, Updates and System need no feature: every machine has
         // accounts and `edel`.
-        assert_eq!(titles(&dir), ["Users", "Updates", "System", "About"]);
+        assert_eq!(
+            titles(&dir),
+            ["Shortcuts", "Users", "Updates", "System", "About"]
+        );
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(
             titles(&dir),
@@ -944,6 +964,7 @@ mod tests {
                 "Lock screen",
                 "Displays",
                 "Notifications",
+                "Shortcuts",
                 "Users",
                 "Updates",
                 "System",
@@ -962,6 +983,7 @@ mod tests {
                 "Displays",
                 "Sound",
                 "Notifications",
+                "Shortcuts",
                 "Users",
                 "Updates",
                 "System",

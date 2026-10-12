@@ -205,6 +205,9 @@ pub struct Edel {
     _pointer_constraints: smithay::wayland::pointer_constraints::PointerConstraintsState,
     _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState,
     _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
+    /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
+    pub keyboard_shortcuts_inhibit:
+        smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
 }
 
 impl Edel {
@@ -259,6 +262,10 @@ impl Edel {
             _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Edel>(
                 &display,
             ),
+            keyboard_shortcuts_inhibit:
+                smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<
+                    Edel,
+                >(&display),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take

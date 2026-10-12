@@ -253,6 +253,184 @@ pub const ROWS: &[Row] = &[
         key: "updates.channel",
         title: n_("Channel"),
     },
+    // The Shortcuts page (M5.13b): one row per action of `edel::shortcuts`,
+    // so search finds each by its name; the keys are the page's own.
+    Row {
+        key: "shortcuts.close_window",
+        title: n_("Close window"),
+    },
+    Row {
+        key: "shortcuts.open_launcher",
+        title: n_("Open launcher"),
+    },
+    Row {
+        key: "shortcuts.switch_windows",
+        title: n_("Switch windows"),
+    },
+    Row {
+        key: "shortcuts.toggle_tiling",
+        title: n_("Floating or tiling"),
+    },
+    Row {
+        key: "shortcuts.open_terminal",
+        title: n_("Open terminal"),
+    },
+    Row {
+        key: "shortcuts.take_screenshot",
+        title: n_("Take screenshot"),
+    },
+    Row {
+        key: "shortcuts.lock_screen",
+        title: n_("Lock screen"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_1",
+        title: n_("Workspace 1"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_2",
+        title: n_("Workspace 2"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_3",
+        title: n_("Workspace 3"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_4",
+        title: n_("Workspace 4"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_5",
+        title: n_("Workspace 5"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_6",
+        title: n_("Workspace 6"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_7",
+        title: n_("Workspace 7"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_8",
+        title: n_("Workspace 8"),
+    },
+    Row {
+        key: "shortcuts.go_to_workspace_9",
+        title: n_("Workspace 9"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_1",
+        title: n_("Move window to workspace 1"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_2",
+        title: n_("Move window to workspace 2"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_3",
+        title: n_("Move window to workspace 3"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_4",
+        title: n_("Move window to workspace 4"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_5",
+        title: n_("Move window to workspace 5"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_6",
+        title: n_("Move window to workspace 6"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_7",
+        title: n_("Move window to workspace 7"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_8",
+        title: n_("Move window to workspace 8"),
+    },
+    Row {
+        key: "shortcuts.move_to_workspace_9",
+        title: n_("Move window to workspace 9"),
+    },
+    Row {
+        key: "shortcuts.toggle_fullscreen",
+        title: n_("Fullscreen"),
+    },
+    Row {
+        key: "shortcuts.next_keyboard_layout",
+        title: n_("Next keyboard layout"),
+    },
+    Row {
+        key: "shortcuts.minimize_window",
+        title: n_("Minimize window"),
+    },
+    Row {
+        key: "shortcuts.toggle_maximize",
+        title: n_("Maximize window"),
+    },
+    Row {
+        key: "shortcuts.focus_window_left",
+        title: n_("Focus window to the left"),
+    },
+    Row {
+        key: "shortcuts.focus_window_right",
+        title: n_("Focus window to the right"),
+    },
+    Row {
+        key: "shortcuts.focus_window_up",
+        title: n_("Focus window up"),
+    },
+    Row {
+        key: "shortcuts.focus_window_down",
+        title: n_("Focus window down"),
+    },
+    Row {
+        key: "shortcuts.move_window_left",
+        title: n_("Move window left"),
+    },
+    Row {
+        key: "shortcuts.move_window_right",
+        title: n_("Move window right"),
+    },
+    Row {
+        key: "shortcuts.move_window_up",
+        title: n_("Move window up"),
+    },
+    Row {
+        key: "shortcuts.move_window_down",
+        title: n_("Move window down"),
+    },
+    Row {
+        key: "shortcuts.cycle_column_width",
+        title: n_("Column width"),
+    },
+    Row {
+        key: "shortcuts.show_tray",
+        title: n_("Show tray"),
+    },
+    Row {
+        key: "shortcuts.show_workspaces",
+        title: n_("Workspace overview"),
+    },
+    Row {
+        key: "shortcuts.next_workspace",
+        title: n_("Next workspace"),
+    },
+    Row {
+        key: "shortcuts.previous_workspace",
+        title: n_("Previous workspace"),
+    },
+    Row {
+        key: "shortcuts.move_to_next_workspace",
+        title: n_("Move window to next workspace"),
+    },
+    Row {
+        key: "shortcuts.move_to_previous_workspace",
+        title: n_("Move window to previous workspace"),
+    },
 ];
 
 /// What the Panels group says under its heading (M5.31d).
@@ -430,9 +608,16 @@ mod tests {
     #[test]
     fn every_row_is_a_key_this_release_supports() {
         for row in ROWS {
+            // A family key such as `shortcuts.*` holds each of its rows.
+            let same_shape = |pattern: &str| {
+                let (p, k): (Vec<&str>, Vec<&str>) =
+                    (pattern.split('.').collect(), row.key.split('.').collect());
+                p.len() == k.len() && p.iter().zip(&k).all(|(p, k)| *p == "*" || p == k)
+            };
             let key = KEYS
                 .iter()
                 .find(|k| k.path == row.key)
+                .or_else(|| KEYS.iter().find(|k| same_shape(k.path)))
                 .unwrap_or_else(|| panic!("{} is not a settings file key", row.key));
             assert!(key.supported, "{} is not supported yet", row.key);
         }
