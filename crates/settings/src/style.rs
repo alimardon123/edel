@@ -162,6 +162,8 @@ pub fn css(t: &Tokens, dark: bool) -> String {
     let error = css_colour(t.title_close_hover);
     let font = &t.font;
     let size = t.text_size;
+    // The Power page's figure (M5.32): the large charge, as the board draws it.
+    let power = size * 28 / 13;
     let small = size.saturating_sub(1).max(1);
     let tiny = format!("{:.1}", f64::from(size) - 1.5);
     let key = format!("{:.1}", f64::from(size) - 2.5);
@@ -341,6 +343,24 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-bars {{ min-width: 20px; }}
 .edel-bar-part {{ min-width: 3px; border-radius: 1px; background-color: {fill_strong}; }}
 .edel-bar-part.edel-lit {{ background-color: {accent}; }}
+.edel-power-card {{ background-color: {card}; border: 1px solid {line}; border-radius: {rm}px; padding: 20px; }}
+.edel-battery {{ border: 2px solid {text}; border-radius: 7px; }}
+.edel-battery-nub {{ background-color: {text}; border-radius: 0 2px 2px 0; }}
+.edel-power-fill {{ border-radius: 3px; background-color: {fill_strong}; }}
+.edel-power-fill.edel-ok {{ background-color: {ok}; }}
+.edel-power-fill.edel-low {{ background-color: {amber}; }}
+.edel-power-fill.edel-empty {{ background-color: {problem}; }}
+.edel-power-percent {{ font-size: {power}px; font-weight: 650; letter-spacing: -0.5px; }}
+.edel-power-sub {{ color: {secondary}; }}
+.edel-power-dim {{ color: {secondary}; font-size: {caption}px; }}
+.edel-power-health {{ font-size: {current}px; font-weight: 650; }}
+.edel-power-axis {{ color: {secondary}; font-size: {caption}px; }}
+.edel-day-bar {{ border-radius: {rs}px {rs}px 0 0; background-color: alpha({accent}, 0.3); }}
+.edel-day-bar.edel-charging {{ background-color: alpha({ok}, 0.4); }}
+.edel-day-bar.edel-low {{ background-color: alpha({problem}, 0.4); }}
+.edel-day-bar.edel-gap {{ background-color: {fill_strong}; }}
+.edel-day-bar.edel-now {{ background-color: {accent}; }}
+.edel-day-bar.edel-now.edel-charging {{ background-color: {ok}; }}
 .edel-lock {{ color: {muted}; }}
 .edel-entry {{ min-height: 26px; padding: 0 8px; border-radius: {rs}px; background-image: none; background-color: {fill};
   box-shadow: none; border: none; color: {text}; }}

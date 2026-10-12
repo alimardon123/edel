@@ -518,6 +518,15 @@ msgstr ""
 msgid "{n} hours"
 msgstr ""
 
+msgid "this machine has no {program}, so the battery's history is not shown"
+msgstr ""
+
+msgid "{command} did not answer in {seconds} s, so the battery's history is not shown"
+msgstr ""
+
+msgid "{command} failed: {said}, so the battery's history is not shown"
+msgstr ""
+
 msgid "this machine has no {program}, so it cannot tell the battery; the power feature brings it"
 msgstr ""
 
