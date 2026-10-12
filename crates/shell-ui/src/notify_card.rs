@@ -694,8 +694,9 @@ impl Shell {
 
     /// The compositor configured the centre's surface (M5.9l). A sheet
     /// waiting for its height takes the height it is given, less the room
-    /// round its card, and asks for exactly that; otherwise the card is
-    /// drawn as it is.
+    /// round its card, and asks for exactly that, then draws at once: the
+    /// size it asks for is the one it was given, so no second configure
+    /// comes. Otherwise the card is drawn as it is.
     pub fn centre_configured(&mut self, size: (u32, u32)) {
         let Some(card) = &mut self.centre else {
             return;
@@ -706,7 +707,6 @@ impl Shell {
             card.state.height = Some(height);
             card.popup
                 .fill((card.state.width, height), &self.compositor);
-            return;
         }
         card.popup_mut().configured();
         self.draw_centre();
