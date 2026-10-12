@@ -27,7 +27,9 @@ use edel::tokens::{Colour, Tokens};
 use edel::wallpapers;
 
 use crate::files::{self, Files};
+use crate::icon;
 use crate::style::Theme;
+use crate::themes::Edit;
 use crate::{rows, widgets};
 
 /// The key this group chooses.
@@ -227,28 +229,42 @@ impl Card {
     }
 }
 
-/// The group's card in `content` after its heading (M5.10c4c), with the
-/// cards in a flow box built as the presets' are.
+/// What a theme's pictures sheet adds to its cards (M5.12b6, part c2): the
+/// person's own themes other than the one in use, by name and title, to add
+/// pictures to or move them to, and `run`, which writes an [`Edit`] to the
+/// person's file and shows the result (`themes.rs`).
+pub struct Sheet {
+    pub others: Vec<(String, String)>,
+    pub run: Rc<dyn Fn(Edit)>,
+}
+
+/// The sheet's card in `content` after its heading (M5.10c4c, M5.12b6,
+/// M5.12b6 part c2): the theme's own pictures first, each a reference (a
+/// wallpaper's name, a picture's path or a colour) with a menu and a drag,
+/// then every other wallpaper with the same menu, None, Your picture,
+/// Colour and last the Add pictures tile. A click on a wallpaper's card
+/// still writes `appearance.wallpaper`.
 pub fn card(
     content: &gtk::Box,
     problem: &gtk::Label,
     theme: &Rc<Theme>,
     title: &str,
     first: &[String],
+    sheet: &Sheet,
 ) -> Rc<Card> {
     let dir = PathBuf::from(places::WALLPAPERS_DIR);
     let source = widgets::section(content, title);
-    // The theme's own pictures lead, as cards of their own, and every other
-    // wallpaper follows (M5.12b6b); a theme's picture that is a path, not a
-    // wallpaper's name, has no card.
-    let found = wallpapers::names(&dir);
-    let mut names: Vec<String> = first
-        .iter()
-        .filter(|name| found.contains(name))
-        .cloned()
-        .collect();
+    // The theme's own pictures lead, each once, and the wallpapers it does
+    // not hold follow; a picture of a path or a colour has a card too, so it
+    // can be removed.
+    let mut names: Vec<String> = Vec::new();
+    for reference in first {
+        if !names.contains(reference) {
+            names.push(reference.clone());
+        }
+    }
     let split = names.len();
-    let rest: Vec<String> = found
+    let rest: Vec<String> = wallpapers::names(&dir)
         .into_iter()
         .filter(|name| !names.contains(name))
         .collect();
@@ -261,7 +277,7 @@ pub fn card(
 
     let mut parts: Vec<(String, String, gtk::Widget)> = names
         .iter()
-        .map(|name| (name.clone(), files::title(name), thumbnail(&dir, name)))
+        .map(|name| (name.clone(), title_of(name), reference_picture(&dir, name)))
         .collect();
     parts.push((
         NONE_CARD.to_string(),
@@ -309,17 +325,39 @@ pub fn card(
             Some(first) => button.set_group(Some(first)),
             None => first = Some(button.clone()),
         }
-        if index < split {
-            theme_flow.append(&button);
+        // A reference of the theme or a wallpaper gets its menu and its drag;
+        // None, Your picture and Colour do not.
+        let placed: gtk::Widget = if index < names.len() {
+            chrome(&button, key, index < split, sheet)
         } else {
-            more_flow.append(&button);
+            button.clone().upcast()
+        };
+        if index < split {
+            theme_flow.append(&placed);
+        } else {
+            more_flow.append(&placed);
         }
         // The card takes the focus, not the box the flow wraps it in.
-        if let Some(child) = button.parent() {
+        if let Some(child) = placed.parent() {
             child.set_focusable(false);
         }
         cards.push((key.clone(), button, badge));
     }
+    let add = crate::themes::new_tile(tr("Add pictures…"));
+    let run = sheet.run.clone();
+    add.connect_clicked(move |button| {
+        let run = run.clone();
+        widgets::choose_pictures(button.upcast_ref(), move |picked| {
+            if let Some(paths) = picked.filter(|paths| !paths.is_empty()) {
+                let paths = paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect();
+                run(Edit::Add(paths));
+            }
+        });
+    });
+    more_flow.append(&add);
 
     let logged = cards.clone();
     let card = Rc::new(Card {
@@ -339,6 +377,177 @@ pub fn card(
     log_places(content.upcast_ref(), logged, card.source.reset.clone());
     card.show(&Files::here());
     card
+}
+
+/// A reference's card picture (M5.12b6, part c2): a wallpaper's pair of
+/// halves, a picture's path on both halves, or a colour over the card.
+fn reference_picture(dir: &Path, reference: &str) -> gtk::Widget {
+    match kind(reference) {
+        Kind::Pair(name) => thumbnail(dir, &name),
+        Kind::Picture(path) => halves(&path, &path),
+        Kind::Colour(hex) => colour_picture(&hex),
+        Kind::None => frame().upcast(),
+    }
+}
+
+/// A colour's card picture: the colour over the whole card, or an empty
+/// card when the colour does not parse.
+fn colour_picture(hex: &str) -> gtk::Widget {
+    let colour = Colour::parse(hex);
+    let area = gtk::DrawingArea::builder()
+        .content_width(WIDTH)
+        .content_height(HEIGHT)
+        .css_classes(["edel-wallpaper-thumb"])
+        .build();
+    area.set_draw_func(move |_, cr, w, h| {
+        let Some(c) = colour else {
+            return;
+        };
+        cr.set_source_rgba(
+            f64::from(c.r),
+            f64::from(c.g),
+            f64::from(c.b),
+            f64::from(c.a),
+        );
+        cr.rectangle(0.0, 0.0, f64::from(w), f64::from(h));
+        let _ = cr.fill();
+    });
+    area.upcast()
+}
+
+/// A picture card of the sheet with its menu and its drag (M5.12b6, part
+/// c2): the reference is dragged onto another of the person's themes' tiles,
+/// and its menu (`menu`) shows on hover and focus, and on a right click.
+fn chrome(
+    button: &gtk::ToggleButton,
+    reference: &str,
+    in_theme: bool,
+    sheet: &Sheet,
+) -> gtk::Widget {
+    let overlay = gtk::Overlay::new();
+    overlay.set_child(Some(button));
+    overlay.add_css_class("edel-picture-overlay");
+    let drag = gtk::DragSource::new();
+    drag.set_actions(gdk::DragAction::COPY);
+    let payload = reference.to_string();
+    drag.connect_prepare(move |_, _, _| Some(gdk::ContentProvider::for_value(&payload.to_value())));
+    button.add_controller(drag);
+    let more = menu(sheet, reference, in_theme);
+    let weak = more.downgrade();
+    overlay.add_overlay(&more);
+    let click = gtk::GestureClick::builder().button(3).build();
+    click.connect_pressed(move |_, _, _, _| {
+        if let Some(more) = weak.upgrade() {
+            more.popup();
+        }
+    });
+    overlay.add_controller(click);
+    overlay.upcast()
+}
+
+/// A picture's menu (M5.12b6, part c2): Add to this theme for a wallpaper
+/// the theme does not hold, Add to theme and Move to theme for each of the
+/// person's other own themes (by title, hidden when there are none), and
+/// Remove for a picture of the theme in use. Each item writes its edit and
+/// closes the menu.
+fn menu(sheet: &Sheet, reference: &str, in_theme: bool) -> gtk::MenuButton {
+    let more = gtk::MenuButton::builder()
+        .child(&icon::image("more", 15))
+        .tooltip_text(tr("More"))
+        .css_classes(["edel-picture-more"])
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::Start)
+        .build();
+    let items = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .build();
+    if !in_theme {
+        item(
+            &items,
+            &more,
+            &sheet.run,
+            tr("Add to this theme"),
+            Edit::Add(vec![reference.to_string()]),
+        );
+    }
+    if !sheet.others.is_empty() {
+        items.append(&heading(tr("Add to theme")));
+        for (name, title) in &sheet.others {
+            item(
+                &items,
+                &more,
+                &sheet.run,
+                title,
+                Edit::AddTo {
+                    theme: name.clone(),
+                    picture: reference.to_string(),
+                },
+            );
+        }
+    }
+    if in_theme && !sheet.others.is_empty() {
+        items.append(&heading(tr("Move to theme")));
+        for (name, title) in &sheet.others {
+            item(
+                &items,
+                &more,
+                &sheet.run,
+                title,
+                Edit::MoveTo {
+                    theme: name.clone(),
+                    picture: reference.to_string(),
+                },
+            );
+        }
+    }
+    if in_theme {
+        let remove = item(
+            &items,
+            &more,
+            &sheet.run,
+            tr("Remove"),
+            Edit::Remove(reference.to_string()),
+        );
+        remove.add_css_class("edel-danger");
+    }
+    let popover = gtk::Popover::builder()
+        .css_classes(["edel-choice-list"])
+        .child(&items)
+        .build();
+    more.set_popover(Some(&popover));
+    more
+}
+
+/// One item of a picture's menu: it closes the menu and writes `edit`.
+fn item(
+    items: &gtk::Box,
+    more: &gtk::MenuButton,
+    run: &Rc<dyn Fn(Edit)>,
+    label: &str,
+    edit: Edit,
+) -> gtk::Button {
+    let button = widgets::menu_item(label);
+    let run = run.clone();
+    let weak = more.downgrade();
+    button.connect_clicked(move |_| {
+        if let Some(more) = weak.upgrade() {
+            more.popdown();
+        }
+        // Written once the menu has closed: the write builds the sheet again.
+        let (run, edit) = (run.clone(), edit.clone());
+        glib::idle_add_local_once(move || run(edit));
+    });
+    items.append(&button);
+    button
+}
+
+/// A heading inside a picture's menu, in the small secondary words.
+fn heading(label: &str) -> gtk::Label {
+    gtk::Label::builder()
+        .label(label)
+        .xalign(0.0)
+        .css_classes(["edel-source"])
+        .build()
 }
 
 /// Connects each card, Reset and Copy as command. A wallpaper and None

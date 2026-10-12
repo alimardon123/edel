@@ -408,6 +408,9 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-font-row {{ min-height: 36px; }}
 .edel-font, .edel-font label {{ font-weight: 400; }}
 .edel-font > button {{ min-height: 30px; padding-top: 0; padding-bottom: 0; }}
+/* The pictures sheet's picture menu (M5.12b6, part c2): its button shows on hover and focus over a card's corner. */
+.edel-picture-more {{ opacity: 0; min-width: 24px; min-height: 24px; margin: 6px; border-radius: {rw}px; }}
+.edel-picture-overlay:hover .edel-picture-more, .edel-picture-overlay:focus-within .edel-picture-more, .edel-picture-more:focus {{ opacity: 1; }}
 "#
     )
 }

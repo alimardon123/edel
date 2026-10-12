@@ -709,8 +709,23 @@ commands() {
 		'theme clean')
 			edel settings reset appearance.theme >/dev/null 2>&1
 			edel theme delete mine >/dev/null 2>&1
+			edel theme delete pics >/dev/null 2>&1
+			edel settings reset appearance.pictures >/dev/null 2>&1
 			rm -rf /tmp/mine.edeltheme /tmp/bad.edeltheme /tmp/badtheme
 			;;
+		# The pictures on top of the theme in use (M5.12b6, part c2): a list
+		# set on the release's theme, then saved as a theme of its own, which
+		# takes the list in and leaves appearance.pictures out.
+		'pictures set')
+			out=$(edel settings set 'appearance.pictures=["aurora"]' 2>&1); status=$?
+			say "pictures_set $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'pictures get') say "pictures_value $(edel settings get appearance.pictures 2>&1 | tr '\n' ' ')" ;;
+		'pictures save')
+			out=$(edel theme save pics 2>&1); status=$?
+			say "pictures_save $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'pictures machine') say "pictures_machine $(tr '\n' ';' <"$data_dir/$settings_name" 2>/dev/null)" ;;
 		'theme save')
 			out=$(edel theme save mine 2>&1); status=$?
 			say "theme_save $status $(echo "$out" | tr '\n' ' ')"

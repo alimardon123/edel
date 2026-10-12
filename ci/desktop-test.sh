@@ -1527,8 +1527,10 @@ case_theme() {
 	# Themes (M5.12b6, step 12b6), as root on the machine's file: the theme
 	# in use saved as mine, which writes it under [themes] as settings set
 	# does, exported as one .edeltheme file that tar reads and holds only
-	# theme.toml, taken out and imported back, chosen by settings set, and a
-	# hand-made archive with an extra run.sh refused, the entry named.
+	# theme.toml, taken out and imported back, chosen by settings set, a
+	# hand-made archive with an extra run.sh refused, the entry named, and
+	# a list of pictures set on top of the theme in use and saved as a
+	# theme of its own (M5.12b6, part c2).
 	asked() {
 		n=$(count "DESKTOP-TEST: $1 ")
 		guest "$2"
@@ -1565,8 +1567,21 @@ case_theme() {
 	value theme_bad | grep -q '^0 ' && fail "a theme file with an extra run.sh was imported: $(value theme_bad)"
 	value theme_bad | grep -q 'run.sh is not part of a theme' ||
 		fail "the refused archive does not name run.sh: $(value theme_bad)"
+	guest 'theme reset'
+	asked pictures_set 'pictures set'
+	value pictures_set | grep -q '^0 ' || fail "edel settings set appearance.pictures failed: $(value pictures_set)"
+	asked pictures_value 'pictures get'
+	value pictures_value | grep -q 'aurora' || fail "edel settings get appearance.pictures does not say aurora: $(value pictures_value)"
+	asked pictures_save 'pictures save'
+	value pictures_save | grep -q '^0 ' || fail "edel theme save pics failed: $(value pictures_save)"
+	asked pictures_machine 'pictures machine'
+	value pictures_machine | grep -q 'pics = { pictures = \["aurora"\] }' ||
+		fail "edel theme save pics did not write pictures = [\"aurora\"] under [themes.pics]: $(value pictures_machine)"
+	if value pictures_machine | grep -q ';pictures = \["aurora"\];'; then
+		fail "edel theme save pics left appearance.pictures in the machine's file: $(value pictures_machine)"
+	fi
 	guest 'theme clean'
-	echo "PASS: edel theme save mine wrote mine under [themes]; edel theme export wrote mine as a tar archive holding theme.toml alone; after edel theme delete and edel theme import of that file, mine is back under [themes] and edel settings set appearance.theme=mine took; a file with an extra run.sh was refused with a non-zero exit, naming run.sh"
+	echo "PASS: edel theme save mine wrote mine under [themes]; edel theme export wrote mine as a tar archive holding theme.toml alone; after edel theme delete and edel theme import of that file, mine is back under [themes] and edel settings set appearance.theme=mine took; a file with an extra run.sh was refused with a non-zero exit, naming run.sh; edel settings set appearance.pictures took the list, and edel theme save pics wrote it into [themes.pics] and took appearance.pictures out"
 }
 
 case_settings_wallpaper() {
