@@ -1010,10 +1010,7 @@ mod tests {
         let before = accent_of(&file(text));
         let saved = save_text(text, "mine").unwrap();
         let after = file(&saved);
-        assert_eq!(
-            after.themes["mine"].pictures,
-            ["aurora", "aurora-arc", "aurora-veil"]
-        );
+        assert_eq!(after.themes["mine"].pictures, ["aurora", "aurora-arc"]);
         assert_eq!(
             after.themes["mine"].values.accent.as_deref(),
             Some("#d0363f")
@@ -1030,7 +1027,7 @@ mod tests {
         let saved = file(&save_text(text, "mine").unwrap());
         assert_eq!(
             saved.themes["mine"].pictures,
-            ["/home/a/x.jpg", "aurora", "aurora-arc", "aurora-veil"]
+            ["/home/a/x.jpg", "aurora", "aurora-arc"]
         );
         assert_eq!(saved.appearance.wallpaper.as_deref(), Some("/home/a/x.jpg"));
     }
@@ -1322,19 +1319,13 @@ mod tests {
     fn pictures_of_gives_the_theme_its_own_unless_the_file_sets_them() {
         let mine = file(OWN);
         assert_eq!(pictures_of(&mine, "mine"), ["earth", "aurora"]);
-        assert_eq!(
-            pictures_of(&mine, "aurora"),
-            ["aurora", "aurora-arc", "aurora-veil"]
-        );
+        assert_eq!(pictures_of(&mine, "aurora"), ["aurora", "aurora-arc"]);
         assert!(pictures_of(&mine, "nope").is_empty());
         let on_top = file(
             "format = 1\n[appearance]\ntheme = \"mine\"\npictures = [\"hills\"]\n[themes.mine]\npictures = [\"earth\"]\n",
         );
         assert_eq!(pictures_of(&on_top, "mine"), ["hills"]);
-        assert_eq!(
-            pictures_of(&on_top, "aurora"),
-            ["aurora", "aurora-arc", "aurora-veil"]
-        );
+        assert_eq!(pictures_of(&on_top, "aurora"), ["aurora", "aurora-arc"]);
     }
 
     #[test]
@@ -1362,7 +1353,7 @@ mod tests {
         let on_top = file("format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\"]\n");
         assert_eq!(changed(&on_top), ["appearance.pictures"]);
         let same = file(
-            "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"aurora\", \"aurora-arc\", \"aurora-veil\"]\n",
+            "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"aurora\", \"aurora-arc\"]\n",
         );
         assert!(changed(&same).is_empty());
     }
@@ -1383,7 +1374,7 @@ mod tests {
         let changed_text = set_pictures_text(aurora, "aurora", &["earth".to_string()]).unwrap();
         assert_eq!(pictures_of(&file(&changed_text), "aurora"), ["earth"]);
         assert!(changed_text.contains("pictures = [\"earth\"]"));
-        let own = ["aurora", "aurora-arc", "aurora-veil"].map(String::from);
+        let own = ["aurora", "aurora-arc"].map(String::from);
         let back = set_pictures_text(&changed_text, "aurora", &own).unwrap();
         assert!(!back.contains("pictures"));
         assert_eq!(back, aurora.to_string());
@@ -1432,11 +1423,9 @@ mod tests {
         let text = add_pictures_text(aurora, "aurora", &["/home/ali/sea.jpg".to_string()]).unwrap();
         assert_eq!(
             pictures_of(&file(&text), "aurora"),
-            ["aurora", "aurora-arc", "aurora-veil", "/home/ali/sea.jpg"]
+            ["aurora", "aurora-arc", "/home/ali/sea.jpg"]
         );
-        assert!(text.contains(
-            "pictures = [\"aurora\", \"aurora-arc\", \"aurora-veil\", \"/home/ali/sea.jpg\"]"
-        ));
+        assert!(text.contains("pictures = [\"aurora\", \"aurora-arc\", \"/home/ali/sea.jpg\"]"));
     }
 
     #[test]
@@ -1511,7 +1500,7 @@ mod tests {
         assert!(!reset.contains("pictures"));
         assert_eq!(
             pictures_of(&file(&reset), "aurora"),
-            ["aurora", "aurora-arc", "aurora-veil"]
+            ["aurora", "aurora-arc"]
         );
     }
 

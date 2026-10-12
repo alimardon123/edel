@@ -6,7 +6,7 @@ compositor shows the one the colour scheme names. Two pairs are our own,
 drawn here as SVG from design/tokens.toml's colours, so they follow the
 theme: Hills (layered hills under a dawn sky, and under a night sky with
 stars) and Aurora (soft ribbons of light), with their collections (Ridges
-and Mist, Aurora's arc and veil, Ocean's three: the sea from its horizon,
+and Mist, Aurora's arc, Ocean's three: the sea from its horizon,
 still and from under the surface), each a light and a dark picture. The
 third, Earth, is NASA's Europe by day and by night, cut from two public
 domain maps (CREDITS).
@@ -395,64 +395,6 @@ def wave_points(base, amp, seed):
     return points
 
 
-def veil(sky, colours, starry, opacity):
-    """Six broad curtains of light: tall, soft folds 150 to 300 pixels wide,
-    swaying gently, brightest near their bottom edge and fading upwards,
-    under a heavy blur. No thin strands."""
-    rnd = random.Random(61)
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}"><defs>']
-    out.append(
-        f'<linearGradient id="sky" x1="0" y1="0" x2="0.3" y2="1"><stop offset="0" '
-        f'stop-color="{sky[0]}"/><stop offset="1" stop-color="{sky[1]}"/></linearGradient>'
-    )
-    for i, colour in enumerate(colours):
-        out.append(
-            f'<linearGradient id="cv{i}" x1="0" y1="0" x2="0" y2="1">'
-            f'<stop offset="0" stop-color="{colour}" stop-opacity="0"/>'
-            f'<stop offset="0.35" stop-color="{colour}" stop-opacity="0.5"/>'
-            f'<stop offset="1" stop-color="{colour}" stop-opacity="1"/></linearGradient>'
-        )
-    out.append(
-        '<filter id="curtain" x="-30%" y="-20%" width="160%" height="140%">'
-        '<feGaussianBlur stdDeviation="60"/></filter></defs>'
-    )
-    out.append(f'<rect width="{W}" height="{H}" fill="url(#sky)"/>')
-    if starry:
-        out += stars(13, 200, 0.5)
-    out.append(f'<g filter="url(#curtain)" opacity="{opacity}">')
-    for centre in (0.08, 0.25, 0.42, 0.6, 0.77, 0.93):
-        x_c = (centre + rnd.uniform(-0.02, 0.02)) * W
-        width = rnd.uniform(0.04, 0.08) * W
-        top = rnd.uniform(0.08, 0.2) * H
-        bottom = rnd.uniform(0.82, 0.92) * H
-        sway = rnd.uniform(0.01, 0.03) * W
-        freq = rnd.uniform(0.4, 0.8)
-        phase = rnd.uniform(0, math.tau)
-        pick = rnd.randrange(len(colours))
-        left, right = [], []
-        for k in range(41):
-            v = k / 40
-            y = top + (bottom - top) * v
-            xc = x_c + sway * math.sin(math.tau * freq * v + phase)
-            half = width / 2
-            left.append(f"{xc - half:.1f},{y:.1f}")
-            right.append(f"{xc + half:.1f},{y:.1f}")
-        out.append(
-            f'<polygon points="{" ".join(left + right[::-1])}" fill="url(#cv{pick})"/>'
-        )
-    out.append("</g>")
-    out.append("</svg>")
-    return "\n".join(out)
-
-
-# The sea's own colours (M5.12b6d): a blue and a teal no token gives, named
-# once here for the Ocean pictures; the rest of each picture is mixed from
-# the tokens' accent and night.
-SEA_DEEP = "#0a2a48"
-SEA_MID = "#1d5f86"
-SEA_TEAL = "#2f9aa6"
-
-
 def ocean(sky, sun, sun_at, sea_far, sea_near, glitter):
     """The horizon a third down: the sky with a soft sun or moon glow, and
     the sea as six soft horizontal bands of water, each lighter towards the
@@ -660,7 +602,7 @@ def ours():
 
 def collections():
     """The pictures of the built-in themes' collections (M5.12b6d): Edel's
-    ridges and mist, Aurora's arc and veil, and Ocean's three. Each a light
+    ridges and mist, Aurora's arc, and Ocean's three. Each a light
     and a dark picture, from the same tokens as the first pictures."""
     dark, light = tokens()
     night = "#0b1024"
@@ -739,8 +681,6 @@ def collections():
             ],
             starry=True,
         ),
-        "aurora-veil-light": veil(sky=aurora_sky_light, colours=aurora_colours_light, starry=False, opacity=0.4),
-        "aurora-veil-dark": veil(sky=(night, navy), colours=aurora_colours_dark, starry=True, opacity=0.8),
         # Ocean: the horizon a third down, still water, and the sea from under.
         "ocean-light": ocean(
             sky=(mix(accent_light, "#ffffff", 0.85), "#fbe3d6"),

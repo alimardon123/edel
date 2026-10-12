@@ -4,10 +4,9 @@ one the colour scheme names.
 
 hills-light.jpg, hills-dark.jpg, aurora-light.jpg, aurora-dark.jpg,
 ridges-light.jpg, ridges-dark.jpg, mist-light.jpg, mist-dark.jpg,
-aurora-arc-light.jpg, aurora-arc-dark.jpg, aurora-veil-light.jpg,
-aurora-veil-dark.jpg, ocean-light.jpg, ocean-dark.jpg,
-ocean-calm-light.jpg, ocean-calm-dark.jpg, ocean-deep-light.jpg,
-ocean-deep-dark.jpg
+aurora-arc-light.jpg, aurora-arc-dark.jpg, ocean-light.jpg,
+ocean-dark.jpg, ocean-calm-light.jpg, ocean-calm-dark.jpg,
+ocean-deep-light.jpg, ocean-deep-dark.jpg
   Our own, drawn by design/wallpapers/make.py from design/tokens.toml's
   colours (and a few named sea colours written there for Ocean). Licence: GPL-3.0-or-later, as the rest of Edel OS.
 
