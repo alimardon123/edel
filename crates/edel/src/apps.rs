@@ -36,6 +36,62 @@ pub const INSTALLATION: &str = "edel";
 /// remote people see stays `flathub` in their own installation.
 pub const APPS_REMOTE: &str = "edel-apps";
 
+/// The default apps of a slot (M6.2), as `edel image build` records them
+/// in `places::DEFAULT_APPS_LIST`: those the data partition's installation
+/// should hold, and those a release dropped, which stay for each person
+/// who used them.
+#[derive(Debug, Default, PartialEq, serde::Deserialize)]
+pub struct DefaultApps {
+    #[serde(default)]
+    pub flatpak: Vec<String>,
+    #[serde(default)]
+    pub flatpak_dropped: Vec<String>,
+}
+
+impl DefaultApps {
+    /// The file's text, as the build writes it.
+    pub fn text(&self) -> String {
+        let list = |ids: &[String]| {
+            ids.iter()
+                .map(|id| format!("{id:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "# The default apps of this slot (roadmap M6.2), written by edel image\n\
+             # build; edel update installs and updates them on the data partition.\n\
+             format = 1\n\
+             flatpak = [{}]\n\
+             flatpak_dropped = [{}]\n",
+            list(&self.flatpak),
+            list(&self.flatpak_dropped)
+        )
+    }
+
+    /// The file read leniently, as a machine reads what another release
+    /// wrote (ADR-008): an id that is not one is left out.
+    pub fn read(text: &str) -> DefaultApps {
+        let mut apps: DefaultApps = toml::from_str(text).unwrap_or_default();
+        apps.flatpak.retain(|id| is_flatpak_id(id));
+        apps.flatpak_dropped.retain(|id| is_flatpak_id(id));
+        apps
+    }
+}
+
+/// What `flatpak remote-add` needs besides the name and the address
+/// (M6.2): `--from` for a `.flatpakrepo` file, which brings its key, and
+/// `--no-gpg-verify` for a local or plain-http test repository, which has
+/// none; an https repository must carry its own key.
+pub fn remote_add_args(from: &str) -> &'static [&'static str] {
+    if from.ends_with(".flatpakrepo") {
+        &["--from"]
+    } else if from.starts_with("file://") || from.starts_with("http://") {
+        &["--no-gpg-verify"]
+    } else {
+        &[]
+    }
+}
+
 /// The file in `places::FLATPAK_INSTALLATIONS` that tells Flatpak where
 /// the default apps' installation lies (M6.2), at `path`: the data
 /// partition's place on a machine, the build's folder while an image is
@@ -555,5 +611,32 @@ mod tests {
                 .iter()
                 .any(|d| d == &Path::new(crate::places::DEFAULT_APPS).join("exports/share"))
         );
+    }
+
+    #[test]
+    fn a_remote_is_added_with_its_key_or_as_a_test_repository() {
+        assert_eq!(remote_add_args(FLATHUB_REMOTE), ["--from"]);
+        assert_eq!(
+            remote_add_args("file:///src/out/apps-repo"),
+            ["--no-gpg-verify"]
+        );
+        assert_eq!(
+            remote_add_args("http://10.0.2.2:8002/"),
+            ["--no-gpg-verify"]
+        );
+        assert!(remote_add_args("https://example.org/repo").is_empty());
+    }
+
+    #[test]
+    fn the_default_apps_list_reads_back_and_drops_what_is_no_id() {
+        let apps = DefaultApps {
+            flatpak: vec!["org.edel.TestB".into()],
+            flatpak_dropped: vec!["org.edel.TestA".into()],
+        };
+        assert_eq!(DefaultApps::read(&apps.text()), apps);
+        let odd =
+            DefaultApps::read("format = 1\nflatpak = [\"org.edel.TestB\", \"nope\"]\nnew = 1\n");
+        assert_eq!(odd.flatpak, ["org.edel.TestB"]);
+        assert_eq!(DefaultApps::read("not toml ["), DefaultApps::default());
     }
 }

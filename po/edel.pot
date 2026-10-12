@@ -29,6 +29,21 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "installing the default apps {apps}"
+msgstr ""
+
+msgid "updating the default apps"
+msgstr ""
+
+msgid "keeping {app} for {person}, who used it, in their own apps"
+msgstr ""
+
+msgid "taking {app} out of the default apps"
+msgstr ""
+
+msgid "the default apps were not all brought up to date ({what}); the system's update is not affected, and the next edel update tries again"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
@@ -440,7 +455,7 @@ msgstr ""
 msgid "Files this machine changed in /etc, kept on /data and not described above:"
 msgstr ""
 
-msgid "--app {id} is not a Flatpak app id, such as org.gnome.TextEditor"
+msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
 msgstr ""
 
 msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
@@ -1688,7 +1703,13 @@ msgstr ""
 msgid "Where the default apps come from: a .flatpakrepo file's address or a Flatpak repository's, such as file:///src/out/apps-repo for a test; Flathub when not given"
 msgstr ""
 
+msgid "The address machines update the default apps from, when it is not where the build took them, as for a test image built from a local repository that its VM reaches over HTTP"
+msgstr ""
+
 msgid "A default app to install instead of the definition's list; for test images. Can be given more than once"
+msgstr ""
+
+msgid "A default app this image drops, kept for each person who used it, instead of the definition's; for test images. Can be given more than once"
 msgstr ""
 
 msgid "Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images"

@@ -50,9 +50,14 @@ pub struct Build<'a> {
     /// Where the default apps come from (M6.2): a `.flatpakrepo` file's
     /// address or a repository's.
     pub apps_from: String,
+    /// Where machines update the default apps from, when not `apps_from`.
+    pub apps_url: Option<String>,
     /// The default apps the data partition gets (M6.2): the definition's,
     /// or a test's own.
     pub apps: Vec<String>,
+    /// The default apps a release dropped (M6.2): the definition's, or a
+    /// test's own.
+    pub apps_dropped: Vec<String>,
     /// Whether to write the disk's `.gz` copy releases publish; test
     /// images nobody downloads skip it (the slot's `.gz` is always made)
     pub compress: bool,
@@ -498,8 +503,21 @@ impl Build<'_> {
     /// Tells Flatpak where the default apps' installation lies on the
     /// data partition (M6.2), when the image has default apps.
     fn install_apps_conf(&self, root: &Path) -> Result<()> {
-        if self.apps.is_empty() {
+        if self.apps.is_empty() && self.apps_dropped.is_empty() {
             return Ok(());
+        }
+        let list = edel::apps::DefaultApps {
+            flatpak: self.apps.clone(),
+            flatpak_dropped: self.apps_dropped.clone(),
+        };
+        self.runner.step(&format!(
+            "record the default apps in {}",
+            edel::places::DEFAULT_APPS_LIST
+        ));
+        if !self.runner.dry_run {
+            let file = root.join(edel::places::DEFAULT_APPS_LIST.trim_start_matches('/'));
+            fs::create_dir_all(file.parent().unwrap_or(root))?;
+            fs::write(file, list.text())?;
         }
         let file =
             Path::new(edel::places::FLATPAK_INSTALLATIONS).join(edel::apps::installation_file());
@@ -560,7 +578,7 @@ impl Build<'_> {
         };
         let mut add = flatpak();
         add.args(["remote-add", "--if-not-exists"]);
-        add.args(remote_args(&self.apps_from));
+        add.args(edel::apps::remote_add_args(&self.apps_from));
         add.arg(edel::apps::APPS_REMOTE).arg(&self.apps_from);
         self.runner.run(&mut add)?;
         let mut install = flatpak();
@@ -568,6 +586,13 @@ impl Build<'_> {
             .args(["install", "--noninteractive", "-y", edel::apps::APPS_REMOTE])
             .args(&self.apps);
         self.runner.run(&mut install)?;
+        if let Some(url) = &self.apps_url {
+            let mut point = flatpak();
+            point
+                .args(["remote-modify", &format!("--url={url}")])
+                .arg(edel::apps::APPS_REMOTE);
+            self.runner.run(&mut point)?;
+        }
         Ok(Some(data))
     }
 
@@ -885,19 +910,6 @@ impl Build<'_> {
                 .arg(&version)
                 .arg(on_esp(&format!("{}/", boot::GRUB_PREFIX))),
         )
-    }
-}
-
-/// What `flatpak remote-add` needs besides the name and the address
-/// (M6.2): `--from` for a `.flatpakrepo` file, which brings its key, and
-/// `--no-gpg-verify` for a local test repository, which has none.
-fn remote_args(from: &str) -> &'static [&'static str] {
-    if from.ends_with(".flatpakrepo") {
-        &["--from"]
-    } else if from.starts_with("file://") {
-        &["--no-gpg-verify"]
-    } else {
-        &[]
     }
 }
 
@@ -1285,16 +1297,6 @@ mod tests {
         // 800 MiB of apps: a quarter more and 64 MiB of room.
         assert_eq!(data_mib_for(64, 800 * MIB), 1064);
         assert_eq!(data_mib_for(2000, 800 * MIB), 2000);
-    }
-
-    #[test]
-    fn a_remote_is_added_with_its_key_or_as_a_local_test_repository() {
-        assert_eq!(remote_args(edel::apps::FLATHUB_REMOTE), ["--from"]);
-        assert_eq!(
-            remote_args("file:///src/out/apps-repo"),
-            ["--no-gpg-verify"]
-        );
-        assert!(remote_args("https://example.org/repo").is_empty());
     }
 
     #[test]
