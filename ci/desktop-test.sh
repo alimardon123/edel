@@ -4700,7 +4700,7 @@ glass_step() {
 		fail "'$1' did not restart edel-shell-ui (the colours changed)"
 	wait_more 'edel-shell-ui: panel places' "$places" ||
 		fail "shell-ui did not draw its panel after '$1'"
-	[ -z "$2" ] ||
+	[ -z "${2:-}" ] ||
 		wait_more "edel-shell-ui: glass blur $2 on 1280x800" "$glassed" ||
 		fail "shell-ui did not make the glass at blur $2 on 1280x800 after '$1'"
 	# The places are logged as the panel is drawn, before its buffer is on
