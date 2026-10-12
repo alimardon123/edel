@@ -30,6 +30,21 @@ const TIME: Duration = Duration::from_secs(8);
 /// percentage and time are the ones to show.
 const DISPLAY_DEVICE: &str = "DisplayDevice";
 
+/// The program that asks the daemon for a battery's history over D-Bus,
+/// found on the `PATH` (`gdbus` comes with GLib, which the desktop has).
+pub const GDBUS: &str = "gdbus";
+
+/// The history shows the last day, as UPower keeps it: 48 samples, which
+/// is one every half hour.
+const DAY: u32 = 86400;
+const SAMPLES: u32 = 48;
+
+/// How many bars a day is drawn in: two hours each.
+pub const BARS: usize = 12;
+
+/// The length of a bar's slot, in seconds.
+const SLOT: u64 = DAY as u64 / BARS as u64;
+
 /// What a battery is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum State {
@@ -71,6 +86,9 @@ pub struct Device {
     pub state: State,
     /// How full it is, in percent
     pub percent: Option<f64>,
+    /// How full it can be now against its design capacity, in percent
+    /// (the battery's health); none when the battery does not say
+    pub capacity: Option<f64>,
     /// Minutes until it is empty (discharging) or full (charging)
     pub minutes: Option<u32>,
     /// For a power cable: whether it carries power
@@ -91,6 +109,12 @@ impl Device {
     /// The percentage as a whole number.
     pub fn percent_whole(&self) -> Option<u32> {
         self.percent.map(|p| p.round().clamp(0.0, 100.0) as u32)
+    }
+
+    /// The battery's health as a whole number: how full it charges now
+    /// against what it was made for.
+    pub fn health_whole(&self) -> Option<u32> {
+        self.capacity.map(|p| p.round().clamp(0.0, 100.0) as u32)
     }
 }
 
@@ -130,6 +154,18 @@ impl Snapshot {
                 && d.present
                 && d.percent.is_some()
                 && !d.is_display()
+        })
+    }
+
+    /// The battery's health: the display device's when it gives one, else
+    /// the first battery of this machine that does (UPower's display device
+    /// often leaves it out), rounded as [`Device::health_whole`] does.
+    pub fn health(&self) -> Option<u32> {
+        self.battery().and_then(Device::health_whole).or_else(|| {
+            self.devices
+                .iter()
+                .filter(|d| d.is_battery() && d.present && !d.is_display())
+                .find_map(Device::health_whole)
         })
     }
 
@@ -203,6 +239,7 @@ pub fn parse(dump: &str) -> Snapshot {
                 present: true,
                 state: State::Unknown,
                 percent: None,
+                capacity: None,
                 minutes: None,
                 online: None,
             });
@@ -253,6 +290,9 @@ pub fn parse(dump: &str) -> Snapshot {
             "state" => device.state = State::parse(value),
             "percentage" => {
                 device.percent = value.trim_end_matches('%').trim().parse::<f64>().ok();
+            }
+            "capacity" => {
+                device.capacity = value.trim_end_matches('%').trim().parse::<f64>().ok();
             }
             "time to empty" | "time to full" => device.minutes = minutes(value),
             _ => {}
@@ -370,6 +410,153 @@ fn hours_text(n: u32) -> String {
     } else {
         trf("{n} hours", &[("n", &n.to_string())])
     }
+}
+
+/// One reading of a battery's charge, as UPower keeps its history.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Sample {
+    /// When it was taken, in seconds since 1970
+    pub time: u64,
+    /// The charge, in percent
+    pub percent: f64,
+    /// Whether the battery was charging then (UPower's states 1, 4 and 5)
+    pub charging: bool,
+}
+
+/// The arguments of the D-Bus call that asks UPower for a battery's
+/// charge over the last day, as `gdbus` takes them.
+pub fn history_args(path: &str) -> Vec<String> {
+    [
+        "call",
+        "--system",
+        "--dest",
+        "org.freedesktop.UPower",
+        "--object-path",
+        path,
+        "--method",
+        "org.freedesktop.UPower.Device.GetHistory",
+        "charge",
+        &DAY.to_string(),
+        &SAMPLES.to_string(),
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect()
+}
+
+/// Reads the samples out of `gdbus`'s text, a list of tuples such as
+/// `([(uint32 1759932326, 82.0, uint32 1), (uint32 1759932266, 81.5, uint32 2)],)`.
+/// A tuple it cannot read is skipped, and text with none gives none, so
+/// a later UPower's output never panics the page.
+pub fn parse_history(text: &str) -> Vec<Sample> {
+    // Each piece after a `(` starts with a tuple's fields and ends at its `)`.
+    text.split('(')
+        .skip(1)
+        .filter_map(|piece| {
+            let fields: Vec<&str> = piece.split(')').next()?.split(',').collect();
+            let [time, percent, state] = fields.as_slice() else {
+                return None;
+            };
+            let time = typed(time, "uint32")?.parse::<u64>().ok()?;
+            let percent: f64 = percent.trim().parse().ok()?;
+            let state: u32 = typed(state, "uint32")?.parse().ok()?;
+            percent.is_finite().then_some(Sample {
+                time,
+                percent: percent.clamp(0.0, 100.0),
+                charging: matches!(state, 1 | 4 | 5),
+            })
+        })
+        .collect()
+}
+
+/// The value of one `TYPE value` field of `gdbus`'s text.
+fn typed<'a>(field: &'a str, kind: &str) -> Option<&'a str> {
+    field.trim().strip_prefix(kind).map(str::trim)
+}
+
+/// Asks UPower for a battery's charge over the last day (the page's
+/// chart). Any failure is an error in words for a person; the page hides
+/// the chart and does not show the error.
+pub fn history(path: &str) -> Result<Vec<Sample>> {
+    let args = history_args(path);
+    let command = tool::command_line(GDBUS, &args);
+    let done = match tool::run(GDBUS, &args, TIME) {
+        Ok(done) => done,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
+            "{}",
+            trf(
+                "this machine has no {program}, so the battery's history is not shown",
+                &[("program", GDBUS)]
+            )
+        ),
+        Err(e) => bail!(
+            "{}",
+            trf(
+                "could not run {program}: {error}",
+                &[("program", GDBUS), ("error", &e.to_string())]
+            )
+        ),
+    };
+    if done.timed_out {
+        bail!(
+            "{}",
+            trf(
+                "{command} did not answer in {seconds} s, so the battery's history is not shown",
+                &[
+                    ("command", &command),
+                    ("seconds", &TIME.as_secs().to_string())
+                ]
+            )
+        );
+    }
+    if !done.ok() {
+        let said = done.err.trim();
+        bail!(
+            "{}",
+            trf(
+                "{command} failed: {said}, so the battery's history is not shown",
+                &[("command", &command), ("said", said)]
+            )
+        );
+    }
+    Ok(parse_history(&done.out))
+}
+
+/// One bar of the day's chart: the mean charge of its slot, and whether
+/// the battery mostly charged in it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Bar {
+    pub percent: f64,
+    pub charging: bool,
+}
+
+/// The day as [`BARS`] bars, oldest first, the last one ending at `now`
+/// (seconds since 1970). A slot with no sample is `None`; samples older
+/// than a day or after `now` are dropped.
+pub fn day_bars(samples: &[Sample], now: u64) -> Vec<Option<Bar>> {
+    let start = now.saturating_sub(DAY as u64);
+    let mut slots: Vec<Vec<Sample>> = vec![Vec::new(); BARS];
+    for sample in samples {
+        if sample.time < start || sample.time > now {
+            continue;
+        }
+        let at = (((sample.time - start) / SLOT) as usize).min(BARS - 1);
+        slots[at].push(*sample);
+    }
+    slots
+        .iter()
+        .map(|slot| {
+            if slot.is_empty() {
+                return None;
+            }
+            let n = slot.len() as f64;
+            let charging = slot.iter().filter(|s| s.charging).count();
+            Some(Bar {
+                percent: slot.iter().map(|s| s.percent).sum::<f64>() / n,
+                charging: charging * 2 > slot.len(),
+            })
+        })
+        .collect()
 }
 
 /// `upower` with `args` as a line to type, what Copy as command shows.
@@ -644,6 +831,7 @@ Daemon:
             present: true,
             state,
             percent,
+            capacity: None,
             minutes,
             online: None,
         };
@@ -673,5 +861,154 @@ Daemon:
     fn the_command_line_is_upower_and_its_words() {
         assert_eq!(command_line(&["--dump"]), "upower --dump");
         assert_eq!(command_line(&["-i", "/org/x y"]), "upower -i '/org/x y'");
+    }
+
+    #[test]
+    fn the_battery_health_is_its_capacity_rounded() {
+        let snapshot = parse(LAPTOP);
+        // The battery's own line says it; the display device does not.
+        assert_eq!(snapshot.devices[1].capacity, Some(95.5));
+        assert_eq!(snapshot.battery().unwrap().capacity, None);
+        assert_eq!(snapshot.health(), Some(96), "95.5 rounds up");
+        let worn = parse(&LAPTOP.replace("capacity:            95.5%", "capacity: 140%"));
+        assert_eq!(worn.health(), Some(100), "clamped");
+        let unknown = parse(&LAPTOP.replace("    capacity:            95.5%\n", ""));
+        assert_eq!(unknown.health(), None, "no line, no health");
+    }
+
+    #[test]
+    fn the_history_call_asks_a_day_in_48_samples() {
+        assert_eq!(
+            history_args("/org/freedesktop/UPower/devices/battery_BAT0").join(" "),
+            "call --system --dest org.freedesktop.UPower --object-path /org/freedesktop/UPower/devices/battery_BAT0 --method org.freedesktop.UPower.Device.GetHistory charge 86400 48"
+        );
+    }
+
+    #[test]
+    fn a_history_line_reads_its_time_charge_and_state() {
+        let samples = parse_history(
+            "([(uint32 1759932326, 82.0, uint32 1), (uint32 1759932266, 81.5, uint32 2)],)",
+        );
+        assert_eq!(
+            samples,
+            vec![
+                Sample {
+                    time: 1759932326,
+                    percent: 82.0,
+                    charging: true
+                },
+                Sample {
+                    time: 1759932266,
+                    percent: 81.5,
+                    charging: false
+                },
+            ]
+        );
+        let states: Vec<bool> = [3, 4, 5, 6]
+            .iter()
+            .map(|state| {
+                parse_history(&format!("([(uint32 1, 50.0, uint32 {state})],)"))[0].charging
+            })
+            .collect();
+        assert_eq!(
+            states,
+            vec![false, true, true, false],
+            "charging is 4 and 5 too"
+        );
+    }
+
+    #[test]
+    fn a_history_with_nothing_or_garbage_is_empty_and_never_panics() {
+        assert!(parse_history("([],)").is_empty());
+        assert!(parse_history("").is_empty());
+        assert!(parse_history("garbage ( ) ((( uint32 x, y, z)").is_empty());
+        // A tuple it cannot read is skipped, the next one is kept.
+        let mixed = parse_history("([(uint32 oops, 1.0, uint32 1), (uint32 5, 60.0, uint32 2)],)");
+        assert_eq!(
+            mixed,
+            vec![Sample {
+                time: 5,
+                percent: 60.0,
+                charging: false
+            }]
+        );
+        assert!(parse_history("([(uint32 5, nan, uint32 2)],)").is_empty());
+    }
+
+    #[test]
+    fn the_day_is_twelve_two_hour_bars_ending_now() {
+        let now = 1_759_932_326u64;
+        let start = now - 86400;
+        let at = |hours: f64, percent: f64, charging: bool| Sample {
+            time: start + (hours * 3600.0) as u64,
+            percent,
+            charging,
+        };
+        // Slot 0 has two samples, slot 1 has none, slot 11 ends at now.
+        let samples = vec![
+            at(0.5, 100.0, false),
+            at(1.5, 90.0, false),
+            at(4.5, 40.0, true),
+            at(5.0, 42.0, true),
+            at(5.5, 44.0, false),
+            at(23.9, 60.0, false),
+        ];
+        let bars = day_bars(&samples, now);
+        assert_eq!(bars.len(), BARS);
+        assert_eq!(
+            bars[0],
+            Some(Bar {
+                percent: 95.0,
+                charging: false
+            })
+        );
+        assert_eq!(bars[1], None, "an empty slot");
+        assert_eq!(
+            bars[2],
+            Some(Bar {
+                percent: 42.0,
+                charging: true
+            }),
+            "two of three charged"
+        );
+        assert_eq!(
+            bars[11],
+            Some(Bar {
+                percent: 60.0,
+                charging: false
+            })
+        );
+    }
+
+    #[test]
+    fn old_and_future_samples_are_dropped_from_the_day() {
+        let now = 1_759_932_326u64;
+        let samples = vec![
+            Sample {
+                time: now - 86401,
+                percent: 10.0,
+                charging: false,
+            },
+            Sample {
+                time: now + 60,
+                percent: 10.0,
+                charging: false,
+            },
+            Sample {
+                time: now,
+                percent: 70.0,
+                charging: false,
+            },
+        ];
+        let bars = day_bars(&samples, now);
+        assert_eq!(bars.iter().filter(|b| b.is_some()).count(), 1);
+        assert_eq!(
+            bars[BARS - 1],
+            Some(Bar {
+                percent: 70.0,
+                charging: false
+            })
+        );
+        assert!(day_bars(&[], now).iter().all(Option::is_none));
     }
 }

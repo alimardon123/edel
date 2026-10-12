@@ -76,6 +76,12 @@ lock_glow_second = "#454079"
 # the same in both schemes, as the lock is dark in both.
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
+# The Power page's battery (M5.32, the board power-updates-users.jpg): the
+# fill when it charges or is above 20 percent, when it is low, and when it
+# is empty, as the accent palette's green, yellow and red.
+battery_ok = "#5cc777"
+battery_low = "#f2c94c"
+battery_empty = "#f2707a"
 
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
@@ -114,6 +120,9 @@ lock_glow_second = "#454079"
 # the same in both schemes, as the lock is dark in both.
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
+battery_ok = "#267f39"
+battery_low = "#8f6a00"
+battery_empty = "#d0363f"
 
 # The accents a person picks from (M5.12b1, appearance.accent): each name
 # has the light scheme's shade and the dark scheme's. `blue` is the
