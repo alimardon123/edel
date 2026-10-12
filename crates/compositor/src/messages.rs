@@ -54,6 +54,12 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// A screen copy a client asked for could not be filled (M6.3): the
+/// client is told `failed` and may ask again.
+pub fn copy_failed(output: &str, why: impl Display) -> String {
+    format!("a screen copy of {output} failed: {why}; the client is told so and may ask again")
+}
+
 /// The overview's plus could not add a workspace (M5.2j-b).
 pub fn workspace_not_added(why: impl Display) -> String {
     format!(
@@ -216,6 +222,14 @@ pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_screen_copy_says_what_failed_and_what_the_client_does() {
+        assert_eq!(
+            copy_failed("Virtual-1", "no texture for the copy"),
+            "a screen copy of Virtual-1 failed: no texture for the copy; the client is told so and may ask again"
+        );
+    }
 
     #[test]
     fn a_wallpaper_that_cannot_be_shown_says_what_shows_instead() {

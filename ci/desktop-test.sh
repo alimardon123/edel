@@ -4262,6 +4262,35 @@ case_portal() {
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
+case_capture() {
+	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
+	# for a screenshot gets the URI of a PNG the compositor copied (its log
+	# says so, once per client), and asking to share the screen gets a stream
+	# of the screen's size, 1280x800 here.
+	guest 'capture screenshot'
+	wait_for 'DESKTOP-TEST: capture_screenshot ' 60 || fail "the service did not hear back from the screenshot portal"
+	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
+	[ -n "$shot" ] || fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1)"
+	guest 'capture file'
+	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
+	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)
+	case "$file" in
+	*" missing") fail "the screenshot's file is not there: $file" ;;
+	esac
+	bytes=$(echo "$file" | awk '{ print $2 }')
+	magic=$(echo "$file" | awk '{ print $3 }')
+	[ "$magic" = 89504e47 ] || fail "the screenshot is not a PNG (its first bytes are $magic): $file"
+	[ "$bytes" -gt 1024 ] || fail "the screenshot is $bytes bytes, under 1 KB: $file"
+	grep -aq 'edel-compositor: screen copied for ' "$log" || fail "the compositor logged no screen copy"
+	guest 'capture screencast'
+	wait_for 'DESKTOP-TEST: capture_screencast ' 60 || fail "the service did not hear back from the screencast portal"
+	stream=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screencast .*screencast stream \([0-9][0-9]*\) \([0-9]*x[0-9]*\).*/\1 \2/p' | tail -n 1)
+	[ -n "$stream" ] || fail "the screencast gave no stream: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screencast ' | tail -n 1)"
+	size=${stream#* }
+	[ "$size" = 1280x800 ] || fail "the screencast's stream is $size, not the screen's 1280x800"
+	echo "PASS: a screenshot portal call gave $shot, a PNG of $bytes bytes the compositor copied; a screencast gave stream ${stream% *} of $size"
+}
+
 case_lock() {
 	# The lock screen (M5.10): Super+L asks shell-ui to lock, the
 	# compositor shows nothing of the session but each screen's lock
@@ -6056,7 +6085,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

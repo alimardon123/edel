@@ -205,6 +205,11 @@ pub struct Edel {
     _pointer_constraints: smithay::wayland::pointer_constraints::PointerConstraintsState,
     _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState,
     _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
+    /// The frames clients asked to copy the screen into, until their
+    /// buffers are filled (`screencopy.rs`, M6.3).
+    pub pending_copies: Vec<crate::screencopy::Pending>,
+    /// The clients whose first copy has been logged, once each.
+    pub copy_clients: Vec<smithay::reexports::wayland_server::backend::ClientId>,
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
     pub keyboard_shortcuts_inhibit:
         smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
@@ -219,6 +224,7 @@ impl Edel {
         crate::extworkspace::create_global(&display);
         crate::toplevels::create_global(&display);
         crate::edelshell::create_global(&display);
+        crate::screencopy::create_global(&display);
         Ok(Edel {
             dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
@@ -262,6 +268,8 @@ impl Edel {
             _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState::new::<Edel>(
                 &display,
             ),
+            pending_copies: Vec::new(),
+            copy_clients: Vec::new(),
             keyboard_shortcuts_inhibit:
                 smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<
                     Edel,

@@ -892,6 +892,9 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
             return false;
         }
     };
+    // Screen copies asked for this output are filled from what it drew
+    // (M6.3); before the empty-frame return, so a copy is never left out.
+    state.fill_copies(renderer, output, &elements);
     for window in state.space.elements() {
         window.with_surfaces(|surface, data| {
             update_surface_primary_scanout_output(

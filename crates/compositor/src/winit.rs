@@ -163,10 +163,13 @@ fn draw(window: &mut Window, state: &mut Edel) {
     let damage = match window.backend.bind() {
         Ok((renderer, mut framebuffer)) => {
             let elements = state.elements(renderer, &window.output);
-            window
+            let drawn = window
                 .damage
                 .render_output(renderer, &mut framebuffer, age, &elements, background)
-                .map(|result| result.damage.cloned())
+                .map(|result| result.damage.cloned());
+            // Screen copies asked for this output (M6.3), from what it drew.
+            state.fill_copies(renderer, &window.output, &elements);
+            drawn
         }
         Err(e) => {
             eprintln!("edel-compositor: binding the window failed: {e}");

@@ -286,6 +286,28 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' dbus-monitor --session \"type='signal',interface='org.freedesktop.portal.Settings',member='SettingChanged'\"" </dev/null >/tmp/portal-signals.txt 2>&1 &
 			;;
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
+		# Screenshots and screen sharing (M6.3), asked as ci through the
+		# portals: the screenshot's URI is kept for `capture file`, which
+		# says the file's size and its first four bytes (a PNG's magic).
+		'capture screenshot')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screenshot" </dev/null 2>&1 | tr '\n' ' ')
+			say "capture_screenshot $out"
+			echo "$out" | sed -n 's/.*screenshot URI \(file:[^ ]*\).*/\1/p' >/tmp/capture-uri.txt
+			;;
+		'capture file')
+			path=$(sed -n 's|^file://||p' /tmp/capture-uri.txt 2>/dev/null)
+			if [ -n "$path" ] && [ -f "$path" ]; then
+				say "capture_file $path $(stat -c %s "$path") $(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
+			else
+				say "capture_file ${path:-none} missing"
+			fi
+			;;
+		'capture screencast')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screencast" </dev/null 2>&1 | tr '\n' ' ')
+			say "capture_screencast $out"
+			;;
 		# The tray (M5.2e): a StatusNotifierItem on ci's session bus, whose
 		# icon is a square of #33aa66 and which prints what a click asks of
 		# it into a file, read back with `sni log`; `sni off` ends it.

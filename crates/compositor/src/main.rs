@@ -30,6 +30,7 @@ mod pointer;
 mod program;
 mod render;
 mod sandbox;
+mod screencopy;
 mod session;
 mod shellui;
 mod shortcuts;

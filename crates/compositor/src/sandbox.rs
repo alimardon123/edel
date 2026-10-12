@@ -3,10 +3,12 @@
 //! Flatpak opens a socket of its own for its apps; a client that connects
 //! through such a socket carries its security context, and the layer
 //! shell, the window list (wlr-foreign-toplevel-management), the
-//! workspaces (ext-workspace-v1) and `edel-shell-v1` are hidden from it,
-//! as is the security context manager itself, so a sandbox cannot nest
-//! one. So a sandboxed app cannot draw over the lock screen, list other
-//! windows or close them. Programs that are not sandboxed keep these
+//! workspaces (ext-workspace-v1), `edel-shell-v1` and the screen copy
+//! (wlr-screencopy, M6.3, so a sandboxed app takes a picture through the
+//! portal, which asks) are hidden from it, as is the security context
+//! manager itself, so a sandbox cannot nest one. So a sandboxed app
+//! cannot draw over the lock screen, list other windows, close them or
+//! read the screen. Programs that are not sandboxed keep these
 //! protocols, as other projects' panels and docks need them (ADR-010).
 
 use std::sync::Arc;

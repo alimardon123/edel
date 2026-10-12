@@ -1,0 +1,8 @@
+# xdg-desktop-portal-wlr's settings in an Edel OS session (roadmap M6.3).
+# A screen is shared without asking: chooser_type=none takes the first
+# screen, and an empty output_name names none, so the first one is
+# shared. A chooser of Edel's own, with the picker the desktop draws, is
+# a later step's (see the step's note in docs/ROADMAP.md).
+[screencast]
+chooser_type=none
+output_name=
