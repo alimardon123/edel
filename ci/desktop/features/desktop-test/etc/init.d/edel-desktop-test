@@ -610,6 +610,13 @@ commands() {
 			as_ci edel-settings --page appearance.gaps </dev/null >/tmp/settings-shape.log 2>&1 &
 			;;
 		'settings shape log') say "settings_shape_log $(tr '\n' ';' </tmp/settings-shape.log 2>/dev/null)" ;;
+		# Settings' Shortcuts page (M5.13b): opened by the name of the
+		# close_window row, its log says where each Change button and each
+		# dialog's Use anyway lies, and what each write did.
+		'settings shortcuts')
+			as_ci edel-settings --page shortcuts.close_window </dev/null >/tmp/settings-shortcuts.log 2>&1 &
+			;;
+		'settings shortcuts log') say "settings_shortcuts_log $(tr '\n' ';' </tmp/settings-shortcuts.log 2>/dev/null)" ;;
 		# The pages `edel settings` lists, one word each, in the order the
 		# tool prints them (the tour's page list, read from the tool itself).
 		'settings pages') say "settings_pages $(edel settings | awk '/^  [a-z_]+  / { print $1 }' | tr '\n' ' ')" ;;
@@ -632,6 +639,9 @@ commands() {
 			;;
 		# The six shape keys ci's own file holds (Settings writes ci's file,
 		# not the machine's), taken out again.
+		# The two shortcut lines the Shortcuts page wrote to ci's own file
+		# (M5.13b), taken out again, so the release's keys are back.
+		'shortcuts mine default') as_ci "sed -i -E '/^(close_window|show_workspaces) = /d' /home/ci/.config/edel/$settings_name" ;;
 		'shape mine default') as_ci "sed -i -E '/^(radius|gaps|gaps_outer|border_width|title_bar_height|panel_opacity) = /d' /home/ci/.config/edel/$settings_name" ;;
 		'settings workspaces log') say "settings_workspaces_log $(tr '\n' ';' </tmp/settings-workspaces.log 2>/dev/null)" ;;
 		# The apps widget's pins (M5.31d): ci's own file with one dock along

@@ -10,6 +10,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::i18n::n_;
+
 /// One action keys can do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Action {
@@ -41,209 +43,260 @@ const fn action(
 /// presets ship their own, M5.4). Append only: a name is a key of the
 /// settings file.
 pub const ACTIONS: &[Action] = &[
-    action("close_window", "Super+Q", true, "Close the focused window"),
+    action(
+        "close_window",
+        "Super+Q",
+        true,
+        n_("Close the focused window"),
+    ),
     action(
         "open_launcher",
         "Super",
         true,
-        "Open or close the launcher, Super tapped alone",
+        n_("Open or close the launcher, Super tapped alone"),
     ),
     action(
         "switch_windows",
         "Alt+Tab",
         false,
-        "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
+        n_(
+            "Switch windows, the most recently used first, while the modifiers are held; with Shift, back",
+        ),
     ),
     action(
         "toggle_tiling",
         "Super+T",
         false,
-        "Switch this workspace between floating and tiling",
+        n_("Switch this workspace between floating and tiling"),
     ),
-    action("open_terminal", "Ctrl+Alt+T", false, "Open a terminal"),
+    action("open_terminal", "Ctrl+Alt+T", false, n_("Open a terminal")),
+    action("take_screenshot", "Print", false, n_("Take a screenshot")),
+    action("lock_screen", "Super+L", true, n_("Lock the screen")),
     action(
-        "take_screenshot",
-        "Print",
+        "go_to_workspace_1",
+        "Super+1",
         false,
-        "Take a screenshot (M6.3)",
+        n_("Go to workspace 1"),
     ),
-    action("lock_screen", "Super+L", true, "Lock the screen (M5.10)"),
-    action("go_to_workspace_1", "Super+1", false, "Go to workspace 1"),
-    action("go_to_workspace_2", "Super+2", false, "Go to workspace 2"),
-    action("go_to_workspace_3", "Super+3", false, "Go to workspace 3"),
-    action("go_to_workspace_4", "Super+4", false, "Go to workspace 4"),
-    action("go_to_workspace_5", "Super+5", false, "Go to workspace 5"),
-    action("go_to_workspace_6", "Super+6", false, "Go to workspace 6"),
-    action("go_to_workspace_7", "Super+7", false, "Go to workspace 7"),
-    action("go_to_workspace_8", "Super+8", false, "Go to workspace 8"),
-    action("go_to_workspace_9", "Super+9", false, "Go to workspace 9"),
+    action(
+        "go_to_workspace_2",
+        "Super+2",
+        false,
+        n_("Go to workspace 2"),
+    ),
+    action(
+        "go_to_workspace_3",
+        "Super+3",
+        false,
+        n_("Go to workspace 3"),
+    ),
+    action(
+        "go_to_workspace_4",
+        "Super+4",
+        false,
+        n_("Go to workspace 4"),
+    ),
+    action(
+        "go_to_workspace_5",
+        "Super+5",
+        false,
+        n_("Go to workspace 5"),
+    ),
+    action(
+        "go_to_workspace_6",
+        "Super+6",
+        false,
+        n_("Go to workspace 6"),
+    ),
+    action(
+        "go_to_workspace_7",
+        "Super+7",
+        false,
+        n_("Go to workspace 7"),
+    ),
+    action(
+        "go_to_workspace_8",
+        "Super+8",
+        false,
+        n_("Go to workspace 8"),
+    ),
+    action(
+        "go_to_workspace_9",
+        "Super+9",
+        false,
+        n_("Go to workspace 9"),
+    ),
     action(
         "move_to_workspace_1",
         "Super+Shift+1",
         false,
-        "Move the focused window to workspace 1",
+        n_("Move the focused window to workspace 1"),
     ),
     action(
         "move_to_workspace_2",
         "Super+Shift+2",
         false,
-        "Move the focused window to workspace 2",
+        n_("Move the focused window to workspace 2"),
     ),
     action(
         "move_to_workspace_3",
         "Super+Shift+3",
         false,
-        "Move the focused window to workspace 3",
+        n_("Move the focused window to workspace 3"),
     ),
     action(
         "move_to_workspace_4",
         "Super+Shift+4",
         false,
-        "Move the focused window to workspace 4",
+        n_("Move the focused window to workspace 4"),
     ),
     action(
         "move_to_workspace_5",
         "Super+Shift+5",
         false,
-        "Move the focused window to workspace 5",
+        n_("Move the focused window to workspace 5"),
     ),
     action(
         "move_to_workspace_6",
         "Super+Shift+6",
         false,
-        "Move the focused window to workspace 6",
+        n_("Move the focused window to workspace 6"),
     ),
     action(
         "move_to_workspace_7",
         "Super+Shift+7",
         false,
-        "Move the focused window to workspace 7",
+        n_("Move the focused window to workspace 7"),
     ),
     action(
         "move_to_workspace_8",
         "Super+Shift+8",
         false,
-        "Move the focused window to workspace 8",
+        n_("Move the focused window to workspace 8"),
     ),
     action(
         "move_to_workspace_9",
         "Super+Shift+9",
         false,
-        "Move the focused window to workspace 9",
+        n_("Move the focused window to workspace 9"),
     ),
     action(
         "toggle_fullscreen",
         "Super+F",
         false,
-        "Make the focused window fill its screen, or leave fullscreen (M5.20)",
+        n_("Make the focused window fill its screen, or leave fullscreen"),
     ),
     action(
         "next_keyboard_layout",
         "Super+Space",
         false,
-        "Switch to the next keyboard layout of region.keyboard (M5.21)",
+        n_("Switch to the next keyboard layout of region.keyboard"),
     ),
     action(
         "minimize_window",
         "Super+H",
         false,
-        "Minimize the focused window; the window list or Alt+Tab brings it back (M5.18a)",
+        n_("Minimize the focused window; the window list or Alt+Tab brings it back"),
     ),
     action(
         "toggle_maximize",
         "Super+M",
         false,
-        "Maximize the focused window, or give it its size back (M5.18a)",
+        n_("Maximize the focused window, or give it its size back"),
     ),
     action(
         "focus_window_left",
         "Super+Left",
         false,
-        "Focus the window to the left of the focused one (M5.16a)",
+        n_("Focus the window to the left of the focused one"),
     ),
     action(
         "focus_window_right",
         "Super+Right",
         false,
-        "Focus the window to the right of the focused one (M5.16a)",
+        n_("Focus the window to the right of the focused one"),
     ),
     action(
         "focus_window_up",
         "Super+Up",
         false,
-        "Focus the window above the focused one (M5.16a)",
+        n_("Focus the window above the focused one"),
     ),
     action(
         "focus_window_down",
         "Super+Down",
         false,
-        "Focus the window below the focused one (M5.16a)",
+        n_("Focus the window below the focused one"),
     ),
     action(
         "move_window_left",
         "Super+Shift+Left",
         false,
-        "Swap the focused window with the one to its left, when tiled (M5.16a)",
+        n_("Swap the focused window with the one to its left, when tiled"),
     ),
     action(
         "move_window_right",
         "Super+Shift+Right",
         false,
-        "Swap the focused window with the one to its right, when tiled (M5.16a)",
+        n_("Swap the focused window with the one to its right, when tiled"),
     ),
     action(
         "move_window_up",
         "Super+Shift+Up",
         false,
-        "Swap the focused window with the one above it, when tiled (M5.16a)",
+        n_("Swap the focused window with the one above it, when tiled"),
     ),
     action(
         "move_window_down",
         "Super+Shift+Down",
         false,
-        "Swap the focused window with the one below it, when tiled (M5.16a)",
+        n_("Swap the focused window with the one below it, when tiled"),
     ),
     action(
         "cycle_column_width",
         "Super+R",
         false,
-        "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style (M5.16c)",
+        n_(
+            "Make the focused column a third, a half or two thirds of the screen wide, in the scroll style",
+        ),
     ),
     action(
         "show_tray",
         "Super+B",
         false,
-        "Open or close the tray's apps behind its arrow, with the keyboard on them (M5.9h)",
+        n_("Open or close the tray's apps behind its arrow, with the keyboard on them"),
     ),
     action(
         "show_workspaces",
         "Super+W",
         false,
-        "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it (M5.2j)",
+        n_(
+            "Open the workspace overview, every workspace in a strip and the shown one's windows spread out, or leave it",
+        ),
     ),
     action(
         "next_workspace",
         "Super+Ctrl+Right",
         false,
-        "Show the workspace after the shown one; stops at the last (M5.2i)",
+        n_("Show the workspace after the shown one; stops at the last"),
     ),
     action(
         "previous_workspace",
         "Super+Ctrl+Left",
         false,
-        "Show the workspace before the shown one; stops at the first (M5.2i)",
+        n_("Show the workspace before the shown one; stops at the first"),
     ),
     action(
         "move_to_next_workspace",
         "Super+Ctrl+Shift+Right",
         false,
-        "Move the focused window to the workspace after the shown one, and follow it (M5.2i)",
+        n_("Move the focused window to the workspace after the shown one, and follow it"),
     ),
     action(
         "move_to_previous_workspace",
         "Super+Ctrl+Shift+Left",
         false,
-        "Move the focused window to the workspace before the shown one, and follow it (M5.2i)",
+        n_("Move the focused window to the workspace before the shown one, and follow it"),
     ),
 ];
 
@@ -441,6 +494,22 @@ pub fn resolve(
     (resolved, notes)
 }
 
+/// The action that already has `keys` in `file` (the settings file's
+/// `[shortcuts]` laid over the defaults, as a reader on a machine resolves
+/// it), other than `action` itself: what the Shortcuts page's capture
+/// says is "Already used by", before it writes anything (M5.13b).
+pub fn clash(
+    file: &BTreeMap<String, String>,
+    action: &str,
+    keys: &Keys,
+) -> Option<&'static Action> {
+    let (resolved, _) = resolve(file);
+    resolved
+        .into_iter()
+        .find(|(a, held)| a.name != action && held.as_ref() == Some(keys))
+        .map(|(a, _)| a)
+}
+
 /// What a strict checker refuses in `[shortcuts]`, one line per problem:
 /// unknown actions, keys it cannot read, two actions on one key and a
 /// rescue action without keys.
@@ -630,6 +699,48 @@ mod tests {
             ("toggle_tiling", "Super+Q+W"),
         ]));
         assert_eq!(notes.len(), 2, "{notes:?}");
+    }
+
+    #[test]
+    fn a_chord_formats_and_parses_back_to_itself() {
+        for text in [
+            "Super+Q",
+            "Super+Ctrl+Alt+Shift+F5",
+            "Ctrl+Alt+T",
+            "Super+Shift+Page_Up",
+            "Shift+Print",
+            "Super+1",
+            "Alt+Space",
+            "Super+Escape",
+        ] {
+            let keys = parse(text).unwrap().unwrap();
+            assert_eq!(
+                parse(&keys.to_string()).unwrap(),
+                Some(keys.clone()),
+                "{text}"
+            );
+            assert_eq!(keys.to_string(), text, "{text} is written the one way");
+        }
+    }
+
+    #[test]
+    fn a_clash_names_the_other_action_and_nothing_else() {
+        let superq = parse("Super+Q").unwrap().unwrap();
+        let superw = parse("Super+W").unwrap().unwrap();
+        // Close holds Super+Q, so Super+Q is no clash for close itself.
+        assert_eq!(clash(&file(&[]), "close_window", &superq), None);
+        assert_eq!(
+            clash(&file(&[]), "open_terminal", &superq).map(|a| a.name),
+            Some("close_window")
+        );
+        // Super+W is the overview's by default; moving it frees nothing.
+        assert_eq!(
+            clash(&file(&[]), "close_window", &superw).map(|a| a.name),
+            Some("show_workspaces")
+        );
+        // Once the overview gives its keys up, Super+W is free.
+        let freed = file(&[("show_workspaces", "")]);
+        assert_eq!(clash(&freed, "close_window", &superw), None);
     }
 
     #[test]

@@ -1019,6 +1019,135 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
+msgid "Close window"
+msgstr ""
+
+msgid "Open launcher"
+msgstr ""
+
+msgid "Switch windows"
+msgstr ""
+
+msgid "Floating or tiling"
+msgstr ""
+
+msgid "Open terminal"
+msgstr ""
+
+msgid "Take screenshot"
+msgstr ""
+
+msgid "Workspace 1"
+msgstr ""
+
+msgid "Workspace 2"
+msgstr ""
+
+msgid "Workspace 3"
+msgstr ""
+
+msgid "Workspace 4"
+msgstr ""
+
+msgid "Workspace 5"
+msgstr ""
+
+msgid "Workspace 6"
+msgstr ""
+
+msgid "Workspace 7"
+msgstr ""
+
+msgid "Workspace 8"
+msgstr ""
+
+msgid "Workspace 9"
+msgstr ""
+
+msgid "Move window to workspace 1"
+msgstr ""
+
+msgid "Move window to workspace 2"
+msgstr ""
+
+msgid "Move window to workspace 3"
+msgstr ""
+
+msgid "Move window to workspace 4"
+msgstr ""
+
+msgid "Move window to workspace 5"
+msgstr ""
+
+msgid "Move window to workspace 6"
+msgstr ""
+
+msgid "Move window to workspace 7"
+msgstr ""
+
+msgid "Move window to workspace 8"
+msgstr ""
+
+msgid "Move window to workspace 9"
+msgstr ""
+
+msgid "Fullscreen"
+msgstr ""
+
+msgid "Next keyboard layout"
+msgstr ""
+
+msgid "Minimize window"
+msgstr ""
+
+msgid "Maximize window"
+msgstr ""
+
+msgid "Focus window to the left"
+msgstr ""
+
+msgid "Focus window to the right"
+msgstr ""
+
+msgid "Focus window up"
+msgstr ""
+
+msgid "Focus window down"
+msgstr ""
+
+msgid "Move window left"
+msgstr ""
+
+msgid "Move window right"
+msgstr ""
+
+msgid "Move window up"
+msgstr ""
+
+msgid "Move window down"
+msgstr ""
+
+msgid "Column width"
+msgstr ""
+
+msgid "Show tray"
+msgstr ""
+
+msgid "Workspace overview"
+msgstr ""
+
+msgid "Next workspace"
+msgstr ""
+
+msgid "Previous workspace"
+msgstr ""
+
+msgid "Move window to next workspace"
+msgstr ""
+
+msgid "Move window to previous workspace"
+msgstr ""
+
 msgid "Which panels and docks show, where, and what they hold"
 msgstr ""
 
@@ -1098,6 +1227,27 @@ msgid "Shape"
 msgstr ""
 
 msgid "How the windows will look with these shapes"
+msgstr ""
+
+msgid "The keys for each action. Change one and press the keys you want."
+msgstr ""
+
+msgid "Hold Super, Ctrl, Alt or Shift with a key. Escape cancels; Backspace clears the action."
+msgstr ""
+
+msgid "Change"
+msgstr ""
+
+msgid "Change shortcut"
+msgstr ""
+
+msgid "Press the new keys for {action}"
+msgstr ""
+
+msgid "Use anyway"
+msgstr ""
+
+msgid "Already used by {action}"
 msgstr ""
 
 msgid "Where sound plays, what listens, and how loud."
