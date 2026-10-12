@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::cairo::{Context, LinearGradient};
+use gtk::cairo::{Context, LinearGradient, RadialGradient};
 use gtk::{gio, glib};
 
 use edel::i18n::{n_, tr, trf};
@@ -26,6 +26,7 @@ use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
 
 use crate::files::Files;
+use crate::look_pictures::{self, Inputs};
 use crate::style::Theme;
 use crate::{icon, panels, preview, rows, widgets};
 
@@ -47,10 +48,11 @@ const SCREEN: (f32, f32) = (1280.0, 800.0);
 const MARGIN: f32 = 24.0;
 const GAP: f32 = 16.0;
 
-/// A look's picture on its card in logical pixels: 256 by 160, 16:10, and the
+/// A look's least picture on its card in logical pixels: 184 by 115, 16:10, so
+/// three stand on a line as the mockup has them, and the
 /// room between the cards.
-const CARD_W: i32 = 256;
-const CARD_H: i32 = 160;
+const CARD_W: i32 = 184;
+const CARD_H: i32 = 115;
 const CARD_GAP: i32 = 16;
 
 /// Each part's size on the screen, width and height in logical pixels.
@@ -64,11 +66,25 @@ const PICTURE_SIZE: (f32, f32) = (112.0, 112.0);
 const BATTERY_SIZE: (f32, f32) = (80.0, 36.0);
 
 /// A part's corner radius on the screen, which the card scales.
-const PART_RADIUS: f64 = 12.0;
-/// The alpha a part is drawn at on a card: the clock and the person a
-/// little more than the rest.
-const PART_ALPHA: f32 = 0.25;
-const STRONG_ALPHA: f32 = 0.45;
+const PART_RADIUS: f64 = 8.0;
+/// A look's picture corner radius on its card, in the card's pixels: the
+/// menus' radius, the same as the ring round the chosen look.
+const PICTURE_CORNER: f64 = 12.0;
+/// The alphas of the backdrop text on a card (M5.10c7b): a part's fill and
+/// edge, an analog clock's face, the date's words, and the light a wallpaper
+/// look has at its top left.
+const FILL_ALPHA: f32 = 0.14;
+const EDGE_ALPHA: f32 = 0.16;
+const FACE_ALPHA: f32 = 0.45;
+const DATE_ALPHA: f32 = 0.78;
+const GLOW_ALPHA: f32 = 0.35;
+/// The person's pill on the screen, in logical pixels tall; the person's disc
+/// stands over it when the person's rect is at least 2.5 times as tall.
+const PILL_H: f64 = 36.0;
+/// A backdrop look's gradient angle, as the mockup has it (160 degrees, CSS
+/// style: 0 up, 90 right), and a wallpaper look's, corner to corner.
+const BACKDROP_ANGLE: f64 = 160.0;
+const WALLPAPER_ANGLE: f64 = 135.0;
 
 /// What a look's picture draws: its parts and whether its background is the
 /// navy scene. Shared with the picture, so a change is drawn in place.
@@ -118,10 +134,11 @@ fn parts_text(parts: &[Placed]) -> Result<String, String> {
 }
 
 /// The built-in looks, then the person's own by name, each with what its
-/// picture draws: the parts and whether the background is the navy scene.
-/// Each look is applied on its own, so a card shows the look as it is, not
-/// what the person has changed over it.
-fn card_list(lock: &LockScreen) -> Vec<(String, LookShown)> {
+/// picture draws: the parts and whether the background is the navy scene,
+/// and the key of its picture (`look_pictures::key`). Each look is applied on
+/// its own, so a card shows the look as it is, not what the person has
+/// changed over it.
+fn card_list(lock: &LockScreen, inputs: &Inputs) -> Vec<(String, LookShown, String)> {
     let built_in = lock_screen::LOOKS.iter().map(|name| name.to_string());
     let own = lock
         .looks
@@ -138,8 +155,9 @@ fn card_list(lock: &LockScreen) -> Vec<(String, LookShown)> {
                 ..LockScreen::default()
             };
             let applied = lock_screen::applied(&look, false);
+            let key = look_pictures::key(&applied.parts, &applied.background, inputs);
             let shown = (applied.parts, applied.background == Background::Backdrop);
-            (name, shown)
+            (name, shown, key)
         })
         .collect()
 }
@@ -173,19 +191,52 @@ fn pill(icon_name: &str, words: &str, class: &str) -> gtk::Box {
     pill
 }
 
-/// The line under the look in use: what the person can do with it. A look
-/// changed over from the command line says so, whatever kind it is.
-fn look_line(name: &str, changed: bool) -> String {
+/// The line under the look in use (M5.10c7b, as the mockup words it): what
+/// the look shows and over what, such as "Clock, date, music player and
+/// notification count over your wallpaper, blurred." A look changed over
+/// from the command line says so instead.
+fn look_line(name: &str, changed: bool, parts: &[Placed], background: &Background) -> String {
     if changed {
-        trf(
+        return trf(
             "Changed over {look} on the command line.",
             &[("look", &lock_screen::look_title(name))],
-        )
-    } else if lock_screen::is_built_in(name) {
-        tr("Built in. Edit it on the lock; your changes become a new look.").to_string()
-    } else {
-        tr("Yours. Edit it on the lock, where it is.").to_string()
+        );
     }
+    // In a fixed order, the clock first, whatever order the list has.
+    let kinds = [
+        (Part::Clock, tr("clock")),
+        (Part::Date, tr("date")),
+        (Part::Player, tr("music player")),
+        (Part::Count, tr("notification count")),
+        (Part::Message, tr("message")),
+        (Part::Picture, tr("picture")),
+        (Part::Battery, tr("battery")),
+    ];
+    let words: Vec<&str> = kinds
+        .iter()
+        .filter(|(kind, _)| parts.iter().any(|p| p.part == *kind))
+        .map(|(_, word)| *word)
+        .collect();
+    let shown = match words.split_last() {
+        None => tr("Only the sign in").to_string(),
+        Some((last, [])) => (*last).to_string(),
+        Some((last, rest)) => format!("{} {} {last}", rest.join(", "), tr("and")),
+    };
+    let mut shown = shown;
+    if let Some(first) = shown.get(..1) {
+        shown = first.to_uppercase() + &shown[1..];
+    }
+    let over = match background {
+        Background::Backdrop => tr("the navy backdrop"),
+        Background::Blurred => tr("your wallpaper, blurred"),
+        Background::Sharp => tr("your wallpaper"),
+        Background::Colour(_) => tr("a plain colour"),
+        Background::Picture(_) => tr("a picture of yours"),
+    };
+    trf(
+        "{parts} over {background}.",
+        &[("parts", &shown), ("background", over)],
+    )
 }
 
 /// Takes `key` out of the person's file, when they have it: nothing is
@@ -308,7 +359,6 @@ fn delete_look(name: &str) -> Result<(), String> {
 struct LookCard {
     name: String,
     button: gtk::ToggleButton,
-    badge: gtk::Box,
     in_use: gtk::Box,
 }
 
@@ -321,7 +371,10 @@ struct Ui {
     current_title: gtk::Label,
     /// The look in use drawn small beside its name, redrawn in place.
     current_shown: Rc<RefCell<LookShown>>,
-    current_view: gtk::DrawingArea,
+    /// Drawn by Settings, and the frame it sits in: a picture drawn by
+    /// shell-ui replaces the drawing there (`look_pictures`).
+    current_drawn: gtk::DrawingArea,
+    current_view: gtk::Overlay,
     current_line: gtk::Label,
     current_head: gtk::Widget,
     keep: gtk::Button,
@@ -338,7 +391,7 @@ struct Ui {
     new_card: RefCell<Option<gtk::Button>>,
     /// The cards' names and what they draw, as they were built, so they are
     /// built again only when a look changes.
-    shown: RefCell<Vec<(String, LookShown)>>,
+    shown: RefCell<Vec<(String, LookShown, String)>>,
     look_source: widgets::Source,
     count: gtk::Switch,
     count_row: widgets::Row,
@@ -358,16 +411,42 @@ impl Ui {
         let files = Files::here();
         let lock = files.lock();
         let look = current_look(&lock);
+        let inputs = Inputs::of(
+            files.chosen("appearance.wallpaper").as_deref(),
+            files.chosen("appearance.wallpaper_dark").as_deref(),
+            files.chosen("appearance.mode").as_deref(),
+            &self.theme.tokens(),
+        );
         self.quiet.set(true);
         let changed = [PARTS, BACKGROUND]
             .iter()
             .any(|key| matches!(files.source(key), Source::Person(_)));
         self.current_title.set_label(&current_title(&lock));
         let applied = lock_screen::applied(&lock, false);
+        self.current_line.set_label(&look_line(
+            &look,
+            changed,
+            &applied.parts,
+            &applied.background,
+        ));
         *self.current_shown.borrow_mut() =
             (applied.parts, applied.background == Background::Backdrop);
-        self.current_view.queue_draw();
-        self.current_line.set_label(&look_line(&look, changed));
+        self.current_drawn.queue_draw();
+        // The look in use small is shell-ui's picture of the look while the
+        // person changes nothing over it; Settings draws what they changed.
+        let alone = lock_screen::applied(
+            &LockScreen {
+                look: Some(look.clone()),
+                looks: lock.looks.clone(),
+                ..LockScreen::default()
+            },
+            false,
+        );
+        let current_key = look_pictures::key(&alone.parts, &alone.background, &inputs);
+        look_pictures::show_drawn(&self.current_view);
+        if lock.parts.is_none() && lock.background.is_none() {
+            look_pictures::want(&self.current_view, &look, &current_key);
+        }
         self.keep.set_visible(changed);
         let own = !lock_screen::is_built_in(&look);
         self.rename.set_visible(own);
@@ -377,7 +456,7 @@ impl Ui {
             .update_property(&[gtk::accessible::Property::Label(
                 trf("More for {look}", &[("look", &title)]).as_str(),
             )]);
-        self.show_looks(&lock);
+        self.show_looks(&lock, &inputs);
         let source = if lock.parts.is_some() {
             files.source(PARTS)
         } else {
@@ -405,13 +484,22 @@ impl Ui {
         self.count_row.reset.set_visible(rows::resettable(&count));
         self.quiet.set(false);
         self.problem.set_visible(false);
+        // The folder keeps the pictures this page shows, and no others.
+        let mut keep: Vec<String> = self
+            .shown
+            .borrow()
+            .iter()
+            .map(|(_, _, key)| key.clone())
+            .collect();
+        keep.push(current_key);
+        look_pictures::prune(&keep);
     }
 
     /// Shows the gallery: built again when a look changes, and the one that
     /// applies chosen, with its tag. Nothing is chosen while the person's own
     /// arrangement is set.
-    fn show_looks(self: &Rc<Self>, lock: &LockScreen) {
-        let list = card_list(lock);
+    fn show_looks(self: &Rc<Self>, lock: &LockScreen, inputs: &Inputs) {
+        let list = card_list(lock, inputs);
         if *self.shown.borrow() != list {
             self.build_cards(&list);
         }
@@ -422,8 +510,6 @@ impl Ui {
         for card in self.cards.borrow().iter() {
             let on = chosen.as_deref() == Some(card.name.as_str());
             card.button.set_active(on);
-            // The In use pill says it, so the card's own check stays hidden.
-            card.badge.set_visible(false);
             card.in_use.set_visible(on);
         }
     }
@@ -431,41 +517,46 @@ impl Ui {
     /// Builds the cards of `list` in the flow, each a picture of its parts
     /// with its name and tag, then the New look card, and wires each to a
     /// choice.
-    fn build_cards(self: &Rc<Self>, list: &[(String, LookShown)]) {
+    fn build_cards(self: &Rc<Self>, list: &[(String, LookShown, String)]) {
         while let Some(child) = self.looks.first_child() {
             self.looks.remove(&child);
         }
         let mut cards = Vec::new();
         let mut first: Option<gtk::ToggleButton> = None;
-        for (name, shown) in list {
+        for (name, shown, key) in list {
             let shown = Rc::new(RefCell::new(shown.clone()));
-            let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H);
-            // The card may be wider than the picture's least size: the frame
-            // keeps the screen's 16:10 shape at whatever width it is given.
-            // A built-in look wears its badge on the picture's corner.
-            let shown_picture = gtk::Overlay::builder().child(&picture).build();
+            let picture = look_picture(&self.theme, &shown, CARD_W, CARD_H, PICTURE_CORNER);
+            // The picture fills its card's width, and its height follows the
+            // width at the screen's 16:10 (`follow_width`): a flow box
+            // measures its children without the width, so an aspect frame
+            // would letterbox the picture.
+            picture.set_hexpand(true);
+            follow_width(&picture);
+            // The picture is laid over the drawing by `look_pictures`; the
+            // badges lie over both, so they stay on top when it comes.
+            let shown_picture = gtk::Overlay::builder()
+                .child(&picture)
+                .hexpand(true)
+                .css_classes(["edel-look-picture"])
+                .build();
+            let badges = gtk::Overlay::builder()
+                .child(&shown_picture)
+                .hexpand(true)
+                .build();
             if lock_screen::is_built_in(name) {
                 let built_in = pill("lock", tr("Built in"), "edel-built-in");
-                built_in.set_halign(gtk::Align::Start);
+                built_in.set_halign(gtk::Align::End);
                 built_in.set_valign(gtk::Align::Start);
-                built_in.set_margin_start(8);
+                built_in.set_margin_end(8);
                 built_in.set_margin_top(8);
-                shown_picture.add_overlay(&built_in);
+                badges.add_overlay(&built_in);
             }
-            let frame = gtk::AspectFrame::builder()
-                .ratio(SCREEN.0 / SCREEN.1)
-                .obey_child(false)
-                .hexpand(true)
-                .child(&shown_picture)
-                .build();
-            let (button, badge) =
-                widgets::picture_card(&lock_screen::look_title(name), &frame.upcast());
+            // shell-ui's picture replaces the drawing once it is there.
+            look_pictures::want(&shown_picture, name, key);
             // In use sits after the name, on the same row.
             let in_use = pill("check", tr("In use"), "edel-in-use");
             in_use.set_visible(false);
-            if let Some(row) = badge.parent().and_downcast::<gtk::Box>() {
-                row.insert_child_after(&in_use, row.first_child().as_ref());
-            }
+            let button = look_card(&lock_screen::look_title(name), &badges.upcast(), &in_use);
             match &first {
                 Some(first) => button.set_group(Some(first)),
                 None => first = Some(button.clone()),
@@ -493,7 +584,6 @@ impl Ui {
             cards.push(LookCard {
                 name: name.clone(),
                 button,
-                badge,
                 in_use,
             });
         }
@@ -531,10 +621,11 @@ impl Ui {
         let area = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)
-            .valign(gtk::Align::Center)
+            .valign(gtk::Align::Fill)
+            .vexpand(true)
+            .hexpand(true)
             .css_classes(["edel-new-look"])
             .build();
-        area.set_size_request(CARD_W, CARD_H);
         // The circle and the hint together, in the middle of the outline.
         let middle = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -554,7 +645,18 @@ impl Ui {
             .orientation(gtk::Orientation::Vertical)
             .spacing(8)
             .build();
-        inner.append(&area);
+        // As tall as the looks' pictures, so the cards of a line stand level:
+        // an empty picture that follows its width as theirs do, with the
+        // outline over it.
+        let room = gtk::DrawingArea::builder()
+            .content_width(CARD_W)
+            .content_height(CARD_H)
+            .hexpand(true)
+            .build();
+        follow_width(&room);
+        let level = gtk::Overlay::builder().child(&room).build();
+        level.add_overlay(&area);
+        inner.append(&level);
         inner.append(&caption);
         let button = gtk::Button::builder()
             .child(&inner)
@@ -594,16 +696,55 @@ impl Ui {
     }
 }
 
+/// A look's card (M5.10c7b): its picture with nothing round it, then its name
+/// and the In use pill on one row, 8 px below the picture. The chosen look's
+/// ring and the hover are `style.rs`'s `edel-look-card` rules, so the cards
+/// the Layout page shares (`widgets::picture_card`) keep their own look.
+fn look_card(title: &str, picture: &gtk::Widget, in_use: &gtk::Box) -> gtk::ToggleButton {
+    let name = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .hexpand(true)
+        .css_classes(["edel-look-name"])
+        .build();
+    let row = gtk::Box::builder().spacing(6).build();
+    row.append(&name);
+    row.append(in_use);
+    let inner = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(8)
+        .build();
+    inner.append(picture);
+    inner.append(&row);
+    let card = gtk::ToggleButton::builder()
+        .child(&inner)
+        .css_classes(["edel-look-card"])
+        .build();
+    card.update_property(&[gtk::accessible::Property::Label(title)]);
+    card
+}
+
 /// A look's picture of `w` by `h` logical pixels: its parts on the screen,
-/// drawn as the lock draws them, over the navy scene where the look has it
-/// and the mid grey-blue for the rest (the wallpaper behind them, blurred),
+/// drawn as the lock draws them, over the look's background (`draw_look`),
 /// in the tokens' colours. It draws `shown` as it is each time, so a change
-/// to it is drawn in place.
+/// to it is drawn in place; `corner` is its corner radius in those pixels.
+/// Keeps `area` as tall as the screen's 16:10 at whatever width it is
+/// given, set when its size changes, so nothing runs while it stands still.
+fn follow_width(area: &gtk::DrawingArea) {
+    area.connect_resize(|area, w, _| {
+        let wanted = w * CARD_H / CARD_W;
+        if w > 0 && area.content_height() != wanted {
+            area.set_content_height(wanted);
+        }
+    });
+}
+
 fn look_picture(
     theme: &Rc<Theme>,
     shown: &Rc<RefCell<LookShown>>,
     w: i32,
     h: i32,
+    corner: f64,
 ) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::builder()
         .content_width(w)
@@ -615,7 +756,7 @@ fn look_picture(
         let t = drawn.tokens();
         let guard = shown.borrow();
         let (parts, backdrop) = &*guard;
-        draw_look(cr, f64::from(w), f64::from(h), parts, *backdrop, &t);
+        draw_look(cr, f64::from(w), f64::from(h), parts, *backdrop, corner, &t);
     });
     let weak = area.downgrade();
     theme.watch(move || {
@@ -626,24 +767,40 @@ fn look_picture(
     area
 }
 
-/// Draws a look on a `w` by `h` card: the background, then each part as a
-/// rounded rectangle in the backdrop text's colour at a quarter alpha, the
-/// clock and the person at 45 percent (`edel::lock_screen::arrange`'s
-/// places, scaled to the card).
-fn draw_look(cr: &Context, w: f64, h: f64, parts: &[Placed], backdrop: bool, t: &Tokens) {
+/// Draws a look on a `w` by `h` card (M5.10c7b), clipped to `corner`: its
+/// background, then each part as the lock draws it, in the tokens' colours.
+/// The clock and the date are words, the person a glass pill with its disc,
+/// the rest frosted rounded rectangles (`edel::lock_screen::arrange`'s places,
+/// scaled to the card).
+fn draw_look(
+    cr: &Context,
+    w: f64,
+    h: f64,
+    parts: &[Placed],
+    backdrop: bool,
+    corner: f64,
+    t: &Tokens,
+) {
     let scale = w / f64::from(SCREEN.0);
-    clip(cr, w, h, f64::from(t.radius_window) * scale);
+    clip(cr, w, h, corner);
     if backdrop {
-        gradient(cr, h, t.lock_backdrop, t.lock_backdrop_deep);
+        gradient(
+            cr,
+            w,
+            h,
+            BACKDROP_ANGLE,
+            t.lock_backdrop,
+            t.lock_backdrop_deep,
+        );
     } else {
-        preview::set(cr, t.backdrop);
-        let _ = cr.paint();
+        gradient(cr, w, h, WALLPAPER_ANGLE, t.backdrop, t.backdrop_deep);
+        glow(cr, w, h, t.lock_glow);
     }
     for (part, rect) in parts.iter().zip(on_screen(parts)) {
         let Some(r) = rect else {
             continue;
         };
-        let (x, y, rw, rh) = (
+        let rect = (
             f64::from(r.x) * scale,
             f64::from(r.y) * scale,
             f64::from(r.w) * scale,
@@ -654,42 +811,111 @@ fn draw_look(cr: &Context, w: f64, h: f64, parts: &[Placed], backdrop: bool, t: 
         let words = match (part.part, part.face) {
             (Part::Clock, Some(Face::Analog)) => None,
             (Part::Clock, Some(Face::Stacked)) => Some(("09\n41", 0.42)),
-            (Part::Clock, _) => Some(("9:41", 0.78)),
+            (Part::Clock, _) => Some(("9:41", 0.82)),
             (Part::Date, _) => Some((SAMPLE_DATE, 0.62)),
             _ => None,
         };
         if let Some((text, share)) = words {
-            preview::set(cr, t.backdrop_text);
-            draw_words(cr, &t.font, text, (x, y, rw, rh), share);
+            let alpha = if part.part == Part::Date {
+                DATE_ALPHA
+            } else {
+                1.0
+            };
+            preview::set(
+                cr,
+                Colour {
+                    a: alpha,
+                    ..t.backdrop_text
+                },
+            );
+            draw_words(cr, &t.font, text, rect, share);
             continue;
         }
-        let alpha = match part.part {
-            Part::Clock | Part::Person => STRONG_ALPHA,
-            _ => PART_ALPHA,
-        };
-        preview::set(
-            cr,
-            Colour {
-                a: alpha,
-                ..t.backdrop_text
-            },
-        );
-        if part.part == Part::Clock {
-            // An analog face: its ring and two hands.
-            let radius = rw.min(rh) / 2.0 * 0.9;
-            let (cx, cy) = (x + rw / 2.0, y + rh / 2.0);
-            cr.set_line_width((radius / 10.0).max(1.0));
-            cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
-            cr.move_to(cx, cy);
-            cr.line_to(cx + radius * 0.5, cy - radius * 0.2);
-            cr.move_to(cx, cy);
-            cr.line_to(cx - radius * 0.1, cy - radius * 0.75);
-            let _ = cr.stroke();
-            continue;
+        match part.part {
+            Part::Clock => face(cr, rect, t),
+            Part::Person => person(cr, rect, scale, t),
+            _ => plate(
+                cr,
+                rect,
+                PART_RADIUS * scale,
+                Colour {
+                    a: FILL_ALPHA,
+                    ..t.backdrop_text
+                },
+                Colour {
+                    a: EDGE_ALPHA,
+                    ..t.backdrop_text
+                },
+            ),
         }
-        preview::rounded(cr, x, y, rw, rh, PART_RADIUS * scale);
-        let _ = cr.fill();
     }
+}
+
+/// An analog clock's face: a ring and two hands, in the backdrop text's colour.
+fn face(cr: &Context, rect: (f64, f64, f64, f64), t: &Tokens) {
+    let (x, y, w, h) = rect;
+    preview::set(
+        cr,
+        Colour {
+            a: FACE_ALPHA,
+            ..t.backdrop_text
+        },
+    );
+    let radius = w.min(h) / 2.0 * 0.9;
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    cr.set_line_width((radius / 10.0).max(1.0));
+    cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+    cr.move_to(cx, cy);
+    cr.line_to(cx + radius * 0.5, cy - radius * 0.2);
+    cr.move_to(cx, cy);
+    cr.line_to(cx - radius * 0.1, cy - radius * 0.75);
+    let _ = cr.stroke();
+}
+
+/// The person's field: a glass pill along the bottom of its rect, and a disc
+/// of glass centred over the pill when the rect is at least 2.5 pills tall.
+fn person(cr: &Context, rect: (f64, f64, f64, f64), scale: f64, t: &Tokens) {
+    let (x, y, w, h) = rect;
+    let pill = PILL_H * scale;
+    let top = y + h - pill;
+    plate(
+        cr,
+        (x, top, w, pill),
+        pill / 2.0,
+        t.lock_glass,
+        t.lock_glass_edge,
+    );
+    if h >= 2.5 * pill {
+        let r = pill / 2.0;
+        let (cx, cy) = (x + w / 2.0, top - pill * 0.3 - r);
+        plate(
+            cr,
+            (cx - r, cy - r, 2.0 * r, 2.0 * r),
+            r,
+            t.lock_glass,
+            t.lock_glass_edge,
+        );
+    }
+}
+
+/// A rounded rectangle of `rect` with corners of `radius`, filled with `fill`
+/// and edged with a 1 px line of `edge` just inside it.
+fn plate(cr: &Context, rect: (f64, f64, f64, f64), radius: f64, fill: Colour, edge: Colour) {
+    let (x, y, w, h) = rect;
+    preview::set(cr, fill);
+    preview::rounded(cr, x, y, w, h, radius);
+    let _ = cr.fill();
+    preview::set(cr, edge);
+    preview::rounded(
+        cr,
+        x + 0.5,
+        y + 0.5,
+        (w - 1.0).max(0.0),
+        (h - 1.0).max(0.0),
+        (radius - 0.5).max(0.0),
+    );
+    cr.set_line_width(1.0);
+    let _ = cr.stroke();
 }
 
 /// The date a card's date shows, as the lock's long style writes one.
@@ -737,25 +963,46 @@ fn clip(cr: &Context, w: f64, h: f64, radius: f64) {
     cr.clip();
 }
 
-/// Paints the current clip with a gradient from `top` at the top edge to
-/// `deep` at the height `h`.
-fn gradient(cr: &Context, h: f64, top: Colour, deep: Colour) {
-    let gradient = LinearGradient::new(0.0, 0.0, 0.0, h);
-    gradient.add_color_stop_rgba(
-        0.0,
-        f64::from(top.r),
-        f64::from(top.g),
-        f64::from(top.b),
-        1.0,
+/// Paints the current clip of a `w` by `h` area with a linear gradient from
+/// `top` to `deep` along the CSS angle `degrees` (0 up, 90 right): the line
+/// runs through the middle, so each corner gets its own end colour.
+fn gradient(cr: &Context, w: f64, h: f64, degrees: f64, top: Colour, deep: Colour) {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let (dx, dy) = (sin, -cos);
+    let half = (w * dx.abs() + h * dy.abs()) / 2.0;
+    let (cx, cy) = (w / 2.0, h / 2.0);
+    let gradient = LinearGradient::new(
+        cx - dx * half,
+        cy - dy * half,
+        cx + dx * half,
+        cy + dy * half,
     );
-    gradient.add_color_stop_rgba(
-        1.0,
-        f64::from(deep.r),
-        f64::from(deep.g),
-        f64::from(deep.b),
-        1.0,
-    );
+    for (offset, c) in [(0.0, top), (1.0, deep)] {
+        gradient.add_color_stop_rgba(
+            offset,
+            f64::from(c.r),
+            f64::from(c.g),
+            f64::from(c.b),
+            f64::from(c.a),
+        );
+    }
     let _ = cr.set_source(&gradient);
+    let _ = cr.paint();
+}
+
+/// A soft light at the top left of a wallpaper look: `colour` at GLOW_ALPHA,
+/// fading to nothing across the card, so the wallpaper is not flat.
+fn glow(cr: &Context, w: f64, h: f64, colour: Colour) {
+    let (cx, cy) = (w * 0.2, h * 0.15);
+    let light = RadialGradient::new(cx, cy, 0.0, cx, cy, w.max(h));
+    let (r, g, b) = (
+        f64::from(colour.r),
+        f64::from(colour.g),
+        f64::from(colour.b),
+    );
+    light.add_color_stop_rgba(0.0, r, g, b, f64::from(GLOW_ALPHA * colour.a));
+    light.add_color_stop_rgba(1.0, r, g, b, 0.0);
+    let _ = cr.set_source(&light);
     let _ = cr.paint();
 }
 
@@ -810,6 +1057,10 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
     let keep = widgets::action(tr("Keep as a look"), false);
     // Customize, the word the lock's switcher uses for the same thing.
     let edit = widgets::action(tr("Customize"), true);
+    let edit_words = gtk::Box::builder().spacing(6).build();
+    edit_words.append(&icon::image("edit", 14));
+    edit_words.append(&gtk::Label::new(Some(tr("Customize"))));
+    edit.set_child(Some(&edit_words));
     for button in [&keep, &edit] {
         button.add_css_class("edel-current-button");
     }
@@ -848,8 +1099,18 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         .build();
     // The look in use, small, beside its name (16:10, as every card).
     let current_shown: Rc<RefCell<LookShown>> = Rc::new(RefCell::new((Vec::new(), false)));
-    let current_view = look_picture(theme, &current_shown, 96, 60);
-    current_view.set_valign(gtk::Align::Center);
+    let current_drawn = look_picture(
+        theme,
+        &current_shown,
+        96,
+        60,
+        PICTURE_CORNER * 96.0 / f64::from(CARD_W),
+    );
+    // A frame so shell-ui's picture can take the drawing's place.
+    let current_view = gtk::Overlay::builder()
+        .child(&current_drawn)
+        .valign(gtk::Align::Center)
+        .build();
     // Its own size when the card stacks too, never stretched across.
     current_view.set_halign(gtk::Align::Start);
     current.append(&current_view);
@@ -897,6 +1158,7 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         theme: theme.clone(),
         current_title: title,
         current_shown,
+        current_drawn,
         current_view,
         current_line: line,
         current_head: bin.clone().upcast(),
@@ -1352,7 +1614,10 @@ mod tests {
     #[test]
     fn the_cards_are_the_built_in_looks_then_the_persons_own() {
         let lock = LockScreen::default();
-        let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
+        let names: Vec<String> = card_list(&lock, &Inputs::default())
+            .into_iter()
+            .map(|(n, _, _)| n)
+            .collect();
         assert_eq!(names, ["classic", "magazine", "minimal"]);
         let own = OwnLook {
             parts: lock_screen::classic(false),
@@ -1362,7 +1627,10 @@ mod tests {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
             ..LockScreen::default()
         };
-        let names: Vec<String> = card_list(&lock).into_iter().map(|(n, _)| n).collect();
+        let names: Vec<String> = card_list(&lock, &Inputs::default())
+            .into_iter()
+            .map(|(n, _, _)| n)
+            .collect();
         assert_eq!(names, ["classic", "magazine", "minimal", "home"]);
         assert_eq!(lock_screen::look_title("magazine"), "Magazine");
         assert_eq!(lock_screen::look_title("home"), "Home");
@@ -1378,10 +1646,10 @@ mod tests {
             looks: Some([("home".to_string(), own)].into_iter().collect()),
             ..LockScreen::default()
         };
-        let cards = card_list(&lock);
-        let (_, (_, backdrop)) = cards.iter().find(|(n, _)| n == "home").unwrap();
+        let cards = card_list(&lock, &Inputs::default());
+        let (_, (_, backdrop), _) = cards.iter().find(|(n, _, _)| n == "home").unwrap();
         assert!(*backdrop, "the look's own navy background");
-        let (_, (_, magazine)) = cards.iter().find(|(n, _)| n == "magazine").unwrap();
+        let (_, (_, magazine), _) = cards.iter().find(|(n, _, _)| n == "magazine").unwrap();
         assert!(!magazine, "magazine is blurred");
     }
 
@@ -1403,21 +1671,23 @@ mod tests {
 
     #[test]
     fn the_line_under_the_look_in_use_says_what_it_is() {
+        let classic = lock_screen::classic(false);
+        let line = look_line("classic", false, &classic, &Background::Blurred);
+        assert!(line.ends_with(" over your wallpaper, blurred."), "{line}");
+        assert!(line.starts_with("Clock, date"), "{line}");
+        assert!(line.contains(" and "), "{line}");
+        let alone: Vec<Placed> = classic
+            .iter()
+            .filter(|p| p.part == Part::Person)
+            .cloned()
+            .collect();
         assert_eq!(
-            look_line("classic", false),
-            "Built in. Edit it on the lock; your changes become a new look."
+            look_line("minimal", false, &alone, &Background::Backdrop),
+            "Only the sign in over the navy backdrop."
         );
         assert_eq!(
-            look_line("home", false),
-            "Yours. Edit it on the lock, where it is."
-        );
-        assert_eq!(
-            look_line("home", true),
+            look_line("home", true, &classic, &Background::Blurred),
             "Changed over Home on the command line."
-        );
-        assert_eq!(
-            look_line("classic", true),
-            "Changed over Classic on the command line."
         );
     }
 
@@ -1467,9 +1737,71 @@ mod tests {
         assert_eq!(renamed(None, "home", "den"), None);
     }
 
+    /// Draws the three built-in looks side by side, each as its card draws
+    /// it, into the folder `EDEL_LOOKS_PNG` names. Cairo has no PNG writer
+    /// here (as shape.rs notes), so the pictures are written as `looks.pam`,
+    /// and ImageMagick's `convert` makes `looks.png` beside it when it is
+    /// installed. Gated by the variable, so a normal run skips it.
+    #[test]
+    fn the_looks_are_written_to_a_file_when_asked() {
+        let Some(dir) = std::env::var_os("EDEL_LOOKS_PNG") else {
+            return;
+        };
+        let (cell_w, cell_h) = (320, 200);
+        let (w, h) = (cell_w * 3, cell_h);
+        let t = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
+        let mut surface =
+            gtk::cairo::ImageSurface::create(gtk::cairo::Format::ARgb32, w, h).expect("a surface");
+        {
+            let cr = Context::new(&surface).expect("a context");
+            let looks = card_list(&LockScreen::default(), &Inputs::default());
+            for (i, (_, (parts, backdrop), _)) in looks.iter().take(3).enumerate() {
+                cr.save().expect("save");
+                cr.translate(f64::from(cell_w * i as i32), 0.0);
+                draw_look(
+                    &cr,
+                    f64::from(cell_w),
+                    f64::from(cell_h),
+                    parts,
+                    *backdrop,
+                    PICTURE_CORNER,
+                    &t,
+                );
+                cr.restore().expect("restore");
+            }
+        }
+        surface.flush();
+        let stride = surface.stride() as usize;
+        let data = surface.data().expect("the pixels");
+        let mut out =
+            format!("P7\nWIDTH {w}\nHEIGHT {h}\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n")
+                .into_bytes();
+        for y in 0..h as usize {
+            for x in 0..w as usize {
+                // ARGB32 in memory is B, G, R, A per pixel, premultiplied.
+                let at = y * stride + x * 4;
+                let (b, g, r, a) = (data[at], data[at + 1], data[at + 2], data[at + 3]);
+                let unpremultiply = |c: u8| -> u8 {
+                    if a == 0 {
+                        0
+                    } else {
+                        (u32::from(c) * 255 / u32::from(a)).min(255) as u8
+                    }
+                };
+                out.extend_from_slice(&[unpremultiply(r), unpremultiply(g), unpremultiply(b), a]);
+            }
+        }
+        let pam = std::path::Path::new(&dir).join("looks.pam");
+        std::fs::write(&pam, out).expect("the picture");
+        let _ = std::process::Command::new("convert")
+            .arg(&pam)
+            .arg(pam.with_extension("png"))
+            .status();
+    }
+
     #[test]
     fn the_pictures_keep_the_shape_of_sixteen_to_ten() {
-        assert_eq!((CARD_W, CARD_H), (256, 160));
+        assert_eq!((CARD_W, CARD_H), (184, 115));
         assert_eq!(CARD_W * 10, CARD_H * 16);
     }
 }

@@ -33,6 +33,7 @@ mod lock;
 mod lock_card;
 mod lock_editor;
 mod lock_editor_card;
+mod look_picture;
 mod messages;
 mod mpris;
 mod notice;
@@ -316,6 +317,17 @@ struct Panel {
 }
 
 fn main() {
+    // A look's picture for Settings' Lock screen page (M5.10c7c): drawn
+    // without a compositor, so it is handed over before any connection, and
+    // its failures say what they are, not that the shell stopped.
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    if words.first().is_some_and(|w| w == "--look-picture") {
+        if let Err(e) = look_picture::run(&words[1..]) {
+            eprintln!("edel-shell-ui: {e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if let Err(e) = run() {
         eprintln!("edel-shell-ui: {}", messages::stopped(format!("{e:#}")));
         std::process::exit(1);

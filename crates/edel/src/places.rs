@@ -224,6 +224,15 @@ pub fn person_state_dir() -> Option<PathBuf> {
     }
 }
 
+/// The folder of a person's lock screen pictures (M5.10c7c): one PNG for
+/// each look Settings' Lock screen page shows, drawn by `edel-shell-ui
+/// --look-picture` and named by a hash of what the picture shows. Settings
+/// deletes the pictures no look uses, so the folder stays small. Nothing
+/// else reads it, and none of it is a setting.
+pub fn look_pictures_dir() -> Option<PathBuf> {
+    person_state_dir().map(|dir| dir.join("look-pictures"))
+}
+
 /// Where one of Edel OS's shared places, such as [`TOKENS_FILE`] or
 /// [`FEATURES_DIR`], is found at run time (M5.15a). On Edel OS it is where
 /// the constant says. On another system the desktop may be installed
