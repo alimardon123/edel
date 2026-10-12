@@ -61,6 +61,7 @@ region.time_servers
 notifications.do_not_disturb
 notifications.position
 notifications.badge
+notifications.list
 panels.list
 panels.tray
 panels.pinned

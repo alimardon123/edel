@@ -354,6 +354,9 @@ commands() {
 		'panels bell start') edel settings set 'panels.list=[{ edge = "bottom", start = ["notifications"], end = ["clock"] }]' ;;
 		'badge count') edel settings set notifications.badge=count ;;
 		'badge default') edel settings reset notifications.badge ;;
+		# Where the notification list opens (M5.9l), in the machine's file.
+		'list right') edel settings set notifications.list=right ;;
+		'list default') edel settings reset notifications.list ;;
 		# The fallback notice (M5.9e): a record of a fallback from slot B
 		# to A, dated 2026-10-10, as the update code writes it (root, the
 		# data partition's own file), and its removal with ci's stamp of

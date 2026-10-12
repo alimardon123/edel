@@ -76,11 +76,28 @@ pub struct CentreCard {
     /// Where the card's parts were last logged, so a line says it only
     /// when it changed.
     logged: String,
+    /// Where it opened: `button` hung on its button, or `left` or `right`
+    /// as a sheet along that side (M5.9l).
+    place: &'static str,
+    /// A sheet still waiting for the height the compositor gives it.
+    stretched: bool,
 }
 
 impl CentreCard {
     pub fn popup_mut(&mut self) -> &mut Popup<centre::View> {
         &mut self.popup
+    }
+}
+
+/// Where the notification centre opens for `notifications.list` `list`
+/// (M5.9l): `left` or `right` as a sheet along that side, else hung on its
+/// button; a Compact screen always has its full-width sheet, so `button`.
+fn centre_place(list: &str, compact: bool) -> &'static str {
+    match (list, compact) {
+        (_, true) => "button",
+        ("left", _) => "left",
+        ("right", _) => "right",
+        _ => "button",
     }
 }
 
@@ -514,7 +531,8 @@ impl Shell {
     /// and kept inside the panel, as the tray's grid hangs on its arrow,
     /// so the clock or the bell at either end or in the middle opens it
     /// beside itself.
-    /// A Compact sheet stays across the screen.
+    /// A Compact sheet stays across the screen, and a sheet along a side
+    /// (M5.9l) stays where the compositor put it.
     fn hang_centre(&mut self, i: usize, at: f32) {
         let Some(panel_width) = self.panels.get(i).map(|p| p.width) else {
             return;
@@ -523,7 +541,7 @@ impl Shell {
         let Some(card) = &self.centre else {
             return;
         };
-        if card.state.compact {
+        if card.state.compact || card.place != "button" {
             return;
         }
         let size = card.state.width as i32;
@@ -578,7 +596,9 @@ impl Shell {
     /// Opens the centre over the clock's panel (below it on a panel along
     /// the top), a sheet across the screen when Compact, with the
     /// keyboard; without the calendar, over the notifications button's
-    /// panel (M5.9k). Opening it reads every notification.
+    /// panel (M5.9k). Opening it reads every notification. With
+    /// `notifications.list` at `left` or `right` (M5.9l) it is a sheet
+    /// along that side instead, its height what the compositor gives.
     fn open_centre(&mut self, calendar: bool) {
         self.close_launcher();
         self.close_styles();
@@ -587,11 +607,13 @@ impl Shell {
         self.hide_banner();
         let (edge, scale) = self.panel_for(if calendar { "clock" } else { "notifications" });
         let (width, compact) = centre::width_for(self.screen_width());
+        let place = centre_place(&self.live.list, compact);
         let today = calendar::today();
         let state = centre::State {
             width,
             compact,
             calendar,
+            height: None,
             dnd: self.do_not_disturb(),
             month: calendar::Month::of(today),
             today,
@@ -614,7 +636,16 @@ impl Shell {
         };
         let m = MARGIN - room as i32;
         let surface = &popup.surface;
-        if compact {
+        let sheet = match place {
+            "left" => Some(Anchor::LEFT),
+            "right" => Some(Anchor::RIGHT),
+            _ => None,
+        };
+        if let Some(along) = sheet {
+            // Between the top and bottom edges, as far as the panels leave.
+            surface.set_anchor(Anchor::TOP | Anchor::BOTTOM | along);
+            surface.set_margin(m, m, m, m);
+        } else if compact {
             surface.set_anchor(side | Anchor::LEFT | Anchor::RIGHT);
             surface.set_margin(m, -(room as i32), m, -(room as i32));
         } else {
@@ -623,6 +654,9 @@ impl Shell {
         }
         surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         surface.commit();
+        if sheet.is_some() {
+            popup.stretch(&self.compositor);
+        }
         let keyboard = self.seat.seats().next().and_then(|seat| {
             self.seat
                 .get_keyboard_with_repeat(
@@ -644,6 +678,8 @@ impl Shell {
             state,
             scrolled: widgets::Scrolled::default(),
             logged: String::new(),
+            place,
+            stretched: sheet.is_some(),
         });
         // The clock lights while the centre is open, the bell while the
         // notifications it opened are; either way they are read.
@@ -654,6 +690,26 @@ impl Shell {
             eprintln!("edel-shell-ui: unread notifications 0");
         }
         self.draw_all();
+    }
+
+    /// The compositor configured the centre's surface (M5.9l). A sheet
+    /// waiting for its height takes the height it is given, less the room
+    /// round its card, and asks for exactly that; otherwise the card is
+    /// drawn as it is.
+    pub fn centre_configured(&mut self, size: (u32, u32)) {
+        let Some(card) = &mut self.centre else {
+            return;
+        };
+        if card.stretched {
+            card.stretched = false;
+            let height = size.1.saturating_sub(2 * card.popup.room());
+            card.state.height = Some(height);
+            card.popup
+                .fill((card.state.width, height), &self.compositor);
+            return;
+        }
+        card.popup_mut().configured();
+        self.draw_centre();
     }
 
     /// Closes the centre and lets go of its keyboard, buffers and reader.
@@ -713,6 +769,7 @@ impl Shell {
                 "edel-shell-ui: notification centre shown, {} notifications",
                 self.notifications.len()
             );
+            eprintln!("edel-shell-ui: notification centre placed {}", card.place);
         }
         let places = centre::places(&layout);
         if places != card.logged {

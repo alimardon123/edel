@@ -69,6 +69,7 @@ review of M8.18 first) may revisit them for better taste.
 | [shell/notifications-laptop.jpg](shell/notifications-laptop.jpg) | A click on the clock: the notifications card, with Do not disturb as a moon button in its title row and Clear all, the calendar card below |
 | [shell/notifications-phone.jpg](shell/notifications-phone.jpg) | Phone: a swipe down from the top left opens a full shade, with no card and no calendar, the battery shown |
 | [shell/notifications-tablet.jpg](shell/notifications-tablet.jpg) | Tablet: the same shade over the dimmed screen |
+| [shell/notify-list.jpg](shell/notify-list.jpg) | Where the notification list opens (M5.9l, approved by Alimardon on 2026-10-12: By the button as the default, the same list as a sheet on the left or the right): one key, `notifications.list`, with a picture of each choice on the Notifications page; the board's footer on the sheets is not built, the list being the one centre |
 | [shell/banners.jpg](shell/banners.jpg) | New notifications stack by the status area, newest at the bottom, each with a close button on hover, gone after 5 s |
 | [shell/details.jpg](shell/details.jpg) | Going deeper: a pill's chevron opens Wi-Fi or Sound in place of the grid |
 | [shell/states.jpg](shell/states.jpg) | Hover, pressed, on and off, focus, and how each part moves |

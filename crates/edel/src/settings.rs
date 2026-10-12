@@ -548,6 +548,12 @@ pub const KEYS: &[Key] = &[
         "notifications.badge",
         Kind::OneOf(&["dot", "count", "none"]),
     ),
+    // Where the notification list opens (M5.9l): hung on the button that
+    // opened it, or a sheet along the left or the right side.
+    now(
+        "notifications.list",
+        Kind::OneOf(&["button", "left", "right"]),
+    ),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -1089,6 +1095,11 @@ pub struct Notifications {
     /// `count` or `none`; absent is `dot` (M5.9k).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub badge: Option<String>,
+    /// Where the notification list opens: `button` (hung on the button
+    /// that opened it), `left` or `right` (a sheet along that side); absent
+    /// is `button` (M5.9l).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list: Option<String>,
 }
 
 /// The Updates page.
@@ -1399,6 +1410,11 @@ pub const NOTIFICATION_POSITION: &str = "notifications.position";
 /// unread (M5.9k), the one name shell-ui, Settings and `edel settings`
 /// share; its values are [`choices`]'.
 pub const NOTIFICATION_BADGE: &str = "notifications.badge";
+
+/// The key that says where the notification list opens (M5.9l), the one
+/// name shell-ui, Settings and `edel settings` share; its values are
+/// [`choices`]'.
+pub const NOTIFICATION_LIST: &str = "notifications.list";
 
 /// The key that says how much things move (M5.11b): `full`, the default,
 /// `reduced` or `off`; the lock screen's field shakes only at `full`

@@ -52,6 +52,11 @@ pub struct Popup<V> {
     /// Takes no clicks at all (the tray's tooltip, M5.9h): its input
     /// region is empty, so the pointer goes on to what lies under it.
     passive: bool,
+    /// Asked for the height the compositor gives it (M5.9l, a sheet along
+    /// a side), so its surface has no height of its own until [`fill`].
+    ///
+    /// [`fill`]: Popup::fill
+    stretched: bool,
 }
 
 impl<V: Clone + PartialEq> Popup<V> {
@@ -88,6 +93,7 @@ impl<V: Clone + PartialEq> Popup<V> {
             waiting: false,
             drawn: None,
             passive: false,
+            stretched: false,
         };
         popup.set_size(&shell.compositor);
         Some(popup)
@@ -98,7 +104,9 @@ impl<V: Clone + PartialEq> Popup<V> {
     fn set_size(&self, compositor: &CompositorState) {
         let (w, h) = self.size;
         let room = self.room;
-        self.surface.set_size(w + 2 * room, h + 2 * room);
+        // Zero asks the compositor for the height the anchors leave (M5.9l).
+        let height = if self.stretched { 0 } else { h + 2 * room };
+        self.surface.set_size(w + 2 * room, height);
         if let Ok(region) = Region::new(compositor) {
             // A passive surface adds nothing: its region stays empty.
             if !self.passive && self.cards.is_empty() {
@@ -117,6 +125,25 @@ impl<V: Clone + PartialEq> Popup<V> {
                 .wl_surface()
                 .set_input_region(Some(region.wl_region()));
         }
+    }
+
+    /// Asks the compositor for the card's height: the surface is as tall
+    /// as the anchors leave it (a sheet between the top and bottom edges,
+    /// clear of the panels' exclusive zones). Takes effect on commit.
+    pub fn stretch(&mut self, compositor: &CompositorState) {
+        self.stretched = true;
+        self.set_size(compositor);
+        self.surface.commit();
+    }
+
+    /// Takes the card's height from the compositor, `size` logical pixels,
+    /// and asks for exactly that: the card then draws as any other.
+    pub fn fill(&mut self, size: (u32, u32), compositor: &CompositorState) {
+        self.stretched = false;
+        self.size = size;
+        self.ready = false;
+        self.set_size(compositor);
+        self.surface.commit();
     }
 
     /// A new card size, drawn once the compositor agrees.

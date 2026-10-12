@@ -37,6 +37,8 @@ use crate::quick::Key;
 pub const RADIUS: f32 = 30.0;
 /// The room between the two cards, logical pixels.
 pub const CARD_GAP: f32 = 10.0;
+/// The room the count line takes above its own line, logical pixels.
+const COUNT_GAP: f32 = 2.0;
 /// The room round Clear all's label inside its pill, each side.
 const CLEAR_PAD: f32 = 12.0;
 /// Between Clear all and the Do not disturb button, logical pixels.
@@ -63,6 +65,9 @@ pub struct State {
     /// Whether the calendar card shows under the notifications: the
     /// clock's centre has it, the notifications button's not (M5.9k).
     pub calendar: bool,
+    /// The height of a sheet along a side, logical pixels (M5.9l), once the
+    /// compositor has given it one; `None` for the card hung on its button.
+    pub height: Option<u32>,
     pub dnd: bool,
     pub month: Month,
     pub today: Ymd,
@@ -90,6 +95,8 @@ pub struct View {
     pub width: u32,
     pub compact: bool,
     pub calendar: bool,
+    /// As [`State::height`].
+    pub height: Option<u32>,
     /// The notifications shown, newest first, from the one the list
     /// starts at.
     pub items: Vec<notice::Item>,
@@ -218,24 +225,18 @@ pub fn view(
     let m = metrics(state.compact);
     let width = state.width as f32 - 2.0 * m.pad;
     let first = state.first.min(list.len().saturating_sub(1));
-    let mut items: Vec<notice::Item> = Vec::new();
-    let mut used = 0.0;
-    for n in &list[first..] {
-        let item = notice::item(n, width, state.compact, &mut measure);
-        let h = notice::place(&item, (0.0, 0.0, width), state.compact)
-            .whole
-            .h;
-        let next = used + if items.is_empty() { 0.0 } else { m.between } + h;
-        if !items.is_empty() && next > m.list {
-            break;
-        }
-        used = next;
-        items.push(item);
+    let budget = list_budget(state, &m);
+    let mut items = take(list, first, width, state.compact, budget, &m, &mut measure);
+    // A sheet that holds more than fit keeps the room of its count line.
+    if state.height.is_some() && (first > 0 || first + items.len() < list.len()) {
+        let room = budget - COUNT_GAP - m.more;
+        items = take(list, first, width, state.compact, room, &m, &mut measure);
     }
     View {
         width: state.width,
         compact: state.compact,
         calendar: state.calendar,
+        height: state.height,
         newer: first,
         older: list.len() - first - items.len(),
         items,
@@ -246,6 +247,63 @@ pub fn view(
         hover: state.hover,
         focus: state.focus,
     }
+}
+
+/// The notifications from `first` that fit `budget` logical pixels, at
+/// least one, each as `notice::item` makes them.
+fn take(
+    list: &[Notification],
+    first: usize,
+    width: f32,
+    compact: bool,
+    budget: f32,
+    m: &Metrics,
+    measure: &mut impl FnMut(&str, Face) -> f32,
+) -> Vec<notice::Item> {
+    let mut items: Vec<notice::Item> = Vec::new();
+    let mut used = 0.0;
+    for n in &list[first..] {
+        let item = notice::item(n, width, compact, &mut *measure);
+        let h = notice::place(&item, (0.0, 0.0, width), compact).whole.h;
+        let next = used + if items.is_empty() { 0.0 } else { m.between } + h;
+        if !items.is_empty() && next > budget {
+            break;
+        }
+        used = next;
+        items.push(item);
+    }
+    items
+}
+
+/// The room the notifications may take, logical pixels: `Metrics::list`
+/// on the card hung on its button; in a sheet, what the height leaves
+/// after the heading, the pads and the calendar (M5.9l).
+fn list_budget(state: &State, m: &Metrics) -> f32 {
+    match state.height {
+        None => m.list,
+        Some(h) => {
+            let head = m.pad + m.row + m.section;
+            (list_height(state.calendar, h as f32, m) - head - m.pad).max(0.0)
+        }
+    }
+}
+
+/// The height of the notifications card in a sheet `height` tall: all of
+/// it, or with the calendar, what lies above the calendar's card and the
+/// gap between them.
+fn list_height(calendar: bool, height: f32, m: &Metrics) -> f32 {
+    if calendar {
+        height - m.pad - calendar_height(m) - CARD_GAP
+    } else {
+        height
+    }
+}
+
+/// The calendar card's height: the pads, the month's row, the weekdays
+/// and six weeks of days.
+fn calendar_height(m: &Metrics) -> f32 {
+    let weeks = calendar::WEEKS as f32;
+    2.0 * m.pad + m.row + 4.0 + m.weekday + weeks * m.day + (weeks - 1.0) * m.week_gap
 }
 
 /// The line under the list when some notifications lie beyond it:
@@ -326,12 +384,19 @@ pub fn layout(view: &View) -> Layout {
             y += placed.whole.h;
             cards.push(placed);
         }
-        if more(view).is_some() {
-            more_rect = Some(Rect::new(m.pad, y + 2.0, inner, m.more));
-            y += 2.0 + m.more;
+        // Hung, the count line follows the list; a sheet keeps it at its foot.
+        if view.height.is_none() && more(view).is_some() {
+            more_rect = Some(Rect::new(m.pad, y + COUNT_GAP, inner, m.more));
+            y += COUNT_GAP + m.more;
         }
     }
-    let first = Rect::new(0.0, 0.0, w, y + m.pad);
+    let first = match view.height {
+        Some(h) => Rect::new(0.0, 0.0, w, list_height(view.calendar, h as f32, &m)),
+        None => Rect::new(0.0, 0.0, w, y + m.pad),
+    };
+    if view.height.is_some() && more(view).is_some() {
+        more_rect = Some(Rect::new(m.pad, first.h - m.pad - m.more, inner, m.more));
+    }
     if !view.calendar {
         // The notifications alone (M5.9k): no second card, and the
         // calendar's parts nowhere a pointer can reach.
@@ -354,7 +419,10 @@ pub fn layout(view: &View) -> Layout {
         };
     }
     // The calendar card: the month row, the weekdays, the days.
-    let top = first.y + first.h + CARD_GAP;
+    let top = match view.height {
+        Some(h) => h as f32 - m.pad - calendar_height(&m),
+        None => first.y + first.h + CARD_GAP,
+    };
     let mut y = top + m.pad;
     let next = Rect::new(w - m.pad - m.row, y, m.row, m.row);
     let prev = Rect::new(next.x - 4.0 - m.row, y, m.row, m.row);
@@ -368,7 +436,10 @@ pub fn layout(view: &View) -> Layout {
     y += grid_h + m.pad;
     let second = Rect::new(0.0, top, w, y - top);
     Layout {
-        size: (view.width, (second.y + second.h).ceil() as u32),
+        size: (
+            view.width,
+            view.height.unwrap_or((second.y + second.h).ceil() as u32),
+        ),
         metrics: m,
         boxes: [first, second],
         title,
@@ -883,6 +954,7 @@ mod tests {
             width,
             compact,
             calendar: true,
+            height: None,
             dnd: false,
             month: Month {
                 year: 2026,
@@ -1077,6 +1149,64 @@ mod tests {
         assert!(l.prev.y > l.boxes[0].y + l.boxes[0].h);
         let ring: Vec<Part> = ring(&v);
         assert_eq!(ring, [Part::Dnd, Part::Prev, Part::Next]);
+    }
+
+    fn sheet(height: u32, calendar: bool) -> State {
+        State {
+            height: Some(height),
+            calendar,
+            ..state(1280)
+        }
+    }
+
+    #[test]
+    fn a_sheet_fills_its_height_and_holds_more_than_the_hung_card() {
+        let many: Vec<Notification> = (1..=50)
+            .rev()
+            .map(|id| note(id, "Hello", "A short body", &[]))
+            .collect();
+        let hung = view(&state(1280), &many, 60.0, six);
+        let v = view(&sheet(760, true), &many, 60.0, six);
+        assert!(
+            v.items.len() > hung.items.len(),
+            "{} <= {}",
+            v.items.len(),
+            hung.items.len()
+        );
+        let l = layout(&v);
+        assert_eq!(l.size, (360, 760));
+        let [list, _] = l.boxes;
+        assert_eq!(list.y, 0.0);
+        // The count line sits at the foot of the list, below the last card.
+        let more = l.more.expect("the count line");
+        assert_eq!(more.y + more.h, list.h - l.metrics.pad);
+        let last = l.cards.last().unwrap().whole;
+        assert!(last.y + last.h <= more.y, "{last:?} over {more:?}");
+    }
+
+    #[test]
+    fn the_calendar_sits_a_pad_above_the_sheets_foot() {
+        let v = view(&sheet(760, true), &two(), 60.0, six);
+        let l = layout(&v);
+        assert_eq!(l.size, (360, 760));
+        let [list, cal] = l.boxes;
+        assert_eq!(cal.y + cal.h, 760.0 - l.metrics.pad);
+        assert!(
+            (list.y + list.h + CARD_GAP - cal.y).abs() < 0.01,
+            "{list:?} {cal:?}"
+        );
+        assert_eq!(cards(&l).len(), 2);
+    }
+
+    #[test]
+    fn without_the_calendar_the_list_fills_the_sheet() {
+        let v = view(&sheet(760, false), &two(), 60.0, six);
+        let l = layout(&v);
+        assert_eq!(l.size, (360, 760));
+        assert_eq!(l.boxes[0].h, 760.0);
+        assert_eq!(l.boxes[1].h, 0.0);
+        assert_eq!(cards(&l).len(), 1);
+        assert!(!places(&l).contains("prev"));
     }
 
     #[test]

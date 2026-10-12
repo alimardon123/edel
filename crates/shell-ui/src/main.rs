@@ -415,6 +415,7 @@ fn run() -> Result<()> {
     let switcher = widgets::workspaces::Settings::read(machine.as_deref(), person.as_deref());
     set_switcher(&mut live, switcher);
     live.badge = notification_badge(machine.as_deref(), person.as_deref());
+    live.list = notification_list(machine.as_deref(), person.as_deref());
     let mut pin_slots = Vec::new();
     if panels
         .iter()
@@ -1832,10 +1833,7 @@ impl LayerShellHandler for Shell {
             return self.draw_osd();
         }
         if self.is_centre(surface.wl_surface()) {
-            if let Some(card) = &mut self.centre {
-                card.popup_mut().configured();
-            }
-            return self.draw_centre();
+            return self.centre_configured(configure.new_size);
         }
         if self.is_tray_grid(surface.wl_surface()) {
             if let Some(card) = &mut self.tray_grid {
@@ -2534,6 +2532,16 @@ pub fn notification_badge(machine: Option<&str>, person: Option<&str>) -> String
     edel::settings::chosen(key, machine, person)
         .filter(|v| edel::settings::choices(key).contains(&v.as_str()))
         .unwrap_or_else(|| "dot".into())
+}
+
+/// `notifications.list` as the machine's and the person's files say it
+/// (M5.9l): one of the key's values, `button` without one or for a value
+/// this release lacks.
+pub fn notification_list(machine: Option<&str>, person: Option<&str>) -> String {
+    let key = edel::settings::NOTIFICATION_LIST;
+    edel::settings::chosen(key, machine, person)
+        .filter(|v| edel::settings::choices(key).contains(&v.as_str()))
+        .unwrap_or_else(|| "button".into())
 }
 
 /// `panels.tray` as the machine's and the person's files say it

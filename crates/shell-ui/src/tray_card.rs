@@ -524,6 +524,13 @@ impl Shell {
             self.live.badge = badge;
             self.draw_all();
         }
+        // Where the list opens (M5.9l): an open list closes when the key
+        // changes, and opens in the new place on the next click.
+        let list = crate::notification_list(machine.as_deref(), person.as_deref());
+        if list != self.live.list {
+            self.live.list = list;
+            self.close_centre();
+        }
     }
 
     /// The tray's split changed: the number behind the arrow is logged when

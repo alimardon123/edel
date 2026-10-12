@@ -225,6 +225,11 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::NOTIFICATION_BADGE,
         title: n_("Unread badge"),
     },
+    // Where the notification list opens (M5.9l).
+    Row {
+        key: edel::settings::NOTIFICATION_LIST,
+        title: n_("Notification list"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",
