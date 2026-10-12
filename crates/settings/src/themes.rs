@@ -487,6 +487,8 @@ pub struct Card {
     sheet_content: gtk::Box,
     sheet_key: RefCell<String>,
     wallpapers: RefCell<Option<Rc<wallpaper::Card>>>,
+    /// The last theme line logged, so a line is logged once per change.
+    changed_log: RefCell<String>,
 }
 
 /// Builds the theme card in `content`, after the page's intro: the theme
@@ -749,6 +751,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         sheet_content,
         sheet_key: RefCell::new(String::new()),
         wallpapers: RefCell::new(None),
+        changed_log: RefCell::new(String::new()),
     });
     wire(&card, &from_use, &blank);
     drop_file(&card, &row);
@@ -1317,6 +1320,22 @@ impl Card {
         self.show_sheet(shown);
         self.quiet.set(false);
         self.problem.set_visible(false);
+        // The theme line's state for CI and for people reading the log, as
+        // `edel-settings: theme aurora changed accent` (or `nothing`); logged
+        // when it changes, in English.
+        let words: Vec<String> = shown.changed.iter().map(|key| rows::plain(key)).collect();
+        let line = format!(
+            "edel-settings: theme {} changed {}",
+            shown.in_use,
+            if words.is_empty() {
+                "nothing".to_string()
+            } else {
+                words.join(" ")
+            },
+        );
+        if self.changed_log.replace(line.clone()) != line {
+            eprintln!("{line}");
+        }
     }
 
     /// The looks of the theme in use, built again when its pictures change;
