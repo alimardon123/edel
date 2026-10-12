@@ -296,6 +296,33 @@ msgstr ""
 msgid "Widgets"
 msgstr ""
 
+msgid "Customize"
+msgstr ""
+
+msgid "In use"
+msgstr ""
+
+msgid "Use this look"
+msgstr ""
+
+msgid "New look from this one"
+msgstr ""
+
+msgid "Look {title}"
+msgstr ""
+
+msgid "Previous look"
+msgstr ""
+
+msgid "Next look"
+msgstr ""
+
+msgid "Left and right, or a swipe, move between looks. Return uses it, Escape leaves."
+msgstr ""
+
+msgid "Lock screen looks"
+msgstr ""
+
 msgid "Close notification"
 msgstr ""
 

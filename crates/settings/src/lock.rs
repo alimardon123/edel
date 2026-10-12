@@ -283,30 +283,24 @@ fn set_line(row: &widgets::Row, text: &str) {
 /// arrangement and background are taken out, as a look brings both.
 fn choose_look(name: &str) -> Result<(), String> {
     let files = Files::here();
-    if name == CLASSIC {
-        files.choose_over(LOOK, CLASSIC, Some(CLASSIC))?;
-    } else {
-        files.set(LOOK, Some(&format!("{name:?}")))?;
+    let (machine, person) = files.texts();
+    let text = lock_screen::chose_text(&person, machine.as_deref(), name)?;
+    if text != person {
+        files.write_person(&text)?;
     }
-    reset_person(&files, PARTS)?;
-    reset_person(&files, BACKGROUND)
+    Ok(())
 }
 
 /// Makes a look of what applies, named after `base` (the look in use): New
 /// look, Duplicate and Keep as a look all do this. The new look is chosen,
 /// and the person's arrangement and background are taken out, as it keeps
-/// them. Returns the name it got.
+/// them. Returns the name it got. The text is the library's (M5.10c7h), as
+/// the looks switcher on the lock writes it too.
 fn save_as_look(base: &str) -> Result<String, String> {
     let files = Files::here();
-    let lock = files.lock();
-    let own = files.person_file().lock_screen.looks;
-    let taken = |name: &str| own.as_ref().is_some_and(|own| own.contains_key(name));
-    let name = lock_screen::new_look_name(base, taken);
-    let text = lock_screen::looks_value(own.as_ref(), &name, Some(lock_screen::as_own_look(&lock)));
-    files.set(OWN_LOOKS, text.as_deref())?;
-    files.set(LOOK, Some(&format!("{name:?}")))?;
-    reset_person(&files, PARTS)?;
-    reset_person(&files, BACKGROUND)?;
+    let (machine, person) = files.texts();
+    let (text, name) = lock_screen::saved_as_text(&person, machine.as_deref(), base)?;
+    files.write_person(&text)?;
     Ok(name)
 }
 

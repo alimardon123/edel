@@ -798,28 +798,8 @@ pub fn places(at: &Layout) -> String {
 /// the machine's is reachable from the person's `look`. A file that does not
 /// read counts as absent (lenient, as `edel::settings::read` is).
 pub fn lock_settings(machine: Option<&str>, person: Option<&str>) -> LockScreen {
-    let read = |text: Option<&str>| {
-        text.and_then(|t| edel::settings::read(t).ok())
-            .map(|read| read.file.lock_screen)
-            .unwrap_or_default()
-    };
-    let (machine, person) = (read(machine), read(person));
-    let looks = match (machine.looks, person.looks) {
-        (None, None) => None,
-        (machine, person) => {
-            let mut all = machine.unwrap_or_default();
-            all.extend(person.unwrap_or_default());
-            Some(all)
-        }
-    };
-    LockScreen {
-        parts: person.parts.or(machine.parts),
-        look: person.look.or(machine.look),
-        background: person.background.or(machine.background),
-        dim: person.dim.or(machine.dim),
-        notifications: person.notifications.or(machine.notifications),
-        looks,
-    }
+    // The one merge is the library's (M5.10c7h), as Settings' looks read it.
+    edel::lock_screen::lock_over(machine, person)
 }
 
 /// The wallpaper the lock and login screens show in the scheme `dark`

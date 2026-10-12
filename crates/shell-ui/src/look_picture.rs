@@ -231,7 +231,7 @@ fn sample_player() -> player::PlayerView {
 
 /// Writes `picture` to `out` as a PNG, through `out` with `.new` added and
 /// renamed over it. The folder is made when it is missing.
-fn write_png(picture: &Pixmap, out: &Path) -> Result<()> {
+pub(crate) fn write_png(picture: &Pixmap, out: &Path) -> Result<()> {
     if let Some(dir) = out.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         fs::create_dir_all(dir)
             .with_context(|| format!("could not make the folder {}", dir.display()))?;

@@ -1516,6 +1516,13 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
         Some(value) => set(&text, key, value)?,
         None => unset(&text, key)?,
     };
+    write_text(path, &edited)
+}
+
+/// Writes a whole settings file's text to `path` through a rename, as
+/// [`write`] does after its one key (M5.10c7h): the look writers of the
+/// library and Settings write their edited text this way.
+pub fn write_text(path: &Path, edited: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| {
             trf(

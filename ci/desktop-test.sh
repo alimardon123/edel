@@ -3976,6 +3976,46 @@ editor_places() {
 	done
 }
 
+case_lock_looks() {
+	# The looks side by side on the lock (M5.10c7h): Super+L on the locked
+	# screen asks for the edit after unlock, as a right press does, so ci's
+	# password opens the looks switcher. Right shows the next look in the
+	# middle, magazine, and Return makes it the look in use, which ci's own
+	# file then holds under [lock_screen]. The look's lines are taken out
+	# again, so the cases after it see classic, and the screen is unlocked.
+	guest 'lock password'
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen"
+	python3 ci/qmp.py key meta_l-l
+	wait_for 'edel-shell-ui: lock: password to edit' ||
+		fail "Super+L on the lock did not ask for the edit: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
+	python3 ci/qmp.py type 'edel-desktop-test'
+	python3 ci/qmp.py key ret
+	wait_for 'edel-shell-ui: lock looks shown, 3 looks, classic in the middle' ||
+		fail "the looks did not open after unlock: $(tr -d '\r' <"$log" | grep -a 'lock' | tail -n 3)"
+	python3 ci/qmp.py key right
+	wait_for 'edel-shell-ui: lock looks shows magazine' ||
+		fail "Right did not show the next look: $(tr -d '\r' <"$log" | grep -a 'lock looks' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/lock-looks.png"
+	python3 ci/qmp.py key ret
+	wait_for 'edel-shell-ui: lock look magazine chosen' ||
+		fail "Return did not choose magazine: $(tr -d '\r' <"$log" | grep -a 'lock look' | tail -n 3)"
+	guest 'settings file'
+	value settings_file | grep -q 'look = "magazine"' ||
+		fail "ci's settings file does not use the look magazine: $(value settings_file)"
+	# The lines the look wrote come out again, so classic applies.
+	guest 'lock parts mine default'
+	guest 'settings file'
+	value settings_file | grep -q 'look = ' &&
+		fail "the look line was not taken out: $(value settings_file)"
+	return 0
+}
+
 case_lock_edit() {
 	# The lock screen's edit mode (M5.10c6b): ci's bus call, the one Settings'
 	# Edit lock screen makes, opens it over the desktop, live, with each part

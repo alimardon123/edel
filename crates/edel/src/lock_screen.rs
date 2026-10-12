@@ -1407,9 +1407,174 @@ pub fn parts_value(parts: &[Placed]) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// The settings key the person's own looks are written to (M5.10c7h).
+pub const OWN_LOOKS: &str = "lock_screen.looks";
+
+/// The lock screen's settings as the person's file sets them over the
+/// machine's, with the looks of both (M5.10c7h): what the lock, its edit
+/// mode, the looks switcher and Settings read, one merge (ADR-010). A text
+/// that does not read counts as empty.
+pub fn lock_over(machine: Option<&str>, person: Option<&str>) -> crate::settings::LockScreen {
+    let (machine, person) = (lock_of(machine), lock_of(person));
+    let mut looks = machine.looks.clone().unwrap_or_default();
+    looks.extend(person.looks.clone().unwrap_or_default());
+    crate::settings::LockScreen {
+        parts: person.parts.or(machine.parts),
+        look: person.look.or(machine.look),
+        background: person.background.or(machine.background),
+        dim: person.dim.or(machine.dim),
+        notifications: person.notifications.or(machine.notifications),
+        looks: (!looks.is_empty()).then_some(looks),
+    }
+}
+
+/// The `[lock_screen]` table of one settings text, leniently.
+fn lock_of(text: Option<&str>) -> crate::settings::LockScreen {
+    text.and_then(|t| crate::settings::read(t).ok())
+        .map(|read| read.file.lock_screen)
+        .unwrap_or_default()
+}
+
+/// Whether the person's own text sets `key` (not the machine's alone).
+fn person_sets(person: &str, machine: Option<&str>, key: &str) -> bool {
+    matches!(
+        crate::settings::source(key, machine, Some(person)),
+        crate::settings::Source::Person(_)
+    )
+}
+
+/// Sets `key` in a settings text (`value`), or takes it out (None). A text
+/// with nothing in it yet starts with its format line, as `settings::write`
+/// starts a new file; a removal from nothing changes nothing.
+fn edit(text: String, key: &str, value: Option<&str>) -> Result<String, String> {
+    match value {
+        Some(value) => {
+            let base = if text.trim().is_empty() {
+                format!("format = {}\n", crate::settings::FORMAT)
+            } else {
+                text
+            };
+            crate::settings::set(&base, key, value).map_err(|e| format!("{e:#}"))
+        }
+        None if text.trim().is_empty() => Ok(text),
+        None => crate::settings::unset(&text, key).map_err(|e| format!("{e:#}")),
+    }
+}
+
+/// The text of the person's settings file after choosing the look `name`
+/// (M5.10c7h): the one writer Settings' Lock screen page and the looks
+/// switcher share. Classic is what applies without the key, so it takes
+/// `look` out, unless the machine's file names another look, which classic
+/// then sets. Any other look sets `look`. The person's own `parts` and
+/// `background` lines go, as a look brings both. Returns `person` itself when
+/// nothing changes, so nothing is written.
+pub fn chose_text(person: &str, machine: Option<&str>, name: &str) -> Result<String, String> {
+    let mut text = person.to_string();
+    if name == CLASSIC {
+        let without =
+            crate::settings::chosen(LOOK, machine, None).unwrap_or_else(|| CLASSIC.to_string());
+        if without == CLASSIC {
+            if person_sets(person, machine, LOOK) {
+                text = edit(text, LOOK, None)?;
+            }
+        } else {
+            text = edit(text, LOOK, Some(CLASSIC))?;
+        }
+    } else {
+        text = edit(text, LOOK, Some(&format!("{name:?}")))?;
+    }
+    for key in [PARTS, BACKGROUND] {
+        if person_sets(person, machine, key) {
+            text = edit(text, key, None)?;
+        }
+    }
+    Ok(text)
+}
+
+/// The text of the person's settings file after saving a copy of what
+/// applies as a look of the person's, named after `base` (M5.10c7h): New
+/// look, Duplicate and Keep as a look, and the looks switcher's plus. The
+/// copy is chosen, and the person's `parts` and `background` lines go, as
+/// the look keeps them. Returns the new text and the name the copy got.
+pub fn saved_as_text(
+    person: &str,
+    machine: Option<&str>,
+    base: &str,
+) -> Result<(String, String), String> {
+    let lock = lock_over(machine, Some(person));
+    let own = lock_of(Some(person)).looks;
+    let taken = |name: &str| own.as_ref().is_some_and(|own| own.contains_key(name));
+    let name = new_look_name(base, taken);
+    let mut text = person.to_string();
+    if let Some(value) = looks_value(own.as_ref(), &name, Some(as_own_look(&lock))) {
+        text = edit(text, OWN_LOOKS, Some(&value))?;
+    }
+    text = edit(text, LOOK, Some(&format!("{name:?}")))?;
+    for key in [PARTS, BACKGROUND] {
+        if person_sets(person, machine, key) {
+            text = edit(text, key, None)?;
+        }
+    }
+    Ok((text, name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn look_of(text: &str) -> Option<String> {
+        crate::settings::read(text).unwrap().file.lock_screen.look
+    }
+
+    #[test]
+    fn choosing_a_look_sets_it_and_takes_the_persons_own_lines_out() {
+        let text = chose_text(
+            "format = 1\n[lock_screen]\nbackground = \"sharp\"\n",
+            None,
+            "magazine",
+        )
+        .unwrap();
+        assert_eq!(look_of(&text).as_deref(), Some("magazine"));
+        assert!(!text.contains("background"), "{text}");
+    }
+
+    #[test]
+    fn choosing_classic_takes_the_key_out_unless_the_machine_names_another_look() {
+        let person = "format = 1\n[lock_screen]\nlook = \"magazine\"\n";
+        let text = chose_text(person, None, CLASSIC).unwrap();
+        assert_eq!(look_of(&text), None);
+        let machine = "format = 1\n[lock_screen]\nlook = \"minimal\"\n";
+        let text = chose_text(person, Some(machine), CLASSIC).unwrap();
+        assert_eq!(look_of(&text).as_deref(), Some(CLASSIC));
+    }
+
+    #[test]
+    fn choosing_the_look_already_in_use_writes_nothing() {
+        assert_eq!(chose_text("", None, CLASSIC).unwrap(), "");
+        let person = "format = 1\n[lock_screen]\nlook = \"minimal\"\n";
+        assert_eq!(chose_text(person, None, "minimal").unwrap(), person);
+    }
+
+    #[test]
+    fn saving_a_copy_names_it_after_the_look_and_chooses_it() {
+        let (text, name) = saved_as_text("", None, CLASSIC).unwrap();
+        assert_eq!(name, "classic-2");
+        assert_eq!(look_of(&text).as_deref(), Some("classic-2"));
+        let own = crate::settings::read(&text).unwrap().file.lock_screen.looks;
+        assert!(own.is_some_and(|own| own.contains_key("classic-2")));
+        let (_, again) = saved_as_text(&text, None, CLASSIC).unwrap();
+        assert_eq!(again, "classic-3");
+    }
+
+    #[test]
+    fn the_lock_settings_merge_the_persons_lines_over_the_machines() {
+        let machine = "format = 1\n[lock_screen]\nlook = \"magazine\"\ndim = 20\n";
+        let person = "format = 1\n[lock_screen]\nlook = \"minimal\"\n";
+        let lock = lock_over(Some(machine), Some(person));
+        assert_eq!(lock.look.as_deref(), Some("minimal"));
+        assert_eq!(lock.dim, Some(20));
+        assert!(lock.looks.is_none());
+    }
 
     const SCREENS: [(f32, f32); 5] = [
         (360.0, 740.0),
