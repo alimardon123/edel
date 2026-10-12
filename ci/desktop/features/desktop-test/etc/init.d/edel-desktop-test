@@ -289,9 +289,16 @@ commands() {
 		# Screenshots and screen sharing (M6.3), asked as ci through the
 		# portals: the screenshot's URI is kept for `capture file`, which
 		# says the file's size and its first four bytes (a PNG's magic).
+		# The screenshot waits for shell-ui's Access dialog (M6.3), which the
+		# person answers, so the call runs in the background, its output
+		# kept in a file, and 'capture screenshot result' says it once it is
+		# there (CI clicks Allow in between).
 		'capture screenshot')
 			bus=$(session_bus)
-			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screenshot" </dev/null 2>&1 | tr '\n' ' ')
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-testclient --screenshot" </dev/null >/tmp/capture-shot.txt 2>&1 &
+			;;
+		'capture screenshot result')
+			out=$(tr '\n' ' ' </tmp/capture-shot.txt 2>/dev/null)
 			say "capture_screenshot $out"
 			echo "$out" | sed -n 's/.*screenshot URI \(file:[^ ]*\).*/\1/p' >/tmp/capture-uri.txt
 			;;

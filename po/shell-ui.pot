@@ -5,6 +5,12 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Allow {app} to take screenshots?"
+msgstr ""
+
+msgid "Allow this app?"
+msgstr ""
+
 msgid "January"
 msgstr ""
 
@@ -474,6 +480,15 @@ msgid "Label: {words}"
 msgstr ""
 
 msgid "Other"
+msgstr ""
+
+msgid "An app"
+msgstr ""
+
+msgid "Deny"
+msgstr ""
+
+msgid "Allow"
 msgstr ""
 
 msgid "Suspend"
