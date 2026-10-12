@@ -877,9 +877,9 @@ fn swatch(theme: &Rc<Theme>, pick: impl Fn(&Tokens) -> Colour + 'static) -> gtk:
 /// Logs where the group's cards and its Reset lie in the window, once the
 /// flow is laid out, for CI to click (logical pixels), as `edel-settings:
 /// wallpaper group places NAME X+Y+WxH ..., reset X+Y+WxH`. Asked for by
-/// this row's key, the page first scrolls the group to the top and gives
-/// the keyboard to the chosen card, as the Style group does; it logs once
-/// two frames agree.
+/// this row's key, the page scrolls the group to the top (again on each
+/// frame while the sheet opens) and gives the keyboard to the chosen card,
+/// as the Style group does; it logs once two frames agree.
 fn log_places(
     flow: &gtk::Widget,
     cards: Vec<(String, gtk::ToggleButton, gtk::Box)>,
@@ -913,6 +913,10 @@ fn log_places(
             }
             return glib::ControlFlow::Continue;
         }
+        // The pictures sheet opens with an animation, so the page may not be
+        // tall enough yet on the first frame: the group is scrolled to the
+        // top again on every frame until the places settle.
+        widgets::scroll_to_top(flow.upcast_ref());
         let places: Vec<String> = cards
             .iter()
             .map(|(key, button, _)| {
