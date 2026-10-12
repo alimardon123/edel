@@ -284,18 +284,30 @@ impl Files {
     /// person's file sets over the machine's, and the looks of both, the
     /// person's of a name over the machine's.
     pub fn lock(&self) -> settings::LockScreen {
-        let machine = Self::file_of(Some(&self.machine)).lock_screen;
-        let person = self.person_file().lock_screen;
-        let mut looks = machine.looks.unwrap_or_default();
-        looks.extend(person.looks.clone().unwrap_or_default());
-        settings::LockScreen {
-            parts: person.parts.or(machine.parts),
-            look: person.look.or(machine.look),
-            background: person.background.or(machine.background),
-            dim: person.dim.or(machine.dim),
-            notifications: person.notifications.or(machine.notifications),
-            looks: (!looks.is_empty()).then_some(looks),
-        }
+        let (machine, person) = self.texts();
+        edel::lock_screen::lock_over(machine.as_deref(), Some(&person))
+    }
+
+    /// The machine's settings text and the person's, as the look writers of
+    /// the library read them (M5.10c7h); the person's is empty with no file.
+    pub fn texts(&self) -> (Option<String>, String) {
+        (
+            std::fs::read_to_string(&self.machine).ok(),
+            self.person
+                .as_ref()
+                .and_then(|path| std::fs::read_to_string(path).ok())
+                .unwrap_or_default(),
+        )
+    }
+
+    /// Writes the person's whole settings text (M5.10c7h), through the same
+    /// rename `set` makes for one key.
+    pub fn write_person(&self, text: &str) -> Result<(), String> {
+        let path = self
+            .person
+            .as_ref()
+            .ok_or("there is no home folder to keep your settings in")?;
+        settings::write_text(path, text).map_err(|e| format!("{e:#}"))
     }
 
     /// This person's own file as the desktop reads it, empty when there is

@@ -35,6 +35,11 @@ pub const EDIT_PANELS: &str = "EditPanels";
 /// Settings' Lock screen page calls it; nothing calls it yet.
 pub const EDIT_LOCK_SCREEN: &str = "EditLockScreen";
 
+/// The method that opens the looks side by side on the lock (M5.10c7h), on
+/// the same interface: the switcher shell-ui draws over the lock screen.
+/// Settings does not call it yet.
+pub const EDIT_LOCK_LOOKS: &str = "EditLockLooks";
+
 /// The three groups of widgets a panel holds, from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {

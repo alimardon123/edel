@@ -13,6 +13,8 @@ use smithay_client_toolkit::reexports::calloop::channel;
 pub enum Edit {
     Panels,
     LockScreen,
+    /// The looks side by side over the lock (M5.10c7h).
+    LockLooks,
 }
 
 /// The object served at `SHELL_PATH`, which asks the event loop to open an
@@ -41,12 +43,18 @@ impl ShellBus {
     fn edit_lock_screen(&self) {
         let _ = self.edits.send(Edit::LockScreen);
     }
+
+    /// Opens the looks side by side over the lock (M5.10c7h); it returns at
+    /// once and the switcher opens on the event loop.
+    fn edit_lock_looks(&self) {
+        let _ = self.edits.send(Edit::LockLooks);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use edel::panel_edit::{EDIT_LOCK_SCREEN, EDIT_PANELS, SHELL_INTERFACE};
+    use edel::panel_edit::{EDIT_LOCK_LOOKS, EDIT_LOCK_SCREEN, EDIT_PANELS, SHELL_INTERFACE};
     use zbus::object_server::Interface;
 
     #[test]
@@ -62,6 +70,10 @@ mod tests {
         );
         assert!(
             xml.contains(&format!("<method name=\"{EDIT_LOCK_SCREEN}\"")),
+            "{xml}"
+        );
+        assert!(
+            xml.contains(&format!("<method name=\"{EDIT_LOCK_LOOKS}\"")),
             "{xml}"
         );
     }
