@@ -5,7 +5,7 @@ name = "edel-flatpak"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak-test"]
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak", "flatpak-test"]
 
 [vm]
 kernel = "virt"

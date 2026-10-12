@@ -272,6 +272,9 @@ pub enum Kind {
     /// Keyboard layouts as xkb names them, such as `"us,ru"` or
     /// `"de(nodeadkeys)"` ([`crate::keyboard::normalize`], M5.21)
     Keyboard,
+    /// A list of Flatpak app ids, such as `["io.mpv.Mpv"]`
+    /// ([`crate::apps::is_flatpak_id`], M6.1)
+    AppIds,
     /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
@@ -569,7 +572,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["off", "check", "install", "install-and-restart"]),
     ),
     later("updates.restart_window", Kind::Text),
-    later("apps.installed", Kind::Texts),
+    now("apps.installed", Kind::AppIds),
     later("addons.installed", Kind::Texts),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
@@ -2469,6 +2472,21 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::Hosts, _) => fail(tr("a list of host names, such as [\"pool.ntp.org\"]")),
+        (Kind::AppIds, Value::Array(items)) => {
+            for item in items {
+                match item.as_str() {
+                    Some(id) if crate::apps::is_flatpak_id(id) => {}
+                    _ => {
+                        return Err(trf(
+                            "{item} is not a Flatpak app id; an id is the app's reverse-DNS name, three or more parts joined by dots, such as \"io.mpv.Mpv\"",
+                            &[("item", &item.to_string())],
+                        ));
+                    }
+                }
+            }
+            Ok(value.clone())
+        }
+        (Kind::AppIds, _) => fail(tr("a list of Flatpak app ids, such as [\"io.mpv.Mpv\"]")),
         (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
         (Kind::Channel, Value::String(s)) => Err(trf(
             "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
@@ -2744,6 +2762,7 @@ mod tests {
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
+            Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::Wallpaper => Value::String("hills".into()),
@@ -3411,6 +3430,54 @@ lock_after_minutes = 11
             )]
         );
         assert_eq!(read(file).unwrap().file.region.time_servers, None);
+    }
+
+    #[test]
+    fn apps_installed_takes_flatpak_ids_and_names_the_bad_one() {
+        // A good id is kept; a bad one is refused with its own text, and
+        // the reader leaves the whole list out, as it does for hosts (M6.1).
+        let ok = set(
+            "format = 1
+",
+            "apps.installed",
+            r#"["io.mpv.Mpv"]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read(&ok).unwrap().file.apps.installed,
+            Some(vec!["io.mpv.Mpv".into()])
+        );
+        let bad = |value: &str| {
+            set(
+                "format = 1
+",
+                "apps.installed",
+                value,
+            )
+            .unwrap_err()
+        };
+        let message = bad(r#"["io.mpv.Mpv", "mpv"]"#).to_string();
+        assert!(
+            message.contains("\"mpv\" is not a Flatpak app id"),
+            "{message}"
+        );
+        assert!(message.contains("io.mpv.Mpv"), "{message}");
+        assert!(bad("[1]").to_string().contains("not a Flatpak app id"));
+        assert!(
+            bad("io.mpv.Mpv")
+                .to_string()
+                .contains("a list of Flatpak app ids")
+        );
+        let file = "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\", \"mpv\"]\n";
+        let read = read(file).unwrap();
+        assert_eq!(read.file.apps.installed, None);
+        assert!(
+            read.problems
+                .iter()
+                .any(|p| p.key == "apps.installed" && p.to_string().contains("\"mpv\"")),
+            "{:?}",
+            read.problems
+        );
     }
 
     #[test]

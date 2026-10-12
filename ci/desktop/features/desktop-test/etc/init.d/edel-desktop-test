@@ -939,6 +939,34 @@ commands() {
 			pkill -9 -x edel-compositor
 			respawned "$before" &
 			;;
+		# Flatpak apps (M6.1): io.mpv.Mpv in apps.installed, with ci made an
+		# admin for the install (apps install for admins only), then apply,
+		# which adds Flathub for ci and installs the app with flatpak --user.
+		# The download takes minutes, so the command's verdict is its status
+		# and the last lines of its log.
+		'flatpak apps')
+			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
+				edel settings apply >>/tmp/flatpak-apply.log 2>&1
+			status=$?
+			say "flatpak_apply $status $(tail -n 5 /tmp/flatpak-apply.log | tr '\n' ';')"
+			;;
+		# mpv as ci, in the session, with no file, so its window stays idle
+		# on the screen until the case closes it.
+		'flatpak run')
+			as_ci "flatpak run io.mpv.Mpv --vo=wlshm --force-window=immediate --idle=yes" </dev/null >/tmp/flatpak-run.log 2>&1 &
+			;;
+		'flatpak diff')
+			say "flatpak_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		'flatpak polkit')
+			say "flatpak_polkit $(pgrep polkitd || echo none)"
+			;;
+		# The key taken out again (never an uninstall: the app stays), ci's
+		# admin taken back, and mpv closed.
+		'flatpak default')
+			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
+			pkill -x mpv
+			;;
 		*)
 			say "unknown command $command"
 			continue

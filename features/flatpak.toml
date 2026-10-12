@@ -1,0 +1,7 @@
+# Flatpak (roadmap M6.1): apps from Flathub, installed per admin person with
+# `flatpak --user` (SPIKE-flatpak), and the portals apps ask for. Nothing in
+# it runs until an app or a person asks: no service, no update timer.
+format = 1
+summary = "Flatpak: apps from Flathub, installed per person, and the portals apps ask for"
+why = "flatpak installs and runs the apps of Flathub, which carry their own glibc libraries (ADR-003, ADR-005), and `edel settings apply` installs the ones in `apps.installed` for each admin person with `flatpak --user`: their apps and runtimes live under the person's home on /data, so they survive every update and rollback, and no polkit daemon or setuid helper is needed. bubblewrap is the sandbox Flatpak runs every app in, which needs unprivileged user namespaces and no setuid bit. xdg-desktop-portal-gtk gives apps the file chooser and the other GTK portals; the shell's own portal, in the shell feature, keeps the Settings portal (edel-portals.conf pins it), and D-Bus starts each portal only when an app asks, so nothing runs before an app does."
+packages = ["flatpak", "bubblewrap", "xdg-desktop-portal-gtk"]
