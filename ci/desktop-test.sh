@@ -3000,7 +3000,11 @@ case_default_apps() {
 	*flatpak*) ;;
 	*) fail "Test A was started as $launched, not through flatpak run" ;;
 	esac
-	wait_more 'edel-compositor: mapped window test-a' "$opened" 60 || fail "Test A did not map a window within 60 s of starting"
+	if ! wait_more 'edel-compositor: mapped window test-a' "$opened" 60; then
+		guest 'default app check'
+		wait_for 'DESKTOP-TEST: default_app_run ' 30
+		fail "Test A did not map a window within 60 s of starting; as ci the installation lists $(value default_app_list) and flatpak run said: $(value default_app_run)"
+	fi
 	python3 ci/qmp.py screendump "$dir/default-apps.png"
 	closed=$(count 'edel-compositor: unmapped window test-a')
 	python3 ci/qmp.py key meta_l-q
