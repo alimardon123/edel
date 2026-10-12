@@ -1595,6 +1595,9 @@ case_settings_wallpaper() {
 	# instead, the same colour. Super+Q closes Settings, the line taken out
 	# of ci's file brings the background back (`wallpaper none`). Kept as
 	# settings-wallpaper.png and settings-wallpaper-gone.png.
+	# The theme in use holds only the test pair, so its card is the
+	# sheet's first and inside the window (Edel's three would push it out).
+	guest 'wallpaper pictures ci'
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'settings wallpaper'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the Wallpaper page: $(value windows)"
