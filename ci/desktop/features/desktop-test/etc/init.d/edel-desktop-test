@@ -987,6 +987,10 @@ commands() {
 			pkill -9 -x edel-compositor
 			respawned "$before" &
 			;;
+		# The input method (M6.8): fcitx5 on the machine's file, which the
+		# compositor starts or stops as the setting changes; reset takes it out.
+		'input method on') edel settings set region.input_method=fcitx5 ;;
+		'input method off') edel settings reset region.input_method ;;
 		# Flatpak apps (M6.1): io.mpv.Mpv in apps.installed, with ci made an
 		# admin for the install (apps install for admins only), then apply,
 		# which adds Flathub for ci and installs the app with flatpak --user.

@@ -60,6 +60,9 @@ pub struct Settings {
     /// `region.language` (M5.24a): shell-ui reads its words in it, and
     /// the compositor only restarts it when it changes.
     pub language: Option<String>,
+    /// `region.input_method` (M6.8): `fcitx5` starts it with the session;
+    /// absent or `none` runs none (`session.rs`).
+    pub input_method: Option<String>,
     /// `layout.tiling_style` as the files and the preset give it (M5.16a,
     /// M5.18b): the person's over the machine's, else the preset's, else
     /// stack. Resolved by [`Settings::from_files`].
@@ -281,6 +284,9 @@ impl Settings {
             }
             if file.region.language.is_some() {
                 settings.language.clone_from(&file.region.language);
+            }
+            if file.region.input_method.is_some() {
+                settings.input_method.clone_from(&file.region.input_method);
             }
             for (name, output) in &file.displays {
                 let into = settings.outputs.entry(name.clone()).or_default();

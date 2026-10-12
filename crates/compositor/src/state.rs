@@ -213,6 +213,9 @@ pub struct Edel {
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
     pub keyboard_shortcuts_inhibit:
         smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
+    /// The text input and input method globals (`ime.rs`, M6.8).
+    _text_input: smithay::wayland::text_input::TextInputManagerState,
+    _input_method: smithay::wayland::input_method::InputMethodManagerState,
 }
 
 impl Edel {
@@ -274,6 +277,12 @@ impl Edel {
                 smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<
                     Edel,
                 >(&display),
+            _text_input: smithay::wayland::text_input::TextInputManagerState::new::<Edel>(&display),
+            // Hidden from sandboxed apps: a Flatpak app never becomes the input method (M6.8).
+            _input_method: smithay::wayland::input_method::InputMethodManagerState::new::<Edel, _>(
+                &display,
+                crate::sandbox::shell_may,
+            ),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take
@@ -704,6 +713,12 @@ impl Edel {
             self.switch_policy(new.policy());
         } else if old.title_bars != new.title_bars || rescaled {
             self.relayout();
+        }
+        // The input method starts or stops as region.input_method says (M6.8).
+        if old.input_method != new.input_method {
+            if let Some(handle) = self.handle.clone() {
+                crate::session::follow_input_method(&handle, self);
+            }
         }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();

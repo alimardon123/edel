@@ -231,16 +231,34 @@ impl Edel {
             let origin = (place.loc - window.geometry().loc - screen.loc)
                 .to_physical_precise_round(scale)
                 + shift;
+            // An input method's popup (M6.8) lies above the window it types
+            // into, so it comes first, as the top of the window's parts.
             let mut parts: Vec<Element> = window
-                .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-                    renderer,
-                    origin,
-                    Scale::from(scale),
-                    look.alpha,
-                )
+                .toplevel()
+                .map(|toplevel| {
+                    crate::ime::popup_elements(
+                        renderer,
+                        toplevel.wl_surface(),
+                        origin,
+                        scale,
+                        look.alpha,
+                    )
+                })
+                .unwrap_or_default()
                 .into_iter()
                 .map(Element::Surface)
                 .collect();
+            parts.extend(
+                window
+                    .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+                        renderer,
+                        origin,
+                        Scale::from(scale),
+                        look.alpha,
+                    )
+                    .into_iter()
+                    .map(Element::Surface),
+            );
             self.remember_picture(&window);
             parts.extend(self.frame_elements(renderer, &window, place, screen.loc, scale, look));
             let outer = self.insets(&window).frame(place);
