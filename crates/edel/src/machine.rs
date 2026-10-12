@@ -620,15 +620,19 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
     Ok(())
 }
 
-/// `program` with `args`, run as `account` with its own home and no other
-/// environment, as `write_keys` runs its shell: root starts it, and the
-/// person owns everything it writes (M6.1).
+/// `program` with `args`, run as `account` in its own home, with only its
+/// name, home and path as environment, as `su` gives them and `write_keys`
+/// runs its shell: root starts it, and the person owns everything it
+/// writes (M6.1).
 fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args)
         .env_clear()
         .env("HOME", &account.home)
+        .env("USER", &account.name)
+        .env("LOGNAME", &account.name)
         .env("PATH", "/usr/bin:/bin")
+        .current_dir(&account.home)
         .uid(account.uid)
         .gid(account.gid);
     cmd
