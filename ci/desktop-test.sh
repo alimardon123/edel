@@ -3003,7 +3003,7 @@ case_notify() {
 	# screen leaves it (the panels keep their places), with the calendar at
 	# its foot; the clock's places still name the calendar's parts.
 	guest 'list right'
-	sleep 1
+	wait_for 'edel-shell-ui: notifications list right$' || fail "notifications.list = right did not reach shell-ui: $(tr -d '\r' <"$log" | grep -a 'ran list right' | tail -n 1)"
 	set -- $(clock)
 	clock_x=$(($1 + $2 / 2))
 	placed=$(count 'edel-shell-ui: notification centre placed right')
@@ -3029,7 +3029,7 @@ case_notify() {
 	# Back to the button: the list hangs by the clock again, shorter than
 	# the sheet (a hung list with four notifications is about 600 px).
 	guest 'list default'
-	sleep 1
+	wait_for 'edel-shell-ui: notifications list button$' || fail "taking notifications.list out did not reach shell-ui"
 	set -- $(clock)
 	clock_x=$(($1 + $2 / 2))
 	placed=$(count 'edel-shell-ui: notification centre placed button')

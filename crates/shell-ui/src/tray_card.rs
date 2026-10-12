@@ -528,6 +528,7 @@ impl Shell {
         // changes, and opens in the new place on the next click.
         let list = crate::notification_list(machine.as_deref(), person.as_deref());
         if list != self.live.list {
+            eprintln!("edel-shell-ui: notifications list {list}");
             self.live.list = list;
             self.close_centre();
         }

@@ -1545,4 +1545,15 @@ mod tests {
         );
         screen.save_png(dir.join(format!("{name}.png"))).unwrap();
     }
+
+    #[test]
+    fn the_list_key_is_read_from_either_file_and_falls_back_to_the_button() {
+        let right = "format = 1\n\n[notifications]\nlist = \"right\"\n";
+        let left = "format = 1\n\n[notifications]\nlist = \"left\"\n";
+        assert_eq!(crate::notification_list(Some(right), None), "right");
+        assert_eq!(crate::notification_list(Some(right), Some(left)), "left");
+        assert_eq!(crate::notification_list(None, None), "button");
+        let odd = "format = 1\n\n[notifications]\nlist = \"top\"\n";
+        assert_eq!(crate::notification_list(Some(odd), None), "button");
+    }
 }
