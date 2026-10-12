@@ -962,10 +962,13 @@ msgstr ""
 msgid "a cursor theme's name in quotes, such as \"default\""
 msgstr ""
 
-msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"
+msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""
 msgstr ""
 
-msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""
+msgid "entry {number}: {problem}"
+msgstr ""
+
+msgid "a list of wallpapers in quotes, one per workspace, such as [\"\", \"#336699\"]"
 msgstr ""
 
 msgid "a list of pictures in quotes, such as [\"aurora\"]"
@@ -996,6 +999,9 @@ msgid "{value} is not a colour; use #rrggbb or #rrggbbaa, such as \"#1e1e2e\""
 msgstr ""
 
 msgid "a colour in quotes, such as \"#1e1e2e\""
+msgstr ""
+
+msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"
 msgstr ""
 
 msgid "{others} or {last}"

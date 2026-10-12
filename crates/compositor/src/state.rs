@@ -645,11 +645,13 @@ impl Edel {
             self.text_changed(old_text);
         }
         // The wallpaper (M5.10c4b): at start, and when it or the scheme (a
-        // dark wallpaper's picture) changes, or the dark one (M5.10c4d).
+        // dark wallpaper's picture) changes, or the dark one (M5.10c4d), or
+        // a workspace's own (M5.12b5).
         if !self.wallpaper.announced
             || old.wallpaper != new.wallpaper
             || old.wallpaper_dark != new.wallpaper_dark
             || old.color_scheme != new.color_scheme
+            || old.workspace_wallpapers != new.workspace_wallpapers
         {
             self.apply_wallpaper(&new);
         }

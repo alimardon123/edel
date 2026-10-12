@@ -9,19 +9,29 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::{tr, trf};
 use edel::presets::MOST_WORKSPACES;
+use edel::{places, wallpapers};
 
 use crate::files::{self, Files, apps_text, list_text};
-use crate::{icon, rows, widgets};
+use crate::{icon, rows, wallpaper, widgets};
 
-/// The key of the names row and the apps row.
+/// The key of the names row, the wallpapers row and the apps row.
 const NAMES: &str = "workspaces.names";
+const WALLPAPERS: &str = "workspaces.wallpapers";
 const APPS: &str = "workspaces.apps";
+/// Appearance's wallpaper key, which an empty choice means (M5.12b5).
+const APPEARANCE: &str = "appearance.wallpaper";
+/// A workspace's wallpaper thumbnail in logical pixels, small beside its
+/// name's row (M5.12b5).
+const THUMB_WIDTH: i32 = 64;
+const THUMB_HEIGHT: i32 = 40;
 
 /// The Workspaces group's names and apps, as the page shows them.
 pub struct Card {
@@ -34,6 +44,13 @@ pub struct Card {
     entries: RefCell<Vec<gtk::Entry>>,
     /// The names as the files say them now.
     names: RefCell<Vec<String>>,
+    wallpapers_row: widgets::Row,
+    wallpapers_box: gtk::Box,
+    /// The entries and Appearance's wallpaper the rows were built for: the
+    /// rows are built again only when one of them changes.
+    wallpapers_built: RefCell<Option<(Vec<String>, String)>>,
+    /// Each workspace's choice and the values it offers, in order.
+    wallpaper_rows: RefCell<Vec<(Rc<widgets::Choice>, Vec<String>)>>,
     apps_row: widgets::Row,
     apps_box: gtk::Box,
     /// The rules shown, each app with its number's spin button.
@@ -51,6 +68,9 @@ pub fn card(group: &gtk::Box, problem: &gtk::Label) -> Rc<Card> {
     let names_row = widgets::row(group, rows::title(NAMES), &empty());
     let names_box = vertical();
     group.append(&names_box);
+    let wallpapers_row = widgets::row(group, rows::title(WALLPAPERS), &empty());
+    let wallpapers_box = vertical();
+    group.append(&wallpapers_box);
     let apps_row = widgets::row(group, rows::title(APPS), &empty());
     let apps_box = vertical();
     group.append(&apps_box);
@@ -78,6 +98,10 @@ pub fn card(group: &gtk::Box, problem: &gtk::Label) -> Rc<Card> {
         names_box,
         entries: RefCell::new(Vec::new()),
         names: RefCell::new(Vec::new()),
+        wallpapers_row,
+        wallpapers_box,
+        wallpapers_built: RefCell::new(None),
+        wallpaper_rows: RefCell::new(Vec::new()),
         apps_row,
         apps_box,
         rules: RefCell::new(Vec::new()),
@@ -114,6 +138,28 @@ fn tidy(mut names: Vec<String>) -> Vec<String> {
     names
 }
 
+/// How many workspaces the rows show: the names' rows, the wallpapers' too.
+fn workspace_count(now: &files::Layout) -> usize {
+    if now.dynamic_workspaces {
+        (now.workspace_names.len() + 1).min(MOST_WORKSPACES)
+    } else {
+        now.workspaces as usize
+    }
+}
+
+/// The values a workspace's wallpaper choice offers, in order: an empty
+/// one (Appearance's), each wallpaper in `names`, then the workspace's own
+/// value when it is none of those (a colour or a picture's path), so the
+/// choice always shows what the file says (M5.12b5).
+pub fn wallpaper_values(names: &[String], entry: &str) -> Vec<String> {
+    let mut values = vec![String::new()];
+    values.extend(names.iter().cloned());
+    if !entry.is_empty() && !values.iter().any(|v| v == entry) {
+        values.push(entry.to_string());
+    }
+    values
+}
+
 impl Card {
     /// Shows what the files say now, without writing anything. Rows are
     /// built again only when their number changes; otherwise each shows
@@ -121,8 +167,131 @@ impl Card {
     pub fn show(self: &Rc<Self>, files: &Files, now: &files::Layout) {
         self.quiet.set(true);
         self.show_names(files, now);
+        self.show_wallpapers(files, now);
         self.show_apps(files, now);
         self.quiet.set(false);
+    }
+
+    /// Shows the wallpapers heading's line, and one row per workspace with
+    /// its thumbnail and its choice (M5.12b5). The rows are built again
+    /// only when an entry or Appearance's wallpaper changes.
+    fn show_wallpapers(self: &Rc<Self>, files: &Files, now: &files::Layout) {
+        let source = files.source(WALLPAPERS);
+        let hint = tr("Each workspace can show its own wallpaper; an empty choice is Appearance's");
+        let line = match rows::note(&source, false) {
+            Some(note) => format!("{hint} · {note}"),
+            None => hint.to_string(),
+        };
+        self.wallpapers_row.subtitle.set_label(&line);
+        self.wallpapers_row
+            .reset
+            .set_visible(rows::resettable(&source));
+
+        let dir = PathBuf::from(places::WALLPAPERS_DIR);
+        let appearance = wallpaper::shown(files.chosen(APPEARANCE), &dir);
+        let entries: Vec<String> = (0..workspace_count(now))
+            .map(|i| now.workspace_wallpapers.get(i).cloned().unwrap_or_default())
+            .collect();
+        let built = Some((entries.clone(), appearance.clone()));
+        if *self.wallpapers_built.borrow() == built {
+            return;
+        }
+        *self.wallpapers_built.borrow_mut() = built;
+        self.build_wallpapers(&dir, &entries, &appearance);
+    }
+
+    /// Builds one row per workspace, replacing the rows shown: its number,
+    /// a thumbnail of its wallpaper (Appearance's for an empty choice) and
+    /// the choice.
+    fn build_wallpapers(self: &Rc<Self>, dir: &Path, entries: &[String], appearance: &str) {
+        while let Some(child) = self.wallpapers_box.first_child() {
+            self.wallpapers_box.remove(&child);
+        }
+        let names = wallpapers::names(dir);
+        let mut built = Vec::new();
+        let mut controls = Vec::new();
+        for (i, entry) in entries.iter().enumerate() {
+            let values = wallpaper_values(&names, entry);
+            let labels: Vec<String> = values
+                .iter()
+                .map(|v| {
+                    if v.is_empty() {
+                        tr("Same as Appearance").to_string()
+                    } else {
+                        wallpaper::title_of(v)
+                    }
+                })
+                .collect();
+            let choice = widgets::Choice::new(labels);
+            choice.set_selected(values.iter().position(|v| v == entry).unwrap_or(0));
+            let shown: &str = if entry.is_empty() {
+                appearance
+            } else {
+                entry.as_str()
+            };
+            let picture = wallpaper::reference_picture_at(dir, shown, THUMB_WIDTH, THUMB_HEIGHT);
+            let place = gtk::Box::builder()
+                .spacing(10)
+                .valign(gtk::Align::Center)
+                .build();
+            place.append(&picture);
+            place.append(&choice.widget());
+            let title = trf("Workspace {n}", &[("n", &(i + 1).to_string())]);
+            let control = place.clone().upcast::<gtk::Widget>();
+            let row = widgets::row(&self.wallpapers_box, &title, &control);
+            row.subtitle.set_visible(false);
+            row.reset.set_visible(false);
+            row.copy.set_visible(false);
+            // The choice holds its callback weakly, so the two do not keep
+            // each other alive.
+            let weak = Rc::downgrade(self);
+            let weak_choice = Rc::downgrade(&choice);
+            let offered = values.clone();
+            choice.connect_changed(move || {
+                let (Some(card), Some(choice)) = (weak.upgrade(), weak_choice.upgrade()) else {
+                    return;
+                };
+                let value = offered.get(choice.selected()).cloned().unwrap_or_default();
+                card.choose_wallpaper(i, value);
+            });
+            controls.push(control);
+            built.push((choice, values));
+        }
+        *self.wallpaper_rows.borrow_mut() = built;
+        log_places(&self.wallpapers_box, controls);
+    }
+
+    /// Writes workspace `index`'s wallpaper as `value` (`""` for
+    /// Appearance's) into the list, trailing empties dropped, the key taken
+    /// out when no entry is left (M5.12b5). Entries past the rows shown
+    /// stay as they are.
+    fn choose_wallpaper(self: &Rc<Self>, index: usize, value: String) {
+        if self.quiet.get() {
+            return;
+        }
+        let files = Files::here();
+        let now = files.layout();
+        let mut list = now.workspace_wallpapers.clone();
+        let count = self.wallpaper_rows.borrow().len().max(index + 1);
+        if list.len() < count {
+            list.resize(count, String::new());
+        }
+        list[index] = value;
+        let list = tidy(list);
+        if list == tidy(now.workspace_wallpapers.clone()) {
+            return;
+        }
+        let result = files.choose(WALLPAPERS, &list_text(&list));
+        if result.is_ok() {
+            let done = if list.is_empty() {
+                "taken out"
+            } else {
+                "WRITTEN"
+            };
+            eprintln!("edel-settings: workspace wallpapers {done}");
+        }
+        self.report(result);
+        self.refresh();
     }
 
     /// Shows the names heading's line, and one row per workspace.
@@ -136,11 +305,7 @@ impl Card {
         self.names_row.subtitle.set_label(&line);
         self.names_row.reset.set_visible(rows::resettable(&source));
 
-        let wanted = if now.dynamic_workspaces {
-            (now.workspace_names.len() + 1).min(MOST_WORKSPACES)
-        } else {
-            now.workspaces as usize
-        };
+        let wanted = workspace_count(now);
         *self.names.borrow_mut() = now.workspace_names.clone();
         if self.entries.borrow().len() == wanted {
             for (i, entry) in self.entries.borrow().iter().enumerate() {
@@ -251,6 +416,20 @@ impl Card {
             button
                 .clipboard()
                 .set_text(&rows::command(&[(NAMES, list_text(&names))]));
+            widgets::copied(button);
+        });
+        let weak = Rc::downgrade(self);
+        self.wallpapers_row.reset.connect_clicked(move |_| {
+            if let Some(card) = weak.upgrade() {
+                card.report(Files::here().set(WALLPAPERS, None));
+                card.refresh();
+            }
+        });
+        self.wallpapers_row.copy.connect_clicked(|button| {
+            let list = Files::here().layout().workspace_wallpapers;
+            button
+                .clipboard()
+                .set_text(&rows::command(&[(WALLPAPERS, list_text(&list))]));
             widgets::copied(button);
         });
         let weak = Rc::downgrade(self);
@@ -397,6 +576,42 @@ impl Card {
     }
 }
 
+/// Logs where each workspace's wallpaper control lies in the window, once
+/// the rows are laid out, for CI and the screenshots (logical pixels), as
+/// `edel-settings: workspace wallpapers places wallpaper1 X+Y+WxH, ...`;
+/// logged once two frames agree, as the other groups' places are.
+fn log_places(group: &gtk::Box, controls: Vec<gtk::Widget>) {
+    let last = RefCell::new(String::new());
+    group.add_tick_callback(move |group, _| {
+        let Some(window) = group.root().and_downcast::<gtk::Window>() else {
+            return glib::ControlFlow::Continue;
+        };
+        if !group.is_mapped() || group.width() == 0 {
+            return glib::ControlFlow::Continue;
+        }
+        let places: Vec<String> = controls
+            .iter()
+            .enumerate()
+            .map(|(i, control)| {
+                format!(
+                    "wallpaper{} {}",
+                    i + 1,
+                    widgets::place(control.compute_bounds(&window))
+                )
+            })
+            .collect();
+        let line = format!(
+            "edel-settings: workspace wallpapers places {}",
+            places.join(", ")
+        );
+        if last.replace(line.clone()) != line {
+            return glib::ControlFlow::Continue;
+        }
+        eprintln!("{line}");
+        glib::ControlFlow::Break
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,5 +624,21 @@ mod tests {
             ["Mail", "", "Chat"]
         );
         assert!(tidy(names(&["", ""])).is_empty());
+    }
+
+    #[test]
+    fn a_wallpaper_choice_offers_appearances_then_the_names_then_its_own_value() {
+        let names = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+        let wallpapers = names(&["aurora", "hills"]);
+        assert_eq!(wallpaper_values(&wallpapers, ""), ["", "aurora", "hills"]);
+        assert_eq!(
+            wallpaper_values(&wallpapers, "#336699"),
+            ["", "aurora", "hills", "#336699"],
+            "a colour the names do not hold is offered as it is"
+        );
+        assert_eq!(
+            wallpaper_values(&wallpapers, "hills"),
+            ["", "aurora", "hills"]
+        );
     }
 }

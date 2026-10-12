@@ -314,6 +314,10 @@ pub enum Kind {
     /// pictures and the appearance values it sets ([`crate::themes`],
     /// M5.12b6a)
     OwnTheme,
+    /// One wallpaper per workspace, in order: each entry a wallpaper as
+    /// `appearance.wallpaper` takes it, or `""` for Appearance's
+    /// (M5.12b5, `workspaces.wallpapers`)
+    WallpaperList,
 }
 
 /// The most host names a [`Kind::Hosts`] list holds.
@@ -415,6 +419,8 @@ pub const KEYS: &[Key] = &[
     now("workspaces.dynamic", Kind::Flag),
     now("workspaces.per_screen", Kind::Flag),
     now("workspaces.names", Kind::Texts),
+    // One wallpaper per workspace (M5.12b5): `""` is Appearance's.
+    now(WORKSPACE_WALLPAPERS, Kind::WallpaperList),
     now("workspaces.apps", Kind::AppWorkspaces),
     // The side of the screen the overview's strip of workspaces lies on
     // (M5.2j-b); the windows take the rest.
@@ -776,6 +782,11 @@ pub struct Workspaces {
     /// meaning no name (M5.2i).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub names: Option<Vec<String>>,
+    /// The wallpaper of each workspace, the first workspace's first, each
+    /// as `appearance.wallpaper` takes it and `""` for Appearance's
+    /// (M5.12b5); absent is Appearance's for every workspace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wallpapers: Option<Vec<String>>,
     /// Apps that always open on their own workspace, each app's id and
     /// the workspace's number from 1 (M5.2l); absent opens every app on
     /// the workspace in use.
@@ -1597,6 +1608,10 @@ pub const OVERVIEW_STRIP_DEFAULT: &str = "left";
 /// names the switcher shows, which a drag of a switcher button reorders.
 pub const WORKSPACE_NAMES: &str = "workspaces.names";
 
+/// The key each workspace's own wallpaper is kept under, one per place
+/// (M5.12b5), which moves with its workspace as the names do.
+pub const WORKSPACE_WALLPAPERS: &str = "workspaces.wallpapers";
+
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An
 /// empty list is a list: `[]` over a machine's list says none.
@@ -2304,12 +2319,37 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         },
         (Kind::CursorTheme, _) => fail(tr("a cursor theme's name in quotes, such as \"default\"")),
         (Kind::Wallpaper, Value::String(s)) if crate::wallpapers::is_form(s) => Ok(value.clone()),
-        (Kind::Wallpaper, Value::String(s)) => Err(trf(
-            "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)",
-            &[("value", &format!("{s:?}"))],
-        )),
+        (Kind::Wallpaper, Value::String(s)) => Err(wallpaper_problem(s)),
         (Kind::Wallpaper, _) => fail(tr(
             "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\"",
+        )),
+        // Each entry is checked as `appearance.wallpaper` is, with its
+        // number; `""` is Appearance's and needs no check.
+        (Kind::WallpaperList, Value::Array(items)) => {
+            for (at, item) in items.iter().enumerate() {
+                match item.as_str() {
+                    Some("") => {}
+                    Some(s) if crate::wallpapers::is_form(s) => {}
+                    Some(s) => {
+                        return Err(trf(
+                            "entry {number}: {problem}",
+                            &[
+                                ("number", &(at + 1).to_string()),
+                                ("problem", &wallpaper_problem(s)),
+                            ],
+                        ));
+                    }
+                    None => {
+                        return fail(tr(
+                            "a list of wallpapers in quotes, one per workspace, such as [\"\", \"#336699\"]",
+                        ));
+                    }
+                }
+            }
+            Ok(value.clone())
+        }
+        (Kind::WallpaperList, _) => fail(tr(
+            "a list of wallpapers in quotes, one per workspace, such as [\"\", \"#336699\"]",
         )),
         (Kind::Pictures, Value::Array(items)) => {
             let mut pictures = Vec::new();
@@ -2373,6 +2413,16 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         )),
         (Kind::Colour, _) => fail(tr("a colour in quotes, such as \"#1e1e2e\"")),
     }
+}
+
+/// Why `value` is no wallpaper, in the words `appearance.wallpaper` gives
+/// (M5.12b5): the one message both that key and each entry of
+/// `workspaces.wallpapers` show.
+fn wallpaper_problem(value: &str) -> String {
+    trf(
+        "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)",
+        &[("value", &format!("{value:?}"))],
+    )
 }
 
 /// The accents a person may choose, as an accent's message names them: the
@@ -2535,6 +2585,7 @@ mod tests {
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::Wallpaper => Value::String("hills".into()),
+            Kind::WallpaperList => value_from_arg(r##"["", "#336699"]"##),
             Kind::Pictures => value_from_arg(r#"["hills"]"#),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
             Kind::LockLook => Value::String("minimal".into()),
@@ -3481,6 +3532,32 @@ lock_after_minutes = 11
             Some(vec!["Mail".to_string(), String::new()])
         );
         assert!(check(&names).unwrap().is_empty());
+    }
+
+    #[test]
+    fn each_workspace_wallpaper_is_checked_as_appearance_wallpaper_is() {
+        let ok = set(
+            "format = 1\n",
+            "workspaces.wallpapers",
+            r##"["", "#336699", "hills"]"##,
+        )
+        .unwrap();
+        assert!(check(&ok).unwrap().is_empty());
+        let refused = set("format = 1\n", "workspaces.wallpapers", r##"["", "Sea"]"##).unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "workspaces.wallpapers: entry 2: \"Sea\" is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"
+        );
+        let refused = set("format = 1\n", "workspaces.wallpapers", r##"["#12"]"##).unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "workspaces.wallpapers: entry 1: \"#12\" is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"
+        );
+        let refused = set("format = 1\n", "workspaces.wallpapers", "[1]").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "workspaces.wallpapers: expected a list of wallpapers in quotes, one per workspace, such as [\"\", \"#336699\"], not [1]"
+        );
     }
 
     #[test]
