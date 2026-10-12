@@ -7,3 +7,13 @@ format = 1
 summary = "Screenshots and screen sharing: the portals' wlr backend, which copies the screen with wlr-screencopy and streams it over PipeWire"
 why = "Apps ask xdg-desktop-portal for a screenshot or to share the screen, and the portal hands the request to its backend, xdg-desktop-portal-wlr, which the compositor's wlr-screencopy serves (M6.3). D-Bus starts the backend only when an app first asks, so a desktop nobody shares spends nothing on it; screen sharing streams over PipeWire, which the session already starts, and a sandboxed app (Flatpak) can only capture through this portal, since the compositor hides screencopy from it. The backend takes each screenshot by running grim (a few hundred KiB), which writes it to /tmp/out.png, a file the person's apps can read and another person's too until it is replaced, so a backend of our own that keeps the picture private is a later step's; slurp, its interactive region picker, is not packaged."
 packages = ["xdg-desktop-portal-wlr", "grim"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Screenshots and screen sharing"
+test = "capture"
+
+[[basics]]
+name = "Camera"
+needs = "hardware"

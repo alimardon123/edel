@@ -10,3 +10,9 @@ format = 1
 summary = "Sound: PipeWire and WirePlumber, started in each person's session"
 why = "PipeWire is the one sound server for apps that play (PulseAudio and ALSA apps through the pulse module of pipewire-pulse, loaded inside PipeWire so no second process runs, and pipewire-alsa, Flatpak ones above all), record and, later, lend a paired phone's speakers over the network (ADR-011); WirePlumber picks and remembers each person's devices and its wpctl is the one command Settings' Sound page, the panel's volume and the shell read and set them with. They run per person in the session, started by the compositor, so nothing runs on a machine nobody is using; alsa-ucm-conf gives laptops' sound cards their speaker and microphone profiles. The udev rule gives group seat, the people at the machine (no logind here), the sound devices, so the feature needs seat."
 packages = ["pipewire", "pipewire-pulse", "pipewire-alsa", "wireplumber", "alsa-ucm-conf"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Audio"
+test = "sound"

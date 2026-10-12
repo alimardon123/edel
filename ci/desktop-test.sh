@@ -226,6 +226,10 @@
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
+#   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
+#               it suspended), QMP's system_wakeup brings it back, and a window
+#               opened after the wakeup is drawn; the kernel's PM lines are
+#               printed (M6.7)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -265,7 +269,7 @@ dir=out/desktop-test
 log=out/desktop-test.log
 export QMP="$dir/qmp.sock"
 commands="$dir/commands.sock"
-rm -f "$QMP" "$commands" "$dir"/*.png
+rm -f "$QMP" "$commands" "$dir"/*.png "$dir/passed"
 
 say() {
 	echo "DESKTOP-TEST: $*"
@@ -569,6 +573,58 @@ case_xwayland() {
 	wait_for 'edel-compositor: unmapped window xclock' ||
 		fail "clicking xclock's close button at $((x + w - 13)),$((y - 14)) did not close it"
 	echo "PASS: no X11 process ran until xclock connected, then XWayland and xwayland-satellite ($(value x11_rss_mib) MiB) showed it at $x,$y with a title bar in the focused colour, and its close button closed it"
+}
+
+suspend_fail() {
+	guest 'suspend log' 2>/dev/null || :
+	wait_for 'DESKTOP-TEST: suspend_log ' 10 || :
+	fail "$1; edel suspend said: $(value suspend_log)"
+}
+
+case_suspend() {
+	# Suspend and resume (M6.7). The VM offers suspend to memory only with
+	# q35's S3 on (the -global line of the desktop VM); ci runs edel
+	# suspend, which goes through the login feature's doas rule to zzz,
+	# and QEMU reports the guest suspended. QMP's system_wakeup brings it
+	# back, and a window opened after the wakeup is drawn (suspend.png,
+	# not one colour). The kernel's PM lines are printed for the log.
+	guest 'suspend states'
+	wait_for 'DESKTOP-TEST: suspend_states ' || fail "the service did not read /sys/power/state"
+	states=$(value suspend_states)
+	case " $states " in
+	*" mem "*) ;;
+	*) fail "the VM offers no suspend to memory (/sys/power/state: $states)" ;;
+	esac
+	guest 'suspend now'
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = suspended ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || suspend_fail "QEMU did not report the guest suspended within 20 s"
+		sleep 1
+	done
+	sleep 2
+	python3 ci/qmp.py wakeup
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = running ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "QEMU did not report the guest running within 20 s of system_wakeup"
+		sleep 1
+	done
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" 60 ||
+		fail "the desktop drew no window after the wakeup: $(value windows)"
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/suspend.png"
+	uniform=$(python3 ci/qmp.py uniform "$dir/suspend.png")
+	[ "$uniform" = varied ] || fail "the screen after the wakeup is $uniform"
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close the window after the wakeup"
+	guest 'suspend log'
+	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
+	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
+	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
 }
 
 case_respawn() {
@@ -6189,7 +6245,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale respawn workspaces-dynamic app-workspaces flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale suspend respawn workspaces-dynamic app-workspaces flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -6319,6 +6375,7 @@ fi
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
+	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
 	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
 	-qmp unix:"$QMP",server=on,wait=off \
@@ -6339,5 +6396,8 @@ while ! grep -q 'edel login:' "$log" && [ "$i" -lt 60 ]; do
 done
 for c in "$@"; do
 	"case_$(echo "$c" | tr '-' '_')"
+	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
+	# has exited already.
+	echo "$c" >>"$dir/passed"
 done
 stop_vm

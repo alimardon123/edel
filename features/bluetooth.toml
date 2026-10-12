@@ -12,3 +12,13 @@ switchable = true
 
 [services]
 default = ["dbus", "bluetooth"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Bluetooth"
+test = "network"
+
+[[basics]]
+name = "Bluetooth audio"
+needs = "hardware"

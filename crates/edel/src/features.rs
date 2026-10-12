@@ -70,6 +70,25 @@ pub struct Feature {
     /// once (M5.27).
     #[serde(default)]
     pub alpine: Option<Alpine>,
+    /// The basics checklist's rows this feature brings (M6.7): each tested
+    /// by a desktop-test case or marked as needing hardware or a later step.
+    #[serde(default)]
+    pub basics: Vec<Basic>,
+}
+
+/// One row of the basics checklist (M6.7, `ci/basics-test.sh`): a basic a
+/// person expects to work, proved by the desktop test case `test`, or
+/// marked `needs` hardware or the roadmap step that brings it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Basic {
+    /// What the row says, such as `Audio`; at most 40 characters.
+    pub name: String,
+    /// The desktop-test case that proves it, a lowercase name such as `sound`.
+    #[serde(default)]
+    pub test: Option<String>,
+    /// `hardware`, or the roadmap step that brings it, such as `M7.8`.
+    #[serde(default)]
+    pub needs: Option<String>,
 }
 
 /// Where an image's packages come from (ADR-003).
@@ -208,7 +227,83 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
     if name != "apps" && !(feature.flatpak.is_empty() && feature.flatpak_dropped.is_empty()) {
         bail!("only the apps feature lists flatpak apps");
     }
+    if let Some(problem) = basic_problems(name, &feature.basics).first() {
+        bail!("{problem}");
+    }
     Ok(feature)
+}
+
+/// What is wrong with the basics rows of feature `feature` (M6.7), one
+/// line each, naming the feature and the row; empty when every row is
+/// right. A row names either the case that tests it or what it needs.
+pub fn basic_problems(feature: &str, basics: &[Basic]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for basic in basics {
+        let name = basic.name.as_str();
+        if name.trim().is_empty() {
+            problems.push(format!(
+                "{feature}: a basic has an empty name; name the row, such as \"Audio\""
+            ));
+            continue;
+        }
+        if name.chars().count() > 40 {
+            problems.push(format!(
+                "{feature}: basic {name:?} is {} characters long; the limit is 40",
+                name.chars().count()
+            ));
+        }
+        if seen.contains(&name) {
+            problems.push(format!("{feature}: basic {name:?} is listed twice"));
+        }
+        seen.push(name);
+        match (&basic.test, &basic.needs) {
+            (Some(_), Some(_)) => problems.push(format!(
+                "{feature}: basic {name:?} has both test and needs; a row is either tested or marked as needing something"
+            )),
+            (None, None) => problems.push(format!(
+                "{feature}: basic {name:?} has neither test nor needs; name the case that tests it, or what it needs"
+            )),
+            (Some(test), None) => {
+                if test.is_empty() || !test.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                    problems.push(format!(
+                        "{feature}: basic {name:?} has test {test:?}; a case name uses only lowercase letters, digits and '-'"
+                    ));
+                }
+            }
+            (None, Some(needs)) => {
+                if needs != "hardware" && !is_step(needs) {
+                    problems.push(format!(
+                        "{feature}: basic {name:?} needs {needs:?}; it must be \"hardware\" or a roadmap step such as \"M7.8\""
+                    ));
+                }
+            }
+        }
+    }
+    problems
+}
+
+/// A roadmap step: `M`, digits, then optionally `.`, digits and lowercase
+/// letters, such as `M7` or `M7.10a`.
+fn is_step(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix('M') else {
+        return false;
+    };
+    let (major, minor) = match rest.split_once('.') {
+        Some((major, minor)) => (major, Some(minor)),
+        None => (rest, None),
+    };
+    let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+    if !digits(major) {
+        return false;
+    }
+    match minor {
+        None => true,
+        Some(minor) => {
+            let n = minor.bytes().take_while(u8::is_ascii_digit).count();
+            n > 0 && minor[n..].bytes().all(|b| b.is_ascii_lowercase())
+        }
+    }
 }
 
 /// a-z, 0-9 and `-`, not starting with `-`: feature and service names.
@@ -330,6 +425,113 @@ mod tests {
         let bare = "format = 1\nsummary = \"x\"\nprograms = [\"edel-compositor\"]\n";
         let err = check("compositor", bare).unwrap_err();
         assert!(err.to_string().contains("why is empty"), "{err}");
+    }
+
+    fn row(name: &str, test: Option<&str>, needs: Option<&str>) -> Basic {
+        Basic {
+            name: name.into(),
+            test: test.map(Into::into),
+            needs: needs.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn a_good_row_of_each_kind_has_no_problem() {
+        let rows = [
+            row("Audio", Some("sound"), None),
+            row("Bluetooth audio", None, Some("hardware")),
+            row("Lid and power key", None, Some("M7.8")),
+            row("Undo", None, Some("M7.10a")),
+        ];
+        assert!(basic_problems("sound", &rows).is_empty());
+    }
+
+    #[test]
+    fn a_row_needs_a_name() {
+        let problems = basic_problems("sound", &[row("  ", Some("sound"), None)]);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("empty name"), "{problems:?}");
+    }
+
+    #[test]
+    fn a_name_is_at_most_40_characters() {
+        let long = "x".repeat(41);
+        let problems = basic_problems("sound", &[row(&long, Some("sound"), None)]);
+        assert!(
+            problems[0].contains("is 41 characters long"),
+            "{problems:?}"
+        );
+        let ok = "x".repeat(40);
+        assert!(basic_problems("sound", &[row(&ok, Some("sound"), None)]).is_empty());
+    }
+
+    #[test]
+    fn a_name_is_listed_once_per_feature() {
+        let rows = [
+            row("Audio", Some("sound"), None),
+            row("Audio", Some("sound"), None),
+        ];
+        let problems = basic_problems("sound", &rows);
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("listed twice"), "{problems:?}");
+    }
+
+    #[test]
+    fn a_row_is_tested_or_needs_something_not_both_or_neither() {
+        let both = basic_problems("sound", &[row("Audio", Some("sound"), Some("hardware"))]);
+        assert!(both[0].contains("has both test and needs"), "{both:?}");
+        let neither = basic_problems("sound", &[row("Audio", None, None)]);
+        assert!(
+            neither[0].contains("has neither test nor needs"),
+            "{neither:?}"
+        );
+    }
+
+    #[test]
+    fn a_test_is_a_case_name() {
+        assert!(basic_problems("sound", &[row("Audio", Some("sound-2"), None)]).is_empty());
+        for bad in ["Sound", "sound_card", "", "sound card"] {
+            let problems = basic_problems("sound", &[row("Audio", Some(bad), None)]);
+            assert_eq!(problems.len(), 1, "{bad:?}");
+            assert!(problems[0].contains("lowercase letters"), "{problems:?}");
+        }
+    }
+
+    #[test]
+    fn needs_is_hardware_or_a_step() {
+        for good in ["hardware", "M7", "M7.8", "M7.10a", "M12"] {
+            assert!(
+                basic_problems("power", &[row("Battery", None, Some(good))]).is_empty(),
+                "{good}"
+            );
+        }
+        for bad in [
+            "software", "m7.8", "M", "M7.", "M7.8A", "M7.8a1", "7.8", "M7.x",
+        ] {
+            let problems = basic_problems("power", &[row("Battery", None, Some(bad))]);
+            assert_eq!(problems.len(), 1, "{bad:?}");
+            assert!(
+                problems[0].contains("must be \"hardware\" or a roadmap step"),
+                "{problems:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn check_refuses_a_bad_row_and_names_the_feature() {
+        let text = "format = 1\nsummary = \"x\"\n\n[[basics]]\nname = \"Audio\"\n";
+        let err = check("sound", text).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("sound: basic \"Audio\" has neither"),
+            "{err}"
+        );
+        let good =
+            "format = 1\nsummary = \"x\"\n\n[[basics]]\nname = \"Audio\"\ntest = \"sound\"\n";
+        assert_eq!(
+            check("sound", good).unwrap().basics[0].test.as_deref(),
+            Some("sound")
+        );
     }
 
     #[test]
