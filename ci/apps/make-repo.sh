@@ -18,9 +18,11 @@ client=target/release/edel-testclient
 	exit 1
 }
 rm -rf "$work" "$repo"
-mkdir -p "$work/runtime/usr/lib"
+mkdir -p "$work/runtime/files" "$work/runtime/usr/lib"
 
-# A runtime keeps its files in usr/ (an app keeps its own in files/), which
+# A runtime keeps its files in usr/ (an app keeps its own in files/, which
+# flatpak build-export also wants to find, empty here, as build-init makes
+# both), which
 # the sandbox mounts at /usr, where Flatpak links /lib to /usr/lib, so
 # musl's loader and the client's libraries go in usr/lib.
 cp -L /lib/ld-musl-x86_64.so.1 "$work/runtime/usr/lib/"
