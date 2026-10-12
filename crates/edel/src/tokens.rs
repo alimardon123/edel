@@ -157,6 +157,9 @@ pub fn load_from_files(
     let text = Text::between(machine.as_ref(), person.as_ref());
     let (tokens, more) = tokens.with_text(&text);
     notes.extend(more);
+    let icons = IconSize::between(machine.as_ref(), person.as_ref());
+    let (tokens, more) = tokens.with_icons(&icons);
+    notes.extend(more);
     (tokens, notes)
 }
 
@@ -177,6 +180,7 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
                     settings::SHAPE_KEYS.contains(&p.key.as_str())
                         || settings::DEPTH_KEYS.contains(&p.key.as_str())
                         || settings::TEXT_KEYS.contains(&p.key.as_str())
+                        || p.key == settings::ICON_SIZE
                 })
                 .map(ToString::to_string)
                 .collect();
@@ -553,6 +557,14 @@ pub struct Tokens {
     pub panel_control: u32,
     pub panel_icon: u32,
     pub panel_glyph: u32,
+    /// The app icons the apps widget draws in a bar and in a dock, logical
+    /// pixels (M5.12b5 part A), scaled by `appearance.icon_size` with
+    /// `panel_icon`.
+    pub app_icon: u32,
+    pub dock_icon: u32,
+    /// The icons' size in percent of the release's, as `appearance.icon_size`
+    /// sets it (M5.12b5 part A); 100 is the release's sizes.
+    pub icon_percent: u32,
     /// Corner radii, logical pixels (M5.5e): windows' (M5.14), menus' and
     /// the panel's fillets', and controls': the panel's buttons and rows.
     pub radius_window: u32,
@@ -1013,6 +1025,8 @@ impl Tokens {
                 "panel_control" => (&mut self.panel_control, 200),
                 "panel_icon" => (&mut self.panel_icon, 100),
                 "panel_glyph" => (&mut self.panel_glyph, 100),
+                "app_icon" => (&mut self.app_icon, 200),
+                "dock_icon" => (&mut self.dock_icon, 200),
                 "radius_window" => (&mut self.radius_window, 100),
                 "radius_menu" => (&mut self.radius_menu, 100),
                 "radius_control" => (&mut self.radius_control, 100),
@@ -1092,6 +1106,8 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "panel_control",
                 "panel_icon",
                 "panel_glyph",
+                "app_icon",
+                "dock_icon",
                 "radius_window",
                 "radius_menu",
                 "radius_control",
@@ -1159,6 +1175,9 @@ pub fn check(text: &str) -> Result<Tokens> {
         panel_control: 0,
         panel_icon: 0,
         panel_glyph: 0,
+        app_icon: 0,
+        dock_icon: 0,
+        icon_percent: 100,
         radius_window: 0,
         radius_menu: 0,
         radius_control: 0,
@@ -1476,6 +1495,47 @@ impl Tokens {
                 *size = scaled(*size, percent);
             }
             self.text_percent = percent;
+        }
+        (self, notes)
+    }
+}
+
+/// A person's icon size (M5.12b5 part A): the percent `appearance.icon_size`
+/// sets, the person's over the machine's; none is the release's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct IconSize {
+    pub percent: Option<u32>,
+}
+
+impl IconSize {
+    /// The percent the person's file sets, else the machine's.
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> IconSize {
+        IconSize {
+            percent: over(machine, person, |a| a.icon_size),
+        }
+    }
+}
+
+/// An icon's size of `value` scaled to `percent` of the release's, rounded
+/// half up and never below 12 px (M5.12b5 part A).
+fn scaled_icon(value: u32, percent: u32) -> u32 {
+    ((u64::from(value) * u64::from(percent) + 50) / 100).max(12) as u32
+}
+
+impl Tokens {
+    /// These tokens with a person's icon size on top (M5.12b5 part A): the
+    /// panel's icon and the apps widget's icons are scaled by the percent,
+    /// never below 12 px. The panel's height does not change, so the panel's
+    /// icon is capped at its button's height less 4 px. Lenient (ADR-008): a
+    /// percent out of range is noted and skipped.
+    pub fn with_icons(mut self, icons: &IconSize) -> (Tokens, Vec<String>) {
+        let mut notes = Vec::new();
+        if let Some(percent) = in_shape_range(settings::ICON_SIZE, icons.percent, &mut notes) {
+            let fits = self.panel_control.saturating_sub(4);
+            self.panel_icon = scaled_icon(self.panel_icon, percent).min(fits);
+            self.app_icon = scaled_icon(self.app_icon, percent);
+            self.dock_icon = scaled_icon(self.dock_icon, percent);
+            self.icon_percent = percent;
         }
         (self, notes)
     }
@@ -2238,6 +2298,29 @@ mod tests {
         let (same, notes) = built.clone().with_text(&Text::default());
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(same, built);
+    }
+
+    #[test]
+    fn an_icon_size_scales_the_panel_and_app_icons_within_their_room() {
+        let built = Tokens::built_in();
+        let (same, notes) = built.clone().with_icons(&IconSize { percent: None });
+        assert_eq!(same, built);
+        assert!(notes.is_empty());
+        let (big, _) = built.clone().with_icons(&IconSize { percent: Some(150) });
+        // 20 px at 150 percent would be 30, capped at the 30 px button less 4.
+        assert_eq!(big.panel_icon, built.panel_control - 4);
+        assert_eq!(
+            big.panel_control, built.panel_control,
+            "the panel keeps its height"
+        );
+        assert_eq!(big.app_icon, (built.app_icon * 3).div_ceil(2));
+        assert_eq!(big.dock_icon, (built.dock_icon * 3).div_ceil(2));
+        assert_eq!(big.icon_percent, 150);
+        let (small, _) = built.clone().with_icons(&IconSize { percent: Some(75) });
+        assert_eq!(small.panel_icon, 15);
+        assert_eq!(scaled_icon(12, 75), 12, "never below 12 px");
+        let (_, notes) = built.with_icons(&IconSize { percent: Some(151) });
+        assert_eq!(notes.len(), 1, "{notes:?}");
     }
 
     #[test]

@@ -35,22 +35,24 @@ const CELL: f32 = 40.0;
 const EDGE: f32 = 4.0;
 /// The lit square behind the focused app and the icon inside it.
 const LIT: f32 = 36.0;
-const ICON: f32 = 24.0;
 /// The marks along a cell's foot, as the window list's: the focused
 /// app's line and a running app's dot, 2 px high.
 const LINE: f32 = 14.0;
 const DOT: f32 = 4.0;
-/// In a dock: the cell is the dock's height less this, and the icon this
-/// big, its dot round, 4 px across.
+/// In a dock: the cell is the dock's height less this, its dot round, 4 px
+/// across. The icons' sizes are the tokens' (`app_icon`, `dock_icon`, scaled
+/// by `appearance.icon_size`, M5.12b5 part A).
 const DOCK_INSET: f32 = 8.0;
-const DOCK_ICON: f32 = 40.0;
 
-/// A cell's side and its icon's in logical pixels, in a bar or a dock.
+/// A cell's side and its icon's in logical pixels, in a bar or a dock. An
+/// icon that would not fit its cell (a large `appearance.icon_size` in a
+/// dock) is capped at the cell's side.
 fn sizes(canvas: &Canvas) -> (f32, f32) {
     if canvas.dock {
-        (canvas.height / canvas.scale - DOCK_INSET, DOCK_ICON)
+        let cell = canvas.height / canvas.scale - DOCK_INSET;
+        (cell, (canvas.tokens.dock_icon as f32).min(cell))
     } else {
-        (CELL, ICON)
+        (CELL, (canvas.tokens.app_icon as f32).min(CELL))
     }
 }
 

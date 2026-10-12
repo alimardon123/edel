@@ -767,6 +767,9 @@ fn load_tokens(scheme: Scheme) -> Tokens {
         "edel-shell-ui: text {} at {} px",
         tokens.font, tokens.panel_text_size
     );
+    // The icons the panel draws with (M5.12b5 part A): the compositor starts
+    // shell-ui again when the icon size changes, so each start says it.
+    eprintln!("edel-shell-ui: icons at {} px", tokens.panel_icon);
     tokens
 }
 

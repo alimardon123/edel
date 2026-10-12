@@ -287,16 +287,46 @@ msgstr ""
 msgid "Colours"
 msgstr ""
 
-msgid "Opaque"
+msgid "{n} px"
+msgstr ""
+
+msgid "As made"
 msgstr ""
 
 msgid "{n} %"
 msgstr ""
 
-msgid "None"
+msgid "The pointer's height. Apps already open keep theirs"
 msgstr ""
 
-msgid "{n} px"
+msgid "The panel's icons and the app icons in the bar and the dock"
+msgstr ""
+
+msgid "The pointer's look in every app that starts after this"
+msgstr ""
+
+msgid "Your choice"
+msgstr ""
+
+msgid "Set by this machine"
+msgstr ""
+
+msgid "Automatic ({current})"
+msgstr ""
+
+msgid "the release"
+msgstr ""
+
+msgid "Cursor and icons"
+msgstr ""
+
+msgid "The pointer and the icons. Apps already open keep their cursor until they start again"
+msgstr ""
+
+msgid "Opaque"
+msgstr ""
+
+msgid "None"
 msgstr ""
 
 msgid "Sharp"
@@ -315,18 +345,6 @@ msgid "How dark the shadow is"
 msgstr ""
 
 msgid "How much the wallpaper blurs behind see-through panels"
-msgstr ""
-
-msgid "Your choice"
-msgstr ""
-
-msgid "Set by this machine"
-msgstr ""
-
-msgid "Automatic ({current})"
-msgstr ""
-
-msgid "the release"
 msgstr ""
 
 msgid "Depth"
@@ -600,9 +618,6 @@ msgid "Search the settings"
 msgstr ""
 
 msgid "Slower"
-msgstr ""
-
-msgid "As made"
 msgstr ""
 
 msgid "Faster"
@@ -954,6 +969,15 @@ msgid "Monospace font"
 msgstr ""
 
 msgid "Text size"
+msgstr ""
+
+msgid "Cursor size"
+msgstr ""
+
+msgid "Cursor"
+msgstr ""
+
+msgid "Icon size"
 msgstr ""
 
 msgid "Animation speed"

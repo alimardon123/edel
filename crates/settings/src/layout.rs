@@ -24,7 +24,9 @@ use edel::i18n::{n_, tr, trf};
 use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
-use crate::{colours, depth, motion, panels, preview, rows, shape, text, themes, tray, workspaces};
+use crate::{
+    colours, cursor, depth, motion, panels, preview, rows, shape, text, themes, tray, workspaces,
+};
 
 const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
 
@@ -183,6 +185,9 @@ struct Ui {
     /// The Appearance page's Depth group, which follows the files too
     /// (M5.12b3).
     depth: Option<Rc<depth::Group>>,
+    /// The Appearance page's Cursor and icons group, which follows the files
+    /// too (M5.12b5 part A).
+    cursor: Option<Rc<cursor::Group>>,
     /// The Appearance page's Motion group, which follows the files too
     /// (M5.12b4).
     motion: Option<Rc<motion::Group>>,
@@ -245,6 +250,9 @@ impl Ui {
         }
         if let Some(text) = &self.text {
             text.show();
+        }
+        if let Some(cursor) = &self.cursor {
+            cursor.show();
         }
         if let Some(depth) = &self.depth {
             depth.show();
@@ -354,6 +362,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut colour_group = None;
     let mut shape_group = None;
     let mut depth_group = None;
+    let mut cursor_group = None;
     let mut text_group = None;
     let mut motion_group = None;
     match section {
@@ -536,6 +545,8 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             // and the windows' shape after them (M5.12b2c): corners, gaps,
             // border, title bars and panels' opacity, with a picture.
             text_group = Some(text::group(&content, &problem));
+            // The pointer and the icons after the text (M5.12b5 part A).
+            cursor_group = Some(cursor::group(&content, &problem));
             shape_group = Some(shape::group(&content, theme, &problem));
             // The depth after the shape (M5.12b3): how see-through the
             // windows are and the shadow under them.
@@ -600,6 +611,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         shape: shape_group.clone(),
         text: text_group.clone(),
         depth: depth_group.clone(),
+        cursor: cursor_group.clone(),
         motion: motion_group.clone(),
     });
     sync_cards(&ui);
