@@ -416,7 +416,7 @@ pub const KEYS: &[Key] = &[
     now("workspaces.per_screen", Kind::Flag),
     now("workspaces.names", Kind::Texts),
     // One wallpaper per workspace (M5.12b5): `""` is Appearance's.
-    now("workspaces.wallpapers", Kind::WallpaperList),
+    now(WORKSPACE_WALLPAPERS, Kind::WallpaperList),
     now("workspaces.apps", Kind::AppWorkspaces),
     // The side of the screen the overview's strip of workspaces lies on
     // (M5.2j-b); the windows take the rest.
@@ -1542,6 +1542,10 @@ pub const OVERVIEW_STRIP_DEFAULT: &str = "left";
 /// The key the workspaces' names are kept under, one per place (M5.2p): the
 /// names the switcher shows, which a drag of a switcher button reorders.
 pub const WORKSPACE_NAMES: &str = "workspaces.names";
+
+/// The key each workspace's own wallpaper is kept under, one per place
+/// (M5.12b5), which moves with its workspace as the names do.
+pub const WORKSPACE_WALLPAPERS: &str = "workspaces.wallpapers";
 
 /// `key`'s value as a list of texts, the person's file over the machine's;
 /// none when neither sets it, or what they say is not a list of texts. An
