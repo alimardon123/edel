@@ -5,7 +5,9 @@
 # signed update, whose default app is org.edel.TestB and which drops
 # TestA, on port 8003, and reads the verdict of the test service
 # (ci/apps-test/features/apps-test) from the serial console. The VM
-# restarts once, into slot B; snapshot mode keeps the disk as built.
+# restarts once, into slot B. It boots a sparse copy 2 GiB larger, so the
+# data partition, which grows to the disk's end at the first boot, has
+# room for the apps the update installs; the copy is removed at the end.
 set -eu
 . ci/vm.sh
 
@@ -15,10 +17,13 @@ python3 -m http.server 8002 --bind 127.0.0.1 --directory out/apps-repo >out/apps
 apps=$!
 python3 -m http.server 8003 --bind 127.0.0.1 --directory "$dir/update" >out/apps-update-http.log 2>&1 &
 update=$!
-trap 'kill "$apps" "$update" 2>/dev/null || true' EXIT
+grown="$dir/edel-apps-test-grown.img"
+cp --sparse=always "$dir/edel-apps-test-x86_64.img" "$grown"
+truncate -s +2G "$grown"
+trap 'kill "$apps" "$update" 2>/dev/null || true; rm -f "$grown"' EXIT
 
-run_vm "$log" 'APPS-TEST: (PASS|FAIL)' "${APPS_TEST_TIMEOUT:-600}" -snapshot \
-	-drive if=none,id=disk0,format=raw,file="$dir/edel-apps-test-x86_64.img" \
+run_vm "$log" 'APPS-TEST: (PASS|FAIL)' "${APPS_TEST_TIMEOUT:-600}" \
+	-drive if=none,id=disk0,format=raw,file="$grown" \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 tr -d '\r' <"$log" | grep -a 'APPS-TEST:' || true
 if ! grep -q 'APPS-TEST: PASS' "$log"; then
