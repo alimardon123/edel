@@ -90,7 +90,7 @@ The first out-of-box state; `docs/defaults.md` holds it once generated:
 | Touchpad | Tap-to-click on; natural scrolling on in Mac-like only | M4.6 |
 | Language, keyboard | Asked first at install; a non-Latin layout gets `us` as a second layout | M6.6a |
 | Hostname | Prefilled as user and form factor (`ali-laptop`), under More options | M6.6a |
-| Apps | Browser, files, editor and store, offline in the slot; a replaced default app stays for every user whose `~/.var/app/<id>` exists | M6.2 |
+| Apps | Browser, files, editor and store, offline from the first start, installed once on the data partition, not in the slots (Alimardon, 2026-10-12); a replaced default app stays for every user whose `~/.var/app/<id>` exists | M6.2 |
 | Services | ssh off on the desktop (`off = ["ssh"]`), on for vm and server; bluetooth and avahi on where present | M4.0, M6.10 |
 | Power | Lid locks then suspends; on AC, idle dims at 5 minutes and locks at 10 | M6.10, M7.8 |
 | Updates | Desktops check and flag; servers install in their window | M5.9, M7.5 |
