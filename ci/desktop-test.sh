@@ -4754,8 +4754,8 @@ case_glass() {
 	[ "$verdict" = ok ] ||
 		fail "the bar at 642,790 is #$sharp with blur 0 (glass-sharp.png) and #$frosted with blur 100 (glass.png); sharp should be the right half #3a8fc0 under the panel at 40 percent, and frosted should differ from it by 8 or more in a channel: $verdict"
 	glass_step 'glass default'
-	guest 'wallpaper default'
 	none=$(count 'edel-compositor: wallpaper none')
+	guest 'wallpaper default'
 	wait_more 'edel-compositor: wallpaper none' "$none" ||
 		fail "resetting appearance.wallpaper did not give no picture (wallpaper none)"
 	echo "PASS: appearance.panel_opacity 40 with blur 0 drew the bar at 642,790 #$sharp, the right half #3a8fc0 under the panel at 40 percent (glass-sharp.png), and blur 100 drew #$frosted there, the left half's colour mixed in (glass.png); glass default brought the release's opaque bar back, and the wallpaper went"
