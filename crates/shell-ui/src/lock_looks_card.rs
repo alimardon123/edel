@@ -459,7 +459,7 @@ impl Shell {
                 wallpaper: &ll.wallpaper,
             };
             if let Some(picture) =
-                lock_looks::look_picture(kit, name, ll.compact, &view, ll.battery)
+                lock_looks::look_picture(kit, name, ll.screen, ll.compact, &view, ll.battery)
             {
                 ll.thumbs.insert(name.clone(), picture);
             }
