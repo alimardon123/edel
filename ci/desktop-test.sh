@@ -1674,6 +1674,155 @@ case_settings_wallpaper() {
 	echo "PASS: Settings' Wallpaper group put the ci card at $cx,$cy; a click wrote appearance.wallpaper = \"ci\" to ci's file and the compositor drew ci-light.png, #d08a2e at $sx,$sy (settings-wallpaper.png), and taking the line out brought the background back (settings-wallpaper-gone.png)"
 }
 
+case_settings_theme() {
+	# Settings' theme card (M5.12b6): the Appearance page of
+	# appearance.wallpaper logs where each theme tile lies, and the tile of
+	# the built-in theme Aurora (pictures aurora and aurora-arc, accent
+	# wallpaper) is clicked. The click writes theme = "aurora" to ci's file,
+	# and the compositor takes aurora-light.png and its colour, which the
+	# switcher's shown pill shows. The second picture, aurora-arc, is picked
+	# on the pictures sheet and written as appearance.wallpaper, with the
+	# accent it gives. An accent that ci's file sets over the theme makes it
+	# Changed, which the theme line says. Super+Q closes Settings, and
+	# `theme mine default` takes the theme's three keys out of ci's file, so
+	# no picture is drawn. Kept as settings-theme.png,
+	# settings-theme-changed.png and settings-theme-picture.png.
+	# Super+1 shows the first workspace, whose pill lies at x + 29.
+	python3 ci/qmp.py key meta_l-1
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings theme'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the theme card: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	[ -n "$place" ] || fail "the compositor did not say where Settings' window lies: $(value windows)"
+	set -- $place
+	x=$1 y=$2
+	# The aurora tile, from the themes row's log line: NAME X+Y+WxH pairs,
+	# then `, new X+Y+WxH`; the commas and the log's `;` line ends become
+	# spaces first.
+	tile=none
+	i=0
+	while [ "$tile" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the aurora tile lies: $(value settings_theme_log)"
+		guest 'settings theme log'
+		text=$(value settings_theme_log)
+		tile=$(echo "$text" | sed -n 's/.*themes places //p' | tr ',;' '  ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "aurora") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$tile" ] || tile=none
+		[ "$tile" = none ] && sleep 1
+	done
+	set -- $tile
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	sleep 2
+	wallpaper_seen=$(count 'edel-compositor: wallpaper .*/aurora-light[.]png$')
+	accents=$(count 'edel-compositor: accent #')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	placed=$(count 'edel-shell-ui: panel places')
+	python3 ci/qmp.py click "$cx" "$cy"
+	if ! wait_more 'edel-compositor: wallpaper .*/aurora-light[.]png$' "$wallpaper_seen"; then
+		python3 ci/qmp.py screendump "$dir/settings-theme-miss.png"
+		guest 'settings file'
+		sleep 2
+		fail "a click on the aurora tile at $cx,$cy did not make the compositor take aurora-light.png (settings-theme-miss.png); ci's file: $(value settings_file)"
+	fi
+	wait_more 'edel-compositor: accent #' "$accents" || fail "the compositor did not take an accent for aurora-light.png"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for the aurora accent"
+	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: panel places' "$placed" ||
+		fail "shell-ui did not lay its panel out again after the restart"
+	accent=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: accent #\([0-9a-f]\{6\}\)$/\1/p' | tail -n 1)
+	[ -n "$accent" ] || fail "the compositor logged no accent after the click on the aurora tile"
+	[ "$accent" != "$(token accent)" ] ||
+		fail "the aurora theme's accent is the light accent #$accent, not the picture's colour"
+	place=$(panel_places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
+	[ -n "$place" ] || fail "shell-ui did not say where the workspace switcher lies"
+	shot settings-theme $((place + 29)) 780 "$accent" >/dev/null ||
+		fail "the switcher's shown pill at $((place + 29)),780 is not #$accent after a click on the aurora tile (settings-theme.png)"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[appearance\];.*theme = "aurora"' ||
+		fail "ci's settings file is not what the theme tile writes: $(value settings_file)"
+	# The second picture: the pictures button of the theme line, which
+	# opens the sheet, then the aurora-arc card of its wallpaper group.
+	pictures=none
+	i=0
+	while [ "$pictures" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the pictures button lies: $(value settings_theme_log)"
+		guest 'settings theme log'
+		text=$(value settings_theme_log)
+		pictures=$(echo "$text" | sed -n 's/.*appearance group places .*pictures \([0-9+x]*\).*/\1/p' | sed 's/[+x]/ /g')
+		[ -n "$pictures" ] || pictures=none
+		[ "$pictures" = none ] && sleep 1
+	done
+	set -- $pictures
+	python3 ci/qmp.py click "$(($x + $1 + $3 / 2))" "$(($y + $2 + $4 / 2))"
+	sleep 2
+	# The last wallpaper group line that names aurora-arc, its places as
+	# NAME X+Y+WxH pairs after `wallpaper group places`.
+	arc=none
+	i=0
+	while [ "$arc" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the aurora-arc card lies: $(value settings_theme_log)"
+		guest 'settings theme log'
+		text=$(value settings_theme_log)
+		arc=$(echo "$text" | tr ';' '\n' | grep 'wallpaper group places' | grep ' aurora-arc [0-9]' | tail -n 1 |
+			sed 's/.*wallpaper group places //' | tr ',' ' ' |
+			awk '{ for (i = 1; i < NF; i += 2) if ($i == "aurora-arc") { print $(i + 1); exit } }' |
+			sed 's/[+x]/ /g')
+		[ -n "$arc" ] || arc=none
+		[ "$arc" = none ] && sleep 1
+	done
+	set -- $arc
+	ax=$((x + $1 + $3 / 2)) ay=$((y + $2 + $4 / 2))
+	sleep 2
+	wallpaper_seen=$(count 'edel-compositor: wallpaper .*/aurora-arc-light[.]png$')
+	accents=$(count 'edel-compositor: accent #')
+	python3 ci/qmp.py click "$ax" "$ay"
+	if ! wait_more 'edel-compositor: wallpaper .*/aurora-arc-light[.]png$' "$wallpaper_seen"; then
+		python3 ci/qmp.py screendump "$dir/settings-theme-picture-miss.png"
+		guest 'settings file'
+		sleep 2
+		fail "a click on the aurora-arc card at $ax,$ay did not make the compositor take aurora-arc-light.png (settings-theme-picture-miss.png); ci's file: $(value settings_file)"
+	fi
+	wait_more 'edel-compositor: accent #' "$accents" || fail "the compositor did not take an accent for aurora-arc-light.png"
+	second=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: accent #\([0-9a-f]\{6\}\)$/\1/p' | tail -n 1)
+	[ -n "$second" ] && [ "$second" != "$accent" ] ||
+		fail "the aurora-arc picture's accent #$second is not the aurora picture's #$accent"
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q '\[appearance\];.*wallpaper = "aurora-arc"' ||
+		fail "ci's settings file does not hold wallpaper = \"aurora-arc\" after the card: $(value settings_file)"
+	value settings_file | grep -q '\[appearance\];.*theme = "aurora"' ||
+		fail "ci's settings file lost theme = \"aurora\" after the card: $(value settings_file)"
+	python3 ci/qmp.py screendump "$dir/settings-theme-picture.png"
+	# An accent set over the theme in ci's file makes it Changed; the theme
+	# line logs `theme aurora changed accent` once Settings follows the file.
+	guest 'theme accent mine'
+	i=0
+	while :; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not show the aurora theme as Changed: $(value settings_theme_log)"
+		guest 'settings theme log'
+		value settings_theme_log | grep -q 'theme aurora changed accent' && break
+		sleep 1
+	done
+	python3 ci/qmp.py screendump "$dir/settings-theme-changed.png"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	none=$(count 'edel-compositor: wallpaper none')
+	guest 'theme mine default'
+	wait_more 'edel-compositor: wallpaper none' "$none" ||
+		fail "taking the theme's keys out of ci's file did not give no picture (wallpaper none)"
+	echo "PASS: Settings' theme card put the aurora tile at $cx,$cy; the compositor took aurora-light.png and #$accent, the switcher's pill that colour (settings-theme.png); the aurora-arc card gave #$second and wrote wallpaper = \"aurora-arc\" beside theme = \"aurora\" (settings-theme-picture.png); an accent over the theme showed Changed: accent (settings-theme-changed.png); and theme mine default left no picture"
+}
+
 case_settings_accent() {
 	# Settings' accent swatches (M5.12b1c): Settings opened on its Appearance
 	# page by the name of the accent row logs where each swatch lies; a click
@@ -5462,7 +5611,7 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

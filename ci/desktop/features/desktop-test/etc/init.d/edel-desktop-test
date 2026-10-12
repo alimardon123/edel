@@ -333,6 +333,11 @@ commands() {
 		# The accent Settings' swatches wrote to ci's own file (M5.12b1c),
 		# taken out again.
 		'accent mine default') as_ci "sed -i '/^accent = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The theme card's own choices in ci's file (M5.12b6): an accent
+		# under the theme line, which makes the theme Changed, and the three
+		# keys taken out again, the default theme back.
+		'theme accent mine') as_ci "sed -i '/^theme = /a accent = \"red\"' /home/ci/.config/edel/$settings_name" ;;
+		'theme mine default') as_ci "sed -i -e '/^theme = /d' -e '/^accent = /d' -e '/^wallpaper = /d' /home/ci/.config/edel/$settings_name" ;;
 		# The sound system's volume (M5.9a): the default output at 20
 		# percent, for the quick settings slider to start from.
 		'volume 20') as_ci wpctl set-volume @DEFAULT_AUDIO_SINK@ 20% ;;
@@ -559,6 +564,12 @@ commands() {
 			as_ci edel-settings --page appearance.wallpaper </dev/null >/tmp/settings-wallpaper.log 2>&1 &
 			;;
 		'settings wallpaper log') say "settings_wallpaper_log $(tr '\n' ';' </tmp/settings-wallpaper.log 2>/dev/null)" ;;
+		# Settings' theme card (M5.12b6, settings-theme): opened on the
+		# wallpaper row's page, its log says where each theme and picture lies.
+		'settings theme')
+			as_ci edel-settings --page appearance.wallpaper </dev/null >/tmp/settings-theme.log 2>&1 &
+			;;
+		'settings theme log') say "settings_theme_log $(tr '\n' ';' </tmp/settings-theme.log 2>/dev/null)" ;;
 		# Settings' accent swatches (M5.12b1c): opened by the name of the
 		# accent row, its log says where each swatch lies.
 		'settings accent')
