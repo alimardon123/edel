@@ -18,7 +18,10 @@
 //! on (`hold.rs`, M5.23). `--sni` draws nothing: it is a tray item on the
 //! session's bus (`sni.rs`, M5.2e). `--mpris` draws nothing either: it is
 //! a media player on the session's bus for quick settings' now playing
-//! (`mpris.rs`, M5.9d). `--recolour RRGGBB@FILE` draws the window in that
+//! (`mpris.rs`, M5.9d). `--screenshot` and `--screencast` draw nothing
+//! either: they ask xdg-desktop-portal for a screenshot or to share the
+//! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
+//! `--recolour RRGGBB@FILE` draws the window in that
 //! colour once FILE exists, so a test can see whether a picture of it
 //! follows it live (M5.2j-b4).
 //!
@@ -30,6 +33,8 @@
 //!     edel-testclient --sni
 //!     edel-testclient --mpris
 //!     edel-testclient --mpris NAME
+//!     edel-testclient --screenshot
+//!     edel-testclient --screencast
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -204,6 +209,7 @@ impl Dispatch<wl_callback::WlCallback, Wake> for Client {
 
 mod hold;
 mod mpris;
+mod portal;
 mod sandbox;
 mod sni;
 mod toplevels;
@@ -216,6 +222,8 @@ fn main() -> Result<()> {
         ["--toplevels"] => return toplevels::run(None),
         ["--sni"] => return sni::run(),
         ["--mpris"] => return mpris::run(None),
+        ["--screenshot"] => return portal::screenshot(),
+        ["--screencast"] => return portal::screencast(),
         ["--mpris", name] => return mpris::run(Some(name)),
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),

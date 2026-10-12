@@ -4,9 +4,11 @@
 //! which D-Bus starts when an app first asks, passes on what it says: the
 //! colour scheme and the accent, from the design tokens, so GTK,
 //! libadwaita and Flatpak apps follow the desktop's look, and says them
-//! again whenever shell-ui starts (M5.5c). It is no process
-//! of its own: zbus answers on a thread of its own, and nothing runs
-//! while no app asks.
+//! again whenever shell-ui starts (M5.5c). It also serves
+//! `org.freedesktop.impl.portal.Access` (M6.3): the screenshot portal asks
+//! through it before an app may take a picture, and shell-ui draws the
+//! dialog itself (`access_card.rs`). It is no process of its own: zbus
+//! answers on a thread of its own, and nothing runs while no app asks.
 
 use std::collections::HashMap;
 
@@ -14,9 +16,11 @@ use edel::panel_edit::{SHELL_BUS, SHELL_PATH};
 use edel::tokens::{Colour, Tokens};
 use smithay_client_toolkit::reexports::calloop::channel;
 use zbus::object_server::SignalEmitter;
-use zbus::zvariant::{OwnedValue, Value};
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
-use crate::shell_bus::{Edit, ShellBus};
+use crate::access::{self, Ask};
+use crate::shell_bus::{self, Edit, ShellBus};
+use edel::i18n::tr;
 
 /// The name xdg-desktop-portal finds the backend by, from
 /// `/usr/share/xdg-desktop-portal/portals/edel.portal`.
@@ -111,6 +115,86 @@ fn chosen(settings: &Settings, wanted: &[String]) -> Settings {
         .collect()
 }
 
+/// The Access portal's backend (M6.3): the question a screenshot asks the
+/// person, through the event loop's dialog. Only `AccessDialog` is served;
+/// the request object the portal makes is its own, so this does not export
+/// `org.freedesktop.impl.portal.Request`, and the portal ends the request
+/// itself.
+struct Asking {
+    edits: channel::Sender<Edit>,
+}
+
+#[zbus::interface(name = "org.freedesktop.impl.portal.Access")]
+impl Asking {
+    /// Asks the person whether `app_id` may do what `title`, `subtitle` and
+    /// `body` say, and answers 0 for allowed, 1 for denied and 2 when the
+    /// question ended without an answer. `options` may name `deny_label` and
+    /// `grant_label`; `choices` and `modal` are ignored, as the dialog has two
+    /// buttons and is always modal. The `handle` and `parent_window` are not
+    /// used: the dialog is shell-ui's own, on the screen the panels lie on.
+    #[allow(clippy::too_many_arguments)]
+    async fn access_dialog(
+        &self,
+        handle: OwnedObjectPath,
+        app_id: String,
+        parent_window: String,
+        title: String,
+        subtitle: String,
+        body: String,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        let _ = (&handle, &parent_window);
+        let app = if app_id.is_empty() {
+            tr("An app").to_string()
+        } else {
+            app_id
+        };
+        let deny = text_option(&options, "deny_label").unwrap_or_else(|| tr("Deny").to_string());
+        let grant = text_option(&options, "grant_label").unwrap_or_else(|| tr("Allow").to_string());
+        let (answer, reply) = shell_bus::answer();
+        let ask = Ask {
+            app,
+            title,
+            subtitle,
+            body,
+            deny,
+            grant,
+            answer,
+        };
+        if self.edits.send(Edit::Access(ask)).is_err() {
+            return (access::CANCEL, HashMap::new());
+        }
+        (reply.wait().await, HashMap::new())
+    }
+}
+
+/// Tells the session bus the compositor's Wayland display (M6.3), as other
+/// desktops do at their start: the bus started before the compositor made
+/// its socket, so a service it starts for an app, such as the screenshot
+/// portal's backend, would otherwise not know which display to reach.
+fn tell_display(connection: &zbus::blocking::Connection) {
+    let Ok(display) = std::env::var("WAYLAND_DISPLAY") else {
+        return;
+    };
+    let told = connection.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "UpdateActivationEnvironment",
+        &HashMap::from([("WAYLAND_DISPLAY", display.as_str())]),
+    );
+    match told {
+        Ok(_) => eprintln!("edel-shell-ui: told D-Bus the Wayland display {display}"),
+        Err(e) => eprintln!("edel-shell-ui: {}", crate::messages::display_not_told(e)),
+    }
+}
+
+/// The text of a string option, when the portal gave a non-empty one.
+fn text_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
+    let value = options.get(key)?.try_clone().ok()?;
+    String::try_from(value).ok().filter(|text| !text.is_empty())
+}
+
 /// The portal's own error for a setting it does not have.
 #[derive(Debug, zbus::DBusError)]
 #[zbus(prefix = "org.freedesktop.portal.Error")]
@@ -167,9 +251,13 @@ pub fn serve(tokens: &Tokens, edits: channel::Sender<Edit>) -> Option<zbus::bloc
     let backend = Backend {
         settings: settings(tokens),
     };
+    let asking = Asking {
+        edits: edits.clone(),
+    };
     let built = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
+        .and_then(|b| b.serve_at(PATH, asking))
         .and_then(|b| b.serve_at(SHELL_PATH, ShellBus::new(edits)))
         .and_then(|b| b.build());
     let connection = match built {
@@ -183,6 +271,7 @@ pub fn serve(tokens: &Tokens, edits: channel::Sender<Edit>) -> Option<zbus::bloc
         eprintln!("edel-shell-ui: {}", crate::messages::edit_bus_not_served(e));
     }
     eprintln!("edel-shell-ui: serving the settings portal as {NAME}");
+    tell_display(&connection);
     let said = connection
         .object_server()
         .interface::<_, Backend>(PATH)
@@ -206,6 +295,99 @@ pub fn serve(tokens: &Tokens, edits: channel::Sender<Edit>) -> Option<zbus::bloc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::access;
+
+    #[test]
+    fn a_string_option_is_read_when_given_and_not_empty() {
+        let mut options = HashMap::new();
+        options.insert(
+            "deny_label".to_string(),
+            OwnedValue::try_from(Value::from("Skip")).unwrap(),
+        );
+        options.insert(
+            "grant_label".to_string(),
+            OwnedValue::try_from(Value::from("")).unwrap(),
+        );
+        assert_eq!(text_option(&options, "deny_label").as_deref(), Some("Skip"));
+        assert_eq!(text_option(&options, "grant_label"), None, "empty is none");
+        assert_eq!(text_option(&options, "missing"), None);
+    }
+
+    /// A question asked over the bus reaches the event loop as `Edit::Access`
+    /// and its answer goes back to the caller (M6.3). Needs a session bus:
+    /// without one, `serve` gives nothing and the test passes by saying so.
+    #[test]
+    fn an_access_question_is_asked_and_answered_over_the_bus() {
+        use smithay_client_toolkit::reexports::calloop::EventLoop;
+        use std::time::Duration;
+        let (edits, asks) = channel::channel::<Edit>();
+        let Some(_served) = serve(&Tokens::built_in(), edits) else {
+            return;
+        };
+        let client = zbus::blocking::Connection::session().expect("the session bus");
+        let proxy =
+            zbus::blocking::Proxy::new(&client, NAME, PATH, "org.freedesktop.impl.portal.Access")
+                .expect("the Access proxy");
+        let caller = std::thread::spawn(move || {
+            let handle = OwnedObjectPath::try_from("/org/freedesktop/portal/desktop/request/t/x")
+                .expect("a handle");
+            proxy.call::<_, _, (u32, HashMap<String, OwnedValue>)>(
+                "AccessDialog",
+                &(
+                    handle,
+                    "org.example.Shot".to_string(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    "Take a picture?".to_string(),
+                    HashMap::<String, OwnedValue>::new(),
+                ),
+            )
+        });
+        let mut event_loop: EventLoop<Option<Ask>> = EventLoop::try_new().expect("a loop");
+        event_loop
+            .handle()
+            .insert_source(asks, |event, _, got: &mut Option<Ask>| {
+                if let channel::Event::Msg(Edit::Access(ask)) = event {
+                    *got = Some(ask);
+                }
+            })
+            .expect("watching the asks");
+        let mut got = None;
+        for _ in 0..50 {
+            if got.is_some() {
+                break;
+            }
+            event_loop
+                .dispatch(Some(Duration::from_millis(100)), &mut got)
+                .expect("dispatching");
+        }
+        let ask = got.expect("the question reached the loop");
+        assert_eq!(ask.app, "org.example.Shot");
+        assert_eq!(ask.body, "Take a picture?");
+        assert_eq!(
+            ask.shown_title(),
+            "Allow org.example.Shot to take screenshots?"
+        );
+        ask.answer.send(access::ALLOW);
+        let (code, results) = caller
+            .join()
+            .expect("the caller returns")
+            .expect("the answer");
+        assert_eq!(code, access::ALLOW);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn the_access_portal_is_served_on_the_settings_portal_path() {
+        use zbus::object_server::Interface;
+
+        // The dialog's interface name is the portal's own.
+        assert_eq!(
+            Asking::name().as_str(),
+            "org.freedesktop.impl.portal.Access"
+        );
+    }
 
     #[test]
     fn the_tokens_say_dark_and_give_the_accent() {
