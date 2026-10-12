@@ -294,11 +294,15 @@ pub fn row(group: &gtk::Box, title: &str, control: &gtk::Widget) -> Row {
     let heading = gtk::Box::builder().spacing(8).build();
     heading.append(&title_label);
     heading.append(&keys);
+    // The line under the title is there only while it has words, so a row
+    // without one keeps its title centred on its control (M5.12b6c).
     let subtitle = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
+        .visible(false)
         .css_classes(["edel-row-subtitle"])
         .build();
+    subtitle.connect_label_notify(|label| label.set_visible(!label.label().is_empty()));
     words.append(&heading);
     words.append(&subtitle);
     row.append(&words);

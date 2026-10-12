@@ -245,7 +245,7 @@ msgstr ""
 msgid "Graphite"
 msgstr ""
 
-msgid "Wallpaper"
+msgid "From wallpaper"
 msgstr ""
 
 msgid "Custom"
@@ -279,6 +279,9 @@ msgid "Pick this colour"
 msgstr ""
 
 msgid "Add a colour"
+msgstr ""
+
+msgid "Custom…"
 msgstr ""
 
 msgid "Colours"
@@ -749,6 +752,9 @@ msgstr ""
 msgid "Side of the strip in the workspace overview"
 msgstr ""
 
+msgid "Wallpaper"
+msgstr ""
+
 msgid "Style"
 msgstr ""
 
@@ -1092,9 +1098,6 @@ msgid "could not write {path}: {why}; choose a folder you can write to"
 msgstr ""
 
 msgid "Default"
-msgstr ""
-
-msgid "{name} (default)"
 msgstr ""
 
 msgid "Text"

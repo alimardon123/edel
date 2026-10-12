@@ -454,6 +454,9 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             names = Some(workspaces::card(&spaces, &problem));
         }
         _ => {
+            // The Appearance page's group headings are the board's (M5.12b6c),
+            // styled by this class in style.rs.
+            content.add_css_class("edel-appearance");
             // The theme first (M5.12b6b): its line with the pictures sheet
             // behind its button, the three styles, and the themes row. Then
             // the accent and the colours (M5.12b1c), the text, the shape and

@@ -40,35 +40,61 @@ const STYLES: [&str; 3] = ["light", "dark", "auto"];
 /// in logical pixels, and the corners of each (the window's radius token,
 /// the small one for thumbnails).
 const STYLE_HEIGHT: i32 = 128;
-const TILE_WIDTH: i32 = 104;
+/// The narrowest a tile is (its picture, with the frame around it adds 8):
+/// six of them with their gaps fit the page, so the row scrolls past six.
+const TILE_WIDTH: i32 = 92;
 const TILE_HEIGHT: i32 = 70;
 const THUMB: (i32, i32) = (20, 14);
 const THUMB_STEP: i32 = 14;
 const RADIUS: f64 = 10.0;
-const RADIUS_SMALL: f64 = 5.0;
+/// The corners of a style's window (7 px) and of a thumbnail (4 px).
+const WINDOW_RADIUS: f64 = 7.0;
+const THUMB_RADIUS: f64 = 4.0;
+/// A style's window: its title strip's height, the panel strip along the
+/// picture's foot, and the shadow's blur, all in logical pixels.
+const TITLE_STRIP: f64 = 11.0;
+const FOOT_STRIP: f64 = 13.0;
+const SHADOW_BLUR: f64 = 20.0;
+/// The themes row's columns: six, whatever the number of themes.
+const COLUMNS: i32 = 6;
 /// The largest a picture is loaded, in pixels: drawn cover-fitted from it.
 const LOAD: (i32, i32) = (320, 220);
 
 /// One scheme of a theme as its pictures are drawn: the theme's first
 /// picture in that scheme, or the background where there is none, with the
-/// window and the panel a style's picture draws over it.
+/// colours a style's window is drawn in over it.
 #[derive(Clone)]
 struct Look {
     picture: Option<Pixbuf>,
     background: Colour,
     window: Colour,
+    /// The title strip, its dots' grey and red, and the text of the foot strip.
     strip: Colour,
-    panel: Colour,
+    muted: Colour,
+    close: Colour,
+    ink: Colour,
+    accent: Colour,
+    dark: bool,
 }
 
 impl Look {
-    fn of(tokens: &Tokens, picture: Option<Pixbuf>) -> Look {
+    fn of(tokens: &Tokens, picture: Option<Pixbuf>, dark: bool) -> Look {
         Look {
             picture,
             background: tokens.background,
             window: tokens.window,
-            strip: tokens.title_bar_focused,
-            panel: tokens.panel,
+            // The card is darker than the window in dark, so there the strip
+            // is the title bar's, which is lighter.
+            strip: if dark {
+                tokens.title_bar_focused
+            } else {
+                tokens.card
+            },
+            muted: tokens.title_text_unfocused,
+            close: tokens.title_close_hover,
+            ink: tokens.title_text,
+            accent: tokens.accent,
+            dark,
         }
     }
 }
@@ -85,8 +111,8 @@ fn looks_of(dir: &Path, pictures: &[String]) -> Looks {
     let first = pictures.first();
     let picture = |dark: bool| first.and_then(|name| picture_of(dir, name, dark));
     Looks {
-        light: Look::of(&style::load(false), picture(false)),
-        dark: Look::of(&style::load(true), picture(true)),
+        light: Look::of(&style::load(false), picture(false), false),
+        dark: Look::of(&style::load(true), picture(true), true),
     }
 }
 
@@ -171,30 +197,110 @@ fn cover(cr: &Context, picture: Option<&Pixbuf>, background: Colour, w: f64, h: 
     }
 }
 
-/// A window of the look over the picture, as the style pictures draw it:
-/// its body, its title strip and the panel's strip along the foot.
+/// A window of the look over the picture, as the style pictures draw it
+/// (M5.12b6c, to the board's sizes): its shadow, its body, the title strip
+/// with three dots, two lines and an accent pill of content, and the
+/// panel's strip along the foot with its two marks.
 fn window(cr: &Context, look: &Look, w: f64, h: f64) {
     let (x, y, ww, wh) = (w * 0.17, h * 0.17, w * 0.54, h * 0.54);
-    rounded(cr, x, y, ww, wh, RADIUS_SMALL);
+    shadow(cr, x, y + 8.0, ww, wh, WINDOW_RADIUS, 0.22);
+    rounded(cr, x, y, ww, wh, WINDOW_RADIUS);
     set_colour(cr, look.window);
     let _ = cr.fill();
-    rounded(cr, x, y, ww, wh * 0.16, RADIUS_SMALL);
+
+    // Inside the window's corners: the title strip and its dots, then the
+    // content.
+    let _ = cr.save();
+    rounded(cr, x, y, ww, wh, WINDOW_RADIUS);
+    cr.clip();
+    cr.rectangle(x, y, ww, TITLE_STRIP);
     set_colour(cr, look.strip);
     let _ = cr.fill();
-    cr.rectangle(0.0, h - h * 0.07, w, h * 0.07);
-    set_colour(cr, look.panel);
+    // Three 4 px dots, 3 px apart and 5 px from the right edge: the last is
+    // red, the two before it grey.
+    for (index, colour) in [look.close, look.muted, look.muted].into_iter().enumerate() {
+        set_colour(cr, colour);
+        cr.arc(
+            x + ww - 7.0 - 7.0 * index as f64,
+            y + TITLE_STRIP / 2.0,
+            2.0,
+            0.0,
+            std::f64::consts::TAU,
+        );
+        let _ = cr.fill();
+    }
+    // The content, 9 px in from the left: a line 58 % wide, one 40 % wide
+    // 5 px under it, and 9 px under those a pill of the accent.
+    let (r, g, b, a) = if look.dark {
+        (1.0, 1.0, 1.0, 0.18)
+    } else {
+        (0.0, 0.0, 0.0, 0.10)
+    };
+    cr.set_source_rgba(r, g, b, a);
+    let top = y + TITLE_STRIP + 9.0;
+    rounded(cr, x + 9.0, top, ww * 0.58, 5.0, 3.0);
+    let _ = cr.fill();
+    rounded(cr, x + 9.0, top + 10.0, ww * 0.40, 5.0, 3.0);
+    let _ = cr.fill();
+    set_colour(cr, look.accent);
+    rounded(cr, x + 9.0, top + 24.0, ww * 0.30, 11.0, 6.0);
+    let _ = cr.fill();
+    let _ = cr.restore();
+
+    // The panel's strip along the foot: white at 62 percent in light, black
+    // at 55 in dark, with the text's colour as a square at its left and a
+    // bar at its right, 8 px in from the edges.
+    let (r, g, b, a) = if look.dark {
+        (0.0, 0.0, 0.0, 0.55)
+    } else {
+        (1.0, 1.0, 1.0, 0.62)
+    };
+    cr.set_source_rgba(r, g, b, a);
+    cr.rectangle(0.0, h - FOOT_STRIP, w, FOOT_STRIP);
+    let _ = cr.fill();
+    set_colour(cr, fade(look.ink, 0.7));
+    rounded(cr, 8.0, h - FOOT_STRIP + 3.5, 6.0, 6.0, 2.0);
+    let _ = cr.fill();
+    set_colour(cr, fade(look.ink, 0.6));
+    rounded(cr, w - 26.0, h - FOOT_STRIP + 4.5, 18.0, 4.0, 2.0);
     let _ = cr.fill();
 }
 
-/// A rounded rectangle's path.
+/// A rounded rectangle's path, its corners no larger than half its sides.
 fn rounded(cr: &Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     use std::f64::consts::{FRAC_PI_2, PI};
+    let r = r.min(w / 2.0).min(h / 2.0);
     cr.new_sub_path();
     cr.arc(x + w - r, y + r, r, -FRAC_PI_2, 0.0);
     cr.arc(x + w - r, y + h - r, r, 0.0, FRAC_PI_2);
     cr.arc(x + r, y + h - r, r, FRAC_PI_2, PI);
     cr.arc(x + r, y + r, r, PI, 3.0 * FRAC_PI_2);
     cr.close_path();
+}
+
+/// A colour at `alpha`, the rest of it kept.
+fn fade(colour: Colour, alpha: f32) -> Colour {
+    Colour { a: alpha, ..colour }
+}
+
+/// A soft shadow of a rounded rectangle, black at `alpha` at its edge and
+/// fading out over `SHADOW_BLUR` pixels as CSS's blur does, drawn as rings
+/// of it growing out from the rectangle.
+fn shadow(cr: &Context, x: f64, y: f64, w: f64, h: f64, radius: f64, alpha: f64) {
+    const RINGS: u32 = 10;
+    cr.set_source_rgba(0.0, 0.0, 0.0, alpha / f64::from(RINGS));
+    for ring in 1..=RINGS {
+        let grow = SHADOW_BLUR * f64::from(ring) / f64::from(RINGS);
+        rounded(
+            cr,
+            x - grow,
+            y - grow,
+            w + 2.0 * grow,
+            h + 2.0 * grow,
+            radius + grow,
+        );
+        let _ = cr.fill();
+    }
 }
 
 /// Sets `colour` as the source of the next drawing.
@@ -279,6 +385,45 @@ impl Shown {
     }
 }
 
+/// The New tile of the themes row (M5.12b6c): a dashed outline the size of
+/// a tile with a plus in the accent, and its name under it. The lock's New
+/// card is `widgets::new_card`, which this page does not share.
+fn new_tile(caption: &str) -> gtk::Button {
+    let plus = gtk::Label::builder()
+        .label("+")
+        .hexpand(true)
+        .vexpand(true)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(["edel-theme-new-plus"])
+        .build();
+    let outline = gtk::Box::builder()
+        .css_classes(["edel-theme-new-look"])
+        .hexpand(true)
+        .build();
+    outline.set_size_request(-1, TILE_HEIGHT);
+    outline.append(&plus);
+    let words = gtk::Label::builder()
+        .label(caption)
+        .justify(gtk::Justification::Center)
+        .css_classes(["edel-theme-new-name"])
+        .build();
+    let inner = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(7)
+        .hexpand(true)
+        .build();
+    inner.append(&outline);
+    inner.append(&words);
+    let button = gtk::Button::builder()
+        .child(&inner)
+        .hexpand(true)
+        .css_classes(["edel-theme-new"])
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label(caption)]);
+    button
+}
+
 /// The Appearance page's theme card: the theme line, the styles, the themes
 /// row and the pictures sheet.
 pub struct Card {
@@ -293,6 +438,7 @@ pub struct Card {
     stack: gtk::Fixed,
     stack_key: RefCell<String>,
     pictures: gtk::Button,
+    pictures_words: gtk::Label,
     changed: gtk::Box,
     changed_label: gtk::Label,
     reset: gtk::Button,
@@ -308,7 +454,7 @@ pub struct Card {
     looks_key: RefCell<String>,
     pictures_now: RefCell<Vec<String>>,
     // The themes row.
-    tiles_box: gtk::Box,
+    tiles_box: gtk::Grid,
     tiles_key: RefCell<String>,
     tiles: RefCell<Vec<(String, gtk::ToggleButton)>>,
     new_card: gtk::Button,
@@ -331,6 +477,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     // then Reset, Keep as new and the More menu.
     let title = gtk::Label::builder()
         .xalign(0.0)
+        .valign(gtk::Align::Baseline)
         .css_classes(["edel-theme-title"])
         .build();
     let tag = gtk::Label::builder()
@@ -342,7 +489,17 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     names.append(&title);
     names.append(&tag);
     let stack = gtk::Fixed::new();
+    // The pictures' words, and their arrow in a fainter colour.
+    let pictures_words = gtk::Label::builder().xalign(0.0).build();
+    let arrow = gtk::Label::builder()
+        .label("›")
+        .css_classes(["edel-pictures-arrow"])
+        .build();
+    let words_box = gtk::Box::builder().spacing(4).build();
+    words_box.append(&pictures_words);
+    words_box.append(&arrow);
     let pictures = gtk::Button::builder()
+        .child(&words_box)
         .css_classes(["edel-pictures-link"])
         .valign(gtk::Align::Center)
         .build();
@@ -358,15 +515,21 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     let changed = gtk::Box::builder().spacing(6).build();
     changed.append(&dot);
     changed.append(&changed_label);
+    // The stack and its words 8 px apart, the changed line 14 px after them.
+    let stacked = gtk::Box::builder()
+        .spacing(8)
+        .valign(gtk::Align::Center)
+        .build();
+    stacked.append(&stack);
+    stacked.append(&pictures);
     let line = gtk::Box::builder().spacing(14).build();
-    line.append(&stack);
-    line.append(&pictures);
+    line.append(&stacked);
     line.append(&changed);
     let words = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(6)
         .hexpand(true)
-        .valign(gtk::Align::End)
+        .valign(gtk::Align::Center)
         .build();
     words.append(&names);
     words.append(&line);
@@ -377,7 +540,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     let more = gtk::MenuButton::builder()
         .child(&icon::image("more", 15))
         .tooltip_text(tr("More"))
-        .valign(gtk::Align::End)
+        .valign(gtk::Align::Center)
         .css_classes(["edel-theme-more"])
         .build();
     let menu = gtk::Popover::builder()
@@ -397,7 +560,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     more.set_popover(Some(&menu));
     let actions = gtk::Box::builder()
         .spacing(8)
-        .valign(gtk::Align::End)
+        .valign(gtk::Align::Center)
         .build();
     actions.append(&reset);
     actions.append(&keep);
@@ -477,7 +640,11 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         .css_classes(["edel-source"])
         .build();
     heading.append(&aside);
-    let tiles_box = gtk::Box::builder().spacing(12).homogeneous(true).build();
+    let tiles_box = gtk::Grid::builder()
+        .column_spacing(12)
+        .column_homogeneous(true)
+        .hexpand(true)
+        .build();
     let row = gtk::ScrolledWindow::builder()
         .hscrollbar_policy(gtk::PolicyType::Automatic)
         .vscrollbar_policy(gtk::PolicyType::Never)
@@ -503,7 +670,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     // Under the theme line, before the styles.
     content.insert_child_after(&sheet, Some(&head));
     // The New tile's menu.
-    let new_card = widgets::new_card(TILE_WIDTH, TILE_HEIGHT, "", tr("New"));
+    let new_card = new_tile(tr("New"));
     let new_items = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .build();
@@ -527,6 +694,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         stack,
         stack_key: RefCell::new(String::new()),
         pictures,
+        pictures_words,
         changed,
         changed_label,
         reset: reset.clone(),
@@ -829,10 +997,11 @@ impl Card {
         } else {
             tr("Your theme").to_string()
         });
-        self.pictures.set_label(&match shown.pictures.len() {
+        let text = match shown.pictures.len() {
             1 => tr("1 picture ›").to_string(),
             count => trf("{count} pictures ›", &[("count", &count.to_string())]),
-        });
+        };
+        self.pictures_words.set_label(text.replace('›', "").trim());
         let any_changed = !shown.changed.is_empty();
         self.changed.set_visible(any_changed);
         self.changed_label.set_label(&trf(
@@ -914,13 +1083,13 @@ impl Card {
                     cr,
                     w,
                     h,
-                    RADIUS_SMALL,
+                    THUMB_RADIUS,
                     Sides::Split(&light_look, &dark_look),
                     false,
                 );
                 // The ring of the window colour, the thumbnails' edge over
                 // the next one.
-                rounded(cr, 0.75, 0.75, w - 1.5, h - 1.5, RADIUS_SMALL);
+                rounded(cr, 0.75, 0.75, w - 1.5, h - 1.5, THUMB_RADIUS);
                 set_colour(cr, ring);
                 cr.set_line_width(1.5);
                 let _ = cr.stroke();
@@ -952,6 +1121,7 @@ impl Card {
             }
             let mut tiles = Vec::new();
             let mut first: Option<gtk::ToggleButton> = None;
+            let mut column = 0;
             for row in &rows {
                 let pictures = themes::lookup(&row.name, &shown.file.themes)
                     .map(|theme| theme.pictures)
@@ -961,10 +1131,19 @@ impl Card {
                     Some(first) => tile.set_group(Some(first)),
                     None => first = Some(tile.clone()),
                 }
-                self.tiles_box.append(&tile);
+                self.tiles_box.attach(&tile, column, 0, 1, 1);
+                column += 1;
                 tiles.push((row.name.clone(), tile));
             }
-            self.tiles_box.append(&self.new_card);
+            self.tiles_box.attach(&self.new_card, column, 0, 1, 1);
+            column += 1;
+            // Empty columns keep the row six wide, as the board has it, so
+            // three themes and New leave two columns empty at the right.
+            while column < COLUMNS {
+                let empty = gtk::Box::builder().hexpand(true).build();
+                self.tiles_box.attach(&empty, column, 0, 1, 1);
+                column += 1;
+            }
             *self.tiles.borrow_mut() = tiles;
             *self.tiles_key.borrow_mut() = key;
         }
@@ -1007,15 +1186,23 @@ impl Card {
             .build();
         frame.append(&overlay);
         if built_in {
-            let badge = widgets::pill("lock", tr("Built in"), "edel-theme-built-in");
-            badge.set_halign(gtk::Align::Start);
-            badge.set_valign(gtk::Align::Start);
-            badge.set_margin_start(6);
-            badge.set_margin_top(6);
+            // The lock and the words at 9 px and 9.5 px, as the board draws
+            // them: a small badge of its own rather than the pill's.
+            let badge = gtk::Box::builder()
+                .spacing(4)
+                .halign(gtk::Align::Start)
+                .valign(gtk::Align::Start)
+                .margin_start(6)
+                .margin_top(6)
+                .css_classes(["edel-theme-built-in"])
+                .build();
+            badge.append(&icon::image("lock", 9));
+            badge.append(&gtk::Label::new(Some(tr("Built in"))));
             overlay.add_overlay(&badge);
         }
         let label = gtk::Label::builder()
             .label(title)
+            .justify(gtk::Justification::Center)
             .css_classes(["edel-tile-name"])
             .build();
         let inner = gtk::Box::builder()
