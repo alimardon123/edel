@@ -758,6 +758,60 @@ msgstr ""
 msgid "The battery, the lid and the power button."
 msgstr ""
 
+msgid "{percent}%"
+msgstr ""
+
+msgid "Plugged in"
+msgstr ""
+
+msgid "This computer has no battery."
+msgstr ""
+
+msgid "Running on battery"
+msgstr ""
+
+msgid "The battery's charge is not reported."
+msgstr ""
+
+msgid "Charging · full in {time}"
+msgstr ""
+
+msgid "Fully charged · plugged in"
+msgstr ""
+
+msgid "Plugged in · not charging"
+msgstr ""
+
+msgid "Battery empty"
+msgstr ""
+
+msgid "Battery empty · plug in the charger"
+msgstr ""
+
+msgid "On battery · {time} left"
+msgstr ""
+
+msgid "On battery"
+msgstr ""
+
+msgid "Other batteries"
+msgstr ""
+
+msgid "Battery health"
+msgstr ""
+
+msgid "The battery over the last 24 hours"
+msgstr ""
+
+msgid "24 hours ago"
+msgstr ""
+
+msgid "Now"
+msgstr ""
+
+msgid "Power information is not available"
+msgstr ""
+
 msgid "Preset"
 msgstr ""
 
