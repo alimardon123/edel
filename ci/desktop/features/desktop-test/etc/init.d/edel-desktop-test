@@ -321,7 +321,15 @@ commands() {
 		'scheme mine default') as_ci "sed -i '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;
 		# The wallpaper the Wallpaper group's card wrote to ci's own file
 		# (M5.10c4c), taken out again.
-		'wallpaper mine default') as_ci "sed -i '/^wallpaper = /d' /home/ci/.config/edel/$settings_name" ;;
+		'wallpaper mine default') as_ci "sed -i -e '/^wallpaper = /d' -e '/^pictures = /d' /home/ci/.config/edel/$settings_name" ;;
+		# The theme in use holding no pictures (M5.12b6), so the test
+		# pair's card comes early in the sheet, inside Settings' window.
+		'wallpaper pictures none')
+			file=/home/ci/.config/edel/$settings_name
+			grep -q '^\[appearance\]' "$file" || printf '\n[appearance]\n' >>"$file"
+			sed -i '/^\[appearance\]/a pictures = []' "$file"
+			chown ci:ci "$file"
+			;;
 		# The accent Settings' swatches wrote to ci's own file (M5.12b1c),
 		# taken out again.
 		'accent mine default') as_ci "sed -i '/^accent = /d' /home/ci/.config/edel/$settings_name" ;;

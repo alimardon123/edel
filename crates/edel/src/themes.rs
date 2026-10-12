@@ -30,6 +30,7 @@ pub const BUILT_IN: &[(&str, &str)] = &[
     ("edel", include_str!("../../../themes/edel.toml")),
     ("aurora", include_str!("../../../themes/aurora.toml")),
     ("earth", include_str!("../../../themes/earth.toml")),
+    ("ocean", include_str!("../../../themes/ocean.toml")),
 ];
 
 /// The theme in use while `appearance.theme` is absent: the release's own,
@@ -1009,7 +1010,7 @@ mod tests {
         let before = accent_of(&file(text));
         let saved = save_text(text, "mine").unwrap();
         let after = file(&saved);
-        assert_eq!(after.themes["mine"].pictures, ["aurora"]);
+        assert_eq!(after.themes["mine"].pictures, ["aurora", "aurora-arc"]);
         assert_eq!(
             after.themes["mine"].values.accent.as_deref(),
             Some("#d0363f")
@@ -1024,7 +1025,10 @@ mod tests {
     fn save_puts_the_persons_wallpaper_first_when_it_is_not_a_picture_of_the_theme() {
         let text = "format = 1\n[appearance]\ntheme = \"aurora\"\nwallpaper = \"/home/a/x.jpg\"\n";
         let saved = file(&save_text(text, "mine").unwrap());
-        assert_eq!(saved.themes["mine"].pictures, ["/home/a/x.jpg", "aurora"]);
+        assert_eq!(
+            saved.themes["mine"].pictures,
+            ["/home/a/x.jpg", "aurora", "aurora-arc"]
+        );
         assert_eq!(saved.appearance.wallpaper.as_deref(), Some("/home/a/x.jpg"));
     }
 
@@ -1088,7 +1092,10 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("\"nope\" is not a theme"), "{error}");
-        assert!(error.contains("choose edel, aurora or earth"), "{error}");
+        assert!(
+            error.contains("choose edel, aurora, earth or ocean"),
+            "{error}"
+        );
         assert!(settings::set("format = 1\n", "appearance.theme", "\"aurora\"").is_ok());
     }
 
@@ -1125,6 +1132,22 @@ mod tests {
     }
 
     #[test]
+    fn every_built_in_picture_is_a_light_and_a_dark_pair() {
+        for (name, _) in BUILT_IN {
+            let theme = built_in(name).expect("the file reads as a theme");
+            for picture in &theme.pictures {
+                for side in ["light", "dark"] {
+                    let file = format!("{FEATURE_PICTURES}/{picture}-{side}.jpg");
+                    assert!(
+                        std::path::Path::new(&file).is_file(),
+                        "{name} names {picture}, which has no {side} picture"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn the_built_in_list_is_the_files_under_themes() {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../themes");
         let mut found: Vec<String> = std::fs::read_dir(dir)
@@ -1143,11 +1166,11 @@ mod tests {
         let text = "format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine]\ntitle = \"Mine\"\n[themes.zed]\n";
         let rows = rows(&file(text));
         let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
-        assert_eq!(names, ["edel", "aurora", "earth", "mine", "zed"]);
-        assert!(rows[3].in_use);
-        assert_eq!(rows[3].title, "Mine");
-        assert_eq!(rows[4].title, "Zed");
-        assert!(rows[0].built_in && !rows[3].built_in);
+        assert_eq!(names, ["edel", "aurora", "earth", "ocean", "mine", "zed"]);
+        assert!(rows[4].in_use);
+        assert_eq!(rows[4].title, "Mine");
+        assert_eq!(rows[5].title, "Zed");
+        assert!(rows[0].built_in && !rows[4].built_in);
     }
 
     #[test]
@@ -1296,13 +1319,13 @@ mod tests {
     fn pictures_of_gives_the_theme_its_own_unless_the_file_sets_them() {
         let mine = file(OWN);
         assert_eq!(pictures_of(&mine, "mine"), ["earth", "aurora"]);
-        assert_eq!(pictures_of(&mine, "aurora"), ["aurora"]);
+        assert_eq!(pictures_of(&mine, "aurora"), ["aurora", "aurora-arc"]);
         assert!(pictures_of(&mine, "nope").is_empty());
         let on_top = file(
             "format = 1\n[appearance]\ntheme = \"mine\"\npictures = [\"hills\"]\n[themes.mine]\npictures = [\"earth\"]\n",
         );
         assert_eq!(pictures_of(&on_top, "mine"), ["hills"]);
-        assert_eq!(pictures_of(&on_top, "aurora"), ["aurora"]);
+        assert_eq!(pictures_of(&on_top, "aurora"), ["aurora", "aurora-arc"]);
     }
 
     #[test]
@@ -1329,7 +1352,9 @@ mod tests {
     fn changed_lists_pictures_set_on_top_of_a_theme_that_differ_from_its_own() {
         let on_top = file("format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\"]\n");
         assert_eq!(changed(&on_top), ["appearance.pictures"]);
-        let same = file("format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"aurora\"]\n");
+        let same = file(
+            "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"aurora\", \"aurora-arc\"]\n",
+        );
         assert!(changed(&same).is_empty());
     }
 
@@ -1349,7 +1374,8 @@ mod tests {
         let changed_text = set_pictures_text(aurora, "aurora", &["earth".to_string()]).unwrap();
         assert_eq!(pictures_of(&file(&changed_text), "aurora"), ["earth"]);
         assert!(changed_text.contains("pictures = [\"earth\"]"));
-        let back = set_pictures_text(&changed_text, "aurora", &["aurora".to_string()]).unwrap();
+        let own = ["aurora", "aurora-arc"].map(String::from);
+        let back = set_pictures_text(&changed_text, "aurora", &own).unwrap();
         assert!(!back.contains("pictures"));
         assert_eq!(back, aurora.to_string());
         // An empty list is a change: the theme shows no picture.
@@ -1397,9 +1423,9 @@ mod tests {
         let text = add_pictures_text(aurora, "aurora", &["/home/ali/sea.jpg".to_string()]).unwrap();
         assert_eq!(
             pictures_of(&file(&text), "aurora"),
-            ["aurora", "/home/ali/sea.jpg"]
+            ["aurora", "aurora-arc", "/home/ali/sea.jpg"]
         );
-        assert!(text.contains("pictures = [\"aurora\", \"/home/ali/sea.jpg\"]"));
+        assert!(text.contains("pictures = [\"aurora\", \"aurora-arc\", \"/home/ali/sea.jpg\"]"));
     }
 
     #[test]
@@ -1472,7 +1498,10 @@ mod tests {
         let on_top = "format = 1\n[appearance]\ntheme = \"aurora\"\npictures = [\"earth\"]\n";
         let reset = reset_text(on_top).unwrap().unwrap();
         assert!(!reset.contains("pictures"));
-        assert_eq!(pictures_of(&file(&reset), "aurora"), ["aurora"]);
+        assert_eq!(
+            pictures_of(&file(&reset), "aurora"),
+            ["aurora", "aurora-arc"]
+        );
     }
 
     #[test]
