@@ -426,6 +426,15 @@ struct BuildArgs {
     /// all install from one package index
     #[arg(long, value_name = "DIR")]
     apk_cache: Option<PathBuf>,
+    /// Where the default apps come from: a .flatpakrepo file's address or
+    /// a Flatpak repository's, such as file:///src/out/apps-repo for a
+    /// test; Flathub when not given
+    #[arg(long, value_name = "URL")]
+    apps_from: Option<String>,
+    /// A default app to install instead of the definition's list; for test
+    /// images. Can be given more than once.
+    #[arg(long = "app", value_name = "ID")]
+    apps: Vec<String>,
     /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
     /// update image, is always made); for test images
     #[arg(long)]
@@ -497,9 +506,20 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from,
+                    apps,
                     no_compress,
                     plan,
                 } = *args;
+                if let Some(id) = apps.iter().find(|id| !edel::apps::is_flatpak_id(id)) {
+                    anyhow::bail!(
+                        "{}",
+                        trf(
+                            "--app {id} is not a Flatpak app id, such as org.gnome.TextEditor",
+                            &[("id", &format!("{id:?}"))]
+                        )
+                    );
+                }
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
                     anyhow::bail!(
                         "{}",
@@ -538,6 +558,12 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from: apps_from.unwrap_or_else(|| edel::apps::FLATHUB_REMOTE.to_string()),
+                    apps: if apps.is_empty() {
+                        def.apps.clone()
+                    } else {
+                        apps
+                    },
                     compress: !no_compress,
                     out,
                     runner: Runner { dry_run: plan },

@@ -2979,6 +2979,32 @@ case_launcher() {
 	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
+case_default_apps() {
+	# The default apps (M6.2): the image build installed the test app
+	# org.edel.TestA from a repository made with no network into the data
+	# partition's Flatpak installation, which the launcher reads through
+	# its exports. Typed in the launcher, Return starts it in Flatpak's
+	# sandbox, and its window maps; Super+Q closes it.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	opened=$(count 'edel-compositor: mapped window test-a')
+	python3 ci/qmp.py type test
+	python3 ci/qmp.py key ret
+	wait_more 'edel-shell-ui: launched Test A' 0 || fail "the launcher did not list the default app Test A, from the data partition's installation"
+	launched=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Test A' | tail -n 1 | sed 's/.*launched //')
+	case $launched in
+	*flatpak*) ;;
+	*) fail "Test A was started as $launched, not through flatpak run" ;;
+	esac
+	wait_more 'edel-compositor: mapped window test-a' "$opened" 60 || fail "Test A did not map a window within 60 s of starting"
+	python3 ci/qmp.py screendump "$dir/default-apps.png"
+	closed=$(count 'edel-compositor: unmapped window test-a')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-a' "$closed" || fail "Super+Q did not close Test A"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed"
+}
+
 case_quick() {
 	# Quick settings (M5.9a). The status area is a pill in the panel,
 	# shell-ui says where (`panel places`); a click on it opens the card
@@ -6101,7 +6127,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal tray scheme scale respawn workspaces-dynamic app-workspaces default-apps flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

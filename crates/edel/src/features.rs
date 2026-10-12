@@ -208,6 +208,16 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
     if name != "apps" && !(feature.flatpak.is_empty() && feature.flatpak_dropped.is_empty()) {
         bail!("only the apps feature lists flatpak apps");
     }
+    if let Some(id) = feature
+        .flatpak
+        .iter()
+        .chain(&feature.flatpak_dropped)
+        .find(|id| !crate::apps::is_flatpak_id(id))
+    {
+        bail!(
+            "{id:?} is not a Flatpak app id; write it as Flathub does, such as \"org.gnome.TextEditor\""
+        );
+    }
     Ok(feature)
 }
 
@@ -340,5 +350,11 @@ mod tests {
         );
         assert!(check("ssh", &text).is_err());
         assert!(check("apps", &text).is_ok());
+        let bad = text.replace("org.gnome.Calculator", "calculator");
+        let err = check("apps", &bad).unwrap_err().to_string();
+        assert!(
+            err.contains("\"calculator\" is not a Flatpak app id"),
+            "{err}"
+        );
     }
 }

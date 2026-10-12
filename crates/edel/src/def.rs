@@ -89,6 +89,9 @@ pub struct ImageDef {
     /// What to keep of the packages' files under a folder (M5.30), one
     /// `[[keep]]` per folder.
     pub keep: Vec<edel::keep::Keep>,
+    /// The default apps, the `apps` feature's `flatpak` list (M6.2), which
+    /// the build installs onto the data partition.
+    pub apps: Vec<String>,
 }
 
 /// `[release]`: public key files (relative to the definition) that may sign
@@ -380,6 +383,10 @@ impl ImageDef {
             [] => bail!("no feature names the Alpine branch; list the base feature first"),
         };
 
+        let apps: Vec<String> = listed
+            .iter()
+            .flat_map(|l| l.feature.flatpak.iter().cloned())
+            .collect();
         let def = ImageDef {
             name: file.name,
             variant: file.variant,
@@ -398,6 +405,7 @@ impl ImageDef {
             health,
             programs,
             keep: keep.into_iter().map(|(k, _)| k).collect(),
+            apps,
         };
         def.validate()?;
         Ok(def)

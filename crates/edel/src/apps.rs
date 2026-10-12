@@ -27,6 +27,35 @@ pub struct App {
     keywords: Vec<String>,
 }
 
+/// The default apps' Flatpak installation (M6.2), by the id Flatpak's
+/// `--installation=` takes; it lies at `places::DEFAULT_APPS`.
+pub const INSTALLATION: &str = "edel";
+
+/// The remote the default apps come from, in their installation only
+/// (M6.2): Flathub's apps for now, under a name of its own, so the
+/// remote people see stays `flathub` in their own installation.
+pub const APPS_REMOTE: &str = "edel-apps";
+
+/// The file in `places::FLATPAK_INSTALLATIONS` that tells Flatpak where
+/// the default apps' installation lies (M6.2), at `path`: the data
+/// partition's place on a machine, the build's folder while an image is
+/// made.
+pub fn installation_conf(path: &str) -> String {
+    format!(
+        "# The default apps of Edel OS (roadmap M6.2), on the data partition,\n\
+         # written by edel image build.\n\
+         [Installation \"{INSTALLATION}\"]\n\
+         Path={path}\n\
+         DisplayName=Edel OS's default apps\n\
+         StorageType=harddisk\n"
+    )
+}
+
+/// The file's name in `places::FLATPAK_INSTALLATIONS`.
+pub fn installation_file() -> String {
+    format!("{INSTALLATION}.conf")
+}
+
 /// Flathub, the one remote Edel OS installs apps from (M6.1): `edel
 /// settings apply` adds it for each admin person who has none, as that
 /// person, with `flatpak --user remote-add --if-not-exists`.
@@ -80,6 +109,7 @@ pub fn data_dirs() -> Vec<PathBuf> {
     );
     out.extend(data_home.map(|d| d.join("flatpak/exports/share")));
     out.push("/var/lib/flatpak/exports/share".into());
+    out.push(Path::new(crate::places::DEFAULT_APPS).join("exports/share"));
     let mut seen = Vec::new();
     for dir in out {
         if !seen.contains(&dir) {
@@ -509,6 +539,21 @@ mod tests {
         assert_eq!(
             FLATHUB_REMOTE,
             "https://dl.flathub.org/repo/flathub.flatpakrepo"
+        );
+    }
+
+    #[test]
+    fn flatpak_finds_the_default_apps_where_the_build_put_them() {
+        let conf = installation_conf("/data/edel/apps");
+        assert!(
+            conf.contains("[Installation \"edel\"]\nPath=/data/edel/apps\n"),
+            "{conf}"
+        );
+        assert_eq!(installation_file(), "edel.conf");
+        assert!(
+            data_dirs()
+                .iter()
+                .any(|d| d == &Path::new(crate::places::DEFAULT_APPS).join("exports/share"))
         );
     }
 }
