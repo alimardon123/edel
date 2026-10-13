@@ -211,6 +211,9 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
   font-size: {small}px; font-weight: 600; }}
 .edel-pages > row.edel-heading:hover {{ background: none; }}
 .edel-pages > row.edel-apart {{ margin-top: 18px; }}
+/* The installer's row (M6.6a) stands out while it is not chosen: accent text on an accent wash, and 10 px more below it. Its icon is drawn in the text's colour, so it turns accent too. */
+.edel-pages > row.edel-install-row:not(:selected) {{ background-color: alpha({accent}, 0.12); color: {accent}; font-weight: 600; }}
+.edel-pages > row.edel-install-row {{ margin-bottom: 10px; }}
 .edel-back {{ margin: 10px 0 0 20px; padding: 2px 8px 2px 4px; border-radius: {rs}px; background: none; box-shadow: none; color: {accent}; }}
 .edel-back:hover {{ background-color: {fill}; }}
 .edel-page-title {{ font-size: {heading}px; font-weight: 700; letter-spacing: -0.5px; }}

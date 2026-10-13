@@ -195,6 +195,12 @@ pub const ICON_THEME_DIRS: &[&str] = &["/usr/share/icons", "/usr/local/share/ico
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
+/// The time zones' files, from tzdata (the shell feature ships it, M5.10c7d).
+pub const ZONEINFO_DIR: &str = "/usr/share/zoneinfo";
+/// The link to the time zone the machine keeps its clock in; no link is UTC.
+pub const LOCALTIME: &str = "/etc/localtime";
+/// The time zone's name, beside [`LOCALTIME`], for programs that read the name.
+pub const TIMEZONE_FILE: &str = "/etc/timezone";
 /// The system's default apps, written by `edel settings apply` from
 /// `[default_apps]` (M6.10): freedesktop's `mimeapps.list`, read by every
 /// desktop app and by `xdg-open`. Only a file that starts with

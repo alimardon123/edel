@@ -423,11 +423,14 @@ fn pages() -> Vec<Page> {
     pages
 }
 
+/// The installer page's icon, which also marks its sidebar row (M6.6a).
+const INSTALL_ICON: &str = "page-install";
+
 /// The installer page (M6.6a), under no group's heading, as About.
 fn install_page() -> Page {
     Page {
         title: tr("Install Edel OS"),
-        icon: "page-install",
+        icon: INSTALL_ICON,
         section: None,
         build: |_| install::page(),
         needs: None,
@@ -558,6 +561,10 @@ fn window(app: &adw::Application, start: usize, asked: bool) {
                 item.set_child(Some(&inner));
                 if apart {
                     item.add_css_class("edel-apart");
+                }
+                // The installer's row stands out from the other pages (M6.6a).
+                if page.icon == INSTALL_ICON {
+                    item.add_css_class("edel-install-row");
                 }
                 list.append(&item);
             }

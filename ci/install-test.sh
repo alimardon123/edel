@@ -52,7 +52,7 @@ trap 'kill "$server" 2>/dev/null || :' EXIT
 python3 ci/serial.py "$tty_sock" \
 	'yes or no [no]: =yes' 'Language [en_US.UTF-8]: =de_DE.UTF-8' 'Keyboard [de]: =' \
 	'Your username: =ali' 'Your password: =edel-ci-tty' 'The same password again: =edel-ci-tty' \
-	'Computer name [ali-vm]: =' 'Layout (=mac-like' 'such as sda: =vdc' 'Type vdc to erase it=vdc' \
+	'Time zone [Europe/Berlin]: =' 'Computer name [ali-vm]: =' 'Layout (=mac-like' 'such as sda: =vdc' 'Type vdc to erase it=vdc' \
 	>out/install-tty.log 2>&1 &
 typist=$!
 run_vm "$log" 'INSTALL-TEST: (installed|FAIL)' "${INSTALL_TEST_TIMEOUT:-600}" -no-reboot \
@@ -93,7 +93,11 @@ for line in '[users.ali]' 'admin = true' 'hostname = "ali-vm"' 'language = "de_D
 	esac
 done
 case $answers in
-*classic* | *timezone*) tty_fail "the installed settings file holds a default or a key not asked: $answers" ;;
+*classic*) tty_fail "the installed settings file holds a default or a key not asked: $answers" ;;
+esac
+case $answers in
+*'timezone = "Europe/Berlin"'*) ;;
+*) tty_fail "the installed settings file lacks the time zone answered: $answers" ;;
 esac
 [ "$(value 'tty passwords')" = '600 ali:$6$' ] ||
 	tty_fail "the password file is not ali's hash, root's only: $(value 'tty passwords')"

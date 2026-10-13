@@ -42,6 +42,7 @@ pub mod sound;
 pub mod speakers;
 pub mod theme_file;
 pub mod themes;
+pub mod timezones;
 pub mod tokens;
 pub mod tool;
 pub mod users;
