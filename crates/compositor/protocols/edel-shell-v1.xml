@@ -68,7 +68,7 @@
 
     <event name="tray">
       <description summary="the tray's key was pressed">
-        The tray's key was pressed (Super+B unless [shortcuts] says
+        The tray's key was pressed (Super+Shift+B unless [shortcuts] says
         otherwise): shell-ui opens the grid of the apps behind the tray's
         arrow with the keyboard on its first app, or closes it (M5.9h).
       </description>

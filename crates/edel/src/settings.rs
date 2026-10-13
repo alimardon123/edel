@@ -547,12 +547,12 @@ pub const KEYS: &[Key] = &[
     // and the built-in preset it starts from.
     now("presets.*", Kind::OwnPreset),
     now("shortcuts.*", Kind::Keys),
-    later("default_apps.browser", Kind::Text),
-    later("default_apps.files", Kind::Text),
-    later("default_apps.editor", Kind::Text),
-    later("default_apps.terminal", Kind::Text),
-    later("default_apps.mail", Kind::Text),
-    later("startup.apps", Kind::Texts),
+    now("default_apps.browser", Kind::Text),
+    now("default_apps.files", Kind::Text),
+    now("default_apps.editor", Kind::Text),
+    now("default_apps.terminal", Kind::Text),
+    now("default_apps.mail", Kind::Text),
+    now("startup.apps", Kind::Texts),
     later(
         "power.lid_close",
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
@@ -1237,6 +1237,28 @@ pub struct DefaultApps {
     pub terminal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mail: Option<String>,
+}
+
+/// The default apps a file sets (M6.10), as (role, desktop file id) pairs in
+/// [`apps::DEFAULT_APP_KEYS`]' order; an empty id is none. Shared by
+/// `edel settings apply` (the system's `mimeapps.list`) and the compositor
+/// (the shortcuts that open them).
+pub fn default_app_roles(defaults: &DefaultApps) -> Vec<(&'static str, &str)> {
+    let values = [
+        ("files", &defaults.files),
+        ("browser", &defaults.browser),
+        ("editor", &defaults.editor),
+        ("terminal", &defaults.terminal),
+        ("mail", &defaults.mail),
+    ];
+    crate::apps::DEFAULT_APP_KEYS
+        .iter()
+        .filter_map(|(role, _)| {
+            let (_, id) = values.iter().find(|(r, _)| r == role)?;
+            let id = id.as_deref().filter(|id| !id.is_empty())?;
+            Some((*role, id))
+        })
+        .collect()
 }
 
 /// The Startup page.
@@ -2723,6 +2745,22 @@ pub(crate) fn or_list(items: &[&str]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_app_roles_leave_out_the_unset_and_the_empty_ones() {
+        let file = read(
+            "format = 1\n[default_apps]\nbrowser = \"org.mozilla.firefox\"\nfiles = \"\"\nmail = \"org.example.Mail\"\n",
+        )
+        .unwrap()
+        .file;
+        assert_eq!(
+            default_app_roles(&file.default_apps),
+            [
+                ("browser", "org.mozilla.firefox"),
+                ("mail", "org.example.Mail")
+            ]
+        );
+    }
 
     /// The example in ADR-006, so the decision record and the parser agree.
     fn adr_006_example() -> &'static str {

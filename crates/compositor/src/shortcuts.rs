@@ -35,6 +35,9 @@ pub enum Act {
     /// The focused column's next width, in the scroll style (M5.16c).
     Widen,
     Terminal,
+    /// The files app and the web browser of `[default_apps]` (M6.10).
+    Files,
+    Browser,
     /// Go to workspace N, from 0 (M5.2a).
     Workspace(usize),
     /// Move the focused window to workspace N, from 0.
@@ -92,6 +95,8 @@ impl Act {
                 Direction::parse(&name["move_window_".len()..]).map(Act::Swap)
             }
             "open_terminal" => Some(Act::Terminal),
+            "open_files" => Some(Act::Files),
+            "open_browser" => Some(Act::Browser),
             _ => {
                 if let Some(rest) = name.strip_prefix("move_to_workspace_") {
                     number(rest).map(Act::MoveTo)
@@ -318,6 +323,12 @@ mod tests {
             Some(Act::NextLayout)
         );
         assert_eq!(find(&bindings, &super_, sym("t")), Some(Act::Terminal));
+        // The files app and the browser (M6.10), and the tray's key moved to
+        // Super+Shift+B, which Super+B no longer is.
+        assert_eq!(find(&bindings, &super_, sym("e")), Some(Act::Files));
+        assert_eq!(find(&bindings, &super_, sym("b")), Some(Act::Browser));
+        let super_shift = held(true, false, false, true);
+        assert_eq!(find(&bindings, &super_shift, sym("b")), Some(Act::Tray));
         // Ctrl+Alt+T is no default any more; it is free for anyone to bind.
         let ctrl_alt = held(false, true, true, false);
         assert_eq!(find(&bindings, &ctrl_alt, sym("t")), None);

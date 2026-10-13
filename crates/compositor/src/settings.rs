@@ -52,6 +52,14 @@ pub struct Settings {
     pub animation_curve: Curve,
     /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
     pub color_scheme: Scheme,
+    /// `[default_apps]` (M6.10): the desktop file id each role opens, by
+    /// role (`files`, `browser`), the person's over the machine's; a role
+    /// no file sets is absent.
+    pub default_apps: BTreeMap<String, String>,
+    /// `startup.apps` (M6.10): the desktop file ids started once the desktop
+    /// is on screen, in the order listed. The person's list replaces the
+    /// machine's whole; empty is none.
+    pub startup: Vec<String>,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
     /// (M5.13a).
@@ -279,6 +287,14 @@ impl Settings {
                 file.appearance.colours.as_ref(),
             );
             settings.shortcuts.extend(file.shortcuts.clone());
+            for (role, id) in edel::settings::default_app_roles(&file.default_apps) {
+                settings
+                    .default_apps
+                    .insert(role.to_string(), id.to_string());
+            }
+            if let Some(apps) = &file.startup.apps {
+                settings.startup.clone_from(apps);
+            }
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
             }
@@ -674,6 +690,37 @@ mod tests {
             Scheme::Light,
             "the person's wins, and auto is light in this release"
         );
+    }
+
+    #[test]
+    fn the_default_apps_are_the_persons_over_the_machines() {
+        let machine = file(
+            "format = 1\n[default_apps]\nbrowser = \"org.mozilla.firefox\"\nfiles = \"org.gnome.Nautilus\"\n",
+        );
+        let person = file("format = 1\n[default_apps]\nbrowser = \"org.gnome.Epiphany\"\n");
+        let apps = Settings::from_files(Some(&machine), Some(&person)).default_apps;
+        assert_eq!(apps["browser"], "org.gnome.Epiphany", "the person's wins");
+        assert_eq!(apps["files"], "org.gnome.Nautilus", "the machine's stays");
+        assert!(!apps.contains_key("mail"), "an unset role stays unset");
+    }
+
+    #[test]
+    fn the_startup_apps_are_the_persons_list_over_the_machines() {
+        let machine = file("format = 1\n[startup]\napps = [\"org.mozilla.firefox\", \"foot\"]\n");
+        let person = file("format = 1\n[startup]\napps = [\"org.gnome.Epiphany\"]\n");
+        let apps = Settings::from_files(Some(&machine), Some(&person)).startup;
+        assert_eq!(
+            apps,
+            ["org.gnome.Epiphany"],
+            "the person's list replaces the machine's whole"
+        );
+        let apps = Settings::from_files(Some(&machine), None).startup;
+        assert_eq!(
+            apps,
+            ["org.mozilla.firefox", "foot"],
+            "the machine's list stands alone"
+        );
+        assert!(Settings::from_files(None, None).startup.is_empty());
     }
 
     #[test]
