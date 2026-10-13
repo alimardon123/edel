@@ -3290,7 +3290,20 @@ case_default_apps() {
 	[ "$varcache" != var-cache ] ||
 		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
 	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
-	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci; after the first app ran: $after_app"
+	# What it saves (M6.2a): the same fonts listed with the baked cache
+	# and with none, as each app's first start did before. Reported, and
+	# the cache must win: a cache that saves nothing is not worth its size.
+	asked=$(count 'DESKTOP-TEST: font_cost ')
+	guest 'font cost'
+	wait_more 'DESKTOP-TEST: font_cost ' "$asked" 60 || fail "the service did not time fc-list"
+	cost=$(value font_cost)
+	with_cache=$(echo "$cost" | cut -d' ' -f1)
+	without_cache=$(echo "$cost" | cut -d' ' -f2)
+	built=$(echo "$cost" | cut -d' ' -f3)
+	[ "${built:-0}" -gt 0 ] || fail "fc-list with an empty cache folder built no cache, so the comparison measured nothing: $cost"
+	[ "$with_cache" -lt "$without_cache" ] ||
+		fail "listing the fonts took $with_cache ms with the baked cache and $without_cache ms without, so the cache saves nothing"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci, fonts listed in ${with_cache} ms with them against ${without_cache} ms without (each app's first start before); after the first app ran: $after_app"
 }
 
 case_quick() {
@@ -6969,8 +6982,8 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
 	# The default apps' installation (M6.2a): Flatpak's triggers build the
-	# icon cache when the image is made, if gtk-update-icon-cache is there;
-	# without it each start of the launcher reads every icon. Partition 4
+	# icon cache when the image is made, if gtk-update-icon-cache is there,
+	# which GTK apps showing app icons read (shell-ui reads the files). Partition 4
 	# is copied and checked as stick_logs does, so the running stick is
 	# left alone.
 	part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
@@ -6978,7 +6991,7 @@ if [ "$*" = live ]; then
 	e2fsck -fy "$dir/apps-data.img" >/dev/null 2>&1 || true
 	icon_cache=$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/apps-data.img" 2>&1)
 	case $icon_cache in
-	*"File not found"* | '') fail "the default apps' installation has no icon cache, so each start of the launcher reads every icon (Flatpak's trigger did not run at build)" ;;
+	*"File not found"* | '') fail "the default apps' installation has no icon cache (Flatpak's trigger did not run at build)" ;;
 	esac
 	rm -f "$dir/apps-data.img"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
