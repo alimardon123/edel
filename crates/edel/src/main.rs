@@ -679,8 +679,15 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
     let shown = file.display().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
-    let problems = settings::check(&text)
+    let mut problems = settings::check(&text)
         .with_context(|| trf("could not check {path}", &[("path", &shown)]))?;
+    // On a machine, `[services]` names only features it can switch (M6.10).
+    let installed = edel::services::installed();
+    if !installed.is_empty() {
+        if let Ok(read) = settings::read(&text) {
+            problems.extend(edel::services::problems(&read.file.services, &installed));
+        }
+    }
     if problems.is_empty() {
         println!("{}", trf("{path}: ok", &[("path", &shown)]));
         return Ok(());

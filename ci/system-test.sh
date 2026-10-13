@@ -159,3 +159,22 @@ ssh_ci 'doas -n edel update --unsigned /nonexistent.img' >out/doas-unsigned.log 
 [ "$code" != 0 ] && grep -q 'developer mode' out/doas-unsigned.log ||
 	fail "update --unsigned without developer mode was not refused by name: $(cat out/doas-unsigned.log)"
 echo "PASS: update --unsigned was refused because developer mode is off"
+
+# M6.10: [services]. A feature that cannot be switched is refused by name,
+# with the ones that can; then ssh switched off stops sshd and takes it
+# out of the default runlevel, so the next connection is refused. Last,
+# as the test cannot reach the VM after it.
+code=0
+ssh_root edel settings set services.udev=false >out/services-bad.log 2>&1 || code=$?
+[ "$code" != 0 ] && grep -q 'udev is not a feature that can be switched' out/services-bad.log &&
+	grep -q 'ssh' out/services-bad.log ||
+	fail "services.udev=false was not refused with the features that can be switched: $(cat out/services-bad.log)"
+ssh_root 'edel settings set services.ssh=false && edel settings apply' >out/services-off.log 2>&1 ||
+	fail "switching ssh off failed: $(cat out/services-off.log)"
+grep -q 'services: stop sshd and take it out of the default runlevel' out/services-off.log ||
+	fail "apply did not say it stopped sshd: $(cat out/services-off.log)"
+sleep 2
+if ssh_ci true >out/services-ssh.log 2>&1; then
+	fail "ssh still answered after services.ssh=false"
+fi
+echo "PASS: services.udev=false was refused naming the features that can be switched, and services.ssh=false stopped sshd, which then refused the next connection"

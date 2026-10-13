@@ -32,6 +32,7 @@ pub mod places;
 pub mod power;
 pub mod presets;
 pub mod scripts;
+pub mod services;
 pub mod session_log;
 pub mod settings;
 pub mod shortcuts;

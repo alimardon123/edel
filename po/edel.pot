@@ -281,6 +281,9 @@ msgstr ""
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
 msgstr ""
 
+msgid "{service} did not start ({status}); rc-service {service} start says why"
+msgstr ""
+
 msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
 msgstr ""
 
@@ -741,6 +744,9 @@ msgid "{disk} is not a removable disk, so the report stays off its EFI system pa
 msgstr ""
 
 msgid "wrote {path} on the EFI system partition"
+msgstr ""
+
+msgid "services.{name}: {name} is not a feature that can be switched on or off; the ones this machine has are {listed}"
 msgstr ""
 
 msgid "Desktop"
