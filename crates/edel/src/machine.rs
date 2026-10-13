@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
-use edel::apps::FLATHUB_REMOTE;
+use edel::apps::{self, FLATHUB_REMOTE};
 use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
@@ -270,6 +270,9 @@ enum Change {
         name: String,
         ids: Vec<String>,
     },
+    /// Write `/etc/xdg/mimeapps.list` with these default apps; an empty
+    /// text removes the file (M6.10)
+    MimeDefaults(String),
 }
 
 impl fmt::Display for Change {
@@ -309,6 +312,12 @@ impl fmt::Display for Change {
             Change::Flatpak { name, ids } => {
                 write!(f, "apps.installed for {name}: install {}", ids.join(", "))
             }
+            Change::MimeDefaults(text) if text.is_empty() => {
+                write!(f, "remove {} (no default apps set)", places::MIME_DEFAULTS)
+            }
+            Change::MimeDefaults(_) => {
+                write!(f, "write {} (the default apps)", places::MIME_DEFAULTS)
+            }
         }
     }
 }
@@ -332,6 +341,8 @@ struct Machine {
     developer: bool,
     /// The Flatpak apps each admin person has (M6.1), by login name
     flatpak: BTreeMap<String, BTreeSet<String>>,
+    /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
+    mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
     first_passwords: Option<String>,
 }
@@ -378,6 +389,7 @@ impl Machine {
             default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
+            mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
         })
     }
@@ -525,6 +537,15 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
                 });
             }
         }
+    }
+    // The default apps (M6.10). A file this release did not write is the
+    // administrator's: never overwritten or removed. Ours is rewritten
+    // when it differs, and removed when the file sets no MIME type.
+    let mime_now = machine.mime_defaults.as_deref();
+    let wanted = apps::mime_defaults(&settings::default_app_roles(&file.default_apps));
+    let theirs = mime_now.is_some_and(|text| !text.starts_with(apps::MIME_COMMENT));
+    if !theirs && mime_now.unwrap_or("") != wanted {
+        changes.push(Change::MimeDefaults(wanted));
     }
     // The passwords edel install asked for, given once the people exist
     // (they are added above), then the file goes (M6.6b).
@@ -695,6 +716,16 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
         }
         Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
         Change::Flatpak { name, ids } => install_apps(&find_account(name)?, ids)?,
+        Change::MimeDefaults(text) => {
+            let path = Path::new(places::MIME_DEFAULTS);
+            if text.is_empty() {
+                fs::remove_file(path).with_context(|| could_not_write(path))?;
+            } else {
+                write_whole(path, text.as_bytes())?;
+                fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+                    .with_context(|| could_not_write(path))?;
+            }
+        }
     }
     Ok(())
 }
@@ -1993,8 +2024,61 @@ mod tests {
             default_shell: DEFAULT_SHELL.into(),
             developer: false,
             flatpak: BTreeMap::new(),
+            mime_defaults: None,
             first_passwords: None,
         }
+    }
+
+    /// The MIME changes `plan` makes for a file's text and the machine's
+    /// `mimeapps.list` (M6.10).
+    fn mime_changes(text: &str, mime: Option<&str>) -> Vec<Change> {
+        let file = settings::read(text).unwrap().file;
+        let mut machine = machine();
+        machine.mime_defaults = mime.map(str::to_string);
+        plan(&file, &machine)
+            .0
+            .into_iter()
+            .filter(|c| matches!(c, Change::MimeDefaults(_)))
+            .collect()
+    }
+
+    const EDITOR_SET: &str = "format = 1\n[default_apps]\neditor = \"org.gnome.TextEditor\"\n";
+    const OUR_MIME: &str = "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.\n[Default Applications]\ntext/plain=org.gnome.TextEditor.desktop;\n";
+
+    #[test]
+    fn default_apps_are_written_when_the_file_has_none() {
+        let changes = mime_changes(EDITOR_SET, None);
+        assert_eq!(changes, [Change::MimeDefaults(OUR_MIME.to_string())]);
+        assert_eq!(
+            changes[0].to_string(),
+            "write /etc/xdg/mimeapps.list (the default apps)"
+        );
+    }
+
+    #[test]
+    fn default_apps_already_written_need_no_change() {
+        assert!(mime_changes(EDITOR_SET, Some(OUR_MIME)).is_empty());
+    }
+
+    #[test]
+    fn our_mime_file_is_removed_when_no_default_app_is_set() {
+        let changes = mime_changes("format = 1\n", Some(OUR_MIME));
+        assert_eq!(changes, [Change::MimeDefaults(String::new())]);
+        assert_eq!(
+            changes[0].to_string(),
+            "remove /etc/xdg/mimeapps.list (no default apps set)"
+        );
+        assert!(
+            mime_changes("format = 1\n", None).is_empty(),
+            "no file and no default apps: nothing to do"
+        );
+    }
+
+    #[test]
+    fn someone_elses_mime_file_is_never_written_or_removed() {
+        let theirs = "[Default Applications]\ntext/plain=vim.desktop;\n";
+        assert!(mime_changes(EDITOR_SET, Some(theirs)).is_empty());
+        assert!(mime_changes("format = 1\n", Some(theirs)).is_empty());
     }
 
     #[test]

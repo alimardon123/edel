@@ -1100,6 +1100,12 @@ msgstr ""
 msgid "Open terminal"
 msgstr ""
 
+msgid "Open files"
+msgstr ""
+
+msgid "Open browser"
+msgstr ""
+
 msgid "Take screenshot"
 msgstr ""
 

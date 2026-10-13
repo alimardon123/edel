@@ -229,6 +229,11 @@
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
+#   default-apps-keys
+#               [default_apps] (M6.10): two test clients' desktop files
+#               and the keys that name them; applied, /etc/xdg/mimeapps.list
+#               holds their MIME types, Super+E opens the files app and
+#               Super+B the browser, and reset removes the file again
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -578,6 +583,45 @@ case_xwayland() {
 	wait_for 'edel-compositor: unmapped window xclock' ||
 		fail "clicking xclock's close button at $((x + w - 13)),$((y - 14)) did not close it"
 	echo "PASS: no X11 process ran until xclock connected, then XWayland and xwayland-satellite ($(value x11_rss_mib) MiB) showed it at $x,$y with a title bar in the focused colour, and its close button closed it"
+}
+
+case_default_apps_keys() {
+	# [default_apps] (M6.10): the two keys become the system's MIME defaults,
+	# and Super+E and Super+B open the apps they name, which are test clients.
+	guest 'default apps on'
+	wait_for 'DESKTOP-TEST: default_apps_mime ' ||
+		fail "edel settings apply did not write /etc/xdg/mimeapps.list: $(value default_apps_mime)"
+	mime=$(value default_apps_mime)
+	for want in 'text/plain=edel-test-files.desktop;' 'x-scheme-handler/https=edel-test-browser.desktop;'; do
+		case "$mime" in *"$want"*) ;; *) fail "mimeapps.list lacks $want: $mime" ;; esac
+	done
+	# default_apps.files is unset, so the files app is the first app of the
+	# FileManager category, the test client; the browser is named by its key.
+	opened=$(count 'edel-compositor: mapped window test-files')
+	python3 ci/qmp.py key meta_l-e
+	wait_more 'edel-compositor: mapped window test-files' "$opened" ||
+		fail "Super+E did not open the files app: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window test-files')
+	sleep 1
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-files' "$closed" ||
+		fail "Super+Q did not close the files app"
+	opened=$(count 'edel-compositor: mapped window test-browser')
+	python3 ci/qmp.py key meta_l-b
+	wait_more 'edel-compositor: mapped window test-browser' "$opened" ||
+		fail "Super+B did not open the browser: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window test-browser')
+	sleep 1
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-browser' "$closed" ||
+		fail "Super+Q did not close the browser"
+	# Removed, the keys leave no file behind: the system's choice is none.
+	guest 'default apps off'
+	wait_for 'DESKTOP-TEST: default_apps_mime_after ' ||
+		fail "edel settings apply did not say what /etc/xdg/mimeapps.list holds after the reset"
+	after=$(value default_apps_mime_after)
+	case "$after" in *'No such file'*) ;; *) fail "mimeapps.list is still there after the reset: $after" ;; esac
+	echo "PASS: [default_apps] wrote text/plain and x-scheme-handler/https into /etc/xdg/mimeapps.list, Super+E opened the files app and Super+B the browser they name, both closed with Super+Q, and the reset removed the file"
 }
 
 case_respawn() {
@@ -6154,7 +6198,7 @@ case_tray() {
 	# middle of its cell in the panel, and a screen reader reads it as a
 	# button named by the item's title, a click asks the item to Activate and
 	# a right click for its ContextMenu; when the item's app ends, the icon
-	# goes. Pointing at the arrow shows its tooltip, Super+B opens the grid
+	# goes. Pointing at the arrow shows its tooltip, Super+Shift+B opens the grid
 	# with the keyboard and Escape closes it (M5.9h). Settings' Tray card
 	# lists the app in the panel, then, after a reset of the key, behind the
 	# arrow, and the panel follows at once. The key is taken out again at the
@@ -6175,7 +6219,7 @@ case_tray() {
 	EOF
 	[ "$w" = 34 ] || fail "the tray is $w px wide in the last places line, not 34"
 	# Pointing at the arrow says how many wait behind it (M5.9h): after a
-	# rest of 600 ms a tooltip shows the same words. Super+B opens the grid
+	# rest of 600 ms a tooltip shows the same words. Super+Shift+B opens the grid
 	# with the keyboard, which takes the tooltip away, and Escape closes it.
 	tip=$(count 'edel-shell-ui: tooltip shown, Hidden icons \(1\)')
 	python3 ci/qmp.py move $((x + 17)) 780
@@ -6183,9 +6227,9 @@ case_tray() {
 		fail "pointing at the arrow did not show the tooltip Hidden icons (1)"
 	opened=$(count 'edel-shell-ui: tray grid opened from the keyboard')
 	hidden=$(count 'edel-shell-ui: tooltip hidden')
-	python3 ci/qmp.py key meta_l-b
+	python3 ci/qmp.py key meta_l-shift-b
 	wait_more 'edel-shell-ui: tray grid opened from the keyboard' "$opened" ||
-		fail "Super+B did not open the tray's grid from the keyboard"
+		fail "Super+Shift+B did not open the tray's grid from the keyboard"
 	wait_more 'edel-shell-ui: tooltip hidden' "$hidden" ||
 		fail "the tooltip stayed up when the tray's grid opened"
 	closed=$(count 'edel-shell-ui: tray grid hidden')
@@ -6305,7 +6349,7 @@ case_tray() {
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
 	value settings_file | grep -q 'tray = ' &&
 		fail "ci's settings file still holds panels.tray after tray reset: $(value settings_file)"
-	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote panels.tray = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
+	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+Shift+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote panels.tray = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {

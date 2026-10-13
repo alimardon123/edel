@@ -52,6 +52,10 @@ pub struct Settings {
     pub animation_curve: Curve,
     /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
     pub color_scheme: Scheme,
+    /// `[default_apps]` (M6.10): the desktop file id each role opens, by
+    /// role (`files`, `browser`), the person's over the machine's; a role
+    /// no file sets is absent.
+    pub default_apps: BTreeMap<String, String>,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
     /// (M5.13a).
@@ -275,6 +279,11 @@ impl Settings {
                 file.appearance.colours.as_ref(),
             );
             settings.shortcuts.extend(file.shortcuts.clone());
+            for (role, id) in edel::settings::default_app_roles(&file.default_apps) {
+                settings
+                    .default_apps
+                    .insert(role.to_string(), id.to_string());
+            }
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
             }
@@ -653,6 +662,18 @@ mod tests {
             Scheme::Light,
             "the person's wins, and auto is light in this release"
         );
+    }
+
+    #[test]
+    fn the_default_apps_are_the_persons_over_the_machines() {
+        let machine = file(
+            "format = 1\n[default_apps]\nbrowser = \"org.mozilla.firefox\"\nfiles = \"org.gnome.Nautilus\"\n",
+        );
+        let person = file("format = 1\n[default_apps]\nbrowser = \"org.gnome.Epiphany\"\n");
+        let apps = Settings::from_files(Some(&machine), Some(&person)).default_apps;
+        assert_eq!(apps["browser"], "org.gnome.Epiphany", "the person's wins");
+        assert_eq!(apps["files"], "org.gnome.Nautilus", "the machine's stays");
+        assert!(!apps.contains_key("mail"), "an unset role stays unset");
     }
 
     #[test]

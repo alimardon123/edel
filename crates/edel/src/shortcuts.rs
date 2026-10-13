@@ -201,6 +201,20 @@ pub const ACTIONS: &[Action] = &[
         n_("Open a terminal"),
     ),
     action(
+        "open_files",
+        "Super+E",
+        false,
+        Group::Apps,
+        n_("Opens the files app (default_apps.files)"),
+    ),
+    action(
+        "open_browser",
+        "Super+B",
+        false,
+        Group::Apps,
+        n_("Opens the web browser (default_apps.browser)"),
+    ),
+    action(
         "take_screenshot",
         "Print",
         false,
@@ -386,7 +400,7 @@ pub const ACTIONS: &[Action] = &[
     ),
     action(
         "show_tray",
-        "Super+B",
+        "Super+Shift+B",
         false,
         Group::System,
         n_("Open or close the tray's apps behind its arrow, with the keyboard on them"),

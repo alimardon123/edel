@@ -346,6 +346,14 @@ pub const ROWS: &[Row] = &[
         title: n_("Open terminal"),
     },
     Row {
+        key: "shortcuts.open_files",
+        title: n_("Open files"),
+    },
+    Row {
+        key: "shortcuts.open_browser",
+        title: n_("Open browser"),
+    },
+    Row {
         key: "shortcuts.take_screenshot",
         title: n_("Take screenshot"),
     },

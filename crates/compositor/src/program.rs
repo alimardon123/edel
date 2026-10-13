@@ -102,6 +102,25 @@ pub fn open(state: &Edel, name: &str) {
     run(state, &[name.to_string()], name);
 }
 
+/// Opens the default app of `role` (M6.10), as the shortcut for it asks: the
+/// app `[default_apps]` names when it is installed, else the first app of
+/// its category. With none, `fallback` starts (foot for the terminal), or a
+/// line says which key to set.
+pub fn open_default(state: &Edel, role: &str, fallback: Option<&str>) {
+    let apps = edel::apps::read_all(&edel::apps::dirs());
+    let chosen = state.settings.default_apps.get(role).map(String::as_str);
+    match edel::apps::default_app(&apps, role, chosen) {
+        Some(app) => {
+            eprintln!("edel-compositor: opened default {role} app {}", app.id);
+            run(state, &edel::apps::command(app), &app.id);
+        }
+        None => match fallback {
+            Some(name) => open(state, name),
+            None => eprintln!("edel-compositor: {}", messages::no_default_app(role)),
+        },
+    }
+}
+
 /// Starts `argv`, a program and its arguments, called `name` in what is
 /// logged, as [`open`] does: the overview's search starts apps this way
 /// (M5.2j-b3), in the person's home folder.

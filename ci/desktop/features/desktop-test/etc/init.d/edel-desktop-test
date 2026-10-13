@@ -603,6 +603,27 @@ commands() {
 				while IFS= read -r line; do say "ext $line"; done
 			;;
 		'shortcuts default') edel settings reset shortcuts.close_window ;;
+		# Default apps (M6.10): two test clients' desktop files in ci's own
+		# applications folder, named by the two keys, which are applied; off
+		# removes the keys and so the MIME file the apply wrote.
+		'default apps on')
+			apps=/home/ci/.local/share/applications
+			# Each folder ci's own: install -d gives only the last one its
+			# owner, and a root-owned ~/.local/share stops flatpak --user.
+			for d in /home/ci/.local /home/ci/.local/share "$apps"; do
+				install -d -o ci -g ci "$d"
+			done
+			printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Test Files' 'Exec=edel-testclient --title test-files --colour 336699 --size 300x200' 'Categories=FileManager;' >"$apps/edel-test-files.desktop"
+			printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Test Browser' 'Exec=edel-testclient --title test-browser --colour 993366 --size 300x200' 'Categories=Network;' >"$apps/edel-test-browser.desktop"
+			chown ci:ci "$apps/edel-test-files.desktop" "$apps/edel-test-browser.desktop"
+			edel settings set default_apps.browser=edel-test-browser default_apps.editor=edel-test-files && edel settings apply
+			say "default_apps_mime $(tr '\n' ';' </etc/xdg/mimeapps.list)"
+			;;
+		'default apps off')
+			rm -f /home/ci/.local/share/applications/edel-test-files.desktop /home/ci/.local/share/applications/edel-test-browser.desktop
+			edel settings reset default_apps.browser default_apps.editor && edel settings apply
+			say "default_apps_mime_after $(cat /etc/xdg/mimeapps.list 2>&1 | tr '\n' ';')"
+			;;
 		# Settings (M5.6a), as ci, and the file it writes. On its Layout page
 		# (M5.32b: Settings opens on Appearance, the first page, without one).
 		'settings window')

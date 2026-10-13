@@ -178,6 +178,11 @@ pub const ICON_THEME_DIRS: &[&str] = &["/usr/share/icons", "/usr/local/share/ico
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
+/// The system's default apps, written by `edel settings apply` from
+/// `[default_apps]` (M6.10): freedesktop's `mimeapps.list`, read by every
+/// desktop app and by `xdg-open`. Only a file that starts with
+/// `apps::MIME_COMMENT` is ours to change.
+pub const MIME_DEFAULTS: &str = "/etc/xdg/mimeapps.list";
 
 /// The places shell scripts use, as `NAME=VALUE` lines: `ci/names.sh` for
 /// CI and `/usr/share/edel/places.sh` in every image, both written from
