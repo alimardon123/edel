@@ -37,8 +37,10 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  or suspended (M6.7)
     qmp.py wakeup                wake a suspended VM, as a key or lid
                                  would (QMP system_wakeup; M6.7)
+    qmp.py plug ID FILE          plug the raw image FILE in as a removable
+                                 USB stick named ID on the xhci bus (M6.6b)
 
-The first ten and the last two talk to the QMP socket named by $QMP.
+The first ten and the last three talk to the QMP socket named by $QMP.
 Key names are QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -316,6 +318,14 @@ def main(argv):
         print(qmp.run("query-status")["status"])
     elif command == "wakeup":
         qmp.run("system_wakeup")
+    elif command == "plug":
+        # A USB stick plugged in while the VM runs (M6.6b): the raw image
+        # FILE as a removable usb-storage device named ID on the xhci bus.
+        name, path = args[0], args[1]
+        qmp.run("blockdev-add", driver="raw", **{"node-name": name},
+                file={"driver": "file", "filename": path})
+        qmp.run("device_add", driver="usb-storage", bus="xhci.0", drive=name, id=name,
+                removable=True)
     else:
         raise SystemExit(f"qmp: unknown command {command}\n{__doc__}")
 

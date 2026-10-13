@@ -182,6 +182,12 @@ msgstr ""
 msgid "no disk found to install on"
 msgstr ""
 
+msgid "found {file} on {device}"
+msgstr ""
+
+msgid "no settings file was found on another disk; put {file} at the top of a USB stick, plug it in and look again"
+msgstr ""
+
 msgid "the questions were not answered; nothing was changed"
 msgstr ""
 
@@ -1842,6 +1848,9 @@ msgid "The settings file the new machine starts with, a path or an https:// addr
 msgstr ""
 
 msgid "List the disks Edel OS could install on, and change nothing"
+msgstr ""
+
+msgid "Look on every other disk for a settings file to install with (install.toml, else the settings file, at its top or in EFI/edel) and print it, changing nothing"
 msgstr ""
 
 msgid "Only show the plan: what would be erased and written; change nothing"

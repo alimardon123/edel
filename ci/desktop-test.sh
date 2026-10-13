@@ -6871,7 +6871,6 @@ if [ "$*" = live ]; then
 	done
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
-	stop_vm
 	target_data || fail "the installed disk has no data partition"
 	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
 	echo "$installed" | sed 's/^/  installed settings: /'
@@ -6879,6 +6878,55 @@ if [ "$*" = live ]; then
 	echo "$installed" | grep -q '^admin = true' || fail "ali is not an administrator in the installed settings file"
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
+	# Use a settings file (M6.6b): a FAT stick holding install.toml
+	# (ci/desktop/install-file.toml, which names the computer and bea) is
+	# plugged in, and Settings, opened again, finds it and gives the keys
+	# to Use it; Return uses it, so only bea's password is asked before
+	# the plan, and the same disk is installed again from the file.
+	python3 ci/qmp.py key meta_l-q
+	sleep 3
+	cp out/install-file.img "$dir/install-file.img"
+	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
+	sleep 5
+	python3 ci/qmp.py key meta_l
+	sleep 3
+	python3 ci/qmp.py type settings
+	sleep 1
+	python3 ci/qmp.py key ret
+	sleep 25
+	python3 ci/qmp.py screendump "$dir/install-file.png"
+	python3 ci/qmp.py key ret
+	sleep 2
+	python3 ci/qmp.py type edel-file-test
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type edel-file-test
+	python3 ci/qmp.py key ret
+	sleep 20
+	python3 ci/qmp.py screendump "$dir/install-file-plan.png"
+	python3 ci/qmp.py key ret
+	sleep 1
+	python3 ci/qmp.py key ret
+	i=0
+	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^bea:\$6\$'; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
+			stick_logs
+			fail "Settings' installer page did not install from the settings file on the stick within 600 s (install-file.png, install-file-plan.png, install-file-failed.png)"
+		fi
+		sleep 10
+	done
+	sleep 5
+	python3 ci/qmp.py screendump "$dir/install-file-done.png"
+	stop_vm
+	target_data || fail "the disk installed from the file has no data partition"
+	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
+	echo "$installed" | sed 's/^/  installed from the file: /'
+	echo "$installed" | grep -q '^# desktop-test.sh live (M6.6b)' || fail "the installed settings file lost the file's own comment"
+	echo "$installed" | grep -q 'hostname = "from-file"' || fail "the installed settings file has not the file's computer name"
+	echo "$installed" | grep -q '^\[users.bea\]' || fail "the installed settings file has no [users.bea]"
+	! echo "$installed" | grep -q 'users.ali' || fail "the installed settings file names ali, though the file named its person"
+	! echo "$installed" | grep -q 'edel-file-test' || fail "the password is in the installed settings file"
 	slots=$(sfdisk -d "$target" | grep -c 'start=')
 	[ "$slots" = 4 ] || fail "the installed disk has $slots partitions, not 4"
 	# The installed disk alone, as a computer's own disk: its first boot
@@ -6900,8 +6948,10 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "the installed disk did not leave the login to the greeter: live was made, or nobody had an account"
 	! tr -d '\r' <"$installed_log" | grep -qa 'Starting sshd' || fail "the installed disk started sshd"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written, and the installed disk started on its own with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	tr -d '\r' <"$installed_log" | grep -qa 'network.hostname: set to from-file' ||
+		fail "the disk installed from the settings file did not take its computer name, from-file"
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding install.toml plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 

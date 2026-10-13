@@ -65,6 +65,11 @@ pub fn need(command: &Commands) -> Need {
         Commands::Update { check: true, .. } => Need::Anyone,
         Commands::Update { .. } | Commands::Rollback => Need::Password,
         Commands::Install { plan: true, .. } | Commands::Install { list: true, .. } => Need::Anyone,
+        // It mounts other disks, read-only, to read one file.
+        Commands::Install {
+            find_settings: true,
+            ..
+        } => Need::Admin,
         Commands::Install { .. } => Need::Password,
         Commands::Status => Need::Anyone,
         Commands::Restart | Commands::Shutdown | Commands::Suspend => Need::Admin,
@@ -469,6 +474,7 @@ mod tests {
                 ],
                 Need::Password,
             ),
+            (&["edel", "install", "--find-settings"], Need::Admin),
             (&["edel", "status"], Need::Anyone),
             (&["edel", "restart"], Need::Admin),
             (&["edel", "shutdown"], Need::Admin),

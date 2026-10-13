@@ -76,13 +76,32 @@ pub struct Form {
     pub disk: Option<String>,
     pub hostname: String,
     pub preset: String,
+    /// The question keys a settings file answers already, which are not
+    /// asked (M6.6b)
+    pub skip: Vec<&'static str>,
+    /// Whether a password is asked: not when the file names several people
+    pub password_needed: bool,
+}
+
+/// The question key each field asks, as `edel::install::QUESTIONS` names it.
+fn key_of(field: Field) -> &'static str {
+    match field {
+        Field::Language => "region.language",
+        Field::Keyboard => "region.keyboard",
+        Field::User => "user",
+        Field::Password | Field::Again => "password",
+        Field::Disk => "disk",
+        Field::Hostname => "network.hostname",
+    }
 }
 
 /// The answers and the disk when every question is answered, else each
 /// field's problem in the words the terminal uses. `rules` is the keyboard
 /// list (`edel::keyboard::RULES`) when the machine has it.
 pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<(Field, String)>> {
-    let password = if form.password.is_empty() {
+    let password = if !form.password_needed {
+        Ok(String::new())
+    } else if form.password.is_empty() {
         Err(tr("a password cannot be empty").to_string())
     } else if form.password != form.again {
         Err(tr("the two passwords differ; type them again").to_string())
@@ -116,12 +135,20 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
             install::hostname_answer(form.hostname.trim()),
         ),
         (Field::Disk, disk),
-    ];
+    ]
+    // A question the file answers is not asked, so it has no answer.
+    .map(|(field, answer)| {
+        if form.skip.contains(&key_of(field)) {
+            (field, Ok(None))
+        } else {
+            (field, answer.map(Some))
+        }
+    });
     let problems: Vec<(Field, String)> = answers
         .iter()
         .filter_map(|(field, answer)| answer.clone().err().map(|why| (*field, why)))
         .collect();
-    let [language, keyboard, user, _, hostname, disk] = answers.map(|(_, a)| a.ok());
+    let [language, keyboard, user, _, hostname, disk] = answers.map(|(_, a)| a.ok().flatten());
     if !problems.is_empty() {
         return Err(problems);
     }
@@ -132,14 +159,15 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
         ssh_key: None,
         timezone: None,
         hostname,
-        preset: Some(form.preset.clone()),
+        preset: (!form.skip.contains(&"layout.preset")).then(|| form.preset.clone()),
     };
     Ok((answers, disk.unwrap_or_default()))
 }
 
 /// `edel install`'s arguments for the plan of `disk` with `file`, or for
-/// the install itself.
-pub fn install_args(disk: &str, file: &Path, plan: bool) -> Vec<String> {
+/// the install itself, given the password on standard input when
+/// `password` says one was asked.
+pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<String> {
     let mut args = vec![
         "install".to_string(),
         format!("/dev/{disk}"),
@@ -149,7 +177,10 @@ pub fn install_args(disk: &str, file: &Path, plan: bool) -> Vec<String> {
     if plan {
         args.push("--plan".into());
     } else {
-        args.extend(["--yes".into(), "--new-password-stdin".into()]);
+        args.push("--yes".into());
+        if password {
+            args.push("--new-password-stdin".into());
+        }
     }
     args
 }
@@ -161,6 +192,15 @@ pub fn disk_block<'a>(list: &'a str, name: &str) -> Option<&'a str> {
     list.split("\n\n")
         .map(str::trim)
         .find(|block| block.starts_with(&head))
+}
+
+/// `text` with a capital first letter, as a sentence starts.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 /// Where the answers are written: the person's runtime folder, which only
@@ -182,9 +222,47 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     file.write_all(text.as_bytes())
 }
 
+/// A settings file `edel install --find-settings` found on another disk
+/// (M6.6b).
+struct Found {
+    text: String,
+    /// Where it was, as `edel install` says it
+    place: String,
+    /// How many people it names
+    people: usize,
+    /// The question keys it answers
+    answered: Vec<&'static str>,
+}
+
+/// The words for what a file answers, by the rows' own titles.
+fn answered_words(answered: &[&str]) -> String {
+    answered
+        .iter()
+        .filter_map(|key| match *key {
+            "region.language" => Some(tr("Language")),
+            "region.keyboard" => Some(tr("Keyboard")),
+            "user" => Some(tr("Who logs in")),
+            "network.hostname" => Some(tr("Computer name")),
+            "layout.preset" => Some(tr("Layout")),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The page's controls and its state.
 struct Ui {
     problem: gtk::Label,
+    /// The card that offers a settings file found on another disk
+    file_card: gtk::Box,
+    file_line: gtk::Label,
+    use_file: gtk::Button,
+    stop_file: gtk::Button,
+    found: RefCell<Option<Found>>,
+    /// Whether the found file is used, so only the rest is asked
+    using: Cell<bool>,
+    /// The Layout row's choice, hidden when the file sets the preset
+    preset_widget: gtk::Widget,
     language: gtk::Entry,
     keyboard: gtk::Entry,
     user: gtk::Entry,
@@ -243,6 +321,31 @@ pub fn page() -> gtk::Widget {
         .unwrap_or_else(|| LANGUAGE.to_string());
     let keyboard_now = install::suggested_keyboard(&language_now);
     let mut lines = Vec::new();
+
+    // A settings file on another disk (M6.6b), shown once one is found.
+    let file_card = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .visible(false)
+        .build();
+    widgets::heading(&file_card, tr("A settings file"));
+    let file_group = widgets::group(&file_card);
+    let file_line = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-row"])
+        .build();
+    file_group.append(&file_line);
+    let file_buttons = gtk::Box::builder()
+        .spacing(8)
+        .css_classes(["edel-row"])
+        .build();
+    file_buttons.append(&gtk::Box::builder().hexpand(true).build());
+    let stop_file = widgets::action(tr("Answer every question"), false);
+    let use_file = widgets::action(tr("Use it"), true);
+    file_buttons.append(&stop_file);
+    file_buttons.append(&use_file);
+    file_group.append(&file_buttons);
+    content.append(&file_card);
 
     widgets::heading(&content, tr("You"));
     let you = widgets::group(&content);
@@ -336,8 +439,16 @@ pub fn page() -> gtk::Widget {
     buttons.append(&restart);
     plan_group.append(&buttons);
 
+    let preset_widget = preset.widget();
     let ui = Rc::new(Ui {
         problem,
+        file_card,
+        file_line,
+        use_file,
+        stop_file,
+        found: RefCell::new(None),
+        using: Cell::new(false),
+        preset_widget,
         language,
         keyboard,
         user,
@@ -363,6 +474,7 @@ pub fn page() -> gtk::Widget {
     });
     ui.connect();
     ui.read_list();
+    ui.find_file();
     // The page holds its state while it lives; the signals hold it weakly.
     let keep = ui.clone();
     page.connect_destroy(move |_| {
@@ -376,7 +488,12 @@ pub fn page() -> gtk::Widget {
         let weak = weak.clone();
         glib::idle_add_local_once(move || {
             if let Some(ui) = weak.upgrade() {
-                ui.user.grab_focus();
+                // A file found already takes the keyboard to Use it.
+                if ui.file_card.is_visible() && ui.use_file.is_visible() {
+                    ui.use_file.grab_focus();
+                } else {
+                    ui.user.grab_focus();
+                }
                 eprintln!(
                     "edel-settings: install page shown, {} disks",
                     ui.disks.len()
@@ -402,11 +519,12 @@ impl Ui {
             self.password.clone().upcast(),
             self.again.clone().upcast(),
         ];
-        // Return moves on; on the last question it shows the plan.
+        // Return moves on to the next question shown; after the last it
+        // shows the plan.
         for (at, widget) in order.iter().enumerate() {
-            let next = order.get(at + 1).cloned();
+            let rest: Vec<gtk::Widget> = order[at + 1..].to_vec();
             let weak = Rc::downgrade(self);
-            let on_return = move || match &next {
+            let on_return = move || match rest.iter().find(|w| w.is_mapped()) {
                 Some(next) => {
                     next.grab_focus();
                 }
@@ -488,6 +606,18 @@ impl Ui {
             *ui.suggested_name.borrow_mut() = suggestion;
         });
         let weak = Rc::downgrade(self);
+        self.use_file.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_using(true);
+            }
+        });
+        let weak = Rc::downgrade(self);
+        self.stop_file.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_using(false);
+            }
+        });
+        let weak = Rc::downgrade(self);
         self.show_plan.connect_clicked(move |_| {
             if let Some(ui) = weak.upgrade() {
                 ui.show_the_plan();
@@ -543,6 +673,148 @@ impl Ui {
                 .map(|d| d.name.clone()),
             hostname: self.hostname.text().to_string(),
             preset: self.presets[self.preset.selected().min(self.presets.len() - 1)].to_string(),
+            skip: self.skipped(),
+            password_needed: self.password_needed(),
+        }
+    }
+
+    /// The question keys the file in use answers; none without one.
+    fn skipped(&self) -> Vec<&'static str> {
+        match self.found.borrow().as_ref() {
+            Some(found) if self.using.get() => found.answered.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// A password is asked unless the file in use names several people,
+    /// who then log in with what the file gives them.
+    fn password_needed(&self) -> bool {
+        !(self.using.get() && self.found.borrow().as_ref().is_some_and(|f| f.people > 1))
+    }
+
+    /// Looks for a settings file on another disk, once, and offers it.
+    fn find_file(self: &Rc<Self>) {
+        let ui = self.clone();
+        glib::spawn_future_local(async move {
+            let done =
+                gio::spawn_blocking(|| cmd::edel_as_root(&["install", "--find-settings"], None))
+                    .await;
+            let Ok(run) = done else { return };
+            if !run.ok {
+                return;
+            }
+            let place = run
+                .err
+                .lines()
+                .last()
+                .unwrap_or_default()
+                .trim_start_matches("edel install: ")
+                .to_string();
+            match edel::settings::read(&run.out) {
+                Ok(read) => {
+                    let answered = install::answered(&read.file);
+                    ui.file_line.set_label(&trf(
+                        "{place}. It answers: {what}. Use it, and only the rest is asked.",
+                        &[
+                            ("place", &capitalized(&place)),
+                            ("what", &answered_words(&answered)),
+                        ],
+                    ));
+                    *ui.found.borrow_mut() = Some(Found {
+                        text: run.out.clone(),
+                        place,
+                        people: read.file.users.len(),
+                        answered,
+                    });
+                    ui.use_file.set_visible(true);
+                }
+                Err(why) => {
+                    ui.file_line.set_label(&trf(
+                        "{place}, but it cannot be used: {why}",
+                        &[
+                            ("place", &capitalized(&place)),
+                            ("why", &format!("{why:#}")),
+                        ],
+                    ));
+                    ui.use_file.set_visible(false);
+                }
+            }
+            ui.stop_file.set_visible(false);
+            ui.file_card.set_visible(true);
+            eprintln!("edel-settings: install found a settings file");
+            // Nothing typed yet: the keyboard goes to Use it.
+            if ui.user.has_focus() && ui.user.text().is_empty() && ui.use_file.is_visible() {
+                ui.use_file.grab_focus();
+            }
+        });
+    }
+
+    /// Uses the found file, asking only what it leaves open, or stops.
+    fn set_using(&self, using: bool) {
+        self.using.set(using);
+        let skip = self.skipped();
+        let password = self.password_needed();
+        let rows: [(&str, gtk::Widget); 7] = [
+            ("region.language", self.language.clone().upcast()),
+            ("region.keyboard", self.keyboard.clone().upcast()),
+            ("user", self.user.clone().upcast()),
+            ("password", self.password.clone().upcast()),
+            ("password", self.again.clone().upcast()),
+            ("network.hostname", self.hostname.clone().upcast()),
+            ("layout.preset", self.preset_widget.clone()),
+        ];
+        for (key, control) in &rows {
+            let shown = !skip.contains(key) && (*key != "password" || password);
+            if let Some(row) = control.parent() {
+                row.set_visible(shown);
+            }
+        }
+        self.use_file.set_visible(!using);
+        self.stop_file.set_visible(using);
+        if let Some(found) = self.found.borrow().as_ref() {
+            let words = if using {
+                trf(
+                    "{place}. In use: it answers {what}, so only the rest is asked.",
+                    &[
+                        ("place", &capitalized(&found.place)),
+                        ("what", &answered_words(&found.answered)),
+                    ],
+                )
+            } else {
+                trf(
+                    "{place}. It answers: {what}. Use it, and only the rest is asked.",
+                    &[
+                        ("place", &capitalized(&found.place)),
+                        ("what", &answered_words(&found.answered)),
+                    ],
+                )
+            };
+            self.file_line.set_label(&words);
+        }
+        eprintln!("edel-settings: install file used {using}");
+        self.stale();
+        // The keyboard goes to the first question left that is empty.
+        let order: [gtk::Widget; 5] = [
+            self.language.clone().upcast(),
+            self.keyboard.clone().upcast(),
+            self.user.clone().upcast(),
+            self.password.clone().upcast(),
+            self.again.clone().upcast(),
+        ];
+        let empty = |w: &gtk::Widget| {
+            w.downcast_ref::<gtk::Editable>()
+                .is_none_or(|e| e.text().is_empty())
+        };
+        match order
+            .iter()
+            .find(|w| w.parent().is_some_and(|r| r.is_visible()) && empty(w))
+        {
+            Some(next) => {
+                next.grab_focus();
+            }
+            None => {
+                self.show_plan.grab_focus();
+            }
         }
     }
 
@@ -599,20 +871,21 @@ impl Ui {
             }
         };
         let file = answers_file();
-        let written = answers
-            .settings_text()
-            .map_err(|e| format!("{e:#}"))
-            .and_then(|text| {
-                write_private(&file, &text).map_err(|e| {
-                    trf(
-                        "could not write {path}: {why}",
-                        &[
-                            ("path", &file.display().to_string()),
-                            ("why", &e.to_string()),
-                        ],
-                    )
-                })
-            });
+        let text = match self.found.borrow().as_ref() {
+            Some(found) if self.using.get() => install::merged(&found.text, &answers),
+            _ => answers.settings_text(),
+        };
+        let written = text.map_err(|e| format!("{e:#}")).and_then(|text| {
+            write_private(&file, &text).map_err(|e| {
+                trf(
+                    "could not write {path}: {why}",
+                    &[
+                        ("path", &file.display().to_string()),
+                        ("why", &e.to_string()),
+                    ],
+                )
+            })
+        });
         if let Err(why) = written {
             self.say_problem(&why);
             return;
@@ -621,7 +894,7 @@ impl Ui {
         widgets::say(&self.plan, tr("Working..."), false);
         let ui = self.clone();
         glib::spawn_future_local(async move {
-            let args = install_args(&disk, &file, true);
+            let args = install_args(&disk, &file, true, false);
             let done = gio::spawn_blocking(move || {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 cmd::edel_as_root(&args, None)
@@ -690,11 +963,12 @@ impl Ui {
         self.again.set_text("");
         let file = answers_file();
         let ui = self.clone();
+        let asked = self.password_needed();
         glib::spawn_future_local(async move {
-            let args = install_args(&disk, &file, false);
+            let args = install_args(&disk, &file, false, asked);
             let done = gio::spawn_blocking(move || {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
-                cmd::edel_as_root(&args, Some(password))
+                cmd::edel_as_root(&args, asked.then_some(password))
             })
             .await;
             let _ = std::fs::remove_file(&file);
@@ -767,6 +1041,8 @@ mod tests {
             disk: Some("nvme0n1".into()),
             hostname: "ali-laptop".into(),
             preset: "classic".into(),
+            skip: Vec::new(),
+            password_needed: true,
         }
     }
 
@@ -816,6 +1092,38 @@ mod tests {
     }
 
     #[test]
+    fn a_question_the_file_answers_is_not_asked_nor_refused() {
+        let with_file = Form {
+            user: String::new(),
+            hostname: "bad name".into(),
+            skip: vec!["user", "network.hostname", "layout.preset"],
+            ..form()
+        };
+        let (answers, disk) = check(&with_file, None).unwrap();
+        assert_eq!(disk, "nvme0n1");
+        assert_eq!(answers.user, None);
+        assert_eq!(answers.hostname, None);
+        assert_eq!(answers.preset, None);
+        assert_eq!(answers.keyboard.as_deref(), Some("de"));
+        let several = Form {
+            password: String::new(),
+            again: String::new(),
+            password_needed: false,
+            ..with_file
+        };
+        assert!(check(&several, None).is_ok(), "no password asked");
+        let text = edel::install::merged(
+            "format = 1\n[users.bea]\nadmin = true\n[network]\nhostname = \"office-1\"\n",
+            &check(&several, None).unwrap().0,
+        )
+        .unwrap();
+        assert!(
+            text.contains("hostname = \"office-1\"") && text.contains("[users.bea]"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn shows_the_chosen_disks_part_of_the_list() {
         let list = "/dev/sda: SanDisk Ultra, 32 GB (removable, running from it, so not offered)\n  sda1: EDEL-ESP (vfat, 67 MB)\n\n/dev/nvme0n1: Samsung SSD 980, 512 GB\n  nvme0n1p3: Windows (ntfs, 420 GB)\n";
         assert_eq!(
@@ -829,12 +1137,17 @@ mod tests {
     fn the_plan_and_the_install_are_the_commands_people_type() {
         let file = Path::new("/run/user/100/edel-install.toml");
         assert_eq!(
-            install_args("sda", file, true).join(" "),
+            install_args("sda", file, true, false).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --plan"
         );
         assert_eq!(
-            install_args("sda", file, false).join(" "),
+            install_args("sda", file, false, true).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --yes --new-password-stdin"
+        );
+        assert_eq!(
+            install_args("sda", file, false, false).join(" "),
+            "install /dev/sda --settings /run/user/100/edel-install.toml --yes",
+            "a file of several people gives no password"
         );
     }
 }

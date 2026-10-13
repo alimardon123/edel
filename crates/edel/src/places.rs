@@ -13,6 +13,10 @@ use std::path::{Path, PathBuf};
 /// The settings file's name. A rename, such as to `edel.toml`, changes
 /// this line and adds the old name to [`FORMER_SETTINGS`].
 pub const SETTINGS: &str = "settings.toml";
+/// A settings file meant for installing (M6.6b): `edel install
+/// --find-settings` and Settings' installer page look for it, then for
+/// [`SETTINGS`], at the top of another disk and in its `EFI/edel`.
+pub const INSTALL_FILE: &str = "install.toml";
 
 /// Names the settings file had before, newest first. Readers still read a
 /// file by one of them when none has the new name, and `apply` renames it

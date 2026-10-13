@@ -365,6 +365,78 @@ impl Answers {
     }
 }
 
+/// The question keys a settings file answers already (M6.6b), so the
+/// installer asks only the rest: `user` when it names anyone (the password
+/// is still asked, as a file never holds one), and each region, network
+/// and layout key the questions ask that it sets.
+pub fn answered(file: &settings::SettingsFile) -> Vec<&'static str> {
+    QUESTIONS
+        .iter()
+        .map(|q| q.key)
+        .filter(|key| match *key {
+            "user" => !file.users.is_empty(),
+            "region.language" => file.region.language.is_some(),
+            "region.keyboard" => file.region.keyboard.is_some(),
+            "region.timezone" => file.region.timezone.is_some(),
+            "network.hostname" => file.network.hostname.is_some(),
+            "layout.preset" => file.layout.preset.is_some(),
+            _ => false,
+        })
+        .collect()
+}
+
+/// `text`, a settings file, with the answers to the questions it leaves
+/// open added through `settings::set`, so the file's own lines and comments
+/// stay as they are (M6.6b). An answer the file answers already is left
+/// out, and so is the Classic preset, which applies anyway; the one person
+/// asked for, when the file names nobody, is an administrator.
+pub fn merged(text: &str, answers: &Answers) -> Result<String> {
+    let file = settings::read(text)?.file;
+    let done = answered(&file);
+    let mut wanted: Vec<(String, String)> = Vec::new();
+    if let Some(user) = answers.user.as_ref().filter(|_| !done.contains(&"user")) {
+        wanted.push((format!("users.{user}.admin"), "true".into()));
+    }
+    let preset = answers.preset.clone().filter(|p| p != DEFAULT_PRESET);
+    for (key, value) in [
+        ("region.language", &answers.language),
+        ("region.keyboard", &answers.keyboard),
+        ("network.hostname", &answers.hostname),
+        ("layout.preset", &preset),
+    ] {
+        if let Some(value) = value.as_ref().filter(|_| !done.contains(&key)) {
+            wanted.push((key.to_string(), value.clone()));
+        }
+    }
+    let mut text = text.to_string();
+    for (key, value) in wanted {
+        text = settings::set(&text, &key, &value)?;
+    }
+    let problems = settings::check(&text)?;
+    if !problems.is_empty() {
+        bail!("{}", problems.join("\n"));
+    }
+    Ok(text)
+}
+
+/// The settings file for installing in `dir`, the top of a disk mounted
+/// read-only: `install.toml`, then the settings file by its name or a
+/// former one, first at the top, then in `EFI/edel` (where the stick's own
+/// seed is kept). Its path and text, when one is there.
+pub fn file_in(dir: &Path) -> Option<(std::path::PathBuf, String)> {
+    for inner in [dir.to_path_buf(), dir.join("EFI/edel")] {
+        for path in [
+            inner.join(crate::places::INSTALL_FILE),
+            crate::places::found(&crate::places::settings_in(&inner)),
+        ] {
+            if let Ok(text) = fs::read_to_string(&path) {
+                return Some((path, text));
+            }
+        }
+    }
+    None
+}
+
 /// A TOML basic string.
 fn quoted(value: &str) -> String {
     toml::Value::String(value.to_string()).to_string()
@@ -529,7 +601,7 @@ pub struct DiskChoice {
 
 /// The disks Settings' installer page offers, read from `sys` (`/sys`, or
 /// a test's tree) with no root: every candidate whole disk but `running`,
-/// the one the system runs from, by name. Their partitions are what
+/// the one the system runs from, the computer's own first, then by name. Their partitions are what
 /// `edel install --list` shows, as only root may read their labels.
 pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
     let Ok(entries) = fs::read_dir(sys.join("block")) else {
@@ -540,7 +612,9 @@ pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| is_candidate(n) && Some(n.as_str()) != running)
         .collect();
-    names.sort();
+    // A computer's own disks first, so the one offered first is never a
+    // stick that happens to be plugged in.
+    names.sort_by_key(|n| (is_removable(sys, n), n.clone()));
     names
         .into_iter()
         .filter_map(|name| {
@@ -796,6 +870,12 @@ mod tests {
                 "1000215216",
             ),
             ("sr0", "devices/pci0/ata1/block/sr0", "1", "2097151"),
+            (
+                "sdb",
+                "devices/pci0/usb1/1-2/host1/block/sdb",
+                "1",
+                "8000000",
+            ),
         ];
         fs::create_dir_all(dir.join("block")).unwrap();
         fs::create_dir_all(dir.join("dev/block")).unwrap();
@@ -840,11 +920,17 @@ mod tests {
         assert!(!is_removable(&sys, "nvme0n1"));
         assert_eq!(
             disk_choices(&sys, running.as_deref()),
-            [DiskChoice {
-                name: "nvme0n1".into(),
-                title: "Samsung SSD 980, 512 GB (nvme0n1)".into(),
-            }],
-            "the stick and the CD drive are not offered"
+            [
+                DiskChoice {
+                    name: "nvme0n1".into(),
+                    title: "Samsung SSD 980, 512 GB (nvme0n1)".into(),
+                },
+                DiskChoice {
+                    name: "sdb".into(),
+                    title: "no model name, 4.1 GB (sdb)".into(),
+                },
+            ],
+            "the computer's own disk first, then another stick; the running stick and the CD drive are not offered"
         );
         let tmpfs = "1 0 0:2 / / rw - tmpfs tmpfs rw\n";
         assert_eq!(running_disk(tmpfs, &sys), None, "/ on no disk");
@@ -879,5 +965,54 @@ mod tests {
         );
         assert_eq!(hostname_answer("ali-laptop").as_deref(), Ok("ali-laptop"));
         assert!(hostname_answer("ali laptop").is_err());
+    }
+
+    #[test]
+    fn a_file_answers_its_own_questions_and_the_rest_are_added_to_it() {
+        let text = "format = 1\n\n# The office's laptops\n[network]\nhostname = \"office-1\"\n\n[users.bea]\nadmin = true\n";
+        let file = settings::read(text).unwrap().file;
+        assert_eq!(answered(&file), ["user", "network.hostname"]);
+        let answers = Answers {
+            language: Some("de_DE.UTF-8".into()),
+            keyboard: Some("de".into()),
+            user: Some("ali".into()),
+            hostname: Some("ali-laptop".into()),
+            preset: Some("classic".into()),
+            ..Answers::default()
+        };
+        let out = merged(text, &answers).unwrap();
+        assert!(
+            out.contains("# The office's laptops"),
+            "the file's own lines stay: {out}"
+        );
+        assert!(out.contains("hostname = \"office-1\""), "{out}");
+        assert!(!out.contains("ali"), "the file names its people: {out}");
+        assert!(out.contains("language = \"de_DE.UTF-8\""), "{out}");
+        assert!(out.contains("keyboard = \"de\""), "{out}");
+        assert!(!out.contains("classic"), "Classic applies anyway: {out}");
+        let empty = merged("format = 1\n", &answers).unwrap();
+        assert!(
+            empty.contains("[users.ali]") && empty.contains("admin = true"),
+            "{empty}"
+        );
+        assert!(empty.contains("hostname = \"ali-laptop\""), "{empty}");
+        assert!(merged("format = 9\n", &answers).is_err());
+    }
+
+    #[test]
+    fn finds_install_toml_before_the_settings_file_and_at_the_top_before_efi() {
+        let dir = std::env::temp_dir().join(format!("edel-file-in-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("EFI/edel")).unwrap();
+        assert_eq!(file_in(&dir), None);
+        let efi = crate::places::settings_in(&dir.join("EFI/edel"));
+        fs::write(&efi, "format = 1\n# efi\n").unwrap();
+        assert_eq!(file_in(&dir), Some((efi, "format = 1\n# efi\n".into())));
+        let top = crate::places::settings_in(&dir);
+        fs::write(&top, "format = 1\n# top\n").unwrap();
+        assert_eq!(file_in(&dir).unwrap().0, top);
+        fs::write(dir.join("install.toml"), "format = 1\n# install\n").unwrap();
+        assert_eq!(file_in(&dir).unwrap().0, dir.join("install.toml"));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

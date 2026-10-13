@@ -170,6 +170,11 @@ enum Commands {
         /// List the disks Edel OS could install on, and change nothing
         #[arg(long)]
         list: bool,
+        /// Look on every other disk for a settings file to install with
+        /// (install.toml, else the settings file, at its top or in EFI/edel)
+        /// and print it, changing nothing
+        #[arg(long)]
+        find_settings: bool,
         /// Only show the plan: what would be erased and written; change
         /// nothing
         #[arg(long)]
@@ -744,6 +749,10 @@ fn run(command: Commands) -> Result<()> {
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
         Commands::Install { list: true, .. } => installer::list(),
+        Commands::Install {
+            find_settings: true,
+            ..
+        } => installer::find_settings(),
         Commands::Install {
             disk,
             settings,
