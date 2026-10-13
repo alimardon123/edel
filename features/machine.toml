@@ -1,6 +1,7 @@
 # What any booted machine runs. features/machine/ holds the console and
-# serial logins (inittab) and edel-clock, which sets the clock from the
-# network once at each start (init.d/edel-clock, usr/libexec/edel-clock,
+# serial logins (inittab, each through usr/libexec/edel-console, which asks
+# for the first person when nobody can log in, M6.6b) and edel-clock, which
+# sets the clock from the network once at each start (init.d/edel-clock, usr/libexec/edel-clock,
 # M1.13). The network itself is another feature's: `vm` brings busybox's
 # DHCP on eth0, `network` brings NetworkManager (M5.8a).
 format = 1
