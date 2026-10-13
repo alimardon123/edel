@@ -162,19 +162,33 @@ echo "PASS: update --unsigned was refused because developer mode is off"
 
 # M6.10: [services]. A feature that cannot be switched is refused by name,
 # with the ones that can; then ssh switched off stops sshd and takes it
-# out of the default runlevel, so the next connection is refused. Last,
-# as the test cannot reach the VM after it.
+# out of the default runlevel, so the next connection is refused. The VM
+# switches ssh on again by itself 15 s later (a detached sleep, so it
+# survives the ssh session that started it, which sshd's stop may cut),
+# and the test reaches it again: services.ssh=true starts sshd without a
+# reboot.
 code=0
 ssh_root edel settings set services.udev=false >out/services-bad.log 2>&1 || code=$?
 [ "$code" != 0 ] && grep -q 'udev is not a feature that can be switched' out/services-bad.log &&
 	grep -q 'ssh' out/services-bad.log ||
 	fail "services.udev=false was not refused with the features that can be switched: $(cat out/services-bad.log)"
-ssh_root 'edel settings set services.ssh=false && edel settings apply' >out/services-off.log 2>&1 ||
-	fail "switching ssh off failed: $(cat out/services-off.log)"
+ssh_root 'edel settings set services.ssh=false && edel settings apply >/tmp/services-off.log 2>&1; cat /tmp/services-off.log; nohup sh -c "sleep 15; edel settings set services.ssh=true && edel settings apply >/tmp/services-on.log 2>&1" >/dev/null 2>&1 &' >out/services-off.log 2>&1 || true
 grep -q 'services: stop sshd and take it out of the default runlevel' out/services-off.log ||
 	fail "apply did not say it stopped sshd: $(cat out/services-off.log)"
 sleep 2
 if ssh_ci true >out/services-ssh.log 2>&1; then
 	fail "ssh still answered after services.ssh=false"
 fi
-echo "PASS: services.udev=false was refused naming the features that can be switched, and services.ssh=false stopped sshd, which then refused the next connection"
+# Up to 60 s, every 3 s, for the VM's own services.ssh=true (M6.10).
+back=0
+until ssh_ci true >out/services-back.log 2>&1; do
+	back=$((back + 3))
+	if [ "$back" -ge 60 ]; then
+		fail "ssh did not come back within 60 s of services.ssh=true, without a reboot"
+	fi
+	sleep 3
+done
+ssh_root 'cat /tmp/services-on.log; rc-status default' >out/services-on.log 2>&1 || true
+grep -E 'sshd.*started' out/services-on.log >/dev/null ||
+	fail "services.ssh=true did not start sshd in the default runlevel: $(cat out/services-on.log)"
+echo "PASS: services.udev=false was refused naming the features that can be switched, and services.ssh=false stopped sshd, which then refused the next connection; services.ssh=true brought it back without a reboot, sshd started in the default runlevel"
