@@ -157,7 +157,9 @@ Build an image from its definition file (run as root on Alpine).
 | `--channel CHANNEL` | The channel written into the image, such as preview or stable |
 | `--apk-cache DIR` | An apk cache to share between the images of one build, so they all install from one package index |
 | `--apps-from URL` | Where the default apps come from: a .flatpakrepo file's address or a Flatpak repository's, such as file:///src/out/apps-repo for a test; Flathub when not given |
+| `--apps-url URL` | The address machines update the default apps from, when it is not where the build took them, as for a test image built from a local repository that its VM reaches over HTTP |
 | `--app ID` | A default app to install instead of the definition's list; for test images. Can be given more than once |
+| `--dropped-app ID` | A default app this image drops, kept for each person who used it, instead of the definition's; for test images. Can be given more than once |
 | `--no-compress` | Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images |
 | `--plan` | Only show the plan: every step, changing nothing |
 

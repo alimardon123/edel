@@ -76,15 +76,15 @@ const WRITE_KEYS: &str = "umask 077 && mkdir -p \"$HOME/.ssh\" && chmod 700 \"$H
 
 /// One line of `/etc/passwd`.
 #[derive(Debug, PartialEq)]
-struct Account {
-    name: String,
+pub(crate) struct Account {
+    pub(crate) name: String,
     uid: u32,
     gid: u32,
-    home: String,
+    pub(crate) home: String,
     shell: String,
 }
 
-fn accounts(passwd: &str) -> Vec<Account> {
+pub(crate) fn accounts(passwd: &str) -> Vec<Account> {
     passwd
         .lines()
         .filter_map(|line| {
@@ -105,7 +105,7 @@ fn accounts(passwd: &str) -> Vec<Account> {
 
 /// A person's account, not a system one: root, or a uid from 1000 below
 /// `nobody`'s.
-fn is_person(account: &Account) -> bool {
+pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
 
@@ -703,7 +703,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
 /// name, home and path as environment, as `su` gives them and `write_keys`
 /// runs its shell: root starts it, and the person owns everything it
 /// writes (M6.1).
-fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
+pub(crate) fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args)
         .env_clear()
@@ -771,7 +771,7 @@ fn flatpak_commands(ids: &[String]) -> Vec<Vec<String>> {
 /// Adds Flathub for `account` and installs each of `ids` it lacks, as that
 /// person (M6.1). One app that fails does not stop the others; the error
 /// names those that failed, and the next apply tries them again.
-fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
+pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
     let mut commands = flatpak_commands(ids).into_iter();
     let remote = commands.next().unwrap_or_default();
     run(&mut as_user(account, "flatpak", &remote)).with_context(|| {

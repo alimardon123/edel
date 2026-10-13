@@ -49,6 +49,9 @@ pub const ETC_UPPER: &str = data!("/etc/upper");
 /// survive every update and rollback. `edel image build` fills it on the
 /// stick, `edel install` copies it, `edel update` updates it.
 pub const DEFAULT_APPS: &str = data!("/edel/apps");
+/// The default apps the slot's image was built with and those a release
+/// dropped (M6.2), written by `edel image build`; `edel update` follows it.
+pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");
 /// Where Flatpak finds its installations besides its own two; the image
 /// build writes the default apps' file here (`apps::installation_conf`).
 pub const FLATPAK_INSTALLATIONS: &str = "/etc/flatpak/installations.d";

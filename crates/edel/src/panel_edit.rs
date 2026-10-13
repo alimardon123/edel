@@ -862,8 +862,8 @@ mod tests {
         assert_eq!(pins_to_write(&list, Some(machine), None), None);
         // A person's line equal to the preset's is taken out, not kept.
         let mac = presets::named(Some("mac-like")).0.apps.pinned;
-        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[panels]\npinned = [\"files\", \"browser\", \"mail\", \"music\", \"editor\", \"terminal\", \"settings\"]\n";
-        assert_eq!(mac.len(), 7);
+        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[panels]\npinned = [\"files\", \"browser\", \"mail\", \"music\", \"editor\", \"terminal\", \"store\", \"settings\"]\n";
+        assert_eq!(mac.len(), 8);
         assert_eq!(pins_to_write(&mac, None, Some(person)), None);
         // An empty list is a choice, written.
         assert_eq!(

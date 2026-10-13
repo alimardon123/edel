@@ -1,12 +1,13 @@
 #!/bin/sh
-# Makes a tiny Flatpak repository for the default apps' test (roadmap
+# Makes a tiny Flatpak repository for the default apps' tests (roadmap
 # M6.2), with no network: a runtime, org.edel.TestPlatform branch 1, that
 # holds musl and the libraries edel-testclient needs, taken from this
-# Alpine container, and an app, org.edel.TestA branch stable, which is
-# edel-testclient showing a window titled test-a in #3399cc. ci/build.sh
-# runs it inside the build container, after cargo built the test client,
-# and builds the desktop test image's default apps from it. Usage:
-# sh ci/apps/make-repo.sh REPO
+# Alpine container, and two apps of branch stable, org.edel.TestA and
+# org.edel.TestB, each edel-testclient showing a window, titled test-a in
+# #3399cc and test-b in #33aa66, so a test can swap one default app for
+# the other. ci/build.sh runs it inside the build container, after cargo
+# built the test client, and builds the test images' default apps from
+# it. Usage: sh ci/apps/make-repo.sh REPO
 set -eu
 
 repo=$1
@@ -17,7 +18,7 @@ client=target/release/edel-testclient
 	exit 1
 }
 rm -rf "$work" "$repo"
-mkdir -p "$work/runtime/files" "$work/runtime/usr/lib" "$work/app/files/bin" "$work/app/files/share/applications"
+mkdir -p "$work/runtime/files" "$work/runtime/usr/lib"
 
 # A runtime keeps its files in usr/ (an app keeps its own in files/, which
 # flatpak build-export also wants to find, empty here, as build-init makes
@@ -41,24 +42,31 @@ sdk=org.edel.TestPlatform/x86_64/1
 META
 flatpak build-export --runtime --arch=x86_64 "$repo" "$work/runtime" 1
 
-cp "$client" "$work/app/files/bin/"
-cat >"$work/app/files/share/applications/org.edel.TestA.desktop" <<'DESKTOP'
+# app ID TITLE NAME COLOUR: exports one app of the test client.
+app() {
+	dir="$work/$1"
+	mkdir -p "$dir/files/bin" "$dir/files/share/applications"
+	cp "$client" "$dir/files/bin/"
+	cat >"$dir/files/share/applications/$1.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=Test A
-Comment=The default apps' test app (M6.2)
-Exec=edel-testclient --title test-a --colour 3399cc --size 300x200
+Name=$3
+Comment=A default app of the tests (M6.2)
+Exec=edel-testclient --title $2 --colour $4 --size 300x200
 DESKTOP
-cat >"$work/app/metadata" <<'META'
+	cat >"$dir/metadata" <<META
 [Application]
-name=org.edel.TestA
+name=$1
 runtime=org.edel.TestPlatform/x86_64/1
 sdk=org.edel.TestPlatform/x86_64/1
 META
-# build-finish writes the command and the Wayland socket into the
-# metadata and exports the desktop file with its Exec line rewritten to
-# flatpak run, so the launcher starts the sandboxed copy, never the
-# host's test client.
-flatpak build-finish --command=edel-testclient --socket=wayland "$work/app"
-flatpak build-export --arch=x86_64 "$repo" "$work/app" stable
-echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1 and org.edel.TestA//stable"
+	# build-finish writes the command and the Wayland socket into the
+	# metadata and exports the desktop file with its Exec line rewritten
+	# to flatpak run, so the launcher starts the sandboxed copy, never the
+	# host's test client.
+	flatpak build-finish --command=edel-testclient --socket=wayland "$dir"
+	flatpak build-export --arch=x86_64 "$repo" "$dir" stable
+}
+app org.edel.TestA test-a 'Test A' 3399cc
+app org.edel.TestB test-b 'Test B' 33aa66
+echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1, org.edel.TestA//stable and org.edel.TestB//stable"
