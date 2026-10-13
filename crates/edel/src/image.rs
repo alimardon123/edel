@@ -514,7 +514,9 @@ impl Build<'_> {
         if self.runner.dry_run {
             return Ok(());
         }
-        if !root.join("usr/bin/fc-cache").is_file() {
+        // An image without fonts (the container, a server) has no cache
+        // to bake, even when fontconfig came in with another package.
+        if !root.join("usr/bin/fc-cache").is_file() || !has_file(&root.join("usr/share/fonts"))? {
             return Ok(());
         }
         let conf = root.join(edel::places::FONT_CACHE_CONF.trim_start_matches('/'));
@@ -1225,6 +1227,21 @@ fn remove_empty_dirs(dir: &Path) -> Result<()> {
 /// Bytes as MiB.
 fn mib(bytes: u64) -> f64 {
     bytes as f64 / 1_048_576.0
+}
+
+/// Whether `dir` holds a file anywhere below it; false when it is not
+/// there (M6.2a).
+fn has_file(dir: &Path) -> Result<bool> {
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_file() || (path.is_dir() && has_file(&path)?) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The fontconfig file that names `dir` as a cache folder (M6.2a), the
