@@ -4451,11 +4451,16 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock parts: 0' || fail "ci's lock parts could not be set"
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
 	compositor_locked=$(count 'edel-compositor: screen locked$')
+	# The places line of this lock, not the last lock's: it comes once the
+	# new lock is laid out, a little after the locked line.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]')
 	python3 ci/qmp.py key meta_l-l
 	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
 		fail "Super+L did not lock the screen with the parts"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up the lock screen with the parts"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]' "$placed" ||
+		fail "shell-ui did not say where the lock's parts lie"
 	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
