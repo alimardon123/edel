@@ -52,6 +52,10 @@ pub const DEFAULT_APPS: &str = data!("/edel/apps");
 /// The default apps the slot's image was built with and those a release
 /// dropped (M6.2), written by `edel image build`; `edel update` follows it.
 pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");
+/// Flathub's remote file (M6.4), fetched by `edel image build` from
+/// `apps::FLATHUB_REMOTE`, from which each person's session adds Flathub
+/// offline, so the store works on a first start without the network.
+pub const FLATHUB_REPO_FILE: &str = share!("/flathub.flatpakrepo");
 /// Where Flatpak finds its installations besides its own two; the image
 /// build writes the default apps' file here (`apps::installation_conf`).
 pub const FLATPAK_INSTALLATIONS: &str = "/etc/flatpak/installations.d";
@@ -248,6 +252,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),
         ("system_log", SYSTEM_LOG.to_string()),
         ("font_cache_dir", FONT_CACHE_DIR.to_string()),
+        ("flathub_repo_file", FLATHUB_REPO_FILE.to_string()),
     ]
 }
 

@@ -584,15 +584,43 @@ impl Build<'_> {
             edel::places::DEFAULT_APPS,
             file.display()
         ));
+        let file = root.join(file.strip_prefix("/")?);
+        if !self.runner.dry_run {
+            fs::create_dir_all(file.parent().unwrap_or(root))?;
+            fs::write(
+                file,
+                edel::apps::installation_conf(edel::places::DEFAULT_APPS),
+            )?;
+        }
+        self.fetch_flathub_remote(root)
+    }
+
+    /// Fetches Flathub's remote file (M6.4) into the slot's share folder, so
+    /// each person's session adds Flathub from it offline on a first start
+    /// and the store lists apps without the network. The file must hold a
+    /// `GPGKey`, or the store could not check what it installs.
+    fn fetch_flathub_remote(&self, root: &Path) -> Result<()> {
+        let url = edel::apps::FLATHUB_REMOTE;
+        let target = edel::places::FLATHUB_REPO_FILE;
+        self.runner.step(&format!(
+            "fetch Flathub's remote file from {url} into {target}"
+        ));
+        let file = root.join(target.trim_start_matches('/'));
+        if !self.runner.dry_run {
+            fs::create_dir_all(file.parent().unwrap_or(root))?;
+        }
+        self.runner
+            .run(Command::new("wget").args(["-q", "-O"]).arg(&file).arg(url))?;
         if self.runner.dry_run {
             return Ok(());
         }
-        let file = root.join(file.strip_prefix("/")?);
-        fs::create_dir_all(file.parent().unwrap_or(root))?;
-        fs::write(
-            file,
-            edel::apps::installation_conf(edel::places::DEFAULT_APPS),
-        )?;
+        let text = fs::read_to_string(&file)
+            .with_context(|| format!("reading the Flathub remote file {}", file.display()))?;
+        if !is_flatpakrepo(&text) {
+            bail!(
+                "Flathub's remote file from {url} holds no GPGKey; the store could not check what it installs"
+            );
+        }
         Ok(())
     }
 
@@ -1365,6 +1393,16 @@ fn gl_missing(apps: &Path) -> Result<Vec<String>> {
     Ok(missing)
 }
 
+/// Whether a Flatpak remote file (M6.4) has what the store needs: the
+/// `[Flatpak Repo]` group and a `GPGKey` line, the key its apps are checked
+/// with.
+fn is_flatpakrepo(text: &str) -> bool {
+    text.lines().any(|line| line.trim() == "[Flatpak Repo]")
+        && text
+            .lines()
+            .any(|line| line.trim_start().starts_with("GPGKey="))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1596,5 +1634,16 @@ mod tests {
         let missing = gl_missing(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
         assert!(missing.is_empty(), "{missing:?}");
+    }
+
+    #[test]
+    fn a_flatpakrepo_file_needs_its_group_and_a_key() {
+        let file =
+            "[Flatpak Repo]\nTitle=Flathub\nUrl=https://dl.flathub.org/repo/\nGPGKey=mQINBF\n";
+        assert!(is_flatpakrepo(file));
+        assert!(!is_flatpakrepo(
+            "[Flatpak Repo]\nTitle=Flathub\nUrl=https://dl.flathub.org/repo/\n"
+        ));
+        assert!(!is_flatpakrepo(""));
     }
 }
