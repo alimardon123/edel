@@ -392,6 +392,9 @@ commands() {
 		'accent red') edel settings set appearance.accent=#ff0000 ;;
 		'panel colour') edel settings set appearance.colours.light.panel=#d8e0f0 ;;
 		'colours default') edel settings reset appearance.accent appearance.colours ;;
+		# High contrast (M6.9): the switch's key, set and taken out again.
+		'contrast high') edel settings set appearance.contrast=high ;;
+		'contrast default') edel settings reset appearance.contrast ;;
 		# The mode the panel's Dark style tile wrote to ci's own file
 		# (M5.9a), taken out again.
 		'scheme mine default') as_ci "sed -i '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;

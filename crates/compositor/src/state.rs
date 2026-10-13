@@ -595,13 +595,7 @@ impl Edel {
         // a wallpaper's accent (M5.12b1), read as every reader on the
         // machine reads them. A change that leaves the tokens as they were
         // does nothing.
-        let colours_changed = old.accent != new.accent
-            || old.colours != new.colours
-            || old.wallpaper != new.wallpaper
-            || old.wallpaper_dark != new.wallpaper_dark
-            || old.shape != new.shape
-            || old.text != new.text
-            || old.icons != new.icons;
+        let colours_changed = new.colours_changed(&old);
         let mut tokens_changed = false;
         // The title font and its size (M5.12b5), as they were.
         let old_text = (self.tokens.font.clone(), self.tokens.title_text_size);
@@ -615,6 +609,11 @@ impl Edel {
             .elements()
             .map(|window| (window.clone(), self.insets(window)))
             .collect();
+        // High contrast (M6.9) is a change of the tokens, logged for CI.
+        if old.contrast != new.contrast {
+            let word = if new.contrast { "high" } else { "normal" };
+            eprintln!("edel-compositor: contrast {word}");
+        }
         if old.color_scheme != new.color_scheme || colours_changed {
             let (tokens, notes) = edel::tokens::on_this_machine(new.color_scheme);
             for note in notes {

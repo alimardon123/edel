@@ -115,6 +115,12 @@ pub const ROWS: &[Row] = &[
         key: "appearance.colours.*",
         title: n_("Colours"),
     },
+    // The high-contrast look (M6.9): a switch under the accent, for strong
+    // edges and the plainest colours.
+    Row {
+        key: "appearance.contrast",
+        title: n_("High contrast"),
+    },
     // The Shape group (M5.12b2c): the corners, the gaps, the border, the
     // title bar's height and the panels' opacity, each a slider.
     Row {
@@ -664,7 +670,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 27);
+        assert_eq!(on_page("appearance").count(), 28);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
