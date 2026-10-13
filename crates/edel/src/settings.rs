@@ -603,6 +603,9 @@ pub const KEYS: &[Key] = &[
         "notifications.list",
         Kind::OneOf(&["button", "left", "right"]),
     ),
+    // The input method for typing languages a keyboard has no keys for
+    // (M6.8): fcitx5, started with the session; absent or none runs none.
+    now("region.input_method", Kind::OneOf(&["none", "fcitx5"])),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -736,6 +739,9 @@ pub struct Region {
     /// Host names the clock is set from (M1.13); absent is `pool.ntp.org`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub time_servers: Option<Vec<String>>,
+    /// The input method, `fcitx5` or `none` (M6.8); absent runs none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_method: Option<String>,
 }
 
 /// The Layout page.

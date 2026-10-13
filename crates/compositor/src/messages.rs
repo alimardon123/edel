@@ -139,6 +139,20 @@ pub fn session_program_given_up(name: &str, how: &str, tries: u32, secs: u64) ->
     )
 }
 
+/// The input method the settings name is not in this image (M6.8).
+pub fn input_method_missing(name: &str) -> String {
+    format!(
+        "{name} is not in this image, so typing through an input method is not possible; the input-method feature brings it, and typing stays in the keyboard layout until then"
+    )
+}
+
+/// The input method ended while the desktop still wants it (M6.8).
+pub fn input_method_ended(name: &str, how: &str) -> String {
+    format!(
+        "{name} {how}; typing through the input method stops until region.input_method is set again or the next login"
+    )
+}
+
 /// A screen cannot be lit.
 pub fn screen_dark(name: &str, why: impl Display) -> String {
     format!("output {name} stays dark: {why}; the other screens work")
@@ -376,6 +390,8 @@ mod tests {
             session_program_not_started("pipewire", "x"),
             session_program_stopped("pipewire", "ended (exit status: 1)"),
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
+            input_method_missing("fcitx5"),
+            input_method_ended("fcitx5", "ended (exit status: 1)"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

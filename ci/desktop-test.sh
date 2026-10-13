@@ -262,6 +262,12 @@
 #               compositor that only fails into slot B and restarts; no
 #               frame, so the guard lets the watchdog restart slot B, and
 #               GRUB, out of tries, starts slot A, which says so (M4.8)
+#   input-method  region.input_method = fcitx5 starts fcitx5 with the desktop
+#               (the compositor logs `started fcitx5`); Super+T opens foot,
+#               Ctrl+Alt+Shift+U and e9 open fcitx5's Unicode picker, whose
+#               popup the compositor shows (`input method popup shown`,
+#               input-method.png); Escape, Super+Q, and reset stop fcitx5
+#               (`input method off, fcitx5 ended`) (M6.8)
 #   flatpak     last: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -6481,6 +6487,39 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
+# input_method_fail MESSAGE: the compositor's lines about the input method
+# and fcitx5's own errors and warnings,
+# then the failure.
+input_method_fail() {
+	tr -d '\r' <"$log" | grep -aE 'fcitx5|input method|^[EW][0-9]{4}-' | sed 's/^/DESKTOP-TEST: compositor: /'
+	fail "$1"
+}
+
+case_input_method() {
+	# region.input_method = fcitx5 (M6.8), set live: the compositor starts
+	# fcitx5 with the desktop, Super+T opens foot, and fcitx5's Unicode
+	# picker (Ctrl+Alt+Shift+U, then the hex digits e9) takes the keys, so
+	# the compositor shows its candidate popup above foot.
+	guest 'input method on'
+	wait_for 'edel-compositor: started fcitx5, pid [0-9]+' 30 ||
+		input_method_fail "the compositor did not start fcitx5 after region.input_method = fcitx5"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T opened no terminal: $(value windows)"
+	sleep 3
+	python3 ci/qmp.py key ctrl-alt-shift-u
+	python3 ci/qmp.py type e9
+	wait_for 'edel-compositor: input method popup shown' 10 ||
+		input_method_fail "fcitx5's candidate popup was not shown above foot"
+	python3 ci/qmp.py screendump "$dir/input-method.png"
+	python3 ci/qmp.py key esc
+	python3 ci/qmp.py key meta_l-q
+	guest 'input method off'
+	wait_for 'edel-compositor: input method off, fcitx5 ended' ||
+		input_method_fail "fcitx5 did not end after region.input_method was reset"
+	echo "PASS: region.input_method = fcitx5 started fcitx5 with the desktop, Super+T opened foot, fcitx5's Unicode picker took Ctrl+Alt+Shift+U and e9 and its candidate popup was shown above foot (input-method.png), and resetting the key ended fcitx5"
+}
+
 case_web_app() {
 	# Web apps (M6.4, part 1): `edel web-app add` makes example.org an app of
 	# ci's, with a desktop file that runs Firefox with its own profile and
@@ -6601,7 +6640,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app default-apps flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -21,6 +21,7 @@ mod glance;
 mod glance_look;
 mod glance_search;
 mod grabs;
+mod ime;
 mod input;
 mod keyboard;
 mod layers;

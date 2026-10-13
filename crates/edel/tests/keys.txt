@@ -103,3 +103,4 @@ lock_screen.dim
 appearance.pictures
 presets.*
 appearance.contrast
+region.input_method
