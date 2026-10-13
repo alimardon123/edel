@@ -10,3 +10,13 @@ why = "edel-compositor draws every window and routes all input (ADR-002); it lin
 programs = ["edel-compositor"]
 packages = ["dbus", "eudev-libs", "libgcc", "libinput-libs", "libseat", "libxkbcommon", "mesa-gbm"]
 health = ["compositor"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Second display"
+test = "outputs"
+
+[[basics]]
+name = "Display hotplug"
+needs = "hardware"

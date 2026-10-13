@@ -34,6 +34,11 @@ session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
 }
 
+# joined [FILE]: the lines of FILE (or of standard input) joined by " | ".
+joined() {
+	awk 'NR > 1 { printf " | " } { printf "%s", $0 } END { print "" }' "$@"
+}
+
 # What process $1 holds of its own, in MiB: its private memory and the
 # buffers it shares with the compositor (RssAnon plus RssShmem), without
 # the pages it maps from files.
@@ -825,6 +830,18 @@ commands() {
 		'bluetooth log') say "bluetooth_log $(tr '\n' ';' </tmp/bluetooth.log 2>/dev/null)" ;;
 		'network memory')
 			say "network_rss_kib $(for p in NetworkManager bluetoothd; do pid=$(pidof $p | cut -d' ' -f1); echo "$p rss $(awk '/^VmRSS:/ { print $2 }' "/proc/$pid/status" 2>/dev/null) pss $(awk '/^Pss:/ { print $2 }' "/proc/$pid/smaps_rollup" 2>/dev/null)"; done | tr '\n' ';')"
+			;;
+		# Suspend to memory (M6.7): what the kernel offers, edel suspend run
+		# as ci in the background (through the login feature's doas rule to
+		# zzz, its output in /tmp/suspend.log), and the kernel's PM lines
+		# after it. The host sends `suspend now` and then QMP's wakeup.
+		'suspend states') say "suspend_states $(cat /sys/power/state)" ;;
+		'suspend now')
+			as_ci edel suspend </dev/null >/tmp/suspend.log 2>&1 &
+			;;
+		'suspend log')
+			say "suspend_log $(joined /tmp/suspend.log 2>/dev/null)"
+			say "suspend_dmesg $(dmesg | grep -iE 'PM: suspend (entry|exit)|ACPI: PM: (Preparing|Waking)' | tail -4 | joined)"
 			;;
 		# Power and Users (M5.8b): what upower lists as ci (`upower -e` must
 		# exit 0: QEMU has no battery, so it lists the display device and

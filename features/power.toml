@@ -10,3 +10,17 @@ packages = ["dbus", "dbus-openrc", "polkit-noelogind-libs", "upower"]
 
 [services]
 default = ["dbus", "upower"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Battery"
+needs = "hardware"
+
+[[basics]]
+name = "Suspend and resume"
+test = "suspend"
+
+[[basics]]
+name = "Lid and power key"
+needs = "M7.8"

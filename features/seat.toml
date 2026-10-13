@@ -10,3 +10,17 @@ packages = ["seatd", "seatd-openrc"]
 [services]
 boot = ["edel-rundir"]
 default = ["seatd"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Keyboard layouts"
+test = "keyboard"
+
+[[basics]]
+name = "Game controller"
+needs = "hardware"
+
+[[basics]]
+name = "Pen pressure"
+needs = "hardware"

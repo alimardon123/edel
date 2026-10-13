@@ -33,9 +33,13 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  of the pixels in the W by H box at X, Y
                                  within 24 of RRGGBB in each channel, or
                                  none (M5.2j)
+    qmp.py status                print the VM's run state, such as running
+                                 or suspended (M6.7)
+    qmp.py wakeup                wake a suspended VM, as a key or lid
+                                 would (QMP system_wakeup; M6.7)
 
-The first ten talk to the QMP socket named by $QMP. Key names are
-QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
+The first ten and the last two talk to the QMP socket named by $QMP.
+Key names are QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
 import json
@@ -308,6 +312,10 @@ def main(argv):
         hold(qmp, args, command == "down")
     elif command == "type":
         type_text(qmp, args[0].replace("\\n", "\n"))
+    elif command == "status":
+        print(qmp.run("query-status")["status"])
+    elif command == "wakeup":
+        qmp.run("system_wakeup")
     else:
         raise SystemExit(f"qmp: unknown command {command}\n{__doc__}")
 

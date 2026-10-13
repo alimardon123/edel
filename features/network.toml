@@ -21,3 +21,9 @@ packages = [
 [services]
 boot = ["loopback"]
 default = ["dbus", "networkmanager"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Network (DHCP)"
+test = "network"
