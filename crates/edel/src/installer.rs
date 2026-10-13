@@ -373,6 +373,12 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
                     edel::keyboard::normalize(v, rules.as_deref())
                 })?)
             }
+            "region.timezone" => {
+                let suggestion =
+                    edel::timezones::suggested(answers.language.as_deref().unwrap_or("C"));
+                answers.timezone =
+                    Some(ask_until(title, Some(suggestion), edel::timezones::answer)?)
+            }
             "user" => answers.user = Some(ask_until(title, None, edel::install::user_answer)?),
             "password" => hashed = Some(hash(&ask_password()?)?),
             "network.hostname" => {

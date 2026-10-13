@@ -233,7 +233,7 @@ pub struct Question {
 
 /// The installer's questions, in the order they are asked. A key the
 /// release does not act on yet (`settings::KEYS`' `supported`, such as
-/// `region.timezone` before its step) is left out by [`asked`], so the
+/// `system.profiles` before its step) is left out by [`asked`], so the
 /// file never holds a key `edel settings check` refuses.
 pub const QUESTIONS: &[Question] = &[
     Question {
@@ -401,6 +401,7 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
     for (key, value) in [
         ("region.language", &answers.language),
         ("region.keyboard", &answers.keyboard),
+        ("region.timezone", &answers.timezone),
         ("network.hostname", &answers.hostname),
         ("layout.preset", &preset),
     ] {
@@ -785,6 +786,31 @@ mod tests {
                 q.key
             );
         }
+    }
+
+    #[test]
+    fn a_zone_answer_is_written_unless_the_file_has_one() {
+        let answers = Answers {
+            timezone: Some("Europe/Berlin".into()),
+            ..Answers::default()
+        };
+        assert!(
+            answers
+                .settings_text()
+                .unwrap()
+                .contains("timezone = \"Europe/Berlin\"")
+        );
+        let added = merged("format = 1\n", &answers).unwrap();
+        assert!(added.contains("timezone = \"Europe/Berlin\""), "{added}");
+        let kept = merged(
+            "format = 1\n[region]\ntimezone = \"Asia/Tashkent\"\n",
+            &answers,
+        )
+        .unwrap();
+        assert!(
+            kept.contains("Asia/Tashkent") && !kept.contains("Berlin"),
+            "{kept}"
+        );
     }
 
     #[test]

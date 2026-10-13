@@ -1346,6 +1346,12 @@ msgstr ""
 msgid "keyboard layouts in quotes, such as \"us\" or \"us,ru\""
 msgstr ""
 
+msgid "{value} is not a time zone this machine knows; time zones are names such as \"Europe/Berlin\" or \"Asia/Tashkent\""
+msgstr ""
+
+msgid "a time zone in quotes, such as \"Europe/Berlin\""
+msgstr ""
+
 msgid "{item} is not a host name; use a name such as \"pool.ntp.org\" (letters, digits, hyphens and dots)"
 msgstr ""
 
@@ -1755,6 +1761,9 @@ msgid "{name} is built in; choose it first, or keep it as new to change it"
 msgstr ""
 
 msgid "{picture} is not a picture of {name}, so there is nothing to remove"
+msgstr ""
+
+msgid "a time zone such as Europe/Berlin or Asia/Tashkent"
 msgstr ""
 
 msgid "accent {name} is not an accent or a colour; the release's is used"
