@@ -20,6 +20,7 @@
 | `edel image` | Build and inspect Edel OS images |
 | `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
 | `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
+| `edel web-app` | web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own |
 
 ## `edel update [RELEASE] [OPTIONS]`
 
@@ -233,3 +234,28 @@ Delete one of your presets; the preset in use cannot be deleted.
 | | What it does |
 |---|---|
 | `NAME` | The preset's name, as preset list shows it |
+
+## `edel web-app`
+
+web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own.
+
+### `edel web-app add URL [OPTIONS]`
+
+Make a website an app with its own window, name and icon in the launcher.
+
+| | What it does |
+|---|---|
+| `URL` | The website, such as example.org or https://example.org |
+| `--name NAME` | The app's name in the launcher; the website's host when none is given |
+
+### `edel web-app remove NAME`
+
+Remove one of your web apps and its own profile, by its name.
+
+| | What it does |
+|---|---|
+| `NAME` | The app's name, as web-app list shows it |
+
+### `edel web-app list`
+
+List your web apps, with their websites.
