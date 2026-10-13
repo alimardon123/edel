@@ -1,0 +1,10 @@
+# desktop-test.sh live (M6.6b): the settings file on a USB stick that
+# Settings' installer page finds and uses. It names the computer and its
+# one person, so the page asks only bea's password and the disk.
+format = 1
+
+[network]
+hostname = "from-file"
+
+[users.bea]
+admin = true

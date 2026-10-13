@@ -419,7 +419,19 @@ msgstr ""
 msgid "no disk to install on"
 msgstr ""
 
+msgid "Who logs in"
+msgstr ""
+
 msgid "Install Edel OS"
+msgstr ""
+
+msgid "A settings file"
+msgstr ""
+
+msgid "Answer every question"
+msgstr ""
+
+msgid "Use it"
 msgstr ""
 
 msgid "You"
@@ -450,6 +462,15 @@ msgid "Erase and install"
 msgstr ""
 
 msgid "Restart now"
+msgstr ""
+
+msgid "{place}. It answers: {what}. Use it, and only the rest is asked."
+msgstr ""
+
+msgid "{place}, but it cannot be used: {why}"
+msgstr ""
+
+msgid "{place}. In use: it answers {what}, so only the rest is asked."
 msgstr ""
 
 msgid "could not write {path}: {why}"

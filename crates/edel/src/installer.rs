@@ -182,6 +182,78 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
+/// `edel install --find-settings` (M6.6b): the settings file to install
+/// with, from another disk: each partition (or a disk with none, as a FAT
+/// image written whole) not mounted and not on the disk Edel OS runs from,
+/// mounted read-only in turn, holding `install.toml` or the settings file
+/// at its top or in `EFI/edel` (`install::file_in`). The first one found is
+/// printed on standard output and where it was on standard error, so
+/// Settings' installer page can read both; nothing is changed.
+pub fn find_settings() -> Result<()> {
+    let running = update::Disk::find().ok().map(|d| d.name);
+    let mounts = fs::read_to_string("/proc/mounts").unwrap_or_default();
+    let mut disks: Vec<String> = fs::read_dir("/sys/block")
+        .with_context(|| could_not_read(Path::new("/sys/block")))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| is_candidate(n) && running.as_deref() != Some(n.as_str()))
+        .collect();
+    disks.sort();
+    for disk in disks {
+        let mut devices: Vec<String> = fs::read_dir(Path::new("/sys/block").join(&disk))
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().join("partition").exists())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        devices.sort();
+        if devices.is_empty() {
+            devices.push(disk.clone());
+        }
+        for name in devices {
+            let device = Path::new("/dev").join(&name);
+            let shown = device.display().to_string();
+            if mounts
+                .lines()
+                .any(|l| l.split_whitespace().next() == Some(shown.as_str()))
+            {
+                continue;
+            }
+            let found = crate::machine::with_mounted(&device, None, true, |dir| {
+                edel::install::file_in(dir).map(|(path, text)| {
+                    let inner = path
+                        .strip_prefix(dir)
+                        .unwrap_or(&path)
+                        .display()
+                        .to_string();
+                    (inner, text)
+                })
+            });
+            if let Some(Some((inner, text))) = found {
+                eprintln!(
+                    "edel install: {}",
+                    trf(
+                        "found {file} on {device}",
+                        &[("file", &inner), ("device", &shown)]
+                    )
+                );
+                print!("{text}");
+                return Ok(());
+            }
+        }
+    }
+    bail!(
+        "{}",
+        trf(
+            "no settings file was found on another disk; put {file} at the top of a USB stick, plug it in and look again",
+            &[("file", edel::places::INSTALL_FILE)]
+        )
+    )
+}
+
 /// One answer typed on the terminal after `prompt`; an empty line takes
 /// `suggestion` when there is one.
 fn ask_line(prompt: &str, suggestion: Option<&str>) -> Result<String> {

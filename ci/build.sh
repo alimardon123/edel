@@ -188,6 +188,13 @@ done
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
 
+# A FAT stick holding install.toml (M6.6b), which desktop-test.sh live
+# plugs in for Settings' installer page to find; FAT, as a stick written on
+# any computer would be.
+rm -f out/install-file.img
+mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
+mcopy -i out/install-file.img ci/desktop/install-file.toml ::install.toml
+
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/desktop-test/update \
 	out/flatpak out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test

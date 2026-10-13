@@ -1827,26 +1827,13 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
 }
 
 /// The settings file in the directory `inner` on `device`, by its name or
-/// a former one, mounted read-only for as long as it takes to read it. `fs` names the file system when it is known: early
-/// in boot the FAT driver is not loaded yet, so mount cannot guess it.
+/// a former one, mounted read-only for as long as it takes to read it. `fs`
+/// names the file system when it is known: early in boot the FAT driver is
+/// not loaded yet, so mount cannot guess it.
 fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
-    let dir = Path::new(places::SEED_MOUNT);
-    fs::create_dir_all(dir).ok()?;
-    // FAT needs a charset the virt kernel has; other file systems refuse
-    // the option, so they get a second try without it.
-    let mount = |kind: &str, options: &str| {
-        Command::new("mount")
-            .args(["-t", kind, "-o", options])
-            .arg(device)
-            .arg(dir)
-            .status()
-            .is_ok_and(|s| s.success())
-    };
-    let mounted = match fs {
-        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
-        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
-    };
-    if !mounted {
+    let Some(text) = with_mounted(device, fs, false, |dir| {
+        fs::read_to_string(places::found(&places::settings_in(&dir.join(inner)))).ok()
+    }) else {
         eprintln!(
             "warning: {}",
             trf(
@@ -1855,10 +1842,41 @@ fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
             )
         );
         return None;
-    }
-    let text = fs::read_to_string(places::found(&places::settings_in(&dir.join(inner)))).ok();
-    let _ = Command::new("umount").arg(dir).status();
+    };
     text
+}
+
+/// Runs `read` on `device` mounted read-only at `places::SEED_MOUNT`, then
+/// unmounts it; None when it does not mount, else what `read` gave. FAT needs a charset the virt
+/// kernel has, and other file systems refuse the option, so they get a
+/// second try without it; `quiet` keeps mount's own complaints off the
+/// console when many devices are tried.
+pub(crate) fn with_mounted<T>(
+    device: &Path,
+    fs: Option<&str>,
+    quiet: bool,
+    read: impl FnOnce(&Path) -> T,
+) -> Option<T> {
+    let dir = Path::new(places::SEED_MOUNT);
+    std::fs::create_dir_all(dir).ok()?;
+    let mount = |kind: &str, options: &str| {
+        let mut cmd = Command::new("mount");
+        cmd.args(["-t", kind, "-o", options]).arg(device).arg(dir);
+        if quiet {
+            cmd.stderr(std::process::Stdio::null());
+        }
+        cmd.status().is_ok_and(|s| s.success())
+    };
+    let mounted = match fs {
+        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
+        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
+    };
+    if !mounted {
+        return None;
+    }
+    let result = read(dir);
+    let _ = Command::new("umount").arg(dir).status();
+    Some(result)
 }
 
 /// What `export` begins the file with: what it is, and how to use it.
