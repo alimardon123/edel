@@ -885,8 +885,12 @@ fn swatch(theme: &Rc<Theme>, pick: impl Fn(&Tokens) -> Colour + 'static) -> gtk:
     area
 }
 
+/// How many frames the places must stay put before the wallpaper group
+/// stops logging them: about two seconds at 60 frames a second.
+const STILL_FRAMES: u32 = 120;
+
 /// Logs where the group's cards and its Reset lie in the window, once the
-/// flow is laid out, for CI to click (logical pixels), as `edel-settings:
+/// flow is laid out (and again whenever they settle elsewhere), for CI to click (logical pixels), as `edel-settings:
 /// wallpaper group places NAME X+Y+WxH ..., reset X+Y+WxH`. Asked for by
 /// this row's key, the page scrolls the group to the top (again on each
 /// frame while the sheet opens) and gives the keyboard to the chosen card,
@@ -898,6 +902,8 @@ fn log_places(
 ) {
     let scrolled = Cell::new(false);
     let last = RefCell::new(String::new());
+    let logged: RefCell<Option<String>> = RefCell::new(None);
+    let still = Cell::new(0u32);
     flow.add_tick_callback(move |flow, _| {
         let Some(window) = flow.root().and_downcast::<gtk::Window>() else {
             return glib::ControlFlow::Continue;
@@ -940,11 +946,22 @@ fn log_places(
             widgets::place(reset.compute_bounds(&window)),
         );
         // The view settles over a few frames, so the places are logged only
-        // once two frames agree.
+        // once two frames agree. The theme card above may grow after that
+        // (its sheet and its Changed line fill in), so the places are logged
+        // again whenever they settle elsewhere, until they stay put for
+        // `STILL_FRAMES`.
         if last.replace(line.clone()) != line {
+            still.set(0);
             return glib::ControlFlow::Continue;
         }
-        eprintln!("{line}");
+        if logged.borrow().as_deref() != Some(line.as_str()) {
+            eprintln!("{line}");
+            logged.replace(Some(line));
+        }
+        still.set(still.get() + 1);
+        if still.get() < STILL_FRAMES {
+            return glib::ControlFlow::Continue;
+        }
         glib::ControlFlow::Break
     });
 }

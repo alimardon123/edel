@@ -1653,11 +1653,18 @@ case_settings_wallpaper() {
 	set -- $pictures
 	python3 ci/qmp.py click "$(($x + $1 + $3 / 2))" "$(($y + $2 + $4 / 2))"
 	sleep 2
+	# The page lays itself out again as its rows fill in, so the card's
+	# place counts only once two readings a second apart agree.
 	card=none
+	before=
 	i=0
-	while [ "$card" = none ]; do
+	while [ "$card" = none ] || [ "$card" != "$before" ]; do
+		[ "$card" = none ] || {
+			before=$card
+			sleep 1
+		}
 		i=$((i + 1))
-		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies: $(value settings_wallpaper_log)"
+		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies, or it kept moving: $(value settings_wallpaper_log)"
 		guest 'settings wallpaper log'
 		text=$(value settings_wallpaper_log)
 		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
@@ -3000,7 +3007,11 @@ case_default_apps() {
 	*flatpak*) ;;
 	*) fail "Test A was started as $launched, not through flatpak run" ;;
 	esac
-	wait_more 'edel-compositor: mapped window test-a' "$opened" 60 || fail "Test A did not map a window within 60 s of starting"
+	if ! wait_more 'edel-compositor: mapped window test-a' "$opened" 60; then
+		guest 'default app check'
+		wait_for 'DESKTOP-TEST: default_app_run ' 30
+		fail "Test A did not map a window within 60 s of starting; as ci the installation lists $(value default_app_list) and flatpak run said: $(value default_app_run)"
+	fi
 	python3 ci/qmp.py screendump "$dir/default-apps.png"
 	closed=$(count 'edel-compositor: unmapped window test-a')
 	python3 ci/qmp.py key meta_l-q

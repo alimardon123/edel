@@ -9,10 +9,9 @@
 //! A password is never shown, read or touched: the page reads `/etc/passwd`
 //! and `/etc/group` (`edel::users`) and nothing else.
 //!
-//! Adding and removing people wait for `doas` (M6.5), which lets Settings
-//! run the commands for them, so the page shows no such buttons until
-//! then. Seam (ADR-008): with `doas` the page runs `edel settings apply`
-//! through `cmd.rs`, as the Updates page runs `edel update`, and the
+//! Adding and removing people is not on this page yet, so it shows no such
+//! buttons. Seam (ADR-008): doas (M6.5) lets the page run `edel settings
+//! apply` through `cmd.rs`, as the Updates page runs `edel update`, and the
 //! buttons come back as rows of the same kind.
 
 use std::rc::Rc;
@@ -175,7 +174,7 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         switch.set_sensitive(false);
         let row = widgets::row(&group, tr("Administrator"), switch.upcast_ref());
         row.subtitle.set_label(tr(
-            "Can change the system. Changing it needs administrator rights, which Settings cannot ask for yet.",
+            "Can change the system. Changing it needs administrator rights.",
         ));
         row.reset.set_visible(false);
         // The command that turns it the other way, as an administrator
@@ -198,8 +197,7 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         person_row(&group, person);
     }
 
-    // Add a person and Remove a person come with doas (M6.5), as the module
-    // says; no button is shown before then.
+    // Add a person and Remove a person are not on this page yet; see above.
     let inner = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .build();

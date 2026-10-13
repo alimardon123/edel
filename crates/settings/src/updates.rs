@@ -4,7 +4,7 @@
 //! in one headline whether Edel OS is up to date, an update waits, a restart
 //! is due or something failed (`status.rs` decides, from what `edel status`
 //! and `edel update --check` print), with one primary button under it: Check
-//! for updates, then Update now, then Restart now. A card under it keeps the
+//! for updates, then Install the update, then Restart now. A card under it keeps the
 //! version before ready, with Roll back, shown only when there is one. What's
 //! new is one card that follows a check which found a newer version. The
 //! Channel row has a card of its own: Stable and Preview as segments, or a
@@ -17,9 +17,10 @@
 //! The page runs nothing in the background: `edel status` is read when
 //! the page is shown and after each action, and every command runs on a
 //! thread of its own, never the one that draws (`cmd.rs`). Installing and
-//! restarting need root until `doas` arrives (M6.5): until then a click
-//! that lacks the right says so in plain words and shows `edel`'s refusal
-//! in the Details; the page changes nothing itself.
+//! going back run `edel` as the administrator through doas, after the
+//! password dialog of `ask.rs` (M6.5); restarting runs through the power
+//! rule. A click that lacks the right says so in plain words and shows
+//! `edel`'s refusal in the Details; the page changes nothing itself.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -32,9 +33,27 @@ use gtk::prelude::*;
 use edel::i18n::{n_, tr, trf};
 use edel::settings;
 
+use crate::ask::{self, Ask};
 use crate::files::Files;
 use crate::status::{self, Action, Doing, Found, Inputs, Phase, Status};
 use crate::{about, cmd, icon, rows, widgets};
+
+/// Install the update, as the administrator (`edel update`), and what its
+/// dialog says (M6.5).
+const INSTALL: Ask = Ask {
+    title: n_("Install the update"),
+    prompt: n_("Installing changes the system, so Edel OS asks for your password."),
+    button: n_("Install"),
+    args: &["update"],
+};
+
+/// Go back, as the administrator (`edel rollback`), and its dialog (M6.5).
+const GO_BACK: Ask = Ask {
+    title: n_("Go back"),
+    prompt: n_("Going back changes the system, so Edel OS asks for your password."),
+    button: n_("Go back"),
+    args: &["rollback"],
+};
 
 /// One line of `edel status`, as a row shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,7 +172,7 @@ struct Ui {
     channel_row: widgets::Row,
     /// The version running (os-release), read once.
     version: Option<String>,
-    /// Whether Settings runs as root (it does not until `doas`, M6.5).
+    /// Whether Settings runs as root (a test or an appliance does).
     root: bool,
     state: RefCell<State>,
     /// What the leading button does now.
@@ -640,36 +659,54 @@ impl Ui {
         });
     }
 
-    /// Update now: `edel update`, which takes the channel's newest version
-    /// into the other slot.
+    /// Install the update: `edel update`, which takes the channel's newest version
+    /// into the other slot, as the administrator after their password.
     fn install(self: &Rc<Self>) {
         let version = match &self.state.borrow().phase {
             Phase::Available(found) => Some(found.version.clone()),
             _ => None,
         };
-        self.set_phase(Phase::Installing);
-        let ui = self.clone();
-        glib::spawn_future_local(async move {
-            let phase = match ui.run(&["update"]).await {
-                Some(done) if done.ok => Phase::Installed { version },
-                Some(done) => failed(Doing::Install, &done),
-                None => stopped(Doing::Install),
-            };
-            ui.set_phase(phase);
-            ui.read_status();
+        self.admin(&INSTALL, Doing::Install, move || Phase::Installed {
+            version,
         });
     }
 
     /// Go back: `edel rollback`, which makes the version before the last
-    /// update start next.
+    /// update start next, as the administrator after their password.
     fn go_back(self: &Rc<Self>) {
-        self.set_phase(Phase::GoingBack);
-        let ui = self.clone();
-        glib::spawn_future_local(async move {
-            let phase = match ui.run(&["rollback"]).await {
-                Some(done) if done.ok => Phase::Idle,
-                Some(done) => failed(Doing::GoBack, &done),
-                None => stopped(Doing::GoBack),
+        self.admin(&GO_BACK, Doing::GoBack, || Phase::Idle);
+    }
+
+    /// Asks the password of `what` (`ask.rs`), then shows what `edel` did
+    /// as the administrator in the Details, and the page's phase: `done`
+    /// when it worked, else the failure.
+    fn admin(
+        self: &Rc<Self>,
+        what: &'static Ask,
+        doing: Doing,
+        done: impl FnOnce() -> Phase + 'static,
+    ) {
+        // The page shows its busy phase while the command runs, and goes
+        // back to where it was when a wrong password sends the person back.
+        let before = self.state.borrow().phase.clone();
+        let busy = match doing {
+            Doing::GoBack => Phase::GoingBack,
+            _ => Phase::Installing,
+        };
+        let weak = Rc::downgrade(self);
+        let running = move |on: bool| {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_phase(if on { busy.clone() } else { before.clone() });
+            }
+        };
+        let ui = Rc::downgrade(self);
+        ask::ask(self.primary.upcast_ref(), what, running, move |outcome| {
+            let Some(ui) = ui.upgrade() else { return };
+            ui.show_last(&cmd::line(what.args), &outcome);
+            let phase = if outcome.ok {
+                done()
+            } else {
+                failed(doing, &outcome)
             };
             ui.set_phase(phase);
             ui.read_status();

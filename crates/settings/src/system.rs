@@ -5,9 +5,9 @@
 //! to apply it with `edel settings import FILE` (the file also becomes
 //! this machine's own, so the next boot keeps it). Both run the command
 //! on a thread of its own and show its result or its message as they are
-//! (`cmd.rs`): changing the machine needs root until `doas` arrives
-//! (M6.5), and until then a click that lacks the right reads `edel`'s
-//! refusal. The page runs nothing in the background.
+//! (`cmd.rs`): changing the machine runs as root through doas (M6.5), and
+//! a click that lacks the right reads `edel`'s refusal. The page runs
+//! nothing in the background.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
