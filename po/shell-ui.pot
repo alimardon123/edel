@@ -149,6 +149,9 @@ msgstr ""
 msgid "No app matches"
 msgstr ""
 
+msgid "Install {url} as an app"
+msgstr ""
+
 msgid "Password"
 msgstr ""
 

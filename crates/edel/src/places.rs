@@ -270,6 +270,34 @@ pub fn person_themes_dir() -> Option<PathBuf> {
     }
 }
 
+/// The folder of a person's own desktop files (M6.4), where a web app's
+/// desktop file goes: `$XDG_DATA_HOME/applications` (an absolute value
+/// only, as the spec says), else `~/.local/share/applications`. None
+/// without a home folder.
+pub fn person_applications_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|d| d.is_absolute())
+    {
+        Some(data) => Some(data.join("applications")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(".local/share/applications")),
+    }
+}
+
+/// The folder a web app's Firefox profile is kept in (M6.4): inside
+/// Firefox's own Flatpak data folder, which its sandbox can write, one
+/// folder per web app. None without a home folder.
+pub fn web_apps_profiles_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty())?;
+    Some(
+        PathBuf::from(home)
+            .join(".var/app")
+            .join(crate::web_apps::BROWSER)
+            .join("edel-web-apps"),
+    )
+}
+
 /// The folder of a person's lock screen pictures (M5.10c7c): one PNG for
 /// each look Settings' Lock screen page shows, drawn by `edel-shell-ui
 /// --look-picture` and named by a hash of what the picture shows. Settings

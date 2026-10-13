@@ -107,6 +107,8 @@ pub fn need(command: &Commands) -> Need {
             PresetCommands::List => Need::Anyone,
             _ => Need::Admin,
         },
+        // A web app is the person's own files, in their own home.
+        Commands::WebApp { .. } => Need::Anyone,
     }
 }
 
@@ -472,6 +474,9 @@ mod tests {
             (&["edel", "theme", "export", "mine"], Need::Admin),
             (&["edel", "preset", "list"], Need::Anyone),
             (&["edel", "preset", "delete", "mine"], Need::Admin),
+            (&["edel", "web-app", "add", "example.org"], Need::Anyone),
+            (&["edel", "web-app", "list"], Need::Anyone),
+            (&["edel", "web-app", "remove", "example.org"], Need::Anyone),
         ];
         for (args, want) in cases {
             assert_eq!(need_of(args), *want, "{args:?}");
