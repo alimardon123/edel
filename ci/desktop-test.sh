@@ -3290,9 +3290,10 @@ case_default_apps() {
 	[ "$varcache" != var-cache ] ||
 		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
 	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
-	# What it saves (M6.2a): the same fonts listed with the baked cache
-	# and with none, as each app's first start did before. Reported, and
-	# the cache must win: a cache that saves nothing is not worth its size.
+	# What it saves (M6.2a): the same fonts listed five times with the
+	# baked cache and five times with none, as each app's first start did
+	# before. Reported, and the cache must win: a cache that saves nothing
+	# is not worth its size.
 	asked=$(count 'DESKTOP-TEST: font_cost ')
 	guest 'font cost'
 	wait_more 'DESKTOP-TEST: font_cost ' "$asked" 60 || fail "the service did not time fc-list"
@@ -3302,8 +3303,8 @@ case_default_apps() {
 	built=$(echo "$cost" | cut -d' ' -f3)
 	[ "${built:-0}" -gt 0 ] || fail "fc-list with an empty cache folder built no cache, so the comparison measured nothing: $cost"
 	[ "$with_cache" -lt "$without_cache" ] ||
-		fail "listing the fonts took $with_cache ms with the baked cache and $without_cache ms without, so the cache saves nothing"
-	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci, fonts listed in ${with_cache} ms with them against ${without_cache} ms without (each app's first start before); after the first app ran: $after_app"
+		fail "listing the fonts five times took $with_cache ms with the baked cache and $without_cache ms without, so the cache saves nothing"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci, fonts listed five times in ${with_cache} ms with them against ${without_cache} ms without (each app's first start before); after the first app ran: $after_app"
 }
 
 case_quick() {
