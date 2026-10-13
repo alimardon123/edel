@@ -92,7 +92,8 @@ pub fn need(command: &Commands) -> Need {
                 SettingsCommands::Set { .. }
                 | SettingsCommands::Reset { .. }
                 | SettingsCommands::Apply { .. }
-                | SettingsCommands::Import { .. },
+                | SettingsCommands::Import { .. }
+                | SettingsCommands::FirstBoot { .. },
             ) => Need::Admin,
         },
         Commands::Image { command } => match command {
@@ -474,6 +475,10 @@ mod tests {
             ),
             (&["edel", "settings", "apply"], Need::Admin),
             (&["edel", "settings", "import", "f"], Need::Admin),
+            (
+                &["edel", "settings", "first-boot", "--console"],
+                Need::Admin,
+            ),
             (&["edel", "image", "check", "images/vm.toml"], Need::Anyone),
             (&["edel", "image", "build", "images/vm.toml"], Need::Admin),
             (&["edel", "theme", "list"], Need::Anyone),
