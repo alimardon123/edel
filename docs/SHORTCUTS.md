@@ -12,6 +12,7 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `toggle_fullscreen` | `Super+F` | Make the focused window fill its screen, or leave fullscreen |  |
 | `switch_windows` | `Alt+Tab` | Switch windows, the most recently used first, while the modifiers are held; with Shift, back |  |
 | `toggle_tiling` | `Super+Y` | Switch this workspace between floating and tiling |  |
+| `choose_tiling_style` | `Super+Shift+Y` | Open the layout button's menu of tiling styles, with the keyboard on it |  |
 | `focus_window_left` | `Super+Left` | Focus the window to the left of the focused one |  |
 | `focus_window_right` | `Super+Right` | Focus the window to the right of the focused one |  |
 | `focus_window_up` | `Super+Up` | Focus the window above the focused one |  |

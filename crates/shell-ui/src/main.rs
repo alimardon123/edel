@@ -1621,6 +1621,39 @@ impl Shell {
         self.draw_launcher();
     }
 
+    /// The tiling styles' key (M6.9): the menu opens over the first
+    /// panel's layout button with the keyboard on it, or closes. A preset
+    /// with no layout button opens it over the middle of the first panel,
+    /// so the styles are never out of the keyboard's reach.
+    pub fn styles_key_pressed(&mut self) {
+        if self.styles.is_some() {
+            return self.close_styles();
+        }
+        let button = self.panels.iter().enumerate().find_map(|(i, panel)| {
+            let j = (0..panel.places.len()).find(|&j| {
+                panel
+                    .row
+                    .widget(j)
+                    .is_some_and(|w| w.name == widgets::layout::WIDGET.name)
+            })?;
+            let (left, width) = panel.places[j];
+            Some((i, left + width / 2.0))
+        });
+        let place = button.or_else(|| {
+            self.panels
+                .first()
+                .map(|panel| (0, panel.width as f32 / 2.0))
+        });
+        let Some((i, centre)) = place else {
+            eprintln!("edel-shell-ui: styles key, but no panel to open the menu over");
+            return;
+        };
+        self.toggle_styles(i, centre);
+        if self.styles.is_some() {
+            eprintln!("edel-shell-ui: styles menu opened from the keyboard");
+        }
+    }
+
     /// A right click on the layout button: the tiling styles' menu opens
     /// beside it, centred on `centre` logical pixels along panel `i`, or
     /// closes if open (M5.16b).

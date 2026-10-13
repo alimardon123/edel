@@ -6057,10 +6057,20 @@ case_styles() {
 		fail "ci's settings file does not hold the chosen style: $(value settings_file)"
 	[ "$(count 'edel-compositor: windows now tiling')" = "$tiled" ] ||
 		fail "choosing a style tiled the floating workspace"
+	# The keyboard's way in (M6.9): Super+Shift+Y opens the same menu with
+	# the keyboard on it, and Escape closes it.
+	opened=$(count 'edel-shell-ui: styles menu opened from the keyboard')
+	hidden=$(count 'edel-shell-ui: styles menu hidden')
+	python3 ci/qmp.py key meta_l-shift-y
+	wait_more 'edel-shell-ui: styles menu opened from the keyboard' "$opened" ||
+		fail "Super+Shift+Y did not open the styles menu"
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: styles menu hidden' "$hidden" ||
+		fail "Escape did not close the styles menu Super+Shift+Y opened"
 	styled=$(count 'edel-compositor: tiling style stack')
 	guest 'style mine default'
 	wait_more 'edel-compositor: tiling style stack' "$styled" || fail "taking layout.tiling_style out of ci's file did not bring stack back"
-	echo "PASS: the layout button's right-click menu showed stack in use, its Split row wrote layout.tiling_style = \"split\" and the compositor followed with workspace 1 still floating"
+	echo "PASS: the layout button's right-click menu showed stack in use, its Split row wrote layout.tiling_style = \"split\" and the compositor followed with workspace 1 still floating, and Super+Shift+Y opened the menu from the keyboard and Escape closed it"
 	echo "PASS: layout.tiling_style = \"split\" left workspace 4 floating ($floated), Super+Y tiled four windows halved in turn ($split), Super+Shift+Left swapped s4 and s3, and stack laid them out as master and stack at once ($stacked)"
 }
 

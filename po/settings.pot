@@ -422,13 +422,10 @@ msgstr ""
 msgid "Welcome to Edel OS"
 msgstr ""
 
-msgid "A few questions, then a plan to check. Nothing changes on your computer until you press Erase and install."
+msgid "A few questions, then a plan to check. Nothing changes until you press Erase and install."
 msgstr ""
 
 msgid "Install Edel OS"
-msgstr ""
-
-msgid "A settings file"
 msgstr ""
 
 msgid "Found a settings file"
@@ -1230,6 +1227,9 @@ msgid "Switch windows"
 msgstr ""
 
 msgid "Floating or tiling"
+msgstr ""
+
+msgid "Tiling styles menu"
 msgstr ""
 
 msgid "Focus window to the left"

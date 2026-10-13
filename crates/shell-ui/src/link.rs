@@ -113,6 +113,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::SwitcherHide => shell.hide_switcher(),
             edel_shell_v1::Event::MediaKey { key } => shell.media_key(&key),
             edel_shell_v1::Event::Tray => shell.tray_key_pressed(),
+            edel_shell_v1::Event::Styles => shell.styles_key_pressed(),
             edel_shell_v1::Event::Settings => shell.settings_changed(),
             edel_shell_v1::Event::Lock => shell.lock_screen(),
         }
