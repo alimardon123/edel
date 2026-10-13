@@ -3290,11 +3290,12 @@ case_notify() {
 	shot bell-count $((bell + 32)) 772 "$accent" >/dev/null || fail "with notifications.badge = count the button shows no count pill at $((bell + 32)),772"
 	# The list hangs on the button wherever it lies (M5.9k): with the bell
 	# at the panel's start, it opens at the screen's left, not its right.
+	# The line before has the same shape, with the button at the end, so
+	# the wait is for the button within the panel's first 100 px.
 	guest 'panels bell start'
-	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
-		fail "panels.list with the notifications button first did not reach the panel"
-	start=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
-	[ "$start" -lt 100 ] || fail "the notifications button first in the panel lies at $start"
+	wait_for 'edel-shell-ui: panel places notifications [0-9]{1,2}\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button first did not move it to the panel's start: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	start=$(tr -d '\r' <"$log" | grep -aE 'edel-shell-ui: panel places notifications [0-9]{1,2}\+' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
 	shown=$(count 'edel-shell-ui: notification centre shown')
 	python3 ci/qmp.py click $((start + 17)) 780
 	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((start + 17)),780 opened no notifications"
