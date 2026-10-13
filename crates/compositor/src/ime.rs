@@ -9,9 +9,13 @@
 //!   key path in `input.rs` runs the shortcuts first, so Super keys still
 //!   act while an input method types, and everything else reaches the
 //!   grab through `KeyboardHandle::input`.
-//! - The input method global is hidden from sandboxed clients
-//!   (`sandbox::shell_may`), so a Flatpak app never becomes an input
-//!   method: only programs the session started may be one.
+//! - fcitx5 uses input-method-v2 only when a virtual keyboard is offered
+//!   too (zwp_virtual_keyboard_v1), which it types the keys it does not
+//!   take through; both are smithay's.
+//! - The input method and virtual keyboard globals are hidden from
+//!   sandboxed clients (`sandbox::shell_may`), so a Flatpak app never
+//!   becomes an input method or types as one: only programs the session
+//!   started may.
 //! - Its candidate list is a popup: `PopupManager` tracks it under the
 //!   window it types into, and the frame draws it above that window
 //!   (`popup_elements`, called from `render.rs`). Only input method popups
@@ -28,6 +32,7 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::delegate_input_method_manager;
 use smithay::delegate_text_input_manager;
+use smithay::delegate_virtual_keyboard_manager;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Rectangle};
@@ -94,3 +99,4 @@ pub fn popup_elements(
 
 delegate_text_input_manager!(Edel);
 delegate_input_method_manager!(Edel);
+delegate_virtual_keyboard_manager!(Edel);

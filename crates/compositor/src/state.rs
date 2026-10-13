@@ -213,9 +213,10 @@ pub struct Edel {
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
     pub keyboard_shortcuts_inhibit:
         smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
-    /// The text input and input method globals (`ime.rs`, M6.8).
+    /// The text input, input method and virtual keyboard globals (`ime.rs`, M6.8).
     _text_input: smithay::wayland::text_input::TextInputManagerState,
     _input_method: smithay::wayland::input_method::InputMethodManagerState,
+    _virtual_keyboard: smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState,
 }
 
 impl Edel {
@@ -283,6 +284,13 @@ impl Edel {
                 &display,
                 crate::sandbox::shell_may,
             ),
+            // fcitx5 speaks input-method-v2 only beside a virtual keyboard,
+            // through which it gives back the keys it does not take (M6.8);
+            // hidden from sandboxed apps as the input method is.
+            _virtual_keyboard: smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState::new::<
+                Edel,
+                _,
+            >(&display, crate::sandbox::shell_may),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take
