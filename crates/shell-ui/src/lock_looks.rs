@@ -332,6 +332,7 @@ fn items(view: &View, l: &Layout) -> Vec<(Option<Part>, Item)> {
         children: Vec::new(),
         toggled: None,
         value: None,
+        value_text: None,
     };
     let mut out = vec![
         (

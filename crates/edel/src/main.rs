@@ -19,6 +19,7 @@ mod privilege;
 mod release;
 mod report;
 mod run;
+mod settings_source;
 mod shell;
 mod system_power;
 mod update;
@@ -158,10 +159,11 @@ enum Commands {
         /// The disk, such as /dev/sda; without it, the disks are listed
         /// and one is asked for
         disk: Option<String>,
-        /// The settings file the new machine starts with; without it, a few
-        /// questions are asked on the terminal and their answers become it
+        /// The settings file the new machine starts with, a path or an
+        /// https:// address; without it, a few questions are asked on the
+        /// terminal and their answers become it
         #[arg(long, value_name = "FILE")]
-        settings: Option<PathBuf>,
+        settings: Option<String>,
         /// List the disks Edel OS could install on, and change nothing
         #[arg(long)]
         list: bool,
@@ -336,8 +338,8 @@ enum SettingsCommands {
     /// Make FILE this machine's settings and apply it, such as a file
     /// exported on another machine
     Import {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
     },
     /// Print this machine as a settings file, to keep or to import on
     /// another machine, and the /etc files it changed
@@ -345,8 +347,8 @@ enum SettingsCommands {
     /// Check a settings file strictly: every unknown key, value or format,
     /// and every key this release does not act on yet, is refused
     Check {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
     },
 }
 
@@ -671,7 +673,18 @@ fn run(command: Commands) -> Result<()> {
             plan,
             yes,
             ..
-        } => installer::install(disk.as_deref(), settings.as_deref(), plan, yes),
+        } => {
+            let settings = settings
+                .as_deref()
+                .map(settings_source::local)
+                .transpose()?;
+            installer::install(
+                disk.as_deref(),
+                settings.as_ref().map(settings_source::Local::path),
+                plan,
+                yes,
+            )
+        }
         Commands::Report { esp } => report::report(esp),
         Commands::Settings { command } => match command {
             None => {
@@ -688,9 +701,13 @@ fn run(command: Commands) -> Result<()> {
                 Ok(())
             }
             Some(SettingsCommands::Apply { boot }) => machine::apply(boot),
-            Some(SettingsCommands::Import { file }) => machine::import(&file),
+            Some(SettingsCommands::Import { file }) => {
+                machine::import(settings_source::local(&file)?.path())
+            }
             Some(SettingsCommands::Export) => machine::export(),
-            Some(SettingsCommands::Check { file }) => check_system_file(&file),
+            Some(SettingsCommands::Check { file }) => {
+                check_system_file(&settings_source::local(&file)?)
+            }
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),
@@ -770,8 +787,9 @@ fn web_app_list() {
 
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
-fn check_system_file(file: &std::path::Path) -> Result<()> {
-    let shown = file.display().to_string();
+fn check_system_file(source: &settings_source::Local) -> Result<()> {
+    let file = source.path();
+    let shown = source.shown().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
     let problems = settings::check(&text)
@@ -783,22 +801,21 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
     for problem in &problems {
         println!("{problem}");
     }
-    bail!("{}", problem_count(file, problems.len()))
+    bail!("{}", problem_count(&shown, problems.len()))
 }
 
 /// The last line of a failed `edel settings check`: how many problems the
 /// lines above are, and what to do about them.
-fn problem_count(file: &std::path::Path, count: usize) -> String {
-    let path = file.display().to_string();
+fn problem_count(path: &str, count: usize) -> String {
     if count == 1 {
         trf(
             "{path} has 1 problem, listed above; fix it and run edel settings check again",
-            &[("path", &path)],
+            &[("path", path)],
         )
     } else {
         trf(
             "{path} has {count} problems, listed above; fix them and run edel settings check again",
-            &[("path", &path), ("count", &count.to_string())],
+            &[("path", path), ("count", &count.to_string())],
         )
     }
 }
@@ -838,7 +855,7 @@ mod tests {
 
     #[test]
     fn a_failed_check_counts_its_problems_and_says_what_to_do() {
-        let file = std::path::Path::new("/tmp/ali.toml");
+        let file = "/tmp/ali.toml";
         assert_eq!(
             problem_count(file, 1),
             "/tmp/ali.toml has 1 problem, listed above; fix it and run edel settings check again"
