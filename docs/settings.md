@@ -56,10 +56,10 @@ The desktop follows these keys at once (M4.5): it reads the machine's file and t
 | `layout.title_bars` | `always` (every window has its bar), `floating-only` (only floating windows have one) or `never` (no window has one, in floating or tiling; Super with a drag still moves a window and Super+Q still closes it). Missing is the preset's (`always` in every preset but Zen, which is `never`, M5.18b) | M4.5, `never` M5.18b |
 | `layout.tiling_style` | `stack`, `split` or `scroll`: how tiling lays windows out, one main window on the left and the rest stacked on the right (`stack`), each new window taking half of the focused one's space, cut across its longer side, as Hyprland tiles (`split`), or each window a column half the screen wide on a strip that scrolls to the focused one, as niri tiles (`scroll`, M5.16c); missing is the preset's style (Zen's is `split`, M5.18b), else `stack`. It never switches a workspace between floating and tiling: a floating one takes the style when it next tiles. The panel's layout button offers the same choice on a right click (M5.16b) | M5.16a |
 | `layout.device_type` | `desktop`, `tablet` or `phone`; missing detects it | M9.3 |
-| `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive) | M5.4b |
-| `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown | M5.18a |
-| `layout.minimize_button` | `true` or `false`: whether every title bar shows its minimize button; missing shows it | M5.18a |
-| `layout.maximize_button` | `true` or `false`: whether every title bar shows its maximize button; missing shows it. A hidden button's room goes to the title | M5.18a |
+| `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive); GTK and libadwaita apps' own header bars follow it through the settings portal (M6.16) | M5.4b |
+| `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
+| `layout.minimize_button` | `true` or `false`: whether every title bar shows its minimize button; missing shows it; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
+| `layout.maximize_button` | `true` or `false`: whether every title bar shows its maximize button; missing shows it. A hidden button's room goes to the title; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
 
 ## Panels: `[panels]`
 
