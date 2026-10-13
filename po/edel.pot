@@ -935,10 +935,16 @@ msgstr ""
 msgid "kept, not used by this release: {problem}"
 msgstr ""
 
+msgid "set {keys}"
+msgstr ""
+
 msgid "{assignment}: write KEY=VALUE, such as network.hostname=lab-1"
 msgstr ""
 
-msgid "set {keys}"
+msgid "{keys}: these are the machine's settings, so changing them needs an administrator: {as_root} edel settings {command}"
+msgstr ""
+
+msgid "HOME is not set, so there is no folder for the person's settings file; set HOME and try again"
 msgstr ""
 
 msgid "reset {keys}"
@@ -984,6 +990,12 @@ msgid "Settings, page by page, as the Settings app shows them:"
 msgstr ""
 
 msgid "edel settings get PAGE shows a page's settings and where each comes from;\nedel settings set KEY=VALUE changes one, and reset KEY gives it back to the release."
+msgstr ""
+
+msgid "preset {name}"
+msgstr ""
+
+msgid "{word} default"
 msgstr ""
 
 msgid "{name}: no such page or key; did you mean {near}?"
@@ -1518,6 +1530,21 @@ msgid "no key given; write KEY=VALUE, such as network.hostname=lab-1"
 msgstr ""
 
 msgid "{table} is not a table in the file; change {key} by hand"
+msgstr ""
+
+msgid "{key}: no longer used since {version}; edel settings reset {key} takes it out"
+msgstr ""
+
+msgid "{key}: no longer used since {version}"
+msgstr ""
+
+msgid "{key}: += and -= work on lists only; this key holds one value, so use {key}=VALUE"
+msgstr ""
+
+msgid "{key} is not a list in the file; change it by hand"
+msgstr ""
+
+msgid "{key}: {item} is not in the list"
 msgstr ""
 
 msgid "{key} is not in the file, so it already has its default; there is nothing to reset"

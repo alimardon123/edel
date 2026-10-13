@@ -1397,6 +1397,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
             .iter()
             .map(|key| format!("{key}: {}", tr("not supported yet"))),
     );
+    // A key a release stopped using is still read; its note says so (M6.11).
+    lines.extend(retired_notes(text, crate::key_help::find));
     // Across keys: unknown actions, two on one key, a way out unbound.
     lines.extend(crate::shortcuts::check(&read.file.shortcuts));
     // Across keys: a look that is neither built in nor the file's own (M5.10c5c).
@@ -1825,6 +1827,9 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
 /// byte for byte. VALUE is TOML when it reads as TOML (`true`, `2`,
 /// `["a"]`, `"x"`) and plain text otherwise, so `hostname=lab-1` works.
 pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
+    if let Some(message) = retired_message(key, crate::key_help::find(key)) {
+        bail!("{message}");
+    }
     let path: Vec<&str> = key.split('.').collect();
     let entry = known_key(key, &path)?;
     let value = normalize(entry.kind, &value_from_arg(value)).map_err(|m| anyhow!("{key}: {m}"))?;
@@ -1903,6 +1908,134 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
         }
     }
     Ok(text)
+}
+
+/// Why `set` refuses `key` because a release stopped using it (M6.11), if
+/// it did: `line` is the key's line in [`crate::key_help`].
+fn retired_message(key: &str, line: Option<&crate::key_help::Help>) -> Option<String> {
+    let version = line?.retired?;
+    Some(trf(
+        "{key}: no longer used since {version}; edel settings reset {key} takes it out",
+        &[("key", key), ("version", version)],
+    ))
+}
+
+/// The notes `check` gives for the keys a file holds that a release stopped
+/// using (M6.11): `find` gives each key's line, as [`crate::key_help::find`].
+fn retired_notes(
+    text: &str,
+    find: impl Fn(&str) -> Option<&'static crate::key_help::Help>,
+) -> Vec<String> {
+    let Ok(table) = toml::from_str::<Table>(text) else {
+        return Vec::new();
+    };
+    let mut keys = Vec::new();
+    present_keys(&table, "", &mut keys);
+    keys.iter()
+        .filter_map(|key| {
+            let version = find(key)?.retired?;
+            Some(trf(
+                "{key}: no longer used since {version}",
+                &[("key", key), ("version", version)],
+            ))
+        })
+        .collect()
+}
+
+/// Every key a table holds, dotted, the tables' own names left out.
+fn present_keys(table: &Table, prefix: &str, out: &mut Vec<String>) {
+    for (name, value) in table {
+        let key = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{prefix}.{name}")
+        };
+        match value {
+            Value::Table(inner) => present_keys(inner, &key, out),
+            _ => out.push(key),
+        }
+    }
+}
+
+/// Whether `kind` takes a list, which `KEY+=VALUE` and `KEY-=VALUE` edit
+/// (M6.11): a list of texts, of Flatpak ids, of host names or of pictures.
+fn is_list(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Texts | Kind::AppIds | Kind::Hosts | Kind::Pictures
+    )
+}
+
+/// The value at `path` in `table`, if the file has it.
+fn list_value_at<'a>(table: &'a Table, path: &[&str]) -> Option<&'a Value> {
+    let (last, parents) = path.split_last()?;
+    let mut here = table;
+    for part in parents {
+        here = here.get(*part)?.as_table()?;
+    }
+    here.get(*last)
+}
+
+/// `edel settings set KEY+=VALUE` (adds) and `KEY-=VALUE` (removes) on a
+/// file's text (M6.11). Adding puts VALUE at the end of the list unless it is
+/// there already; removing takes out its one item, which must be there. The
+/// whole new list is written through [`set`], so it is checked as
+/// `KEY=[...]` would be, and an empty list removes the key, as [`unset`]
+/// does.
+pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String> {
+    let path: Vec<&str> = key.split('.').collect();
+    let entry = known_key(key, &path)?;
+    if !is_list(entry.kind) {
+        bail!(
+            "{}",
+            trf(
+                "{key}: += and -= work on lists only; this key holds one value, so use {key}=VALUE",
+                &[("key", key)]
+            )
+        );
+    }
+    // A list item reads as the arguments of `set` do, so a quoted text and a
+    // bare word both give the text.
+    let item = match value_from_arg(value) {
+        Value::String(text) => text,
+        _ => value.to_string(),
+    };
+    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let mut list: Vec<String> = match list_value_at(&table, &path) {
+        None => Vec::new(),
+        Some(Value::Array(items)) if items.iter().all(Value::is_str) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+        Some(_) => bail!(
+            "{}",
+            trf(
+                "{key} is not a list in the file; change it by hand",
+                &[("key", key)]
+            )
+        ),
+    };
+    if add {
+        if !list.contains(&item) {
+            list.push(item);
+        }
+    } else {
+        if !list.contains(&item) {
+            bail!(
+                "{}",
+                trf(
+                    "{key}: {item} is not in the list",
+                    &[("key", key), ("item", &format!("{item:?}"))]
+                )
+            );
+        }
+        list.retain(|kept| *kept != item);
+    }
+    if list.is_empty() {
+        return unset(text, key);
+    }
+    let array = Value::Array(list.into_iter().map(Value::String).collect());
+    set(text, key, &array.to_string())
 }
 
 /// `edel settings reset KEY` on a file's text: removes the key, and tables
@@ -3215,6 +3348,87 @@ lock_after_minutes = 11
         let set_hive = set("format = 1\n", "layout.preset", "hive").unwrap();
         assert_eq!(set_hive, "format = 1\n\n[layout]\npreset = \"hive\"\n");
         assert!(check(&set_hive).unwrap().is_empty());
+    }
+
+    static RETIRED: crate::key_help::Help = crate::key_help::Help {
+        key: "old.key",
+        help: "an old key",
+        default: "1",
+        from: crate::key_help::DecidedBy::Release,
+        belongs: crate::key_help::Belongs::Device,
+        retired: Some("0.9"),
+    };
+
+    static CURRENT: crate::key_help::Help = crate::key_help::Help {
+        key: "new.key",
+        help: "a key",
+        default: "1",
+        from: crate::key_help::DecidedBy::Release,
+        belongs: crate::key_help::Belongs::Device,
+        retired: None,
+    };
+
+    #[test]
+    fn a_retired_key_is_refused_by_set_with_the_release_that_stopped_it() {
+        assert_eq!(
+            retired_message("old.key", Some(&RETIRED)).as_deref(),
+            Some("old.key: no longer used since 0.9; edel settings reset old.key takes it out")
+        );
+        assert_eq!(retired_message("new.key", Some(&CURRENT)), None);
+        assert_eq!(retired_message("network.hostname", None), None);
+    }
+
+    #[test]
+    fn check_notes_a_retired_key_the_file_holds() {
+        let find = |key: &str| (key == "old.key").then_some(&RETIRED);
+        let notes = retired_notes("format = 1\n[old]\nkey = 2\n", find);
+        assert_eq!(notes, ["old.key: no longer used since 0.9"]);
+        assert!(retired_notes("format = 1\n[new]\nkey = 2\n", find).is_empty());
+        assert!(retired_notes("not toml [", find).is_empty());
+    }
+
+    #[test]
+    fn plus_and_minus_add_to_and_remove_from_a_list() {
+        let added = edit_list("format = 1\n", "startup.apps", "org.mozilla.firefox", true).unwrap();
+        assert_eq!(
+            added,
+            "format = 1\n\n[startup]\napps = [\"org.mozilla.firefox\"]\n"
+        );
+        // Adding the same item again changes nothing.
+        assert_eq!(
+            edit_list(&added, "startup.apps", "org.mozilla.firefox", true).unwrap(),
+            added
+        );
+        let two = edit_list(&added, "startup.apps", "org.example.Mail", true).unwrap();
+        assert!(
+            two.ends_with("apps = [\"org.mozilla.firefox\", \"org.example.Mail\"]\n"),
+            "{two}"
+        );
+        let one = edit_list(&two, "startup.apps", "org.mozilla.firefox", false).unwrap();
+        assert!(one.ends_with("apps = [\"org.example.Mail\"]\n"), "{one}");
+        // Removing the last item removes the key, and the table it left empty.
+        let gone = edit_list(&one, "startup.apps", "org.example.Mail", false).unwrap();
+        assert_eq!(gone, "format = 1\n");
+    }
+
+    #[test]
+    fn plus_and_minus_refuse_a_key_that_is_not_a_list() {
+        let error = edit_list(EDITED, "network.hostname", "lab", true)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("lists only"), "{error}");
+        assert!(error.contains("network.hostname=VALUE"), "{error}");
+    }
+
+    #[test]
+    fn minus_refuses_an_item_the_list_does_not_hold() {
+        let error = edit_list("format = 1\n", "startup.apps", "org.example.Mail", false)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            "startup.apps: \"org.example.Mail\" is not in the list"
+        );
     }
 
     const EDITED: &str = "format = 1\nfuture.key = 1 # kept\n\n[network]\nhostname = \"ci-seeded\"  # mine\n\n# The person who runs CI\n[users.ci]\nadmin = true\n";

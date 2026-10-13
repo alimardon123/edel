@@ -37,6 +37,8 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 | `edel settings export` | Prints the machine as a settings file, to import on another one |
 | `edel settings check FILE` | Checks a file strictly |
 
+A list takes `KEY+=VALUE` to add an item and `KEY-=VALUE` to remove one, such as `edel settings set startup.apps+=org.mozilla.firefox`; a list left empty removes its key. Someone who is not root changes their own settings file for the keys the desktop follows; a machine key needs an administrator, and the refusal names the command that gives one. `get` shows the value that applies to a key no file sets, with the layer that decides it: the preset in use, or the release, the image or the hardware. A key a release has stopped using is still read and reported, and `set` refuses it until `reset` takes it out.
+
 A mistyped key or value is answered with the nearest one: `edel settings set layout.presset=hive` says "did you mean layout.preset?". Every part reads the file with the one parser in `edel::settings` (`crates/edel/src/settings.rs`), whose key table this page follows; the reading rules are in [FORMATS.md](FORMATS.md).
 
 ## Where it lives

@@ -18,6 +18,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use edel::apps::{self, FLATHUB_REMOTE};
 use edel::i18n::{tr, trf};
+use edel::key_help::{self, DecidedBy};
 use edel::panel_edit;
 use edel::places;
 use edel::presets;
@@ -1292,14 +1293,25 @@ fn write_edit(
     change: impl Fn(&str) -> Result<String>,
 ) -> Result<Written> {
     let _lock = Lock::take("settings", command)?;
-    let machine = machine_file();
+    write_edit_at(command, &machine_file(), keys, change)
+}
+
+/// [`write_edit`] for the settings file `machine`, the machine's or a
+/// person's own (M6.11). A person's takes no lock: the lock lives in
+/// `/run/edel`, which only root writes; the write is the same rename.
+fn write_edit_at(
+    command: &str,
+    machine: &Path,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<Written> {
     let shown = machine.display().to_string();
-    let mut path = machine.clone();
+    let mut path = machine.to_path_buf();
     let mut newer = None;
-    if let Ok(text) = fs::read_to_string(&machine) {
-        let format = settings::format(&text).with_context(|| could_not_read(&machine))?;
+    if let Ok(text) = fs::read_to_string(machine) {
+        let format = settings::format(&text).with_context(|| could_not_read(machine))?;
         if format > settings::FORMAT {
-            path = settings::versioned(&machine, settings::FORMAT);
+            path = settings::versioned(machine, settings::FORMAT);
             newer = Some(format);
         }
     }
@@ -1355,13 +1367,7 @@ fn write_edit(
 pub fn set(assignments: &[String]) -> Result<()> {
     let mut pairs = Vec::new();
     for assignment in assignments {
-        let (key, value) = assignment.split_once('=').with_context(|| {
-            trf(
-                "{assignment}: write KEY=VALUE, such as network.hostname=lab-1",
-                &[("assignment", &format!("{assignment:?}"))],
-            )
-        })?;
-        pairs.push((key.trim(), value.trim()));
+        pairs.push(split_assignment(assignment)?);
     }
     // A feature this machine cannot switch is refused before anything is
     // written (M6.10); a build host with no features checks nothing here.
@@ -1369,22 +1375,114 @@ pub fn set(assignments: &[String]) -> Result<()> {
     if !installed.is_empty() {
         let wanted: BTreeMap<String, bool> = pairs
             .iter()
-            .filter_map(|(k, _)| k.strip_prefix("services."))
+            .filter_map(|(k, _, _)| k.strip_prefix("services."))
             .map(|name| (name.to_string(), true))
             .collect();
         if let Some(problem) = services::problems(&wanted, &installed).into_iter().next() {
             bail!("{problem}");
         }
     }
-    let keys: Vec<&str> = pairs.iter().map(|(k, _)| *k).collect();
+    let keys: Vec<&str> = pairs.iter().map(|(k, _, _)| *k).collect();
     let what = trf("set {keys}", &[("keys", &keys.join(", "))]);
-    edit(&what, &keys, |text| {
+    let typed = format!("set {}", assignments.join(" "));
+    let change = |text: &str| -> Result<String> {
         let mut text = text.to_string();
-        for (key, value) in &pairs {
-            text = settings::set(&text, key, value)?;
+        for (key, how, value) in &pairs {
+            text = match how {
+                Assign::Set => settings::set(&text, key, value)?,
+                Assign::Add => settings::edit_list(&text, key, value, true)?,
+                Assign::Remove => settings::edit_list(&text, key, value, false)?,
+            };
         }
         Ok(text)
-    })
+    };
+    match target_for(is_root(), &keys, &typed)? {
+        Target::Machine => edit(&what, &keys, change),
+        Target::Person => edit_person(&what, &keys, change),
+    }
+}
+
+/// What one assignment of `edel settings set` does to its key (M6.11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Assign {
+    /// `KEY=VALUE`
+    Set,
+    /// `KEY+=VALUE`: adds VALUE to a list
+    Add,
+    /// `KEY-=VALUE`: removes VALUE from a list
+    Remove,
+}
+
+/// Splits `KEY=VALUE`, `KEY+=VALUE` or `KEY-=VALUE` (M6.11) into the key, what
+/// the assignment does and the value.
+fn split_assignment(assignment: &str) -> Result<(&str, Assign, &str)> {
+    let (left, value) = assignment.split_once('=').with_context(|| {
+        trf(
+            "{assignment}: write KEY=VALUE, such as network.hostname=lab-1",
+            &[("assignment", &format!("{assignment:?}"))],
+        )
+    })?;
+    let left = left.trim();
+    let (key, how) = if let Some(key) = left.strip_suffix('+') {
+        (key, Assign::Add)
+    } else if let Some(key) = left.strip_suffix('-') {
+        (key, Assign::Remove)
+    } else {
+        (left, Assign::Set)
+    };
+    Ok((key.trim(), how, value.trim()))
+}
+
+/// Whether this process runs as root: the effective user, as
+/// `users::current` reads it (M6.11).
+fn is_root() -> bool {
+    edel::users::current() == Some(0)
+}
+
+/// Where `edel settings set` and `reset` write (M6.11). Root changes the
+/// machine's file, as it always has. Anyone else changes their own file,
+/// for the keys the desktop follows; a machine key needs an administrator,
+/// and the refusal repeats what they typed (`command`, after `edel settings`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Target {
+    Machine,
+    Person,
+}
+
+fn target_for(is_root: bool, keys: &[&str], command: &str) -> Result<Target> {
+    if is_root {
+        return Ok(Target::Machine);
+    }
+    let machine_keys: Vec<&str> = keys
+        .iter()
+        .copied()
+        .filter(|key| !desktop_follows(key))
+        .collect();
+    if machine_keys.is_empty() {
+        return Ok(Target::Person);
+    }
+    bail!(
+        "{}",
+        trf(
+            "{keys}: these are the machine's settings, so changing them needs an administrator: {as_root} edel settings {command}",
+            &[
+                ("keys", &machine_keys.join(", ")),
+                ("as_root", places::AS_ROOT),
+                ("command", command)
+            ]
+        )
+    );
+}
+
+/// [`edit`] for the person's own settings file (M6.11), which the desktop
+/// reads over the machine's for the keys it follows.
+fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> Result<()> {
+    let file = places::person_settings().with_context(|| {
+        tr("HOME is not set, so there is no folder for the person's settings file; set HOME and try again")
+    })?;
+    let written = write_edit_at("edel settings", &places::found(&file), keys, change)?;
+    report_written("edel settings", what, &written);
+    Ok(())
 }
 
 /// Whether the desktop follows `key` at once, as it does the layout,
@@ -1410,7 +1508,12 @@ fn desktop_follows(key: &str) -> bool {
 pub fn reset(keys: &[String]) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
     let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
-    edit(&what, &keys, |text| settings::unset_all(text, &keys))
+    let typed = format!("reset {}", keys.join(" "));
+    let change = |text: &str| settings::unset_all(text, &keys);
+    match target_for(is_root(), &keys, &typed)? {
+        Target::Machine => edit(&what, &keys, change),
+        Target::Person => edit_person(&what, &keys, change),
+    }
 }
 
 /// The machine's settings file as it is, or the release's empty one, for
@@ -1674,6 +1777,44 @@ fn values_in(path: Option<PathBuf>) -> Vec<(String, toml::Value)> {
     out
 }
 
+/// One line of `edel settings get` (M6.11): a key, its value and where the
+/// value comes from. A key no file sets shows the default that applies.
+struct Row {
+    key: String,
+    value: toml::Value,
+    /// Where the value comes from, in words; empty when no line says, so the
+    /// key is shown as not set.
+    from: String,
+    /// The default that applies, as its key's line writes it, for a key no
+    /// file sets.
+    default: Option<String>,
+}
+
+/// The layout preset in use: the person's `layout.preset`, else the
+/// machine's, else the release's (M6.11).
+fn preset_in_use(person: &[(String, toml::Value)], machine: &[(String, toml::Value)]) -> String {
+    person
+        .iter()
+        .chain(machine.iter())
+        .find(|(k, _)| k.as_str() == "layout.preset")
+        .and_then(|(_, v)| v.as_str())
+        .unwrap_or(presets::DEFAULT)
+        .to_string()
+}
+
+/// Where a key's default comes from, in words, for `edel settings get` (M6.11):
+/// the preset in use for a preset's key, else the layer that decides it. Empty
+/// when there is no line for the key.
+fn layer_label(line: Option<&key_help::Help>, preset: &str) -> String {
+    let Some(line) = line else {
+        return String::new();
+    };
+    match line.from {
+        DecidedBy::Preset => trf("preset {name}", &[("name", preset)]),
+        from => trf("{word} default", &[("word", from.word())]),
+    }
+}
+
 /// `edel settings get [KEY|PAGE] [--toml]`: the settings with their
 /// values and where each comes from: a person's own file for what the
 /// desktop reads, then the machine's, else the release's default.
@@ -1724,40 +1865,63 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
         _ => true,
     };
     // The person's value wins over the machine's for the same key.
-    let mut rows: Vec<(String, toml::Value, &str)> = Vec::new();
+    let mut rows: Vec<Row> = Vec::new();
     for (k, v) in &person {
         if wanted(k) {
-            rows.push((k.clone(), v.clone(), tr("your own file")));
+            rows.push(Row {
+                key: k.clone(),
+                value: v.clone(),
+                from: tr("your own file").to_string(),
+                default: None,
+            });
         }
     }
     for (k, v) in &machine {
-        if wanted(k) && !rows.iter().any(|(r, _, _)| r == k) {
-            rows.push((k.clone(), v.clone(), tr("this machine")));
+        if wanted(k) && !rows.iter().any(|row| &row.key == k) {
+            rows.push(Row {
+                key: k.clone(),
+                value: v.clone(),
+                from: tr("this machine").to_string(),
+                default: None,
+            });
         }
     }
     if as_toml {
         let mut table = toml::Table::new();
-        for (k, v, _) in &rows {
-            insert_path(&mut table, k, v.clone());
+        for row in &rows {
+            insert_path(&mut table, &row.key, row.value.clone());
         }
         print!("{}", toml::to_string(&table)?);
         return Ok(());
     }
-    // The keys a page has that nobody set, so the release decides them.
+    // The keys a page has that nobody set: the value that applies and the
+    // layer that decides it (M6.11), or nothing when no line says so.
+    let preset = preset_in_use(&person, &machine);
     for entry in settings::KEYS.iter().filter(|k| !k.path.contains('*')) {
-        if wanted(entry.path) && !rows.iter().any(|(r, _, _)| r == entry.path) {
-            rows.push((
-                entry.path.to_string(),
-                toml::Value::String(String::new()),
-                "",
-            ));
+        if wanted(entry.path) && !rows.iter().any(|row| row.key == entry.path) {
+            let line = key_help::find(entry.path);
+            rows.push(Row {
+                key: entry.path.to_string(),
+                value: toml::Value::String(String::new()),
+                from: layer_label(line, &preset),
+                default: line.map(|line| {
+                    // A preset's key shows the preset's own value (M6.11).
+                    match line.from {
+                        DecidedBy::Preset => {
+                            presets::value_of(entry.path, &presets::named(Some(&preset)).0)
+                                .unwrap_or_else(|| line.default.to_string())
+                        }
+                        _ => line.default.to_string(),
+                    }
+                }),
+            });
         }
     }
-    let width = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0);
+    let width = rows.iter().map(|row| row.key.len()).max().unwrap_or(0);
     for page in settings::PAGES {
-        let mut mine: Vec<&(String, toml::Value, &str)> = rows
+        let mut mine: Vec<&Row> = rows
             .iter()
-            .filter(|(k, _, _)| k.split('.').next() == Some(page.section))
+            .filter(|row| row.key.split('.').next() == Some(page.section))
             .collect();
         if mine.is_empty() {
             // A page asked for by name that holds nothing in the file, such
@@ -1773,28 +1937,36 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             }
             continue;
         }
-        mine.sort_by(|a, b| (a.2.is_empty(), &a.0).cmp(&(b.2.is_empty(), &b.0)));
+        mine.sort_by(|a, b| (a.from.is_empty(), &a.key).cmp(&(b.from.is_empty(), &b.key)));
         println!(
             "{} ({}): {}",
             tr(page.title),
             page_word(page),
             tr(page.about)
         );
-        for (k, v, from) in mine {
+        for row in mine {
             let later = settings::KEYS
                 .iter()
-                .any(|e| !e.supported && key_fits(e.path, k));
-            let shown = if from.is_empty() {
+                .any(|e| !e.supported && key_fits(e.path, &row.key));
+            let shown = if row.from.is_empty() {
                 tr("not set: the release decides").to_string()
+            } else if let Some(default) = &row.default {
+                format!("{default}  ({})", row.from)
             } else {
-                format!("{v}  ({from})")
+                format!("{}  ({})", row.value, row.from)
             };
             let later = if later {
                 format!("  ({})", tr("not supported yet"))
             } else {
                 String::new()
             };
-            println!("  {k:width$}  {shown}{later}");
+            println!("  {:width$}  {shown}{later}", row.key);
+            // The one key asked for says what it is, on the line below (M6.11).
+            if key == Some(row.key.as_str()) {
+                if let Some(line) = key_help::find(&row.key) {
+                    println!("    {}", tr(line.help));
+                }
+            }
         }
         // Network's connections are not keys of the file either (M5.8a).
         if section == Some(page.section) && page.section == "network" {
@@ -2060,6 +2232,113 @@ fn describe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static PRESET_LINE: key_help::Help = key_help::Help {
+        key: "layout.tiling",
+        help: "tiling",
+        default: "false",
+        from: DecidedBy::Preset,
+        belongs: key_help::Belongs::Person,
+        retired: None,
+    };
+
+    static RELEASE_LINE: key_help::Help = key_help::Help {
+        key: "network.hostname",
+        help: "the name",
+        default: "\"edel\"",
+        from: DecidedBy::Release,
+        belongs: key_help::Belongs::Device,
+        retired: None,
+    };
+
+    static HARDWARE_LINE: key_help::Help = key_help::Help {
+        key: "displays.main.scale",
+        help: "the scale",
+        default: "1",
+        from: DecidedBy::Hardware,
+        belongs: key_help::Belongs::Device,
+        retired: None,
+    };
+
+    #[test]
+    fn get_names_the_layer_that_gives_an_unset_default() {
+        assert_eq!(layer_label(None, "classic"), "");
+        assert_eq!(layer_label(Some(&PRESET_LINE), "hive"), "preset hive");
+        assert_eq!(layer_label(Some(&RELEASE_LINE), "hive"), "release default");
+        assert_eq!(
+            layer_label(Some(&HARDWARE_LINE), "hive"),
+            "hardware default"
+        );
+    }
+
+    #[test]
+    fn the_preset_in_use_is_the_persons_then_the_machines_then_the_release_s() {
+        let text = |preset: &str| toml::Value::String(preset.to_string());
+        let person = [("layout.preset".to_string(), text("mac-like"))];
+        let machine = [("layout.preset".to_string(), text("hive"))];
+        assert_eq!(preset_in_use(&person, &machine), "mac-like");
+        assert_eq!(preset_in_use(&[], &machine), "hive");
+        assert_eq!(preset_in_use(&[], &[]), presets::DEFAULT);
+    }
+
+    #[test]
+    fn set_plus_and_minus_split_the_key_from_what_it_does() {
+        assert_eq!(
+            split_assignment("startup.apps+=org.mozilla.firefox").unwrap(),
+            ("startup.apps", Assign::Add, "org.mozilla.firefox")
+        );
+        assert_eq!(
+            split_assignment("startup.apps-=a=b").unwrap(),
+            ("startup.apps", Assign::Remove, "a=b")
+        );
+        assert_eq!(
+            split_assignment(" network.hostname = lab-1 ").unwrap(),
+            ("network.hostname", Assign::Set, "lab-1")
+        );
+        assert!(split_assignment("network.hostname").is_err());
+    }
+
+    #[test]
+    fn set_by_a_person_writes_their_own_file_only_for_the_keys_the_desktop_follows() {
+        // Root always changes the machine's file, as it did before (M6.11).
+        assert_eq!(
+            target_for(true, &["network.hostname"], "set network.hostname=lab-1").unwrap(),
+            Target::Machine
+        );
+        assert_eq!(
+            target_for(true, &["layout.preset"], "set layout.preset=hive").unwrap(),
+            Target::Machine
+        );
+        // A person's keys are the desktop's: their own file.
+        assert_eq!(
+            target_for(false, &["layout.preset"], "set layout.preset=hive").unwrap(),
+            Target::Person
+        );
+        assert_eq!(
+            target_for(false, &["appearance.mode"], "reset appearance.mode").unwrap(),
+            Target::Person
+        );
+        // A machine key needs an administrator, and the refusal repeats the command.
+        let error = target_for(false, &["network.hostname"], "set network.hostname=lab-1")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            format!(
+                "network.hostname: these are the machine's settings, so changing them needs an administrator: {} edel settings set network.hostname=lab-1",
+                places::AS_ROOT
+            )
+        );
+        // A mix of both is refused, naming only the machine's key.
+        let mixed = target_for(
+            false,
+            &["layout.preset", "network.hostname"],
+            "set layout.preset=hive network.hostname=lab-1",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(mixed.starts_with("network.hostname: these are"), "{mixed}");
+    }
 
     #[test]
     fn settings_lists_the_five_groups_with_their_pages_under_them() {
