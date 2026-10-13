@@ -22,6 +22,7 @@ mod depth;
 mod display;
 mod files;
 mod icon;
+mod install;
 mod layout;
 mod lock;
 mod look_pictures;
@@ -412,8 +413,26 @@ fn pages_in(features: &std::path::Path) -> Vec<Page> {
         .collect()
 }
 
+/// The pages this machine shows; on a stick, the installer page first and
+/// opened when no page is asked for (M6.6a).
 fn pages() -> Vec<Page> {
-    pages_in(&edel::places::found_shared(edel::features::DIR))
+    let mut pages = pages_in(&edel::places::found_shared(edel::features::DIR));
+    if install::shown() {
+        pages.insert(0, install_page());
+    }
+    pages
+}
+
+/// The installer page (M6.6a), under no group's heading, as About.
+fn install_page() -> Page {
+    Page {
+        title: tr("Install Edel OS"),
+        icon: "page-install",
+        section: None,
+        build: |_| install::page(),
+        needs: None,
+        group: None,
+    }
 }
 
 /// Whether search text `query` finds `page`: its title or one of its rows'

@@ -18,7 +18,7 @@ use crate::report;
 use crate::update::Disk;
 
 /// The account that logs in by itself.
-const LIVE_USER: &str = "live";
+const LIVE_USER: &str = edel::places::LIVE_USER;
 /// The login feature's greetd config, the slot's.
 const GREETD: &str = "/etc/greetd/config.toml";
 /// greetd's config with the live session, which `conf.d/greetd` prefers.

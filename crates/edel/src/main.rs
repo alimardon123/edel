@@ -178,6 +178,11 @@ enum Commands {
         /// it and without a terminal, install shows its plan and exits 3
         #[arg(long)]
         yes: bool,
+        /// Read the password of the settings file's one person from the
+        /// first line of standard input (after the administrator's, with
+        /// --password-stdin), as Settings' installer page gives it
+        #[arg(long, requires = "settings")]
+        new_password_stdin: bool,
     },
     /// Print what an issue about this machine needs, as TOML: the release,
     /// kernel, boot time, memory in use, PCI devices, the kernel log, and
@@ -744,6 +749,7 @@ fn run(command: Commands) -> Result<()> {
             settings,
             plan,
             yes,
+            new_password_stdin,
             ..
         } => {
             let settings = settings
@@ -755,6 +761,7 @@ fn run(command: Commands) -> Result<()> {
                 settings.as_ref().map(settings_source::Local::path),
                 plan,
                 yes,
+                new_password_stdin,
             )
         }
         Commands::Report { esp } => report::report(esp),

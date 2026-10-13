@@ -248,6 +248,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-row {{ padding: 6px 14px; min-height: 34px; }}
 .edel-row + .edel-row {{ border-top: 1px solid {line}; }}
 .edel-row-subtitle {{ color: {muted}; font-size: {tiny}px; }}
+.edel-row-subtitle.edel-error {{ color: {error}; margin-top: 0; }}
 .edel-key {{ font-size: {key}px; font-weight: 500; color: {secondary}; padding: 0 5px; min-height: 15px; min-width: 9px;
   border-radius: {rs}px; background-color: {fill}; border: 1px solid {line}; border-bottom-width: 2px; }}
 .edel-value {{ color: {secondary}; }}

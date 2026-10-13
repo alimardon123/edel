@@ -137,12 +137,33 @@ pub fn decide(euid: u32, doas_user: Option<&str>, is_admin: bool, need: Need) ->
 /// input, not the terminal.
 static FROM_STDIN: AtomicBool = AtomicBool::new(false);
 
+/// Whether the person who ran doas may install with no administrator and
+/// no password (M6.6a): the stick's own account (`places::LIVE_USER`, which
+/// has no password to type and is in no group) on a system that runs from
+/// a stick. Whoever sits at a stick's desktop can start any system from it
+/// anyway, so asking proves nothing; on an installed disk the rule is off.
+pub fn live_may_install(doas_user: Option<&str>, from_a_stick: bool, installing: bool) -> bool {
+    installing && from_a_stick && doas_user == Some(places::LIVE_USER)
+}
+
 /// Runs before `command`, once, after the command line is read: the
-/// unsigned-install rule, then the rules of [`decide`].
+/// unsigned-install rule, the stick's install rule, then the rules of
+/// [`decide`].
 pub fn gate(command: &Commands, password_stdin: bool) -> Result<()> {
     FROM_STDIN.store(password_stdin, Ordering::Relaxed);
     if let Commands::Update { unsigned: true, .. } = command {
         developer_mode_needed()?;
+    }
+    let doas = std::env::var(places::AS_ROOT_USER).ok();
+    let installing = matches!(command, Commands::Install { .. });
+    if users::current() == Some(0)
+        && live_may_install(
+            doas.as_deref(),
+            installing && edel::install::from_a_stick(),
+            installing,
+        )
+    {
+        return Ok(());
     }
     enforce(need(command), None)
 }
@@ -492,6 +513,35 @@ mod tests {
         ];
         for (args, want) in cases {
             assert_eq!(need_of(args), *want, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_sticks_own_account_installs_without_a_password_and_only_from_a_stick() {
+        assert!(live_may_install(Some("live"), true, true));
+        assert!(
+            !live_may_install(Some("live"), false, true),
+            "an installed disk"
+        );
+        assert!(
+            !live_may_install(Some("live"), true, false),
+            "another command"
+        );
+        assert!(!live_may_install(Some("ali"), true, true), "a person");
+        assert!(
+            !live_may_install(None, true, true),
+            "a root login decides as before"
+        );
+        let rule = include_str!("../../../features/login/etc/doas.d/edel-live.conf");
+        for command in ["edel", "/usr/bin/edel"] {
+            let line = format!(
+                "permit nopass {} as root cmd {command}\n",
+                places::LIVE_USER
+            );
+            assert!(
+                rule.contains(&line),
+                "the login feature's rule names {line}"
+            );
         }
     }
 

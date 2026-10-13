@@ -218,27 +218,6 @@ pub(crate) fn ask_until(
     }
 }
 
-/// What kind of computer this is, for the suggested computer name: a
-/// laptop has a battery, a virtual machine says so in its firmware.
-fn form_factor() -> &'static str {
-    let battery = fs::read_dir("/sys/class/power_supply").is_ok_and(|entries| {
-        entries
-            .filter_map(|e| e.ok())
-            .any(|e| fs::read_to_string(e.path().join("type")).is_ok_and(|t| t.trim() == "Battery"))
-    });
-    let vendor = fs::read_to_string("/sys/class/dmi/id/sys_vendor").unwrap_or_default();
-    if battery {
-        "laptop"
-    } else if ["QEMU", "VMware", "innotek", "Xen", "Microsoft"]
-        .iter()
-        .any(|v| vendor.contains(v))
-    {
-        "vm"
-    } else {
-        "pc"
-    }
-}
-
 /// The password, asked twice with the echo off until both agree and it is
 /// not empty.
 fn ask_password() -> Result<Password> {
@@ -309,16 +288,11 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
         let title = tr(q.title);
         match q.key {
             "region.language" => {
-                answers.language = Some(ask_until(title, Some("en_US.UTF-8"), |v| {
-                    if !v.is_empty()
-                        && v.chars()
-                            .all(|c| c.is_ascii_alphanumeric() || "_.@-".contains(c))
-                    {
-                        Ok(v.to_string())
-                    } else {
-                        Err(tr("a language such as en_US.UTF-8 or de_DE.UTF-8").to_string())
-                    }
-                })?)
+                answers.language = Some(ask_until(
+                    title,
+                    Some("en_US.UTF-8"),
+                    edel::install::language_answer,
+                )?)
             }
             "region.keyboard" => {
                 let suggestion = suggested_keyboard(answers.language.as_deref().unwrap_or("C"));
@@ -327,26 +301,18 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
                     edel::keyboard::normalize(v, rules.as_deref())
                 })?)
             }
-            "user" => {
-                answers.user = Some(ask_until(title, None, |v| {
-                    if settings::is_user_name(v) && v != "root" && v != "live" {
-                        Ok(v.to_string())
-                    } else {
-                        Err(tr("lowercase letters, digits, - and _, starting with a letter, and not root or live").to_string())
-                    }
-                })?)
-            }
+            "user" => answers.user = Some(ask_until(title, None, edel::install::user_answer)?),
             "password" => hashed = Some(hash(&ask_password()?)?),
             "network.hostname" => {
-                let suggestion =
-                    suggested_hostname(answers.user.as_deref().unwrap_or("edel"), form_factor());
-                answers.hostname = Some(ask_until(title, Some(&suggestion), |v| {
-                    if settings::is_hostname(v) {
-                        Ok(v.to_string())
-                    } else {
-                        Err(tr("letters, digits and hyphens, up to 63").to_string())
-                    }
-                })?)
+                let suggestion = suggested_hostname(
+                    answers.user.as_deref().unwrap_or("edel"),
+                    edel::install::form_factor(Path::new("/sys")),
+                );
+                answers.hostname = Some(ask_until(
+                    title,
+                    Some(&suggestion),
+                    edel::install::hostname_answer,
+                )?)
             }
             "layout.preset" => {
                 let names = settings::PRESETS.join(", ");
@@ -390,6 +356,7 @@ pub fn install(
     system_file: Option<&Path>,
     dry_run: bool,
     yes: bool,
+    new_password: bool,
 ) -> Result<()> {
     let asking = system_file.is_none() || disk.is_none();
     if asking && !io::stdin().is_terminal() {
@@ -401,6 +368,7 @@ pub fn install(
         );
     }
     let (written, hashed) = match system_file {
+        Some(file) if new_password => (file.to_path_buf(), Some(password_from_stdin(file)?)),
         Some(file) => (file.to_path_buf(), None),
         None => {
             let (answers, hashed) = ask_questions()?;
@@ -416,6 +384,34 @@ pub fn install(
         None => ask_disk()?,
     };
     install_on(&disk, &written, hashed.as_ref(), dry_run, yes)
+}
+
+/// The one person of `file` and the hash of the password standard input
+/// gives them (`--new-password-stdin`, M6.6a): Settings' installer page asks
+/// the password and hands it over this way, never on a command line.
+fn password_from_stdin(file: &Path) -> Result<(String, String)> {
+    let text = fs::read_to_string(file).with_context(|| could_not_read(file))?;
+    let people: Vec<String> = settings::read(&text)?.file.users.into_keys().collect();
+    let [person] = people.as_slice() else {
+        bail!(
+            "{}",
+            trf(
+                "--new-password-stdin gives one person a password, and {path} names {count}; name one person in it",
+                &[
+                    ("path", &file.display().to_string()),
+                    ("count", &people.len().to_string()),
+                ]
+            )
+        );
+    };
+    let password = privilege::read_password_line(io::stdin().lock())?;
+    if password.letters() == 0 {
+        bail!(
+            "{}",
+            tr("the new password on standard input is empty; nothing was changed")
+        );
+    }
+    Ok((person.clone(), hash(&password)?))
 }
 
 /// Installs on `disk` with the settings file `system_file` and, when the

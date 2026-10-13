@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 71] = [
+pub const BUILT_IN: [(&str, &str); 72] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     ("more", include_str!("../../../design/icons/more.svg")),
     // Customize, a look's edit (M5.10c7b).
@@ -95,6 +95,11 @@ pub const BUILT_IN: [(&str, &str); 71] = [
     (
         "page-users",
         include_str!("../../../design/icons/page-users.svg"),
+    ),
+    // Settings' installer page, shown on a stick (M6.6a).
+    (
+        "page-install",
+        include_str!("../../../design/icons/page-install.svg"),
     ),
     // The Updates and System pages' (M5.8c).
     (
