@@ -643,6 +643,9 @@ pub struct Tokens {
     /// The text size in percent of the release's, as `appearance.text_size`
     /// sets it (M5.12b5); 100 is the release's sizes.
     pub text_percent: u32,
+    /// foot's colours in this scheme (M6.13), `[colour.terminal]` or
+    /// `[colour.light.terminal]`.
+    pub terminal: Terminal,
 }
 
 /// Every colour token by its name in `design/tokens.toml` (M5.12b1): one
@@ -680,6 +683,51 @@ colour_tokens! {
     window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
     lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
     lock_glow_second, lock_edit_deep, lock_edit_glow,
+}
+
+/// foot's colours (M6.13): the background, text, cursor, selection and the
+/// 16 colours of the terminal, read from `[colour.terminal]` (dark) and
+/// `[colour.light.terminal]` (light), in the order the file lists them.
+macro_rules! terminal_colours {
+    ($($name:ident),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq)]
+        pub struct Terminal {
+            $(pub $name: Colour,)*
+        }
+
+        /// The names of foot's colours, in the file's order.
+        pub const TERMINAL_NAMES: &[&str] = &[$(stringify!($name)),*];
+
+        impl Terminal {
+            /// Every colour `colour`: the start, before the file is read.
+            fn filled(colour: Colour) -> Terminal {
+                Terminal { $($name: colour,)* }
+            }
+
+            /// The colour called `name`; none for a name that is not one.
+            pub fn colour(&self, name: &str) -> Option<Colour> {
+                match name {
+                    $(stringify!($name) => Some(self.$name),)*
+                    _ => None,
+                }
+            }
+
+            /// The colour called `name`, to change it.
+            fn slot(&mut self, name: &str) -> Option<&mut Colour> {
+                match name {
+                    $(stringify!($name) => Some(&mut self.$name),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+terminal_colours! {
+    background, foreground, cursor, selection,
+    black, red, green, yellow, blue, magenta, cyan, white,
+    bright_black, bright_red, bright_green, bright_yellow,
+    bright_blue, bright_magenta, bright_cyan, bright_white,
 }
 
 impl Tokens {
@@ -843,6 +891,31 @@ impl Tokens {
         css
     }
 
+    /// foot's config from the tokens (M6.13): its font, the monospace family
+    /// at the text size, and `[colors-dark]` and `[colors-light]`, each of the
+    /// 20 colours as foot names them (`regular0` to `regular7` are black to
+    /// white, `bright0` to `bright7` the bright ones). The header says it is
+    /// written, not kept by hand; `features/terminal/usr/share/edel/foot.ini`
+    /// must equal it (EDEL_WRITE_DOCS=1 cargo test -p edel foot_ini).
+    pub fn foot_ini(dark: &Tokens, light: &Tokens) -> String {
+        let mut ini = String::from(
+            "# Edel OS's terminal look (M6.13): foot's font and colours, written from\n\
+             # design/tokens.toml by edel::tokens::Tokens::foot_ini. Never edit it by\n\
+             # hand: change the tokens, then run EDEL_WRITE_DOCS=1 cargo test -p edel\n\
+             # foot_ini. Each person's config includes it (features/terminal).\n\n\
+             [main]\n",
+        );
+        // foot takes size= in points and pixelsize= in pixels; the tokens'
+        // sizes are logical pixels, so pixelsize.
+        ini.push_str(&format!(
+            "font={}:pixelsize={}\n",
+            dark.monospace, dark.text_size
+        ));
+        ini.push_str(&foot_section("colors-dark", &dark.terminal));
+        ini.push_str(&foot_section("colors-light", &light.terminal));
+        ini
+    }
+
     /// The docs site's colours, radii and font from the tokens (the docs
     /// site, M8.10a), as CSS custom properties, `dark`'s and then
     /// `light`'s, for mdBook's dark and light themes: the page is drawn
@@ -996,6 +1069,11 @@ impl Tokens {
             if key == "light" && value.is_table() {
                 continue;
             }
+            // foot's colours (M6.13), `[colour.terminal]` in this scheme.
+            if let ("terminal", Some(terminal)) = (key.as_str(), value.as_table()) {
+                self.apply_terminal(terminal, notes);
+                continue;
+            }
             let Some(slot) = self.slot(key) else {
                 notes.push(format!("unknown key colour.{key} ignored"));
                 continue;
@@ -1004,6 +1082,23 @@ impl Tokens {
                 Some(colour) => *slot = colour,
                 None => notes.push(format!(
                     "colour.{key} = {value} is not #rrggbb or #rrggbbaa; the built-in value is used"
+                )),
+            }
+        }
+    }
+
+    /// foot's colours (M6.13) over these, one by one; a name that is not one
+    /// is noted and skipped.
+    fn apply_terminal(&mut self, colours: &Table, notes: &mut Vec<String>) {
+        for (key, value) in colours {
+            let Some(slot) = self.terminal.slot(key) else {
+                notes.push(format!("unknown key colour.terminal.{key} ignored"));
+                continue;
+            };
+            match value.as_str().and_then(Colour::parse) {
+                Some(colour) => *slot = colour,
+                None => notes.push(format!(
+                    "colour.terminal.{key} = {value} is not #rrggbb or #rrggbbaa; the built-in value is used"
                 )),
             }
         }
@@ -1150,6 +1245,28 @@ pub fn check(text: &str) -> Result<Tokens> {
             }
         }
     }
+    // foot's 20 colours (M5.13's terminal), in each scheme's table (M6.13).
+    for (path, found) in [
+        (
+            "colour.terminal",
+            colours
+                .and_then(|c| c.get("terminal"))
+                .and_then(Value::as_table),
+        ),
+        (
+            "colour.light.terminal",
+            light
+                .and_then(|l| l.get("terminal"))
+                .and_then(Value::as_table),
+        ),
+    ] {
+        if let Some(key) = TERMINAL_NAMES
+            .iter()
+            .find(|k| found.is_none_or(|t| !t.contains_key(**k)))
+        {
+            bail!("{path}.{key} is missing");
+        }
+    }
     let mut notes = Vec::new();
     let mut tokens = Tokens {
         background: BLACK,
@@ -1216,6 +1333,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         font: String::new(),
         monospace: MONOSPACE.to_string(),
         text_percent: 100,
+        terminal: Terminal::filled(BLACK),
     };
     tokens.apply(&table, &mut notes);
     let mut light = tokens.clone();
@@ -1541,6 +1659,54 @@ impl Tokens {
     }
 }
 
+/// One `[NAME]` section of foot's config: the 20 colours as foot names them,
+/// `#` left out, the cursor as foot takes it, its text then its block.
+fn foot_section(name: &str, terminal: &Terminal) -> String {
+    let hex = |colour: Colour| {
+        let [r, g, b, _] = colour.bytes();
+        format!("{r:02x}{g:02x}{b:02x}")
+    };
+    let normal = [
+        terminal.black,
+        terminal.red,
+        terminal.green,
+        terminal.yellow,
+        terminal.blue,
+        terminal.magenta,
+        terminal.cyan,
+        terminal.white,
+    ];
+    let bright = [
+        terminal.bright_black,
+        terminal.bright_red,
+        terminal.bright_green,
+        terminal.bright_yellow,
+        terminal.bright_blue,
+        terminal.bright_magenta,
+        terminal.bright_cyan,
+        terminal.bright_white,
+    ];
+    let mut section = format!(
+        "\n[{name}]\nbackground={}\nforeground={}\n",
+        hex(terminal.background),
+        hex(terminal.foreground)
+    );
+    for (i, colour) in normal.iter().enumerate() {
+        section.push_str(&format!("regular{i}={}\n", hex(*colour)));
+    }
+    for (i, colour) in bright.iter().enumerate() {
+        section.push_str(&format!("bright{i}={}\n", hex(*colour)));
+    }
+    section.push_str(&format!(
+        "cursor={} {}\nselection-background={}\nselection-foreground={}\n",
+        hex(terminal.background),
+        hex(terminal.cursor),
+        hex(terminal.selection),
+        hex(terminal.foreground)
+    ));
+    section
+}
+
 const BLACK: Colour = Colour {
     r: 0.0,
     g: 0.0,
@@ -1603,6 +1769,116 @@ mod tests {
         assert!(
             Tokens::gtk_css(&tokens, &light).contains("@define-color accent_bg_color #e5484d;")
         );
+    }
+
+    /// The shipped foot config, which images carry at [`crate::places::FOOT_INI`]
+    /// (M6.13).
+    const FOOT_INI_FILE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../features/terminal/usr/share/edel/foot.ini"
+    );
+
+    /// foot's config is written from the tokens, in both schemes; with
+    /// EDEL_WRITE_DOCS set, the test writes the file instead.
+    #[test]
+    fn foot_ini_is_the_tokens() {
+        let want = Tokens::foot_ini(&Tokens::built_in(), &Tokens::built_in_scheme(Scheme::Light));
+        if std::env::var_os("EDEL_WRITE_DOCS").is_some() {
+            std::fs::create_dir_all(std::path::Path::new(FOOT_INI_FILE).parent().unwrap()).unwrap();
+            std::fs::write(FOOT_INI_FILE, &want).unwrap();
+        }
+        let shipped = std::fs::read_to_string(FOOT_INI_FILE).unwrap_or_default();
+        assert!(
+            shipped == want,
+            "the foot config ({}) differs from the tokens; run EDEL_WRITE_DOCS=1 cargo test -p edel foot_ini",
+            crate::places::FOOT_INI
+        );
+        // The sections foot reads, the font at the text size, and one
+        // changed token changing its line.
+        assert!(want.contains("font=Noto Sans Mono:pixelsize=13\n"));
+        assert!(want.contains("\n[colors-dark]\n") && want.contains("\n[colors-light]\n"));
+        assert!(want.contains("regular1=f2707a\n"));
+        assert!(want.contains("cursor=fafbfc 2d6ae3\n"));
+        let mut tokens = Tokens::built_in();
+        tokens.terminal.red = Colour::parse("#e5484d").unwrap();
+        assert!(
+            Tokens::foot_ini(&tokens, &Tokens::built_in_scheme(Scheme::Light))
+                .contains("regular1=e5484d\n")
+        );
+    }
+
+    /// Every person's foot config includes the shipped one and then their
+    /// theme in the state folder, by their places (M6.13).
+    #[test]
+    fn a_person_includes_the_shipped_foot_ini() {
+        let want = format!(
+            "# Edel OS's terminal look, from the design tokens (M6.13). Your own\n\
+             # settings go below these lines; they win over the included ones.\n\
+             include={}\n\
+             include=~/{}/{}\n",
+            crate::places::FOOT_INI,
+            crate::places::STATE_IN_HOME,
+            crate::places::FOOT_THEME
+        );
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../features/terminal/etc/skel/.config/foot/foot.ini"
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap_or_default(), want);
+    }
+
+    /// The 16 colours read at 3 to 1 on foot's background and the text at 7
+    /// to 1 or more, in both schemes; black and bright black (dark) and white
+    /// and bright white (light) are the faint ones the terminal may show as
+    /// they are. A problem names the colour that fails (M6.13).
+    #[test]
+    fn the_terminal_colours_hold_their_contrast_in_both_schemes() {
+        const SIXTEEN: [&str; 16] = [
+            "black",
+            "red",
+            "green",
+            "yellow",
+            "blue",
+            "magenta",
+            "cyan",
+            "white",
+            "bright_black",
+            "bright_red",
+            "bright_green",
+            "bright_yellow",
+            "bright_blue",
+            "bright_magenta",
+            "bright_cyan",
+            "bright_white",
+        ];
+        for (scheme, faint) in [
+            (Scheme::Dark, ["black", "bright_black"]),
+            (Scheme::Light, ["white", "bright_white"]),
+        ] {
+            let tokens = Tokens::built_in_scheme(scheme);
+            let terminal = tokens.terminal;
+            let background = terminal.background;
+            let mut problems = Vec::new();
+            for name in SIXTEEN.iter().filter(|n| !faint.contains(n)) {
+                let colour = terminal.colour(name).unwrap();
+                let reads = contrast(colour, background);
+                if reads < MARK_CONTRAST {
+                    problems.push(format!(
+                        "{name} {} on the background {} reads at {reads:.1}:1, 3.0 needed",
+                        colour.hex(),
+                        background.hex()
+                    ));
+                }
+            }
+            assert!(problems.is_empty(), "{scheme:?}: {}", problems.join("; "));
+            let text = contrast(terminal.foreground, background);
+            assert!(
+                text >= 7.0,
+                "{scheme:?}: foreground {} on the background {} reads at {text:.1}:1, 7.0 needed",
+                terminal.foreground.hex(),
+                background.hex()
+            );
+        }
     }
 
     /// The docs site's `docs/theme/tokens.css` (M8.10a).
