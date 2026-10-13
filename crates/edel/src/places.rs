@@ -95,6 +95,10 @@ pub const GREETD_LIVE: &str = run!("/greetd.toml");
 pub const SEED_MOUNT: &str = run!("/seed");
 /// Where the installer mounts the new disk's partitions (M2.4).
 pub const INSTALL_DIR: &str = run!("/install");
+/// The machine's certificate authorities, one PEM file (Alpine's
+/// `ca-certificates-bundle`), which a settings file fetched over https is
+/// checked against (M6.6b).
+pub const CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
 /// The answers to the installer's questions as the new machine's settings
 /// file, before `edel install` copies it to the new disk (M6.6b).
 pub const INSTALL_ANSWERS: &str = run!("/install-answers.toml");

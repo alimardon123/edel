@@ -5,6 +5,7 @@
 # Use Edel OS
 
 - [Try it](TRY-IT.md)
+- [Install](INSTALL.md)
 - [How Edel OS works](guide/how-it-works.md)
 - [The settings file](settings.md)
 - [Keyboard shortcuts](SHORTCUTS.md)
