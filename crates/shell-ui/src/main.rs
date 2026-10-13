@@ -112,6 +112,7 @@ use std::time::Duration;
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use tiny_skia::Pixmap;
 
+use edel::i18n::tr;
 use edel::places;
 use edel::presets::{self, Edge, Hide, Screens, Size, Style};
 use edel::settings;
@@ -292,6 +293,8 @@ struct Shell {
 struct Menu {
     popup: Popup<launcher::View>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    /// What screen readers read of it (M6.9).
+    reader: a11y::Reader,
 }
 
 /// The open tiling styles' menu, what it shows and the keyboard.
@@ -299,6 +302,8 @@ struct StylesMenu {
     popup: Popup<styles::View>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     view: styles::View,
+    /// What screen readers read of it (M6.9).
+    reader: a11y::Reader,
 }
 
 /// One of the preset's panels.
@@ -1033,10 +1038,12 @@ impl Shell {
                         children: Vec::new(),
                         toggled: None,
                         value: None,
+                        value_text: None,
                     })
                     .collect(),
                 toggled: None,
                 value: None,
+                value_text: None,
             })
             .collect();
         let size = (
@@ -1492,7 +1499,12 @@ impl Shell {
                 .ok()
         });
         self.launcher.open();
-        self.menu = Some(Menu { popup, keyboard });
+        let reader = a11y::Reader::new(tr("Launcher"));
+        self.menu = Some(Menu {
+            popup,
+            keyboard,
+            reader,
+        });
         // The menu button's tile lights while the launcher is open.
         self.live.launcher = true;
         self.draw_all();
@@ -1519,6 +1531,10 @@ impl Shell {
             return;
         };
         let view = self.launcher.view();
+        let (items, focus) = launcher::nodes(&view, &self.tokens);
+        let (w, h) = launcher::size(&self.tokens);
+        menu.reader
+            .update_focused((f64::from(w), f64::from(h)), items, focus);
         let Some(mut pixmap) = menu.popup.canvas(&view) else {
             return;
         };
@@ -1582,7 +1598,11 @@ impl Shell {
                 }
             }
             Keysym::Up => self.launcher.step(-1),
-            Keysym::Down | Keysym::Tab => self.launcher.step(1),
+            Keysym::Down => self.launcher.step(1),
+            // Shift+Tab goes back (M6.9); the keymap may send it as Tab
+            // with Shift held or as ISO_Left_Tab.
+            Keysym::Tab => self.launcher.step(popup::tab_step(self.shift)),
+            Keysym::ISO_Left_Tab => self.launcher.step(popup::tab_step(true)),
             Keysym::BackSpace => self.launcher.erase(),
             _ => {
                 // Keys that type nothing (arrows, F-keys) give "".
@@ -1651,6 +1671,7 @@ impl Shell {
                 chosen,
                 lit: chosen,
             },
+            reader: a11y::Reader::new(tr("Layout styles")),
         });
     }
 
@@ -1671,6 +1692,10 @@ impl Shell {
             return;
         };
         let view = menu.view.clone();
+        let (items, focus) = styles::nodes(&view, &self.tokens);
+        let (w, h) = styles::size(&self.tokens);
+        menu.reader
+            .update_focused((f64::from(w), f64::from(h)), items, focus);
         let Some(mut pixmap) = menu.popup.canvas(&view) else {
             return;
         };
@@ -1724,6 +1749,8 @@ impl Shell {
             return;
         };
         let last = styles::styles().len().saturating_sub(1);
+        // Shift+Tab goes back a row (M6.9), as the launcher's does.
+        let by = popup::tab_step(self.shift || event.keysym == Keysym::ISO_Left_Tab);
         match event.keysym {
             Keysym::Escape => return self.close_styles(),
             Keysym::Return | Keysym::KP_Enter | Keysym::space => {
@@ -1731,7 +1758,10 @@ impl Shell {
                 return self.choose_style(row);
             }
             Keysym::Up => menu.view.lit = menu.view.lit.saturating_sub(1),
-            Keysym::Down | Keysym::Tab => menu.view.lit = (menu.view.lit + 1).min(last),
+            Keysym::Down => menu.view.lit = (menu.view.lit + 1).min(last),
+            Keysym::Tab | Keysym::ISO_Left_Tab => {
+                menu.view.lit = (menu.view.lit as i32 + by).clamp(0, last as i32) as usize;
+            }
             _ => {}
         }
         self.draw_styles();
