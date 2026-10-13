@@ -1427,6 +1427,9 @@ msgstr ""
 msgid "No sound device found. Plug in speakers or a headset, or check that the machine has a sound card."
 msgstr ""
 
+msgid "the table is format {format}, and this release reads format {current}"
+msgstr ""
+
 msgid "; the power rules come with the login feature (doas), so check that it is installed"
 msgstr ""
 

@@ -57,7 +57,7 @@ The machine reads its own IDs and the packs' lists; nothing is sent anywhere, an
 
 1. [ ] Keep the always list as M5.30's one owner file (M5.30).
 2. [ ] Build, sign and match hardware packs, kept on `/data` (M7.11).
-3. [ ] Laptop sound that works and sounds right: speaker profiles in the base, `firmware-sof` as the first pack (M6.15).
+3. [x] Laptop sound that works and sounds right: speaker profiles in the base, `firmware-sof` as the first pack (M6.15). (Done 2026-10-13: the profiles and their matching are in the base; Intel's sound firmware went on the always list instead, as the reference laptop needs it to make any sound as far as we know and packs come with M7.11.)
 4. [ ] The stick carries every pack, the installer copies the matching ones, online install fetches them (M8.17).
 
 ## Principles check

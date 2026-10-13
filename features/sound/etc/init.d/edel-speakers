@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# Laptop speakers that sound right (roadmap M6.15, ADR-012): edel boot
+# speakers links the speaker tuning profile that matches this machine's
+# model, from /usr/share/edel/speakers, into PipeWire's drop-in folder, or
+# takes an old link out, before anyone logs in, so the session's PipeWire
+# loads it when it starts. It runs once and exits; nothing stays running.
+
+description="Give this laptop's speakers their tuning profile"
+
+depend() {
+	need localmount
+	before greetd
+}
+
+start() {
+	ebegin "Matching a speaker profile"
+	/usr/bin/edel boot speakers
+	eend $?
+}

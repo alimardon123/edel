@@ -4,7 +4,7 @@
 # every boot (M3.4, docs/TRY-IT.md).
 format = 1
 summary = "Real laptops: the long-term kernel, firmware for graphics and Wi-Fi, CPU microcode and the hardware report"
-why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them (kept to the chips of the last ten years' laptops and desktops by the [[keep]] list below, M5.30), and CPU microcode, which GRUB loads before the initramfs (M3.3a); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
+why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them (kept to the chips of the last ten years' laptops and desktops by the [[keep]] list below, M5.30), and CPU microcode, which GRUB loads before the initramfs (M3.3a); Intel's Sound Open Firmware (sof-firmware, its signed images and generic topologies kept, M6.15), without which the sound of Intel laptops since about 2019, the reference laptop's among them as far as we know, makes no sound at all, so it is on the always list until hardware packs exist (M7.11, ADR-012); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
 # eMMC disks of small laptops: without mmc the initramfs cannot find a
 # root installed on one.
 initramfs = ["mmc"]
@@ -24,6 +24,7 @@ packages = [
   "linux-firmware-rtw88",
   "linux-firmware-rtw89",
   "linux-firmware-xe",
+  "sof-firmware",
 ]
 
 [services]
@@ -68,6 +69,16 @@ files = [
   "intel/dsp_fw_*",
   "intel/fw_sst_*",
   "intel/IntcSST2.bin.zst",
+  # Sound Open Firmware (M6.15): Intel laptops since about 2019 run their
+  # sound, digital microphones above all, on a DSP that makes no sound at
+  # all without it. Intel's signed images and the generic HDA topologies
+  # only; the community-signed ones are for Chromebooks.
+  "intel/sof/*",
+  "intel/sof/intel-signed/*",
+  "intel/sof-tplg/sof-hda-generic*",
+  "intel/sof-ipc4/*/*",
+  "intel/sof-ipc4/*/intel-signed/*",
+  "intel/sof-ipc4-tplg/sof-hda-generic*",
   # Wi-Fi and Bluetooth, MediaTek: MT7921 and MT7922 (MT7961), MT7902,
   # MT7925 and MT7927, and the older MT7601, MT76x0, MT76x2 and MT7663.
   "mediatek/WIFI_*",

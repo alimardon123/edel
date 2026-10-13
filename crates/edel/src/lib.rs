@@ -37,6 +37,7 @@ pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
 pub mod sound;
+pub mod speakers;
 pub mod theme_file;
 pub mod themes;
 pub mod tokens;

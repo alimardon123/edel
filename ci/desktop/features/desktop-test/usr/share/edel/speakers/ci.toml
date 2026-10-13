@@ -1,0 +1,9 @@
+# CI's virtual machine only (M6.15): desktop-test.sh gives the VM this
+# model with QEMU's -smbios, so edel boot speakers links ci-test.conf and
+# the sound case finds its filter in the sound system.
+format = 1
+
+[[model]]
+vendor = "Edel"
+product = "Speaker Test"
+profile = "ci-test"

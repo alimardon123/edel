@@ -132,6 +132,9 @@ pub const FOOT_INI: &str = share!("/foot.ini");
 /// The wallpapers the `wallpapers` feature carries, and their `CREDITS`
 /// (M5.10c4b): `NAME-light.jpg` and `NAME-dark.jpg` for a pair.
 pub const WALLPAPERS_DIR: &str = share!("/wallpapers");
+/// Speaker tuning profiles and the tables that match them to models
+/// (M6.15, `edel::speakers`).
+pub const SPEAKERS_DIR: &str = share!("/speakers");
 /// Where each part's words in each language are (M5.24): `LANG/PART.po`.
 pub const LOCALE_DIR: &str = share!("/locale");
 /// Alpine's initramfs `init` with our one change, which finds a root
@@ -194,6 +197,10 @@ pub const ETC_DIR: &str = "/etc/edel";
 /// desktop app and by `xdg-open`. Only a file that starts with
 /// `apps::MIME_COMMENT` is ours to change.
 pub const MIME_DEFAULTS: &str = "/etc/xdg/mimeapps.list";
+/// The link `edel boot speakers` makes to this machine's speaker profile
+/// (M6.15), in PipeWire's own drop-in folder, so the session's PipeWire
+/// loads it; none when no profile matches.
+pub const SPEAKER_PROFILE: &str = "/etc/pipewire/pipewire.conf.d/80-edel-speakers.conf";
 
 /// The places shell scripts use, as `NAME=VALUE` lines: `ci/names.sh` for
 /// CI and `/usr/share/edel/places.sh` in every image, both written from
