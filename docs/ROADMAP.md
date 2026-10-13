@@ -800,7 +800,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`. Since 2026-10-07 only a change to the plan gets an entry: a finished step is recorded by its tick and its "Done with:" note, so the many PRs running side by side do not all add a line at the same place.
 
-- 2026-10-13: M6.6b's check of Use a settings file runs in `desktop-test live` instead of `install-test gui`, as M6.6a's does, because only the desktop image carries Settings; the file comes on a FAT stick plugged in while the stick runs. PR for M6.6b.
+- 2026-10-13: M6.6b's check of Use a settings file runs in `desktop-test live` instead of `install-test gui`, as M6.6a's does, because only the desktop image carries Settings; the file comes on a FAT stick plugged in while the stick runs. PR #318.
 - 2026-10-13: M6.15's check that `edel status` names a missing pack moves to M7.11, which makes packs; Intel's sound firmware goes on the always list meanwhile, as the step allowed for the reference laptop. PR #317.
 - 2026-10-13: M6.6a's check runs in `desktop-test live` instead of `install-test gui`, because only the desktop image carries Settings; the stick installs through its page onto a blank disk, and that disk is then started alone. PR #316.
 - 2026-10-12: M10.10, the optional runtime spike, is widened from Alpine's packages to other distributions' too (Debian and Fedora to check), each measured against Flathub's runtime, so the base and the apps' runtime are chosen apart (ADR-010). Asked by Alimardon.
