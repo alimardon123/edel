@@ -55,14 +55,15 @@ Shut this machine down now: the system's own poweroff, through doas when you are
 
 Suspend this machine to memory now; a key or the power button wakes it.
 
-## `edel install DISK [OPTIONS]`
+## `edel install [DISK] [OPTIONS]`
 
 Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings.
 
 | | What it does |
 |---|---|
-| `DISK` | The disk, such as /dev/sda |
-| `--settings FILE` | The settings file the new machine starts with |
+| `DISK` | The disk, such as /dev/sda; without it, the disks are listed and one is asked for |
+| `--settings FILE` | The settings file the new machine starts with; without it, a few questions are asked on the terminal and their answers become it |
+| `--list` | List the disks Edel OS could install on, and change nothing |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 
