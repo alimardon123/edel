@@ -3167,8 +3167,14 @@ case_notify() {
 	shown=$(count 'edel-shell-ui: banner shown')
 	guest 'notify one'
 	wait_more 'edel-shell-ui: banner shown' "$shown" || fail "a notification sent on the session bus showed no banner: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	# Another process may write into the middle of this line on the shared
+	# console ("edel-shell-ui: notification " then the compositor's own line,
+	# then "1 from ci-test: Hello from CI"), so the whole line, or its two
+	# halves, will do.
 	tr -d '\r' <"$log" | grep -aEq 'edel-shell-ui: notification [0-9]+ from ci-test: Hello from CI' ||
-		fail "shell-ui did not log the notification it was sent"
+		{ tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: notification ' &&
+			tr -d '\r' <"$log" | grep -aq 'ci-test: Hello from CI'; } ||
+		fail "shell-ui did not log the notification it was sent: $(tr -d '\r' <"$log" | grep -a 'Hello from CI' | tail -n 2)"
 	shot notify 1200 745 "$panel" >/dev/null || fail "the banner is not drawn at 1200,745 in the panel's colour"
 	i=0
 	# Listed with its size: the state file may name it before its first
