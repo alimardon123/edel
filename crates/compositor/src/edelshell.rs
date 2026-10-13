@@ -154,6 +154,17 @@ impl Edel {
         }
     }
 
+    /// The tiling styles' key (M6.9): shell-ui opens the layout button's
+    /// menu of styles with the keyboard on it, or closes it.
+    pub fn show_styles(&self) {
+        eprintln!("edel-compositor: styles");
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.styles();
+            }
+        }
+    }
+
     /// The settings files changed (M5.9h): every link reads them again, as
     /// the tray's list is read when the tray changes. Nothing is logged,
     /// as it happens at every change.

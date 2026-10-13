@@ -335,6 +335,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Floating or tiling"),
     },
     Row {
+        key: "shortcuts.choose_tiling_style",
+        title: n_("Tiling styles menu"),
+    },
+    Row {
         key: "shortcuts.focus_window_left",
         title: n_("Focus window to the left"),
     },

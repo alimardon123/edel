@@ -122,6 +122,13 @@ pub const ACTIONS: &[Action] = &[
         n_("Switch this workspace between floating and tiling"),
     ),
     action(
+        "choose_tiling_style",
+        "Super+Shift+Y",
+        false,
+        Group::Windows,
+        n_("Open the layout button's menu of tiling styles, with the keyboard on it"),
+    ),
+    action(
         "focus_window_left",
         "Super+Left",
         false,

@@ -136,5 +136,13 @@
       </description>
       <arg name="name" type="string" summary="floating or tiling"/>
     </event>
+
+    <event name="styles">
+      <description summary="the styles key was pressed">
+        The tiling styles' key was pressed (Super+Shift+Y unless [shortcuts]
+        says otherwise): shell-ui opens the layout button's menu of tiling
+        styles with the keyboard on it, or closes it (M6.9).
+      </description>
+    </event>
   </interface>
 </protocol>

@@ -1313,6 +1313,9 @@ msgstr ""
 msgid "Switch this workspace between floating and tiling"
 msgstr ""
 
+msgid "Open the layout button's menu of tiling styles, with the keyboard on it"
+msgstr ""
+
 msgid "Focus the window to the left of the focused one"
 msgstr ""
 
