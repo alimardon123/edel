@@ -8,6 +8,7 @@ mod boot;
 mod completion;
 mod data;
 mod def;
+mod default_apps;
 mod first_boot;
 mod grubenv;
 mod guard;
@@ -473,6 +474,25 @@ struct BuildArgs {
     /// all install from one package index
     #[arg(long, value_name = "DIR")]
     apk_cache: Option<PathBuf>,
+    /// Where the default apps come from: a .flatpakrepo file's address or
+    /// a Flatpak repository's, such as file:///src/out/apps-repo for a
+    /// test; Flathub when not given
+    #[arg(long, value_name = "URL")]
+    apps_from: Option<String>,
+    /// The address machines update the default apps from, when it is not
+    /// where the build took them, as for a test image built from a local
+    /// repository that its VM reaches over HTTP
+    #[arg(long, value_name = "URL")]
+    apps_url: Option<String>,
+    /// A default app to install instead of the definition's list; for test
+    /// images. Can be given more than once.
+    #[arg(long = "app", value_name = "ID")]
+    apps: Vec<String>,
+    /// A default app this image drops, kept for each person who used it,
+    /// instead of the definition's; for test images. Can be given more
+    /// than once.
+    #[arg(long = "dropped-app", value_name = "ID")]
+    dropped_apps: Vec<String>,
     /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
     /// update image, is always made); for test images
     #[arg(long)]
@@ -550,9 +570,26 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from,
+                    apps_url,
+                    apps,
+                    dropped_apps,
                     no_compress,
                     plan,
                 } = *args;
+                if let Some(id) = apps
+                    .iter()
+                    .chain(&dropped_apps)
+                    .find(|id| !edel::apps::is_flatpak_id(id))
+                {
+                    anyhow::bail!(
+                        "{}",
+                        trf(
+                            "{id} is not a Flatpak app id, such as org.gnome.TextEditor",
+                            &[("id", &format!("{id:?}"))]
+                        )
+                    );
+                }
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
                     anyhow::bail!(
                         "{}",
@@ -591,6 +628,18 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from: apps_from.unwrap_or_else(|| edel::apps::FLATHUB_REMOTE.to_string()),
+                    apps_url,
+                    apps: if apps.is_empty() {
+                        def.apps.clone()
+                    } else {
+                        apps
+                    },
+                    apps_dropped: if dropped_apps.is_empty() {
+                        def.apps_dropped.clone()
+                    } else {
+                        dropped_apps
+                    },
                     compress: !no_compress,
                     out,
                     runner: Runner { dry_run: plan },
@@ -667,7 +716,16 @@ fn run(command: Commands) -> Result<()> {
             if check {
                 release::check(&location, &accept)
             } else {
-                update::install(&location, &accept, unsigned)
+                let system = update::install(&location, &accept, unsigned);
+                // The default apps follow the system, whether or not it had
+                // a newer release (M6.2); their failure never hides the
+                // system's own result.
+                if !unsigned {
+                    if let Err(err) = default_apps::follow() {
+                        eprintln!("warning: {err:#}");
+                    }
+                }
+                system
             }
         }
         Commands::Rollback => update::rollback(),

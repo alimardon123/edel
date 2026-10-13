@@ -1,0 +1,70 @@
+#!/sbin/openrc-run
+# Test only (roadmap M6.2): CI builds this into ci/apps-test/vm.toml, whose
+# default app is org.edel.TestA, with an update whose default app is
+# org.edel.TestB and which drops TestA; the host serves the apps'
+# repository on port 8002 and the update on 8003 (ci/apps-test.sh). The
+# step number lives on the data partition, which both slots share.
+#
+#   1. Slot A: TestA is in the default apps' installation, outside the
+#      slot (whose used size is printed). Person `used` gets TestA's data
+#      folder, as if they had run it; install the update and restart.
+#   2. Slot B: edel update again (no newer system, so only the apps
+#      follow): TestB is installed and TestA taken out of the default
+#      apps, `used` keeps TestA in their own apps, and a new person,
+#      `fresh`, sees TestB and not TestA.
+
+description="Edel OS default apps test"
+
+depend() {
+	need edel-boot-ok
+}
+
+say() {
+	echo "APPS-TEST: $*"
+}
+
+end() {
+	say "$1"
+	(sleep 1 && poweroff) &
+}
+
+# has WHO ID: whether `flatpak list` run as WHO (root: the default apps'
+# installation alone) lists app ID.
+has() {
+	if [ "$1" = root ]; then
+		flatpak --installation=edel list --app --columns=application
+	else
+		su -s /bin/sh "$1" -c "flatpak list --app --columns=application"
+	fi 2>/dev/null | grep -qx "$2"
+}
+
+start() {
+	. /usr/share/edel/places.sh
+	marker="$data_dir/apps-test-step"
+	step=$(cat "$marker" 2>/dev/null || echo 1)
+	release=http://10.0.2.2:8003/release.toml
+	case $step in
+	1)
+		has root org.edel.TestA || { end "FAIL: step 1 expected TestA among the default apps"; return 0; }
+		say "slot used $(df -m / | awk 'NR == 2 { print $3 }') MiB"
+		adduser -D used
+		su -s /bin/sh used -c 'mkdir -p "$HOME/.var/app/org.edel.TestA"'
+		echo 2 >"$marker"
+		edel update --allow-http "$release" || { end "FAIL: step 1 could not install the update"; return 0; }
+		say "step 1 done, restarting into slot B"
+		(sleep 1 && reboot) &
+		;;
+	2)
+		edel update --allow-http "$release" >/tmp/apps-update.log 2>&1 || true
+		sed 's/^/APPS-TEST: update: /' /tmp/apps-update.log
+		has root org.edel.TestB || { end "FAIL: step 2 expected TestB among the default apps"; return 0; }
+		! has root org.edel.TestA || { end "FAIL: step 2 expected TestA taken out of the default apps"; return 0; }
+		has used org.edel.TestA || { end "FAIL: step 2 expected TestA kept for used, who had its data"; return 0; }
+		adduser -D fresh
+		has fresh org.edel.TestB || { end "FAIL: step 2 expected a new person to see TestB"; return 0; }
+		! has fresh org.edel.TestA || { end "FAIL: step 2 expected a new person not to see TestA"; return 0; }
+		end "PASS"
+		;;
+	esac
+	return 0
+}

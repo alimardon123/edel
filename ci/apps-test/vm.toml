@@ -1,0 +1,15 @@
+# CI only (roadmap M6.2): the VM image plus Flatpak and a test service that
+# swaps one default app for another through a real update. Its default
+# apps come from ci/apps/make-repo.sh's repository (ci/build.sh passes
+# --app, --apps-from and --apps-url). Release images never use it.
+format = 2
+name = "edel-apps-test"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak", "apps-test"]
+
+[vm]
+kernel = "virt"
+slot_mib = 1024
+cmdline = "console=ttyS0"

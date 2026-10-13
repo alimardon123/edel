@@ -1052,6 +1052,13 @@ commands() {
 			;;
 		# mpv as ci, in the session, with no file, so its window stays idle
 		# on the screen until the case closes it.
+		# Why Test A did not map (M6.2): what Flatpak says when ci runs it,
+		# and what the default apps' installation holds as ci sees it.
+		'default app check')
+			say "default_app_list $(as_ci "flatpak --installation=edel list --columns=ref" 2>&1 | tr '\n' ';')"
+			as_ci "timeout 15 flatpak run --command=edel-testclient org.edel.TestA --title test-a-check --colour 3399cc --size 300x200" </dev/null >/tmp/default-app.log 2>&1
+			say "default_app_run $? $(tr '\n' ';' </tmp/default-app.log | cut -c1-2000)"
+			;;
 		'flatpak run')
 			as_ci "flatpak run io.mpv.Mpv --vo=wlshm --force-window=immediate --idle=yes" </dev/null >/tmp/flatpak-run.log 2>&1 &
 			;;

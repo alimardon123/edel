@@ -44,6 +44,17 @@ pub const DATA_DIR: &str = data!("/edel");
 /// What this machine changed in `/etc`: a file here differs from the
 /// slot's (the overlay's upper directory, M1.4).
 pub const ETC_UPPER: &str = data!("/etc/upper");
+/// The default apps (M6.2): a Flatpak system installation on the data
+/// partition, so the apps are paid for once rather than in each slot, and
+/// survive every update and rollback. `edel image build` fills it on the
+/// stick, `edel install` copies it, `edel update` updates it.
+pub const DEFAULT_APPS: &str = data!("/edel/apps");
+/// The default apps the slot's image was built with and those a release
+/// dropped (M6.2), written by `edel image build`; `edel update` follows it.
+pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");
+/// Where Flatpak finds its installations besides its own two; the image
+/// build writes the default apps' file here (`apps::installation_conf`).
+pub const FLATPAK_INSTALLATIONS: &str = "/etc/flatpak/installations.d";
 /// Developer mode is on while this file exists (ADR-007).
 pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show

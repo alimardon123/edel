@@ -29,7 +29,8 @@ use crate::privilege;
 use crate::update::{self, Lock, run};
 
 /// The external tools a real install runs, and the package each comes
-/// from; busybox's `mount`, `umount` and `blkid` come with the base. A test
+/// from; busybox's `mount`, `umount`, `blkid` and `tar` (which copies the
+/// default apps, M6.2) come with the base. A test
 /// holds `images/vm.toml` to this list.
 pub const TOOLS: &[(&str, &str)] = &[
     ("sfdisk", "sfdisk"),
@@ -727,6 +728,7 @@ fn write(
             file.write_all(format!("{user}:{hash}\n").as_bytes())?;
             file.sync_all()?;
         }
+        copy_default_apps(&data.0)?;
     }
     run(&mut Command::new("sync"))?;
     println!(
@@ -736,6 +738,52 @@ fn write(
             &[("disk", &disk.display().to_string())]
         )
     );
+    Ok(())
+}
+
+/// Copies the default apps (M6.2), when this system has them, onto the
+/// new data partition mounted at `data`, so the installed machine starts
+/// with them offline. `tar` keeps Flatpak's hard links between its
+/// repository and its checkouts, which a plain copy would double.
+fn copy_default_apps(data: &Path) -> Result<()> {
+    let apps = Path::new(edel::places::DEFAULT_APPS);
+    if !apps.is_dir() {
+        return Ok(());
+    }
+    println!("edel install: {}", tr("copying the default apps"));
+    let target = data.join(
+        apps.strip_prefix(edel::places::DATA_MOUNT)
+            .unwrap_or(apps)
+            .strip_prefix("/")
+            .unwrap_or(apps),
+    );
+    fs::create_dir_all(&target)?;
+    let mut pack = Command::new("tar")
+        .arg("-C")
+        .arg(apps)
+        .args(["-cf", "-", "."])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .context("could not start tar to copy the default apps")?;
+    let stream = pack.stdout.take().context("tar gave no output to copy")?;
+    run(Command::new("tar")
+        .arg("-C")
+        .arg(&target)
+        .args(["-xf", "-"])
+        .stdin(stream))?;
+    let packed = pack.wait()?;
+    if !packed.success() {
+        bail!(
+            "{}",
+            trf(
+                "could not read the default apps in {path} ({status}); the system is installed, without them",
+                &[
+                    ("path", &apps.display().to_string()),
+                    ("status", &packed.to_string())
+                ]
+            )
+        );
+    }
     Ok(())
 }
 
