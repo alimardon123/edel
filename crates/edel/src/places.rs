@@ -49,6 +49,11 @@ pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
 /// once (M1.1, M5.9).
 pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
+/// The hashed passwords `edel install` asked for (M6.6b), one
+/// `NAME:HASH` line each, root's only: the new machine's first
+/// `edel settings apply` gives them to the people the settings file makes
+/// and deletes the file, so no password is ever in the settings file.
+pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
 /// The login screen's own directory, made at boot owned by greetd by the
 /// login feature's `edel-live` (M5.10c3b).
 pub const GREETER_DIR: &str = data!("/edel/greeter");
@@ -90,6 +95,9 @@ pub const GREETD_LIVE: &str = run!("/greetd.toml");
 pub const SEED_MOUNT: &str = run!("/seed");
 /// Where the installer mounts the new disk's partitions (M2.4).
 pub const INSTALL_DIR: &str = run!("/install");
+/// The answers to the installer's questions as the new machine's settings
+/// file, before `edel install` copies it to the new disk (M6.6b).
+pub const INSTALL_ANSWERS: &str = run!("/install-answers.toml");
 
 /// Where a slot keeps Edel OS's own files.
 pub const SHARE_DIR: &str = share!("");
@@ -184,6 +192,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
+        ("first_passwords", FIRST_PASSWORDS.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
@@ -260,6 +269,34 @@ pub fn person_themes_dir() -> Option<PathBuf> {
         Some(data) => Some(PathBuf::from(data).join("edel").join("themes")),
         None => var("HOME").map(|home| PathBuf::from(home).join(".local/share/edel/themes")),
     }
+}
+
+/// The folder of a person's own desktop files (M6.4), where a web app's
+/// desktop file goes: `$XDG_DATA_HOME/applications` (an absolute value
+/// only, as the spec says), else `~/.local/share/applications`. None
+/// without a home folder.
+pub fn person_applications_dir() -> Option<PathBuf> {
+    let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
+    match var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|d| d.is_absolute())
+    {
+        Some(data) => Some(data.join("applications")),
+        None => var("HOME").map(|home| PathBuf::from(home).join(".local/share/applications")),
+    }
+}
+
+/// The folder a web app's Firefox profile is kept in (M6.4): inside
+/// Firefox's own Flatpak data folder, which its sandbox can write, one
+/// folder per web app. None without a home folder.
+pub fn web_apps_profiles_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|v| !v.is_empty())?;
+    Some(
+        PathBuf::from(home)
+            .join(".var/app")
+            .join(crate::web_apps::BROWSER)
+            .join("edel-web-apps"),
+    )
 }
 
 /// The folder of a person's lock screen pictures (M5.10c7c): one PNG for

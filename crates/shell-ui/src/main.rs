@@ -1557,8 +1557,32 @@ impl Shell {
         }
     }
 
+    /// Makes `url` a web app of the person's (M6.4), starts it at once and
+    /// closes the launcher; a failure says so and keeps the launcher open.
+    fn install_web_app(&mut self, url: &str) {
+        match edel::web_apps::add(url, None) {
+            Ok(added) => {
+                eprintln!("edel-shell-ui: web app {} added", added.name);
+                let started = apps::read_all(&apps::dirs())
+                    .into_iter()
+                    .find(|app| app.id == added.id);
+                self.close_launcher();
+                if let Some(app) = started {
+                    self.launcher.run(&app);
+                }
+            }
+            Err(why) => {
+                eprintln!(
+                    "edel-shell-ui: {}",
+                    messages::web_app_not_added(url, format!("{why:#}"))
+                );
+            }
+        }
+    }
+
     /// A key while the launcher is open: Escape closes, Return starts the
-    /// chosen app, Up and Down choose, Backspace erases, and text searches.
+    /// chosen app (or installs the typed website, M6.4), Up and Down choose,
+    /// Backspace erases, and text searches.
     fn launcher_key(&mut self, event: KeyEvent) {
         if self.menu.is_none() {
             return;
@@ -1566,6 +1590,9 @@ impl Shell {
         match event.keysym {
             Keysym::Escape => return self.close_launcher(),
             Keysym::Return | Keysym::KP_Enter => {
+                if let Some(url) = self.launcher.install_url(None) {
+                    return self.install_web_app(&url);
+                }
                 if self.launcher.start(None).is_some() {
                     return self.close_launcher();
                 }
@@ -2308,12 +2335,12 @@ impl PointerHandler for Shell {
                             self.draw_launcher();
                         }
                     }
-                    PointerEventKind::Press { button, .. }
-                        if *button == BTN_LEFT
-                            && row.is_some()
-                            && self.launcher.start(row).is_some() =>
-                    {
-                        self.close_launcher();
+                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                        if let Some(url) = self.launcher.install_url(row) {
+                            self.install_web_app(&url);
+                        } else if row.is_some() && self.launcher.start(row).is_some() {
+                            self.close_launcher();
+                        }
                     }
                     _ => {}
                 }

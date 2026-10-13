@@ -1022,6 +1022,19 @@ commands() {
 			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
 			as_ci "flatpak kill io.mpv.Mpv"
 			;;
+		# Web apps (M6.4, part 1), as ci, so the files land in ci's own home:
+		# a website made an app (its desktop file and profile), listed, its
+		# file shown, and removed again. No Firefox here, so no window opens.
+		'web app add')
+			out=$(as_ci edel web-app add https://example.org 2>&1); status=$?
+			say "web_app_add $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'web app list') say "web_app_list $(as_ci edel web-app list 2>&1 | tr '\n' ';')" ;;
+		'web app file') say "web_app_file $(cat /home/ci/.local/share/applications/edel-web-example-org.desktop 2>&1 | tr '\n' ';')" ;;
+		'web app remove')
+			out=$(as_ci edel web-app remove example.org 2>&1); status=$?
+			say "web_app_remove $status $(echo "$out" | tr '\n' ' ')"
+			;;
 		*)
 			say "unknown command $command"
 			continue
