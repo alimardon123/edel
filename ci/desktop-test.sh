@@ -2535,7 +2535,9 @@ case_updates() {
 	asked=$(count 'DESKTOP-TEST: channel_value ')
 	guest 'channel get'
 	wait_more 'DESKTOP-TEST: channel_value ' "$asked" || fail "the service did not read updates.channel after the reset"
-	value channel_value | grep -q 'not set' ||
+	# Reset leaves no line in any file, so get shows the default that
+	# applies and the layer giving it (M6.11), never this machine's value.
+	value channel_value | grep -q '(image default)' && ! value channel_value | grep -q '"preview"' ||
 		fail "edel settings reset updates.channel left it set: $(value channel_value)"
 	asked=$(count 'DESKTOP-TEST: channel_update ')
 	guest 'channel update'
