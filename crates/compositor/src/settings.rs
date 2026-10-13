@@ -125,6 +125,9 @@ pub struct Settings {
     /// The icon scale (M5.12b5 part A); the tokens read it, and a change
     /// starts shell-ui again with them.
     pub icons: edel::tokens::IconSize,
+    /// `appearance.contrast` (M6.9): high contrast on, the person's over the
+    /// machine's. The tokens read it too, so a change reads them again.
+    pub contrast: bool,
 }
 
 /// Whether `value` is in the key table's range for `key` (M5.12b5 part A); a
@@ -170,6 +173,7 @@ impl Settings {
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),
             icons: edel::tokens::IconSize::between(machine, person),
+            contrast: edel::tokens::high_contrast_between(machine, person),
             window_buttons: buttons.side,
             buttons: Shown {
                 close: buttons.close,
@@ -472,6 +476,23 @@ pub fn load(machine: &Path, person: Option<&Path>) -> (Settings, Vec<String>) {
     let settings = Settings::from_files(machine.as_ref(), person.as_ref());
     notes.extend(presets::named(settings.preset.as_deref()).1);
     (settings, notes)
+}
+
+impl Settings {
+    /// Whether the tokens the desktop draws with may change from `old` to
+    /// `self` (M5.12b1, M6.9): the accent, colours, wallpapers' accent, shape,
+    /// text, icons and contrast. The compositor reads the tokens again when
+    /// this says so; a change that leaves them as they were does nothing.
+    pub fn colours_changed(&self, old: &Settings) -> bool {
+        self.accent != old.accent
+            || self.colours != old.colours
+            || self.wallpaper != old.wallpaper
+            || self.wallpaper_dark != old.wallpaper_dark
+            || self.shape != old.shape
+            || self.text != old.text
+            || self.icons != old.icons
+            || self.contrast != old.contrast
+    }
 }
 
 #[cfg(test)]
@@ -926,5 +947,24 @@ mod tests {
         assert_eq!(settings, Settings::default());
         assert_eq!(notes.len(), 2, "{notes:?}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// High contrast is the person's over the machine's, and turning it on or
+    /// off is a change of the tokens, while a change of the tiling is not
+    /// (M6.9: the compositor reads the tokens again only for the first).
+    #[test]
+    fn high_contrast_is_the_persons_over_the_machines_and_changes_the_tokens() {
+        let high = file("format = 1\n[appearance]\ncontrast = \"high\"\n");
+        let normal = file("format = 1\n[appearance]\ncontrast = \"normal\"\n");
+        let plain = Settings::from_files(None, None);
+        let on = Settings::from_files(Some(&high), None);
+        assert!(on.contrast);
+        assert!(!Settings::from_files(Some(&high), Some(&normal)).contrast);
+        assert!(Settings::from_files(Some(&normal), Some(&high)).contrast);
+        assert!(on.colours_changed(&plain));
+        assert!(plain.colours_changed(&on));
+        assert!(!on.colours_changed(&on.clone()));
+        let tiled = file("format = 1\n[layout]\ntiling = true\n");
+        assert!(!Settings::from_files(Some(&tiled), None).colours_changed(&plain));
     }
 }

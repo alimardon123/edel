@@ -19,7 +19,7 @@ use std::rc::{Rc, Weak};
 use gtk::glib;
 use gtk::prelude::*;
 
-use edel::i18n::tr;
+use edel::i18n::{n_, tr};
 use edel::settings::{self, Colours};
 use edel::tokens::{self, Colour, Scheme, Tokens};
 
@@ -39,6 +39,11 @@ fn release() -> String {
 }
 /// The table of colours a person sets, `appearance.colours`, and its schemes.
 const COLOURS: &str = "appearance.colours";
+/// The high-contrast switch's key (M6.9): `high`, or taken out for normal.
+const CONTRAST: &str = "appearance.contrast";
+/// The line under the High contrast switch, before where its value comes from.
+const CONTRAST_LINE: &str =
+    n_("Strong edges and the plainest colours, for text that is easy to read");
 /// The swatch names that are not accents: the wallpaper's colour, a pill
 /// now (M5.12b6c), and a colour chosen in the system's dialog.
 const WALLPAPER_SWATCH: &str = tokens::WALLPAPER_ACCENT;
@@ -224,6 +229,26 @@ fn read_colours(path: &Path) -> Option<Colours> {
     settings::read(&text).ok()?.file.appearance.colours
 }
 
+/// The High contrast row (M6.9), under the swatches: its title and switch,
+/// its line and Reset and Copy as command come from `widgets::row`.
+fn contrast_row(content: &gtk::Box) -> Contrast {
+    let group = widgets::group(content);
+    let switch = gtk::Switch::new();
+    switch.set_valign(gtk::Align::Center);
+    let row = widgets::row(&group, rows::title(CONTRAST), switch.upcast_ref());
+    Contrast { switch, row }
+}
+
+/// What the High contrast row's line says: what it does, then where its
+/// value comes from.
+fn contrast_line(note: Option<&str>) -> String {
+    [Some(tr(CONTRAST_LINE)), note]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<&str>>()
+        .join(" · ")
+}
+
 /// What a colour row's line says: its scheme, when it is one scheme's own,
 /// then where its value comes from.
 fn line(scope: Scope, note: Option<&str>) -> String {
@@ -335,6 +360,13 @@ struct AddRow {
     error: gtk::Label,
 }
 
+/// The High contrast row under the swatches (M6.9): a switch for
+/// `appearance.contrast`, with Reset and Copy as command on the row.
+struct Contrast {
+    switch: gtk::Switch,
+    row: widgets::Row,
+}
+
 /// The accent and the colours on the Appearance page (M5.12b1c).
 pub struct Group {
     /// This group as the closures it hands out refer to it.
@@ -347,6 +379,8 @@ pub struct Group {
     swatches: Vec<Swatch>,
     /// The custom colour chosen, which the custom pill's dialog starts from.
     custom: Rc<Cell<Option<Colour>>>,
+    /// The High contrast switch and its row (M6.9).
+    contrast: Contrast,
     /// The box the colour rows are built in, and the keys they were built for.
     list: gtk::Box,
     keys_shown: RefCell<Option<Vec<String>>>,
@@ -362,6 +396,20 @@ impl Group {
     /// The rows are built again only when the set of colours changes, so a
     /// colour changed in place keeps the keyboard where it was.
     pub fn show(&self, files: &Files) {
+        let high = files.chosen(CONTRAST).as_deref() == Some("high");
+        self.quiet.set(true);
+        self.contrast.switch.set_active(high);
+        self.quiet.set(false);
+        let source = files.source(CONTRAST);
+        self.contrast
+            .row
+            .subtitle
+            .set_label(&contrast_line(rows::note(&source, false)));
+        self.contrast
+            .row
+            .reset
+            .set_visible(rows::resettable(&source));
+
         let chosen = files.chosen(KEY);
         let name = swatch_of(chosen.as_deref());
         let source = files.source(KEY);
@@ -481,6 +529,20 @@ impl Group {
             subtitle: row.subtitle,
             reset: row.reset,
         }
+    }
+
+    /// Writes high contrast on or off (M6.9): `high`, or `normal` taken out
+    /// when the release's own is what applies, and logs what the file holds
+    /// for CI. A machine's `high` is overruled by a written `normal`.
+    fn write_contrast(&self, on: bool) {
+        let value = if on { "high" } else { "normal" };
+        let result = Files::here().choose_over(CONTRAST, value, Some("normal"));
+        match Files::here().chosen(CONTRAST) {
+            Some(now) => eprintln!("edel-settings: contrast {CONTRAST} {now} written"),
+            None => eprintln!("edel-settings: contrast {CONTRAST} {value} taken out"),
+        }
+        self.report(result);
+        self.show(&Files::here());
     }
 
     /// Writes `value` as the accent (`blue` is taken out), then shows what
@@ -671,6 +733,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         swatches.push(Swatch { name, button, area });
     }
     content.append(&card);
+    let contrast = contrast_row(content);
 
     widgets::heading(content, tr("Colours"));
     widgets::note_row(content, tr(COLOURS_INTRO));
@@ -685,6 +748,7 @@ pub fn group(content: &gtk::Box, theme: &Rc<Theme>, problem: &gtk::Label) -> Rc<
         accent,
         swatches,
         custom,
+        contrast,
         list,
         keys_shown: RefCell::new(None),
         rows: RefCell::new(Vec::new()),
@@ -729,6 +793,33 @@ fn wire(group: &Rc<Group>) {
     }
 
     let reset_weak = weak.clone();
+    let switch_weak = weak.clone();
+    group.contrast.switch.connect_active_notify(move |switch| {
+        let Some(group) = switch_weak.upgrade() else {
+            return;
+        };
+        if !group.quiet.get() {
+            group.write_contrast(switch.is_active());
+        }
+    });
+    let contrast_reset = weak.clone();
+    group.contrast.row.reset.connect_clicked(move |_| {
+        let Some(group) = contrast_reset.upgrade() else {
+            return;
+        };
+        let result = Files::here().set(CONTRAST, None);
+        group.report(result);
+        group.show(&Files::here());
+    });
+    group.contrast.row.copy.connect_clicked(move |button| {
+        let value = Files::here()
+            .chosen(CONTRAST)
+            .unwrap_or_else(|| "normal".to_string());
+        button
+            .clipboard()
+            .set_text(&rows::command(&[(CONTRAST, value)]));
+        widgets::copied(button);
+    });
     group.accent.reset.connect_clicked(move |_| {
         let Some(group) = reset_weak.upgrade() else {
             return;
