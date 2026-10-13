@@ -30,6 +30,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [SHORTCUTS.md](SHORTCUTS.md) | Every keyboard shortcut's action, default keys and whether it is a way out; generated from `crates/edel/src/shortcuts.rs` | Reference |
 | [mockups/](mockups/README.md) | Pictures of the target look, each preset in light or dark, the effect tiers, a tablet and a phone; not binding, the real values are tokens | Reference |
 | [settings.md](settings.md) | Every key of `settings.toml`, its values and the step that acts on it | Reference |
+| [defaults.md](defaults.md) | The value every settings key has when the file does not set it, generated | Generated |
 | [INSTALL.md](INSTALL.md) | Every way into Edel OS, each ending in one settings file: checking the download, writing the stick, the boot menu, `edel install` with questions, a file or an https address | Guide |
 | [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
 | [index.md](index.md) | The docs site's front page: what Edel OS is and where to start (M8.10a) | Guide |

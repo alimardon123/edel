@@ -305,6 +305,306 @@ msgstr ""
 msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
 msgstr ""
 
+msgid "What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet."
+msgstr ""
+
+msgid "Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on."
+msgstr ""
+
+msgid "The hardware profiles applied to this machine, in order; this release does not act on them yet."
+msgstr ""
+
+msgid "Whether this person is an administrator, who may change the whole machine."
+msgstr ""
+
+msgid "The public keys that may log in to this person's account over ssh, one line each."
+msgstr ""
+
+msgid "The program this person's login starts, given as a full path such as /bin/ash."
+msgstr ""
+
+msgid "The name this computer has on the network: letters, digits and hyphens, up to 63."
+msgstr ""
+
+msgid "The language the desktop's own words and Settings are shown in, such as de or pt_BR."
+msgstr ""
+
+msgid "The keyboard layouts, up to four, such as us or us,ru; Super+Space goes to the next one."
+msgstr ""
+
+msgid "The time zone the clock shows, such as Europe/London."
+msgstr ""
+
+msgid "The servers the clock is set from, one to four host names, such as pool.ntp.org."
+msgstr ""
+
+msgid "The layout preset that arranges the panel, windows and workspaces, such as classic, mac-like or zen."
+msgstr ""
+
+msgid "Whether windows tile across the screen (true) or float freely (false); the preset decides when this is missing."
+msgstr ""
+
+msgid "Where windows get a title bar: always, only on floating windows, or never (Zen has none)."
+msgstr ""
+
+msgid "What kind of device this is: a desktop, a tablet or a phone; this release does not act on it yet."
+msgstr ""
+
+msgid "The side of each title bar where close, minimize and maximize sit: left or right."
+msgstr ""
+
+msgid "Whether each title bar shows its close button; Super+Q closes a window whether or not it shows."
+msgstr ""
+
+msgid "Whether each title bar shows its minimize button."
+msgstr ""
+
+msgid "Whether each title bar shows its maximize button; a hidden button's room goes to the title."
+msgstr ""
+
+msgid "How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles)."
+msgstr ""
+
+msgid "The panels along the screen's edges, each with its widgets, in place of the preset's."
+msgstr ""
+
+msgid "The tray apps kept in the panel, by their tray id; the other apps wait behind the tray's arrow."
+msgstr ""
+
+msgid "The apps the apps widget pins, in order, by app id or role such as browser."
+msgstr ""
+
+msgid "How many workspaces there are, from 1 to 9, one for each of Super+1 to Super+9."
+msgstr ""
+
+msgid "Whether empty workspaces come and go, so the count follows the windows."
+msgstr ""
+
+msgid "Whether each screen shows its own workspace, so Super+1 to Super+9 switch only the screen under the pointer."
+msgstr ""
+
+msgid "The names of the workspaces, the first one's first; an empty text leaves a workspace as its number."
+msgstr ""
+
+msgid "A wallpaper for each workspace, the first one's first; an empty text uses Appearance's wallpaper."
+msgstr ""
+
+msgid "The apps that always open on one workspace, by app id and number, such as Firefox on 2."
+msgstr ""
+
+msgid "The side of the screen where the workspace overview's strip lies: left, right, top or bottom."
+msgstr ""
+
+msgid "Where this screen sits among the others, as [x, y] in whole numbers."
+msgstr ""
+
+msgid "How big things are on this screen, such as 1.25 for 125 percent."
+msgstr ""
+
+msgid "The resolution of this screen as WIDTHxHEIGHT, such as 1920x1080."
+msgstr ""
+
+msgid "How many times a second this screen redraws, such as 60."
+msgstr ""
+
+msgid "Whether this screen is on; a screen that is off shows nothing."
+msgstr ""
+
+msgid "How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet."
+msgstr ""
+
+msgid "The theme in use: a built-in one (edel, aurora, earth or ocean) or one of your own."
+msgstr ""
+
+msgid "The wallpaper behind the windows: a name such as hills, a picture's path, a colour or none."
+msgstr ""
+
+msgid "The wallpaper for dark mode, when it differs from the light one."
+msgstr ""
+
+msgid "The pictures of the theme in use, shown on top of its own; at most 32, none twice."
+msgstr ""
+
+msgid "How the workspace switcher looks: round numbers, or a button with a line for each workspace."
+msgstr ""
+
+msgid "How many workspace numbers the switcher shows at once, from 1 to 9."
+msgstr ""
+
+msgid "What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts."
+msgstr ""
+
+msgid "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one."
+msgstr ""
+
+msgid "High contrast gives strong edges and plain colours in both schemes; normal is the usual look."
+msgstr ""
+
+msgid "The accent colour for the shown workspace, buttons and marks: a named accent, wallpaper, or a colour."
+msgstr ""
+
+msgid "One colour of the look, by its token name, in both schemes."
+msgstr ""
+
+msgid "One colour of the light scheme alone, over the colours both schemes share."
+msgstr ""
+
+msgid "One colour of the dark scheme alone, over the colours both schemes share."
+msgstr ""
+
+msgid "The corner radius of windows, in logical pixels from 0 to 24; 0 makes every corner square."
+msgstr ""
+
+msgid "The gap between tiled windows, in logical pixels from 0 to 64."
+msgstr ""
+
+msgid "The gap between tiled windows and the screen's edge, in logical pixels from 0 to 64."
+msgstr ""
+
+msgid "The border round each window with a title bar, in logical pixels from 0 to 10."
+msgstr ""
+
+msgid "The height of each title bar, in logical pixels from 24 to 48."
+msgstr ""
+
+msgid "How solid the panels are, in percent from 20 to 100."
+msgstr ""
+
+msgid "How solid the focused window is, in percent from 20 to 100."
+msgstr ""
+
+msgid "How solid every other window is, in percent from 20 to 100."
+msgstr ""
+
+msgid "How far the shadow under each window spreads, in logical pixels from 0 to 64; 0 is none."
+msgstr ""
+
+msgid "How dark the shadow under each window is, in percent from 0 to 100."
+msgstr ""
+
+msgid "How strongly the wallpaper blurs behind see-through panels, in percent; 0 shows it sharp."
+msgstr ""
+
+msgid "The font for the interface's text, by its family name."
+msgstr ""
+
+msgid "The font apps use for code and terminals, by its family name."
+msgstr ""
+
+msgid "How big every text is, in percent of the release's size, from 80 to 150."
+msgstr ""
+
+msgid "The pointer's height in logical pixels, from 16 to 96."
+msgstr ""
+
+msgid "The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow."
+msgstr ""
+
+msgid "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150."
+msgstr ""
+
+msgid "How much things move: full, reduced (fades only) or off."
+msgstr ""
+
+msgid "How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast."
+msgstr ""
+
+msgid "The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little)."
+msgstr ""
+
+msgid "The parts of the lock and login screens and where each one stands, as a list of tables."
+msgstr ""
+
+msgid "The look of the lock and login screens: classic, magazine, minimal or one of your own."
+msgstr ""
+
+msgid "What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture."
+msgstr ""
+
+msgid "How much the lock screen's background is darkened, in percent from 0 to 80, so the words read."
+msgstr ""
+
+msgid "Whether the lock screen shows how many notifications are unread: count, or none to hide it."
+msgstr ""
+
+msgid "Your own lock screen looks, each with its parts and background, chosen by name."
+msgstr ""
+
+msgid "One of your own themes: its title, its pictures and the appearance values it sets."
+msgstr ""
+
+msgid "One of your own layout presets: the built-in preset it starts from and the layout keys it sets."
+msgstr ""
+
+msgid "The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions."
+msgstr ""
+
+msgid "The app that opens web pages and web links, by its desktop file id without .desktop."
+msgstr ""
+
+msgid "The app that opens folders, by its desktop file id without .desktop."
+msgstr ""
+
+msgid "The app that opens plain text files, by its desktop file id without .desktop."
+msgstr ""
+
+msgid "The app the terminal shortcut opens, by its desktop file id without .desktop."
+msgstr ""
+
+msgid "The app that opens mail and mail links, by its desktop file id without .desktop."
+msgstr ""
+
+msgid "The apps that start once the desktop is on screen, in the order listed, by desktop file id."
+msgstr ""
+
+msgid "What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet."
+msgstr ""
+
+msgid "How many minutes without input before the screen locks, 0 for never; this release does not act on it yet."
+msgstr ""
+
+msgid "What the power button does: suspend, power off, ask or nothing; this release does not act on it yet."
+msgstr ""
+
+msgid "How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet."
+msgstr ""
+
+msgid "Turns one switchable feature, such as ssh or bluetooth, on or off by its name."
+msgstr ""
+
+msgid "The release channel whose updates this machine takes, such as stable or preview."
+msgstr ""
+
+msgid "A release to stay on instead of following the channel; this release does not act on it yet."
+msgstr ""
+
+msgid "Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet."
+msgstr ""
+
+msgid "The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet."
+msgstr ""
+
+msgid "The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv."
+msgstr ""
+
+msgid "The add-ons this machine has, by name; this release does not act on them yet."
+msgstr ""
+
+msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
+msgstr ""
+
+msgid "Where banners appear: by the status area, in a corner, or at the top's middle."
+msgstr ""
+
+msgid "What the notifications button shows while some are unread: a dot, the count, or nothing."
+msgstr ""
+
+msgid "Where the notification list opens: hung on its button, or as a sheet on the left or right."
+msgstr ""
+
+msgid "The input method for typing languages a keyboard has no keys for: fcitx5 or none."
+msgstr ""
+
 msgid "English (United States)"
 msgstr ""
 

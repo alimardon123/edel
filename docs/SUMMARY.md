@@ -8,6 +8,7 @@
 - [Install](INSTALL.md)
 - [How Edel OS works](guide/how-it-works.md)
 - [The settings file](settings.md)
+- [Defaults](defaults.md)
 - [Keyboard shortcuts](SHORTCUTS.md)
 - [Commands](guide/commands.md)
 
