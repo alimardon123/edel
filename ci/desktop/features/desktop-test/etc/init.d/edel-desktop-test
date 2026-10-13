@@ -640,6 +640,22 @@ commands() {
 			edel settings set 'startup.apps=["edel-test-files"]' && say "startup_apps $(edel settings get startup.apps | tr '\n' ';')"
 			;;
 		'startup off') edel settings reset startup.apps ;;
+		# Startup after a login (M6.10): a test client's desktop file that
+		# the list names, set before ci logs in again, so the session that
+		# starts then opens it; `startup login off` takes both away.
+		'startup login')
+			apps=/home/ci/.local/share/applications
+			for d in /home/ci/.local /home/ci/.local/share "$apps"; do
+				install -d -o ci -g ci "$d"
+			done
+			printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Test Startup' 'Exec=edel-testclient --title test-startup --colour 669933 --size 300x200' >"$apps/edel-test-startup.desktop"
+			chown ci:ci "$apps/edel-test-startup.desktop"
+			edel settings set 'startup.apps=["edel-test-startup"]' && say "startup_login $(edel settings get startup.apps | tr '\n' ';')"
+			;;
+		'startup login off')
+			rm -f /home/ci/.local/share/applications/edel-test-startup.desktop
+			edel settings reset startup.apps && say "startup_login_off"
+			;;
 		# Settings on the Default apps page (M6.10), as ci; its log says where
 		# each role's choice lies, once the page is laid out.
 		'settings default apps')
