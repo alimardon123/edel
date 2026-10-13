@@ -279,6 +279,15 @@ commands() {
 				say "portal $key $out"
 			done
 			;;
+		# The header bars' button layout (M6.16): what GTK and libadwaita
+		# apps hear from the portal for their own bars, and the Edel icon
+		# theme's files, which apps' glyphs come from.
+		'portal buttons')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne org.gnome.desktop.wm.preferences button-layout" </dev/null 2>&1 | tr '\n' ' ')
+			say "portal button-layout $out"
+			;;
+		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.
 		'portal watch')
@@ -1042,6 +1051,19 @@ commands() {
 		'flatpak default')
 			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
 			as_ci "flatpak kill io.mpv.Mpv"
+			;;
+		# Web apps (M6.4, part 1), as ci, so the files land in ci's own home:
+		# a website made an app (its desktop file and profile), listed, its
+		# file shown, and removed again. No Firefox here, so no window opens.
+		'web app add')
+			out=$(as_ci edel web-app add https://example.org 2>&1); status=$?
+			say "web_app_add $status $(echo "$out" | tr '\n' ' ')"
+			;;
+		'web app list') say "web_app_list $(as_ci edel web-app list 2>&1 | tr '\n' ';')" ;;
+		'web app file') say "web_app_file $(cat /home/ci/.local/share/applications/edel-web-example-org.desktop 2>&1 | tr '\n' ';')" ;;
+		'web app remove')
+			out=$(as_ci edel web-app remove example.org 2>&1); status=$?
+			say "web_app_remove $status $(echo "$out" | tr '\n' ' ')"
 			;;
 		*)
 			say "unknown command $command"

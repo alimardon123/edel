@@ -19,6 +19,7 @@ mod privilege;
 mod release;
 mod report;
 mod run;
+mod settings_source;
 mod shell;
 mod system_power;
 mod update;
@@ -28,7 +29,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{FromArgMatches, Parser, Subcommand};
 use edel::i18n::{self, trf};
-use edel::settings;
+use edel::{settings, users};
 
 use crate::def::ImageDef;
 use crate::run::Runner;
@@ -155,11 +156,17 @@ enum Commands {
     /// Install Edel OS on another disk, erasing it: the running system
     /// becomes slot A, and FILE the new machine's settings
     Install {
-        /// The disk, such as /dev/sda
-        disk: String,
-        /// The settings file the new machine starts with
+        /// The disk, such as /dev/sda; without it, the disks are listed
+        /// and one is asked for
+        disk: Option<String>,
+        /// The settings file the new machine starts with, a path or an
+        /// https:// address; without it, a few questions are asked on the
+        /// terminal and their answers become it
         #[arg(long, value_name = "FILE")]
-        settings: PathBuf,
+        settings: Option<String>,
+        /// List the disks Edel OS could install on, and change nothing
+        #[arg(long)]
+        list: bool,
         /// Only show the plan: what would be erased and written; change
         /// nothing
         #[arg(long)]
@@ -201,6 +208,33 @@ enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// web-app: a website made an app, with its own window, name and icon in
+    /// the launcher; it runs in Firefox with a profile of its own
+    WebApp {
+        #[command(subcommand)]
+        command: WebAppCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum WebAppCommands {
+    /// Make a website an app with its own window, name and icon in the launcher
+    Add {
+        /// The website, such as example.org or https://example.org
+        #[arg(value_name = "URL")]
+        url: String,
+        /// The app's name in the launcher; the website's host when none is given
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+    },
+    /// Remove one of your web apps and its own profile, by its name
+    Remove {
+        /// The app's name, as web-app list shows it
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// List your web apps, with their websites
+    List,
 }
 
 #[derive(Subcommand)]
@@ -304,8 +338,8 @@ enum SettingsCommands {
     /// Make FILE this machine's settings and apply it, such as a file
     /// exported on another machine
     Import {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
     },
     /// Print this machine as a settings file, to keep or to import on
     /// another machine, and the /etc files it changed
@@ -313,8 +347,8 @@ enum SettingsCommands {
     /// Check a settings file strictly: every unknown key, value or format,
     /// and every key this release does not act on yet, is refused
     Check {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
     },
 }
 
@@ -487,6 +521,7 @@ impl Commands {
             Commands::Settings { .. } => "settings",
             Commands::Theme { .. } => "theme",
             Commands::Preset { .. } => "preset",
+            Commands::WebApp { .. } => "web-app",
         }
     }
 }
@@ -631,12 +666,25 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
             disk,
             settings,
             plan,
             yes,
-        } => installer::install(&disk, &settings, plan, yes),
+            ..
+        } => {
+            let settings = settings
+                .as_deref()
+                .map(settings_source::local)
+                .transpose()?;
+            installer::install(
+                disk.as_deref(),
+                settings.as_ref().map(settings_source::Local::path),
+                plan,
+                yes,
+            )
+        }
         Commands::Report { esp } => report::report(esp),
         Commands::Settings { command } => match command {
             None => {
@@ -653,9 +701,13 @@ fn run(command: Commands) -> Result<()> {
                 Ok(())
             }
             Some(SettingsCommands::Apply { boot }) => machine::apply(boot),
-            Some(SettingsCommands::Import { file }) => machine::import(&file),
+            Some(SettingsCommands::Import { file }) => {
+                machine::import(settings_source::local(&file)?.path())
+            }
             Some(SettingsCommands::Export) => machine::export(),
-            Some(SettingsCommands::Check { file }) => check_system_file(&file),
+            Some(SettingsCommands::Check { file }) => {
+                check_system_file(&settings_source::local(&file)?)
+            }
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),
@@ -670,13 +722,74 @@ fn run(command: Commands) -> Result<()> {
             PresetCommands::Save { name } => machine::preset_save(&name),
             PresetCommands::Delete { name } => machine::preset_delete(&name),
         },
+        Commands::WebApp { command } => {
+            refuse_root()?;
+            match command {
+                WebAppCommands::Add { url, name } => web_app_add(&url, name.as_deref()),
+                WebAppCommands::Remove { name } => web_app_remove(&name),
+                WebAppCommands::List => {
+                    web_app_list();
+                    Ok(())
+                }
+            }
+        }
+    }
+}
+
+/// Web apps are the person's own files: run as root, they would be root's,
+/// in root's home, so the command refuses (M6.4).
+fn refuse_root() -> Result<()> {
+    if users::current() == Some(0) {
+        bail!(
+            "{}",
+            i18n::tr(
+                "edel web-app writes the files of the person who runs it, and root has no desktop of its own; run it as that person, without doas"
+            )
+        );
+    }
+    Ok(())
+}
+
+/// `edel web-app add URL [--name NAME]`: the web app is made, and the
+/// launcher lists it at once.
+fn web_app_add(url: &str, name: Option<&str>) -> Result<()> {
+    let app = edel::web_apps::add(url, name)?;
+    println!(
+        "{}",
+        trf(
+            "added web app {name} ({id}); it is in the launcher",
+            &[("name", &app.name), ("id", &app.id)],
+        )
+    );
+    Ok(())
+}
+
+/// `edel web-app remove NAME`: the desktop file and the profile go.
+fn web_app_remove(name: &str) -> Result<()> {
+    let app = edel::web_apps::remove(name)?;
+    println!("{}", trf("removed web app {name}", &[("name", &app.name)]));
+    Ok(())
+}
+
+/// `edel web-app list`: one line per web app, its name then its website.
+fn web_app_list() {
+    let apps = edel::web_apps::list();
+    if apps.is_empty() {
+        println!(
+            "{}",
+            i18n::tr("no web apps yet; make one with edel web-app add URL")
+        );
+    }
+    for app in apps {
+        println!("{}  {}", app.name, app.url);
     }
 }
 
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
-fn check_system_file(file: &std::path::Path) -> Result<()> {
-    let shown = file.display().to_string();
+fn check_system_file(source: &settings_source::Local) -> Result<()> {
+    let file = source.path();
+    let shown = source.shown().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
     let problems = settings::check(&text)
@@ -688,22 +801,21 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
     for problem in &problems {
         println!("{problem}");
     }
-    bail!("{}", problem_count(file, problems.len()))
+    bail!("{}", problem_count(&shown, problems.len()))
 }
 
 /// The last line of a failed `edel settings check`: how many problems the
 /// lines above are, and what to do about them.
-fn problem_count(file: &std::path::Path, count: usize) -> String {
-    let path = file.display().to_string();
+fn problem_count(path: &str, count: usize) -> String {
     if count == 1 {
         trf(
             "{path} has 1 problem, listed above; fix it and run edel settings check again",
-            &[("path", &path)],
+            &[("path", path)],
         )
     } else {
         trf(
             "{path} has {count} problems, listed above; fix them and run edel settings check again",
-            &[("path", &path), ("count", &count.to_string())],
+            &[("path", path), ("count", &count.to_string())],
         )
     }
 }
@@ -743,7 +855,7 @@ mod tests {
 
     #[test]
     fn a_failed_check_counts_its_problems_and_says_what_to_do() {
-        let file = std::path::Path::new("/tmp/ali.toml");
+        let file = "/tmp/ali.toml";
         assert_eq!(
             problem_count(file, 1),
             "/tmp/ali.toml has 1 problem, listed above; fix it and run edel settings check again"

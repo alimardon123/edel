@@ -5,15 +5,18 @@
 //! Return or a click starts one, Escape, Super again or a click
 //! elsewhere closes it. It holds the keyboard, its buffers and the app
 //! list only while open: shell-ui's idle memory stays the panel's.
-//! Drawing is plain and tested without a display.
+//! Drawing is plain and tested without a display. A typed website (`host.tld`
+//! or an address) puts "Install ... as an app" first, a web app (M6.4).
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 use std::process::{Child, Command, Stdio};
 
 use tiny_skia::Pixmap;
 
+use accesskit::{Rect, Role};
 use edel::tokens::Tokens;
 
+use crate::a11y::Item;
 use crate::paint::{Text, fill, mix};
 use crate::popup::{self, INSET, PAD, middle};
 use edel::apps::{self, App};
@@ -32,12 +35,53 @@ pub fn size(tokens: &Tokens) -> (u32, u32) {
 }
 
 /// What the launcher shows: what was typed, the matching apps' names
-/// and which is chosen.
+/// and which is chosen. `web` is the address the first row installs, when
+/// what was typed is a website (M6.4); that row is then `names[0]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct View {
     pub query: String,
     pub names: Vec<String>,
     pub selected: usize,
+    pub web: Option<String>,
+}
+
+/// What a screen reader reads of the launcher (M6.9): the search line
+/// first, its typed text as its value, then one list item for each row
+/// shown, named by its app. The focus is the chosen row, or the search
+/// line when no app is listed.
+pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
+    let w = WIDTH as f64;
+    let (pad, search) = (PAD as f64, SEARCH as f64);
+    let first = PAD + SEARCH + PAD;
+    let row = tokens.row as f64;
+    let field = Item {
+        role: Role::SearchInput,
+        label: tr("Search apps").to_string(),
+        bounds: Rect::new(pad, pad, w - pad, pad + search),
+        children: vec![],
+        toggled: None,
+        value: None,
+        value_text: Some(view.query.clone()),
+    };
+    let mut items = vec![field];
+    for (i, name) in view.names.iter().enumerate() {
+        let top = (first as f64) + i as f64 * row;
+        items.push(Item {
+            role: Role::ListItem,
+            label: name.clone(),
+            bounds: Rect::new(pad, top, w - pad, top + row),
+            children: vec![],
+            toggled: None,
+            value: None,
+            value_text: None,
+        });
+    }
+    let focus = if view.names.is_empty() {
+        0
+    } else {
+        1 + view.selected
+    };
+    (items, Some(focus))
 }
 
 /// The row at `y` logical pixels from the launcher's top, if any.
@@ -138,19 +182,52 @@ impl Launcher {
         self.apps.len()
     }
 
+    /// The address the first row installs: what was typed, when it is a
+    /// website (M6.4), as the scheme it opens with.
+    fn web(&self) -> Option<String> {
+        let typed = self.query.trim();
+        edel::web_apps::is_url(typed).then(|| edel::web_apps::normalise(typed))
+    }
+
+    /// How many rows come before the apps: the install row, when there is one.
+    fn offset(&self) -> usize {
+        usize::from(self.web().is_some())
+    }
+
     fn matches(&self) -> Vec<&App> {
         let mut found = apps::search(&self.apps, &self.query);
-        found.truncate(ROWS);
+        found.truncate(ROWS - self.offset());
         found
     }
 
+    /// Every row the list has now: the install row, if any, then the apps.
+    fn rows(&self) -> usize {
+        self.offset() + self.matches().len()
+    }
+
     pub fn view(&self) -> View {
-        let names: Vec<String> = self.matches().iter().map(|a| a.name.clone()).collect();
+        let web = self.web();
+        let mut names = Vec::new();
+        if web.is_some() {
+            names.push(trf(
+                "Install {url} as an app",
+                &[("url", self.query.trim())],
+            ));
+        }
+        names.extend(self.matches().iter().map(|a| a.name.clone()));
         View {
             selected: self.selected.min(names.len().saturating_sub(1)),
             query: self.query.clone(),
             names,
+            web,
         }
+    }
+
+    /// The address the row (else the chosen one) installs, when it is the
+    /// install row; None for an app's row.
+    pub fn install_url(&self, row: Option<usize>) -> Option<String> {
+        let row = row.unwrap_or(self.selected);
+        if row == 0 { self.web() } else { None }
     }
 
     /// Something typed: the search starts again from the best match.
@@ -166,14 +243,14 @@ impl Launcher {
 
     /// Up (-1) or down (1), staying on the list.
     pub fn step(&mut self, by: i32) {
-        let last = self.matches().len().saturating_sub(1) as i32;
+        let last = self.rows().saturating_sub(1) as i32;
         self.selected = (self.selected as i32 + by).clamp(0, last.max(0)) as usize;
     }
 
     /// Starts the app on `row`, else the chosen one; its name if one
     /// started.
     pub fn start(&mut self, row: Option<usize>) -> Option<String> {
-        let row = row.unwrap_or(self.selected);
+        let row = row.unwrap_or(self.selected).checked_sub(self.offset())?;
         let app = (*self.matches().get(row)?).clone();
         self.run(&app).then_some(app.name)
     }
@@ -239,6 +316,7 @@ mod tests {
             query: "fo".into(),
             names: vec!["Foot".into(), "Foot Client".into()],
             selected: 1,
+            web: None,
         };
         let (_, height) = size(&tokens);
         let high = tokens.row;
@@ -256,6 +334,99 @@ mod tests {
         let y = PAD + SEARCH + PAD + high as f32 * 1.5;
         assert_eq!(row_at(y, &tokens), Some(1));
         assert_eq!(row_at(height as f32, &tokens), None);
+    }
+
+    #[test]
+    fn a_screen_reader_reads_the_search_line_and_the_listed_apps() {
+        let tokens = Tokens::built_in();
+        let view = View {
+            query: "fo".into(),
+            names: vec!["Foot".into(), "Foot Client".into()],
+            selected: 1,
+            web: None,
+        };
+        let (items, focus) = nodes(&view, &tokens);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].role, Role::SearchInput);
+        assert_eq!(items[0].label, "Search apps");
+        assert_eq!(items[0].value_text.as_deref(), Some("fo"));
+        assert_eq!(
+            (items[1].role, items[1].label.as_str()),
+            (Role::ListItem, "Foot")
+        );
+        assert_eq!(items[2].label, "Foot Client");
+        assert_eq!(focus, Some(2), "the chosen row is focused");
+        let first = (PAD + SEARCH + PAD) as f64;
+        assert_eq!(items[2].bounds.y0, first + tokens.row as f64);
+        let (none, focus) = nodes(
+            &View {
+                query: "zz".into(),
+                names: vec![],
+                selected: 0,
+                web: None,
+            },
+            &tokens,
+        );
+        assert_eq!(none.len(), 1, "no app listed: the search line alone");
+        assert_eq!(focus, Some(0), "the search line holds the focus");
+    }
+
+    #[test]
+    fn shift_tab_moves_the_choice_back() {
+        let app = |name: &str| {
+            apps::parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={name}\nExec=true\n"
+            ))
+            .unwrap()
+        };
+        let mut launcher = Launcher {
+            apps: vec![app("Files"), app("Foot"), app("Text Editor")],
+            ..Launcher::default()
+        };
+        launcher.step(popup::tab_step(false));
+        launcher.step(popup::tab_step(false));
+        assert_eq!(launcher.selected, 2);
+        launcher.step(popup::tab_step(true));
+        assert_eq!(launcher.selected, 1, "Shift+Tab goes back one row");
+    }
+
+    #[test]
+    fn a_website_puts_the_install_row_first_and_a_name_does_not() {
+        let app = |name: &str| {
+            apps::parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={name}\nExec=true\n"
+            ))
+            .unwrap()
+        };
+        let mut launcher = Launcher {
+            apps: vec![app("Files"), app("Foot")],
+            ..Launcher::default()
+        };
+        launcher.typed("example.org");
+        let view = launcher.view();
+        assert_eq!(view.web.as_deref(), Some("https://example.org"));
+        assert_eq!(view.names, ["Install example.org as an app"]);
+        assert_eq!(
+            launcher.install_url(None).as_deref(),
+            Some("https://example.org")
+        );
+        assert_eq!(launcher.start(None), None, "the install row starts no app");
+        launcher.step(1);
+        assert_eq!(launcher.selected, 0, "one row");
+        launcher.query.clear();
+        launcher.typed("fo");
+        let view = launcher.view();
+        assert_eq!(view.web, None);
+        assert_eq!(view.names, ["Foot"]);
+        assert_eq!(launcher.install_url(None), None);
+        // A typed address with no app of that name shows the install row alone.
+        launcher.query.clear();
+        launcher.typed("https://files.org");
+        assert_eq!(launcher.view().names.len(), 1);
+        launcher.query = "files".into();
+        let view = launcher.view();
+        assert_eq!(view.web, None, "a name is not a website");
+        assert_eq!(view.names, ["Files"]);
     }
 
     #[test]

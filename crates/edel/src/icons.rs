@@ -297,9 +297,90 @@ fn tint(pixmap: &mut Pixmap, colour: Colour) {
     }
 }
 
+/// The window glyphs of our title bars under the names GTK and libadwaita
+/// ask their icon theme for (M6.16): each of our names and the freedesktop
+/// name its copy has in the `Edel` icon theme, `features/shell/usr/share/icons/Edel`,
+/// so apps' own header bars draw the glyphs our bars draw.
+pub const SYMBOLIC: [(&str, &str); 4] = [
+    ("close", "window-close-symbolic"),
+    ("minimize", "window-minimize-symbolic"),
+    ("maximize", "window-maximize-symbolic"),
+    ("restore", "window-restore-symbolic"),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `Edel` icon theme's index (M6.16): it inherits Adwaita, which the
+    /// apps' own glyphs come from, and hicolor, and holds one scalable
+    /// context of the UI's icons from 8 to 512 px.
+    fn index_theme() -> String {
+        "# Edel OS's icon theme (M6.16): the shell's own icons under the names\n\
+         # apps ask for. Written from design/icons/ by edel::icons (a cargo test\n\
+         # keeps it so: EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme).\n\
+         [Icon Theme]\n\
+         Name=Edel\n\
+         Comment=Edel OS's own icons\n\
+         Inherits=Adwaita,hicolor\n\
+         Directories=scalable/ui\n\n\
+         [scalable/ui]\n\
+         Size=16\n\
+         MinSize=8\n\
+         MaxSize=512\n\
+         Type=Scalable\n\
+         Context=UI\n"
+            .to_string()
+    }
+
+    /// The `Edel` icon theme holds the window glyphs of [`SYMBOLIC`], each
+    /// copied byte for byte from `design/icons/`, and its index (M6.16).
+    /// With EDEL_WRITE_DOCS set, the test writes the copies and the index.
+    #[test]
+    fn the_edel_icon_theme_is_the_shells_icons() {
+        let root = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../features/shell/usr/share/icons/Edel"
+        );
+        let ui = format!("{root}/scalable/ui");
+        let write = std::env::var_os("EDEL_WRITE_DOCS").is_some();
+        if write {
+            std::fs::create_dir_all(&ui).unwrap();
+            std::fs::write(format!("{root}/index.theme"), index_theme()).unwrap();
+        }
+        let shipped_index = std::fs::read_to_string(format!("{root}/index.theme"));
+        assert!(
+            shipped_index.unwrap_or_default() == index_theme(),
+            "the Edel icon theme's index differs; run EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme"
+        );
+        let mut want = Vec::new();
+        for (ours, freedesktop) in SYMBOLIC {
+            let source = format!(
+                "{}/../../design/icons/{ours}.svg",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let source = std::fs::read(&source).unwrap();
+            let copy = format!("{ui}/{freedesktop}.svg");
+            if write {
+                std::fs::write(&copy, &source).unwrap();
+            }
+            assert!(
+                std::fs::read(&copy).unwrap_or_default() == source,
+                "{copy} differs from design/icons/{ours}.svg; run EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme"
+            );
+            want.push(format!("{freedesktop}.svg"));
+        }
+        let mut shipped: Vec<String> = std::fs::read_dir(&ui)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        shipped.sort();
+        want.sort();
+        assert_eq!(
+            shipped, want,
+            "the theme holds exactly the icons SYMBOLIC names"
+        );
+    }
 
     fn covered(pixmap: &Pixmap) -> usize {
         pixmap.data().chunks_exact(4).filter(|p| p[3] > 0).count()
