@@ -128,9 +128,6 @@ msgstr ""
 msgid "Headphones or speaker"
 msgstr ""
 
-msgid "Keyboard"
-msgstr ""
-
 msgid "Mouse"
 msgstr ""
 
