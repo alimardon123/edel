@@ -6156,10 +6156,11 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
-# input_method_fail MESSAGE: the compositor's lines about the input method,
+# input_method_fail MESSAGE: the compositor's lines about the input method
+# and fcitx5's own errors and warnings,
 # then the failure.
 input_method_fail() {
-	tr -d '\r' <"$log" | grep -aE 'fcitx5|input method' | sed 's/^/DESKTOP-TEST: compositor: /'
+	tr -d '\r' <"$log" | grep -aE 'fcitx5|input method|^[EW][0-9]{4}-' | sed 's/^/DESKTOP-TEST: compositor: /'
 	fail "$1"
 }
 

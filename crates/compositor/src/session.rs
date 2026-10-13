@@ -99,8 +99,15 @@ pub fn follow_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel)
 /// compositor as its child and ended with it, but never started again:
 /// it runs as long as the setting asks for it.
 fn start_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
+    // fcitx5 types into Wayland apps, so it needs the desktop's socket,
+    // which session programs do not get. It gets no X display: connecting
+    // to one would start XWayland, which waits for an X11 app (M4.7).
     let mut process = Command::new(INPUT_METHOD);
-    process.envs(state.cursors.env()).stdin(Stdio::null());
+    process
+        .envs(state.cursors.env())
+        .env("WAYLAND_DISPLAY", &state.socket)
+        .env_remove("DISPLAY")
+        .stdin(Stdio::null());
     ends_with_us(&mut process);
     let mut child = match process.spawn() {
         Ok(child) => child,
