@@ -43,3 +43,4 @@ pub mod tool;
 pub mod users;
 pub mod version;
 pub mod wallpapers;
+pub mod web_apps;
