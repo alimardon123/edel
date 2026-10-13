@@ -22,6 +22,7 @@ pub mod i18n;
 pub mod icons;
 pub mod install;
 pub mod keep;
+pub mod key_help;
 pub mod keyboard;
 pub mod languages;
 pub mod lock_screen;
