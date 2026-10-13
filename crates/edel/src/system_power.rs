@@ -46,7 +46,7 @@ pub fn command(action: Action, root: bool) -> Vec<&'static str> {
     if root {
         vec![action.program()]
     } else {
-        vec!["doas", "-n", action.program()]
+        vec![edel::places::AS_ROOT, "-n", action.program()]
     }
 }
 
@@ -112,19 +112,19 @@ mod tests {
     fn anyone_else_runs_each_program_through_doas() {
         assert_eq!(
             command(Action::Restart, false),
-            ["doas", "-n", "/sbin/reboot"]
+            [edel::places::AS_ROOT, "-n", "/sbin/reboot"]
         );
         assert_eq!(
             command(Action::ShutDown, false),
-            ["doas", "-n", "/sbin/poweroff"]
+            [edel::places::AS_ROOT, "-n", "/sbin/poweroff"]
         );
         assert_eq!(
             command(Action::Suspend, false),
-            ["doas", "-n", "/usr/sbin/zzz"]
+            [edel::places::AS_ROOT, "-n", "/usr/sbin/zzz"]
         );
         for action in [Action::Restart, Action::ShutDown, Action::Suspend] {
             let argv = command(action, false);
-            assert_eq!(&argv[..2], ["doas", "-n"]);
+            assert_eq!(&argv[..2], [edel::places::AS_ROOT, "-n"]);
             assert_eq!(argv.len(), 3, "no arguments are passed");
         }
     }
