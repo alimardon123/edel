@@ -61,6 +61,9 @@
 #               bottom) lies above shell-ui's along the bottom in its
 #               colour, keeps its height free of tiled windows, and goes
 #               when closed (M5.1a)
+#   own-bars    a GTK app's own title bars take the button layout from the
+#               settings portal: close first when layout.window_buttons is
+#               left, the glyphs from the Edel icon theme (M6.16)
 #   capture     shell-ui's Access dialog, asked over D-Bus, answers 0 when
 #               Allow is clicked; a screenshot through xdg-desktop-portal
 #               writes a PNG; a screencast gives a 1280x800 stream (M6.3)
@@ -4277,6 +4280,51 @@ case_portal() {
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
+case_own_bars() {
+	# Apps' own title bars (M6.16): a GTK or libadwaita app reads the header
+	# bars' button layout from the settings portal, so it puts its buttons
+	# where ours are, and its window glyphs come from the Edel icon theme.
+	# The release's layout is Classic's, the buttons on the right; with
+	# layout.window_buttons = left they go to the left, and the reset puts
+	# them back. Each change is told to apps by shell-ui, which logs it.
+	layout_of() {
+		tr -d '\r' <"$log" | sed -n "s/.*DESKTOP-TEST: portal button-layout (<'\([^']*\)'>,).*/\1/p" | tail -n 1
+	}
+	guest 'portal buttons'
+	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
+	first=$(layout_of)
+	[ "$first" = ':minimize,maximize,close' ] ||
+		fail "the portal's button layout is not the default :minimize,maximize,close: $first"
+	guest 'icon theme'
+	wait_for 'DESKTOP-TEST: icon theme ' 20 || fail "the service did not list the Edel icon theme"
+	icons=$(value 'icon theme')
+	for glyph in window-close window-minimize window-maximize window-restore; do
+		echo "$icons" | grep -q "$glyph-symbolic.svg" ||
+			fail "the Edel icon theme has no $glyph-symbolic.svg: $icons"
+	done
+	told=$(count 'edel-shell-ui: button layout close,minimize,maximize: told to apps')
+	guest 'buttons left'
+	wait_more 'edel-shell-ui: button layout close,minimize,maximize: told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps the buttons moved to the left: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: button layout' | tail -n 1)"
+	asked=$(count 'DESKTOP-TEST: portal button-layout ')
+	guest 'portal buttons'
+	wait_more 'DESKTOP-TEST: portal button-layout ' "$asked" 60 || fail "the service did not hear back from the portal"
+	left=$(layout_of)
+	[ "$left" = 'close,minimize,maximize:' ] ||
+		fail "the portal's button layout is not close,minimize,maximize: after layout.window_buttons = left: $left"
+	told=$(count 'edel-shell-ui: button layout :minimize,maximize,close told to apps')
+	guest 'buttons default'
+	wait_more 'edel-shell-ui: button layout :minimize,maximize,close told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps the buttons went back to the right: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: button layout' | tail -n 1)"
+	asked=$(count 'DESKTOP-TEST: portal button-layout ')
+	guest 'portal buttons'
+	wait_more 'DESKTOP-TEST: portal button-layout ' "$asked" 60 || fail "the service did not hear back from the portal"
+	back=$(layout_of)
+	[ "$back" = ':minimize,maximize,close' ] ||
+		fail "the portal's button layout did not go back to the default: $back"
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs"
+}
+
 case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
 	# for a screenshot gets the URI of a PNG the compositor copied (its log
@@ -6384,7 +6432,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces web-app flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces web-app flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
