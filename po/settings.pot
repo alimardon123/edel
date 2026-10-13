@@ -1685,9 +1685,6 @@ msgstr ""
 msgid "No one else has an account on this computer."
 msgstr ""
 
-msgid "Login name"
-msgstr ""
-
 msgid "User ID"
 msgstr ""
 

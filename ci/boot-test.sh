@@ -7,21 +7,62 @@
 # the virtual machine's clock set to 2020 and checks that edel-clock sets it
 # from the network, so serial shows 2026 or later (roadmap M1.13). The
 # desktop image is booted as a USB stick by desktop-test.sh live (M3.6).
+# The image has no seed, so nobody can log in, and its serial console asks
+# for the first person before the login prompt (M6.6b): the first boot
+# answers over a serial socket with ci/serial.py, giving `ci` a fresh ssh
+# key, and ci then logs in over ssh. The other boots stop at that question.
 set -eu
 . ci/vm.sh
 
-# boot LOG IMAGE [DEVICE ARGUMENTS...]: the disk is drive disk0, on virtio
-# unless the arguments attach it otherwise.
+# boot LOG PATTERN IMAGE: boots IMAGE on virtio until PATTERN.
 boot() {
-	log_file=$1 image=$2
-	shift 2
-	[ "$#" -gt 0 ] || set -- -device virtio-blk-pci,drive=disk0,bootindex=0
-	run_vm "$log_file" 'edel login:' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
-		-drive if=none,id=disk0,format=raw,file="$image" "$@"
+	log_file=$1 boot_pattern=$2 image=$3
+	run_vm "$log_file" "$boot_pattern" "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
+		-drive if=none,id=disk0,format=raw,file="$image" \
+		-device virtio-blk-pci,drive=disk0,bootindex=0
 	cat "$log_file"
 }
 
-boot out/boot.log out/edel-vm-x86_64.img
+key=out/keys/boot-ssh
+mkdir -p out/keys
+rm -f "$key" "$key.pub"
+ssh-keygen -q -t ed25519 -N '' -C ci@boot-test -f "$key"
+console=out/boot-console.sock
+rm -f out/boot.log "$console"
+python3 ci/serial.py "$console" 'Login name: =ci' 'ssh key instead: =' \
+	"on one line: =$(cat "$key.pub")" >out/boot.log 2>&1 &
+typist=$!
+vm_console=$console vm_net=,hostfwd=tcp:127.0.0.1:2223-:22 keep_vm=1
+boot out/boot.log 'edel login:' out/edel-vm-x86_64.img
+vm_console='' vm_net='' keep_vm=0
+kill "$typist" 2>/dev/null || :
+logged_in=''
+if [ "$found" = 1 ]; then
+	tries=0
+	until logged_in=$(ssh -i "$key" -p 2223 -o BatchMode=yes -o ConnectTimeout=10 -o LogLevel=ERROR \
+		-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ci@127.0.0.1 \
+		'id -un; id -Gn; edel settings get users.ci.admin' 2>out/boot-ssh.log); do
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || break
+		sleep 3
+	done
+fi
+stop_vm
+if [ "$found" = 1 ]; then
+	echo "ssh as ci: $logged_in"
+	case $logged_in in
+	ci*admin*true*) ;;
+	*)
+		cat out/boot-ssh.log 2>/dev/null || :
+		echo "FAIL: the person the console made, ci, could not log in over ssh as an administrator"
+		exit 1
+		;;
+	esac
+fi
+grep -q 'Nobody can log in to this computer yet' out/boot.log ||
+	{ echo "FAIL: the seedless image's console did not ask for its first person"; exit 1; }
+grep -q 'ci can log in now' out/boot.log ||
+	{ echo "FAIL: the console did not say ci can log in"; exit 1; }
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&
@@ -30,7 +71,7 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
 	! grep -q 'generating new host keys' out/boot.log &&
 	grep -q 'edel guard: using the hardware watchdog' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1} to the login prompt, mounted /data, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed in ${waited}s"
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1}, mounted /data, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
@@ -39,7 +80,7 @@ fi
 grown=out/grown.img
 cp --sparse=always out/edel-vm-x86_64.img "$grown"
 truncate -s +3G "$grown"
-boot out/boot-grown.log "$grown"
+boot out/boot-grown.log 'Login name: ' "$grown"
 rm -f "$grown"
 # busybox df -m: Filesystem 1M-blocks Used Available Use% Mounted on
 size=$(tr -d '\r' <out/boot-grown.log | awk '$NF == "/data" && $2 ~ /^[0-9]+$/ { print $2 }' | tail -n 1)

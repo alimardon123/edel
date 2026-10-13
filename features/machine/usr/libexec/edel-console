@@ -1,0 +1,9 @@
+#!/bin/sh
+# Each console's start (roadmap M6.6b), which busybox init runs from
+# /etc/inittab once `openrc default` is done, so the guard has confirmed
+# the slot before anyone is asked anything. When nobody can log in, edel
+# asks here for the machine's first person; whatever it did, getty
+# follows with the arguments given, so a console always ends at its
+# login prompt.
+/usr/bin/edel settings first-boot --console
+exec /sbin/getty "$@"
