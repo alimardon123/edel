@@ -1149,18 +1149,23 @@ commands() {
 		# What the baked cache saves (M6.2a): fc-list as ci with the slot's
 		# cache, then with a fontconfig file naming the same fonts and an
 		# empty cache folder of its own, which is what each app did on its
-		# first start before the cache was baked. Both timed in ms.
+		# first start before the cache was baked. Each is run five times,
+		# every cold run with a fresh folder of its own, as the clock here
+		# counts in 10 ms steps and one run of either can take a single
+		# step. Both totals in ms, then the caches the first cold run built.
 		'font cost')
 			rm -rf /tmp/fc-cold
 			mkdir -p /tmp/fc-cold
-			printf '<?xml version="1.0"?>\n<fontconfig>\n<dir>/usr/share/fonts</dir>\n<cachedir>/tmp/fc-cold/cache</cachedir>\n</fontconfig>\n' >/tmp/fc-cold/fonts.conf
+			for i in 1 2 3 4 5; do
+				printf '<?xml version="1.0"?>\n<fontconfig>\n<dir>/usr/share/fonts</dir>\n<cachedir>/tmp/fc-cold/cache-%s</cachedir>\n</fontconfig>\n' "$i" >"/tmp/fc-cold/fonts-$i.conf"
+			done
 			chown -R ci /tmp/fc-cold
 			t0=$(now_ms)
-			as_ci "fc-list >/dev/null 2>&1"
+			as_ci "sh -c 'for i in 1 2 3 4 5; do fc-list >/dev/null 2>&1; done'"
 			t1=$(now_ms)
-			as_ci "FONTCONFIG_FILE=/tmp/fc-cold/fonts.conf fc-list >/dev/null 2>&1"
+			as_ci "sh -c 'for i in 1 2 3 4 5; do FONTCONFIG_FILE=/tmp/fc-cold/fonts-\$i.conf fc-list >/dev/null 2>&1; done'"
 			t2=$(now_ms)
-			say "font_cost $((t1 - t0)) $((t2 - t1)) $(ls /tmp/fc-cold/cache 2>/dev/null | grep -c '\.cache-')"
+			say "font_cost $((t1 - t0)) $((t2 - t1)) $(ls /tmp/fc-cold/cache-1 2>/dev/null | grep -c '\.cache-')"
 			;;
 		'flatpak run')
 			as_ci "flatpak run io.mpv.Mpv --vo=wlshm --force-window=immediate --idle=yes" </dev/null >/tmp/flatpak-run.log 2>&1 &
