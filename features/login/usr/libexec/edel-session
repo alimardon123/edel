@@ -4,7 +4,9 @@
 # stick, for the person called live (edel boot live). Our compositor with
 # a session bus, which apps and portals talk over, in a session named
 # Edel (XDG_CURRENT_DESKTOP), which apps and the portals go by (M5.5a).
-env XDG_CURRENT_DESKTOP=Edel dbus-run-session -- edel-compositor
+# Qt apps, in Flatpak's sandbox too, read the colour scheme, fonts and
+# accent from the settings portal (QT_QPA_PLATFORMTHEME, M6.2a).
+env XDG_CURRENT_DESKTOP=Edel QT_QPA_PLATFORMTHEME=xdgdesktopportal dbus-run-session -- edel-compositor
 status=$?
 
 # What the session started and left running when the compositor ended, a

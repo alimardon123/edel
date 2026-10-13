@@ -7,6 +7,8 @@
 //! person who used it (their `~/.var/app/ID` exists) in their own
 //! installation, so swapping a default app never takes one away (ADR-008).
 //! Apps never roll back with the system: Flatpak keeps their own history.
+//! It also takes out the runtimes no app uses any more, never one that a
+//! person's own app takes from this installation (M6.2a).
 //! A failure here never fails the system's update; it is said and tried
 //! again at the next `edel update`.
 
@@ -35,14 +37,19 @@ pub enum Step {
     Keep { person: String, id: String },
     /// Take a dropped app out of the installation.
     Remove(String),
+    /// Take out runtimes no app uses any more, keeping `keep`, the runtimes
+    /// people's own apps take from this installation (M6.2a).
+    Tidy { keep: Vec<String> },
 }
 
 /// What brings the installation to `list` (pure): `installed` is what it
-/// holds, `used` each dropped app's people, those with its data.
+/// holds, `used` each dropped app's people, those with its data, and
+/// `relied` the runtimes people's own apps take from it (M6.2a).
 pub fn plan(
     list: &DefaultApps,
     installed: &BTreeSet<String>,
     used: &[(String, Vec<String>)],
+    relied: &BTreeSet<String>,
 ) -> Vec<Step> {
     let mut steps = Vec::new();
     let missing: Vec<String> = list
@@ -51,7 +58,8 @@ pub fn plan(
         .filter(|id| !installed.contains(*id))
         .cloned()
         .collect();
-    if !missing.is_empty() {
+    let installs = !missing.is_empty();
+    if installs {
         steps.push(Step::Install(missing));
     }
     if !installed.is_empty() {
@@ -72,7 +80,40 @@ pub fn plan(
         }
         steps.push(Step::Remove(id.clone()));
     }
+    // Last, once nothing else is left to use a runtime (M6.2a).
+    if !installed.is_empty() || installs {
+        steps.push(Step::Tidy {
+            keep: relied.iter().cloned().collect(),
+        });
+    }
     steps
+}
+
+/// The runtimes a person's own apps use from the installation (M6.2a,
+/// pure): `apps_runtimes` are the runtimes of their apps, `own_runtimes`
+/// the runtimes they have themselves and `ours` those the installation
+/// holds. Refs are compared exactly, after trimming.
+pub fn relied_on(
+    apps_runtimes: &[String],
+    own_runtimes: &[String],
+    ours: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let own: BTreeSet<&str> = own_runtimes
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty())
+        .collect();
+    let ours: BTreeSet<&str> = ours
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty())
+        .collect();
+    apps_runtimes
+        .iter()
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty() && !own.contains(r) && ours.contains(r))
+        .map(String::from)
+        .collect()
 }
 
 /// The remote a person's own copy of a dropped app comes from: Flathub
@@ -108,6 +149,58 @@ fn installed() -> BTreeSet<String> {
             .collect(),
         _ => BTreeSet::new(),
     }
+}
+
+/// The non-empty, trimmed lines of a listing command's output; none when
+/// the command fails or does not run (M6.2a).
+fn listed(command: &mut Command) -> Vec<String> {
+    match command.stderr(Stdio::null()).output() {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(String::from)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Takes out the runtimes no app uses any more (M6.2a), keeping `keep`: each
+/// of them is pinned for the removal, so `--unused` leaves it, and the pins
+/// this step added are taken off again, also when the removal failed. A
+/// runtime that cannot be pinned is not removed at all.
+fn tidy(keep: &[String]) -> Result<()> {
+    let pinned: BTreeSet<String> = listed(flatpak().arg("pin")).into_iter().collect();
+    let mut added: Vec<&String> = Vec::new();
+    let mut result: Result<()> = Ok(());
+    // `flatpak pin` lists a pin as `runtime/NAME/ARCH/BRANCH`; a person's
+    // own pin is never added again, nor taken off afterwards.
+    for runtime in keep
+        .iter()
+        .filter(|r| !pinned.contains(*r) && !pinned.contains(&format!("runtime/{r}")))
+    {
+        match run(flatpak().args(["pin", "--runtime", runtime])) {
+            Ok(()) => added.push(runtime),
+            Err(err) => {
+                result = Err(err.context(trf(
+                    "could not keep the runtime {runtime} for a person's own apps",
+                    &[("runtime", runtime)],
+                )));
+                break;
+            }
+        }
+    }
+    if result.is_ok() {
+        result = run(flatpak().args(["uninstall", "--noninteractive", "-y", "--unused"]));
+    }
+    for runtime in added {
+        if let Err(err) = run(flatpak().args(["pin", "--remove", "--runtime", runtime])) {
+            if result.is_ok() {
+                result = Err(err);
+            }
+        }
+    }
+    result
 }
 
 /// The address of the default apps' remote, from the installation.
@@ -175,8 +268,37 @@ pub fn follow() -> Result<()> {
     let passwd = fs::read_to_string("/etc/passwd").context("could not read /etc/passwd")?;
     let accounts = machine::accounts(&passwd);
     let url = remote_url().unwrap_or_default();
+    // The runtimes people's own apps take from this installation, which
+    // `Step::Tidy` keeps (M6.2a).
+    let ours: BTreeSet<String> = listed(flatpak().args(["list", "--runtime", "--columns=ref"]))
+        .into_iter()
+        .collect();
+    let mut relied = BTreeSet::new();
+    for account in accounts
+        .iter()
+        .filter(|a| machine::is_person(a) && a.name != "root")
+    {
+        if !Path::new(&account.home)
+            .join(".local/share/flatpak/app")
+            .is_dir()
+        {
+            continue;
+        }
+        let apps = listed(&mut machine::as_user(
+            account,
+            "flatpak",
+            &["--user", "list", "--app", "--columns=runtime"],
+        ));
+        let own = listed(&mut machine::as_user(
+            account,
+            "flatpak",
+            &["--user", "list", "--runtime", "--columns=ref"],
+        ));
+        relied.extend(relied_on(&apps, &own, &ours));
+    }
+    let used = used_by(&accounts, &list.flatpak_dropped);
     let mut failed = Vec::new();
-    for step in plan(&list, &have, &used_by(&accounts, &list.flatpak_dropped)) {
+    for step in plan(&list, &have, &used, &relied) {
         let (said, result) = match &step {
             Step::Install(ids) => (
                 trf(
@@ -204,9 +326,11 @@ pub fn follow() -> Result<()> {
             ),
             Step::Remove(id) => (
                 trf("taking {app} out of the default apps", &[("app", id)]),
-                run(flatpak().args(["uninstall", "--noninteractive", "-y", id])).and_then(|()| {
-                    run(flatpak().args(["uninstall", "--noninteractive", "-y", "--unused"]))
-                }),
+                run(flatpak().args(["uninstall", "--noninteractive", "-y", id])),
+            ),
+            Step::Tidy { keep } => (
+                tr("taking out the runtimes no app uses any more").to_string(),
+                tidy(keep),
             ),
         };
         println!("edel update: {said}");
@@ -241,12 +365,70 @@ mod tests {
             flatpak: ids(&["org.edel.TestA"]),
             flatpak_dropped: vec![],
         };
+        let none = BTreeSet::new();
         assert_eq!(
-            plan(&list, &BTreeSet::new(), &[]),
-            [Step::Install(ids(&["org.edel.TestA"]))]
+            plan(&list, &none, &[], &none),
+            [
+                Step::Install(ids(&["org.edel.TestA"])),
+                Step::Tidy { keep: vec![] }
+            ]
         );
         let have: BTreeSet<String> = ids(&["org.edel.TestA"]).into_iter().collect();
-        assert_eq!(plan(&list, &have, &[]), [Step::Update]);
+        assert_eq!(
+            plan(&list, &have, &[], &none),
+            [Step::Update, Step::Tidy { keep: vec![] }]
+        );
+    }
+
+    #[test]
+    fn tidy_keeps_the_runtimes_people_use_and_comes_last() {
+        let list = DefaultApps {
+            flatpak: ids(&["org.edel.TestA"]),
+            flatpak_dropped: vec![],
+        };
+        let have: BTreeSet<String> = ids(&["org.edel.TestA"]).into_iter().collect();
+        let relied: BTreeSet<String> = ids(&["org.freedesktop.Platform/x86_64/24.08"])
+            .into_iter()
+            .collect();
+        assert_eq!(
+            plan(&list, &have, &[], &relied).last(),
+            Some(&Step::Tidy {
+                keep: ids(&["org.freedesktop.Platform/x86_64/24.08"])
+            })
+        );
+    }
+
+    #[test]
+    fn nothing_installed_and_nothing_to_install_gives_no_steps() {
+        let list = DefaultApps {
+            flatpak: vec![],
+            flatpak_dropped: vec![],
+        };
+        let none = BTreeSet::new();
+        assert!(plan(&list, &none, &[], &none).is_empty());
+    }
+
+    #[test]
+    fn a_runtime_a_persons_app_uses_is_kept_unless_they_have_it_themselves() {
+        let ours: BTreeSet<String> = ids(&[
+            "org.freedesktop.Platform/x86_64/24.08",
+            "org.gnome.Platform/x86_64/47",
+        ])
+        .into_iter()
+        .collect();
+        let apps = ids(&[
+            "org.freedesktop.Platform/x86_64/24.08",
+            "org.gnome.Platform/x86_64/47",
+            "",
+            "org.kde.Platform/x86_64/6.7",
+        ]);
+        let own = ids(&["org.gnome.Platform/x86_64/47 "]);
+        assert_eq!(
+            relied_on(&apps, &own, &ours),
+            ids(&["org.freedesktop.Platform/x86_64/24.08"])
+                .into_iter()
+                .collect::<BTreeSet<String>>()
+        );
     }
 
     #[test]
@@ -260,8 +442,9 @@ mod tests {
             ("ci".to_string(), ids(&["org.edel.TestA"])),
             ("ali".to_string(), ids(&["org.other.App"])),
         ];
+        let none = BTreeSet::new();
         assert_eq!(
-            plan(&list, &have, &used),
+            plan(&list, &have, &used, &none),
             [
                 Step::Install(ids(&["org.edel.TestB"])),
                 Step::Update,
@@ -270,11 +453,15 @@ mod tests {
                     id: "org.edel.TestA".into()
                 },
                 Step::Remove("org.edel.TestA".into()),
+                Step::Tidy { keep: vec![] },
             ]
         );
         // Once taken out, nothing more happens to it.
         let after: BTreeSet<String> = ids(&["org.edel.TestB"]).into_iter().collect();
-        assert_eq!(plan(&list, &after, &used), [Step::Update]);
+        assert_eq!(
+            plan(&list, &after, &used, &none),
+            [Step::Update, Step::Tidy { keep: vec![] }]
+        );
     }
 
     #[test]

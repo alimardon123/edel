@@ -17,7 +17,10 @@ esac
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
+# Flatpak's triggers build the default apps' icon, desktop and MIME caches
+# at install when these tools are there (M6.2a).
 apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar flatpak \
+	gtk-update-icon-cache desktop-file-utils shared-mime-info \
 	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
 
 # The tool and our programs the features ship (edel-compositor, M4.2b);

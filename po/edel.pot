@@ -29,6 +29,9 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "could not keep the runtime {runtime} for a person's own apps"
+msgstr ""
+
 msgid "installing the default apps {apps}"
 msgstr ""
 
@@ -39,6 +42,9 @@ msgid "keeping {app} for {person}, who used it, in their own apps"
 msgstr ""
 
 msgid "taking {app} out of the default apps"
+msgstr ""
+
+msgid "taking out the runtimes no app uses any more"
 msgstr ""
 
 msgid "the default apps were not all brought up to date ({what}); the system's update is not affected, and the next edel update tries again"

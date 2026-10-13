@@ -34,6 +34,12 @@ session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
 }
 
+# now_ms: milliseconds since the machine started, from /proc/uptime
+# (10 ms steps), for the app start times (M6.2a).
+now_ms() {
+	awk '{ printf "%d\n", $1 * 1000 }' /proc/uptime
+}
+
 # joined [FILE]: the lines of FILE (or of standard input) joined by " | ".
 joined() {
 	awk 'NR > 1 { printf " | " } { printf "%s", $0 } END { print "" }' "$@"
@@ -1079,6 +1085,66 @@ commands() {
 			say "default_app_list $(as_ci "flatpak --installation=edel list --columns=ref" 2>&1 | tr '\n' ';')"
 			as_ci "timeout 15 flatpak run --command=edel-testclient org.edel.TestA --title test-a-check --colour 3399cc --size 300x200" </dev/null >/tmp/default-app.log 2>&1
 			say "default_app_run $? $(tr '\n' ';' </tmp/default-app.log | cut -c1-2000)"
+			;;
+		# Flatpak apps quick and light (M6.2a): which Flatpak and portal
+		# processes run before any app starts; a cold start of Test A (the
+		# page cache dropped first, so it reads the app and its runtime
+		# from disk) and a warm one, each timed to its window and measured;
+		# the settings portal's ReadAll, twice; and the font caches the
+		# image holds, against the ones ci's own fontconfig builds.
+		'background')
+			list=$(cat /proc/[0-9]*/comm 2>/dev/null | grep -E 'flatpak|portal|permission-store' | sort -u | tr '\n' ' ' | sed 's/ $//')
+			say "background ${list:-none}"
+			;;
+		'drop caches')
+			sync
+			echo 3 >/proc/sys/vm/drop_caches
+			say "caches_dropped"
+			;;
+		'app start '*)
+			name=${command#app start }
+			t0=$(now_ms)
+			as_ci "flatpak run --command=edel-testclient org.edel.TestA --title test-a-$name --colour 3399cc --size 300x200" </dev/null >/tmp/app-$name.log 2>&1 &
+			i=0
+			while [ "$i" -lt 3000 ] && ! grep -q "edel-compositor: mapped window test-a-$name" "$session_log"; do
+				sleep 0.01
+				i=$((i + 1))
+			done
+			t1=$(now_ms)
+			# flatpak run's process is the one named after the test client
+			# (the kernel cuts names to 15 characters).
+			pid=''
+			for p in $(pgrep -f "test-a-$name"); do
+				c=$(cat "/proc/$p/comm" 2>/dev/null)
+				if [ "$c" = edel-testclien ] || [ "$c" = edel-testclient ]; then pid=$p; fi
+			done
+			pss=$(awk '/^Pss:/ { print $2 }' "/proc/$pid/smaps_rollup" 2>/dev/null)
+			if [ "$i" -ge 3000 ]; then ms=timeout; else ms=$((t1 - t0)); fi
+			say "app_start $name $ms ${pss:-0} $(tr '\n' ';' </tmp/app-$name.log | cut -c1-300)"
+			;;
+		'app stop '*)
+			name=${command#app stop }
+			pkill -f "test-a-$name"
+			say "app_stopped $name"
+			;;
+		# The settings portal's ReadAll (M6.2a): the first call may start
+		# xdg-desktop-portal on D-Bus; the second is what an app meets once
+		# it runs. Each is timed; the second's reply is what is kept.
+		'portal readall')
+			bus=$(session_bus)
+			t0=$(now_ms)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadAll \"['org.freedesktop.appearance']\"" </dev/null >/tmp/readall.log 2>&1
+			t1=$(now_ms)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadAll \"['org.freedesktop.appearance']\"" </dev/null >/tmp/readall.log 2>&1
+			t2=$(now_ms)
+			say "portal_readall $((t1 - t0)) $((t2 - t1)) $(tr '\n' ' ' </tmp/readall.log | cut -c1-300)"
+			;;
+		# The font caches (M6.2a): how many the image bakes into the
+		# fontconfig cache folder, whether /var/cache/fontconfig exists (it
+		# would make Flatpak hand apps its stale cache), and how many caches
+		# ci's own fontconfig built when it listed the fonts.
+		'font cache')
+			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")"
 			;;
 		'flatpak run')
 			as_ci "flatpak run io.mpv.Mpv --vo=wlshm --force-window=immediate --idle=yes" </dev/null >/tmp/flatpak-run.log 2>&1 &

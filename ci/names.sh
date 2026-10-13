@@ -21,3 +21,4 @@ share_dir=/usr/share/edel
 esp_dir=/EFI/edel
 home_session_log=.local/state/edel/session.log
 system_log=/var/log/messages
+font_cache_dir=/usr/lib/fontconfig/cache

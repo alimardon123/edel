@@ -112,6 +112,7 @@ impl Build<'_> {
         self.copy_files(&root)?;
         self.install_features(&root)?;
         self.install_places(&root)?;
+        self.bake_font_cache(&root)?;
         if def.variant == Variant::Vm {
             self.install_edel(&root)?;
             self.install_keys(&root)?;
@@ -500,6 +501,57 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// Bakes the fonts' cache into the slot (M6.2a): `fc-cache` writes it
+    /// at build time, in the folder `places::FONT_CACHE_DIR` that Flatpak
+    /// hands every app, so no app builds its own on its first start. The
+    /// data partition's old cache (`places::VAR_FONT_CACHE`) is left out,
+    /// as it predates the fonts this image has.
+    fn bake_font_cache(&self, root: &Path) -> Result<()> {
+        self.runner.step(&format!(
+            "bake the fonts' cache into {}, so no app builds its own (M6.2a)",
+            edel::places::FONT_CACHE_DIR
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        if !root.join("usr/bin/fc-cache").is_file() {
+            return Ok(());
+        }
+        let conf = root.join(edel::places::FONT_CACHE_CONF.trim_start_matches('/'));
+        fs::create_dir_all(conf.parent().unwrap_or(root))?;
+        fs::write(conf, font_cache_conf(edel::places::FONT_CACHE_DIR))?;
+        let var = root.join(edel::places::VAR_FONT_CACHE.trim_start_matches('/'));
+        if var.is_dir() {
+            fs::remove_dir_all(&var)?;
+        }
+        let dir = root.join(edel::places::FONT_CACHE_DIR.trim_start_matches('/'));
+        fs::create_dir_all(&dir)?;
+        let mut chroot = Command::new("chroot");
+        chroot
+            .arg(root)
+            .args(["fc-cache", "--system-only", "--really-force"]);
+        self.runner.run(&mut chroot)?;
+        // fc-cache may still write to the old folder: move its files over,
+        // so that folder never exists in the slot.
+        if var.is_dir() {
+            for entry in fs::read_dir(&var)? {
+                let entry = entry?;
+                fs::rename(entry.path(), dir.join(entry.file_name()))?;
+            }
+            fs::remove_dir_all(&var)?;
+        }
+        let wrote = fs::read_dir(&dir)?
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains(".cache-"));
+        if !wrote {
+            bail!(
+                "fc-cache wrote no cache into {}; the fonts' cache is baked so no app builds its own",
+                dir.display()
+            );
+        }
+        Ok(())
+    }
+
     /// Tells Flatpak where the default apps' installation lies on the
     /// data partition (M6.2), when the image has default apps.
     fn install_apps_conf(&self, root: &Path) -> Result<()> {
@@ -586,6 +638,17 @@ impl Build<'_> {
             .args(["install", "--noninteractive", "-y", edel::apps::APPS_REMOTE])
             .args(&self.apps);
         self.runner.run(&mut install)?;
+        // Each runtime that asks for the Mesa driver must have it now: an
+        // app without it draws in software (M6.2a).
+        if !self.runner.dry_run {
+            let missing = gl_missing(&apps)?;
+            if !missing.is_empty() {
+                bail!(
+                    "the default apps' runtimes {} have no Mesa driver, so their apps would draw in software; flatpak install should have installed it with them (M6.2a)",
+                    missing.join(", ")
+                );
+            }
+        }
         if let Some(url) = &self.apps_url {
             let mut point = flatpak();
             point
@@ -1164,6 +1227,104 @@ fn mib(bytes: u64) -> f64 {
     bytes as f64 / 1_048_576.0
 }
 
+/// The fontconfig file that names `dir` as a cache folder (M6.2a), the
+/// text `bake_font_cache` writes to `places::FONT_CACHE_CONF`.
+fn font_cache_conf(dir: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\"?>\n\
+         <!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n\
+         <!-- Written by edel image build (M6.2a): the fonts' cache baked into the slot, read first. -->\n\
+         <fontconfig>\n\
+         \t<cachedir>{dir}</cachedir>\n\
+         </fontconfig>\n"
+    )
+}
+
+/// The Mesa driver extension a runtime's metadata asks for (M6.2a): the
+/// `versions=` of its `[Extension org.freedesktop.Platform.GL]` section,
+/// else its `version=`; None when the section is absent.
+fn gl_versions(metadata: &str) -> Option<Vec<String>> {
+    let mut lines = metadata.lines().map(str::trim);
+    lines.find(|line| *line == "[Extension org.freedesktop.Platform.GL]")?;
+    let mut versions = None;
+    let mut version = None;
+    for line in lines {
+        if line.starts_with('[') {
+            break;
+        }
+        if let Some(list) = line.strip_prefix("versions=") {
+            versions = Some(
+                list.split(';')
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(String::from)
+                    .collect(),
+            );
+        } else if let Some(one) = line.strip_prefix("version=") {
+            version = Some(vec![one.trim().to_string()]).filter(|v| !v[0].is_empty());
+        }
+    }
+    versions.or(version)
+}
+
+/// The folders directly inside `dir`, sorted.
+fn subdirs(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            out.push(path);
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// The last part of a path, as text.
+fn name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// The runtimes under `apps` whose Mesa driver (`org.freedesktop.Platform.GL.default`)
+/// is missing (M6.2a): each runtime's metadata says which versions of the
+/// driver it wants, and one of them must be installed for its arch. Sorted.
+fn gl_missing(apps: &Path) -> Result<Vec<String>> {
+    let runtimes = apps.join("runtime");
+    let mut missing = Vec::new();
+    if !runtimes.is_dir() {
+        return Ok(missing);
+    }
+    for name_dir in subdirs(&runtimes)? {
+        let name = name_of(&name_dir);
+        for arch_dir in subdirs(&name_dir)? {
+            let arch = name_of(&arch_dir);
+            for branch_dir in subdirs(&arch_dir)? {
+                let branch = name_of(&branch_dir);
+                let metadata = branch_dir.join("active/metadata");
+                if !metadata.is_file() {
+                    continue;
+                }
+                let Some(versions) = gl_versions(&fs::read_to_string(&metadata)?) else {
+                    continue;
+                };
+                let driver = runtimes
+                    .join("org.freedesktop.Platform.GL.default")
+                    .join(&arch);
+                if !versions.iter().any(|v| driver.join(v).is_dir()) {
+                    missing.push(format!(
+                        "{name}//{branch} (wants org.freedesktop.Platform.GL.default of {})",
+                        versions.join(" or ")
+                    ));
+                }
+            }
+        }
+    }
+    missing.sort();
+    Ok(missing)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1309,5 +1470,73 @@ mod tests {
         let bytes = tree_bytes(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
         assert!((8192..16384).contains(&bytes), "{bytes}");
+    }
+
+    #[test]
+    fn the_font_cache_conf_names_the_baked_folder() {
+        let text = font_cache_conf(edel::places::FONT_CACHE_DIR);
+        assert!(text.contains(&format!(
+            "<cachedir>{}</cachedir>",
+            edel::places::FONT_CACHE_DIR
+        )));
+        assert!(text.starts_with("<?xml"));
+    }
+
+    #[test]
+    fn reads_the_gl_versions_of_a_runtime() {
+        let list = "[Runtime]\nname=x\n\n[Extension org.freedesktop.Platform.GL]\ndirectory=lib/GL\nversions=25.08;25.08-extra\n";
+        assert_eq!(
+            gl_versions(list),
+            Some(vec!["25.08".to_string(), "25.08-extra".to_string()])
+        );
+        let one = "[Extension org.freedesktop.Platform.GL]\nversion=1.4\n";
+        assert_eq!(gl_versions(one), Some(vec!["1.4".to_string()]));
+        let other =
+            "[Extension org.freedesktop.Platform.GL.default]\nversions=9\n[Runtime]\nname=x\n";
+        assert_eq!(gl_versions(other), None);
+        let none = "[Runtime]\nversions=3\n";
+        assert_eq!(gl_versions(none), None);
+    }
+
+    #[test]
+    fn names_a_runtime_whose_mesa_driver_is_missing() {
+        let dir =
+            std::env::temp_dir().join(format!("edel-gl-missing-named-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let runtime = dir.join("runtime/org.edel.Platform/x86_64/25.08/active");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(
+            runtime.join("metadata"),
+            "[Extension org.freedesktop.Platform.GL]\nversions=25.08\n",
+        )
+        .unwrap();
+        let missing = gl_missing(&dir).unwrap();
+        fs::create_dir_all(dir.join("runtime/org.freedesktop.Platform.GL.default/x86_64/25.08"))
+            .unwrap();
+        let found = gl_missing(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            missing,
+            vec!["org.edel.Platform//25.08 (wants org.freedesktop.Platform.GL.default of 25.08)"]
+        );
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_runtime_without_the_gl_section_is_never_named() {
+        let dir =
+            std::env::temp_dir().join(format!("edel-gl-missing-plain-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert!(gl_missing(&dir).unwrap().is_empty());
+        let runtime = dir.join("runtime/org.edel.TestPlatform/x86_64/1/active");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(
+            runtime.join("metadata"),
+            "[Runtime]\nname=org.edel.TestPlatform\n",
+        )
+        .unwrap();
+        let missing = gl_missing(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(missing.is_empty(), "{missing:?}");
     }
 }

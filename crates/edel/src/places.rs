@@ -55,6 +55,17 @@ pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");
 /// Where Flatpak finds its installations besides its own two; the image
 /// build writes the default apps' file here (`apps::installation_conf`).
 pub const FLATPAK_INSTALLATIONS: &str = "/etc/flatpak/installations.d";
+/// The fonts' cache, baked into the slot by `edel image build` (M6.2a).
+/// Flatpak hands every app the first of `VAR_FONT_CACHE` and this folder
+/// that exists as `/run/host/fonts-cache`, so no app rebuilds it on its
+/// first start.
+pub const FONT_CACHE_DIR: &str = "/usr/lib/fontconfig/cache";
+/// Fontconfig's own cache folder, on the data partition. The slot's own
+/// cache replaces it (M6.2a), so an update never leaves a stale one.
+pub const VAR_FONT_CACHE: &str = "/var/cache/fontconfig";
+/// The fontconfig file that names `FONT_CACHE_DIR` as a cache folder
+/// (M6.2a).
+pub const FONT_CACHE_CONF: &str = "/etc/fonts/conf.d/05-edel-font-cache.conf";
 /// Developer mode is on while this file exists (ADR-007).
 pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
@@ -236,6 +247,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         // Inside a person's home (M5.28a).
         ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),
         ("system_log", SYSTEM_LOG.to_string()),
+        ("font_cache_dir", FONT_CACHE_DIR.to_string()),
     ]
 }
 

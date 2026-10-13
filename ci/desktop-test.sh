@@ -452,6 +452,17 @@ case_console() {
 	echo "PASS: the desktop image booted to the login prompt, logged ci in to the compositor with /run/user/UID at 0700, showed foot and closed it when exit was typed (${waited}s)"
 }
 
+# Nothing Flatpak-related runs in the background (M6.2a): before any app
+# starts, the session runs no Flatpak helper and no portal; they start on
+# D-Bus activation when an app asks.
+case_background() {
+	asked=$(count 'DESKTOP-TEST: background ')
+	guest 'background'
+	wait_more 'DESKTOP-TEST: background ' "$asked" || fail "the service did not list the background processes"
+	[ "$(value background)" = none ] || fail "Flatpak or portal processes run before any app starts: $(value background)"
+	echo "PASS: no Flatpak helper and no portal ran before the first app"
+}
+
 case_compositor() {
 	line=$(value ready_line)
 	case "$line" in
@@ -3201,7 +3212,85 @@ case_default_apps() {
 	closed=$(count 'edel-compositor: unmapped window test-a')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window test-a' "$closed" || fail "Super+Q did not close Test A"
-	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed"
+	# What runs once an app has been up (M6.2a): Flatpak's session helper
+	# and the document portal start with it, on D-Bus, so this is reported
+	# and never failed.
+	asked=$(count 'DESKTOP-TEST: background ')
+	guest 'background'
+	wait_more 'DESKTOP-TEST: background ' "$asked" || fail "the service did not list the background processes"
+	after_app=$(value background)
+	# Cold start (M6.2a): the page cache dropped first, so Test A's app and
+	# its runtime are read from the disk; the service times its window and
+	# measures the app's own memory (PSS).
+	asked=$(count 'DESKTOP-TEST: caches_dropped')
+	guest 'drop caches'
+	wait_more 'DESKTOP-TEST: caches_dropped' "$asked" || fail "the service did not drop the page cache"
+	asked=$(count 'DESKTOP-TEST: app_start cold ')
+	guest 'app start cold'
+	wait_more 'DESKTOP-TEST: app_start cold ' "$asked" 60 || fail "the service did not time Test A's cold start in 60 s"
+	cold=$(value 'app_start cold')
+	cold_ms=$(echo "$cold" | cut -d' ' -f1)
+	[ "$cold_ms" != timeout ] || fail "Test A's cold start mapped no window in 30 s: $cold"
+	closed=$(count 'edel-compositor: unmapped window test-a-cold')
+	asked=$(count 'DESKTOP-TEST: app_stopped cold')
+	guest 'app stop cold'
+	wait_more 'DESKTOP-TEST: app_stopped cold' "$asked" || fail "the service did not stop Test A after its cold start"
+	wait_more 'edel-compositor: unmapped window test-a-cold' "$closed" || fail "Test A's cold window did not close"
+	# Warm start (M6.2a): again with the page cache as it is, and the
+	# window kept open while it is photographed.
+	asked=$(count 'DESKTOP-TEST: app_start warm ')
+	guest 'app start warm'
+	wait_more 'DESKTOP-TEST: app_start warm ' "$asked" 60 || fail "the service did not time Test A's warm start in 60 s"
+	warm=$(value 'app_start warm')
+	warm_ms=$(echo "$warm" | cut -d' ' -f1)
+	pss_kib=$(echo "$warm" | cut -d' ' -f2)
+	[ "$warm_ms" != timeout ] || fail "Test A's warm start mapped no window in 30 s: $warm"
+	[ "${pss_kib:-0}" -gt 0 ] || fail "the service found no process of Test A to measure: $warm"
+	python3 ci/qmp.py screendump "$dir/flatpak-warm.png"
+	closed=$(count 'edel-compositor: unmapped window test-a-warm')
+	asked=$(count 'DESKTOP-TEST: app_stopped warm')
+	guest 'app stop warm'
+	wait_more 'DESKTOP-TEST: app_stopped warm' "$asked" || fail "the service did not stop Test A after its warm start"
+	wait_more 'edel-compositor: unmapped window test-a-warm' "$closed" || fail "Test A's warm window did not close"
+	# The budgets (M6.2a): the two starts in ms, and Test A's memory in MiB.
+	cold_budget=$(budget flatpak_cold_ms)
+	warm_budget=$(budget flatpak_warm_ms)
+	pss_budget=$(budget flatpak_app_pss_mib)
+	[ "$cold_ms" -le "$cold_budget" ] || fail "Test A's cold start took $cold_ms ms, over the budget of $cold_budget ms"
+	[ "$warm_ms" -le "$warm_budget" ] || fail "Test A's warm start took $warm_ms ms, over the budget of $warm_budget ms"
+	pss_mib=$(awk -v k="$pss_kib" 'BEGIN { printf "%.1f", k / 1024 }')
+	awk -v m="$pss_mib" -v b="$pss_budget" 'BEGIN { exit !(m + 0 <= b + 0) }' ||
+		fail "Test A's own memory is $pss_mib MiB (PSS), over the budget of $pss_budget MiB"
+	# The settings portal (M6.2a): its second ReadAll, which an app meets
+	# once it runs, must answer the appearance settings and within budget.
+	asked=$(count 'DESKTOP-TEST: portal_readall ')
+	guest 'portal readall'
+	wait_more 'DESKTOP-TEST: portal_readall ' "$asked" || fail "the service did not call the settings portal's ReadAll"
+	readall=$(value portal_readall)
+	readall_first=$(echo "$readall" | cut -d' ' -f1)
+	readall_ms=$(echo "$readall" | cut -d' ' -f2)
+	reply=$(echo "$readall" | cut -d' ' -f3-)
+	case $reply in
+	*org.freedesktop.appearance*) ;;
+	*) fail "the settings portal's ReadAll did not answer org.freedesktop.appearance: $reply" ;;
+	esac
+	readall_budget=$(budget portal_readall_ms)
+	[ "$readall_ms" -le "$readall_budget" ] ||
+		fail "the settings portal answered ReadAll in $readall_ms ms, over $readall_budget ms"
+	# The font caches (M6.2a): the image bakes them, Flatpak must not find
+	# a stale /var/cache/fontconfig, and ci's own fontconfig builds none.
+	asked=$(count 'DESKTOP-TEST: font_cache ')
+	guest 'font cache'
+	wait_more 'DESKTOP-TEST: font_cache ' "$asked" || fail "the service did not check the font caches"
+	fonts=$(value font_cache)
+	baked=$(echo "$fonts" | cut -d' ' -f1)
+	varcache=$(echo "$fonts" | cut -d' ' -f2)
+	own=$(echo "$fonts" | cut -d' ' -f3)
+	[ "${baked:-0}" -gt 0 ] || fail "the slot carries no fonts' cache: the check said \"$fonts\""
+	[ "$varcache" != var-cache ] ||
+		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
+	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci; after the first app ran: $after_app"
 }
 
 case_quick() {
@@ -6726,7 +6815,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -6845,6 +6934,19 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
+	# The default apps' installation (M6.2a): Flatpak's triggers build the
+	# icon cache when the image is made, if gtk-update-icon-cache is there;
+	# without it each start of the launcher reads every icon. Partition 4
+	# is copied and checked as stick_logs does, so the running stick is
+	# left alone.
+	part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+	dd if="$stick" of="$dir/apps-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+	e2fsck -fy "$dir/apps-data.img" >/dev/null 2>&1 || true
+	icon_cache=$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/apps-data.img" 2>&1)
+	case $icon_cache in
+	*"File not found"* | '') fail "the default apps' installation has no icon cache, so each start of the launcher reads every icon (Flatpak's trigger did not run at build)" ;;
+	esac
+	rm -f "$dir/apps-data.img"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
 	# could: the launcher opens Settings, which on a stick opens on the
 	# page with the login name taking the keys; Return moves on, and on
@@ -6965,7 +7067,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 
