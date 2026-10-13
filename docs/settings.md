@@ -194,16 +194,23 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 |---|---|---|
 | `network.hostname` | the row "Device name (hostname)": letters, digits and hyphens, up to 63. Missing at the next apply removes the machine's own `/etc/hostname`, so the slot's shows again | M2.2 |
 
-## Default apps, Startup, Power and Services
+## Default apps: `[default_apps]`
 
 | Key | Value | From |
 |---|---|---|
-| `default_apps.browser` | text, a `.desktop` id | M6.10 |
-| `default_apps.files` | text, a `.desktop` id | M6.10 |
-| `default_apps.editor` | text, a `.desktop` id | M6.10 |
-| `default_apps.terminal` | text, a `.desktop` id | M6.10 |
-| `default_apps.mail` | text, a `.desktop` id | M6.10 |
-| `startup.apps` | list of `.desktop` ids started with the session | M6.10 |
+| `default_apps.browser` | text, a desktop file id without `.desktop`, such as `org.mozilla.firefox`; `edel settings apply` writes it as the system's MIME defaults for web pages and `x-scheme-handler/http(s)`, and the `open_browser` key opens it | M6.10 |
+| `default_apps.files` | text, a desktop file id without `.desktop`; the folders' MIME type `inode/directory` and the `open_files` key use it | M6.10 |
+| `default_apps.editor` | text, a desktop file id without `.desktop`; plain text, `text/plain` | M6.10 |
+| `default_apps.terminal` | text, a desktop file id without `.desktop`; there is no MIME type for a terminal; the `open_terminal` shortcut opens it | M6.10 |
+| `default_apps.mail` | text, a desktop file id without `.desktop`; `x-scheme-handler/mailto` | M6.10 |
+
+When the key is unset, or names an app that is not installed, the shortcuts open the first installed app of the role's category (FileManager, WebBrowser), and the terminal's falls back to `foot`.
+
+## Startup, Power and Services
+
+| Key | Value | From |
+|---|---|---|
+| `startup.apps` | list of desktop file ids without `.desktop`, such as `["org.mozilla.firefox"]`, each started once the desktop is on screen, in the order listed; an app not installed is logged and skipped; an empty list is none | M6.10 |
 | `power.lid_close` | `suspend`, `lock`, `nothing` or `poweroff` | M7.8 |
 | `power.lock_after_minutes` | a whole number of minutes without input before the screen locks; `0` never | M7.8 |
 | `power.power_button` | `suspend`, `poweroff`, `ask` or `nothing` | M7.8 |

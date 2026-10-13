@@ -222,6 +222,84 @@ pub fn pinned<'a>(apps: &'a [App], pin: &str) -> Option<&'a App> {
     }
 }
 
+/// The apps of `role`'s category (M6.10), in the order `apps` gives them,
+/// so the first is the one [`default_app`] picks when no key names one.
+/// None for a role `ROLES` does not hold.
+pub fn apps_of_role<'a>(apps: &'a [App], role: &str) -> Vec<&'a App> {
+    let Some((_, category)) = ROLES.iter().find(|(r, _)| *r == role) else {
+        return Vec::new();
+    };
+    apps.iter()
+        .filter(|a| a.categories.iter().any(|c| c == category))
+        .collect()
+}
+
+/// The default app each role has in `[default_apps]` (M6.10): the role
+/// and the settings key that names its app.
+pub const DEFAULT_APP_KEYS: &[(&str, &str)] = &[
+    ("files", "default_apps.files"),
+    ("browser", "default_apps.browser"),
+    ("editor", "default_apps.editor"),
+    ("terminal", "default_apps.terminal"),
+    ("mail", "default_apps.mail"),
+];
+
+/// The MIME types each role's default app opens (M6.10), in the order
+/// the system's `mimeapps.list` lists them. A terminal has no MIME type,
+/// so it is not here.
+const MIME_TYPES: &[(&str, &[&str])] = &[
+    (
+        "browser",
+        &[
+            "x-scheme-handler/http",
+            "x-scheme-handler/https",
+            "text/html",
+        ],
+    ),
+    ("files", &["inode/directory"]),
+    ("editor", &["text/plain"]),
+    ("mail", &["x-scheme-handler/mailto"]),
+];
+
+/// The app a role opens (M6.10): the one `chosen` names when it is
+/// installed (an empty name is none), else the first app of the role's
+/// category, as `pinned` finds it.
+pub fn default_app<'a>(apps: &'a [App], role: &str, chosen: Option<&str>) -> Option<&'a App> {
+    chosen
+        .filter(|id| !id.is_empty())
+        .and_then(|id| apps.iter().find(|a| a.id == id))
+        .or_else(|| pinned(apps, role))
+}
+
+/// The first line of the `mimeapps.list` [`mime_defaults`] writes (M6.10).
+/// A file that starts with it is Edel OS's to change; any other is the
+/// administrator's, and nothing writes or removes it.
+pub const MIME_COMMENT: &str = "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.";
+
+/// The text of the system's `mimeapps.list` for the default apps a
+/// settings file sets (M6.10), given as (role, desktop file id) pairs.
+/// Empty when no MIME type is set, so nothing is written for a file that
+/// sets none, or only the terminal.
+pub fn mime_defaults(chosen: &[(&str, &str)]) -> String {
+    let mut lines = Vec::new();
+    for (role, types) in MIME_TYPES {
+        let Some((_, id)) = chosen.iter().find(|(r, _)| r == role) else {
+            continue;
+        };
+        for mime in types.iter() {
+            lines.push(format!("{mime}={id}.desktop;\n"));
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut text = format!("{MIME_COMMENT}\n[Default Applications]\n");
+    for line in lines {
+        text.push_str(&line);
+    }
+    text
+}
+
 /// A string value's escapes: `\s`, `\n`, `\t`, `\r` and `\\`.
 fn unescape(value: &str) -> String {
     let mut out = String::new();
@@ -502,6 +580,114 @@ mod tests {
         }
         let long = format!("a.b.{}", "c".repeat(256));
         assert!(!is_flatpak_id(&long), "256 characters or more is too long");
+    }
+
+    #[test]
+    fn the_apps_of_a_role_are_its_category_in_the_given_order() {
+        let app = |id: &str, category: &str| App {
+            id: id.to_string(),
+            ..parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={id}\nExec={id}\nCategories={category};\n"
+            ))
+            .unwrap()
+        };
+        let apps = vec![
+            app("org.gnome.Nautilus", "FileManager"),
+            app("org.mozilla.firefox", "WebBrowser"),
+            app("org.gnome.Epiphany", "WebBrowser"),
+        ];
+        let ids = |role: &str| -> Vec<String> {
+            apps_of_role(&apps, role)
+                .iter()
+                .map(|a| a.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            ids("browser"),
+            ["org.mozilla.firefox", "org.gnome.Epiphany"]
+        );
+        assert_eq!(ids("files"), ["org.gnome.Nautilus"]);
+        assert!(ids("mail").is_empty(), "no app of the category, none");
+        assert!(ids("nonesuch").is_empty(), "a role ROLES does not hold");
+        assert_eq!(
+            apps_of_role(&apps, "browser")
+                .first()
+                .map(|a| a.id.as_str()),
+            default_app(&apps, "browser", None).map(|a| a.id.as_str()),
+            "the first is the one default_app picks"
+        );
+    }
+
+    #[test]
+    fn a_default_app_is_the_chosen_one_when_installed_else_the_first_of_its_role() {
+        // `read_all` gives each app its id from its file name; `parse` does not.
+        let app = |id: &str, category: &str| App {
+            id: id.to_string(),
+            ..parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={id}\nExec={id}\nCategories={category};\n"
+            ))
+            .unwrap()
+        };
+        let apps = vec![
+            app("org.gnome.Nautilus", "FileManager"),
+            app("org.mozilla.firefox", "WebBrowser"),
+            app("org.gnome.Epiphany", "WebBrowser"),
+        ];
+        let id_of = |found: Option<&App>| found.map(|a| a.id.clone());
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some("org.gnome.Epiphany"))),
+            Some("org.gnome.Epiphany".into()),
+            "the chosen app, when installed"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some("org.example.Missing"))),
+            Some("org.mozilla.firefox".into()),
+            "a chosen app that is not installed falls back to the category"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", None)),
+            Some("org.mozilla.firefox".into()),
+            "nothing chosen takes the category's first app"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some(""))),
+            Some("org.mozilla.firefox".into()),
+            "an empty choice is none"
+        );
+        assert!(
+            default_app(&apps, "terminal", None).is_none(),
+            "no app of the role"
+        );
+    }
+
+    #[test]
+    fn mime_defaults_write_each_role_under_its_types_in_table_order() {
+        assert_eq!(
+            mime_defaults(&[
+                ("mail", "org.example.Mail"),
+                ("editor", "org.gnome.TextEditor"),
+                ("browser", "org.mozilla.firefox"),
+                ("files", "org.gnome.Nautilus"),
+            ]),
+            "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.\n\
+             [Default Applications]\n\
+             x-scheme-handler/http=org.mozilla.firefox.desktop;\n\
+             x-scheme-handler/https=org.mozilla.firefox.desktop;\n\
+             text/html=org.mozilla.firefox.desktop;\n\
+             inode/directory=org.gnome.Nautilus.desktop;\n\
+             text/plain=org.gnome.TextEditor.desktop;\n\
+             x-scheme-handler/mailto=org.example.Mail.desktop;\n"
+        );
+    }
+
+    #[test]
+    fn mime_defaults_is_empty_when_no_mime_type_is_set() {
+        assert_eq!(mime_defaults(&[]), "");
+        assert_eq!(
+            mime_defaults(&[("terminal", "foot")]),
+            "",
+            "a terminal has no MIME type"
+        );
     }
 
     #[test]
