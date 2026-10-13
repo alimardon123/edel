@@ -272,6 +272,9 @@ pub enum Kind {
     /// Keyboard layouts as xkb names them, such as `"us,ru"` or
     /// `"de(nodeadkeys)"` ([`crate::keyboard::normalize`], M5.21)
     Keyboard,
+    /// A time zone tzdata names, such as `Europe/Berlin`, checked against the
+    /// zone files when the machine has them ([`crate::timezones::known_in`])
+    TimeZone,
     /// A list of Flatpak app ids, such as `["io.mpv.Mpv"]`
     /// ([`crate::apps::is_flatpak_id`], M6.1)
     AppIds,
@@ -389,7 +392,7 @@ pub const KEYS: &[Key] = &[
     // name, such as `de` or `pt_BR`; English without it.
     now("region.language", Kind::Text),
     now("region.keyboard", Kind::Keyboard),
-    later("region.timezone", Kind::Text),
+    now("region.timezone", Kind::TimeZone),
     // The servers the clock is set from (M1.13); `pool.ntp.org` without.
     now("region.time_servers", Kind::Hosts),
     now("layout.preset", Kind::Preset),
@@ -2483,6 +2486,16 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::Keyboard, _) => fail(tr(
             "keyboard layouts in quotes, such as \"us\" or \"us,ru\"",
         )),
+        (Kind::TimeZone, Value::String(s))
+            if crate::timezones::known_in(Path::new(crate::places::ZONEINFO_DIR), s) =>
+        {
+            Ok(value.clone())
+        }
+        (Kind::TimeZone, Value::String(s)) => Err(trf(
+            "{value} is not a time zone this machine knows; time zones are names such as \"Europe/Berlin\" or \"Asia/Tashkent\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::TimeZone, _) => fail(tr("a time zone in quotes, such as \"Europe/Berlin\"")),
         (Kind::Hosts, Value::Array(items)) => {
             let mut names = Vec::new();
             for item in items {
@@ -2813,6 +2826,7 @@ mod tests {
             Kind::LockParts => value_from_arg(r#"[{ part = "person", at = "centre" }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
+            Kind::TimeZone => Value::String("Europe/Berlin".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
             Kind::Channel => Value::String("stable".into()),

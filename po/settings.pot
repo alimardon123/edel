@@ -494,6 +494,9 @@ msgstr ""
 msgid "Everything on it is erased. What it holds now is listed below."
 msgstr ""
 
+msgid "The clock shows this zone's time."
+msgstr ""
+
 msgid "No disk chosen"
 msgstr ""
 

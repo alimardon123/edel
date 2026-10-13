@@ -240,6 +240,11 @@ enum Change {
     /// The file names no hostname: drop this machine's copy of
     /// `/etc/hostname`, so the slot's shows again (ADR-008, defaults)
     HostnameDefault,
+    /// Point `/etc/localtime` at the zone's file and write `/etc/timezone`
+    Timezone(String),
+    /// The file names no zone: take this machine's `/etc/localtime` and
+    /// `/etc/timezone` out, so the clock is UTC again
+    TimezoneDefault,
     AddUser {
         name: String,
         shell: String,
@@ -283,6 +288,8 @@ impl fmt::Display for Change {
         match self {
             Change::Hostname(h) => write!(f, "network.hostname: set to {h}"),
             Change::HostnameDefault => write!(f, "network.hostname: back to the release's"),
+            Change::Timezone(z) => write!(f, "region.timezone: set to {z}"),
+            Change::TimezoneDefault => write!(f, "region.timezone: back to the release's (UTC)"),
             Change::AddUser { name, shell } => write!(f, "users.{name}: add, with shell {shell}"),
             Change::Shell { name, shell } => write!(f, "users.{name}.login_shell: set to {shell}"),
             Change::Unlock(name) => write!(f, "users.{name}: allow key logins"),
@@ -341,6 +348,8 @@ struct Machine {
     hostname: String,
     /// Whether this machine has its own `/etc/hostname`
     hostname_set: bool,
+    /// The zone this machine's own `/etc/localtime` names, if it has one
+    timezone: Option<String>,
     passwd: String,
     group: String,
     /// `None` when this user may not read it
@@ -400,6 +409,7 @@ impl Machine {
         Ok(Machine {
             hostname: fs::read_to_string("/etc/hostname").unwrap_or_default(),
             hostname_set: Path::new(ETC_UPPER).join("hostname").exists(),
+            timezone: own_timezone(),
             passwd,
             group: fs::read_to_string("/etc/group")?,
             shadow: fs::read_to_string("/etc/shadow").ok(),
@@ -462,6 +472,25 @@ fn run_with_input(cmd: &mut Command, input: &str) -> Result<()> {
     Ok(())
 }
 
+/// The zone this machine's own `/etc/localtime` link names (`region.timezone`):
+/// None when the overlay's upper layer holds no link of ours, or the link
+/// points somewhere other than the zone files.
+fn own_timezone() -> Option<String> {
+    fs::symlink_metadata(Path::new(ETC_UPPER).join("localtime")).ok()?;
+    zone_of_target(&fs::read_link(places::LOCALTIME).ok()?)
+}
+
+/// The zone a link to `target` names: the target without the zone files'
+/// folder in front of it, None when it is not inside that folder.
+fn zone_of_target(target: &Path) -> Option<String> {
+    let prefix = format!("{}/", places::ZONEINFO_DIR);
+    target
+        .to_str()?
+        .strip_prefix(&prefix)
+        .filter(|zone| !zone.is_empty())
+        .map(str::to_string)
+}
+
 /// The changes that make `machine` match `file`, and notes on what is left
 /// alone. Pure, so diff and apply agree and tests need no machine.
 fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
@@ -470,6 +499,13 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     match &file.network.hostname {
         Some(h) if machine.hostname.trim() != h => changes.push(Change::Hostname(h.clone())),
         None if machine.hostname_set => changes.push(Change::HostnameDefault),
+        _ => {}
+    }
+    match &file.region.timezone {
+        Some(z) if machine.timezone.as_deref() != Some(z) => {
+            changes.push(Change::Timezone(z.clone()))
+        }
+        None if machine.timezone.is_some() => changes.push(Change::TimezoneDefault),
         _ => {}
     }
     let all = accounts(&machine.passwd);
@@ -716,6 +752,32 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             if let (false, Some(h)) = (boot, os_release_value(&release, "EDEL_HOSTNAME")) {
                 run(Command::new("hostname").arg(h))?;
             }
+        }
+        Change::Timezone(zone) => {
+            let link = Path::new(places::LOCALTIME);
+            match fs::remove_file(link) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err).with_context(|| could_not_write(link)),
+            }
+            std::os::unix::fs::symlink(format!("{}/{zone}", places::ZONEINFO_DIR), link)
+                .with_context(|| could_not_write(link))?;
+            let name = Path::new(places::TIMEZONE_FILE);
+            fs::write(name, format!("{zone}\n")).with_context(|| could_not_write(name))?;
+        }
+        Change::TimezoneDefault => {
+            // As the hostname's default: the overlay's upper directory
+            // changes under it, and dropping cached names shows the slot's
+            // files at once.
+            for file in ["localtime", "timezone"] {
+                let upper = Path::new(ETC_UPPER).join(file);
+                match fs::remove_file(&upper) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err).with_context(|| could_not_write(&upper)),
+                }
+            }
+            let _ = fs::write("/proc/sys/vm/drop_caches", "2");
         }
         Change::AddUser { name, shell } => {
             run(Command::new("adduser").args(["-D", "-s", shell, name]))?;
@@ -1922,6 +1984,8 @@ pub fn export() -> Result<()> {
         Path::new(DEVELOPER_FLAG).exists(),
         default_shell(),
     );
+    // The zone this machine's own link names (`region.timezone`).
+    file.region.timezone = own_timezone();
     print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
     if !changed.is_empty() {
@@ -2114,6 +2178,7 @@ mod tests {
         Machine {
             hostname: "lab-1\n".into(),
             hostname_set: true,
+            timezone: None,
             passwd: PASSWD.into(),
             group: "admin:x:101:ci\n".into(),
             shadow: Some("ci:*:1::::::\nali:!:1::::::\n".into()),
@@ -2213,6 +2278,55 @@ mod tests {
                 "users.new: add, with shell /bin/ash",
                 "system.developer_mode: on",
             ]
+        );
+    }
+
+    #[test]
+    fn plans_a_zone_the_machine_has_no_link_for() {
+        let file = settings::read("format = 1\n[region]\ntimezone = \"Asia/Tashkent\"\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&file, &machine());
+        assert!(changes.contains(&Change::Timezone("Asia/Tashkent".into())));
+        assert!(
+            changes
+                .iter()
+                .any(|c| { c.to_string() == "region.timezone: set to Asia/Tashkent" })
+        );
+    }
+
+    #[test]
+    fn plans_nothing_for_the_zone_already_linked() {
+        let file = settings::read("format = 1\n[region]\ntimezone = \"Asia/Tashkent\"\n")
+            .unwrap()
+            .file;
+        let mut machine = machine();
+        machine.timezone = Some("Asia/Tashkent".into());
+        let (changes, _) = plan(&file, &machine);
+        assert!(!changes.iter().any(|c| matches!(c, Change::Timezone(_))));
+    }
+
+    #[test]
+    fn plans_the_default_when_the_file_names_no_zone_and_a_link_is_ours() {
+        let file = settings::read("format = 1\n").unwrap().file;
+        let mut linked = machine();
+        linked.timezone = Some("Asia/Tashkent".into());
+        let (changes, _) = plan(&file, &linked);
+        assert!(changes.contains(&Change::TimezoneDefault));
+        let (changes, _) = plan(&file, &machine());
+        assert!(!changes.contains(&Change::TimezoneDefault));
+    }
+
+    #[test]
+    fn reads_the_zone_a_link_names_only_inside_the_zone_files() {
+        assert_eq!(
+            zone_of_target(Path::new("/usr/share/zoneinfo/Asia/Tashkent")).as_deref(),
+            Some("Asia/Tashkent")
+        );
+        assert_eq!(zone_of_target(Path::new("/usr/share/zoneinfo/")), None);
+        assert_eq!(
+            zone_of_target(Path::new("/etc/elsewhere/Asia/Tashkent")),
+            None
         );
     }
 

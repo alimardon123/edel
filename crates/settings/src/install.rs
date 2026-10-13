@@ -53,6 +53,7 @@ pub fn shown() -> bool {
 pub enum Field {
     Language,
     Keyboard,
+    TimeZone,
     User,
     Password,
     Again,
@@ -70,6 +71,8 @@ pub struct Form {
     pub again: String,
     /// The chosen disk's name, none when there is no disk to offer
     pub disk: Option<String>,
+    /// The time zone, as `edel::timezones::answer` takes it
+    pub timezone: String,
     pub hostname: String,
     pub preset: String,
     /// The question keys a settings file answers already, which are not
@@ -84,6 +87,7 @@ fn key_of(field: Field) -> &'static str {
     match field {
         Field::Language => "region.language",
         Field::Keyboard => "region.keyboard",
+        Field::TimeZone => "region.timezone",
         Field::User => "user",
         Field::Password | Field::Again => "password",
         Field::Disk => "disk",
@@ -127,6 +131,10 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
             password,
         ),
         (
+            Field::TimeZone,
+            edel::timezones::answer(form.timezone.trim()),
+        ),
+        (
             Field::Hostname,
             install::hostname_answer(form.hostname.trim()),
         ),
@@ -144,7 +152,8 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
         .iter()
         .filter_map(|(field, answer)| answer.clone().err().map(|why| (*field, why)))
         .collect();
-    let [language, keyboard, user, _, hostname, disk] = answers.map(|(_, a)| a.ok().flatten());
+    let [language, keyboard, user, _, timezone, hostname, disk] =
+        answers.map(|(_, a)| a.ok().flatten());
     if !problems.is_empty() {
         return Err(problems);
     }
@@ -153,7 +162,7 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
         keyboard,
         user,
         ssh_key: None,
-        timezone: None,
+        timezone,
         hostname,
         preset: (!form.skip.contains(&"layout.preset")).then(|| form.preset.clone()),
     };
@@ -285,6 +294,10 @@ struct Ui {
     keyboard: Rc<widgets::Choice>,
     /// The keyboard layouts, by the keyboard choice's index
     keyboards: RefCell<Vec<String>>,
+    /// The time zone choice, by the index of `zones`
+    zone: Rc<widgets::Choice>,
+    /// The zones the choice lists, in its order
+    zones: Vec<String>,
     user: gtk::Entry,
     password: gtk::PasswordEntry,
     again: gtk::PasswordEntry,
@@ -303,6 +316,7 @@ struct Ui {
     review_user: gtk::Label,
     review_language: gtk::Label,
     review_keyboard: gtk::Label,
+    review_zone: gtk::Label,
     /// What `edel install --list` says of the chosen disk
     list: gtk::Label,
     /// The run of `edel install --list`, once it is read
@@ -318,6 +332,8 @@ struct Ui {
     suggested: RefCell<String>,
     /// The computer name suggested last
     suggested_name: RefCell<String>,
+    /// The time zone suggested last, so a zone the person picked is kept
+    suggested_zone: RefCell<String>,
     rules: Option<String>,
 }
 
@@ -354,6 +370,27 @@ fn review_row(grid: &gtk::Grid, at: i32, title: &str) -> gtk::Label {
 /// The first layout of a keyboard value, `ru` of `ru,us`.
 fn first_layout(keyboard: &str) -> &str {
     keyboard.split(',').next().unwrap_or(keyboard)
+}
+
+/// The zones the time zone choice lists: tzdata's, the one `now` names and
+/// each language's suggestion added when the list lacks them (so a machine
+/// with no zone files still offers every language's zone), sorted by their
+/// labels as the list is.
+fn zone_list(now: &str) -> Vec<String> {
+    let mut zones = edel::timezones::list_in(Path::new(edel::places::ZONEINFO_DIR));
+    if zones.is_empty() {
+        zones.push(edel::timezones::DEFAULT.to_string());
+    }
+    let suggested = edel::languages::LANGUAGES
+        .iter()
+        .map(|l| l.zone.to_string());
+    for zone in std::iter::once(now.to_string()).chain(suggested) {
+        if !zones.contains(&zone) {
+            zones.push(zone);
+        }
+    }
+    zones.sort_by_key(|zone| edel::timezones::label(zone));
+    zones
 }
 
 /// The width of every control at the right of a row on this page.
@@ -515,6 +552,26 @@ pub fn page() -> gtk::Widget {
     row.copy.set_visible(false);
     lines.push((Field::Keyboard, row.subtitle));
 
+    // The time zone follows the language until the person picks one, as the
+    // keyboard does. The zones are tzdata's; the file's own zone and each
+    // language's suggestion are listed too, so the choice follows any of them.
+    let zone_suggested = edel::timezones::suggested(&language_now).to_string();
+    let zone_now = files
+        .person_file()
+        .region
+        .timezone
+        .unwrap_or_else(|| zone_suggested.clone());
+    let zones = zone_list(&zone_now);
+    let zone_at = zones.iter().position(|z| *z == zone_now).unwrap_or(0);
+    let zone_names: Vec<String> = zones.iter().map(|z| edel::timezones::label(z)).collect();
+    let zone = widgets::Choice::searchable(zone_names);
+    zone.set_selected(zone_at);
+    zone.set_width(CONTROL_WIDTH);
+    let row = widgets::row(&choices, tr("Time zone"), &zone.widget());
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    lines.push((Field::TimeZone, row.subtitle));
+
     widgets::step_heading(&content, 2, tr("Your account"));
     let you = widgets::group(&content);
     let user = entry("");
@@ -596,6 +653,7 @@ pub fn page() -> gtk::Widget {
     let review_user = review_row(&review, 1, tr("Username"));
     let review_language = review_row(&review, 2, tr("Language"));
     let review_keyboard = review_row(&review, 3, tr("Keyboard"));
+    let review_zone = review_row(&review, 4, tr("Time zone"));
     install_group.append(&review);
     let plan = widgets::output_row(&install_group);
     // The buttons sit centred under the plan, then a line says what the
@@ -648,6 +706,8 @@ pub fn page() -> gtk::Widget {
         languages: codes,
         keyboard,
         keyboards: RefCell::new(keyboard_values),
+        zone,
+        zones,
         user,
         password,
         again,
@@ -662,6 +722,7 @@ pub fn page() -> gtk::Widget {
         review_user,
         review_language,
         review_keyboard,
+        review_zone,
         list,
         listed: RefCell::new(None),
         plan,
@@ -672,6 +733,7 @@ pub fn page() -> gtk::Widget {
         armed: Cell::new(false),
         suggested: RefCell::new(keyboard_now),
         suggested_name: RefCell::new(String::new()),
+        suggested_zone: RefCell::new(zone_suggested),
         rules,
     });
     ui.connect();
@@ -760,6 +822,8 @@ impl Ui {
             let stale = changed(self);
             entry.connect_changed(move |_| stale());
         }
+        let stale = changed(self);
+        self.zone.connect_changed(stale);
         let stale = changed(self);
         self.preset.connect_changed(stale);
         if let Some(disk) = &self.disk {
@@ -864,9 +928,24 @@ impl Ui {
         install::keyboard_for(&self.keyboard_layout())
     }
 
+    /// The time zone the choice shows, such as `Europe/Berlin`.
+    fn zone_value(&self) -> String {
+        self.zones
+            .get(self.zone.selected())
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// The language changed: the keyboard follows it while the person has not
     /// picked one of their own.
     fn language_picked(&self) {
+        let zone_suggestion = edel::timezones::suggested(&self.language_code()).to_string();
+        if self.zone_value() == *self.suggested_zone.borrow() {
+            if let Some(at) = self.zones.iter().position(|z| *z == zone_suggestion) {
+                self.zone.set_selected(at);
+            }
+        }
+        *self.suggested_zone.borrow_mut() = zone_suggestion;
         let suggestion = install::suggested_keyboard(&self.language_code());
         if self.keyboard_value() == *self.suggested.borrow() {
             let at = self
@@ -895,6 +974,7 @@ impl Ui {
             Field::Password => tr("You type it to log in and to change the system."),
             Field::Hostname => tr("How other computers on the network see this one."),
             Field::Disk => tr("Everything on it is erased. What it holds now is listed below."),
+            Field::TimeZone => tr("The clock shows this zone's time."),
             Field::Language | Field::Keyboard | Field::Again => "",
         }
     }
@@ -950,6 +1030,7 @@ impl Ui {
         self.review_user.set_label(&user);
         self.review_language.set_label(&self.language.chosen_text());
         self.review_keyboard.set_label(&self.keyboard.chosen_text());
+        self.review_zone.set_label(&self.zone.chosen_text());
     }
 
     /// The keyboard's line says what a second layout is for, as the
@@ -988,6 +1069,7 @@ impl Ui {
                 .as_ref()
                 .and_then(|d| self.disks.get(d.selected()))
                 .map(|d| d.name.clone()),
+            timezone: self.zone_value(),
             hostname: self.hostname.text().to_string(),
             preset: self.presets[self.preset.selected().min(self.presets.len() - 1)].to_string(),
             skip: self.skipped(),
@@ -1071,9 +1153,10 @@ impl Ui {
         self.using.set(using);
         let skip = self.skipped();
         let password = self.password_needed();
-        let rows: [(&str, gtk::Widget); 7] = [
+        let rows: [(&str, gtk::Widget); 8] = [
             ("region.language", self.language.widget()),
             ("region.keyboard", self.keyboard.widget()),
+            ("region.timezone", self.zone.widget()),
             ("user", self.user.clone().upcast()),
             ("password", self.password.clone().upcast()),
             ("password", self.again.clone().upcast()),
@@ -1248,6 +1331,7 @@ impl Ui {
         match field {
             Field::Language => self.language.widget().grab_focus(),
             Field::Keyboard => self.keyboard.widget().grab_focus(),
+            Field::TimeZone => self.zone.widget().grab_focus(),
             Field::User => self.user.grab_focus(),
             Field::Password => self.password.grab_focus(),
             Field::Again => self.again.grab_focus(),
@@ -1387,6 +1471,7 @@ mod tests {
             password: "secret".into(),
             again: "secret".into(),
             disk: Some("nvme0n1".into()),
+            timezone: "Europe/Berlin".into(),
             hostname: "ali-laptop".into(),
             preset: "classic".into(),
             skip: Vec::new(),
@@ -1475,6 +1560,36 @@ mod tests {
             text.contains("hostname = \"office-1\"") && text.contains("[users.bea]"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn the_zone_is_refused_in_the_words_of_the_terminal() {
+        let bad = Form {
+            timezone: "../etc".into(),
+            ..form()
+        };
+        let fields: Vec<Field> = check(&bad, None)
+            .unwrap_err()
+            .into_iter()
+            .map(|p| p.0)
+            .collect();
+        assert_eq!(fields, [Field::TimeZone]);
+        let (answers, _) = check(&form(), None).unwrap();
+        assert_eq!(answers.timezone.as_deref(), Some("Europe/Berlin"));
+    }
+
+    #[test]
+    fn the_zone_choice_holds_the_file_zone_and_each_languages() {
+        let zones = zone_list("Asia/Tashkent");
+        assert!(zones.contains(&"Asia/Tashkent".to_string()));
+        for language in edel::languages::LANGUAGES {
+            assert!(
+                zones.contains(&language.zone.to_string()),
+                "{}",
+                language.zone
+            );
+        }
+        assert!(!zones.is_empty());
     }
 
     #[test]
