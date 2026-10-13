@@ -749,6 +749,18 @@ case_respawn() {
 	# compositor dies, the session ends and greetd starts its greeter, our
 	# compositor running shell-ui's greeter (M5.10b), which writes the
 	# health file.
+	# Startup after a login (M6.10): startup.apps is set before the kill, so
+	# the session that ci starts by logging in again opens the test client
+	# it names. Its window count is taken first; the login checks below wait
+	# for one more.
+	guest 'startup login'
+	wait_for 'DESKTOP-TEST: startup_login ' ||
+		fail "the service did not set startup.apps for the login"
+	case "$(value startup_login)" in
+	*edel-test-startup*) ;;
+	*) fail "startup.apps does not name edel-test-startup for the login: \"$(value startup_login)\"" ;;
+	esac
+	started=$(count 'edel-compositor: mapped window test-startup')
 	guest 'kill compositor'
 	wait_for 'DESKTOP-TEST: (respawn_seconds|respawn:)' ||
 		fail "no word from the test service after kill -9 edel-compositor"
@@ -829,6 +841,17 @@ case_respawn() {
 		sleep 3
 		fail "logging in as ci through the greeter did not start ci's compositor: \"$(value login_ready)\"" ;;
 	esac
+	# The app startup.apps names (M6.10) opened in ci's new session. Super+Q
+	# closes it, since the windows checks of the cases after this count
+	# exactly; startup login off takes the name out of the file.
+	wait_more 'edel-compositor: mapped window test-startup' "$started" 60 ||
+		fail "the app startup.apps names did not open after ci logged in again"
+	closed=$(count 'edel-compositor: unmapped window test-startup')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-startup' "$closed" || fail "Super+Q did not close the startup window"
+	guest 'startup login off'
+	wait_for 'DESKTOP-TEST: startup_login_off' ||
+		fail "the service did not take startup.apps back after the login"
 	case "$(value greeter_said)" in
 	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
 	*) fail "the greeter did not refuse the wrong password and then start ci's CI other session: $(value greeter_said)" ;;
@@ -863,7 +886,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
 }
 
 case_layers() {
@@ -3290,9 +3313,10 @@ case_default_apps() {
 	[ "$varcache" != var-cache ] ||
 		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
 	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
-	# What it saves (M6.2a): the same fonts listed with the baked cache
-	# and with none, as each app's first start did before. Reported, and
-	# the cache must win: a cache that saves nothing is not worth its size.
+	# What it saves (M6.2a): the same fonts listed five times with the
+	# baked cache and five times with none, as each app's first start did
+	# before. Reported, and the cache must win: a cache that saves nothing
+	# is not worth its size.
 	asked=$(count 'DESKTOP-TEST: font_cost ')
 	guest 'font cost'
 	wait_more 'DESKTOP-TEST: font_cost ' "$asked" 60 || fail "the service did not time fc-list"
@@ -3302,8 +3326,8 @@ case_default_apps() {
 	built=$(echo "$cost" | cut -d' ' -f3)
 	[ "${built:-0}" -gt 0 ] || fail "fc-list with an empty cache folder built no cache, so the comparison measured nothing: $cost"
 	[ "$with_cache" -lt "$without_cache" ] ||
-		fail "listing the fonts took $with_cache ms with the baked cache and $without_cache ms without, so the cache saves nothing"
-	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci, fonts listed in ${with_cache} ms with them against ${without_cache} ms without (each app's first start before); after the first app ran: $after_app"
+		fail "listing the fonts five times took $with_cache ms with the baked cache and $without_cache ms without, so the cache saves nothing"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed; cold start ${cold_ms} ms (budget $cold_budget ms), warm ${warm_ms} ms (budget $warm_budget ms), Test A's own memory ${pss_mib} MiB (budget $pss_budget MiB), ReadAll ${readall_first} ms then ${readall_ms} ms (budget $readall_budget ms), ${baked} baked font caches and none built by ci, fonts listed five times in ${with_cache} ms with them against ${without_cache} ms without (each app's first start before); after the first app ran: $after_app"
 }
 
 case_quick() {
