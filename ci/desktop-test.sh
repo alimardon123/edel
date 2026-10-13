@@ -229,7 +229,7 @@
 #   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
-#               printed (M6.7)
+#               printed; run last, after flatpak (M6.7)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -252,7 +252,7 @@
 #               compositor that only fails into slot B and restarts; no
 #               frame, so the guard lets the watchdog restart slot B, and
 #               GRUB, out of tries, starts slot A, which says so (M4.8)
-#   flatpak     last: `edel settings set apps.installed` lists io.mpv.Mpv
+#   flatpak     last but suspend: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
 #               window maps in the session (flatpak-mpv.png); `edel settings
@@ -6451,7 +6451,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme terminal scale suspend respawn workspaces-dynamic app-workspaces web-app flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces web-app flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
