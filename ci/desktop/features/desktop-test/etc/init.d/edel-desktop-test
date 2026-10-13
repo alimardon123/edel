@@ -599,7 +599,11 @@ commands() {
 		# removes the keys and so the MIME file the apply wrote.
 		'default apps on')
 			apps=/home/ci/.local/share/applications
-			install -d -o ci -g ci "$apps"
+			# Each folder ci's own: install -d gives only the last one its
+			# owner, and a root-owned ~/.local/share stops flatpak --user.
+			for d in /home/ci/.local /home/ci/.local/share "$apps"; do
+				install -d -o ci -g ci "$d"
+			done
 			printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Test Files' 'Exec=edel-testclient --title test-files --colour 336699 --size 300x200' 'Categories=FileManager;' >"$apps/edel-test-files.desktop"
 			printf '%s\n' '[Desktop Entry]' 'Type=Application' 'Name=Test Browser' 'Exec=edel-testclient --title test-browser --colour 993366 --size 300x200' 'Categories=Network;' >"$apps/edel-test-browser.desktop"
 			chown ci:ci "$apps/edel-test-files.desktop" "$apps/edel-test-browser.desktop"
