@@ -81,10 +81,10 @@ Each needs its own check before a fix (M6.17's second line).
 | The desktop tests split into parallel parts, a failed case run once more and marked flaky | Neutral in code, about a third of the wall time | M6.17 |
 | A shared surface type in shell-ui | More at first | Only if it pays for itself; not planned |
 
-## Waiting for Alimardon
+## Decisions and what waits for Alimardon
 
-- Whether to cut the path to the first release: the reviewers propose moving the "devices as one" steps (M7.10a to M7.10m), M8.19, M8.20 and M8.22 after it, and freezing new lock screen and theme features until M6 and M8 are done. Not planned; their call.
-- Branch protection for `main` with the four checks required (M2.5), and the release key for the first preview (M3.4).
+- The path to the first release: the reviewers proposed moving the "devices as one" steps (M7.10a to M7.10m), M8.19, M8.20 and M8.22 after it. Alimardon chose to on 2026-10-13, each to be built then to the same standard (the roadmap's log). Freezing new lock screen and theme features was not asked.
+- Branch protection for `main` with the four checks required (M2.5): Alimardon said on 2026-10-13 they will turn it on. The release key for the first preview (M3.4) still waits.
 
 ## Principles check
 
