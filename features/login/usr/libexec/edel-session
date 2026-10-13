@@ -1,4 +1,13 @@
 #!/bin/sh
+# The store (M6.4): Bazaar lists the person's own Flatpak remotes and
+# installs into the person's own installation, which needs no polkit. Each
+# person gets Flathub once, from the file the image carries, offline; the
+# check reads one file, so a login runs no flatpak when it is there.
+flathub_repo_file=$(. /usr/share/edel/places.sh && echo "$flathub_repo_file")
+if [ -f "$flathub_repo_file" ] && ! grep -qs '^\[remote "flathub"\]' "$HOME/.local/share/flatpak/repo/config"; then
+	flatpak --user remote-add --if-not-exists --from flathub "$flathub_repo_file" >/dev/null 2>&1 &
+fi
+
 # The person's session (roadmap M4.2b, M3.6): what greetd starts after a
 # login, from shell-ui's greeter (etc/greetd/config.toml) or, on a
 # stick, for the person called live (edel boot live). Our compositor with

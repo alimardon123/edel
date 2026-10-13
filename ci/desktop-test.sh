@@ -6981,6 +6981,27 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/firefox.png"
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	# The store (M6.4): Super, "bazaar" and Return start Bazaar from the
+	# default apps, offline; its window must map within 120 s.
+	python3 ci/qmp.py key meta_l
+	sleep 2
+	python3 ci/qmp.py type bazaar
+	sleep 1
+	python3 ci/qmp.py key ret
+	i=0
+	until stick_session | grep -qai 'edel-compositor: mapped window .*bazaar'; do
+		i=$((i + 10))
+		if [ "$i" -gt 120 ]; then
+			python3 ci/qmp.py screendump "$dir/store-failed.png"
+			stick_session | grep -ai 'launched\|mapped window\|bazaar\|flatpak' | tail -n 20
+			fail "the store, Bazaar, did not map within 120 s on the offline stick (store-failed.png)"
+		fi
+		sleep 10
+	done
+	store_seconds=$i
+	python3 ci/qmp.py screendump "$dir/store.png"
+	python3 ci/qmp.py key meta_l-q
+	sleep 3
 	# The default apps' installation (M6.2a): Flatpak's triggers build the
 	# icon cache when the image is made, if gtk-update-icon-cache is there,
 	# which GTK apps showing app icons read (shell-ui reads the files). Partition 4
@@ -6992,6 +7013,13 @@ if [ "$*" = live ]; then
 	icon_cache=$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/apps-data.img" 2>&1)
 	case $icon_cache in
 	*"File not found"* | '') fail "the default apps' installation has no icon cache (Flatpak's trigger did not run at build)" ;;
+	esac
+	# The store (M6.4): the live person's Flatpak remotes hold Flathub, added
+	# at login from the image's own file, which the store lists apps from.
+	remotes=$(debugfs -R "cat /home/live/.local/share/flatpak/repo/config" "$dir/apps-data.img" 2>/dev/null)
+	case $remotes in
+	*'[remote "flathub"]'*) ;;
+	*) fail "the live session did not add Flathub from the image's file, so the store lists nothing" ;;
 	esac
 	rm -f "$dir/apps-data.img"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
@@ -7114,7 +7142,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 
