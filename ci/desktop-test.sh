@@ -610,6 +610,17 @@ case_suspend() {
 		[ "$i" -lt 20 ] || fail "QEMU did not report the guest running within 20 s of system_wakeup"
 		sleep 1
 	done
+	# The command line's serial port loses the first bytes it is sent
+	# after the wakeup (the guest read `ortcut window`), so a command that
+	# changes nothing is sent until the test service answers it.
+	i=0
+	answered=$(count 'DESKTOP-TEST: ran suspend states')
+	until [ "$(count 'DESKTOP-TEST: ran suspend states')" -gt "$answered" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the test service answered no command within 20 s of the wakeup"
+		guest 'suspend states'
+		sleep 1
+	done
 	opened=$(count 'edel-compositor: mapped window keys')
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' "$opened" 60 ||
