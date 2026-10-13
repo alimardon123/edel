@@ -66,6 +66,7 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 | `--list` | List the disks Edel OS could install on, and change nothing |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
+| `--new-password-stdin` | Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it |
 
 ## `edel report [OPTIONS]`
 

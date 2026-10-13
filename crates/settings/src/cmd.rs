@@ -72,6 +72,27 @@ pub fn edel_as_admin(args: &[&str], password: String) -> Outcome {
     with_password(edel::places::AS_ROOT, &all, password)
 }
 
+/// Runs `doas -n edel ARGS` (M6.6a), or `edel ARGS` when Settings itself
+/// runs as root, giving `input` and a newline on standard input when there
+/// is some, as the installer page hands the new person's password to
+/// `edel install --new-password-stdin`. On a stick doas lets its own
+/// account run `edel` with no password, and `edel` decides what it may do
+/// (`privilege.rs`). Call it from a thread of its own.
+pub fn edel_as_root(args: &[&str], input: Option<String>) -> Outcome {
+    let mut all = Vec::new();
+    let program = if is_root() {
+        "edel"
+    } else {
+        all.extend_from_slice(&["-n", "edel"]);
+        edel::places::AS_ROOT
+    };
+    all.extend_from_slice(args);
+    match input {
+        Some(input) => with_password(program, &all, input),
+        None => run(program, &all),
+    }
+}
+
 /// Runs `program` with `args`, writing `password` and a newline to its
 /// standard input and then closing it, and waits for it.
 fn with_password(program: &str, args: &[&str], mut password: String) -> Outcome {

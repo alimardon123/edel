@@ -413,6 +413,60 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
+msgid "Put Edel OS on this computer's disk. Nothing changes until you press Erase and install, and every answer can be changed later in Settings."
+msgstr ""
+
+msgid "no disk to install on"
+msgstr ""
+
+msgid "Install Edel OS"
+msgstr ""
+
+msgid "You"
+msgstr ""
+
+msgid "The same password again"
+msgstr ""
+
+msgid "Disk"
+msgstr ""
+
+msgid "No other disk was found. Plug one in, then open this page again."
+msgstr ""
+
+msgid "More options"
+msgstr ""
+
+msgid "Plan"
+msgstr ""
+
+msgid "The plan says what is erased and what is written. Erase and install asks twice."
+msgstr ""
+
+msgid "Show the plan"
+msgstr ""
+
+msgid "Erase and install"
+msgstr ""
+
+msgid "Restart now"
+msgstr ""
+
+msgid "could not write {path}: {why}"
+msgstr ""
+
+msgid "Working..."
+msgstr ""
+
+msgid "Press again to erase {disk}"
+msgstr ""
+
+msgid "Installing on {disk}. This takes a few minutes; keep the stick in."
+msgstr ""
+
+msgid "Edel OS is installed on {disk}. Restart, and take the stick out when the screen goes dark."
+msgstr ""
+
 msgid "The bars and docks along the screen's edges, and what they hold."
 msgstr ""
 
@@ -1379,9 +1433,6 @@ msgstr ""
 msgid "The computer restarts in a moment."
 msgstr ""
 
-msgid "Restart now"
-msgstr ""
-
 msgid "Version {version} is installed and starts after a restart. If it does not start, the computer goes back by itself."
 msgstr ""
 
@@ -1485,9 +1536,6 @@ msgid "Apply the file"
 msgstr ""
 
 msgid "Makes the file this machine's settings. Choose a file first to see what it changes."
-msgstr ""
-
-msgid "Working..."
 msgstr ""
 
 msgid "Saved to {path}"

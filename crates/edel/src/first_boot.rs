@@ -23,7 +23,6 @@ use anyhow::{Context, Result};
 
 use edel::i18n::tr;
 use edel::places;
-use edel::settings;
 
 use crate::installer;
 use crate::machine;
@@ -100,16 +99,7 @@ pub fn console() -> Result<()> {
             "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
         )
     );
-    let name = installer::ask_until(tr("Login name"), None, |v| {
-        if settings::is_user_name(v) && v != "root" && v != "live" {
-            Ok(v.to_string())
-        } else {
-            Err(tr(
-                "lowercase letters, digits, - and _, starting with a letter, and not root or live",
-            )
-            .to_string())
-        }
-    })?;
+    let name = installer::ask_until(tr("Login name"), None, edel::install::user_answer)?;
     let (hashed, key) = loop {
         let first =
             privilege::read_secret(tr("Password, or press Return to give an ssh key instead: "))?;

@@ -6756,12 +6756,28 @@ if [ "$*" = live ]; then
 			debugfs -R "cat $f" "$dir/data.img" 2>&1 | tail -n 80
 		done
 	}
+	# A blank disk beside the stick, which Settings' installer page
+	# installs on (M6.6a); zeros written to it stay holes.
+	. ci/names.sh
+	target="$dir/target.img"
+	rm -f "$target"
+	truncate -s 10G "$target"
+	# target_data: the installed disk's data partition (partition 4),
+	# copied to $dir/target-data.img for debugfs; false while there is none.
+	target_data() {
+		part=$(sfdisk -d "$target" 2>/dev/null | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+		[ -n "$part" ] || return 1
+		dd if="$target" of="$dir/target-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
+	}
 	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-qmp unix:"$QMP",server=on,wait=off \
 		-device qemu-xhci,id=xhci \
 		-drive if=none,id=stick,format=raw,file="$stick" \
-		-device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=0
+		-device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=0 \
+		-drive if=none,id=target,format=raw,file="$target",detect-zeroes=unmap \
+		-device virtio-blk-pci,drive=target
 	if [ "$found" = 0 ]; then
 		cat "$log"
 		stick_logs
@@ -6810,9 +6826,73 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
+	# Settings' installer page (M6.6a), by keyboard alone as a person
+	# could: the launcher opens Settings, which on a stick opens on the
+	# page with the login name taking the keys; Return moves on, and on
+	# the second password shows the plan and gives the keys to Erase and
+	# install, which wants two presses. The blank disk is the only one
+	# offered, as the stick never is.
+	python3 ci/qmp.py key meta_l
+	sleep 3
+	python3 ci/qmp.py type settings
+	sleep 1
+	python3 ci/qmp.py key ret
+	sleep 25
+	python3 ci/qmp.py screendump "$dir/install-page.png"
+	python3 ci/qmp.py type ali
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type edel-install-test
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type edel-install-test
+	python3 ci/qmp.py key ret
+	sleep 20
+	python3 ci/qmp.py screendump "$dir/install-plan.png"
+	python3 ci/qmp.py key ret
+	sleep 1
+	python3 ci/qmp.py key ret
+	i=0
+	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			python3 ci/qmp.py screendump "$dir/install-failed.png"
+			stick_logs
+			fail "Settings' installer page did not install on the blank disk within 600 s (install-page.png, install-plan.png, install-failed.png)"
+		fi
+		sleep 10
+	done
+	sleep 5
+	python3 ci/qmp.py screendump "$dir/install-done.png"
 	stop_vm
-	rm -f "$stick" "$dir/data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off"
+	target_data || fail "the installed disk has no data partition"
+	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
+	echo "$installed" | sed 's/^/  installed settings: /'
+	echo "$installed" | grep -q '^\[users.ali\]' || fail "the installed settings file has no [users.ali]"
+	echo "$installed" | grep -q '^admin = true' || fail "ali is not an administrator in the installed settings file"
+	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
+	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
+	slots=$(sfdisk -d "$target" | grep -c 'start=')
+	[ "$slots" = 4 ] || fail "the installed disk has $slots partitions, not 4"
+	# The installed disk alone, as a computer's own disk: its first boot
+	# applies the answers, so the greeter asks who logs in, live is never
+	# made, and ssh stays off.
+	installed_log=out/desktop-installed.log
+	keep_vm=1 run_vm "$installed_log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+		-m 2048 -smp 4 -vga std \
+		-drive if=none,id=installed,format=raw,file="$target" \
+		-device virtio-blk-pci,drive=installed,bootindex=0
+	[ "$found" = 1 ] || { cat "$installed_log"; fail "the disk the installer page wrote did not confirm its slot"; }
+	i=0
+	until tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+		i=$((i + 1))
+		sleep 1
+	done
+	stop_vm
+	tr -d '\r' <"$installed_log" | grep -a 'edel boot live: '
+	tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
+		fail "the installed disk did not leave the login to the greeter: live was made, or nobody had an account"
+	! tr -d '\r' <"$installed_log" | grep -qa 'Starting sshd' || fail "the installed disk started sshd"
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written, and the installed disk started on its own with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 
