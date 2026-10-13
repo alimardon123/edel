@@ -31,15 +31,11 @@ use std::time::Duration;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
-use crate::{cmd, widgets};
-
-const INTRO: &str = n_(
-    "Put Edel OS on this computer: a few questions, then a plan to check. Nothing changes until you press Erase and install, and every answer can be changed later in Settings.",
-);
+use crate::{cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
 const LANGUAGE: &str = "en_US.UTF-8";
@@ -234,6 +230,14 @@ struct Found {
     answered: Vec<&'static str>,
 }
 
+/// The disk a found file is on, from `edel install`'s "found FILE on
+/// /dev/sdb1"; the whole line when it reads otherwise (another language).
+fn device_of(place: &str) -> &str {
+    place
+        .rsplit_once(" on ")
+        .map_or(place, |(_, device)| device)
+}
+
 /// The words for what a file answers, by the rows' own titles.
 fn answered_words(answered: &[&str]) -> String {
     answered
@@ -293,6 +297,12 @@ struct Ui {
     lines: Vec<(Field, gtk::Label)>,
     /// The problems the last check found, by field
     problems: RefCell<Vec<(Field, String)>>,
+    /// The review's values: the disk, the username, the language and the
+    /// keyboard, as the answers stand
+    review_disk: gtk::Label,
+    review_user: gtk::Label,
+    review_language: gtk::Label,
+    review_keyboard: gtk::Label,
     /// What `edel install --list` says of the chosen disk
     list: gtk::Label,
     /// The run of `edel install --list`, once it is read
@@ -318,8 +328,27 @@ fn welcome(hero: &widgets::Hero) {
         false,
         false,
         tr("Welcome to Edel OS"),
-        tr("Fast, calm and yours. It takes about five minutes."),
+        tr("A few questions, then a plan to check. Nothing changes until you press Erase and install."),
     );
+}
+
+/// One row of the review: its title, then its value, which `summarize`
+/// writes. Returns the value's label.
+fn review_row(grid: &gtk::Grid, at: i32, title: &str) -> gtk::Label {
+    let name = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .valign(gtk::Align::Start)
+        .css_classes(["edel-row-subtitle"])
+        .build();
+    let value = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .hexpand(true)
+        .build();
+    grid.attach(&name, 0, at, 1, 1);
+    grid.attach(&value, 1, at, 1, 1);
+    value
 }
 
 /// The first layout of a keyboard value, `ru` of `ru,us`.
@@ -327,11 +356,14 @@ fn first_layout(keyboard: &str) -> &str {
     keyboard.split(',').next().unwrap_or(keyboard)
 }
 
+/// The width of every control at the right of a row on this page.
+const CONTROL_WIDTH: i32 = 240;
+
 /// An entry of the form, its text filled in.
 fn entry(text: &str) -> gtk::Entry {
     gtk::Entry::builder()
         .text(text)
-        .width_chars(18)
+        .width_request(CONTROL_WIDTH)
         .css_classes(["edel-entry"])
         .build()
 }
@@ -340,13 +372,13 @@ fn entry(text: &str) -> gtk::Entry {
 fn password_entry() -> gtk::PasswordEntry {
     gtk::PasswordEntry::builder()
         .show_peek_icon(true)
-        .width_chars(18)
+        .width_request(CONTROL_WIDTH)
         .css_classes(["edel-entry"])
         .build()
 }
 
 pub fn page() -> gtk::Widget {
-    let (page, content, problem) = widgets::page(tr("Install Edel OS"), tr(INTRO));
+    let (page, content, problem) = widgets::page(tr("Install Edel OS"), "");
     let files = Files::here();
     let language_now = files
         .person_file()
@@ -356,38 +388,60 @@ pub fn page() -> gtk::Widget {
     let keyboard_now = install::suggested_keyboard(&language_now);
     let mut lines = Vec::new();
 
-    // The welcome under the intro; the install changes it as it goes.
+    // The welcome sits on the page itself; the install changes it as it goes.
     let hero = widgets::Hero::new(&content);
+    hero.set_bare();
     welcome(&hero);
 
-    // A settings file on another disk (M6.6b), shown once one is found.
+    // A settings file on another disk (M6.6b), shown once one is found, 20 px
+    // below the welcome.
     let file_card = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .visible(false)
+        .margin_top(20)
         .build();
-    widgets::heading(&file_card, tr("A settings file"));
     let file_group = widgets::group(&file_card);
+    // One row, as a notice reads: what was found on the left, the choice
+    // on the right.
+    let file_row = gtk::Box::builder()
+        .spacing(12)
+        .css_classes(["edel-row"])
+        .build();
+    let file_icon = icon::image("copy", 20);
+    file_icon.set_valign(gtk::Align::Center);
+    file_row.append(&file_icon);
+    let file_words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    file_words.append(
+        &gtk::Label::builder()
+            .label(tr("Found a settings file"))
+            .xalign(0.0)
+            .wrap(true)
+            .build(),
+    );
     let file_line = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
-        .css_classes(["edel-row"])
+        .css_classes(["edel-row-subtitle"])
         .build();
-    file_group.append(&file_line);
-    let file_buttons = gtk::Box::builder()
-        .spacing(8)
-        .css_classes(["edel-row"])
-        .build();
-    file_buttons.append(&gtk::Box::builder().hexpand(true).build());
+    file_words.append(&file_line);
+    file_row.append(&file_words);
     let stop_file = widgets::action(tr("Answer every question"), false);
     let use_file = widgets::action(tr("Use it"), true);
-    file_buttons.append(&stop_file);
-    file_buttons.append(&use_file);
-    file_group.append(&file_buttons);
+    for button in [&stop_file, &use_file] {
+        button.set_valign(gtk::Align::Center);
+        file_row.append(button);
+    }
+    file_group.append(&file_row);
     content.append(&file_card);
 
     // The languages and keyboard layouts are the library's lists, so every
     // part shows the same names.
-    widgets::heading(&content, tr("Language and keyboard"));
+    widgets::step_heading(&content, 1, tr("Language and keyboard"));
     let choices = widgets::group(&content);
     let mut codes: Vec<String> = edel::languages::LANGUAGES
         .iter()
@@ -405,6 +459,7 @@ pub fn page() -> gtk::Widget {
     let language_at = codes.iter().position(|c| *c == language_now).unwrap_or(0);
     let language = widgets::Choice::searchable(names);
     language.set_selected(language_at);
+    language.set_width(CONTROL_WIDTH);
     let row = widgets::row(&choices, tr("Language"), &language.widget());
     row.reset.set_visible(false);
     row.copy.set_visible(false);
@@ -454,12 +509,13 @@ pub fn page() -> gtk::Widget {
     let keyboard_values: Vec<String> = layouts.into_iter().map(|(name, _)| name).collect();
     let keyboard = widgets::Choice::searchable(keyboard_names);
     keyboard.set_selected(keyboard_at);
+    keyboard.set_width(CONTROL_WIDTH);
     let row = widgets::row(&choices, tr("Keyboard"), &keyboard.widget());
     row.reset.set_visible(false);
     row.copy.set_visible(false);
     lines.push((Field::Keyboard, row.subtitle));
 
-    widgets::heading(&content, tr("Your account"));
+    widgets::step_heading(&content, 2, tr("Your account"));
     let you = widgets::group(&content);
     let user = entry("");
     let password = password_entry();
@@ -467,7 +523,7 @@ pub fn page() -> gtk::Widget {
     for (field, title, control) in [
         (
             Field::User,
-            tr("Your login name"),
+            tr("Your username"),
             user.clone().upcast::<gtk::Widget>(),
         ),
         (
@@ -487,7 +543,7 @@ pub fn page() -> gtk::Widget {
         lines.push((field, row.subtitle));
     }
 
-    widgets::heading(&content, tr("Where to install"));
+    widgets::step_heading(&content, 3, tr("Where to install"));
     let disk_group = widgets::group(&content);
     let disks = install::disk_choices(Path::new("/sys"), running().as_deref());
     let disk = if disks.is_empty() {
@@ -498,6 +554,7 @@ pub fn page() -> gtk::Widget {
         None
     } else {
         let choice = widgets::Choice::new(disks.iter().map(|d| d.title.clone()).collect());
+        choice.set_width(CONTROL_WIDTH);
         let row = widgets::row(&disk_group, tr("Disk"), &choice.widget());
         row.reset.set_visible(false);
         row.copy.set_visible(false);
@@ -517,6 +574,7 @@ pub fn page() -> gtk::Widget {
     lines.push((Field::Hostname, row.subtitle));
     let presets: Vec<&'static str> = edel::settings::PRESETS.to_vec();
     let preset = widgets::Choice::new(presets.iter().map(|p| edel::presets::title(p)).collect());
+    preset.set_width(CONTROL_WIDTH);
     let row = widgets::row(&more_group, tr("Layout"), &preset.widget());
     row.reset.set_visible(false);
     row.copy.set_visible(false);
@@ -525,32 +583,54 @@ pub fn page() -> gtk::Widget {
     ));
     widgets::disclosure(&content, tr("More options"), &more);
 
-    widgets::heading(&content, tr("Install"));
+    widgets::step_heading(&content, 4, tr("Review and install"));
     let install_group = widgets::group(&content);
-    widgets::note_row(
-        &install_group,
-        tr(
-            "Show the plan to see what is erased and what is written. Erase and install asks you to press it twice.",
-        ),
-    );
-    let plan = widgets::output_row(&install_group);
-    // The row spans the card, so its line above does; the buttons sit at
-    // its end.
-    let buttons = gtk::Box::builder()
-        .spacing(8)
+    // The answers as they stand, read before anything is erased; each change
+    // writes its value again (`Ui::summarize`).
+    let review = gtk::Grid::builder()
+        .column_spacing(16)
+        .row_spacing(6)
         .css_classes(["edel-row"])
         .build();
-    buttons.append(&gtk::Box::builder().hexpand(true).build());
-    let show_plan = widgets::action(tr("Show the plan"), false);
-    let erase = widgets::action(tr("Erase and install"), true);
+    let review_disk = review_row(&review, 0, tr("Install on"));
+    let review_user = review_row(&review, 1, tr("Username"));
+    let review_language = review_row(&review, 2, tr("Language"));
+    let review_keyboard = review_row(&review, 3, tr("Keyboard"));
+    install_group.append(&review);
+    let plan = widgets::output_row(&install_group);
+    // The buttons sit centred under the plan, then a line says what the
+    // install asks.
+    // The row spans the card, so its line above does; the buttons sit in
+    // its middle.
+    let button_row = gtk::Box::builder().css_classes(["edel-row"]).build();
+    let buttons = gtk::Box::builder()
+        .spacing(10)
+        .hexpand(true)
+        .halign(gtk::Align::Center)
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    button_row.append(&buttons);
+    let show_plan = widgets::big_button(tr("Show the plan"), false);
+    let erase = widgets::big_button(tr("Erase and install"), true);
     erase.add_css_class("destructive-action");
     erase.set_sensitive(false);
-    let restart = widgets::action(tr("Restart now"), true);
+    let restart = widgets::big_button(tr("Restart now"), true);
     restart.set_visible(false);
     buttons.append(&show_plan);
     buttons.append(&erase);
     buttons.append(&restart);
-    install_group.append(&buttons);
+    install_group.append(&button_row);
+    content.append(
+        &gtk::Label::builder()
+            .label(tr("Erase and install asks you to press it twice."))
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .margin_top(10)
+            .css_classes(["edel-row-subtitle"])
+            .build(),
+    );
 
     let preset_widget = preset.widget();
     let ui = Rc::new(Ui {
@@ -578,6 +658,10 @@ pub fn page() -> gtk::Widget {
         disk,
         lines,
         problems: RefCell::new(Vec::new()),
+        review_disk,
+        review_user,
+        review_language,
+        review_keyboard,
         list,
         listed: RefCell::new(None),
         plan,
@@ -593,6 +677,7 @@ pub fn page() -> gtk::Widget {
     ui.connect();
     // Each row's line starts with its own words.
     ui.show_problems(&[]);
+    ui.summarize();
     ui.read_list();
     ui.find_file();
     // The page holds its state while it lives; the signals hold it weakly.
@@ -804,7 +889,7 @@ impl Ui {
     fn default_line(&self, field: Field) -> &'static str {
         match field {
             Field::Keyboard if self.keyboard_value().contains(',') => tr(
-                "English (US) is added, to type your login name and password; Super+Space switches",
+                "English (US) is added, to type your username and password; Super+Space switches",
             ),
             Field::User => tr("Lowercase, such as ali. Your home folder takes this name."),
             Field::Password => tr("You type it to log in and to change the system."),
@@ -826,12 +911,45 @@ impl Ui {
             Some(words) => {
                 line.set_label(&words);
                 line.add_css_class("edel-error");
+                line.remove_css_class("edel-warn");
             }
             None => {
                 line.set_label(self.default_line(field));
                 line.remove_css_class("edel-error");
+                // The disk's line warns: what it holds is erased.
+                if field == Field::Disk {
+                    line.add_css_class("edel-warn");
+                } else {
+                    line.remove_css_class("edel-warn");
+                }
             }
         }
+    }
+
+    /// The review's values, as the answers stand now.
+    fn summarize(&self) {
+        let disk = match self
+            .disk
+            .as_ref()
+            .and_then(|d| self.disks.get(d.selected()))
+        {
+            Some(disk) => disk.title.clone(),
+            None => tr("No disk chosen").to_string(),
+        };
+        let user = if self.skipped().contains(&"user") {
+            tr("From the settings file").to_string()
+        } else {
+            let typed = self.user.text().trim().to_string();
+            if typed.is_empty() {
+                tr("Not given yet").to_string()
+            } else {
+                typed
+            }
+        };
+        self.review_disk.set_label(&disk);
+        self.review_user.set_label(&user);
+        self.review_language.set_label(&self.language.chosen_text());
+        self.review_keyboard.set_label(&self.keyboard.chosen_text());
     }
 
     /// The keyboard's line says what a second layout is for, as the
@@ -913,9 +1031,9 @@ impl Ui {
                 Ok(read) => {
                     let answered = install::answered(&read.file);
                     ui.file_line.set_label(&trf(
-                        "{place}. It answers: {what}. Use it, and only the rest is asked.",
+                        "On {device}, answering {what}. Use it, and only the rest is asked.",
                         &[
-                            ("place", &capitalized(&place)),
+                            ("device", device_of(&place)),
                             ("what", &answered_words(&answered)),
                         ],
                     ));
@@ -1033,6 +1151,7 @@ impl Ui {
             self.stage.set(Stage::Welcome);
             welcome(&self.hero);
         }
+        self.summarize();
     }
 
     /// The install did not finish: the hero says so, and the plan's message
@@ -1273,6 +1392,12 @@ mod tests {
             skip: Vec::new(),
             password_needed: true,
         }
+    }
+
+    #[test]
+    fn the_disk_a_file_is_on_reads_from_the_found_line() {
+        assert_eq!(device_of("found a file on /dev/sdb1"), "/dev/sdb1");
+        assert_eq!(device_of("anderswo"), "anderswo");
     }
 
     #[test]

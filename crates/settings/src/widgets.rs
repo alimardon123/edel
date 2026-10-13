@@ -225,6 +225,35 @@ pub fn heading(content: &gtk::Box, title: &str) -> gtk::Box {
     heading
 }
 
+/// A step's heading: its number in a small accent disc, then its title,
+/// for pages a person goes through in order (the installer).
+pub fn step_heading(content: &gtk::Box, number: u32, title: &str) -> gtk::Box {
+    let heading = gtk::Box::builder()
+        .spacing(10)
+        .margin_top(30)
+        .margin_bottom(10)
+        .build();
+    let disc = gtk::Label::builder()
+        .label(number.to_string())
+        .width_request(22)
+        .height_request(22)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .xalign(0.5)
+        .css_classes(["edel-step-number"])
+        .build();
+    let label = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .hexpand(true)
+        .css_classes(["edel-section"])
+        .build();
+    heading.append(&disc);
+    heading.append(&label);
+    content.append(&heading);
+    heading
+}
+
 pub fn source() -> Source {
     let label = gtk::Label::builder()
         .xalign(1.0)
@@ -560,6 +589,12 @@ impl Hero {
             sub,
             buttons,
         }
+    }
+
+    /// Drops the card's round background, border and padding: the hero sits
+    /// on the page itself, as the installer's does.
+    pub fn set_bare(&self) {
+        self.card.add_css_class("edel-hero-bare");
     }
 
     /// Adds a button under the line, after the others.
@@ -1082,6 +1117,20 @@ impl Choice {
 
     pub fn widget(&self) -> gtk::Widget {
         self.button.clone().upcast()
+    }
+
+    /// The words of the value chosen now.
+    pub fn chosen_text(&self) -> String {
+        self.label.label().to_string()
+    }
+
+    /// Gives the choice a width of `width` logical pixels, its value cut
+    /// short with an ellipsis at the end when it is longer.
+    pub fn set_width(&self, width: i32) {
+        self.button.set_width_request(width);
+        self.label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        self.label.set_hexpand(true);
+        self.label.set_xalign(0.0);
     }
 
     pub fn selected(&self) -> usize {

@@ -47,7 +47,7 @@ msgstr ""
 msgid "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
 msgstr ""
 
-msgid "Login name"
+msgid "Username"
 msgstr ""
 
 msgid "Password, or press Return to give an ssh key instead: "
@@ -119,7 +119,7 @@ msgstr ""
 msgid "Keyboard"
 msgstr ""
 
-msgid "Your login name"
+msgid "Your username"
 msgstr ""
 
 msgid "Your password"
@@ -140,7 +140,7 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
-msgid "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter"
+msgid "{name:?} is not a username; use lowercase letters, digits, - and _, starting with a letter"
 msgstr ""
 
 msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"

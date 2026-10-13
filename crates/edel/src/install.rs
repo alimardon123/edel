@@ -248,7 +248,7 @@ pub const QUESTIONS: &[Question] = &[
     },
     Question {
         key: "user",
-        title: n_("Your login name"),
+        title: n_("Your username"),
         more: false,
     },
     Question {
@@ -327,7 +327,7 @@ impl Answers {
                 bail!(
                     "{}",
                     trf(
-                        "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter",
+                        "{name:?} is not a username; use lowercase letters, digits, - and _, starting with a letter",
                         &[("name", user)]
                     )
                 );

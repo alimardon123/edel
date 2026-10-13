@@ -202,7 +202,7 @@ fn fill(body: &gtk::Box, people: &[Person]) {
         .orientation(gtk::Orientation::Vertical)
         .build();
     let details = widgets::group(&inner);
-    widgets::value_row(&details, tr("Login name"), &you.name);
+    widgets::value_row(&details, tr("Username"), &you.name);
     widgets::value_row(&details, tr("User ID"), &you.uid.to_string());
     widgets::value_row(&details, tr("Home folder"), &you.home);
     widgets::value_row(&details, tr("Login shell"), &you.shell);
@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(
             line(&person("ali", "Ali Karimov", true, 1000)),
             "ali · Administrator",
-            "the login name, when the full name hides it"
+            "the username, when the full name hides it"
         );
     }
 

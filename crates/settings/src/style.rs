@@ -217,6 +217,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-intro {{ color: {secondary}; margin-top: 4px; margin-bottom: 8px; }}
 .edel-error {{ color: {error}; margin-top: 8px; }}
 .edel-section {{ font-weight: 600; font-size: {small}px; color: {secondary}; }}
+.edel-step-number {{ background-color: {accent}; color: {accent_text}; border-radius: 11px; font-size: {small}px; font-weight: 700; min-width: 22px; min-height: 22px; }}
 .edel-source {{ color: {muted}; font-size: {small}px; }}
 .edel-link {{ color: {accent}; font-size: {small}px; padding: 0 4px; min-height: 0; min-width: 0;
   background: none; box-shadow: none; border: none; }}
@@ -249,6 +250,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-row + .edel-row {{ border-top: 1px solid {line}; }}
 .edel-row-subtitle {{ color: {muted}; font-size: {tiny}px; }}
 .edel-row-subtitle.edel-error {{ color: {error}; margin-top: 0; }}
+.edel-row-subtitle.edel-warn {{ color: {amber}; }}
 .edel-key {{ font-size: {key}px; font-weight: 500; color: {secondary}; padding: 0 5px; min-height: 15px; min-width: 9px;
   border-radius: {rs}px; background-color: {fill}; border: 1px solid {line}; border-bottom-width: 2px; }}
 .edel-value {{ color: {secondary}; }}
@@ -309,6 +311,7 @@ popover.edel-choice-list > contents {{ padding: 4px; border-radius: {rc}px; back
 .edel-spin > button {{ background: none; box-shadow: none; border: none; color: {text}; }}
 .edel-arrangement {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
 .edel-hero {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; padding: 24px 26px 26px; }}
+.edel-hero.edel-hero-bare {{ background: none; border: none; padding: 8px 0 4px; }}
 .edel-hero-title {{ font-size: {hero}px; font-weight: 650; letter-spacing: -0.4px; }}
 .edel-hero-sub {{ color: {secondary}; }}
 .edel-buttons {{ background: none; }}

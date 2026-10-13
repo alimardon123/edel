@@ -413,9 +413,6 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
-msgid "Put Edel OS on this computer: a few questions, then a plan to check. Nothing changes until you press Erase and install, and every answer can be changed later in Settings."
-msgstr ""
-
 msgid "no disk to install on"
 msgstr ""
 
@@ -425,13 +422,16 @@ msgstr ""
 msgid "Welcome to Edel OS"
 msgstr ""
 
-msgid "Fast, calm and yours. It takes about five minutes."
+msgid "A few questions, then a plan to check. Nothing changes on your computer until you press Erase and install."
 msgstr ""
 
 msgid "Install Edel OS"
 msgstr ""
 
 msgid "A settings file"
+msgstr ""
+
+msgid "Found a settings file"
 msgstr ""
 
 msgid "Answer every question"
@@ -464,10 +464,10 @@ msgstr ""
 msgid "More options"
 msgstr ""
 
-msgid "Install"
+msgid "Review and install"
 msgstr ""
 
-msgid "Show the plan to see what is erased and what is written. Erase and install asks you to press it twice."
+msgid "Install on"
 msgstr ""
 
 msgid "Show the plan"
@@ -479,7 +479,10 @@ msgstr ""
 msgid "Restart now"
 msgstr ""
 
-msgid "English (US) is added, to type your login name and password; Super+Space switches"
+msgid "Erase and install asks you to press it twice."
+msgstr ""
+
+msgid "English (US) is added, to type your username and password; Super+Space switches"
 msgstr ""
 
 msgid "Lowercase, such as ali. Your home folder takes this name."
@@ -494,13 +497,25 @@ msgstr ""
 msgid "Everything on it is erased. What it holds now is listed below."
 msgstr ""
 
-msgid "{place}. It answers: {what}. Use it, and only the rest is asked."
+msgid "No disk chosen"
+msgstr ""
+
+msgid "From the settings file"
+msgstr ""
+
+msgid "Not given yet"
+msgstr ""
+
+msgid "On {device}, answering {what}. Use it, and only the rest is asked."
 msgstr ""
 
 msgid "{place}, but it cannot be used: {why}"
 msgstr ""
 
 msgid "{place}. In use: it answers {what}, so only the rest is asked."
+msgstr ""
+
+msgid "{place}. It answers: {what}. Use it, and only the rest is asked."
 msgstr ""
 
 msgid "The install did not finish"
@@ -1746,6 +1761,9 @@ msgid "Its icon's name: {app}"
 msgstr ""
 
 msgid "Installing changes the system, so Edel OS asks for your password."
+msgstr ""
+
+msgid "Install"
 msgstr ""
 
 msgid "Go back"
