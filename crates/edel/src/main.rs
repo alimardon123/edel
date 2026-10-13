@@ -23,6 +23,7 @@ mod report;
 mod run;
 mod settings_source;
 mod shell;
+mod speaker_boot;
 mod system_power;
 mod update;
 
@@ -380,6 +381,9 @@ enum BootCommands {
     /// On a USB stick, or with nobody set up yet, log the person called
     /// live in to the desktop by itself
     Live,
+    /// Give this laptop's speakers their tuning profile, when one matches
+    /// its model
+    Speakers,
 }
 
 #[derive(Subcommand)]
@@ -667,6 +671,7 @@ fn run(command: Commands) -> Result<()> {
             BootCommands::Guard => guard::guard(),
             BootCommands::MarkGood => update::mark_good(),
             BootCommands::Live => live::live(),
+            BootCommands::Speakers => speaker_boot::speakers(),
         },
         Commands::Release { command } => match command {
             ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),

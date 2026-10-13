@@ -1,0 +1,10 @@
+# Speaker tuning profiles by model (roadmap M6.15, ADR-012 section 1):
+# each line gives a laptop, as its firmware names it (DMI's sys_vendor and
+# product_name, which `edel report` and /sys/class/dmi/id show), the
+# profile beside this file that tunes its speakers, NAME.conf, a PipeWire
+# filter-chain. edel boot speakers links the matching one at boot. Adding
+# a model is one profile and one line here, one pull request: tuning made
+# on your own laptop helps everyone with the same one. No model is listed
+# yet; the reference laptop's profile comes once it is measured on the
+# laptop itself.
+format = 1

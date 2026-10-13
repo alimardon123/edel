@@ -16,6 +16,7 @@ pub mod apps;
 pub mod backlight;
 pub mod bluetooth;
 pub mod features;
+pub mod firmware;
 pub mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
@@ -37,6 +38,7 @@ pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
 pub mod sound;
+pub mod speakers;
 pub mod theme_file;
 pub mod themes;
 pub mod tokens;

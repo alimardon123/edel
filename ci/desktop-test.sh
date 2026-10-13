@@ -1315,6 +1315,15 @@ case_sound() {
 		[ "$i" -lt 20 ] || fail "wpctl status lists no sink in use after 60 s; the sound card did not come up: $(value sound_status)"
 		sleep 3
 	done
+	# The speaker profile (M6.15): the VM's firmware names the model the
+	# test's table matches (-smbios above), so edel boot speakers linked
+	# ci-test.conf at boot and the session's PipeWire runs its filter.
+	tr -d '\r' <"$log" | grep -qa 'edel boot speakers: Edel Speaker Test uses the speaker profile ci-test' ||
+		fail "edel boot speakers did not give the VM's model its speaker profile: $(tr -d '\r' <"$log" | grep -a 'edel boot speakers' | head -n 3)"
+	case "$(value sound_status)" in
+	*'CI speaker profile'* | *edel-speakers*) ;;
+	*) fail "the speaker profile's filter is not in the sound system: $(value sound_status)" ;;
+	esac
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'sound window'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Sound page: $(value windows)"
@@ -1342,7 +1351,7 @@ case_sound() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
+	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, edel boot speakers gave the VM's model its speaker profile and its filter runs in the sound system, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
 }
 
 case_network() {
@@ -6920,6 +6929,7 @@ keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300
 	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
 	-audiodev none,id=sound0 -device intel-hda -device hda-duplex,audiodev=sound0 \
+	-smbios 'type=1,manufacturer=Edel,product=Speaker Test' \
 	-qmp unix:"$QMP",server=on,wait=off \
 	-serial unix:"$commands",server=on,wait=off \
 	-drive if=none,id=disk0,format=raw,file="$grown" \

@@ -17,7 +17,8 @@ use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
 
-use edel::i18n::{n_, tr};
+use edel::firmware;
+use edel::i18n::{n_, tr, trf};
 use edel::sound::{self, Device, Devices, Kind};
 
 use crate::widgets;
@@ -67,6 +68,11 @@ struct Ui {
     sides: [Side; 2],
     /// Said when no sound device is listed at all.
     nothing: gtk::Box,
+    /// Names the sound firmware the kernel asked for and lacks, under
+    /// `nothing`, when the kernel log says so (M6.15).
+    firmware: gtk::Label,
+    /// Whether the kernel log was read for `firmware`, which is done once.
+    firmware_read: Cell<bool>,
     problem: gtk::Label,
 }
 
@@ -101,11 +107,14 @@ pub fn page() -> gtk::Widget {
     widgets::heading(&nothing, tr("Devices"));
     let group = widgets::group(&nothing);
     widgets::text_row(&group, sound::no_devices());
+    let firmware = widgets::output_row(&group);
     content.append(&nothing);
     let ui = Rc::new(Ui {
         page: page.clone(),
         sides: [output, input],
         nothing,
+        firmware,
+        firmware_read: Cell::new(false),
         problem,
     });
     for side in &ui.sides {
@@ -356,12 +365,39 @@ fn show(ui: &Rc<Ui>, devices: &Devices) {
         }
         side.quiet.set(false);
     }
-    ui.nothing
-        .set_visible(devices.sinks.is_empty() && devices.sources.is_empty());
+    let none = devices.sinks.is_empty() && devices.sources.is_empty();
+    ui.nothing.set_visible(none);
+    if none && !ui.firmware_read.replace(true) {
+        read_firmware(ui);
+    }
     // Opened by name, the page gives the keyboard to the volume slider.
     if ui.sides[0].shown.is_visible() {
         widgets::take_asked(&ui.page, &ui.sides[0].scale);
     }
+}
+
+/// Reads the kernel log for the sound firmware the kernel asked for and could
+/// not find, and says which under the no-device message (M6.15). Says
+/// nothing when the log cannot be read or names no sound firmware.
+fn read_firmware(ui: &Rc<Ui>) {
+    let ui = ui.clone();
+    glib::spawn_future_local(async move {
+        let Ok(Some(text)) = gio::spawn_blocking(firmware::read_kernel_log).await else {
+            return;
+        };
+        let missing = firmware::missing_firmware(&text);
+        let sound = firmware::for_sound(&missing);
+        if sound.is_empty() {
+            return;
+        }
+        let files: Vec<&str> = sound.iter().map(|m| m.file.as_str()).collect();
+        let files = files.join(", ");
+        let words = trf(
+            "This computer's sound needs firmware it does not have: {files}. Run edel report and send it with your issue, so the firmware can be added.",
+            &[("files", &files)],
+        );
+        widgets::say(&ui.firmware, &words, false);
+    });
 }
 
 impl Side {
