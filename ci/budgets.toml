@@ -101,9 +101,11 @@ shell_ui_rss_mib = 11.2
 # case: the test app org.edel.TestA started as ci with flatpak run, from
 # the command to its window mapped, first with the page cache dropped
 # (cold) and then again (warm), in ms; its own process's memory (PSS) in
-# MiB; and the settings portal's second ReadAll, in ms. First values are
-# generous; the PR that adds them sets them from CI's first measurement.
-flatpak_cold_ms = 5000
-flatpak_warm_ms = 2000
-flatpak_app_pss_mib = 30
-portal_readall_ms = 200
+# MiB; and the settings portal's second ReadAll, in ms. CI measured on
+# 2026-10-13 (PR #324): cold 50 ms, warm 30 ms, 3.0 MiB, ReadAll 10 ms, in
+# 10 ms steps; the start budgets leave room for the runner's noise, and
+# ReadAll's is the roadmap's 50 ms.
+flatpak_cold_ms = 500
+flatpak_warm_ms = 300
+flatpak_app_pss_mib = 6
+portal_readall_ms = 50

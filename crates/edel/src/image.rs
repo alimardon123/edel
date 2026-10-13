@@ -528,6 +528,10 @@ impl Build<'_> {
         }
         let dir = root.join(edel::places::FONT_CACHE_DIR.trim_start_matches('/'));
         fs::create_dir_all(&dir)?;
+        // fontconfig keeps each folder's time to the nanosecond and drops a
+        // cache whose folder differs, and `mkfs.ext4 -d` keeps whole seconds
+        // only, so the folders are rounded before the cache is made.
+        whole_seconds(&root.join("usr/share/fonts"))?;
         let mut chroot = Command::new("chroot");
         chroot
             .arg(root)
@@ -1229,6 +1233,25 @@ fn mib(bytes: u64) -> f64 {
     bytes as f64 / 1_048_576.0
 }
 
+/// Sets the modification time of `dir` and every folder below it to its
+/// whole second, as the slot's file system keeps it (M6.2a).
+fn whole_seconds(dir: &Path) -> Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.is_dir() && !path.is_symlink() {
+            whole_seconds(&path)?;
+        }
+    }
+    let modified = fs::metadata(dir)?.modified()?;
+    let secs = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    fs::File::open(dir)
+        .and_then(|f| f.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs)))
+        .with_context(|| format!("rounding the time of {}", dir.display()))
+}
+
 /// Whether `dir` holds a file anywhere below it; false when it is not
 /// there (M6.2a).
 fn has_file(dir: &Path) -> Result<bool> {
@@ -1487,6 +1510,24 @@ mod tests {
         let bytes = tree_bytes(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
         assert!((8192..16384).contains(&bytes), "{bytes}");
+    }
+
+    #[test]
+    fn rounds_folder_times_to_whole_seconds() {
+        let dir = std::env::temp_dir().join(format!("edel-whole-seconds-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("noto")).unwrap();
+        fs::write(dir.join("noto/a.ttf"), b"x").unwrap();
+        whole_seconds(&dir).unwrap();
+        for d in [dir.clone(), dir.join("noto")] {
+            let t = fs::metadata(&d).unwrap().modified().unwrap();
+            let nanos = t
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos();
+            assert_eq!(nanos, 0, "{}", d.display());
+        }
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
