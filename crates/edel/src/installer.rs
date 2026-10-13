@@ -8,6 +8,7 @@
 
 use std::fs::{self, File};
 use std::io::{self, BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
@@ -15,11 +16,16 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use edel::i18n::{n_, tr, trf};
-use edel::install::{Disk, Partition, Plan, SLOT_MIB, parse_blkid};
+use edel::install::{
+    Answers, Disk, Partition, Plan, SLOT_MIB, asked, is_candidate, list_entry, parse_blkid,
+    suggested_hostname, suggested_keyboard,
+};
+use edel::password::Password;
 use edel::settings;
 
 use crate::boot::{self, DATA_LABEL, ESP_LABEL, GRUB_PREFIX, Layout};
 use crate::loader::SLOT_DIR;
+use crate::privilege;
 use crate::update::{self, Lock, run};
 
 /// The external tools a real install runs, and the package each comes
@@ -142,8 +148,285 @@ fn describe(name: &str) -> Result<Disk> {
     })
 }
 
-/// `edel install DISK --settings FILE`.
-pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Result<()> {
+/// Whether the disk named `name` says it is removable, as a USB stick does.
+fn removable(name: &str) -> bool {
+    fs::read_to_string(Path::new("/sys/block").join(name).join("removable"))
+        .is_ok_and(|v| v.trim() == "1")
+}
+
+/// The disks the installer could offer, as `/sys/block` lists them, each
+/// described as the plan describes it.
+fn candidates() -> Result<Vec<Disk>> {
+    let mut names: Vec<String> = fs::read_dir("/sys/block")
+        .with_context(|| could_not_read(Path::new("/sys/block")))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| is_candidate(n))
+        .collect();
+    names.sort();
+    names.iter().map(|n| describe(n)).collect()
+}
+
+/// `edel install --list` (M6.6a): every disk the installer could use, the
+/// one Edel OS runs from marked and never offered.
+pub fn list() -> Result<()> {
+    let running = update::Disk::find().ok().map(|d| d.name);
+    let disks = candidates()?;
+    if disks.is_empty() {
+        println!("{}", tr("no disk found to install on"));
+    }
+    for disk in &disks {
+        let here = running.as_deref() == Some(disk.name.as_str());
+        println!("{}\n", list_entry(disk, removable(&disk.name), here));
+    }
+    Ok(())
+}
+
+/// One answer typed on the terminal after `prompt`; an empty line takes
+/// `suggestion` when there is one.
+fn ask_line(prompt: &str, suggestion: Option<&str>) -> Result<String> {
+    match suggestion {
+        Some(s) => print!("{prompt} [{s}]: "),
+        None => print!("{prompt}: "),
+    }
+    io::stdout().flush()?;
+    let mut line = String::new();
+    if io::stdin().lock().read_line(&mut line)? == 0 {
+        bail!(
+            "{}",
+            tr("the questions were not answered; nothing was changed")
+        );
+    }
+    let line = line.trim();
+    Ok(match (line.is_empty(), suggestion) {
+        (true, Some(s)) => s.to_string(),
+        _ => line.to_string(),
+    })
+}
+
+/// Asks until `valid` takes the answer, saying why it did not.
+fn ask_until(
+    prompt: &str,
+    suggestion: Option<&str>,
+    valid: impl Fn(&str) -> std::result::Result<String, String>,
+) -> Result<String> {
+    loop {
+        match valid(&ask_line(prompt, suggestion)?) {
+            Ok(answer) => return Ok(answer),
+            Err(why) => println!("  {why}"),
+        }
+    }
+}
+
+/// What kind of computer this is, for the suggested computer name: a
+/// laptop has a battery, a virtual machine says so in its firmware.
+fn form_factor() -> &'static str {
+    let battery = fs::read_dir("/sys/class/power_supply").is_ok_and(|entries| {
+        entries
+            .filter_map(|e| e.ok())
+            .any(|e| fs::read_to_string(e.path().join("type")).is_ok_and(|t| t.trim() == "Battery"))
+    });
+    let vendor = fs::read_to_string("/sys/class/dmi/id/sys_vendor").unwrap_or_default();
+    if battery {
+        "laptop"
+    } else if ["QEMU", "VMware", "innotek", "Xen", "Microsoft"]
+        .iter()
+        .any(|v| vendor.contains(v))
+    {
+        "vm"
+    } else {
+        "pc"
+    }
+}
+
+/// The password, asked twice with the echo off until both agree and it is
+/// not empty.
+fn ask_password() -> Result<Password> {
+    loop {
+        let first = privilege::read_secret(tr("Your password: "))?;
+        if first.letters() == 0 {
+            println!("  {}", tr("a password cannot be empty"));
+            continue;
+        }
+        let again = privilege::read_secret(tr("The same password again: "))?;
+        if first.text() == again.text() {
+            return Ok(first);
+        }
+        println!("  {}", tr("the two passwords differ; type them again"));
+    }
+}
+
+/// Hashes `password` as `/etc/shadow` keeps it (SHA-512 crypt), with
+/// busybox's `cryptpw` reading it on standard input, so it is never on a
+/// command line.
+fn hash(password: &Password) -> Result<String> {
+    let mut child = Command::new("cryptpw")
+        .args(["-m", "sha512", "-P", "0"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .context(tr(
+            "could not start cryptpw, which hashes the password (busybox)",
+        ))?;
+    child
+        .stdin
+        .take()
+        .context(tr("cryptpw has no input"))?
+        .write_all(password.text().unwrap_or_default().as_bytes())?;
+    let out = child.wait_with_output()?;
+    let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if !out.status.success() || !hash.starts_with("$6$") {
+        bail!(
+            "{}",
+            tr("cryptpw could not hash the password; nothing was changed")
+        );
+    }
+    Ok(hash)
+}
+
+/// The questions on the terminal (M6.6b), in `install::QUESTIONS`' order,
+/// up to the disk, which the caller asks; More options only when asked
+/// for. Returns the answers and the password's hash.
+fn ask_questions() -> Result<(Answers, Option<String>)> {
+    println!(
+        "{}\n",
+        tr(
+            "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
+        )
+    );
+    let mut answers = Answers::default();
+    let mut hashed = None;
+    let questions = asked();
+    let more = ask_line(
+        tr("More options (computer name, layout)? yes or no"),
+        Some("no"),
+    )?
+    .starts_with('y');
+    for q in questions {
+        if q.more && !more {
+            continue;
+        }
+        let title = tr(q.title);
+        match q.key {
+            "region.language" => {
+                answers.language = Some(ask_until(title, Some("en_US.UTF-8"), |v| {
+                    if !v.is_empty()
+                        && v.chars()
+                            .all(|c| c.is_ascii_alphanumeric() || "_.@-".contains(c))
+                    {
+                        Ok(v.to_string())
+                    } else {
+                        Err(tr("a language such as en_US.UTF-8 or de_DE.UTF-8").to_string())
+                    }
+                })?)
+            }
+            "region.keyboard" => {
+                let suggestion = suggested_keyboard(answers.language.as_deref().unwrap_or("C"));
+                let rules = fs::read_to_string(edel::keyboard::RULES).ok();
+                answers.keyboard = Some(ask_until(title, Some(&suggestion), |v| {
+                    edel::keyboard::normalize(v, rules.as_deref())
+                })?)
+            }
+            "user" => {
+                answers.user = Some(ask_until(title, None, |v| {
+                    if settings::is_user_name(v) && v != "root" && v != "live" {
+                        Ok(v.to_string())
+                    } else {
+                        Err(tr("lowercase letters, digits, - and _, starting with a letter, and not root or live").to_string())
+                    }
+                })?)
+            }
+            "password" => hashed = Some(hash(&ask_password()?)?),
+            "network.hostname" => {
+                let suggestion =
+                    suggested_hostname(answers.user.as_deref().unwrap_or("edel"), form_factor());
+                answers.hostname = Some(ask_until(title, Some(&suggestion), |v| {
+                    if settings::is_hostname(v) {
+                        Ok(v.to_string())
+                    } else {
+                        Err(tr("letters, digits and hyphens, up to 63").to_string())
+                    }
+                })?)
+            }
+            "layout.preset" => {
+                let names = settings::PRESETS.join(", ");
+                answers.preset = Some(ask_until(
+                    &format!("{title} ({names})"),
+                    Some("classic"),
+                    |v| {
+                        if settings::PRESETS.contains(&v) {
+                            Ok(v.to_string())
+                        } else {
+                            Err(trf("one of {names}", &[("names", &names)]))
+                        }
+                    },
+                )?)
+            }
+            _ => {}
+        }
+    }
+    Ok((answers, hashed))
+}
+
+/// Asks which disk, after showing the list; the running disk is refused
+/// later, as a disk named on the command line is.
+fn ask_disk() -> Result<String> {
+    list()?;
+    ask_until(tr("Disk to install on, such as sda"), None, |v| {
+        let name = disk_name(v);
+        if is_candidate(name) && Path::new("/sys/block").join(name).exists() {
+            Ok(name.to_string())
+        } else {
+            Err(tr("one of the disks listed above, such as sda").to_string())
+        }
+    })
+}
+
+/// `edel install [DISK] [--settings FILE]`: without a settings file, the
+/// questions are asked on the terminal and their answers become one
+/// (M6.6b); without a disk, the list is shown and the disk asked.
+pub fn install(
+    disk: Option<&str>,
+    system_file: Option<&Path>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
+    let asking = system_file.is_none() || disk.is_none();
+    if asking && !io::stdin().is_terminal() {
+        bail!(
+            "{}",
+            tr(
+                "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
+            )
+        );
+    }
+    let (written, hashed) = match system_file {
+        Some(file) => (file.to_path_buf(), None),
+        None => {
+            let (answers, hashed) = ask_questions()?;
+            let text = answers.settings_text()?;
+            let file = PathBuf::from(edel::places::INSTALL_ANSWERS);
+            fs::create_dir_all(edel::places::RUN_DIR)?;
+            fs::write(&file, text)?;
+            (file, hashed.map(|h| (answers.user.unwrap_or_default(), h)))
+        }
+    };
+    let disk = match disk {
+        Some(d) => d.to_string(),
+        None => ask_disk()?,
+    };
+    install_on(&disk, &written, hashed.as_ref(), dry_run, yes)
+}
+
+/// Installs on `disk` with the settings file `system_file` and, when the
+/// questions asked one, the person's password hash.
+fn install_on(
+    disk: &str,
+    system_file: &Path,
+    password: Option<&(String, String)>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<()> {
     let name = disk_name(disk);
     let running = update::Disk::find()?;
     if name == running.name {
@@ -244,7 +527,7 @@ pub fn install(disk: &str, system_file: &Path, dry_run: bool, yes: bool) -> Resu
         );
     }
     let _lock = Lock::take("install", "edel install")?;
-    write(&plan, &slot, running_mib, system_file)
+    write(&plan, &slot, running_mib, system_file, password)
 }
 
 /// Waits for the kernel's device node of a new partition; after a second
@@ -288,7 +571,13 @@ impl Drop for Mounted {
 /// Writes the disk: `running_mib` MiB of the running slot become the start
 /// of slot A, byte for byte; the rest of the slot stays unused, as a
 /// read-only root needs no room.
-fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Result<()> {
+fn write(
+    plan: &Plan,
+    slot: &Path,
+    running_mib: u64,
+    system_file: &Path,
+    password: Option<&(String, String)>,
+) -> Result<()> {
     let name = &plan.disk.name;
     let disk = Path::new("/dev").join(name);
     let part = |n: u32| Path::new("/dev").join(partition_name(name, n));
@@ -423,6 +712,22 @@ fn write(plan: &Plan, slot: &Path, running_mib: u64, system_file: &Path) -> Resu
         );
         fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
         fs::copy(system_file, target)?;
+        // The person's password, hashed, for the first boot's apply to give
+        // them; root's only (M6.6b).
+        if let Some((user, hash)) = password {
+            let first = data.0.join(
+                Path::new(edel::places::FIRST_PASSWORDS)
+                    .strip_prefix(edel::places::DATA_MOUNT)
+                    .unwrap_or(Path::new(edel::places::FIRST_PASSWORDS)),
+            );
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&first)?;
+            file.write_all(format!("{user}:{hash}\n").as_bytes())?;
+            file.sync_all()?;
+        }
         copy_default_apps(&data.0)?;
     }
     run(&mut Command::new("sync"))?;
