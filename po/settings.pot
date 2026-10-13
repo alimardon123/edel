@@ -1346,6 +1346,9 @@ msgstr ""
 msgid "Level"
 msgstr ""
 
+msgid "This computer's sound needs firmware it does not have: {files}. Run edel report and send it with your issue, so the firmware can be added."
+msgstr ""
+
 msgid "Remove {app}"
 msgstr ""
 
