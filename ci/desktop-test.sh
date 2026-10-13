@@ -6789,7 +6789,18 @@ if [ "$*" = live ]; then
 		dd if="$target" of="$dir/target-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
 	}
-	keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+	# stick_session: the live session's log, read from a copy of the
+	# stick's data partition while the stick runs (the journal replayed
+	# on the copy), as the session writes it there.
+	stick_session() {
+		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
+		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
+	}
+	# Offline (M6.2): the stick reaches nothing beyond the VM's own
+	# network, so the default apps must start from what it carries.
+	vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-qmp unix:"$QMP",server=on,wait=off \
 		-device qemu-xhci,id=xhci \
@@ -6845,6 +6856,29 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
+	# The browser offline (M6.2): Super, "firefox" and Return start the
+	# default apps' Firefox from the stick's own installation with no
+	# network beyond the VM, and its window must map within 180 s, which
+	# the session's log on the stick says; Super+Q closes it.
+	python3 ci/qmp.py key meta_l
+	sleep 2
+	python3 ci/qmp.py type firefox
+	sleep 1
+	python3 ci/qmp.py key ret
+	i=0
+	until stick_session | grep -qa 'edel-compositor: mapped window .*[Ff]irefox'; do
+		i=$((i + 10))
+		if [ "$i" -gt 180 ]; then
+			python3 ci/qmp.py screendump "$dir/firefox-failed.png"
+			stick_session | grep -a 'launched\|mapped window\|firefox\|flatpak' | tail -n 20
+			fail "Firefox from the default apps did not map within 180 s on the offline stick (firefox-failed.png)"
+		fi
+		sleep 10
+	done
+	firefox_seconds=$i
+	python3 ci/qmp.py screendump "$dir/firefox.png"
+	python3 ci/qmp.py key meta_l-q
+	sleep 3
 	# Settings' installer page (M6.6a), by keyboard alone as a person
 	# could: the launcher opens Settings, which on a stick opens on the
 	# page with the login name taking the keys; Return moves on, and on
@@ -6965,7 +6999,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 
