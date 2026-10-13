@@ -1748,11 +1748,18 @@ case_settings_wallpaper() {
 	set -- $pictures
 	python3 ci/qmp.py click "$(($x + $1 + $3 / 2))" "$(($y + $2 + $4 / 2))"
 	sleep 2
+	# The page lays itself out again as its rows fill in, so the card's
+	# place counts only once two readings a second apart agree.
 	card=none
+	before=
 	i=0
-	while [ "$card" = none ]; do
+	while [ "$card" = none ] || [ "$card" != "$before" ]; do
+		[ "$card" = none ] || {
+			before=$card
+			sleep 1
+		}
 		i=$((i + 1))
-		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies: $(value settings_wallpaper_log)"
+		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies, or it kept moving: $(value settings_wallpaper_log)"
 		guest 'settings wallpaper log'
 		text=$(value settings_wallpaper_log)
 		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
@@ -3089,6 +3096,36 @@ case_launcher() {
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
 	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+}
+
+case_default_apps() {
+	# The default apps (M6.2): the image build installed the test app
+	# org.edel.TestA from a repository made with no network into the data
+	# partition's Flatpak installation, which the launcher reads through
+	# its exports. Typed in the launcher, Return starts it in Flatpak's
+	# sandbox, and its window maps; Super+Q closes it.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	opened=$(count 'edel-compositor: mapped window test-a')
+	python3 ci/qmp.py type test
+	python3 ci/qmp.py key ret
+	wait_more 'edel-shell-ui: launched Test A' 0 || fail "the launcher did not list the default app Test A, from the data partition's installation"
+	launched=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Test A' | tail -n 1 | sed 's/.*launched //')
+	case $launched in
+	*flatpak*) ;;
+	*) fail "Test A was started as $launched, not through flatpak run" ;;
+	esac
+	if ! wait_more 'edel-compositor: mapped window test-a' "$opened" 60; then
+		guest 'default app check'
+		wait_for 'DESKTOP-TEST: default_app_run ' 30
+		fail "Test A did not map a window within 60 s of starting; as ci the installation lists $(value default_app_list) and flatpak run said: $(value default_app_run)"
+	fi
+	python3 ci/qmp.py screendump "$dir/default-apps.png"
+	closed=$(count 'edel-compositor: unmapped window test-a')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-a' "$closed" || fail "Super+Q did not close Test A"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed"
 }
 
 case_quick() {
@@ -4575,11 +4612,16 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock parts: 0' || fail "ci's lock parts could not be set"
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
 	compositor_locked=$(count 'edel-compositor: screen locked$')
+	# The places line of this lock, not the last lock's: it comes once the
+	# new lock is laid out, a little after the locked line.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]')
 	python3 ci/qmp.py key meta_l-l
 	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
 		fail "Super+L did not lock the screen with the parts"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up the lock screen with the parts"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]' "$placed" ||
+		fail "shell-ui did not say where the lock's parts lie"
 	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
@@ -6598,7 +6640,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

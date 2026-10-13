@@ -29,6 +29,21 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "installing the default apps {apps}"
+msgstr ""
+
+msgid "updating the default apps"
+msgstr ""
+
+msgid "keeping {app} for {person}, who used it, in their own apps"
+msgstr ""
+
+msgid "taking {app} out of the default apps"
+msgstr ""
+
+msgid "the default apps were not all brought up to date ({what}); the system's update is not affected, and the next edel update tries again"
+msgstr ""
+
 msgid "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
 msgstr ""
 
@@ -260,6 +275,12 @@ msgstr ""
 msgid "done; restart from {disk} to use it"
 msgstr ""
 
+msgid "copying the default apps"
+msgstr ""
+
+msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
+msgstr ""
+
 msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
 msgstr ""
 
@@ -393,6 +414,9 @@ msgid "no input to the shell"
 msgstr ""
 
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
+msgstr ""
+
+msgid "{service} did not start ({status}); rc-service {service} start says why"
 msgstr ""
 
 msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
@@ -546,6 +570,9 @@ msgid "{why}; exporting only what the machine has"
 msgstr ""
 
 msgid "Files this machine changed in /etc, kept on /data and not described above:"
+msgstr ""
+
+msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
 msgstr ""
 
 msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
@@ -867,6 +894,9 @@ msgid "{disk} is not a removable disk, so the report stays off its EFI system pa
 msgstr ""
 
 msgid "wrote {path} on the EFI system partition"
+msgstr ""
+
+msgid "services.{name}: {name} is not a feature that can be switched on or off; the ones this machine has are {listed}"
 msgstr ""
 
 msgid "Desktop"
@@ -1893,6 +1923,18 @@ msgid "The channel written into the image, such as preview or stable"
 msgstr ""
 
 msgid "An apk cache to share between the images of one build, so they all install from one package index"
+msgstr ""
+
+msgid "Where the default apps come from: a .flatpakrepo file's address or a Flatpak repository's, such as file:///src/out/apps-repo for a test; Flathub when not given"
+msgstr ""
+
+msgid "The address machines update the default apps from, when it is not where the build took them, as for a test image built from a local repository that its VM reaches over HTTP"
+msgstr ""
+
+msgid "A default app to install instead of the definition's list; for test images. Can be given more than once"
+msgstr ""
+
+msgid "A default app this image drops, kept for each person who used it, instead of the definition's; for test images. Can be given more than once"
 msgstr ""
 
 msgid "Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images"

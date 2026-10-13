@@ -217,7 +217,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `power.lock_after_minutes` | a whole number of minutes without input before the screen locks; `0` never | M7.8 |
 | `power.power_button` | `suspend`, `poweroff`, `ask` or `nothing` | M7.8 |
 | `power.on_battery` | `power-saver`, `balanced` or `performance` | M7.8 |
-| `services.*` | `true` or `false`: the switchable feature `NAME` on or off | M6.10 |
+| `services.*` | `true` or `false`: the feature `NAME` on or off, by the feature's name, never a daemon's, and only a feature marked `switchable` (ssh, bluetooth); `edel settings set` and `check` name the ones this machine has. Missing is the image's choice (on, unless the image definition lists it in `off`). `edel settings apply` adds or takes out the feature's services in their runlevels and starts or stops them at once; a service another feature that is on still lists (dbus) stays. At boot only the runlevels change, and the default runlevel then starts what it holds | M6.10 |
 
 ## Updates, Apps and Add-ons
 

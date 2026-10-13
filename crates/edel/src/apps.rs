@@ -27,6 +27,91 @@ pub struct App {
     keywords: Vec<String>,
 }
 
+/// The default apps' Flatpak installation (M6.2), by the id Flatpak's
+/// `--installation=` takes; it lies at `places::DEFAULT_APPS`.
+pub const INSTALLATION: &str = "edel";
+
+/// The remote the default apps come from, in their installation only
+/// (M6.2): Flathub's apps for now, under a name of its own, so the
+/// remote people see stays `flathub` in their own installation.
+pub const APPS_REMOTE: &str = "edel-apps";
+
+/// The default apps of a slot (M6.2), as `edel image build` records them
+/// in `places::DEFAULT_APPS_LIST`: those the data partition's installation
+/// should hold, and those a release dropped, which stay for each person
+/// who used them.
+#[derive(Debug, Default, PartialEq, serde::Deserialize)]
+pub struct DefaultApps {
+    #[serde(default)]
+    pub flatpak: Vec<String>,
+    #[serde(default)]
+    pub flatpak_dropped: Vec<String>,
+}
+
+impl DefaultApps {
+    /// The file's text, as the build writes it.
+    pub fn text(&self) -> String {
+        let list = |ids: &[String]| {
+            ids.iter()
+                .map(|id| format!("{id:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "# The default apps of this slot (roadmap M6.2), written by edel image\n\
+             # build; edel update installs and updates them on the data partition.\n\
+             format = 1\n\
+             flatpak = [{}]\n\
+             flatpak_dropped = [{}]\n",
+            list(&self.flatpak),
+            list(&self.flatpak_dropped)
+        )
+    }
+
+    /// The file read leniently, as a machine reads what another release
+    /// wrote (ADR-008): an id that is not one is left out.
+    pub fn read(text: &str) -> DefaultApps {
+        let mut apps: DefaultApps = toml::from_str(text).unwrap_or_default();
+        apps.flatpak.retain(|id| is_flatpak_id(id));
+        apps.flatpak_dropped.retain(|id| is_flatpak_id(id));
+        apps
+    }
+}
+
+/// What `flatpak remote-add` needs besides the name and the address
+/// (M6.2): `--from` for a `.flatpakrepo` file, which brings its key, and
+/// `--no-gpg-verify` for a local or plain-http test repository, which has
+/// none; an https repository must carry its own key.
+pub fn remote_add_args(from: &str) -> &'static [&'static str] {
+    if from.ends_with(".flatpakrepo") {
+        &["--from"]
+    } else if from.starts_with("file://") || from.starts_with("http://") {
+        &["--no-gpg-verify"]
+    } else {
+        &[]
+    }
+}
+
+/// The file in `places::FLATPAK_INSTALLATIONS` that tells Flatpak where
+/// the default apps' installation lies (M6.2), at `path`: the data
+/// partition's place on a machine, the build's folder while an image is
+/// made.
+pub fn installation_conf(path: &str) -> String {
+    format!(
+        "# The default apps of Edel OS (roadmap M6.2), on the data partition,\n\
+         # written by edel image build.\n\
+         [Installation \"{INSTALLATION}\"]\n\
+         Path={path}\n\
+         DisplayName=Edel OS's default apps\n\
+         StorageType=harddisk\n"
+    )
+}
+
+/// The file's name in `places::FLATPAK_INSTALLATIONS`.
+pub fn installation_file() -> String {
+    format!("{INSTALLATION}.conf")
+}
+
 /// Flathub, the one remote Edel OS installs apps from (M6.1): `edel
 /// settings apply` adds it for each admin person who has none, as that
 /// person, with `flatpak --user remote-add --if-not-exists`.
@@ -80,6 +165,7 @@ pub fn data_dirs() -> Vec<PathBuf> {
     );
     out.extend(data_home.map(|d| d.join("flatpak/exports/share")));
     out.push("/var/lib/flatpak/exports/share".into());
+    out.push(Path::new(crate::places::DEFAULT_APPS).join("exports/share"));
     let mut seen = Vec::new();
     for dir in out {
         if !seen.contains(&dir) {
@@ -209,6 +295,8 @@ const ROLES: &[(&str, &str)] = &[
     ("terminal", "TerminalEmulator"),
     ("music", "Audio"),
     ("settings", "Settings"),
+    // The store (M6.4), Bazaar by default.
+    ("store", "PackageManager"),
 ];
 
 /// The app `pin` names: a role (`browser`) or a desktop file id
@@ -695,6 +783,61 @@ mod tests {
         assert_eq!(
             FLATHUB_REMOTE,
             "https://dl.flathub.org/repo/flathub.flatpakrepo"
+        );
+    }
+
+    #[test]
+    fn flatpak_finds_the_default_apps_where_the_build_put_them() {
+        let conf = installation_conf("/data/edel/apps");
+        assert!(
+            conf.contains("[Installation \"edel\"]\nPath=/data/edel/apps\n"),
+            "{conf}"
+        );
+        assert_eq!(installation_file(), "edel.conf");
+        assert!(
+            data_dirs()
+                .iter()
+                .any(|d| d == &Path::new(crate::places::DEFAULT_APPS).join("exports/share"))
+        );
+    }
+
+    #[test]
+    fn a_remote_is_added_with_its_key_or_as_a_test_repository() {
+        assert_eq!(remote_add_args(FLATHUB_REMOTE), ["--from"]);
+        assert_eq!(
+            remote_add_args("file:///src/out/apps-repo"),
+            ["--no-gpg-verify"]
+        );
+        assert_eq!(
+            remote_add_args("http://10.0.2.2:8002/"),
+            ["--no-gpg-verify"]
+        );
+        assert!(remote_add_args("https://example.org/repo").is_empty());
+    }
+
+    #[test]
+    fn the_default_apps_list_reads_back_and_drops_what_is_no_id() {
+        let apps = DefaultApps {
+            flatpak: vec!["org.edel.TestB".into()],
+            flatpak_dropped: vec!["org.edel.TestA".into()],
+        };
+        assert_eq!(DefaultApps::read(&apps.text()), apps);
+        let odd =
+            DefaultApps::read("format = 1\nflatpak = [\"org.edel.TestB\", \"nope\"]\nnew = 1\n");
+        assert_eq!(odd.flatpak, ["org.edel.TestB"]);
+        assert_eq!(DefaultApps::read("not toml ["), DefaultApps::default());
+    }
+
+    #[test]
+    fn the_store_role_finds_the_package_manager() {
+        let store = parse(
+            "[Desktop Entry]\nType=Application\nName=Bazaar\nExec=bazaar\nCategories=System;PackageManager;\n",
+        )
+        .unwrap();
+        let apps = [store];
+        assert_eq!(
+            pinned(&apps, "store").map(|a| a.name.as_str()),
+            Some("Bazaar")
         );
     }
 }

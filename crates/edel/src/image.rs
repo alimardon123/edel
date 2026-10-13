@@ -47,6 +47,17 @@ pub struct Build<'a> {
     /// An apk cache shared by every image of one run, so they all install
     /// from one package index (M3.1)
     pub apk_cache: Option<PathBuf>,
+    /// Where the default apps come from (M6.2): a `.flatpakrepo` file's
+    /// address or a repository's.
+    pub apps_from: String,
+    /// Where machines update the default apps from, when not `apps_from`.
+    pub apps_url: Option<String>,
+    /// The default apps the data partition gets (M6.2): the definition's,
+    /// or a test's own.
+    pub apps: Vec<String>,
+    /// The default apps a release dropped (M6.2): the definition's, or a
+    /// test's own.
+    pub apps_dropped: Vec<String>,
     /// Whether to write the disk's `.gz` copy releases publish; test
     /// images nobody downloads skip it (the slot's `.gz` is always made)
     pub compress: bool,
@@ -105,6 +116,7 @@ impl Build<'_> {
             self.install_edel(&root)?;
             self.install_keys(&root)?;
             self.install_programs(&root)?;
+            self.install_apps_conf(&root)?;
         }
         self.enable_services(&root)?;
         self.configure(&root)?;
@@ -488,6 +500,102 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// Tells Flatpak where the default apps' installation lies on the
+    /// data partition (M6.2), when the image has default apps.
+    fn install_apps_conf(&self, root: &Path) -> Result<()> {
+        if self.apps.is_empty() && self.apps_dropped.is_empty() {
+            return Ok(());
+        }
+        let list = edel::apps::DefaultApps {
+            flatpak: self.apps.clone(),
+            flatpak_dropped: self.apps_dropped.clone(),
+        };
+        self.runner.step(&format!(
+            "record the default apps in {}",
+            edel::places::DEFAULT_APPS_LIST
+        ));
+        if !self.runner.dry_run {
+            let file = root.join(edel::places::DEFAULT_APPS_LIST.trim_start_matches('/'));
+            fs::create_dir_all(file.parent().unwrap_or(root))?;
+            fs::write(file, list.text())?;
+        }
+        let file =
+            Path::new(edel::places::FLATPAK_INSTALLATIONS).join(edel::apps::installation_file());
+        self.runner.step(&format!(
+            "tell Flatpak of the default apps at {} in {}",
+            edel::places::DEFAULT_APPS,
+            file.display()
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let file = root.join(file.strip_prefix("/")?);
+        fs::create_dir_all(file.parent().unwrap_or(root))?;
+        fs::write(
+            file,
+            edel::apps::installation_conf(edel::places::DEFAULT_APPS),
+        )?;
+        Ok(())
+    }
+
+    /// Installs the default apps (M6.2) into what becomes the data
+    /// partition, `work/data` below the place the partition is mounted
+    /// at, from `apps_from`, with Flatpak's own installer told of a
+    /// build-time installation there; returns that folder, or None when
+    /// the image has no default apps.
+    fn fill_apps(&self, work: &Path) -> Result<Option<PathBuf>> {
+        if self.apps.is_empty() {
+            return Ok(None);
+        }
+        let data = work.join("data");
+        let below = edel::places::DEFAULT_APPS
+            .strip_prefix(edel::places::DATA_MOUNT)
+            .unwrap_or(edel::places::DEFAULT_APPS)
+            .trim_start_matches('/');
+        let apps = data.join(below);
+        let config = work.join("flatpak-config");
+        self.runner.step(&format!(
+            "install the default apps {} from {} into {}",
+            self.apps.join(", "),
+            self.apps_from,
+            apps.display()
+        ));
+        if !self.runner.dry_run {
+            fs::create_dir_all(&apps)?;
+            let installations = config.join("installations.d");
+            fs::create_dir_all(&installations)?;
+            fs::write(
+                installations.join(edel::apps::installation_file()),
+                edel::apps::installation_conf(&apps.to_string_lossy()),
+            )?;
+        }
+        let flatpak = || {
+            let mut command = Command::new("flatpak");
+            command
+                .env("FLATPAK_CONFIG_DIR", &config)
+                .arg(format!("--installation={}", edel::apps::INSTALLATION));
+            command
+        };
+        let mut add = flatpak();
+        add.args(["remote-add", "--if-not-exists"]);
+        add.args(edel::apps::remote_add_args(&self.apps_from));
+        add.arg(edel::apps::APPS_REMOTE).arg(&self.apps_from);
+        self.runner.run(&mut add)?;
+        let mut install = flatpak();
+        install
+            .args(["install", "--noninteractive", "-y", edel::apps::APPS_REMOTE])
+            .args(&self.apps);
+        self.runner.run(&mut install)?;
+        if let Some(url) = &self.apps_url {
+            let mut point = flatpak();
+            point
+                .args(["remote-modify", &format!("--url={url}")])
+                .arg(edel::apps::APPS_REMOTE);
+            self.runner.run(&mut point)?;
+        }
+        Ok(Some(data))
+    }
+
     fn configure(&self, root: &Path) -> Result<()> {
         // OS defaults live in /usr (stateless /etc, ADR-006); /etc only points at them.
         self.runner
@@ -576,10 +684,12 @@ impl Build<'_> {
         let update = stem.with_extension("ext4");
         let disk = stem.with_extension("img");
         let slot_mib = self.slot_mib.unwrap_or(vm.slot_mib);
-        let layout = Layout {
-            slot_mib,
-            data_mib: vm.data_mib,
+        let data_root = self.fill_apps(work)?;
+        let data_mib = match &data_root {
+            Some(dir) if !self.runner.dry_run => data_mib_for(vm.data_mib, tree_bytes(dir)?),
+            _ => vm.data_mib,
         };
+        let layout = Layout { slot_mib, data_mib };
 
         let loader = work.join("esp");
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
@@ -589,7 +699,7 @@ impl Build<'_> {
         // stays what was signed (M1.12): GRUB finds a slot by its
         // partition, so two slots may hold one file system UUID.
         let data = work.join("data.ext4");
-        self.make_data(&data, vm.data_mib)?;
+        self.make_data(&data, data_mib, data_root.as_deref())?;
         let esp = work.join("esp.img");
         self.make_esp(&loader, &esp)?;
 
@@ -673,9 +783,10 @@ impl Build<'_> {
         )
     }
 
-    /// An empty ext4 data partition; it grows to the end of the disk on
-    /// first boot (`edel boot mount-data`).
-    fn make_data(&self, image: &Path, size_mib: u64) -> Result<()> {
+    /// The ext4 data partition, empty or holding `root`'s files (the
+    /// default apps, M6.2); it grows to the end of the disk on first boot
+    /// (`edel boot mount-data`).
+    fn make_data(&self, image: &Path, size_mib: u64, root: Option<&Path>) -> Result<()> {
         self.runner.step(&format!(
             "create a sparse {size_mib} MiB data partition image {}",
             image.display()
@@ -683,11 +794,12 @@ impl Build<'_> {
         if !self.runner.dry_run {
             File::create(image)?.set_len(size_mib * MIB)?;
         }
-        self.runner.run(
-            Command::new("mkfs.ext4")
-                .args(["-q", "-F", "-L", boot::DATA_LABEL])
-                .arg(image),
-        )
+        let mut mkfs = Command::new("mkfs.ext4");
+        mkfs.args(["-q", "-F", "-L", boot::DATA_LABEL]);
+        if let Some(root) = root {
+            mkfs.arg("-d").arg(root);
+        }
+        self.runner.run(mkfs.arg(image))
     }
 
     /// Builds the EFI system partition: GRUB as the removable-disk boot
@@ -799,6 +911,36 @@ impl Build<'_> {
                 .arg(on_esp(&format!("{}/", boot::GRUB_PREFIX))),
         )
     }
+}
+
+/// The data partition's size in MiB (M6.2): the definition's, or more
+/// when its files need it, with a quarter more and 64 MiB for ext4's own
+/// tables and journal; it grows to the disk on first boot anyway.
+fn data_mib_for(defined: u64, bytes: u64) -> u64 {
+    defined.max((bytes + bytes / 4).div_ceil(MIB) + 64)
+}
+
+/// The bytes the files under `dir` hold, each file once however many hard
+/// links it has, as Flatpak's checkouts link the repository's objects.
+fn tree_bytes(dir: &Path) -> Result<u64> {
+    use std::collections::HashSet;
+    use std::os::unix::fs::MetadataExt;
+
+    let mut seen = HashSet::new();
+    let mut total = 0;
+    let mut todo = vec![dir.to_path_buf()];
+    while let Some(dir) = todo.pop() {
+        for entry in fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))? {
+            let path = entry?.path();
+            let meta = fs::symlink_metadata(&path)?;
+            if meta.is_dir() {
+                todo.push(path);
+            } else if seen.insert((meta.dev(), meta.ino())) {
+                total += meta.blocks() * 512;
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// The size in bytes of the ext4 file system whose first 2048 bytes are
@@ -1147,5 +1289,25 @@ mod tests {
             firmware_names(bytes),
             ["iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-cc-a0-77.ucode"]
         );
+    }
+
+    #[test]
+    fn the_data_partition_grows_to_hold_the_default_apps() {
+        assert_eq!(data_mib_for(64, 0), 64);
+        // 800 MiB of apps: a quarter more and 64 MiB of room.
+        assert_eq!(data_mib_for(64, 800 * MIB), 1064);
+        assert_eq!(data_mib_for(2000, 800 * MIB), 2000);
+    }
+
+    #[test]
+    fn hard_links_count_once() {
+        let dir = std::env::temp_dir().join(format!("edel-tree-bytes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("a")).unwrap();
+        fs::write(dir.join("a/one"), vec![1u8; 8192]).unwrap();
+        fs::hard_link(dir.join("a/one"), dir.join("two")).unwrap();
+        let bytes = tree_bytes(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+        assert!((8192..16384).contains(&bytes), "{bytes}");
     }
 }

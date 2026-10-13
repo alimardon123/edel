@@ -21,6 +21,7 @@ use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
 use edel::presets;
+use edel::services;
 use edel::settings::{self, SettingsFile, User};
 use edel::theme_file;
 use edel::themes;
@@ -76,15 +77,15 @@ const WRITE_KEYS: &str = "umask 077 && mkdir -p \"$HOME/.ssh\" && chmod 700 \"$H
 
 /// One line of `/etc/passwd`.
 #[derive(Debug, PartialEq)]
-struct Account {
-    name: String,
+pub(crate) struct Account {
+    pub(crate) name: String,
     uid: u32,
     gid: u32,
-    home: String,
+    pub(crate) home: String,
     shell: String,
 }
 
-fn accounts(passwd: &str) -> Vec<Account> {
+pub(crate) fn accounts(passwd: &str) -> Vec<Account> {
     passwd
         .lines()
         .filter_map(|line| {
@@ -105,7 +106,7 @@ fn accounts(passwd: &str) -> Vec<Account> {
 
 /// A person's account, not a system one: root, or a uid from 1000 below
 /// `nobody`'s.
-fn is_person(account: &Account) -> bool {
+pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
 
@@ -259,6 +260,8 @@ enum Change {
         keys: Vec<String>,
     },
     Developer(bool),
+    /// Add a service to its runlevel, or take it out (M6.10)
+    Service(services::Step),
     /// Give these people the password `edel install` asked for, then
     /// delete `places::FIRST_PASSWORDS` (M6.6b)
     Passwords(Vec<String>),
@@ -290,6 +293,16 @@ impl fmt::Display for Change {
             Change::Keys { name, keys } => {
                 write!(f, "users.{name}.ssh_keys: write {} keys", keys.len())
             }
+            Change::Service(step) if step.on => write!(
+                f,
+                "services: start {} and add it to the {} runlevel",
+                step.service, step.level
+            ),
+            Change::Service(step) => write!(
+                f,
+                "services: stop {} and take it out of the {} runlevel",
+                step.service, step.level
+            ),
             Change::Passwords(names) if names.is_empty() => {
                 write!(
                     f,
@@ -341,6 +354,12 @@ struct Machine {
     developer: bool,
     /// The Flatpak apps each admin person has (M6.1), by login name
     flatpak: BTreeMap<String, BTreeSet<String>>,
+    /// The features this machine has, for `[services]` (M6.10)
+    features: Vec<(String, edel::features::Feature)>,
+    /// The features the image left off (`EDEL_SERVICES_OFF`)
+    services_off: Vec<String>,
+    /// The services in OpenRC's runlevels now
+    runlevels: BTreeSet<services::Entry>,
     /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
     mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
@@ -389,6 +408,11 @@ impl Machine {
             default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
+            features: services::installed(),
+            services_off: services::off_by_default(
+                &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
+            ),
+            runlevels: services::enabled_in(Path::new("/etc/runlevels")),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
         })
@@ -559,6 +583,19 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
     }
+    // Switchable features on or off (M6.10); a name the machine cannot
+    // switch is a note, as apply is lenient on a machine.
+    for problem in services::problems(&file.services, &machine.features) {
+        notes.push(problem);
+    }
+    for step in services::plan(
+        &machine.features,
+        &file.services,
+        &machine.services_off,
+        &machine.runlevels,
+    ) {
+        changes.push(Change::Service(step));
+    }
     // On a desktop (M4.2b), every person in the file and the greeter may
     // use the screen and input; machines without a seat have no group.
     if let Some(seated) = seated {
@@ -705,6 +742,36 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             fs::write(flag, "")?;
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+        // At boot only the runlevel changes: OpenRC starts the default
+        // runlevel after this boot service, so what was added starts then
+        // and what was taken out never does. Later, it happens at once.
+        Change::Service(step) => {
+            let (verb, now) = if step.on {
+                ("add", "start")
+            } else {
+                ("del", "stop")
+            };
+            if step.on {
+                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+            }
+            if !boot {
+                let status = Command::new("rc-service")
+                    .args([&step.service, now])
+                    .status()?;
+                if step.on && !status.success() {
+                    bail!(
+                        "{}",
+                        trf(
+                            "{service} did not start ({status}); rc-service {service} start says why",
+                            &[("service", &step.service), ("status", &status.to_string())]
+                        )
+                    );
+                }
+            }
+            if !step.on {
+                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+            }
+        }
         Change::Passwords(names) => {
             let text = fs::read_to_string(FIRST_PASSWORDS)
                 .with_context(|| could_not_read(Path::new(FIRST_PASSWORDS)))?;
@@ -734,7 +801,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
 /// name, home and path as environment, as `su` gives them and `write_keys`
 /// runs its shell: root starts it, and the person owns everything it
 /// writes (M6.1).
-fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
+pub(crate) fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args)
         .env_clear()
@@ -802,7 +869,7 @@ fn flatpak_commands(ids: &[String]) -> Vec<Vec<String>> {
 /// Adds Flathub for `account` and installs each of `ids` it lacks, as that
 /// person (M6.1). One app that fails does not stop the others; the error
 /// names those that failed, and the next apply tries them again.
-fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
+pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
     let mut commands = flatpak_commands(ids).into_iter();
     let remote = commands.next().unwrap_or_default();
     run(&mut as_user(account, "flatpak", &remote)).with_context(|| {
@@ -1233,6 +1300,19 @@ pub fn set(assignments: &[String]) -> Result<()> {
             )
         })?;
         pairs.push((key.trim(), value.trim()));
+    }
+    // A feature this machine cannot switch is refused before anything is
+    // written (M6.10); a build host with no features checks nothing here.
+    let installed = services::installed();
+    if !installed.is_empty() {
+        let wanted: BTreeMap<String, bool> = pairs
+            .iter()
+            .filter_map(|(k, _)| k.strip_prefix("services."))
+            .map(|name| (name.to_string(), true))
+            .collect();
+        if let Some(problem) = services::problems(&wanted, &installed).into_iter().next() {
+            bail!("{problem}");
+        }
     }
     let keys: Vec<&str> = pairs.iter().map(|(k, _)| *k).collect();
     let what = trf("set {keys}", &[("keys", &keys.join(", "))]);
@@ -2024,6 +2104,9 @@ mod tests {
             default_shell: DEFAULT_SHELL.into(),
             developer: false,
             flatpak: BTreeMap::new(),
+            features: Vec::new(),
+            services_off: Vec::new(),
+            runlevels: BTreeSet::new(),
             mime_defaults: None,
             first_passwords: None,
         }

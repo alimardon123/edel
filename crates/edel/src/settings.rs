@@ -566,7 +566,7 @@ pub const KEYS: &[Key] = &[
         "power.on_battery",
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
-    later("services.*", Kind::Flag),
+    now("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
     later("updates.version", Kind::Text),
