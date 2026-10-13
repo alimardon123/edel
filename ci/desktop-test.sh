@@ -404,10 +404,11 @@ background=$(token background)
 # foot's own background. Window frames open centred in the area above
 # shell-ui's 40 px panel (M5.1b), 1280x760, and cascade (M4.3), each a
 # 28 px title bar above the window and a 1 px border round the rest
-# (M4.4): foot, asked for 400x300, draws 396x288, whole character cells,
-# and opens first at 442,249; 460,530 is inside it but outside the test
-# clients opened after it.
-foot=242424
+# (M4.4): foot, asked for 400x300, draws 400x288, whole character
+# cells of Noto Sans Mono at 13 px (M6.13), and opens first at 440,249; 460,530 is inside it but outside the test
+# clients opened after it. foot now takes the terminal's background from
+# the tokens (M6.13), in the scheme the desktop starts in, light.
+foot=$(raw_token background colour.light.terminal)
 foot_x=460 foot_y=530
 
 case_console() {
@@ -4908,6 +4909,114 @@ case_scheme() {
 	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default"
 }
 
+terminal_colours() {
+	python3 - "$@" <<-'EOF'
+		import sys
+		sys.path.insert(0, "ci")
+		from qmp import read_png
+
+		# foot's 16 colours in the order the tokens name them (M6.13).
+		NAMES = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+		         "bright_black", "bright_red", "bright_green", "bright_yellow",
+		         "bright_blue", "bright_magenta", "bright_cyan", "bright_white"]
+		png, x, y, w = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+		background = tuple(int(sys.argv[5][i:i + 2], 16) for i in (0, 2, 4))
+		want = [tuple(int(v[i:i + 2], 16) for i in (0, 2, 4)) for v in sys.argv[6:22]]
+
+		def close(a, b):
+		    return all(abs(p - q) <= 6 for p, q in zip(a, b))
+
+		def hexof(colour):
+		    return "%02x%02x%02x" % colour
+
+		_, height, rows = read_png(png)
+
+		def blocks(row):
+		    # Each run of one colour, 8 px or more, across the window, that is
+		    # not the background: foot's blocks, left to right, with their x.
+		    found, start = [], x
+		    for i in range(x + 1, x + w + 1):
+		        if i == x + w or rows[row][i] != rows[row][start]:
+		            colour = rows[row][start]
+		            if i - start >= 8 and not close(colour, background):
+		                found.append((colour, start))
+		            start = i
+		    return found
+
+		# Row 1 is 6 px below the window's top edge, inside the first text row
+		# (foot's padding is 2 px); row 2 starts where row 1's first block ends,
+		# walking down its column, and is sampled 6 px below that.
+		row1 = y + 6
+		first = blocks(row1)
+		if not first:
+		    print("no colour blocks on the row %d" % row1)
+		    sys.exit(1)
+		column = first[0][1] + 2
+		colour = rows[row1][column]
+		row2 = row1
+		while row2 < height - 1 and rows[row2][column] == colour:
+		    row2 += 1
+		row2 += 6
+
+		errors = []
+		for label, row, offset in (("row 1", row1, 0), ("row 2", row2, 8)):
+		    got = blocks(row)
+		    if len(got) != 8:
+		        errors.append("%s has %d colour blocks, 8 expected" % (label, len(got)))
+		        continue
+		    for i, (colour, start) in enumerate(got):
+		        if not close(colour, want[offset + i]):
+		            errors.append("%s at x %d is %s, the tokens say %s" % (
+		                NAMES[offset + i], start, hexof(colour), hexof(want[offset + i])))
+		if errors:
+		    print("; ".join(errors))
+		    sys.exit(1)
+	EOF
+}
+
+# terminal_shot PNG X Y W TABLE: takes a screendump, and checks foot's
+# colours in it against TABLE's (terminal_colours), up to ten times a
+# second apart, as foot may still be drawing or repainting. Prints the
+# last miss when none matches.
+terminal_shot() {
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$1"
+		miss=$(terminal_colours "$1" "$2" "$3" "$4" "$(raw_token background "$5")" $(for name in black red green yellow blue magenta cyan white bright_black bright_red bright_green bright_yellow bright_blue bright_magenta bright_cyan bright_white; do raw_token "$name" "$5"; done)) && return 0
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || break
+		sleep 1
+	done
+	echo "$miss"
+	return 1
+}
+
+case_terminal() {
+	# The terminal in our look (M6.13): foot, the desktop's terminal, opens
+	# a window with its 16 colours as blocks, 8 normal then 8 bright on two
+	# text rows, and each block is the tokens' colour at its place on the
+	# screen. Then appearance.mode=dark: shell-ui writes foot's dark theme
+	# file and tells foot to repaint (SIGUSR1), and the blocks are the dark
+	# scheme's. Kept as terminal-light.png and terminal-dark.png.
+	said=$(count 'edel-compositor: mapped window colours')
+	guest 'terminal colours'
+	wait_more 'edel-compositor: mapped window colours' "$said" || fail "foot did not open its colours window: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: mapped window colours at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	read -r x y w h <<-EOF
+		$place
+	EOF
+	miss=$(terminal_shot "$dir/terminal-light.png" "$x" "$y" "$w" colour.light.terminal) ||
+		fail "foot's 16 colours are not the light scheme's tokens at $x,$y: $miss"
+	said=$(count 'edel-shell-ui: terminal theme dark')
+	guest 'scheme dark'
+	wait_more 'edel-shell-ui: terminal theme dark' "$said" || fail "shell-ui did not write foot's dark theme file"
+	miss=$(terminal_shot "$dir/terminal-dark.png" "$x" "$y" "$w" colour.terminal) ||
+		fail "foot's 16 colours are not the dark scheme's tokens after appearance.mode=dark: $miss"
+	guest 'scheme default'
+	guest 'terminal off'
+	echo "PASS: foot drew its 16 colour blocks in the light scheme's terminal tokens (terminal-light.png), and after appearance.mode=dark, shell-ui wrote its dark theme and foot repainted in the dark tokens (terminal-dark.png)"
+}
+
 case_accent() {
 	# The accent and the colours (M5.12b1): appearance.accent=#ff0000
 	# turns the switcher's shown pill and the portal's accent red, and
@@ -5345,7 +5454,7 @@ case_tiling() {
 	# Super+Y: this workspace floats again, each window where it was.
 	python3 ci/qmp.py key meta_l-y
 	wait_for 'edel-compositor: windows now floating' || fail "Super+Y did not switch back to floating"
-	wait_for 'DESKTOP-TEST: windows 2 foot@442,249,396x288 one@722,145,300x200' ||
+	wait_for 'DESKTOP-TEST: windows 2 foot@440,249,400x288 one@722,145,300x200' ||
 		fail "back in floating, foot and one are not where they floated: $(value windows)"
 	echo "PASS: edel settings set layout.tiling=true tiled foot and one side by side with their title bars ($tiled), and Super+Y floated them back where they were"
 }
@@ -6228,7 +6337,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme scale respawn workspaces-dynamic app-workspaces input-method flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces input-method flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

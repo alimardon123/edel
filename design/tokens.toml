@@ -77,6 +77,34 @@ lock_glow_second = "#454079"
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
 
+# foot's colours (M6.13, features/terminal): the background, text, cursor
+# and selection, and the 16 colours of the terminal, as the dark scheme
+# has them. The normal colours are the dark accents' shades; each of the
+# 16 but black and bright_black reads at 3 to 1 on the background, and the
+# text at 7 to 1 or more (a test holds them). foot's config is written from
+# this table by edel::tokens (foot_ini).
+[colour.terminal]
+background = "#1e2026"
+foreground = "#eceef1"
+cursor = "#5b8ef5"
+selection = "#34466b"
+black = "#2a2e37"
+red = "#f2707a"
+green = "#5cc777"
+yellow = "#f2c94c"
+blue = "#5b8ef5"
+magenta = "#a487f0"
+cyan = "#4cc3c9"
+white = "#c3c9d4"
+bright_black = "#5c6370"
+bright_red = "#ff8f98"
+bright_green = "#7fdc96"
+bright_yellow = "#ffdb75"
+bright_blue = "#7ea9ff"
+bright_magenta = "#bca3ff"
+bright_cyan = "#7ddde2"
+bright_white = "#eceef1"
+
 # The light scheme (M5.5c, appearance.mode = "light", the default): the
 # same keys, each one given, over the dark values above.
 [colour.light]
@@ -114,6 +142,31 @@ lock_glow_second = "#454079"
 # the same in both schemes, as the lock is dark in both.
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
+
+# foot's colours in the light scheme (M6.13), as [colour.terminal] is in
+# the dark one: each of the 16 but white and bright_white reads at 3 to 1
+# on the background, and the text at 7 to 1 or more.
+[colour.light.terminal]
+background = "#fafbfc"
+foreground = "#1c1e22"
+cursor = "#2d6ae3"
+selection = "#bfd2f7"
+black = "#2b2f36"
+red = "#c42b33"
+green = "#267f39"
+yellow = "#8f6a00"
+blue = "#2d6ae3"
+magenta = "#7a4fd6"
+cyan = "#0f7f86"
+white = "#aeb4bd"
+bright_black = "#5a6270"
+bright_red = "#d0363f"
+bright_green = "#2f9a46"
+bright_yellow = "#a67c00"
+bright_blue = "#3f7bf0"
+bright_magenta = "#9150e0"
+bright_cyan = "#12969e"
+bright_white = "#7d838e"
 
 # The accents a person picks from (M5.12b1, appearance.accent): each name
 # has the light scheme's shade and the dark scheme's. `blue` is the
