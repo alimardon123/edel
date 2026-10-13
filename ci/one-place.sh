@@ -38,7 +38,7 @@ find_in() {
 		case "$file" in
 		# GTK reads only CSS: a cargo test writes the person's gtk.css from
 		# edel::places, as it does the shipped one from the tokens.
-		$owner | ci/one-place.sh | features/shell/etc/skel/.config/gtk-4.0/gtk.css | *.md | *.png | *.jpg | *.svg) continue ;;
+		$owner | ci/one-place.sh | features/shell/etc/skel/.config/gtk-4.0/gtk.css | features/terminal/etc/skel/.config/foot/foot.ini | *.md | *.png | *.jpg | *.svg) continue ;;
 		esac
 		code "$root/$file" | grep -E "$pattern" | grep -v 'places\.sh' | while IFS= read -r line; do
 			echo "FAIL: $file:$line: $kind belongs to its owner"

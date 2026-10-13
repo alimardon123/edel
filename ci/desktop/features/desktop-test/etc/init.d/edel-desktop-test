@@ -366,6 +366,12 @@ commands() {
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;
+		# foot in our look (M6.13): 16 colour blocks, 8 normal then 8 bright,
+		# on two lines, kept until `terminal off`; foot's window is titled colours.
+		'terminal colours')
+			as_ci "foot --window-size-pixels=640x200 --title colours sh -c 'for i in 0 1 2 3 4 5 6 7; do printf \"\\033[4\${i}m    \"; done; printf \"\\033[0m\\n\"; for i in 0 1 2 3 4 5 6 7; do printf \"\\033[10\${i}m    \"; done; printf \"\\033[0m\\n\"; sleep 600'" </dev/null >/dev/null 2>&1 &
+			;;
+		'terminal off') pkill -f -- '[-]-title colours' ;;
 		# appearance.wallpaper (M5.10c4b): the test picture in the test
 		# files beside the share directory, one colour, and the default.
 		'wallpaper picture') edel settings set "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
