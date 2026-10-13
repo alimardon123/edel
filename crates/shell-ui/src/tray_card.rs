@@ -153,7 +153,7 @@ impl Shell {
         self.draw_all();
     }
 
-    /// The tray's key (Super+B unless `[shortcuts]` says otherwise, M5.9h):
+    /// The tray's key (Super+Shift+B unless `[shortcuts]` says otherwise, M5.9h):
     /// the grid of the apps behind the arrow opens with the keyboard on its
     /// first app, or closes if it is open. With nothing behind the arrow,
     /// or no tray on the panels, nothing opens.

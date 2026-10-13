@@ -28,12 +28,16 @@ ovmf_vars=$(echo "$ovmf_code" | sed 's/CODE/VARS/')
 # With vm_stamp=1 each finished line of LOG starts with the seconds since
 # QEMU started, taken on the host as the line arrives, so the services of
 # a boot can be timed without changing the image (the budgets use it).
+# With vm_console=SOCKET the serial console is a unix socket QEMU serves
+# and waits on before starting (M6.6b), so a typist (ci/serial.py) can
+# answer the console; the caller starts it with its output going to LOG,
+# which run_vm then leaves in place.
 run_vm() {
 	log=$1 pattern=$2 timeout_s=$3
 	shift 3
 	vars=$(mktemp)
 	cp "$ovmf_vars" "$vars"
-	rm -f "$log"
+	[ -n "${vm_console:-}" ] || rm -f "$log"
 	serial=$log stamper=''
 	if [ "${vm_stamp:-0}" = 1 ]; then
 		serial=$(mktemp -u)
@@ -45,10 +49,15 @@ for line in sys.stdin.buffer:
     sys.stdout.buffer.flush()' <"$serial" >"$log" &
 		stamper=$!
 	fi
+	console="file:$serial"
+	if [ -n "${vm_console:-}" ]; then
+		console=chardev:console
+		set -- -chardev socket,id=console,path="$vm_console",server=on,wait=on "$@"
+	fi
 	echo "booting with $accel, waiting up to ${timeout_s}s for: $pattern"
 	qemu-system-x86_64 \
 		-machine q35,accel="$accel" -m 512 -smp 2 \
-		-display none -monitor none -serial file:"$serial" \
+		-display none -monitor none -serial "$console" \
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$vars" \
 		-netdev user,id=net0"${vm_net:-}" -device virtio-net-pci,netdev=net0,romfile= \

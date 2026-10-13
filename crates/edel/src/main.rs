@@ -9,6 +9,7 @@ mod completion;
 mod data;
 mod def;
 mod default_apps;
+mod first_boot;
 mod grubenv;
 mod guard;
 mod image;
@@ -350,6 +351,14 @@ enum SettingsCommands {
     Check {
         /// The settings file, a path or an https:// address
         file: String,
+    },
+    /// Ask for the first person on a console when nobody can log in, as
+    /// the consoles do before their login prompt (M6.6b)
+    #[command(hide = true)]
+    FirstBoot {
+        /// Ask on this terminal, as init's consoles run it
+        #[arg(long, required = true)]
+        console: bool,
     },
 }
 
@@ -766,6 +775,7 @@ fn run(command: Commands) -> Result<()> {
             Some(SettingsCommands::Check { file }) => {
                 check_system_file(&settings_source::local(&file)?)
             }
+            Some(SettingsCommands::FirstBoot { .. }) => first_boot::console(),
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),
