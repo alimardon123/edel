@@ -99,6 +99,14 @@ pub fn display_not_told(why: impl Display) -> String {
     )
 }
 
+/// The terminal's theme file cannot be written (M6.13): new terminals start
+/// in foot's own scheme until it can.
+pub fn terminal_theme_not_written(why: impl Display) -> String {
+    format!(
+        "could not write the terminal's theme file: {why}; new terminals start in foot's own scheme until it can be written"
+    )
+}
+
 /// The tray cannot be served.
 pub fn tray_not_served(why: impl Display) -> String {
     format!(
@@ -331,6 +339,14 @@ mod tests {
         assert_eq!(
             clock_zone_missing("Asia/Tokyo"),
             "lock: the clock's time zone Asia/Tokyo is not on this machine; it shows this machine's time"
+        );
+    }
+
+    #[test]
+    fn a_terminal_theme_not_written_says_what_still_works() {
+        assert_eq!(
+            terminal_theme_not_written("Permission denied (os error 13)"),
+            "could not write the terminal's theme file: Permission denied (os error 13); new terminals start in foot's own scheme until it can be written"
         );
     }
 

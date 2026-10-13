@@ -103,6 +103,9 @@ pub const PACKAGES_FILE: &str = share!("/packages");
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
 /// GTK's colours from the tokens (M5.5b).
 pub const GTK_CSS: &str = share!("/gtk.css");
+/// foot's font and colours from the tokens (M6.13), which every person's
+/// foot config includes.
+pub const FOOT_INI: &str = share!("/foot.ini");
 /// The wallpapers the `wallpapers` feature carries, and their `CREDITS`
 /// (M5.10c4b): `NAME-light.jpg` and `NAME-dark.jpg` for a pair.
 pub const WALLPAPERS_DIR: &str = share!("/wallpapers");
@@ -124,6 +127,10 @@ pub const STATE_IN_HOME: &str = ".local/state/edel";
 pub const SESSION_LOG: &str = "session.log";
 /// The session before's log, beside it: two sessions are kept.
 pub const SESSION_LOG_BEFORE: &str = "session.old.log";
+/// foot's theme in a person's state directory, `dark` or `light` (M6.13):
+/// shell-ui writes it, and foot's config includes it, so a new window
+/// starts in the desktop's scheme.
+pub const FOOT_THEME: &str = "foot-theme.ini";
 /// The system log busybox's syslogd writes, on the data partition.
 pub const SYSTEM_LOG: &str = "/var/log/messages";
 /// Where the system's password helper may lie, the first that exists

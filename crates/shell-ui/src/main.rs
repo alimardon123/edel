@@ -63,6 +63,7 @@ mod status;
 mod styles;
 mod switcher;
 mod telling;
+mod terminal;
 mod tooltip;
 mod toplevels;
 mod tray;
@@ -392,6 +393,8 @@ fn run() -> Result<()> {
         eprintln!("edel-shell-ui: words in {language}, {words} translated");
     }
     let (preset, scheme) = from_system_files();
+    // foot's theme follows the scheme, and a running foot repaints (M6.13).
+    terminal::follow(scheme == Scheme::Dark);
     let tokens = load_tokens(scheme);
     let connection = Connection::connect_to_env().context(messages::NO_COMPOSITOR)?;
     let (globals, queue) = registry_queue_init(&connection).context(messages::NO_GLOBALS)?;
