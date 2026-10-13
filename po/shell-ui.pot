@@ -455,9 +455,6 @@ msgstr ""
 msgid "Words"
 msgstr ""
 
-msgid "Time zone"
-msgstr ""
-
 msgid "Label"
 msgstr ""
 

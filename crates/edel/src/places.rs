@@ -49,6 +49,11 @@ pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
 /// once (M1.1, M5.9).
 pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
+/// The hashed passwords `edel install` asked for (M6.6b), one
+/// `NAME:HASH` line each, root's only: the new machine's first
+/// `edel settings apply` gives them to the people the settings file makes
+/// and deletes the file, so no password is ever in the settings file.
+pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
 /// The login screen's own directory, made at boot owned by greetd by the
 /// login feature's `edel-live` (M5.10c3b).
 pub const GREETER_DIR: &str = data!("/edel/greeter");
@@ -90,6 +95,9 @@ pub const GREETD_LIVE: &str = run!("/greetd.toml");
 pub const SEED_MOUNT: &str = run!("/seed");
 /// Where the installer mounts the new disk's partitions (M2.4).
 pub const INSTALL_DIR: &str = run!("/install");
+/// The answers to the installer's questions as the new machine's settings
+/// file, before `edel install` copies it to the new disk (M6.6b).
+pub const INSTALL_ANSWERS: &str = run!("/install-answers.toml");
 
 /// Where a slot keeps Edel OS's own files.
 pub const SHARE_DIR: &str = share!("");

@@ -155,11 +155,16 @@ enum Commands {
     /// Install Edel OS on another disk, erasing it: the running system
     /// becomes slot A, and FILE the new machine's settings
     Install {
-        /// The disk, such as /dev/sda
-        disk: String,
-        /// The settings file the new machine starts with
+        /// The disk, such as /dev/sda; without it, the disks are listed
+        /// and one is asked for
+        disk: Option<String>,
+        /// The settings file the new machine starts with; without it, a few
+        /// questions are asked on the terminal and their answers become it
         #[arg(long, value_name = "FILE")]
-        settings: PathBuf,
+        settings: Option<PathBuf>,
+        /// List the disks Edel OS could install on, and change nothing
+        #[arg(long)]
+        list: bool,
         /// Only show the plan: what would be erased and written; change
         /// nothing
         #[arg(long)]
@@ -631,12 +636,14 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
             disk,
             settings,
             plan,
             yes,
-        } => installer::install(&disk, &settings, plan, yes),
+            ..
+        } => installer::install(disk.as_deref(), settings.as_deref(), plan, yes),
         Commands::Report { esp } => report::report(esp),
         Commands::Settings { command } => match command {
             None => {
