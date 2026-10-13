@@ -25,8 +25,13 @@ mkdir -p "$work/runtime/files" "$work/runtime/usr/lib" "$work/app/files/bin" "$w
 # the sandbox mounts at /usr, where Flatpak links /lib to /usr/lib, so
 # musl's loader and the client's libraries go in usr/lib.
 cp -L /lib/ld-musl-x86_64.so.1 "$work/runtime/usr/lib/"
-ldd "$client" | awk '/=> \// { print $3 }' | while read -r lib; do
-	cp -L "$lib" "$work/runtime/usr/lib/"
+# The client loads libwayland-client when it starts (dlopen), so ldd does
+# not list it: it goes in by name, with what it links itself.
+for file in "$client" /usr/lib/libwayland-client.so.0; do
+	[ "$file" = "$client" ] || cp -L "$file" "$work/runtime/usr/lib/"
+	ldd "$file" | awk '/=> \// { print $3 }' | while read -r lib; do
+		cp -L "$lib" "$work/runtime/usr/lib/"
+	done
 done
 cat >"$work/runtime/metadata" <<'META'
 [Runtime]
