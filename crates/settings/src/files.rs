@@ -457,6 +457,30 @@ impl Files {
         )
     }
 
+    /// The apps `startup.apps` names that apply (M6.10): the person's list
+    /// over the machine's, which it replaces whole, else none.
+    pub fn startup(&self) -> Vec<String> {
+        let machine = Self::raw_file_of(Some(&self.machine)).startup.apps;
+        let person = Self::raw_file_of(self.person.as_ref()).startup.apps;
+        person.or(machine).unwrap_or_default()
+    }
+
+    /// Writes the person's `startup.apps` as `list` (M6.10), the whole list
+    /// at once. A list the machine's already gives is taken out instead, as
+    /// writers never write what would apply anyway (ADR-008), so an empty
+    /// list goes only when the machine has none.
+    pub fn choose_startup(&self, list: &[String]) -> Result<(), String> {
+        let machine = Self::raw_file_of(Some(&self.machine))
+            .startup
+            .apps
+            .unwrap_or_default();
+        if list == machine.as_slice() {
+            self.set("startup.apps", None)
+        } else {
+            self.set("startup.apps", Some(&list_text(list)))
+        }
+    }
+
     /// Chooses `value` for the key `key` of the Layout, Workspaces or
     /// Appearance page: written to the person's
     /// file, or taken out of it when it is what would apply without it,

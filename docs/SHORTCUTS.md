@@ -28,6 +28,8 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 |---|---|---|---|
 | `open_launcher` | `Super` | Open or close the launcher, Super tapped alone | yes |
 | `open_terminal` | `Super+T` | Open a terminal |  |
+| `open_files` | `Super+E` | Opens the files app (default_apps.files) |  |
+| `open_browser` | `Super+B` | Opens the web browser (default_apps.browser) |  |
 | `take_screenshot` | `Print` | Take a screenshot |  |
 
 ## Workspaces
@@ -64,4 +66,4 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 |---|---|---|---|
 | `lock_screen` | `Super+L` | Lock the screen | yes |
 | `next_keyboard_layout` | `Super+Space` | Switch to the next keyboard layout of region.keyboard |  |
-| `show_tray` | `Super+B` | Open or close the tray's apps behind its arrow, with the keyboard on them |  |
+| `show_tray` | `Super+Shift+B` | Open or close the tray's apps behind its arrow, with the keyboard on them |  |

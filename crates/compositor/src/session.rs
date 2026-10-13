@@ -77,6 +77,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         spawn(handle, command, 1, env.clone());
     }
     follow_input_method(handle, state);
+    start_apps(state);
 }
 
 /// Starts the input method when `region.input_method` is fcitx5 and
@@ -180,6 +181,30 @@ fn stop_input_method(state: &mut Edel) {
     };
     input.asked.store(true, Ordering::SeqCst);
     let _ = kill_process(input.pid, Signal::TERM);
+}
+
+/// Starts the apps `startup.apps` names (M6.10), after the session's own
+/// programs, each through the same `program::run` the shortcuts use, so it
+/// gets the session's socket and display. An id no installed app has is
+/// logged and skipped. The list is read when the session starts, so a change
+/// takes effect at the next login.
+fn start_apps(state: &Edel) {
+    let apps = edel::apps::read_all(&edel::apps::dirs());
+    for id in &state.settings.startup {
+        let Some(app) = startup_app(&apps, id) else {
+            eprintln!("edel-compositor: {}", messages::startup_app_missing(id));
+            continue;
+        };
+        if crate::program::run(state, &edel::apps::command(app), &app.id) {
+            eprintln!("edel-compositor: started startup app {}", app.id);
+        }
+    }
+}
+
+/// The installed app a `startup.apps` id names (M6.10): the one whose
+/// desktop file id is `id`, none when no installed app has it.
+fn startup_app<'a>(apps: &'a [edel::apps::App], id: &str) -> Option<&'a edel::apps::App> {
+    apps.iter().find(|app| app.id == id)
 }
 
 /// The cursor's variables the programs are given (M5.12b5 part A).
@@ -291,5 +316,36 @@ fn ended(
     });
     if let Err(e) = timer {
         eprintln!("edel-compositor: starting {name} again failed: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_startup_id_names_the_installed_app_with_that_desktop_file_id() {
+        // read_all gives each app its id from its file name, so the test
+        // writes two desktop files in a folder of its own.
+        let dir = std::env::temp_dir().join(format!("edel-startup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("org.example.Notes.desktop"),
+            "[Desktop Entry]\nType=Application\nName=Notes\nExec=notes\n",
+        )
+        .unwrap();
+        let apps = edel::apps::read_all(std::slice::from_ref(&dir));
+        let found = startup_app(&apps, "org.example.Notes").map(|a| a.name.clone());
+        assert_eq!(found.as_deref(), Some("Notes"));
+        assert!(
+            startup_app(&apps, "org.example.Notes.desktop").is_none(),
+            "the id has no .desktop"
+        );
+        assert!(
+            startup_app(&apps, "org.example.Gone").is_none(),
+            "not installed"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

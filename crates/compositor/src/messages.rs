@@ -54,6 +54,18 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// A shortcut for a default app (M6.10) found no app of its kind: it does
+/// nothing, and the line says which key to set.
+pub fn no_default_app(role: &str) -> String {
+    format!("no {role} app installed; set default_apps.{role}")
+}
+
+/// An app `startup.apps` names (M6.10) is not installed: it is skipped, and
+/// the line says which list to fix.
+pub fn startup_app_missing(id: &str) -> String {
+    format!("startup app {id} is not installed; take it out of startup.apps")
+}
+
 /// A screen copy a client asked for could not be filled (M6.3): the
 /// client is told `failed` and may ask again.
 pub fn copy_failed(output: &str, why: impl Display) -> String {
@@ -236,6 +248,22 @@ pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_default_app_shortcut_with_no_app_names_the_key_to_set() {
+        assert_eq!(
+            no_default_app("files"),
+            "no files app installed; set default_apps.files"
+        );
+    }
+
+    #[test]
+    fn a_startup_app_not_installed_names_the_list_to_fix() {
+        assert_eq!(
+            startup_app_missing("org.example.Gone"),
+            "startup app org.example.Gone is not installed; take it out of startup.apps"
+        );
+    }
 
     #[test]
     fn a_failed_screen_copy_says_what_failed_and_what_the_client_does() {
