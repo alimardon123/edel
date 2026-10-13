@@ -37,6 +37,8 @@ ssh_keys = ["ssh-ed25519 AAAA... ali@desk"]
 | `edel settings export` | Prints the machine as a settings file, to import on another one |
 | `edel settings check FILE` | Checks a file strictly |
 
+A list takes `KEY+=VALUE` to add an item and `KEY-=VALUE` to remove one, such as `edel settings set startup.apps+=org.mozilla.firefox`; a list left empty removes its key. Someone who is not root changes their own settings file for the keys the desktop follows; a machine key needs an administrator, and the refusal names the command that gives one. `get` shows the value that applies to a key no file sets, with the layer that decides it: the preset in use, or the release, the image or the hardware. A key a release has stopped using is still read and reported, and `set` refuses it until `reset` takes it out.
+
 A mistyped key or value is answered with the nearest one: `edel settings set layout.presset=hive` says "did you mean layout.preset?". Every part reads the file with the one parser in `edel::settings` (`crates/edel/src/settings.rs`), whose key table this page follows; the reading rules are in [FORMATS.md](FORMATS.md).
 
 ## Where it lives
@@ -110,7 +112,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.wallpaper` | a wallpaper's name (`"hills"`, the light or dark picture as the colour scheme says), a picture's path, a colour `"#rrggbb"` or `"none"`; absent is Hills where the `wallpapers` feature carries it, else the background colour | M5.10c4b |
 | `appearance.wallpaper_dark` | the same kinds of value as `appearance.wallpaper`, for dark mode when it differs: a person's own light and dark pair is two picture paths, one in each key; absent is the dark side of `appearance.wallpaper` | M5.10c4d |
 | `appearance.pictures` | the pictures of the theme in use, on top of its own: a list of wallpapers as `appearance.wallpaper` takes them, a wallpaper's name such as `["aurora", "earth"]`, a picture's full path or a colour; never copies of the files. Absent is the theme's own list, and `[]` shows none; at most 32, none twice. Set in the pictures sheet of Appearance (Add pictures, a picture's menu and drag and drop), or with `edel settings set appearance.pictures='["aurora"]'`. Changing a built-in theme this way makes it Changed; Keep as new saves the person's copy | M5.12b6, part c2 |
-| `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, dark in this one, and missing is `auto`. A change takes effect at once | M5.5c |
+| `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, light in this one, and missing is `auto`. A change takes effect at once | M5.5c |
 | `appearance.contrast` | `normal` or `high`: high contrast gives strong edges and the plainest colours, in both schemes, text at 7 to 1 or more and lines in black or white, over every colour the person chose; missing is `normal`. The desktop follows it at once | M6.9 |
 | `appearance.accent` | one of the release's named accents (`blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `teal`, `graphite`), `wallpaper` for a colour taken from the picture, or a colour `"#rrggbb"`; missing is `blue`. The text on the accent is whichever of the two schemes' reads better. `edel settings set appearance.accent=red` works; `edel settings set appearance.accent=crimson` is refused with "`"crimson"` is not an accent; choose blue, purple, pink, red, orange, yellow, green, teal, graphite, wallpaper or a colour such as "#d0363f"". An accent that leaves its own pairs under their contrast ratio is refused too, with the pair named | M5.12b1 |
 | `appearance.colours.*` | a colour `"#rrggbb"` or `"#rrggbbaa"` for any colour token by its name (`background`, `panel`, `title_bar_focused`, ...), in both schemes; missing is the release's. `edel settings set appearance.colours.background=#202020` works; `edel settings set appearance.colours.panl=#ffffff` is refused with `appearance.colours.panl: "panl" is not a colour; did you mean panel?`. `edel settings reset appearance.colours.background` takes it back. A colour that leaves a pair under its ratio is refused with that pair's line, in both schemes | M5.12b1 |
@@ -238,6 +240,219 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `system.developer_mode` | `true` or `false`: developer mode (ADR-007) | M2.2 |
 | `system.profiles` | list of profile names, applied in order | M7.6 |
 
+## Every key
+
+<!-- written by key_help.rs: EDEL_WRITE_DOCS=1 cargo test -p edel key_help -->
+### `appearance`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `appearance.theme` | The theme in use: a built-in one (edel, aurora, earth or ocean) or one of your own. | `"edel"` | release |
+| `appearance.wallpaper` | The wallpaper behind the windows: a name such as hills, a picture's path, a colour or none. | `"hills"` | release |
+| `appearance.wallpaper_dark` | The wallpaper for dark mode, when it differs from the light one. | the wallpaper's | release |
+| `appearance.pictures` | The pictures of the theme in use, shown on top of its own; at most 32, none twice. | the theme's | release |
+| `appearance.switcher_look` | How the workspace switcher looks: round numbers, or a button with a line for each workspace. | `"numbers"` | release |
+| `appearance.switcher_shown` | How many workspace numbers the switcher shows at once, from 1 to 9. | `3` | release |
+| `appearance.switcher_ends` | What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts. | `"arrows"` | release |
+| `appearance.mode` | Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one. | `"auto"` | token |
+| `appearance.contrast` | High contrast gives strong edges and plain colours in both schemes; normal is the usual look. | `"normal"` | release |
+| `appearance.accent` | The accent colour for the shown workspace, buttons and marks: a named accent, wallpaper, or a colour. | `"blue"` | token |
+| `appearance.colours.*` | One colour of the look, by its token name, in both schemes. | the token's | token |
+| `appearance.colours.light.*` | One colour of the light scheme alone, over the colours both schemes share. | the token's | token |
+| `appearance.colours.dark.*` | One colour of the dark scheme alone, over the colours both schemes share. | the token's | token |
+| `appearance.radius` | The corner radius of windows, in logical pixels from 0 to 24; 0 makes every corner square. | the token size.radius_window | token |
+| `appearance.gaps` | The gap between tiled windows, in logical pixels from 0 to 64. | the token size.gap | token |
+| `appearance.gaps_outer` | The gap between tiled windows and the screen's edge, in logical pixels from 0 to 64. | the token size.gap_outer | token |
+| `appearance.border_width` | The border round each window with a title bar, in logical pixels from 0 to 10. | the token size.border | token |
+| `appearance.title_bar_height` | The height of each title bar, in logical pixels from 24 to 48. | the token size.title_bar | token |
+| `appearance.panel_opacity` | How solid the panels are, in percent from 20 to 100. | the token size.panel_opacity | token |
+| `appearance.window_opacity` | How solid the focused window is, in percent from 20 to 100. | the token size.window_opacity | token |
+| `appearance.window_opacity_unfocused` | How solid every other window is, in percent from 20 to 100. | the token size.window_opacity_unfocused | token |
+| `appearance.shadow_size` | How far the shadow under each window spreads, in logical pixels from 0 to 64; 0 is none. | the token size.shadow_blur | token |
+| `appearance.shadow_darkness` | How dark the shadow under each window is, in percent from 0 to 100. | the alpha of colour.shadow | token |
+| `appearance.blur` | How strongly the wallpaper blurs behind see-through panels, in percent; 0 shows it sharp. | the token size.blur | token |
+| `appearance.font` | The font for the interface's text, by its family name. | `"Inter Variable"` | token |
+| `appearance.monospace_font` | The font apps use for code and terminals, by its family name. | `"Noto Sans Mono"` | release |
+| `appearance.text_size` | How big every text is, in percent of the release's size, from 80 to 150. | `100` | release |
+| `appearance.cursor_size` | The pointer's height in logical pixels, from 16 to 96. | `24` | release |
+| `appearance.cursor_theme` | The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow. | `"default"` | release |
+| `appearance.icon_size` | How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150. | `100` | release |
+| `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
+| `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |
+| `appearance.animation_curve` | The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little). | `"smooth"` | release |
+
+### `layout`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `layout.preset` | The layout preset that arranges the panel, windows and workspaces, such as classic, mac-like or zen. | `"classic"` | release |
+| `layout.tiling` | Whether windows tile across the screen (true) or float freely (false); the preset decides when this is missing. | the preset's | preset |
+| `layout.title_bars` | Where windows get a title bar: always, only on floating windows, or never (Zen has none). | the preset's | preset |
+| `layout.device_type` | What kind of device this is: a desktop, a tablet or a phone; this release does not act on it yet. | detected | hardware |
+| `layout.window_buttons` | The side of each title bar where close, minimize and maximize sit: left or right. | the preset's | preset |
+| `layout.close_button` | Whether each title bar shows its close button; Super+Q closes a window whether or not it shows. | `true` | release |
+| `layout.minimize_button` | Whether each title bar shows its minimize button. | `true` | release |
+| `layout.maximize_button` | Whether each title bar shows its maximize button; a hidden button's room goes to the title. | `true` | release |
+| `layout.tiling_style` | How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles). | the preset's | preset |
+
+### `panels`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `panels.list` | The panels along the screen's edges, each with its widgets, in place of the preset's. | the preset's | preset |
+| `panels.tray` | The tray apps kept in the panel, by their tray id; the other apps wait behind the tray's arrow. | `[]` | release |
+| `panels.pinned` | The apps the apps widget pins, in order, by app id or role such as browser. | the preset's | preset |
+
+### `workspaces`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `workspaces.count` | How many workspaces there are, from 1 to 9, one for each of Super+1 to Super+9. | the preset's | preset |
+| `workspaces.dynamic` | Whether empty workspaces come and go, so the count follows the windows. | `false` | release |
+| `workspaces.per_screen` | Whether each screen shows its own workspace, so Super+1 to Super+9 switch only the screen under the pointer. | `false` | release |
+| `workspaces.names` | The names of the workspaces, the first one's first; an empty text leaves a workspace as its number. | `[]` | release |
+| `workspaces.wallpapers` | A wallpaper for each workspace, the first one's first; an empty text uses Appearance's wallpaper. | `[]` | release |
+| `workspaces.apps` | The apps that always open on one workspace, by app id and number, such as Firefox on 2. | `{}` | release |
+| `workspaces.overview_strip` | The side of the screen where the workspace overview's strip lies: left, right, top or bottom. | `"left"` | release |
+
+### `lock_screen`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `lock_screen.parts` | The parts of the lock and login screens and where each one stands, as a list of tables. | the look's | release |
+| `lock_screen.look` | The look of the lock and login screens: classic, magazine, minimal or one of your own. | `"classic"` | release |
+| `lock_screen.background` | What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture. | the look's | release |
+| `lock_screen.dim` | How much the lock screen's background is darkened, in percent from 0 to 80, so the words read. | 30, or 40 for a sharp background or picture | release |
+| `lock_screen.notifications` | Whether the lock screen shows how many notifications are unread: count, or none to hide it. | `"count"` | release |
+| `lock_screen.looks` | Your own lock screen looks, each with its parts and background, chosen by name. | none | release |
+
+### `network`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `network.hostname` | The name this computer has on the network: letters, digits and hyphens, up to 63. | `"edel"` | image |
+
+### `bluetooth`
+
+This page has no key in the file.
+
+### `displays`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `displays.*.position` | Where this screen sits among the others, as [x, y] in whole numbers. | each screen's own | hardware |
+| `displays.*.scale` | How big things are on this screen, such as 1.25 for 125 percent. | each screen's own | hardware |
+| `displays.*.resolution` | The resolution of this screen as WIDTHxHEIGHT, such as 1920x1080. | each screen's own | hardware |
+| `displays.*.refresh_rate` | How many times a second this screen redraws, such as 60. | the resolution's best | hardware |
+| `displays.*.enabled` | Whether this screen is on; a screen that is off shows nothing. | `true` | hardware |
+| `displays.*.rotation` | How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet. | each screen's own | hardware |
+
+### `sound`
+
+This page has no key in the file.
+
+### `power`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `power.lid_close` | What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet. | not set yet | release |
+| `power.lock_after_minutes` | How many minutes without input before the screen locks, 0 for never; this release does not act on it yet. | not set yet | release |
+| `power.power_button` | What the power button does: suspend, power off, ask or nothing; this release does not act on it yet. | not set yet | release |
+| `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet. | not set yet | release |
+
+### `notifications`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `notifications.do_not_disturb` | Whether banners stay away; notifications still arrive and are listed in the notification centre. | `false` | release |
+| `notifications.position` | Where banners appear: by the status area, in a corner, or at the top's middle. | `"auto"` | release |
+| `notifications.badge` | What the notifications button shows while some are unread: a dot, the count, or nothing. | `"dot"` | release |
+| `notifications.list` | Where the notification list opens: hung on its button, or as a sheet on the left or right. | `"button"` | release |
+
+### `shortcuts`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `shortcuts.*` | The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions. | each action's own keys, docs/SHORTCUTS.md | release |
+
+### `region`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `region.language` | The language the desktop's own words and Settings are shown in, such as de or pt_BR. | English | release |
+| `region.keyboard` | The keyboard layouts, up to four, such as us or us,ru; Super+Space goes to the next one. | `"us"` | release |
+| `region.timezone` | The time zone the clock shows, such as Europe/London. | `"UTC"` | release |
+| `region.time_servers` | The servers the clock is set from, one to four host names, such as pool.ntp.org. | `["pool.ntp.org"]` | release |
+| `region.input_method` | The input method for typing languages a keyboard has no keys for: fcitx5 or none. | `"none"` | release |
+
+### `default_apps`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `default_apps.browser` | The app that opens web pages and web links, by its desktop file id without .desktop. | the first installed browser | image |
+| `default_apps.files` | The app that opens folders, by its desktop file id without .desktop. | the first installed file manager | image |
+| `default_apps.editor` | The app that opens plain text files, by its desktop file id without .desktop. | the first installed editor | image |
+| `default_apps.terminal` | The app the terminal shortcut opens, by its desktop file id without .desktop. | the first installed terminal, else foot | image |
+| `default_apps.mail` | The app that opens mail and mail links, by its desktop file id without .desktop. | the first installed mail app | image |
+
+### `startup`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `startup.apps` | The apps that start once the desktop is on screen, in the order listed, by desktop file id. | `[]` | release |
+
+### `apps`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `apps.installed` | The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv. | `[]` | release |
+
+### `addons`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `addons.installed` | The add-ons this machine has, by name; this release does not act on them yet. | `[]` | release |
+
+### `services`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `services.*` | Turns one switchable feature, such as ssh or bluetooth, on or off by its name. | the image's | image |
+
+### `users`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `users.*.admin` | Whether this person is an administrator, who may change the whole machine. | `false` | release |
+| `users.*.ssh_keys` | The public keys that may log in to this person's account over ssh, one line each. | the file as it is | release |
+| `users.*.login_shell` | The program this person's login starts, given as a full path such as /bin/ash. | `"/bin/sh"` | release |
+
+### `updates`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `updates.channel` | The release channel whose updates this machine takes, such as stable or preview. | the image's | image |
+| `updates.version` | A release to stay on instead of following the channel; this release does not act on it yet. | follows the channel | release |
+| `updates.automatic` | Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet. | not set yet | release |
+| `updates.restart_window` | The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet. | none | release |
+
+### `system`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `system.variant` | What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet. | the image's | image |
+| `system.developer_mode` | Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on. | `false` | release |
+| `system.profiles` | The hardware profiles applied to this machine, in order; this release does not act on them yet. | `[]` | release |
+
+### Other keys
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
+| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
+
+<!-- end of the keys -->
+
 ## Adding a key
 
-Name it after its row in Settings: the label in lowercase with `_` for spaces, its section the page's name, its values the options' labels in lowercase with `-` for spaces (ADR-008's same names decision). Add it to `KEYS` and the structs in `settings.rs`, append it to `crates/edel/tests/keys.txt`, add its row here, and set `supported` in the step that acts on it. A key is never removed or renamed within a format (ADR-008).
+Name it after its row in Settings: the label in lowercase with `_` for spaces, its section the page's name, its values the options' labels in lowercase with `-` for spaces (ADR-008's same names decision). Add it to `KEYS` and the structs in `settings.rs`, append it to `crates/edel/tests/keys.txt`, add its row here, and set `supported` in the step that acts on it. A key is never removed or renamed within a format (ADR-008). A new key also gets its line in `crates/edel/src/key_help.rs`, which writes the list above and `docs/defaults.md`.

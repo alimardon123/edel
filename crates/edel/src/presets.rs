@@ -667,6 +667,22 @@ pub fn is_built_in(name: &str) -> bool {
     BUILT_IN.iter().any(|(built_in, _)| *built_in == name)
 }
 
+/// The value a built-in preset gives `key` while the settings file does
+/// not set it, as the file would write it (`true`, `"right"`, `4`), for
+/// `edel settings get` (M6.11); None for a key no preset decides, or one
+/// whose value is more than one word, such as the panels.
+pub fn value_of(key: &str, preset: &Preset) -> Option<String> {
+    let text = |word: &str| toml::Value::String(word.to_string()).to_string();
+    Some(match key {
+        "layout.tiling" => (preset.windows.policy == Policy::Tiling).to_string(),
+        "layout.window_buttons" => text(preset.windows.buttons.name()),
+        "layout.title_bars" => text(preset.windows.title_bars.unwrap_or_default().name()),
+        "layout.tiling_style" => text(preset.windows.tiling_style.as_deref().unwrap_or("stack")),
+        "workspaces.count" => preset.workspaces.count.to_string(),
+        _ => return None,
+    })
+}
+
 /// Why `name` is no preset's name, in the words every reader shows (the
 /// checks, save and the commands say it the same way).
 pub fn name_message(name: &str) -> String {
@@ -1586,5 +1602,22 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn a_built_in_preset_gives_the_values_get_shows() {
+        let (classic, _) = named(Some("classic"));
+        assert_eq!(
+            value_of("layout.tiling", &classic).as_deref(),
+            Some("false")
+        );
+        assert_eq!(
+            value_of("layout.window_buttons", &classic).as_deref(),
+            Some("\"right\"")
+        );
+        assert_eq!(value_of("workspaces.count", &classic).as_deref(), Some("4"));
+        let (hive, _) = named(Some("hive"));
+        assert_eq!(value_of("layout.tiling", &hive).as_deref(), Some("true"));
+        assert_eq!(value_of("panels.list", &classic), None);
     }
 }
