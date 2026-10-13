@@ -295,6 +295,8 @@ const ROLES: &[(&str, &str)] = &[
     ("terminal", "TerminalEmulator"),
     ("music", "Audio"),
     ("settings", "Settings"),
+    // The store (M6.4), Bazaar by default.
+    ("store", "PackageManager"),
 ];
 
 /// The app `pin` names: a role (`browser`) or a desktop file id
@@ -638,5 +640,18 @@ mod tests {
             DefaultApps::read("format = 1\nflatpak = [\"org.edel.TestB\", \"nope\"]\nnew = 1\n");
         assert_eq!(odd.flatpak, ["org.edel.TestB"]);
         assert_eq!(DefaultApps::read("not toml ["), DefaultApps::default());
+    }
+
+    #[test]
+    fn the_store_role_finds_the_package_manager() {
+        let store = parse(
+            "[Desktop Entry]\nType=Application\nName=Bazaar\nExec=bazaar\nCategories=System;PackageManager;\n",
+        )
+        .unwrap();
+        let apps = [store];
+        assert_eq!(
+            pinned(&apps, "store").map(|a| a.name.as_str()),
+            Some("Bazaar")
+        );
     }
 }

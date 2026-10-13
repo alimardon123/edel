@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(windows.windows.buttons, Side::Right);
         assert_eq!(
             windows.apps.pinned,
-            ["files", "browser", "terminal", "mail", "music"]
+            ["files", "browser", "terminal", "mail", "music", "store"]
         );
         let panel = &windows.panels[0];
         assert_eq!(panel.edge, Edge::Bottom);
