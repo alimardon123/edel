@@ -413,13 +413,19 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
-msgid "Put Edel OS on this computer's disk. Nothing changes until you press Erase and install, and every answer can be changed later in Settings."
+msgid "Put Edel OS on this computer: a few questions, then a plan to check. Nothing changes until you press Erase and install, and every answer can be changed later in Settings."
 msgstr ""
 
 msgid "no disk to install on"
 msgstr ""
 
 msgid "Who logs in"
+msgstr ""
+
+msgid "Welcome to Edel OS"
+msgstr ""
+
+msgid "Fast, calm and yours. It takes about five minutes."
 msgstr ""
 
 msgid "Install Edel OS"
@@ -434,25 +440,34 @@ msgstr ""
 msgid "Use it"
 msgstr ""
 
-msgid "You"
+msgid "Language and keyboard"
+msgstr ""
+
+msgid "Your account"
 msgstr ""
 
 msgid "The same password again"
 msgstr ""
 
-msgid "Disk"
+msgid "Where to install"
 msgstr ""
 
 msgid "No other disk was found. Plug one in, then open this page again."
 msgstr ""
 
+msgid "Disk"
+msgstr ""
+
+msgid "How windows and panels are laid out. Change it any time in Settings."
+msgstr ""
+
 msgid "More options"
 msgstr ""
 
-msgid "Plan"
+msgid "Install"
 msgstr ""
 
-msgid "The plan says what is erased and what is written. Erase and install asks twice."
+msgid "Show the plan to see what is erased and what is written. Erase and install asks you to press it twice."
 msgstr ""
 
 msgid "Show the plan"
@@ -464,6 +479,21 @@ msgstr ""
 msgid "Restart now"
 msgstr ""
 
+msgid "English (US) is added, to type your login name and password; Super+Space switches"
+msgstr ""
+
+msgid "Lowercase, such as ali. Your home folder takes this name."
+msgstr ""
+
+msgid "You type it to log in and to change the system."
+msgstr ""
+
+msgid "How other computers on the network see this one."
+msgstr ""
+
+msgid "Everything on it is erased. What it holds now is listed below."
+msgstr ""
+
 msgid "{place}. It answers: {what}. Use it, and only the rest is asked."
 msgstr ""
 
@@ -471,6 +501,12 @@ msgid "{place}, but it cannot be used: {why}"
 msgstr ""
 
 msgid "{place}. In use: it answers {what}, so only the rest is asked."
+msgstr ""
+
+msgid "The install did not finish"
+msgstr ""
+
+msgid "The message below says what went wrong. Fix it and press Erase and install again."
 msgstr ""
 
 msgid "could not write {path}: {why}"
@@ -483,6 +519,18 @@ msgid "Press again to erase {disk}"
 msgstr ""
 
 msgid "Installing on {disk}. This takes a few minutes; keep the stick in."
+msgstr ""
+
+msgid "Installing Edel OS"
+msgstr ""
+
+msgid "This takes a few minutes. Keep the computer on."
+msgstr ""
+
+msgid "Edel OS is installed"
+msgstr ""
+
+msgid "Restart, take out the USB stick, and your computer starts Edel OS."
 msgstr ""
 
 msgid "Edel OS is installed on {disk}. Restart, and take the stick out when the screen goes dark."
@@ -1698,9 +1746,6 @@ msgid "Its icon's name: {app}"
 msgstr ""
 
 msgid "Installing changes the system, so Edel OS asks for your password."
-msgstr ""
-
-msgid "Install"
 msgstr ""
 
 msgid "Go back"

@@ -113,6 +113,76 @@ pub fn known(rules: &str) -> (BTreeSet<String>, BTreeSet<String>) {
     (layouts, variants)
 }
 
+/// The lines of `rules`' section named `section`, such as `layout`, with
+/// the blank lines left out.
+fn section_lines<'a>(rules: &'a str, section: &'a str) -> Vec<&'a str> {
+    let mut current = "";
+    let mut lines = Vec::new();
+    for line in rules.lines() {
+        if let Some(name) = line.strip_prefix("! ") {
+            current = name.trim();
+        } else if current == section && !line.trim().is_empty() {
+            lines.push(line.trim_start());
+        }
+    }
+    lines
+}
+
+/// The part of a list line after its first word, trimmed: the name people
+/// read for the layout or variant it names.
+fn after_first_word(line: &str) -> &str {
+    line.split_once(char::is_whitespace)
+        .map_or("", |(_, rest)| rest.trim())
+}
+
+/// Every layout xkeyboard-config's list `rules` names, with its name as
+/// people read it ("German"), sorted by that name, for a list to pick
+/// from.
+pub fn layouts(rules: &str) -> Vec<(String, String)> {
+    let mut layouts: Vec<(String, String)> = section_lines(rules, "layout")
+        .into_iter()
+        .filter_map(|line| {
+            let name = line.split_whitespace().next()?;
+            // xkb's own "A user-defined custom Layout" is no layout to pick.
+            (name != "custom").then(|| (name.to_string(), after_first_word(line).to_string()))
+        })
+        .collect();
+    layouts.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    layouts
+}
+
+/// The name people read for `value`'s first layout, `de` or `de(nodeadkeys)`,
+/// from `rules`: the layout's or the variant's description.
+pub fn description(rules: &str, value: &str) -> Option<String> {
+    let first = value.split(',').next()?.trim();
+    match first.split_once('(') {
+        Some((layout, rest)) => {
+            let variant = rest.strip_suffix(')')?;
+            // "  nodeadkeys      de: German (no dead keys)"
+            let owner = format!("{layout}:");
+            section_lines(rules, "variant")
+                .into_iter()
+                .find_map(|line| {
+                    let mut words = line.split_whitespace();
+                    let (name, owned) = (words.next()?, words.next()?);
+                    if name != variant || owned != owner {
+                        return None;
+                    }
+                    Some(
+                        after_first_word(line)
+                            .strip_prefix(&owner)?
+                            .trim()
+                            .to_string(),
+                    )
+                })
+        }
+        None => section_lines(rules, "layout").into_iter().find_map(|line| {
+            let name = line.split_whitespace().next()?;
+            (name == first).then(|| after_first_word(line).to_string())
+        }),
+    }
+}
+
 /// `value` written the one way (no spaces), checked against `rules`
 /// when the machine has xkeyboard-config's list, else what is wrong.
 pub fn normalize(value: &str, rules: Option<&str>) -> Result<String, String> {
@@ -168,10 +238,12 @@ mod tests {
   us              English (US)
   de              German
   ru              Russian
+  uz              Uzbek
 
 ! variant
   chr             us: Cherokee
   nodeadkeys      de: German (no dead keys)
+  latin           uz: Uzbek (Latin)
 
 ! option
   grp             Switching to another layout
@@ -204,6 +276,43 @@ mod tests {
                 .contains("does not close")
         );
         assert!(parse("us,de,fr,ru,ua").unwrap_err().contains("at most 4"));
+    }
+
+    #[test]
+    fn lists_the_layouts_by_the_names_people_read() {
+        let listed = layouts(RULES_SAMPLE);
+        let listed: Vec<(&str, &str)> = listed
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("us", "English (US)"),
+                ("de", "German"),
+                ("ru", "Russian"),
+                ("uz", "Uzbek"),
+            ]
+        );
+    }
+
+    #[test]
+    fn describes_a_layout_or_a_variant_as_people_read_it() {
+        assert_eq!(description(RULES_SAMPLE, "de").as_deref(), Some("German"));
+        assert_eq!(
+            description(RULES_SAMPLE, "uz(latin)").as_deref(),
+            Some("Uzbek (Latin)")
+        );
+        assert_eq!(
+            description(RULES_SAMPLE, "de(nodeadkeys)").as_deref(),
+            Some("German (no dead keys)")
+        );
+        assert_eq!(
+            description(RULES_SAMPLE, "ru,us").as_deref(),
+            Some("Russian")
+        );
+        assert_eq!(description(RULES_SAMPLE, "xx"), None);
+        assert_eq!(description(RULES_SAMPLE, "de(xx)"), None);
     }
 
     #[test]

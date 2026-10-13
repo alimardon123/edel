@@ -538,9 +538,12 @@ impl Hero {
             .wrap(true)
             .css_classes(["edel-hero-sub"])
             .build();
+        // Shown with its first button, so a hero without one ends at its
+        // line.
         let buttons = gtk::Box::builder()
             .halign(gtk::Align::Center)
             .margin_top(22)
+            .visible(false)
             .build();
         let card = hero_card(content);
         card.set_spacing(10);
@@ -562,6 +565,7 @@ impl Hero {
     /// Adds a button under the line, after the others.
     pub fn add(&self, button: &gtk::Button) {
         self.buttons.append(button);
+        self.buttons.set_visible(true);
     }
 
     /// Shows `icon` (or a spinner when `busy`), the headline and the line
@@ -1066,52 +1070,14 @@ pub struct Choice {
 impl Choice {
     /// A choice of `labels`, the first chosen.
     pub fn new(labels: Vec<String>) -> std::rc::Rc<Choice> {
-        let label = gtk::Label::new(labels.first().map(String::as_str));
-        let inside = gtk::Box::builder().spacing(6).build();
-        inside.append(&label);
-        inside.append(&icon::image("updown", 12));
-        let list = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["edel-choices"])
-            .build();
-        let mut checks = Vec::new();
-        for text in &labels {
-            let row = gtk::Box::builder().spacing(8).build();
-            let check = icon::image("check", 12);
-            row.append(&check);
-            row.append(&gtk::Label::builder().label(text).xalign(0.0).build());
-            list.append(&row);
-            checks.push(check);
-        }
-        let popover = gtk::Popover::builder()
-            .child(&list)
-            .has_arrow(false)
-            .css_classes(["edel-choice-list"])
-            .build();
-        let button = gtk::MenuButton::builder()
-            .child(&inside)
-            .popover(&popover)
-            .css_classes(["edel-choice"])
-            .build();
-        let choice = std::rc::Rc::new(Choice {
-            button,
-            label,
-            checks,
-            labels,
-            selected: std::cell::Cell::new(0),
-            changed: std::cell::RefCell::new(Vec::new()),
-        });
-        choice.show(0);
-        let weak = std::rc::Rc::downgrade(&choice);
-        list.connect_row_activated(move |_, row| {
-            let Some(choice) = weak.upgrade() else { return };
-            choice.set_selected(row.index().max(0) as usize);
-            popover.popdown();
-            for f in choice.changed.borrow().iter() {
-                f();
-            }
-        });
-        choice
+        build(labels, false)
+    }
+
+    /// A choice of `labels` whose list a search field filters, for a long
+    /// list such as the languages or the keyboard layouts: Return takes the
+    /// first row left, and the search clears each time the list opens.
+    pub fn searchable(labels: Vec<String>) -> std::rc::Rc<Choice> {
+        build(labels, true)
     }
 
     pub fn widget(&self) -> gtk::Widget {
@@ -1140,6 +1106,123 @@ impl Choice {
     /// Calls `f` when a person picks a value.
     pub fn connect_changed(&self, f: impl Fn() + 'static) {
         self.changed.borrow_mut().push(Box::new(f));
+    }
+}
+
+/// The one builder behind [`Choice::new`] and [`Choice::searchable`]: the
+/// list of `labels`, with a search field above it when `search` is set.
+fn build(labels: Vec<String>, search: bool) -> std::rc::Rc<Choice> {
+    let label = gtk::Label::new(labels.first().map(String::as_str));
+    let inside = gtk::Box::builder().spacing(6).build();
+    inside.append(&label);
+    inside.append(&icon::image("updown", 12));
+    let list = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .css_classes(["edel-choices"])
+        .build();
+    let mut checks = Vec::new();
+    for text in &labels {
+        let row = gtk::Box::builder().spacing(8).build();
+        let check = icon::image("check", 12);
+        row.append(&check);
+        row.append(&gtk::Label::builder().label(text).xalign(0.0).build());
+        list.append(&row);
+        checks.push(check);
+    }
+    let popover = gtk::Popover::builder()
+        .has_arrow(false)
+        .css_classes(["edel-choice-list"])
+        .build();
+    let mut search_entry = None;
+    if search {
+        let needle = Rc::new(std::cell::RefCell::new(String::new()));
+        let entry = gtk::SearchEntry::builder()
+            .placeholder_text(tr("Search"))
+            .css_classes(["edel-entry"])
+            .build();
+        let shown = labels.clone();
+        let filter = Rc::clone(&needle);
+        list.set_filter_func(move |row| {
+            let needle = filter.borrow();
+            usize::try_from(row.index())
+                .ok()
+                .and_then(|at| shown.get(at))
+                .is_some_and(|text| text.to_lowercase().contains(needle.as_str()))
+        });
+        let typed = Rc::clone(&needle);
+        let filtered = list.clone();
+        entry.connect_search_changed(move |entry| {
+            *typed.borrow_mut() = entry.text().to_lowercase();
+            filtered.invalidate_filter();
+        });
+        let scroll = gtk::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .max_content_height(320)
+            .propagate_natural_height(true)
+            .child(&list)
+            .build();
+        let column = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .build();
+        column.append(&entry);
+        column.append(&scroll);
+        popover.set_child(Some(&column));
+        search_entry = Some(entry);
+    } else {
+        popover.set_child(Some(&list));
+    }
+    let button = gtk::MenuButton::builder()
+        .child(&inside)
+        .popover(&popover)
+        .css_classes(["edel-choice"])
+        .build();
+    let choice = std::rc::Rc::new(Choice {
+        button,
+        label,
+        checks,
+        labels,
+        selected: std::cell::Cell::new(0),
+        changed: std::cell::RefCell::new(Vec::new()),
+    });
+    choice.show(0);
+    let weak = std::rc::Rc::downgrade(&choice);
+    list.connect_row_activated({
+        let (weak, popover) = (weak.clone(), popover.clone());
+        move |_, row| choose(&weak, &popover, row.index().max(0) as usize)
+    });
+    if let Some(entry) = search_entry {
+        // Return takes the first row the search leaves showing.
+        entry.connect_activate({
+            let (weak, popover, list) = (weak.clone(), popover.clone(), list.clone());
+            move |_| {
+                let mut at = 0;
+                while let Some(row) = list.row_at_index(at) {
+                    if row.is_child_visible() {
+                        choose(&weak, &popover, at.max(0) as usize);
+                        return;
+                    }
+                    at += 1;
+                }
+            }
+        });
+        // Each time the list opens it starts with no search, ready to type.
+        popover.connect_show(move |_| {
+            entry.set_text("");
+            entry.grab_focus();
+        });
+    }
+    choice
+}
+
+/// Chooses row `at` of a choice: shows it, shuts its list and tells the
+/// callers, as a person's pick does.
+fn choose(weak: &std::rc::Weak<Choice>, popover: &gtk::Popover, at: usize) {
+    let Some(choice) = weak.upgrade() else { return };
+    choice.set_selected(at);
+    popover.popdown();
+    for f in choice.changed.borrow().iter() {
+        f();
     }
 }
 

@@ -420,18 +420,14 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
 }
 
 /// The settings file for installing in `dir`, the top of a disk mounted
-/// read-only: `install.toml`, then the settings file by its name or a
-/// former one, first at the top, then in `EFI/edel` (where the stick's own
-/// seed is kept). Its path and text, when one is there.
+/// read-only: the settings file by its name or a former one, first at the
+/// top, then in `EFI/edel` (where the stick's own seed is kept). Its path
+/// and text, when one is there.
 pub fn file_in(dir: &Path) -> Option<(std::path::PathBuf, String)> {
     for inner in [dir.to_path_buf(), dir.join("EFI/edel")] {
-        for path in [
-            inner.join(crate::places::INSTALL_FILE),
-            crate::places::found(&crate::places::settings_in(&inner)),
-        ] {
-            if let Ok(text) = fs::read_to_string(&path) {
-                return Some((path, text));
-            }
+        let path = crate::places::found(&crate::places::settings_in(&inner));
+        if let Ok(text) = fs::read_to_string(&path) {
+            return Some((path, text));
         }
     }
     None
@@ -470,22 +466,35 @@ pub fn suggested_keyboard(language: &str) -> String {
         None => (base, String::new()),
     };
     let layout = match (lang, country.as_str()) {
+        // xkb names Arabic and Latin American Spanish by language, not country.
+        ("ar", _) => "ara".to_string(),
+        ("es", "mx") => "latam".to_string(),
+        // Uzbek is written in Latin letters here; xkb's `uz` is Cyrillic.
+        ("uz", _) => "uz(latin)".to_string(),
         (_, "") | ("en", "us") => "us".to_string(),
         ("en", "gb") => "gb".to_string(),
         (_, "us") => "us".to_string(),
         (_, c) => c.to_string(),
     };
-    if NON_LATIN.contains(&layout.as_str()) {
+    keyboard_for(&layout)
+}
+
+/// The keyboard a layout gives the installer: a layout that types no Latin
+/// letters gets `us` as a second layout, so a login name and a password can
+/// be typed.
+pub fn keyboard_for(layout: &str) -> String {
+    let name = layout.split('(').next().unwrap_or(layout);
+    if NON_LATIN.contains(&name) {
         format!("{layout},us")
     } else {
-        layout
+        layout.to_string()
     }
 }
 
 /// xkb layouts that type no Latin letters.
 const NON_LATIN: &[&str] = &[
-    "ru", "ua", "by", "bg", "rs", "mk", "kz", "kg", "mn", "gr", "il", "ir", "sa", "eg", "ae", "th",
-    "kr", "jp", "cn", "tw", "in", "am", "ge",
+    "ru", "ua", "by", "bg", "rs", "mk", "kz", "kg", "mn", "gr", "il", "ir", "ara", "th", "kr",
+    "jp", "cn", "tw", "in", "am", "ge",
 ];
 
 /// The language answer as the installer takes it, such as `de_DE.UTF-8`, or
@@ -628,14 +637,15 @@ pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
                 .ok()
                 .map(|m| m.trim().to_string())
                 .filter(|m| !m.is_empty());
-            let title = trf(
-                "{model}, {size} ({name})",
-                &[
-                    ("model", model.as_deref().unwrap_or(tr("no model name"))),
-                    ("size", &size(sectors * 512)),
-                    ("name", &name),
-                ],
-            );
+            let capacity = size(sectors * 512);
+            // The name (`sda`) stays in the choice, not the title people read.
+            let title = match model {
+                Some(model) => trf(
+                    "{model} · {size}",
+                    &[("model", &model), ("size", &capacity)],
+                ),
+                None => trf("{size} disk", &[("size", &capacity)]),
+            };
             (sectors > 0).then_some(DiskChoice { name, title })
         })
         .collect()
@@ -830,6 +840,13 @@ mod tests {
         assert_eq!(suggested_keyboard("de_DE.UTF-8"), "de");
         assert_eq!(suggested_keyboard("ru_RU.UTF-8"), "ru,us");
         assert_eq!(suggested_keyboard("C"), "us");
+        assert_eq!(suggested_keyboard("ar_SA.UTF-8"), "ara,us");
+        assert_eq!(suggested_keyboard("es_MX.UTF-8"), "latam");
+        assert_eq!(suggested_keyboard("uz_UZ.UTF-8"), "uz(latin)");
+        assert_eq!(keyboard_for("ru"), "ru,us");
+        assert_eq!(keyboard_for("de"), "de");
+        assert_eq!(keyboard_for("ru(phonetic)"), "ru(phonetic),us");
+        assert_eq!(keyboard_for("uz(latin)"), "uz(latin)");
     }
 
     #[test]
@@ -923,11 +940,11 @@ mod tests {
             [
                 DiskChoice {
                     name: "nvme0n1".into(),
-                    title: "Samsung SSD 980, 512 GB (nvme0n1)".into(),
+                    title: "Samsung SSD 980 · 512 GB".into(),
                 },
                 DiskChoice {
                     name: "sdb".into(),
-                    title: "no model name, 4.1 GB (sdb)".into(),
+                    title: "4.1 GB disk".into(),
                 },
             ],
             "the computer's own disk first, then another stick; the running stick and the CD drive are not offered"
@@ -1000,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn finds_install_toml_before_the_settings_file_and_at_the_top_before_efi() {
+    fn finds_the_settings_file_at_the_top_before_efi() {
         let dir = std::env::temp_dir().join(format!("edel-file-in-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("EFI/edel")).unwrap();
@@ -1011,8 +1028,6 @@ mod tests {
         let top = crate::places::settings_in(&dir);
         fs::write(&top, "format = 1\n# top\n").unwrap();
         assert_eq!(file_in(&dir).unwrap().0, top);
-        fs::write(dir.join("install.toml"), "format = 1\n# install\n").unwrap();
-        assert_eq!(file_in(&dir).unwrap().0, dir.join("install.toml"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

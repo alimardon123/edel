@@ -171,7 +171,7 @@ enum Commands {
         #[arg(long)]
         list: bool,
         /// Look on every other disk for a settings file to install with
-        /// (install.toml, else the settings file, at its top or in EFI/edel)
+        /// (the settings file, at its top or in EFI/edel)
         /// and print it, changing nothing
         #[arg(long)]
         find_settings: bool,
