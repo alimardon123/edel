@@ -20,6 +20,7 @@
 | `edel image` | Build and inspect Edel OS images |
 | `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
 | `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
+| `edel web-app` | web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own |
 
 ## `edel update [RELEASE] [OPTIONS]`
 
@@ -54,14 +55,15 @@ Shut this machine down now: the system's own poweroff, through doas when you are
 
 Suspend this machine to memory now; a key or the power button wakes it.
 
-## `edel install DISK [OPTIONS]`
+## `edel install [DISK] [OPTIONS]`
 
 Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings.
 
 | | What it does |
 |---|---|
-| `DISK` | The disk, such as /dev/sda |
-| `--settings FILE` | The settings file the new machine starts with |
+| `DISK` | The disk, such as /dev/sda; without it, the disks are listed and one is asked for |
+| `--settings FILE` | The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it |
+| `--list` | List the disks Edel OS could install on, and change nothing |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 
@@ -120,7 +122,7 @@ Make FILE this machine's settings and apply it, such as a file exported on anoth
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ### `edel settings export`
 
@@ -132,7 +134,7 @@ Check a settings file strictly: every unknown key, value or format, and every ke
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ## `edel image`
 
@@ -233,3 +235,28 @@ Delete one of your presets; the preset in use cannot be deleted.
 | | What it does |
 |---|---|
 | `NAME` | The preset's name, as preset list shows it |
+
+## `edel web-app`
+
+web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own.
+
+### `edel web-app add URL [OPTIONS]`
+
+Make a website an app with its own window, name and icon in the launcher.
+
+| | What it does |
+|---|---|
+| `URL` | The website, such as example.org or https://example.org |
+| `--name NAME` | The app's name in the launcher; the website's host when none is given |
+
+### `edel web-app remove NAME`
+
+Remove one of your web apps and its own profile, by its name.
+
+| | What it does |
+|---|---|
+| `NAME` | The app's name, as web-app list shows it |
+
+### `edel web-app list`
+
+List your web apps, with their websites.

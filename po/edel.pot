@@ -68,6 +68,45 @@ msgstr ""
 msgid "  4: data, {mib} MiB, starting from the settings file {file}"
 msgstr ""
 
+msgid "Language"
+msgstr ""
+
+msgid "Keyboard"
+msgstr ""
+
+msgid "Your login name"
+msgstr ""
+
+msgid "Your password"
+msgstr ""
+
+msgid "Disk to install on"
+msgstr ""
+
+msgid "Time zone"
+msgstr ""
+
+msgid "Computer name"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "Profile"
+msgstr ""
+
+msgid "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter"
+msgstr ""
+
+msgid "removable"
+msgstr ""
+
+msgid "running from it, so not offered"
+msgstr ""
+
+msgid "no partitions"
+msgstr ""
+
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
 msgstr ""
 
@@ -81,6 +120,60 @@ msgid "unknown"
 msgstr ""
 
 msgid "run as root to see"
+msgstr ""
+
+msgid "no disk found to install on"
+msgstr ""
+
+msgid "the questions were not answered; nothing was changed"
+msgstr ""
+
+msgid "Your password: "
+msgstr ""
+
+msgid "a password cannot be empty"
+msgstr ""
+
+msgid "The same password again: "
+msgstr ""
+
+msgid "the two passwords differ; type them again"
+msgstr ""
+
+msgid "could not start cryptpw, which hashes the password (busybox)"
+msgstr ""
+
+msgid "cryptpw has no input"
+msgstr ""
+
+msgid "cryptpw could not hash the password; nothing was changed"
+msgstr ""
+
+msgid "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
+msgstr ""
+
+msgid "More options (computer name, layout)? yes or no"
+msgstr ""
+
+msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
+msgstr ""
+
+msgid "lowercase letters, digits, - and _, starting with a letter, and not root or live"
+msgstr ""
+
+msgid "letters, digits and hyphens, up to 63"
+msgstr ""
+
+msgid "one of {names}"
+msgstr ""
+
+msgid "Disk to install on, such as sda"
+msgstr ""
+
+msgid "one of the disks listed above, such as sda"
+msgstr ""
+
+msgid "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
 msgstr ""
 
 msgid "/dev/{name} is the disk this system runs from; install to another disk"
@@ -440,6 +533,18 @@ msgstr ""
 msgid "no release named; taking {location}"
 msgstr ""
 
+msgid "edel web-app writes the files of the person who runs it, and root has no desktop of its own; run it as that person, without doas"
+msgstr ""
+
+msgid "added web app {name} ({id}); it is in the launcher"
+msgstr ""
+
+msgid "removed web app {name}"
+msgstr ""
+
+msgid "no web apps yet; make one with edel web-app add URL"
+msgstr ""
+
 msgid "{path}: ok"
 msgstr ""
 
@@ -659,10 +764,10 @@ msgstr ""
 msgid "warning: could not turn the terminal's echo back on; run stty echo to fix it"
 msgstr ""
 
-msgid "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin"
+msgid "Password for {user}: "
 msgstr ""
 
-msgid "Password for {user}: "
+msgid "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin"
 msgstr ""
 
 msgid "the password was not given; nothing was changed"
@@ -762,9 +867,6 @@ msgid "Appearance"
 msgstr ""
 
 msgid "colours, accent, shape, fonts and motion"
-msgstr ""
-
-msgid "Layout"
 msgstr ""
 
 msgid "the preset, tiling and title bars"
@@ -1116,6 +1218,12 @@ msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a 
 msgstr ""
 
 msgid "{others} or {last}"
+msgstr ""
+
+msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
+msgstr ""
+
+msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
 msgstr ""
 
 msgid "Windows"
@@ -1583,6 +1691,42 @@ msgstr ""
 msgid "slot {slot} starts after the next restart; slot {running} stays installed"
 msgstr ""
 
+msgid "a web app named {name} is already there ({id}); remove it first with edel web-app remove {name}"
+msgstr ""
+
+msgid "could not make the web app's profile in {path}"
+msgstr ""
+
+msgid "could not make the applications folder {path}"
+msgstr ""
+
+msgid "could not put {path} in place"
+msgstr ""
+
+msgid "no web app named {key}; edel web-app list shows yours"
+msgstr ""
+
+msgid "{key} is not a web app made by edel; it is left alone"
+msgstr ""
+
+msgid "could not remove {path}"
+msgstr ""
+
+msgid "could not remove the profile {path}"
+msgstr ""
+
+msgid "could not find the home folder; web apps are made for the person who runs edel web-app"
+msgstr ""
+
+msgid "{url} is not a web address; write it as example.org or https://example.org"
+msgstr ""
+
+msgid "\"{name}\" is not a name for a web app; use letters and numbers, such as Mail"
+msgstr ""
+
+msgid "could not make a name from {url}; give one with --name NAME"
+msgstr ""
+
 msgid "The Edel OS system tool"
 msgstr ""
 
@@ -1628,10 +1772,13 @@ msgstr ""
 msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"
 msgstr ""
 
-msgid "The disk, such as /dev/sda"
+msgid "The disk, such as /dev/sda; without it, the disks are listed and one is asked for"
 msgstr ""
 
-msgid "The settings file the new machine starts with"
+msgid "The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it"
+msgstr ""
+
+msgid "List the disks Edel OS could install on, and change nothing"
 msgstr ""
 
 msgid "Only show the plan: what would be erased and written; change nothing"
@@ -1682,7 +1829,7 @@ msgstr ""
 msgid "Make FILE this machine's settings and apply it, such as a file exported on another machine"
 msgstr ""
 
-msgid "The settings file"
+msgid "The settings file, a path or an https:// address"
 msgstr ""
 
 msgid "Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed"
@@ -1785,4 +1932,25 @@ msgid "Delete one of your presets; the preset in use cannot be deleted"
 msgstr ""
 
 msgid "The preset's name, as preset list shows it"
+msgstr ""
+
+msgid "web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own"
+msgstr ""
+
+msgid "Make a website an app with its own window, name and icon in the launcher"
+msgstr ""
+
+msgid "The website, such as example.org or https://example.org"
+msgstr ""
+
+msgid "The app's name in the launcher; the website's host when none is given"
+msgstr ""
+
+msgid "Remove one of your web apps and its own profile, by its name"
+msgstr ""
+
+msgid "The app's name, as web-app list shows it"
+msgstr ""
+
+msgid "List your web apps, with their websites"
 msgstr ""

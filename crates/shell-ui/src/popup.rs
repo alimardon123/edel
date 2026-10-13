@@ -24,6 +24,12 @@ use crate::paint::{self, Text, fill, lit, mix, outline, paint_of};
 pub const PAD: f32 = 8.0;
 pub const INSET: f32 = 12.0;
 
+/// How far Tab (`shift` false) or Shift+Tab (true) moves a menu's choice:
+/// one row on, or one back (M6.9).
+pub fn tab_step(shift: bool) -> i32 {
+    if shift { -1 } else { 1 }
+}
+
 /// A drawn shadow and what it was drawn for: the card's size and scale in
 /// device pixels, and the cards.
 type Shadow = ((u32, u32, u32), Vec<Card>, Pixmap);

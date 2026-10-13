@@ -61,6 +61,14 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// A website typed in the launcher cannot be made a web app (M6.4); the
+/// launcher stays open so the address can be changed.
+pub fn web_app_not_added(url: &str, why: impl Display) -> String {
+    format!(
+        "could not make {url} an app: {why}; the launcher is still open, so change the address and try again"
+    )
+}
+
 /// The settings portal cannot be served.
 pub fn portal_not_served(why: impl Display) -> String {
     format!(
@@ -88,6 +96,14 @@ pub fn portal_not_said(why: impl Display) -> String {
 pub fn display_not_told(why: impl Display) -> String {
     format!(
         "could not tell D-Bus the session's Wayland display: {why}; screenshots and screen sharing fail until the next login"
+    )
+}
+
+/// The header bars' button layout cannot be told to apps (M6.16): apps
+/// already open keep their buttons where they were until the next change.
+pub fn button_layout_not_said(why: impl Display) -> String {
+    format!(
+        "could not tell apps where their title bar buttons go: {why}; apps already open keep theirs until the setting changes"
     )
 }
 
@@ -335,6 +351,14 @@ mod tests {
     }
 
     #[test]
+    fn a_button_layout_not_told_says_what_still_works() {
+        assert_eq!(
+            button_layout_not_said("no answer"),
+            "could not tell apps where their title bar buttons go: no answer; apps already open keep theirs until the setting changes"
+        );
+    }
+
+    #[test]
     fn a_terminal_theme_not_written_says_what_still_works() {
         assert_eq!(
             terminal_theme_not_written("Permission denied (os error 13)"),
@@ -376,6 +400,17 @@ mod tests {
         assert_eq!(
             app_not_started("Foot", "No such file or directory (os error 2)"),
             "could not start Foot: No such file or directory (os error 2); check that it is installed"
+        );
+    }
+
+    #[test]
+    fn a_web_app_that_is_not_made_says_why_and_what_to_do() {
+        assert_eq!(
+            web_app_not_added(
+                "https://example.org",
+                "a web app named example.org is already there (edel-web-example-org); remove it first with edel web-app remove example.org"
+            ),
+            "could not make https://example.org an app: a web app named example.org is already there (edel-web-example-org); remove it first with edel web-app remove example.org; the launcher is still open, so change the address and try again"
         );
     }
 

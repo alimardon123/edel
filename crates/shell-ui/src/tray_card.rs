@@ -513,6 +513,11 @@ impl Shell {
         // change of preset restarts shell-ui instead, as the compositor
         // says.
         let (machine, person) = crate::settings_texts();
+        // The header bars' button layout (M6.16): apps already open follow.
+        if let Some(connection) = &self._portal {
+            let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
+            crate::portal::buttons_changed(connection, &buttons);
+        }
         let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
         if wanted != self.panel_specs {
             self.panels_changed(wanted);

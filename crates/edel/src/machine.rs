@@ -38,6 +38,7 @@ fn machine_file() -> PathBuf {
 }
 /// Developer mode is on while this file exists (ADR-007; M7.1 acts on it).
 const DEVELOPER_FLAG: &str = places::DEVELOPER_FLAG;
+const FIRST_PASSWORDS: &str = places::FIRST_PASSWORDS;
 /// What this machine changed in `/etc`: a file here differs from the slot's.
 const ETC_UPPER: &str = places::ETC_UPPER;
 /// A volume with this label holding the settings file seeds a first boot.
@@ -258,6 +259,9 @@ enum Change {
         keys: Vec<String>,
     },
     Developer(bool),
+    /// Give these people the password `edel install` asked for, then
+    /// delete `places::FIRST_PASSWORDS` (M6.6b)
+    Passwords(Vec<String>),
     /// May use the screen and input: a person in the file, or the greeter
     Seat(String),
     /// Flatpak apps from Flathub for an admin person, installed as that
@@ -286,6 +290,17 @@ impl fmt::Display for Change {
             Change::Keys { name, keys } => {
                 write!(f, "users.{name}.ssh_keys: write {} keys", keys.len())
             }
+            Change::Passwords(names) if names.is_empty() => {
+                write!(
+                    f,
+                    "remove the passwords edel install left, as nobody in the file has one"
+                )
+            }
+            Change::Passwords(names) => write!(
+                f,
+                "give {} the password edel install asked for",
+                names.join(", ")
+            ),
             Change::Developer(on) => {
                 write!(
                     f,
@@ -328,6 +343,8 @@ struct Machine {
     flatpak: BTreeMap<String, BTreeSet<String>>,
     /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
     mime_defaults: Option<String>,
+    /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
+    first_passwords: Option<String>,
 }
 
 impl Machine {
@@ -373,8 +390,52 @@ impl Machine {
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
+            first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
         })
     }
+}
+
+/// The people of `users` that `places::FIRST_PASSWORDS`' `text` has a
+/// password for, in the file's order.
+fn first_password_names<'a>(text: &str, users: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let users: BTreeSet<&String> = users.collect();
+    text.lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, _)| users.iter().any(|u| u.as_str() == *name))
+        .map(|(name, _)| name.to_string())
+        .collect()
+}
+
+/// The `NAME:HASH` lines of `text` for `names`, as `chpasswd -e` takes
+/// them; a line whose hash is not a crypt hash is left out.
+fn first_password_lines(text: &str, names: &[String]) -> String {
+    text.lines()
+        .filter(|line| {
+            line.split_once(':').is_some_and(|(name, hash)| {
+                names.iter().any(|n| n == name) && hash.starts_with('$') && !hash.contains(':')
+            })
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// Runs `cmd` with `input` on its standard input, failing on a non-zero
+/// exit; the input is not shown in the message.
+fn run_with_input(cmd: &mut Command, input: &str) -> Result<()> {
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not start {:?}", cmd.get_program()))?;
+    child
+        .stdin
+        .take()
+        .context("no input")?
+        .write_all(input.as_bytes())?;
+    let status = child.wait()?;
+    if !status.success() {
+        bail!("{:?} failed with {status}", cmd.get_program());
+    }
+    Ok(())
 }
 
 /// The changes that make `machine` match `file`, and notes on what is left
@@ -485,6 +546,14 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let theirs = mime_now.is_some_and(|text| !text.starts_with(apps::MIME_COMMENT));
     if !theirs && mime_now.unwrap_or("") != wanted {
         changes.push(Change::MimeDefaults(wanted));
+    }
+    // The passwords edel install asked for, given once the people exist
+    // (they are added above), then the file goes (M6.6b).
+    if let Some(text) = &machine.first_passwords {
+        changes.push(Change::Passwords(first_password_names(
+            text,
+            file.users.keys(),
+        )));
     }
     let developer = file.system.developer_mode == Some(true);
     if developer != machine.developer {
@@ -636,6 +705,15 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             fs::write(flag, "")?;
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+        Change::Passwords(names) => {
+            let text = fs::read_to_string(FIRST_PASSWORDS)
+                .with_context(|| could_not_read(Path::new(FIRST_PASSWORDS)))?;
+            let lines = first_password_lines(&text, names);
+            if !lines.is_empty() {
+                run_with_input(Command::new("chpasswd").arg("-e"), &lines)?;
+            }
+            fs::remove_file(FIRST_PASSWORDS)?;
+        }
         Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
         Change::Flatpak { name, ids } => install_apps(&find_account(name)?, ids)?,
         Change::MimeDefaults(text) => {
@@ -1947,6 +2025,7 @@ mod tests {
             developer: false,
             flatpak: BTreeMap::new(),
             mime_defaults: None,
+            first_passwords: None,
         }
     }
 
@@ -2366,5 +2445,15 @@ mod tests {
         assert_eq!(file.users["ali"].login_shell.as_deref(), Some("/bin/ash"));
         let text = toml::to_string(&file).unwrap();
         assert!(settings::read(&text).unwrap().problems.is_empty(), "{text}");
+    }
+
+    #[test]
+    fn gives_the_install_passwords_to_the_people_in_the_file_only() {
+        let text = "ali:$6$salt$hash\nmallory:$6$x$y\nbad:plain\n";
+        let users = ["ali".to_string(), "bad".to_string()];
+        let names = first_password_names(text, users.iter());
+        assert_eq!(names, ["ali", "bad"]);
+        assert_eq!(first_password_lines(text, &names), "ali:$6$salt$hash\n");
+        assert!(first_password_names(text, [].iter()).is_empty());
     }
 }

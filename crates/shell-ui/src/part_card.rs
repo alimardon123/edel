@@ -1593,6 +1593,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         children,
         toggled,
         value: None,
+        value_text: None,
     };
     let mut children: Vec<Item> = l
         .rows

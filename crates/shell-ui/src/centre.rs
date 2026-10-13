@@ -612,6 +612,7 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
         children: Vec::new(),
         toggled,
         value: None,
+        value_text: None,
     };
     put(
         &mut out,
