@@ -1,0 +1,7 @@
+# CI only (roadmap M6.2). features/apps-test/ holds the test service.
+format = 1
+summary = "CI only: swap a default app for another through an update"
+why = "The default apps' test service checks that an update which drops test app A for B keeps A for the person who used it and gives a new person only B; it needs nothing beyond the flatpak feature."
+
+[services]
+default = ["edel-apps-test"]

@@ -17,7 +17,7 @@ esac
 # Inside the checkout, so CI's cache step can keep them between runs.
 export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar \
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar flatpak \
 	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
 
 # The tool and our programs the features ship (edel-compositor, M4.2b);
@@ -51,8 +51,11 @@ desktop_test_image() {
 	rm -rf out/desktop-seed
 	mkdir -p "out/desktop-seed$share_dir"
 	cp ci/desktop/seed.toml "out/desktop-seed$share_dir/$settings_name"
+	# Its default apps (M6.2) are a test app from a repository made here,
+	# with no network.
+	sh ci/apps/make-repo.sh out/apps-repo
 	build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
-		--no-compress --out out/desktop-test
+		--app org.edel.TestA --apps-from "file://$PWD/out/apps-repo" --no-compress --out out/desktop-test
 }
 
 # This container runs as root. Hand the finished images back to whoever
@@ -148,6 +151,26 @@ ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
 ./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-desktop-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
 
+# The default apps' test (roadmap M6.2, ci/apps-test.sh): the VM image with
+# Flatpak, whose default app is TestA from the repository desktop_test_image
+# made, and its update, whose default app is TestB and which drops TestA.
+# Both are built from the local repository and point their machines at it
+# over HTTP, where ci/apps-test.sh serves it.
+apps_test() {
+	apps_version=$1
+	shift
+	build "$apps_version" ci/apps-test/vm.toml --health-timeout 30 --public-key out/keys/ci-1.pub \
+		--apps-from "file://$PWD/out/apps-repo" --apps-url http://10.0.2.2:8002/ --no-compress "$@"
+}
+apps_test "$version" --app org.edel.TestA --out out/apps-test
+apps_test "$version.1" --app org.edel.TestB --dropped-app org.edel.TestA --out out/apps-test-update
+update=out/apps-test/update
+rm -rf "$update"
+mkdir -p "$update"
+ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
+./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-apps-test-x86_64.ext4.gz"
+./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
+
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update
 # images and their release.toml, the disks, the container image and the
@@ -165,6 +188,6 @@ done
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
 
-hand_back out out/ab-test out/ab-test/update out/ab-test-update out/channel out/desktop-test out/desktop-test/update \
+hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/desktop-test/update \
 	out/flatpak out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test

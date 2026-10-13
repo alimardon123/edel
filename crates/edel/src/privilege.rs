@@ -64,7 +64,7 @@ pub fn need(command: &Commands) -> Need {
     match command {
         Commands::Update { check: true, .. } => Need::Anyone,
         Commands::Update { .. } | Commands::Rollback => Need::Password,
-        Commands::Install { plan: true, .. } => Need::Anyone,
+        Commands::Install { plan: true, .. } | Commands::Install { list: true, .. } => Need::Anyone,
         Commands::Install { .. } => Need::Password,
         Commands::Status => Need::Anyone,
         Commands::Restart | Commands::Shutdown | Commands::Suspend => Need::Admin,
@@ -92,7 +92,8 @@ pub fn need(command: &Commands) -> Need {
                 SettingsCommands::Set { .. }
                 | SettingsCommands::Reset { .. }
                 | SettingsCommands::Apply { .. }
-                | SettingsCommands::Import { .. },
+                | SettingsCommands::Import { .. }
+                | SettingsCommands::FirstBoot { .. },
             ) => Need::Admin,
         },
         Commands::Image { command } => match command {
@@ -336,6 +337,13 @@ fn stty(tty: &File, args: &[&str]) -> io::Result<String> {
 
 /// Prompts on the terminal with echo off and reads one line. Ctrl-C cancels.
 fn read_terminal(user: &str) -> Result<Password> {
+    read_secret(&trf("Password for {user}: ", &[("user", user)]))
+}
+
+/// Shows `prompt` on the terminal and reads one line with echo off, as a
+/// password is read; `edel install` asks the new person's password with it
+/// (M6.6b). Ctrl-C cancels.
+pub fn read_secret(prompt: &str) -> Result<Password> {
     let no_terminal = || {
         tr(
             "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin",
@@ -347,7 +355,7 @@ fn read_terminal(user: &str) -> Result<Password> {
         .open(TERMINAL)
         .with_context(no_terminal)?;
     let _echo = Echo::off(&tty)?;
-    write!(shown, "{}", trf("Password for {user}: ", &[("user", user)]))?;
+    write!(shown, "{prompt}")?;
     shown.flush()?;
     let mut line = Vec::new();
     let mut byte = [0u8; 1];
@@ -467,6 +475,10 @@ mod tests {
             ),
             (&["edel", "settings", "apply"], Need::Admin),
             (&["edel", "settings", "import", "f"], Need::Admin),
+            (
+                &["edel", "settings", "first-boot", "--console"],
+                Need::Admin,
+            ),
             (&["edel", "image", "check", "images/vm.toml"], Need::Anyone),
             (&["edel", "image", "build", "images/vm.toml"], Need::Admin),
             (&["edel", "theme", "list"], Need::Anyone),

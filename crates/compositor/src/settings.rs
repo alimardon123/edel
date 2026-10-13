@@ -31,8 +31,10 @@ pub struct Settings {
     /// Resolved by [`Settings::from_files`], so a window's frame reads it
     /// without parsing a preset.
     pub title_bars: TitleBars,
-    /// `layout.window_buttons` (M5.4b): absent means the preset's side.
-    pub window_buttons: Option<Side>,
+    /// `layout.window_buttons` (M5.4b) as the files and the preset give it
+    /// (M6.16, `presets::buttons_applying`), set by `from_files`; the
+    /// default is Classic's right side.
+    pub window_buttons: Side,
     /// `layout.close_button`, `minimize_button` and `maximize_button`
     /// (M5.18a): absent shows each.
     pub buttons: Shown,
@@ -50,6 +52,14 @@ pub struct Settings {
     pub animation_curve: Curve,
     /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
     pub color_scheme: Scheme,
+    /// `[default_apps]` (M6.10): the desktop file id each role opens, by
+    /// role (`files`, `browser`), the person's over the machine's; a role
+    /// no file sets is absent.
+    pub default_apps: BTreeMap<String, String>,
+    /// `startup.apps` (M6.10): the desktop file ids started once the desktop
+    /// is on screen, in the order listed. The person's list replaces the
+    /// machine's whole; empty is none.
+    pub startup: Vec<String>,
     /// `[shortcuts]`, action to keys as written, the person's over the
     /// machine's; `edel::shortcuts::resolve` lays them over the defaults
     /// (M5.13a).
@@ -60,6 +70,9 @@ pub struct Settings {
     /// `region.language` (M5.24a): shell-ui reads its words in it, and
     /// the compositor only restarts it when it changes.
     pub language: Option<String>,
+    /// `region.input_method` (M6.8): `fcitx5` starts it with the session;
+    /// absent or `none` runs none (`session.rs`).
+    pub input_method: Option<String>,
     /// `layout.tiling_style` as the files and the preset give it (M5.16a,
     /// M5.18b): the person's over the machine's, else the preset's, else
     /// stack. Resolved by [`Settings::from_files`].
@@ -115,6 +128,9 @@ pub struct Settings {
     /// The icon scale (M5.12b5 part A); the tokens read it, and a change
     /// starts shell-ui again with them.
     pub icons: edel::tokens::IconSize,
+    /// `appearance.contrast` (M6.9): high contrast on, the person's over the
+    /// machine's. The tokens read it too, so a change reads them again.
+    pub contrast: bool,
 }
 
 /// Whether `value` is in the key table's range for `key` (M5.12b5 part A); a
@@ -148,6 +164,9 @@ pub struct OutputSettings {
 impl Settings {
     /// The machine's file, then the person's over it.
     pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
+        // The title bars' buttons, one rule for the compositor and shell-ui's
+        // apps (M6.16): the files' values over the preset's.
+        let buttons = presets::buttons_applying(machine, person);
         // Each file with the preset and theme in use applied, as the tokens
         // read them (M5.12b6a, M5.17); the readers below see the values they give.
         let machine = machine.map(edel::settings::in_use);
@@ -157,6 +176,13 @@ impl Settings {
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),
             icons: edel::tokens::IconSize::between(machine, person),
+            contrast: edel::tokens::high_contrast_between(machine, person),
+            window_buttons: buttons.side,
+            buttons: Shown {
+                close: buttons.close,
+                minimize: buttons.minimize,
+                maximize: buttons.maximize,
+            },
             ..Settings::default()
         };
         // The keys the files set, before the preset fills in the rest.
@@ -171,18 +197,6 @@ impl Settings {
             }
             if let Some(bars) = file.layout.title_bars.as_deref().and_then(TitleBars::parse) {
                 title_bars = Some(bars);
-            }
-            if let Some(side) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
-                settings.window_buttons = Some(side);
-            }
-            for (value, shown) in [
-                (file.layout.close_button, &mut settings.buttons.close),
-                (file.layout.minimize_button, &mut settings.buttons.minimize),
-                (file.layout.maximize_button, &mut settings.buttons.maximize),
-            ] {
-                if let Some(value) = value {
-                    *shown = value;
-                }
             }
             if file.panels.list.is_some() {
                 settings.panels.clone_from(&file.panels.list);
@@ -276,11 +290,22 @@ impl Settings {
                 file.appearance.colours.as_ref(),
             );
             settings.shortcuts.extend(file.shortcuts.clone());
+            for (role, id) in edel::settings::default_app_roles(&file.default_apps) {
+                settings
+                    .default_apps
+                    .insert(role.to_string(), id.to_string());
+            }
+            if let Some(apps) = &file.startup.apps {
+                settings.startup.clone_from(apps);
+            }
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
             }
             if file.region.language.is_some() {
                 settings.language.clone_from(&file.region.language);
+            }
+            if file.region.input_method.is_some() {
+                settings.input_method.clone_from(&file.region.input_method);
             }
             for (name, output) in &file.displays {
                 let into = settings.outputs.entry(name.clone()).or_default();
@@ -330,11 +355,10 @@ impl Settings {
         }
     }
 
-    /// The side of the title bars their buttons sit on (M5.4b):
-    /// `layout.window_buttons` if set, else the preset's.
+    /// The side of the title bars their buttons sit on (M5.4b): the files'
+    /// `layout.window_buttons`, else the preset's, resolved by `from_files`.
     pub fn button_side(&self) -> Side {
         self.window_buttons
-            .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.windows.buttons)
     }
 
     /// The commands the session starts (M5.7b): the preset's
@@ -458,6 +482,23 @@ pub fn load(machine: &Path, person: Option<&Path>) -> (Settings, Vec<String>) {
     let settings = Settings::from_files(machine.as_ref(), person.as_ref());
     notes.extend(presets::named(settings.preset.as_deref()).1);
     (settings, notes)
+}
+
+impl Settings {
+    /// Whether the tokens the desktop draws with may change from `old` to
+    /// `self` (M5.12b1, M6.9): the accent, colours, wallpapers' accent, shape,
+    /// text, icons and contrast. The compositor reads the tokens again when
+    /// this says so; a change that leaves them as they were does nothing.
+    pub fn colours_changed(&self, old: &Settings) -> bool {
+        self.accent != old.accent
+            || self.colours != old.colours
+            || self.wallpaper != old.wallpaper
+            || self.wallpaper_dark != old.wallpaper_dark
+            || self.shape != old.shape
+            || self.text != old.text
+            || self.icons != old.icons
+            || self.contrast != old.contrast
+    }
 }
 
 #[cfg(test)]
@@ -655,6 +696,37 @@ mod tests {
             Scheme::Light,
             "the person's wins, and auto is light in this release"
         );
+    }
+
+    #[test]
+    fn the_default_apps_are_the_persons_over_the_machines() {
+        let machine = file(
+            "format = 1\n[default_apps]\nbrowser = \"org.mozilla.firefox\"\nfiles = \"org.gnome.Nautilus\"\n",
+        );
+        let person = file("format = 1\n[default_apps]\nbrowser = \"org.gnome.Epiphany\"\n");
+        let apps = Settings::from_files(Some(&machine), Some(&person)).default_apps;
+        assert_eq!(apps["browser"], "org.gnome.Epiphany", "the person's wins");
+        assert_eq!(apps["files"], "org.gnome.Nautilus", "the machine's stays");
+        assert!(!apps.contains_key("mail"), "an unset role stays unset");
+    }
+
+    #[test]
+    fn the_startup_apps_are_the_persons_list_over_the_machines() {
+        let machine = file("format = 1\n[startup]\napps = [\"org.mozilla.firefox\", \"foot\"]\n");
+        let person = file("format = 1\n[startup]\napps = [\"org.gnome.Epiphany\"]\n");
+        let apps = Settings::from_files(Some(&machine), Some(&person)).startup;
+        assert_eq!(
+            apps,
+            ["org.gnome.Epiphany"],
+            "the person's list replaces the machine's whole"
+        );
+        let apps = Settings::from_files(Some(&machine), None).startup;
+        assert_eq!(
+            apps,
+            ["org.mozilla.firefox", "foot"],
+            "the machine's list stands alone"
+        );
+        assert!(Settings::from_files(None, None).startup.is_empty());
     }
 
     #[test]
@@ -881,5 +953,24 @@ mod tests {
         assert_eq!(settings, Settings::default());
         assert_eq!(notes.len(), 2, "{notes:?}");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// High contrast is the person's over the machine's, and turning it on or
+    /// off is a change of the tokens, while a change of the tiling is not
+    /// (M6.9: the compositor reads the tokens again only for the first).
+    #[test]
+    fn high_contrast_is_the_persons_over_the_machines_and_changes_the_tokens() {
+        let high = file("format = 1\n[appearance]\ncontrast = \"high\"\n");
+        let normal = file("format = 1\n[appearance]\ncontrast = \"normal\"\n");
+        let plain = Settings::from_files(None, None);
+        let on = Settings::from_files(Some(&high), None);
+        assert!(on.contrast);
+        assert!(!Settings::from_files(Some(&high), Some(&normal)).contrast);
+        assert!(Settings::from_files(Some(&normal), Some(&high)).contrast);
+        assert!(on.colours_changed(&plain));
+        assert!(plain.colours_changed(&on));
+        assert!(!on.colours_changed(&on.clone()));
+        let tiled = file("format = 1\n[layout]\ntiling = true\n");
+        assert!(!Settings::from_files(Some(&tiled), None).colours_changed(&plain));
     }
 }

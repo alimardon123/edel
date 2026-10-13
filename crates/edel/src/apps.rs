@@ -27,6 +27,91 @@ pub struct App {
     keywords: Vec<String>,
 }
 
+/// The default apps' Flatpak installation (M6.2), by the id Flatpak's
+/// `--installation=` takes; it lies at `places::DEFAULT_APPS`.
+pub const INSTALLATION: &str = "edel";
+
+/// The remote the default apps come from, in their installation only
+/// (M6.2): Flathub's apps for now, under a name of its own, so the
+/// remote people see stays `flathub` in their own installation.
+pub const APPS_REMOTE: &str = "edel-apps";
+
+/// The default apps of a slot (M6.2), as `edel image build` records them
+/// in `places::DEFAULT_APPS_LIST`: those the data partition's installation
+/// should hold, and those a release dropped, which stay for each person
+/// who used them.
+#[derive(Debug, Default, PartialEq, serde::Deserialize)]
+pub struct DefaultApps {
+    #[serde(default)]
+    pub flatpak: Vec<String>,
+    #[serde(default)]
+    pub flatpak_dropped: Vec<String>,
+}
+
+impl DefaultApps {
+    /// The file's text, as the build writes it.
+    pub fn text(&self) -> String {
+        let list = |ids: &[String]| {
+            ids.iter()
+                .map(|id| format!("{id:?}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        format!(
+            "# The default apps of this slot (roadmap M6.2), written by edel image\n\
+             # build; edel update installs and updates them on the data partition.\n\
+             format = 1\n\
+             flatpak = [{}]\n\
+             flatpak_dropped = [{}]\n",
+            list(&self.flatpak),
+            list(&self.flatpak_dropped)
+        )
+    }
+
+    /// The file read leniently, as a machine reads what another release
+    /// wrote (ADR-008): an id that is not one is left out.
+    pub fn read(text: &str) -> DefaultApps {
+        let mut apps: DefaultApps = toml::from_str(text).unwrap_or_default();
+        apps.flatpak.retain(|id| is_flatpak_id(id));
+        apps.flatpak_dropped.retain(|id| is_flatpak_id(id));
+        apps
+    }
+}
+
+/// What `flatpak remote-add` needs besides the name and the address
+/// (M6.2): `--from` for a `.flatpakrepo` file, which brings its key, and
+/// `--no-gpg-verify` for a local or plain-http test repository, which has
+/// none; an https repository must carry its own key.
+pub fn remote_add_args(from: &str) -> &'static [&'static str] {
+    if from.ends_with(".flatpakrepo") {
+        &["--from"]
+    } else if from.starts_with("file://") || from.starts_with("http://") {
+        &["--no-gpg-verify"]
+    } else {
+        &[]
+    }
+}
+
+/// The file in `places::FLATPAK_INSTALLATIONS` that tells Flatpak where
+/// the default apps' installation lies (M6.2), at `path`: the data
+/// partition's place on a machine, the build's folder while an image is
+/// made.
+pub fn installation_conf(path: &str) -> String {
+    format!(
+        "# The default apps of Edel OS (roadmap M6.2), on the data partition,\n\
+         # written by edel image build.\n\
+         [Installation \"{INSTALLATION}\"]\n\
+         Path={path}\n\
+         DisplayName=Edel OS's default apps\n\
+         StorageType=harddisk\n"
+    )
+}
+
+/// The file's name in `places::FLATPAK_INSTALLATIONS`.
+pub fn installation_file() -> String {
+    format!("{INSTALLATION}.conf")
+}
+
 /// Flathub, the one remote Edel OS installs apps from (M6.1): `edel
 /// settings apply` adds it for each admin person who has none, as that
 /// person, with `flatpak --user remote-add --if-not-exists`.
@@ -80,6 +165,7 @@ pub fn data_dirs() -> Vec<PathBuf> {
     );
     out.extend(data_home.map(|d| d.join("flatpak/exports/share")));
     out.push("/var/lib/flatpak/exports/share".into());
+    out.push(Path::new(crate::places::DEFAULT_APPS).join("exports/share"));
     let mut seen = Vec::new();
     for dir in out {
         if !seen.contains(&dir) {
@@ -209,6 +295,8 @@ const ROLES: &[(&str, &str)] = &[
     ("terminal", "TerminalEmulator"),
     ("music", "Audio"),
     ("settings", "Settings"),
+    // The store (M6.4), Bazaar by default.
+    ("store", "PackageManager"),
 ];
 
 /// The app `pin` names: a role (`browser`) or a desktop file id
@@ -220,6 +308,84 @@ pub fn pinned<'a>(apps: &'a [App], pin: &str) -> Option<&'a App> {
             .find(|a| a.categories.iter().any(|c| c == category)),
         None => apps.iter().find(|a| a.id == pin),
     }
+}
+
+/// The apps of `role`'s category (M6.10), in the order `apps` gives them,
+/// so the first is the one [`default_app`] picks when no key names one.
+/// None for a role `ROLES` does not hold.
+pub fn apps_of_role<'a>(apps: &'a [App], role: &str) -> Vec<&'a App> {
+    let Some((_, category)) = ROLES.iter().find(|(r, _)| *r == role) else {
+        return Vec::new();
+    };
+    apps.iter()
+        .filter(|a| a.categories.iter().any(|c| c == category))
+        .collect()
+}
+
+/// The default app each role has in `[default_apps]` (M6.10): the role
+/// and the settings key that names its app.
+pub const DEFAULT_APP_KEYS: &[(&str, &str)] = &[
+    ("files", "default_apps.files"),
+    ("browser", "default_apps.browser"),
+    ("editor", "default_apps.editor"),
+    ("terminal", "default_apps.terminal"),
+    ("mail", "default_apps.mail"),
+];
+
+/// The MIME types each role's default app opens (M6.10), in the order
+/// the system's `mimeapps.list` lists them. A terminal has no MIME type,
+/// so it is not here.
+const MIME_TYPES: &[(&str, &[&str])] = &[
+    (
+        "browser",
+        &[
+            "x-scheme-handler/http",
+            "x-scheme-handler/https",
+            "text/html",
+        ],
+    ),
+    ("files", &["inode/directory"]),
+    ("editor", &["text/plain"]),
+    ("mail", &["x-scheme-handler/mailto"]),
+];
+
+/// The app a role opens (M6.10): the one `chosen` names when it is
+/// installed (an empty name is none), else the first app of the role's
+/// category, as `pinned` finds it.
+pub fn default_app<'a>(apps: &'a [App], role: &str, chosen: Option<&str>) -> Option<&'a App> {
+    chosen
+        .filter(|id| !id.is_empty())
+        .and_then(|id| apps.iter().find(|a| a.id == id))
+        .or_else(|| pinned(apps, role))
+}
+
+/// The first line of the `mimeapps.list` [`mime_defaults`] writes (M6.10).
+/// A file that starts with it is Edel OS's to change; any other is the
+/// administrator's, and nothing writes or removes it.
+pub const MIME_COMMENT: &str = "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.";
+
+/// The text of the system's `mimeapps.list` for the default apps a
+/// settings file sets (M6.10), given as (role, desktop file id) pairs.
+/// Empty when no MIME type is set, so nothing is written for a file that
+/// sets none, or only the terminal.
+pub fn mime_defaults(chosen: &[(&str, &str)]) -> String {
+    let mut lines = Vec::new();
+    for (role, types) in MIME_TYPES {
+        let Some((_, id)) = chosen.iter().find(|(r, _)| r == role) else {
+            continue;
+        };
+        for mime in types.iter() {
+            lines.push(format!("{mime}={id}.desktop;\n"));
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut text = format!("{MIME_COMMENT}\n[Default Applications]\n");
+    for line in lines {
+        text.push_str(&line);
+    }
+    text
 }
 
 /// A string value's escapes: `\s`, `\n`, `\t`, `\r` and `\\`.
@@ -505,10 +671,173 @@ mod tests {
     }
 
     #[test]
+    fn the_apps_of_a_role_are_its_category_in_the_given_order() {
+        let app = |id: &str, category: &str| App {
+            id: id.to_string(),
+            ..parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={id}\nExec={id}\nCategories={category};\n"
+            ))
+            .unwrap()
+        };
+        let apps = vec![
+            app("org.gnome.Nautilus", "FileManager"),
+            app("org.mozilla.firefox", "WebBrowser"),
+            app("org.gnome.Epiphany", "WebBrowser"),
+        ];
+        let ids = |role: &str| -> Vec<String> {
+            apps_of_role(&apps, role)
+                .iter()
+                .map(|a| a.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            ids("browser"),
+            ["org.mozilla.firefox", "org.gnome.Epiphany"]
+        );
+        assert_eq!(ids("files"), ["org.gnome.Nautilus"]);
+        assert!(ids("mail").is_empty(), "no app of the category, none");
+        assert!(ids("nonesuch").is_empty(), "a role ROLES does not hold");
+        assert_eq!(
+            apps_of_role(&apps, "browser")
+                .first()
+                .map(|a| a.id.as_str()),
+            default_app(&apps, "browser", None).map(|a| a.id.as_str()),
+            "the first is the one default_app picks"
+        );
+    }
+
+    #[test]
+    fn a_default_app_is_the_chosen_one_when_installed_else_the_first_of_its_role() {
+        // `read_all` gives each app its id from its file name; `parse` does not.
+        let app = |id: &str, category: &str| App {
+            id: id.to_string(),
+            ..parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={id}\nExec={id}\nCategories={category};\n"
+            ))
+            .unwrap()
+        };
+        let apps = vec![
+            app("org.gnome.Nautilus", "FileManager"),
+            app("org.mozilla.firefox", "WebBrowser"),
+            app("org.gnome.Epiphany", "WebBrowser"),
+        ];
+        let id_of = |found: Option<&App>| found.map(|a| a.id.clone());
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some("org.gnome.Epiphany"))),
+            Some("org.gnome.Epiphany".into()),
+            "the chosen app, when installed"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some("org.example.Missing"))),
+            Some("org.mozilla.firefox".into()),
+            "a chosen app that is not installed falls back to the category"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", None)),
+            Some("org.mozilla.firefox".into()),
+            "nothing chosen takes the category's first app"
+        );
+        assert_eq!(
+            id_of(default_app(&apps, "browser", Some(""))),
+            Some("org.mozilla.firefox".into()),
+            "an empty choice is none"
+        );
+        assert!(
+            default_app(&apps, "terminal", None).is_none(),
+            "no app of the role"
+        );
+    }
+
+    #[test]
+    fn mime_defaults_write_each_role_under_its_types_in_table_order() {
+        assert_eq!(
+            mime_defaults(&[
+                ("mail", "org.example.Mail"),
+                ("editor", "org.gnome.TextEditor"),
+                ("browser", "org.mozilla.firefox"),
+                ("files", "org.gnome.Nautilus"),
+            ]),
+            "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.\n\
+             [Default Applications]\n\
+             x-scheme-handler/http=org.mozilla.firefox.desktop;\n\
+             x-scheme-handler/https=org.mozilla.firefox.desktop;\n\
+             text/html=org.mozilla.firefox.desktop;\n\
+             inode/directory=org.gnome.Nautilus.desktop;\n\
+             text/plain=org.gnome.TextEditor.desktop;\n\
+             x-scheme-handler/mailto=org.example.Mail.desktop;\n"
+        );
+    }
+
+    #[test]
+    fn mime_defaults_is_empty_when_no_mime_type_is_set() {
+        assert_eq!(mime_defaults(&[]), "");
+        assert_eq!(
+            mime_defaults(&[("terminal", "foot")]),
+            "",
+            "a terminal has no MIME type"
+        );
+    }
+
+    #[test]
     fn flathub_is_added_from_the_one_constant() {
         assert_eq!(
             FLATHUB_REMOTE,
             "https://dl.flathub.org/repo/flathub.flatpakrepo"
+        );
+    }
+
+    #[test]
+    fn flatpak_finds_the_default_apps_where_the_build_put_them() {
+        let conf = installation_conf("/data/edel/apps");
+        assert!(
+            conf.contains("[Installation \"edel\"]\nPath=/data/edel/apps\n"),
+            "{conf}"
+        );
+        assert_eq!(installation_file(), "edel.conf");
+        assert!(
+            data_dirs()
+                .iter()
+                .any(|d| d == &Path::new(crate::places::DEFAULT_APPS).join("exports/share"))
+        );
+    }
+
+    #[test]
+    fn a_remote_is_added_with_its_key_or_as_a_test_repository() {
+        assert_eq!(remote_add_args(FLATHUB_REMOTE), ["--from"]);
+        assert_eq!(
+            remote_add_args("file:///src/out/apps-repo"),
+            ["--no-gpg-verify"]
+        );
+        assert_eq!(
+            remote_add_args("http://10.0.2.2:8002/"),
+            ["--no-gpg-verify"]
+        );
+        assert!(remote_add_args("https://example.org/repo").is_empty());
+    }
+
+    #[test]
+    fn the_default_apps_list_reads_back_and_drops_what_is_no_id() {
+        let apps = DefaultApps {
+            flatpak: vec!["org.edel.TestB".into()],
+            flatpak_dropped: vec!["org.edel.TestA".into()],
+        };
+        assert_eq!(DefaultApps::read(&apps.text()), apps);
+        let odd =
+            DefaultApps::read("format = 1\nflatpak = [\"org.edel.TestB\", \"nope\"]\nnew = 1\n");
+        assert_eq!(odd.flatpak, ["org.edel.TestB"]);
+        assert_eq!(DefaultApps::read("not toml ["), DefaultApps::default());
+    }
+
+    #[test]
+    fn the_store_role_finds_the_package_manager() {
+        let store = parse(
+            "[Desktop Entry]\nType=Application\nName=Bazaar\nExec=bazaar\nCategories=System;PackageManager;\n",
+        )
+        .unwrap();
+        let apps = [store];
+        assert_eq!(
+            pinned(&apps, "store").map(|a| a.name.as_str()),
+            Some("Bazaar")
         );
     }
 }

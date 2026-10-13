@@ -13,11 +13,13 @@
 //! changed. Like the launcher it holds its surface only while open.
 //! Drawing is plain and tested without a display.
 
+use accesskit::{Rect, Role};
 use edel::i18n::tr;
 use tiny_skia::Pixmap;
 
 use edel::tokens::Tokens;
 
+use crate::a11y::Item;
 use crate::paint::{Text, fill, mix};
 use crate::popup::{self, INSET, PAD, middle};
 
@@ -68,6 +70,30 @@ pub fn size(tokens: &Tokens) -> (u32, u32) {
 pub struct View {
     pub chosen: usize,
     pub lit: usize,
+}
+
+/// What a screen reader reads of the menu (M6.9): one radio button a
+/// style, named as it is drawn, on when it is the style in use; the focus
+/// is the lit row.
+pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
+    let (left, row) = (PAD as f64, tokens.row as f64);
+    let items = styles()
+        .iter()
+        .enumerate()
+        .map(|(i, style)| {
+            let top = PAD as f64 + i as f64 * row;
+            Item {
+                role: Role::RadioButton,
+                label: label(style),
+                bounds: Rect::new(left, top, WIDTH as f64 - left, top + row),
+                children: vec![],
+                toggled: Some(i == view.chosen),
+                value: None,
+                value_text: None,
+            }
+        })
+        .collect();
+    (items, Some(view.lit))
 }
 
 /// The row at `y` logical pixels from the card's top, if any.
@@ -233,6 +259,19 @@ mod tests {
         assert_eq!(in_use(Some(zen), Some(stack)), 0, "the person's stack");
         assert_eq!(in_use_without_key(Some(zen), Some(stack)), 1);
         assert_eq!(in_use_without_key(None, None), 0);
+    }
+
+    #[test]
+    fn a_screen_reader_reads_each_style_as_a_radio_button() {
+        let tokens = Tokens::built_in();
+        let view = View { chosen: 1, lit: 2 };
+        let (items, focus) = nodes(&view, &tokens);
+        let names: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(names, ["Stack", "Split", "Scroll"]);
+        assert!(items.iter().all(|i| i.role == Role::RadioButton));
+        let on: Vec<Option<bool>> = items.iter().map(|i| i.toggled).collect();
+        assert_eq!(on, [Some(false), Some(true), Some(false)]);
+        assert_eq!(focus, Some(2), "the lit row holds the focus");
     }
 
     #[test]

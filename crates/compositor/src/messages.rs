@@ -54,6 +54,18 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// A shortcut for a default app (M6.10) found no app of its kind: it does
+/// nothing, and the line says which key to set.
+pub fn no_default_app(role: &str) -> String {
+    format!("no {role} app installed; set default_apps.{role}")
+}
+
+/// An app `startup.apps` names (M6.10) is not installed: it is skipped, and
+/// the line says which list to fix.
+pub fn startup_app_missing(id: &str) -> String {
+    format!("startup app {id} is not installed; take it out of startup.apps")
+}
+
 /// A screen copy a client asked for could not be filled (M6.3): the
 /// client is told `failed` and may ask again.
 pub fn copy_failed(output: &str, why: impl Display) -> String {
@@ -124,6 +136,20 @@ pub fn session_program_stopped(name: &str, how: &str) -> String {
 pub fn session_program_given_up(name: &str, how: &str, tries: u32, secs: u64) -> String {
     format!(
         "{name} {how}, and failed {tries} times in a row within {secs} s of starting; it is not started again, so what it served (sound, for PipeWire) is missing until the next login, and the lines above say why"
+    )
+}
+
+/// The input method the settings name is not in this image (M6.8).
+pub fn input_method_missing(name: &str) -> String {
+    format!(
+        "{name} is not in this image, so typing through an input method is not possible; the input-method feature brings it, and typing stays in the keyboard layout until then"
+    )
+}
+
+/// The input method ended while the desktop still wants it (M6.8).
+pub fn input_method_ended(name: &str, how: &str) -> String {
+    format!(
+        "{name} {how}; typing through the input method stops until region.input_method is set again or the next login"
     )
 }
 
@@ -222,6 +248,22 @@ pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_default_app_shortcut_with_no_app_names_the_key_to_set() {
+        assert_eq!(
+            no_default_app("files"),
+            "no files app installed; set default_apps.files"
+        );
+    }
+
+    #[test]
+    fn a_startup_app_not_installed_names_the_list_to_fix() {
+        assert_eq!(
+            startup_app_missing("org.example.Gone"),
+            "startup app org.example.Gone is not installed; take it out of startup.apps"
+        );
+    }
 
     #[test]
     fn a_failed_screen_copy_says_what_failed_and_what_the_client_does() {
@@ -348,6 +390,8 @@ mod tests {
             session_program_not_started("pipewire", "x"),
             session_program_stopped("pipewire", "ended (exit status: 1)"),
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
+            input_method_missing("fcitx5"),
+            input_method_ended("fcitx5", "ended (exit status: 1)"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

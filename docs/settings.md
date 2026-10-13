@@ -56,10 +56,10 @@ The desktop follows these keys at once (M4.5): it reads the machine's file and t
 | `layout.title_bars` | `always` (every window has its bar), `floating-only` (only floating windows have one) or `never` (no window has one, in floating or tiling; Super with a drag still moves a window and Super+Q still closes it). Missing is the preset's (`always` in every preset but Zen, which is `never`, M5.18b) | M4.5, `never` M5.18b |
 | `layout.tiling_style` | `stack`, `split` or `scroll`: how tiling lays windows out, one main window on the left and the rest stacked on the right (`stack`), each new window taking half of the focused one's space, cut across its longer side, as Hyprland tiles (`split`), or each window a column half the screen wide on a strip that scrolls to the focused one, as niri tiles (`scroll`, M5.16c); missing is the preset's style (Zen's is `split`, M5.18b), else `stack`. It never switches a workspace between floating and tiling: a floating one takes the style when it next tiles. The panel's layout button offers the same choice on a right click (M5.16b) | M5.16a |
 | `layout.device_type` | `desktop`, `tablet` or `phone`; missing detects it | M9.3 |
-| `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive) | M5.4b |
-| `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown | M5.18a |
-| `layout.minimize_button` | `true` or `false`: whether every title bar shows its minimize button; missing shows it | M5.18a |
-| `layout.maximize_button` | `true` or `false`: whether every title bar shows its maximize button; missing shows it. A hidden button's room goes to the title | M5.18a |
+| `layout.window_buttons` | `left` or `right`: the side of the title bars where close, minimize and maximize sit, close outermost; missing is the preset's (right in Classic and Hive); GTK and libadwaita apps' own header bars follow it through the settings portal (M6.16) | M5.4b |
+| `layout.close_button` | `true` or `false`: whether every title bar shows its close button; missing shows it. Super+Q closes a window whatever is shown; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
+| `layout.minimize_button` | `true` or `false`: whether every title bar shows its minimize button; missing shows it; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
+| `layout.maximize_button` | `true` or `false`: whether every title bar shows its maximize button; missing shows it. A hidden button's room goes to the title; apps' own header bars follow it through the settings portal (M6.16) | M5.18a |
 
 ## Panels: `[panels]`
 
@@ -111,6 +111,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.wallpaper_dark` | the same kinds of value as `appearance.wallpaper`, for dark mode when it differs: a person's own light and dark pair is two picture paths, one in each key; absent is the dark side of `appearance.wallpaper` | M5.10c4d |
 | `appearance.pictures` | the pictures of the theme in use, on top of its own: a list of wallpapers as `appearance.wallpaper` takes them, a wallpaper's name such as `["aurora", "earth"]`, a picture's full path or a colour; never copies of the files. Absent is the theme's own list, and `[]` shows none; at most 32, none twice. Set in the pictures sheet of Appearance (Add pictures, a picture's menu and drag and drop), or with `edel settings set appearance.pictures='["aurora"]'`. Changing a built-in theme this way makes it Changed; Keep as new saves the person's copy | M5.12b6, part c2 |
 | `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, dark in this one, and missing is `auto`. A change takes effect at once | M5.5c |
+| `appearance.contrast` | `normal` or `high`: high contrast gives strong edges and the plainest colours, in both schemes, text at 7 to 1 or more and lines in black or white, over every colour the person chose; missing is `normal`. The desktop follows it at once | M6.9 |
 | `appearance.accent` | one of the release's named accents (`blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `teal`, `graphite`), `wallpaper` for a colour taken from the picture, or a colour `"#rrggbb"`; missing is `blue`. The text on the accent is whichever of the two schemes' reads better. `edel settings set appearance.accent=red` works; `edel settings set appearance.accent=crimson` is refused with "`"crimson"` is not an accent; choose blue, purple, pink, red, orange, yellow, green, teal, graphite, wallpaper or a colour such as "#d0363f"". An accent that leaves its own pairs under their contrast ratio is refused too, with the pair named | M5.12b1 |
 | `appearance.colours.*` | a colour `"#rrggbb"` or `"#rrggbbaa"` for any colour token by its name (`background`, `panel`, `title_bar_focused`, ...), in both schemes; missing is the release's. `edel settings set appearance.colours.background=#202020` works; `edel settings set appearance.colours.panl=#ffffff` is refused with `appearance.colours.panl: "panl" is not a colour; did you mean panel?`. `edel settings reset appearance.colours.background` takes it back. A colour that leaves a pair under its ratio is refused with that pair's line, in both schemes | M5.12b1 |
 | `appearance.colours.light.*` | the same, for the light scheme alone, over the shared one: `edel settings set appearance.colours.light.panel=#f6f7f9` works | M5.12b1 |
@@ -177,6 +178,7 @@ The lock and login screens are made of parts (M5.10c5), each placed by an anchor
 | `region.keyboard` | keyboard layouts as xkb names them: one, such as `"de"`, or up to four, such as `"us,ru"`, each with a variant if wanted, such as `"de(nodeadkeys)"`; missing is US. Check and set refuse a layout or variant xkeyboard-config lacks where its list is on the machine. The desktop follows it at once, and Super+Space (`shortcuts.next_keyboard_layout`) goes to the next layout | M5.21a |
 | `region.timezone` | text, such as `"Europe/London"` | M6.6a |
 | `region.time_servers` | the time servers the clock is set from, one to four host names, such as `["pool.ntp.org"]` or a cloud provider's own, `["169.254.169.123"]` (letters, digits, hyphens and dots; check and set refuse anything else); missing is `pool.ntp.org`. The `edel-clock` service of every machine image asks them once, in the background, each time the machine starts (busybox `ntpd`, up to three tries of 20 s, never holding the boot up), prints one line on the console and in the system log and writes the hardware clock; nothing keeps running afterwards. The next start uses a changed list. Its Settings row, "Time servers", comes with the Settings app's Region page, not built yet | M1.13 |
+| `region.input_method` | the input method for typing languages a keyboard has no keys for: `fcitx5`, or `none`; missing runs none. With `fcitx5` the desktop starts it with the session, once it is on screen, and stops it at once when the key changes; it runs only where the input-method feature is in the image (its Settings row comes with the Settings app's Region page, not built yet) | M6.8 |
 
 ## Users: `[users.NAME]`
 
@@ -194,21 +196,28 @@ On a desktop (an image with the `seat` feature), apply also puts every person in
 |---|---|---|
 | `network.hostname` | the row "Device name (hostname)": letters, digits and hyphens, up to 63. Missing at the next apply removes the machine's own `/etc/hostname`, so the slot's shows again | M2.2 |
 
-## Default apps, Startup, Power and Services
+## Default apps: `[default_apps]`
 
 | Key | Value | From |
 |---|---|---|
-| `default_apps.browser` | text, a `.desktop` id | M6.10 |
-| `default_apps.files` | text, a `.desktop` id | M6.10 |
-| `default_apps.editor` | text, a `.desktop` id | M6.10 |
-| `default_apps.terminal` | text, a `.desktop` id | M6.10 |
-| `default_apps.mail` | text, a `.desktop` id | M6.10 |
-| `startup.apps` | list of `.desktop` ids started with the session | M6.10 |
+| `default_apps.browser` | text, a desktop file id without `.desktop`, such as `org.mozilla.firefox`; `edel settings apply` writes it as the system's MIME defaults for web pages and `x-scheme-handler/http(s)`, and the `open_browser` key opens it | M6.10 |
+| `default_apps.files` | text, a desktop file id without `.desktop`; the folders' MIME type `inode/directory` and the `open_files` key use it | M6.10 |
+| `default_apps.editor` | text, a desktop file id without `.desktop`; plain text, `text/plain` | M6.10 |
+| `default_apps.terminal` | text, a desktop file id without `.desktop`; there is no MIME type for a terminal; the `open_terminal` shortcut opens it | M6.10 |
+| `default_apps.mail` | text, a desktop file id without `.desktop`; `x-scheme-handler/mailto` | M6.10 |
+
+When the key is unset, or names an app that is not installed, the shortcuts open the first installed app of the role's category (FileManager, WebBrowser), and the terminal's falls back to `foot`.
+
+## Startup, Power and Services
+
+| Key | Value | From |
+|---|---|---|
+| `startup.apps` | list of desktop file ids without `.desktop`, such as `["org.mozilla.firefox"]`, each started once the desktop is on screen, in the order listed; an app not installed is logged and skipped; an empty list is none | M6.10 |
 | `power.lid_close` | `suspend`, `lock`, `nothing` or `poweroff` | M7.8 |
 | `power.lock_after_minutes` | a whole number of minutes without input before the screen locks; `0` never | M7.8 |
 | `power.power_button` | `suspend`, `poweroff`, `ask` or `nothing` | M7.8 |
 | `power.on_battery` | `power-saver`, `balanced` or `performance` | M7.8 |
-| `services.*` | `true` or `false`: the switchable feature `NAME` on or off | M6.10 |
+| `services.*` | `true` or `false`: the feature `NAME` on or off, by the feature's name, never a daemon's, and only a feature marked `switchable` (ssh, bluetooth); `edel settings set` and `check` name the ones this machine has. Missing is the image's choice (on, unless the image definition lists it in `off`). `edel settings apply` adds or takes out the feature's services in their runlevels and starts or stops them at once; a service another feature that is on still lists (dbus) stays. At boot only the runlevels change, and the default runlevel then starts what it holds | M6.10 |
 
 ## Updates, Apps and Add-ons
 

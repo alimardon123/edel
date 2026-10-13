@@ -1,0 +1,10 @@
+# Input method (roadmap M6.8): fcitx5, which types the languages a keyboard
+# has no keys for. Nothing of it runs unless region.input_method says
+# fcitx5: the compositor starts it with the session then (crates/compositor
+# session.rs), and stops it when the key changes. GTK 4 and foot speak
+# text-input-v3 to the compositor by themselves, so no toolkit module of
+# fcitx5 is needed.
+format = 1
+summary = "Input method: fcitx5, started with the session when region.input_method asks for it"
+why = "Typing the languages a keyboard has no keys for (Chinese, Japanese, Korean, Russian input on a Latin keyboard and the like) and fcitx5's own Unicode picker, Ctrl+Alt+Shift+U then the code. fcitx5 talks to apps through the compositor's text-input and input-method protocols and draws its candidate list through the compositor's input-method popups (crates/compositor ime.rs), so it needs no X11 and no toolkit module. It runs only when region.input_method is fcitx5, never otherwise, so nobody who types in one language runs it (principle Efficient). Its size is about 17 MB installed; the Settings row for the key comes with the Region page."
+packages = ["fcitx5"]

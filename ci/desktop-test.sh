@@ -41,6 +41,11 @@
 #               shell-ui starts again with its icons at a new count, the
 #               Arabic and Hindi faces are on the image, and cursor default
 #               brings 24 px back (M5.12b5)
+#   contrast    appearance.contrast = high, sent to the VM, logs contrast high
+#               and restarts shell-ui for the colours; the panel at 640,790
+#               is the light scheme's high-contrast panel colour, and
+#               contrast default takes the key out, logged as contrast
+#               normal, and the release's light panel is back (M6.9)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -61,6 +66,9 @@
 #               bottom) lies above shell-ui's along the bottom in its
 #               colour, keeps its height free of tiled windows, and goes
 #               when closed (M5.1a)
+#   own-bars    a GTK app's own title bars take the button layout from the
+#               settings portal: close first when layout.window_buttons is
+#               left, the glyphs from the Edel icon theme (M6.16)
 #   capture     shell-ui's Access dialog, asked over D-Bus, answers 0 when
 #               Allow is clicked; a screenshot through xdg-desktop-portal
 #               writes a PNG; a screencast gives a 1280x800 stream (M6.3)
@@ -226,6 +234,12 @@
 #   scale       edel settings set displays.Virtual-1.scale=2 halves the
 #               logical screen and doubles the title bar's height in
 #               screen pixels, after the other cases
+#   default-apps-keys
+#               [default_apps] (M6.10): two test clients' desktop files
+#               and the keys that name them; applied, /etc/xdg/mimeapps.list
+#               holds their MIME types, Super+E opens the files app and
+#               Super+B the browser, startup.apps reads back, Settings'
+#               Default apps page logs its places, and reset removes the file again
 #   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
@@ -252,6 +266,12 @@
 #               compositor that only fails into slot B and restarts; no
 #               frame, so the guard lets the watchdog restart slot B, and
 #               GRUB, out of tries, starts slot A, which says so (M4.8)
+#   input-method  region.input_method = fcitx5 starts fcitx5 with the desktop
+#               (the compositor logs `started fcitx5`); Super+T opens foot,
+#               Ctrl+Alt+Shift+U and e9 open fcitx5's Unicode picker, whose
+#               popup the compositor shows (`input method popup shown`,
+#               input-method.png); Escape, Super+Q, and reset stop fcitx5
+#               (`input method off, fcitx5 ended`) (M6.8)
 #   flatpak     last but suspend: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -642,6 +662,75 @@ case_suspend() {
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
+}
+
+case_default_apps_keys() {
+	# [default_apps] (M6.10): the two keys become the system's MIME defaults,
+	# and Super+E and Super+B open the apps they name, which are test clients.
+	guest 'default apps on'
+	wait_for 'DESKTOP-TEST: default_apps_mime ' ||
+		fail "edel settings apply did not write /etc/xdg/mimeapps.list: $(value default_apps_mime)"
+	mime=$(value default_apps_mime)
+	for want in 'text/plain=edel-test-files.desktop;' 'x-scheme-handler/https=edel-test-browser.desktop;'; do
+		case "$mime" in *"$want"*) ;; *) fail "mimeapps.list lacks $want: $mime" ;; esac
+	done
+	# default_apps.files is unset, so the files app is the first app of the
+	# FileManager category, the test client; the browser is named by its key.
+	opened=$(count 'edel-compositor: mapped window test-files')
+	python3 ci/qmp.py key meta_l-e
+	wait_more 'edel-compositor: mapped window test-files' "$opened" ||
+		fail "Super+E did not open the files app: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window test-files')
+	sleep 1
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-files' "$closed" ||
+		fail "Super+Q did not close the files app"
+	opened=$(count 'edel-compositor: mapped window test-browser')
+	python3 ci/qmp.py key meta_l-b
+	wait_more 'edel-compositor: mapped window test-browser' "$opened" ||
+		fail "Super+B did not open the browser: $(value windows)"
+	closed=$(count 'edel-compositor: unmapped window test-browser')
+	sleep 1
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-browser' "$closed" ||
+		fail "Super+Q did not close the browser"
+	# Startup (M6.10): `edel settings get` reads startup.apps back, which is
+	# all CI checks, as a session starts its apps once and this one started
+	# already, so no app is started here. Settings' Default apps page then
+	# logs where each role's choice lies once laid out, and Super+Q closes
+	# it; `startup off` takes the list out again.
+	guest 'startup on'
+	wait_for 'DESKTOP-TEST: startup_apps ' ||
+		fail "edel settings get did not read startup.apps back: $(value startup_apps)"
+	case "$(value startup_apps)" in
+	*edel-test-files*) ;;
+	*) fail "startup.apps does not name edel-test-files: $(value startup_apps)" ;;
+	esac
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings default apps'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on the Default apps page: $(value windows)"
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: settings_default_apps_log ')
+		guest 'settings default apps log'
+		wait_more 'DESKTOP-TEST: settings_default_apps_log ' "$seen" 10 || true
+		value settings_default_apps_log | grep -q 'edel-settings: default apps places' && break
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings never logged edel-settings: default apps places: $(value settings_default_apps_log)"
+		sleep 1
+	done
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	guest 'startup off'
+	# Removed, the keys leave no file behind: the system's choice is none.
+	guest 'default apps off'
+	wait_for 'DESKTOP-TEST: default_apps_mime_after ' ||
+		fail "edel settings apply did not say what /etc/xdg/mimeapps.list holds after the reset"
+	after=$(value default_apps_mime_after)
+	case "$after" in *'No such file'*) ;; *) fail "mimeapps.list is still there after the reset: $after" ;; esac
+	echo "PASS: [default_apps] wrote text/plain and x-scheme-handler/https into /etc/xdg/mimeapps.list, Super+E opened the files app and Super+B the browser they name, both closed with Super+Q, startup.apps read back with edel-test-files and Settings' Default apps page logged its places, and the reset removed the file"
 }
 
 case_respawn() {
@@ -1726,11 +1815,18 @@ case_settings_wallpaper() {
 	set -- $pictures
 	python3 ci/qmp.py click "$(($x + $1 + $3 / 2))" "$(($y + $2 + $4 / 2))"
 	sleep 2
+	# The page lays itself out again as its rows fill in, so the card's
+	# place counts only once two readings a second apart agree.
 	card=none
+	before=
 	i=0
-	while [ "$card" = none ]; do
+	while [ "$card" = none ] || [ "$card" != "$before" ]; do
+		[ "$card" = none ] || {
+			before=$card
+			sleep 1
+		}
 		i=$((i + 1))
-		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies: $(value settings_wallpaper_log)"
+		[ "$i" -lt 30 ] || fail "Settings did not log where the ci card lies, or it kept moving: $(value settings_wallpaper_log)"
 		guest 'settings wallpaper log'
 		text=$(value settings_wallpaper_log)
 		# The places are NAME X+Y+WxH pairs, then `, reset X+Y+WxH`; the
@@ -3022,7 +3118,9 @@ case_launcher() {
 	# The launcher (M5.3b): Super, tapped alone, opens it beside the
 	# panel's start, 360x352 at 8,400, 8 px from the screen's side and
 	# the panel, in the panel's colour; 188,748 lies in its bottom
-	# margin, below its last row, and is the background before.
+	# margin, below its last row, and is the background before. Typed
+	# and listing an app, a screen reader (M6.9) finds it in AT-SPI as a
+	# frame named Launcher with a list item for each app listed.
 	background=$(token background)
 	panel=$(token panel)
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
@@ -3035,6 +3133,18 @@ case_launcher() {
 	opened=$(count 'edel-compositor: mapped window foot')
 	hidden=$(count 'edel-shell-ui: launcher hidden')
 	python3 ci/qmp.py type foot
+	# A screen reader (M6.9): the launcher with foot listed is a frame
+	# named Launcher, its list items are the apps listed. The walk runs
+	# before Return, while the launcher is open.
+	asked=$(count 'DESKTOP-TEST: a11y_done')
+	guest 'a11y tree'
+	wait_more 'DESKTOP-TEST: a11y_done' "$asked" 30 || fail "the screen reader's walk of AT-SPI did not finish"
+	tree=$(tr -d '\r' <"$log" | awk '/DESKTOP-TEST: a11y_done/ { last = now; now = "" } /DESKTOP-TEST: a11y / { sub(/.*DESKTOP-TEST: a11y /, ""); now = now $0 "\n" } END { printf "%s", last }')
+	echo "$tree" | grep -qx '2 frame: Launcher' ||
+		fail "AT-SPI does not hold a window named Launcher while it is open; it holds: $(echo "$tree" | tr '\n' ';')"
+	listed=$(echo "$tree" | grep -c '^3 list item: ')
+	[ "$listed" -ge 1 ] || fail "AT-SPI holds the launcher with no list item for the typed foot; it holds: $(echo "$tree" | tr '\n' ';')"
+	first=$(echo "$tree" | sed -n 's/^3 list item: //p' | head -n 3 | tr '\n' ',' | sed 's/,$//')
 	python3 ci/qmp.py key ret
 	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "typing foot and Return did not open foot"
 	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "the launcher did not close when foot started"
@@ -3052,7 +3162,37 @@ case_launcher() {
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
-	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+}
+
+case_default_apps() {
+	# The default apps (M6.2): the image build installed the test app
+	# org.edel.TestA from a repository made with no network into the data
+	# partition's Flatpak installation, which the launcher reads through
+	# its exports. Typed in the launcher, Return starts it in Flatpak's
+	# sandbox, and its window maps; Super+Q closes it.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	opened=$(count 'edel-compositor: mapped window test-a')
+	python3 ci/qmp.py type test
+	python3 ci/qmp.py key ret
+	wait_more 'edel-shell-ui: launched Test A' 0 || fail "the launcher did not list the default app Test A, from the data partition's installation"
+	launched=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Test A' | tail -n 1 | sed 's/.*launched //')
+	case $launched in
+	*flatpak*) ;;
+	*) fail "Test A was started as $launched, not through flatpak run" ;;
+	esac
+	if ! wait_more 'edel-compositor: mapped window test-a' "$opened" 60; then
+		guest 'default app check'
+		wait_for 'DESKTOP-TEST: default_app_run ' 30
+		fail "Test A did not map a window within 60 s of starting; as ci the installation lists $(value default_app_list) and flatpak run said: $(value default_app_run)"
+	fi
+	python3 ci/qmp.py screendump "$dir/default-apps.png"
+	closed=$(count 'edel-compositor: unmapped window test-a')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window test-a' "$closed" || fail "Super+Q did not close Test A"
+	echo "PASS: the launcher listed Test A from the default apps on the data partition, started it as $launched, and its window mapped and closed"
 }
 
 case_quick() {
@@ -3202,8 +3342,14 @@ case_notify() {
 	shown=$(count 'edel-shell-ui: banner shown')
 	guest 'notify one'
 	wait_more 'edel-shell-ui: banner shown' "$shown" || fail "a notification sent on the session bus showed no banner: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui' | tail -n 5)"
+	# Another process may write into the middle of this line on the shared
+	# console ("edel-shell-ui: notification " then the compositor's own line,
+	# then "1 from ci-test: Hello from CI"), so the whole line, or its two
+	# halves, will do.
 	tr -d '\r' <"$log" | grep -aEq 'edel-shell-ui: notification [0-9]+ from ci-test: Hello from CI' ||
-		fail "shell-ui did not log the notification it was sent"
+		{ tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: notification ' &&
+			tr -d '\r' <"$log" | grep -aq 'ci-test: Hello from CI'; } ||
+		fail "shell-ui did not log the notification it was sent: $(tr -d '\r' <"$log" | grep -a 'Hello from CI' | tail -n 2)"
 	shot notify 1200 745 "$panel" >/dev/null || fail "the banner is not drawn at 1200,745 in the panel's colour"
 	i=0
 	# Listed with its size: the state file may name it before its first
@@ -3340,11 +3486,12 @@ case_notify() {
 	shot bell-count $((bell + 32)) 772 "$accent" >/dev/null || fail "with notifications.badge = count the button shows no count pill at $((bell + 32)),772"
 	# The list hangs on the button wherever it lies (M5.9k): with the bell
 	# at the panel's start, it opens at the screen's left, not its right.
+	# The line before has the same shape, with the button at the end, so
+	# the wait is for the button within the panel's first 100 px.
 	guest 'panels bell start'
-	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
-		fail "panels.list with the notifications button first did not reach the panel"
-	start=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
-	[ "$start" -lt 100 ] || fail "the notifications button first in the panel lies at $start"
+	wait_for 'edel-shell-ui: panel places notifications [0-9]{1,2}\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button first did not move it to the panel's start: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	start=$(tr -d '\r' <"$log" | grep -aE 'edel-shell-ui: panel places notifications [0-9]{1,2}\+' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
 	shown=$(count 'edel-shell-ui: notification centre shown')
 	python3 ci/qmp.py click $((start + 17)) 780
 	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((start + 17)),780 opened no notifications"
@@ -4344,6 +4491,51 @@ case_portal() {
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
 }
 
+case_own_bars() {
+	# Apps' own title bars (M6.16): a GTK or libadwaita app reads the header
+	# bars' button layout from the settings portal, so it puts its buttons
+	# where ours are, and its window glyphs come from the Edel icon theme.
+	# The release's layout is Classic's, the buttons on the right; with
+	# layout.window_buttons = left they go to the left, and the reset puts
+	# them back. Each change is told to apps by shell-ui, which logs it.
+	layout_of() {
+		tr -d '\r' <"$log" | sed -n "s/.*DESKTOP-TEST: portal button-layout (<'\([^']*\)'>,).*/\1/p" | tail -n 1
+	}
+	guest 'portal buttons'
+	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
+	first=$(layout_of)
+	[ "$first" = ':minimize,maximize,close' ] ||
+		fail "the portal's button layout is not the default :minimize,maximize,close: $first"
+	guest 'icon theme'
+	wait_for 'DESKTOP-TEST: icon theme ' 20 || fail "the service did not list the Edel icon theme"
+	icons=$(value 'icon theme')
+	for glyph in window-close window-minimize window-maximize window-restore; do
+		echo "$icons" | grep -q "$glyph-symbolic.svg" ||
+			fail "the Edel icon theme has no $glyph-symbolic.svg: $icons"
+	done
+	told=$(count 'edel-shell-ui: button layout close,minimize,maximize: told to apps')
+	guest 'buttons left'
+	wait_more 'edel-shell-ui: button layout close,minimize,maximize: told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps the buttons moved to the left: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: button layout' | tail -n 1)"
+	asked=$(count 'DESKTOP-TEST: portal button-layout ')
+	guest 'portal buttons'
+	wait_more 'DESKTOP-TEST: portal button-layout ' "$asked" 60 || fail "the service did not hear back from the portal"
+	left=$(layout_of)
+	[ "$left" = 'close,minimize,maximize:' ] ||
+		fail "the portal's button layout is not close,minimize,maximize: after layout.window_buttons = left: $left"
+	told=$(count 'edel-shell-ui: button layout :minimize,maximize,close told to apps')
+	guest 'buttons default'
+	wait_more 'edel-shell-ui: button layout :minimize,maximize,close told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps the buttons went back to the right: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: button layout' | tail -n 1)"
+	asked=$(count 'DESKTOP-TEST: portal button-layout ')
+	guest 'portal buttons'
+	wait_more 'DESKTOP-TEST: portal button-layout ' "$asked" 60 || fail "the service did not hear back from the portal"
+	back=$(layout_of)
+	[ "$back" = ':minimize,maximize,close' ] ||
+		fail "the portal's button layout did not go back to the default: $back"
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs"
+}
+
 case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
 	# for a screenshot gets the URI of a PNG the compositor copied (its log
@@ -4487,11 +4679,16 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock parts: 0' || fail "ci's lock parts could not be set"
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
 	compositor_locked=$(count 'edel-compositor: screen locked$')
+	# The places line of this lock, not the last lock's: it comes once the
+	# new lock is laid out, a little after the locked line.
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]')
 	python3 ci/qmp.py key meta_l-l
 	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
 		fail "Super+L did not lock the screen with the parts"
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
 		fail "shell-ui did not put up the lock screen with the parts"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]' "$placed" ||
+		fail "shell-ui did not say where the lock's parts lie"
 	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
 	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
@@ -5130,6 +5327,32 @@ case_accent() {
 	shot colours-default-accent $((place + 29)) 780 "$(token accent)" >/dev/null ||
 		fail "the switcher's shown pill is not the light accent #$(token accent) after reset"
 	echo "PASS: appearance.accent=#ff0000 turned the workspace pill and the portal's accent red and appearance.colours.light.panel the panel's colour, at once; reset brought both back"
+}
+
+case_contrast() {
+	# High contrast (M6.9): appearance.contrast = high lays the light
+	# scheme's high-contrast colours over the release's, so the panel at
+	# 640,790 is that table's panel colour; taking the key out brings the
+	# release's back. Counted before each change, as case_accent does.
+	said=$(count 'edel-compositor: contrast high')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'contrast high'
+	wait_more 'edel-compositor: contrast high' "$said" ||
+		fail "appearance.contrast=high did not reach the compositor's log"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for high contrast"
+	shot contrast 640 790 "$(raw_token panel colour.light.contrast)" >/dev/null ||
+		fail "the panel at 640,790 is not the high-contrast panel #$(raw_token panel colour.light.contrast) after appearance.contrast=high"
+	said=$(count 'edel-compositor: contrast normal')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'contrast default'
+	wait_more 'edel-compositor: contrast normal' "$said" ||
+		fail "taking appearance.contrast out did not reach the compositor's log"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui after high contrast was taken out"
+	shot contrast-normal 640 790 "$(token panel)" >/dev/null ||
+		fail "the panel at 640,790 is not the light panel #$(token panel) after reset"
+	echo "PASS: appearance.contrast=high turned the panel at 640,790 to the high-contrast panel #$(raw_token panel colour.light.contrast), and taking it out brought the light panel #$(token panel) back"
 }
 
 case_wallpaper() {
@@ -6153,7 +6376,7 @@ case_tray() {
 	# middle of its cell in the panel, and a screen reader reads it as a
 	# button named by the item's title, a click asks the item to Activate and
 	# a right click for its ContextMenu; when the item's app ends, the icon
-	# goes. Pointing at the arrow shows its tooltip, Super+B opens the grid
+	# goes. Pointing at the arrow shows its tooltip, Super+Shift+B opens the grid
 	# with the keyboard and Escape closes it (M5.9h). Settings' Tray card
 	# lists the app in the panel, then, after a reset of the key, behind the
 	# arrow, and the panel follows at once. The key is taken out again at the
@@ -6174,7 +6397,7 @@ case_tray() {
 	EOF
 	[ "$w" = 34 ] || fail "the tray is $w px wide in the last places line, not 34"
 	# Pointing at the arrow says how many wait behind it (M5.9h): after a
-	# rest of 600 ms a tooltip shows the same words. Super+B opens the grid
+	# rest of 600 ms a tooltip shows the same words. Super+Shift+B opens the grid
 	# with the keyboard, which takes the tooltip away, and Escape closes it.
 	tip=$(count 'edel-shell-ui: tooltip shown, Hidden icons \(1\)')
 	python3 ci/qmp.py move $((x + 17)) 780
@@ -6182,9 +6405,9 @@ case_tray() {
 		fail "pointing at the arrow did not show the tooltip Hidden icons (1)"
 	opened=$(count 'edel-shell-ui: tray grid opened from the keyboard')
 	hidden=$(count 'edel-shell-ui: tooltip hidden')
-	python3 ci/qmp.py key meta_l-b
+	python3 ci/qmp.py key meta_l-shift-b
 	wait_more 'edel-shell-ui: tray grid opened from the keyboard' "$opened" ||
-		fail "Super+B did not open the tray's grid from the keyboard"
+		fail "Super+Shift+B did not open the tray's grid from the keyboard"
 	wait_more 'edel-shell-ui: tooltip hidden' "$hidden" ||
 		fail "the tooltip stayed up when the tray's grid opened"
 	closed=$(count 'edel-shell-ui: tray grid hidden')
@@ -6304,7 +6527,7 @@ case_tray() {
 	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
 	value settings_file | grep -q 'tray = ' &&
 		fail "ci's settings file still holds panels.tray after tray reset: $(value settings_file)"
-	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote panels.tray = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
+	echo "PASS: the test item first waited behind the arrow, pointing at the arrow said Hidden icons (1), Super+Shift+B opened the grid and Escape closed it, a click on the arrow opened the grid with its icon at $mx,$my, a drag from there onto the panel kept it in the panel and wrote panels.tray = [\"edel-testclient\"], then the icon lay at $((x + 17)),780 in a 34 px tray and AT-SPI named it edel test, a click and a right click reached its Activate and ContextMenu, Settings' Tray card listed it in the panel, resetting the key put it behind the arrow in the panel and the card at once, the icon went when its app ended, and tray reset took the key out again"
 }
 
 case_scale() {
@@ -6329,6 +6552,39 @@ case_scale() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" ||
 		fail "resetting displays.Virtual-1.scale did not bring scale 1 back"
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
+}
+
+# input_method_fail MESSAGE: the compositor's lines about the input method
+# and fcitx5's own errors and warnings,
+# then the failure.
+input_method_fail() {
+	tr -d '\r' <"$log" | grep -aE 'fcitx5|input method|^[EW][0-9]{4}-' | sed 's/^/DESKTOP-TEST: compositor: /'
+	fail "$1"
+}
+
+case_input_method() {
+	# region.input_method = fcitx5 (M6.8), set live: the compositor starts
+	# fcitx5 with the desktop, Super+T opens foot, and fcitx5's Unicode
+	# picker (Ctrl+Alt+Shift+U, then the hex digits e9) takes the keys, so
+	# the compositor shows its candidate popup above foot.
+	guest 'input method on'
+	wait_for 'edel-compositor: started fcitx5, pid [0-9]+' 30 ||
+		input_method_fail "the compositor did not start fcitx5 after region.input_method = fcitx5"
+	opened=$(count 'edel-compositor: mapped window foot')
+	python3 ci/qmp.py key meta_l-t
+	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T opened no terminal: $(value windows)"
+	sleep 3
+	python3 ci/qmp.py key ctrl-alt-shift-u
+	python3 ci/qmp.py type e9
+	wait_for 'edel-compositor: input method popup shown' 10 ||
+		input_method_fail "fcitx5's candidate popup was not shown above foot"
+	python3 ci/qmp.py screendump "$dir/input-method.png"
+	python3 ci/qmp.py key esc
+	python3 ci/qmp.py key meta_l-q
+	guest 'input method off'
+	wait_for 'edel-compositor: input method off, fcitx5 ended' ||
+		input_method_fail "fcitx5 did not end after region.input_method was reset"
+	echo "PASS: region.input_method = fcitx5 started fcitx5 with the desktop, Super+T opened foot, fcitx5's Unicode picker took Ctrl+Alt+Shift+U and e9 and its candidate popup was shown above foot (input-method.png), and resetting the key ended fcitx5"
 }
 
 case_web_app() {
@@ -6451,7 +6707,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces web-app flatpak suspend
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

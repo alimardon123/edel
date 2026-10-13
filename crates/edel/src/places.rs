@@ -44,11 +44,27 @@ pub const DATA_DIR: &str = data!("/edel");
 /// What this machine changed in `/etc`: a file here differs from the
 /// slot's (the overlay's upper directory, M1.4).
 pub const ETC_UPPER: &str = data!("/etc/upper");
+/// The default apps (M6.2): a Flatpak system installation on the data
+/// partition, so the apps are paid for once rather than in each slot, and
+/// survive every update and rollback. `edel image build` fills it on the
+/// stick, `edel install` copies it, `edel update` updates it.
+pub const DEFAULT_APPS: &str = data!("/edel/apps");
+/// The default apps the slot's image was built with and those a release
+/// dropped (M6.2), written by `edel image build`; `edel update` follows it.
+pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");
+/// Where Flatpak finds its installations besides its own two; the image
+/// build writes the default apps' file here (`apps::installation_conf`).
+pub const FLATPAK_INSTALLATIONS: &str = "/etc/flatpak/installations.d";
 /// Developer mode is on while this file exists (ADR-007).
 pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
 /// once (M1.1, M5.9).
 pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
+/// The hashed passwords `edel install` asked for (M6.6b), one
+/// `NAME:HASH` line each, root's only: the new machine's first
+/// `edel settings apply` gives them to the people the settings file makes
+/// and deletes the file, so no password is ever in the settings file.
+pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
 /// The login screen's own directory, made at boot owned by greetd by the
 /// login feature's `edel-live` (M5.10c3b).
 pub const GREETER_DIR: &str = data!("/edel/greeter");
@@ -90,6 +106,13 @@ pub const GREETD_LIVE: &str = run!("/greetd.toml");
 pub const SEED_MOUNT: &str = run!("/seed");
 /// Where the installer mounts the new disk's partitions (M2.4).
 pub const INSTALL_DIR: &str = run!("/install");
+/// The machine's certificate authorities, one PEM file (Alpine's
+/// `ca-certificates-bundle`), which a settings file fetched over https is
+/// checked against (M6.6b).
+pub const CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
+/// The answers to the installer's questions as the new machine's settings
+/// file, before `edel install` copies it to the new disk (M6.6b).
+pub const INSTALL_ANSWERS: &str = run!("/install-answers.toml");
 
 /// Where a slot keeps Edel OS's own files.
 pub const SHARE_DIR: &str = share!("");
@@ -166,6 +189,11 @@ pub const ICON_THEME_DIRS: &[&str] = &["/usr/share/icons", "/usr/local/share/ico
 /// Where admins look first: `/etc/edel/` holds a link to the machine's
 /// settings file.
 pub const ETC_DIR: &str = "/etc/edel";
+/// The system's default apps, written by `edel settings apply` from
+/// `[default_apps]` (M6.10): freedesktop's `mimeapps.list`, read by every
+/// desktop app and by `xdg-open`. Only a file that starts with
+/// `apps::MIME_COMMENT` is ours to change.
+pub const MIME_DEFAULTS: &str = "/etc/xdg/mimeapps.list";
 
 /// The places shell scripts use, as `NAME=VALUE` lines: `ci/names.sh` for
 /// CI and `/usr/share/edel/places.sh` in every image, both written from
@@ -184,6 +212,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
+        ("first_passwords", FIRST_PASSWORDS.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),

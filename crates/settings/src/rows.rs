@@ -115,6 +115,12 @@ pub const ROWS: &[Row] = &[
         key: "appearance.colours.*",
         title: n_("Colours"),
     },
+    // The high-contrast look (M6.9): a switch under the accent, for strong
+    // edges and the plainest colours.
+    Row {
+        key: "appearance.contrast",
+        title: n_("High contrast"),
+    },
     // The Shape group (M5.12b2c): the corners, the gaps, the border, the
     // title bar's height and the panels' opacity, each a slider.
     Row {
@@ -270,6 +276,33 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::NOTIFICATION_LIST,
         title: n_("Notification list"),
     },
+    // The Default apps page (M6.10): the app each role opens, one row each,
+    // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
+    Row {
+        key: "default_apps.browser",
+        title: n_("Web browser"),
+    },
+    Row {
+        key: "default_apps.files",
+        title: n_("Files"),
+    },
+    Row {
+        key: "default_apps.editor",
+        title: n_("Text editor"),
+    },
+    Row {
+        key: "default_apps.terminal",
+        title: n_("Terminal"),
+    },
+    Row {
+        key: "default_apps.mail",
+        title: n_("Mail"),
+    },
+    // The Startup page (M6.10): the apps that start with the desktop.
+    Row {
+        key: "startup.apps",
+        title: n_("Startup apps"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",
@@ -344,6 +377,14 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "shortcuts.open_terminal",
         title: n_("Open terminal"),
+    },
+    Row {
+        key: "shortcuts.open_files",
+        title: n_("Open files"),
+    },
+    Row {
+        key: "shortcuts.open_browser",
+        title: n_("Open browser"),
     },
     Row {
         key: "shortcuts.take_screenshot",
@@ -664,7 +705,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 27);
+        assert_eq!(on_page("appearance").count(), 28);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

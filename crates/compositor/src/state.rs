@@ -213,6 +213,10 @@ pub struct Edel {
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
     pub keyboard_shortcuts_inhibit:
         smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
+    /// The text input, input method and virtual keyboard globals (`ime.rs`, M6.8).
+    _text_input: smithay::wayland::text_input::TextInputManagerState,
+    _input_method: smithay::wayland::input_method::InputMethodManagerState,
+    _virtual_keyboard: smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState,
 }
 
 impl Edel {
@@ -274,6 +278,19 @@ impl Edel {
                 smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<
                     Edel,
                 >(&display),
+            _text_input: smithay::wayland::text_input::TextInputManagerState::new::<Edel>(&display),
+            // Hidden from sandboxed apps: a Flatpak app never becomes the input method (M6.8).
+            _input_method: smithay::wayland::input_method::InputMethodManagerState::new::<Edel, _>(
+                &display,
+                crate::sandbox::shell_may,
+            ),
+            // fcitx5 speaks input-method-v2 only beside a virtual keyboard,
+            // through which it gives back the keys it does not take (M6.8);
+            // hidden from sandboxed apps as the input method is.
+            _virtual_keyboard: smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState::new::<
+                Edel,
+                _,
+            >(&display, crate::sandbox::shell_may),
             data_device: DataDeviceState::new::<Edel>(&display),
             _decorations: XdgDecorationState::new::<Edel>(&display),
             // Server: GTK windows without a header bar of their own take
@@ -595,13 +612,7 @@ impl Edel {
         // a wallpaper's accent (M5.12b1), read as every reader on the
         // machine reads them. A change that leaves the tokens as they were
         // does nothing.
-        let colours_changed = old.accent != new.accent
-            || old.colours != new.colours
-            || old.wallpaper != new.wallpaper
-            || old.wallpaper_dark != new.wallpaper_dark
-            || old.shape != new.shape
-            || old.text != new.text
-            || old.icons != new.icons;
+        let colours_changed = new.colours_changed(&old);
         let mut tokens_changed = false;
         // The title font and its size (M5.12b5), as they were.
         let old_text = (self.tokens.font.clone(), self.tokens.title_text_size);
@@ -615,6 +626,11 @@ impl Edel {
             .elements()
             .map(|window| (window.clone(), self.insets(window)))
             .collect();
+        // High contrast (M6.9) is a change of the tokens, logged for CI.
+        if old.contrast != new.contrast {
+            let word = if new.contrast { "high" } else { "normal" };
+            eprintln!("edel-compositor: contrast {word}");
+        }
         if old.color_scheme != new.color_scheme || colours_changed {
             let (tokens, notes) = edel::tokens::on_this_machine(new.color_scheme);
             for note in notes {
@@ -704,6 +720,12 @@ impl Edel {
             self.switch_policy(new.policy());
         } else if old.title_bars != new.title_bars || rescaled {
             self.relayout();
+        }
+        // The input method starts or stops as region.input_method says (M6.8).
+        if old.input_method != new.input_method {
+            if let Some(handle) = self.handle.clone() {
+                crate::session::follow_input_method(&handle, self);
+            }
         }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();

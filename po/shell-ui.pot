@@ -143,6 +143,9 @@ msgstr ""
 msgid "Lock screen changed"
 msgstr ""
 
+msgid "Search apps"
+msgstr ""
+
 msgid "Type to search"
 msgstr ""
 
@@ -332,6 +335,12 @@ msgstr ""
 msgid "Lock screen looks"
 msgstr ""
 
+msgid "Launcher"
+msgstr ""
+
+msgid "Layout styles"
+msgstr ""
+
 msgid "Close notification"
 msgstr ""
 
@@ -456,9 +465,6 @@ msgid "Hours"
 msgstr ""
 
 msgid "Words"
-msgstr ""
-
-msgid "Time zone"
 msgstr ""
 
 msgid "Label"

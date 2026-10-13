@@ -17,6 +17,7 @@ mod card;
 mod cmd;
 mod colours;
 mod cursor;
+mod default_apps;
 mod depth;
 mod display;
 mod files;
@@ -35,6 +36,7 @@ mod screens;
 mod shape;
 mod shortcuts;
 mod sound;
+mod startup;
 mod status;
 mod style;
 mod system;
@@ -346,6 +348,24 @@ fn all_pages() -> Vec<Page> {
                 icon: "gear",
                 section: Some(page.section),
                 build: |_| shortcuts::page(),
+                needs: None,
+                group: Some(page.group),
+            }),
+            // The apps the desktop opens and starts (M6.10): read from the
+            // apps' desktop files, which every image has, so no feature.
+            "default_apps" => Some(Page {
+                title: tr(page.title),
+                icon: "app-generic",
+                section: Some(page.section),
+                build: |_| default_apps::page(),
+                needs: None,
+                group: Some(page.group),
+            }),
+            "startup" => Some(Page {
+                title: tr(page.title),
+                icon: "app-generic",
+                section: Some(page.section),
+                build: |_| startup::page(),
                 needs: None,
                 group: Some(page.group),
             }),
@@ -716,6 +736,8 @@ mod tests {
                 "Power",
                 "Notifications",
                 "Shortcuts",
+                "Default apps",
+                "Startup",
                 "Users",
                 "Updates",
                 "System",
@@ -827,6 +849,8 @@ mod tests {
                 "Power",
                 "Notifications",
                 "Shortcuts",
+                "Default apps",
+                "Startup",
                 "Users",
                 "Updates",
                 "System",
@@ -875,18 +899,20 @@ mod tests {
         assert_eq!(at("display"), Some(7), "the start of one name");
         assert_eq!(at("sound"), Some(8));
         assert_eq!(at("Sound"), Some(8));
-        assert_eq!(at("users"), Some(12));
+        assert_eq!(at("default"), Some(12), "a start of Default apps");
+        assert_eq!(at("startup"), Some(13));
+        assert_eq!(at("users"), Some(14));
         assert_eq!(at("network"), Some(5));
         assert_eq!(at("bluetooth"), Some(6));
         assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
-        assert_eq!(at("updates"), Some(13));
-        assert_eq!(at("system"), Some(14));
-        assert_eq!(at("sy"), Some(14));
-        assert_eq!(at("about"), Some(15));
-        assert_eq!(at("abo"), Some(15));
+        assert_eq!(at("updates"), Some(15));
+        assert_eq!(at("system"), Some(16));
+        assert_eq!(at("sy"), Some(16));
+        assert_eq!(at("about"), Some(17));
+        assert_eq!(at("abo"), Some(17));
         assert_eq!(at(""), None);
         assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
@@ -914,11 +940,11 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(15));
-        assert_eq!(start(&["--page=about"]), Ok(15));
-        assert_eq!(start(&["--page", "updates"]), Ok(13));
+        assert_eq!(start(&["--page", "about"]), Ok(17));
+        assert_eq!(start(&["--page=about"]), Ok(17));
+        assert_eq!(start(&["--page", "updates"]), Ok(15));
         assert_eq!(start(&["--page", "sound"]), Ok(8));
-        assert_eq!(start(&["--page", "users"]), Ok(12));
+        assert_eq!(start(&["--page", "users"]), Ok(14));
         assert_eq!(start(&["--page", "notifications"]), Ok(10));
         assert_eq!(start(&["--page", "network"]), Ok(5));
         assert_eq!(start(&["--page", "bluetooth"]), Ok(6));
@@ -953,7 +979,15 @@ mod tests {
         // accounts and `edel`.
         assert_eq!(
             titles(&dir),
-            ["Shortcuts", "Users", "Updates", "System", "About"]
+            [
+                "Shortcuts",
+                "Default apps",
+                "Startup",
+                "Users",
+                "Updates",
+                "System",
+                "About"
+            ]
         );
         std::fs::write(dir.join("shell.toml"), "format = 1\n").unwrap();
         assert_eq!(
@@ -967,6 +1001,8 @@ mod tests {
                 "Displays",
                 "Notifications",
                 "Shortcuts",
+                "Default apps",
+                "Startup",
                 "Users",
                 "Updates",
                 "System",
@@ -986,6 +1022,8 @@ mod tests {
                 "Sound",
                 "Notifications",
                 "Shortcuts",
+                "Default apps",
+                "Startup",
                 "Users",
                 "Updates",
                 "System",

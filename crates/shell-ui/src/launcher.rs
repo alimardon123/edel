@@ -13,8 +13,10 @@ use std::process::{Child, Command, Stdio};
 
 use tiny_skia::Pixmap;
 
+use accesskit::{Rect, Role};
 use edel::tokens::Tokens;
 
+use crate::a11y::Item;
 use crate::paint::{Text, fill, mix};
 use crate::popup::{self, INSET, PAD, middle};
 use edel::apps::{self, App};
@@ -41,6 +43,45 @@ pub struct View {
     pub names: Vec<String>,
     pub selected: usize,
     pub web: Option<String>,
+}
+
+/// What a screen reader reads of the launcher (M6.9): the search line
+/// first, its typed text as its value, then one list item for each row
+/// shown, named by its app. The focus is the chosen row, or the search
+/// line when no app is listed.
+pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
+    let w = WIDTH as f64;
+    let (pad, search) = (PAD as f64, SEARCH as f64);
+    let first = PAD + SEARCH + PAD;
+    let row = tokens.row as f64;
+    let field = Item {
+        role: Role::SearchInput,
+        label: tr("Search apps").to_string(),
+        bounds: Rect::new(pad, pad, w - pad, pad + search),
+        children: vec![],
+        toggled: None,
+        value: None,
+        value_text: Some(view.query.clone()),
+    };
+    let mut items = vec![field];
+    for (i, name) in view.names.iter().enumerate() {
+        let top = (first as f64) + i as f64 * row;
+        items.push(Item {
+            role: Role::ListItem,
+            label: name.clone(),
+            bounds: Rect::new(pad, top, w - pad, top + row),
+            children: vec![],
+            toggled: None,
+            value: None,
+            value_text: None,
+        });
+    }
+    let focus = if view.names.is_empty() {
+        0
+    } else {
+        1 + view.selected
+    };
+    (items, Some(focus))
 }
 
 /// The row at `y` logical pixels from the launcher's top, if any.
@@ -293,6 +334,60 @@ mod tests {
         let y = PAD + SEARCH + PAD + high as f32 * 1.5;
         assert_eq!(row_at(y, &tokens), Some(1));
         assert_eq!(row_at(height as f32, &tokens), None);
+    }
+
+    #[test]
+    fn a_screen_reader_reads_the_search_line_and_the_listed_apps() {
+        let tokens = Tokens::built_in();
+        let view = View {
+            query: "fo".into(),
+            names: vec!["Foot".into(), "Foot Client".into()],
+            selected: 1,
+            web: None,
+        };
+        let (items, focus) = nodes(&view, &tokens);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].role, Role::SearchInput);
+        assert_eq!(items[0].label, "Search apps");
+        assert_eq!(items[0].value_text.as_deref(), Some("fo"));
+        assert_eq!(
+            (items[1].role, items[1].label.as_str()),
+            (Role::ListItem, "Foot")
+        );
+        assert_eq!(items[2].label, "Foot Client");
+        assert_eq!(focus, Some(2), "the chosen row is focused");
+        let first = (PAD + SEARCH + PAD) as f64;
+        assert_eq!(items[2].bounds.y0, first + tokens.row as f64);
+        let (none, focus) = nodes(
+            &View {
+                query: "zz".into(),
+                names: vec![],
+                selected: 0,
+                web: None,
+            },
+            &tokens,
+        );
+        assert_eq!(none.len(), 1, "no app listed: the search line alone");
+        assert_eq!(focus, Some(0), "the search line holds the focus");
+    }
+
+    #[test]
+    fn shift_tab_moves_the_choice_back() {
+        let app = |name: &str| {
+            apps::parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={name}\nExec=true\n"
+            ))
+            .unwrap()
+        };
+        let mut launcher = Launcher {
+            apps: vec![app("Files"), app("Foot"), app("Text Editor")],
+            ..Launcher::default()
+        };
+        launcher.step(popup::tab_step(false));
+        launcher.step(popup::tab_step(false));
+        assert_eq!(launcher.selected, 2);
+        launcher.step(popup::tab_step(true));
+        assert_eq!(launcher.selected, 1, "Shift+Tab goes back one row");
     }
 
     #[test]

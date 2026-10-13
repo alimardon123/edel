@@ -29,6 +29,54 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "installing the default apps {apps}"
+msgstr ""
+
+msgid "updating the default apps"
+msgstr ""
+
+msgid "keeping {app} for {person}, who used it, in their own apps"
+msgstr ""
+
+msgid "taking {app} out of the default apps"
+msgstr ""
+
+msgid "the default apps were not all brought up to date ({what}); the system's update is not affected, and the next edel update tries again"
+msgstr ""
+
+msgid "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
+msgstr ""
+
+msgid "Login name"
+msgstr ""
+
+msgid "lowercase letters, digits, - and _, starting with a letter, and not root or live"
+msgstr ""
+
+msgid "Password, or press Return to give an ssh key instead: "
+msgstr ""
+
+msgid "Your ssh public key, on one line"
+msgstr ""
+
+msgid "a public key such as ssh-ed25519 AAAA... me@laptop, as ~/.ssh/id_ed25519.pub holds it"
+msgstr ""
+
+msgid "The same password again: "
+msgstr ""
+
+msgid "the two passwords differ; type them again"
+msgstr ""
+
+msgid "Someone was set up on another console, so this one changes nothing."
+msgstr ""
+
+msgid "{name} can log in now."
+msgstr ""
+
+msgid "could not write {path}"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
@@ -68,6 +116,45 @@ msgstr ""
 msgid "  4: data, {mib} MiB, starting from the settings file {file}"
 msgstr ""
 
+msgid "Language"
+msgstr ""
+
+msgid "Keyboard"
+msgstr ""
+
+msgid "Your login name"
+msgstr ""
+
+msgid "Your password"
+msgstr ""
+
+msgid "Disk to install on"
+msgstr ""
+
+msgid "Time zone"
+msgstr ""
+
+msgid "Computer name"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "Profile"
+msgstr ""
+
+msgid "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter"
+msgstr ""
+
+msgid "removable"
+msgstr ""
+
+msgid "running from it, so not offered"
+msgstr ""
+
+msgid "no partitions"
+msgstr ""
+
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
 msgstr ""
 
@@ -81,6 +168,51 @@ msgid "unknown"
 msgstr ""
 
 msgid "run as root to see"
+msgstr ""
+
+msgid "no disk found to install on"
+msgstr ""
+
+msgid "the questions were not answered; nothing was changed"
+msgstr ""
+
+msgid "Your password: "
+msgstr ""
+
+msgid "a password cannot be empty"
+msgstr ""
+
+msgid "could not start cryptpw, which hashes the password (busybox)"
+msgstr ""
+
+msgid "cryptpw has no input"
+msgstr ""
+
+msgid "cryptpw could not hash the password; nothing was changed"
+msgstr ""
+
+msgid "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
+msgstr ""
+
+msgid "More options (computer name, layout)? yes or no"
+msgstr ""
+
+msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
+msgstr ""
+
+msgid "letters, digits and hyphens, up to 63"
+msgstr ""
+
+msgid "one of {names}"
+msgstr ""
+
+msgid "Disk to install on, such as sda"
+msgstr ""
+
+msgid "one of the disks listed above, such as sda"
+msgstr ""
+
+msgid "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
 msgstr ""
 
 msgid "/dev/{name} is the disk this system runs from; install to another disk"
@@ -141,6 +273,12 @@ msgid "creating the data partition"
 msgstr ""
 
 msgid "done; restart from {disk} to use it"
+msgstr ""
+
+msgid "copying the default apps"
+msgstr ""
+
+msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
 msgstr ""
 
 msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
@@ -263,9 +401,6 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
-msgid "could not write {path}"
-msgstr ""
-
 msgid "{name} is not in /etc/passwd"
 msgstr ""
 
@@ -279,6 +414,9 @@ msgid "no input to the shell"
 msgstr ""
 
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
+msgstr ""
+
+msgid "{service} did not start ({status}); rc-service {service} start says why"
 msgstr ""
 
 msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
@@ -432,6 +570,9 @@ msgid "{why}; exporting only what the machine has"
 msgstr ""
 
 msgid "Files this machine changed in /etc, kept on /data and not described above:"
+msgstr ""
+
+msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
 msgstr ""
 
 msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
@@ -671,10 +812,10 @@ msgstr ""
 msgid "warning: could not turn the terminal's echo back on; run stty echo to fix it"
 msgstr ""
 
-msgid "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin"
+msgid "Password for {user}: "
 msgstr ""
 
-msgid "Password for {user}: "
+msgid "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin"
 msgstr ""
 
 msgid "the password was not given; nothing was changed"
@@ -755,6 +896,9 @@ msgstr ""
 msgid "wrote {path} on the EFI system partition"
 msgstr ""
 
+msgid "services.{name}: {name} is not a feature that can be switched on or off; the ones this machine has are {listed}"
+msgstr ""
+
 msgid "Desktop"
 msgstr ""
 
@@ -774,9 +918,6 @@ msgid "Appearance"
 msgstr ""
 
 msgid "colours, accent, shape, fonts and motion"
-msgstr ""
-
-msgid "Layout"
 msgstr ""
 
 msgid "the preset, tiling and title bars"
@@ -1130,6 +1271,12 @@ msgstr ""
 msgid "{others} or {last}"
 msgstr ""
 
+msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
+msgstr ""
+
+msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
+msgstr ""
+
 msgid "Windows"
 msgstr ""
 
@@ -1182,6 +1329,12 @@ msgid "Open or close the launcher, Super tapped alone"
 msgstr ""
 
 msgid "Open a terminal"
+msgstr ""
+
+msgid "Opens the files app (default_apps.files)"
+msgstr ""
+
+msgid "Opens the web browser (default_apps.browser)"
 msgstr ""
 
 msgid "Take a screenshot"
@@ -1670,10 +1823,13 @@ msgstr ""
 msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"
 msgstr ""
 
-msgid "The disk, such as /dev/sda"
+msgid "The disk, such as /dev/sda; without it, the disks are listed and one is asked for"
 msgstr ""
 
-msgid "The settings file the new machine starts with"
+msgid "The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it"
+msgstr ""
+
+msgid "List the disks Edel OS could install on, and change nothing"
 msgstr ""
 
 msgid "Only show the plan: what would be erased and written; change nothing"
@@ -1724,7 +1880,7 @@ msgstr ""
 msgid "Make FILE this machine's settings and apply it, such as a file exported on another machine"
 msgstr ""
 
-msgid "The settings file"
+msgid "The settings file, a path or an https:// address"
 msgstr ""
 
 msgid "Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed"
@@ -1767,6 +1923,18 @@ msgid "The channel written into the image, such as preview or stable"
 msgstr ""
 
 msgid "An apk cache to share between the images of one build, so they all install from one package index"
+msgstr ""
+
+msgid "Where the default apps come from: a .flatpakrepo file's address or a Flatpak repository's, such as file:///src/out/apps-repo for a test; Flathub when not given"
+msgstr ""
+
+msgid "The address machines update the default apps from, when it is not where the build took them, as for a test image built from a local repository that its VM reaches over HTTP"
+msgstr ""
+
+msgid "A default app to install instead of the definition's list; for test images. Can be given more than once"
+msgstr ""
+
+msgid "A default app this image drops, kept for each person who used it, instead of the definition's; for test images. Can be given more than once"
 msgstr ""
 
 msgid "Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images"

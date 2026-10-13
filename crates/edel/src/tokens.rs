@@ -151,6 +151,10 @@ pub fn load_from_files(
     );
     let (tokens, more) = load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper);
     notes.extend(more);
+    // High contrast (M6.9) comes after the person's accent and colours, so it
+    // always wins over them.
+    let high = high_contrast_between(machine.as_ref(), person.as_ref());
+    let tokens = tokens.with_contrast(high, scheme);
     let shape = Shape::between(machine.as_ref(), person.as_ref());
     let (tokens, more) = tokens.with_shape(&shape);
     notes.extend(more);
@@ -189,6 +193,20 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
         }
         Err(_) => (None, Vec::new()),
     }
+}
+
+/// Whether high contrast is on (M6.9): `appearance.contrast` is `high` in
+/// the person's file, else in the machine's. A person's `normal` wins over a
+/// machine's `high`, as the person's file is written with `normal` then.
+pub fn high_contrast_between(
+    machine: Option<&SettingsFile>,
+    person: Option<&SettingsFile>,
+) -> bool {
+    person
+        .and_then(|file| file.appearance.contrast.clone())
+        .or_else(|| machine.and_then(|file| file.appearance.contrast.clone()))
+        .as_deref()
+        == Some("high")
 }
 
 /// The accent the person's file names, else the machine's (M5.12b1).
@@ -783,6 +801,45 @@ impl Tokens {
         (self, notes)
     }
 
+    /// The high-contrast colours of `scheme` laid over these when `high`
+    /// (M6.9): `[colour.contrast]` for the dark scheme and
+    /// `[colour.light.contrast]` for the light one, both in the release's
+    /// file. A `high` of false changes nothing, so normal contrast is the
+    /// tokens as they were. Called after the person's accent and colours.
+    pub fn with_contrast(mut self, high: bool, scheme: Scheme) -> Tokens {
+        if !high {
+            return self;
+        }
+        // The built-in file parses, as its tests hold; were it not to, the
+        // tokens stay as they are.
+        let Ok(table) = BUILT_IN.parse::<Table>() else {
+            return self;
+        };
+        if let Some(colours) = contrast_table(&table, scheme) {
+            // The built-in file is checked by the tests, so no note is left.
+            self.apply_contrast(colours, contrast_path(scheme), &mut Vec::new());
+        }
+        self
+    }
+
+    /// The high-contrast colours in `colours` over these (M6.9). A name that
+    /// is not a colour token, or a value that is not a colour, is noted and
+    /// skipped, as `apply_colours` does.
+    fn apply_contrast(&mut self, colours: &Table, path: &str, notes: &mut Vec<String>) {
+        for (key, value) in colours {
+            let Some(slot) = self.slot(key) else {
+                notes.push(format!("unknown key {path}.{key} ignored"));
+                continue;
+            };
+            match value.as_str().and_then(Colour::parse) {
+                Some(colour) => *slot = colour,
+                None => notes.push(format!(
+                    "{path}.{key} = {value} is not #rrggbb or #rrggbbaa; the built-in value is used"
+                )),
+            }
+        }
+    }
+
     /// Sets the colour token `name` to the colour `value` reads as, or notes
     /// why it cannot (M5.12b1).
     fn set_from_text(&mut self, name: &str, value: &str, notes: &mut Vec<String>) {
@@ -1069,6 +1126,10 @@ impl Tokens {
             if key == "light" && value.is_table() {
                 continue;
             }
+            // The high-contrast colours (M6.9), read by `with_contrast`.
+            if key == "contrast" && value.is_table() {
+                continue;
+            }
             // foot's colours (M6.13), `[colour.terminal]` in this scheme.
             if let ("terminal", Some(terminal)) = (key.as_str(), value.as_table()) {
                 self.apply_terminal(terminal, notes);
@@ -1239,7 +1300,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         .and_then(|c| c.get("light"))
         .and_then(Value::as_table);
     if let Some(colours) = colours {
-        for key in colours.keys().filter(|k| *k != "light") {
+        for key in colours.keys().filter(|k| *k != "light" && *k != "contrast") {
             if light.is_none_or(|l| !l.contains_key(key)) {
                 bail!("colour.light.{key} is missing");
             }
@@ -1338,6 +1399,17 @@ pub fn check(text: &str) -> Result<Tokens> {
     tokens.apply(&table, &mut notes);
     let mut light = tokens.clone();
     light.apply_light(&table, &mut notes);
+    // The high-contrast tables (M6.9) name colours of their own: each name
+    // must be a colour token, each value a colour. A probe copy keeps the
+    // checked tokens as the release's.
+    for (scheme, path) in [
+        (Scheme::Dark, "colour.contrast"),
+        (Scheme::Light, "colour.light.contrast"),
+    ] {
+        if let Some(colours) = contrast_table(&table, scheme) {
+            tokens.clone().apply_contrast(colours, path, &mut notes);
+        }
+    }
     if !notes.is_empty() {
         bail!("{}", notes.join("; "));
     }
@@ -1661,6 +1733,28 @@ impl Tokens {
 
 /// One `[NAME]` section of foot's config: the 20 colours as foot names them,
 /// `#` left out, the cursor as foot takes it, its text then its block.
+/// The high-contrast table of `scheme` in `table` (M6.9): `[colour.contrast]`
+/// for the dark scheme, `[colour.light.contrast]` for the light one.
+fn contrast_table(table: &Table, scheme: Scheme) -> Option<&Table> {
+    let colours = table.get("colour").and_then(Value::as_table)?;
+    match scheme {
+        Scheme::Dark => colours.get("contrast").and_then(Value::as_table),
+        Scheme::Light => colours
+            .get("light")
+            .and_then(Value::as_table)?
+            .get("contrast")
+            .and_then(Value::as_table),
+    }
+}
+
+/// The name a note gives a scheme's high-contrast table (M6.9).
+fn contrast_path(scheme: Scheme) -> &'static str {
+    match scheme {
+        Scheme::Dark => "colour.contrast",
+        Scheme::Light => "colour.light.contrast",
+    }
+}
+
 fn foot_section(name: &str, terminal: &Terminal) -> String {
     let hex = |colour: Colour| {
         let [r, g, b, _] = colour.bytes();
@@ -2706,5 +2800,82 @@ mod tests {
         let (tokens, notes) = built.clone().with_text(&empty);
         assert_eq!(tokens.font, built.font);
         assert_eq!(notes, ["appearance.font is empty; the release's is used"]);
+    }
+
+    /// High contrast (M6.9): every pair the release holds, read at 7 to 1 or
+    /// more in both schemes (WCAG AAA), where the release holds 4.5 or 3.
+    #[test]
+    fn high_contrast_holds_every_pair_at_7_to_1_in_both_schemes() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let tokens = Tokens::built_in_scheme(scheme).with_contrast(true, scheme);
+            for (foreground, surface, _) in PAIRS {
+                let (text, on) = (
+                    tokens.colour(foreground).expect("a colour token"),
+                    tokens.colour(surface).expect("a colour token"),
+                );
+                let ratio = contrast(text, on);
+                assert!(
+                    ratio >= 7.0,
+                    "{foreground} on {surface} in {} reads at {ratio:.2} to 1",
+                    scheme.name()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn normal_contrast_or_none_changes_no_token() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let built = Tokens::built_in_scheme(scheme);
+            assert_eq!(built.clone().with_contrast(false, scheme), built);
+        }
+        let normal = Some("format = 1\n[appearance]\ncontrast = \"normal\"\n");
+        let (absent, _) = load_from_files(Scheme::Light, None, None, None);
+        let (chosen, notes) = load_from_files(Scheme::Light, None, normal, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(chosen, absent);
+    }
+
+    /// The person's `appearance.contrast` wins over the machine's, and high
+    /// contrast lies over the person's own colours (M6.9).
+    #[test]
+    fn the_persons_contrast_wins_and_high_contrast_wins_over_their_colours() {
+        let high = "format = 1\n[appearance]\ncontrast = \"high\"\n";
+        let normal = "format = 1\n[appearance]\ncontrast = \"normal\"\n";
+        // The release's own, as the files give it (the focused title bar
+        // takes its tint from the accent, which the files also do).
+        let (dark, _) = load_from_files(Scheme::Dark, None, None, None);
+        let (on, _) = load_from_files(Scheme::Dark, Some(high), None, None);
+        assert_eq!(on, dark.clone().with_contrast(true, Scheme::Dark));
+        let (off, _) = load_from_files(Scheme::Dark, Some(high), Some(normal), None);
+        assert_eq!(off, dark);
+        let (person_on, _) = load_from_files(Scheme::Dark, Some(normal), Some(high), None);
+        assert_eq!(person_on, on);
+        let coloured = "format = 1\n[appearance]\ncontrast = \"high\"\n[appearance.colours]\npanel = \"#ff00ff\"\n";
+        let (tokens, _) = load_from_files(Scheme::Light, None, Some(coloured), None);
+        assert_eq!(tokens.panel, Colour::parse("#ffffff").unwrap());
+    }
+
+    /// A name in a contrast table that is not a colour token, or a bad
+    /// colour in one, is refused by `check` as any other colour is (M6.9).
+    #[test]
+    fn check_refuses_a_name_in_a_contrast_table_that_is_not_a_colour() {
+        let dark = BUILT_IN.replace(
+            "[colour.contrast]\n",
+            "[colour.contrast]\nnot_a_colour = \"#000000\"\n",
+        );
+        let error = check(&dark)
+            .expect_err("a name that is no colour")
+            .to_string();
+        assert!(error.contains("colour.contrast.not_a_colour"), "{error}");
+        let light = BUILT_IN.replace(
+            "[colour.light.contrast]\ntitle_bar = \"#e6e6e6\"",
+            "[colour.light.contrast]\ntitle_bar = \"blue\"",
+        );
+        let error = check(&light)
+            .expect_err("a value that is no colour")
+            .to_string();
+        assert!(error.contains("colour.light.contrast.title_bar"), "{error}");
+        assert!(check(BUILT_IN).is_ok());
     }
 }

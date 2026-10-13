@@ -1,0 +1,15 @@
+# Edel OS's icon theme (M6.16): the shell's own icons under the names
+# apps ask for. Written from design/icons/ by edel::icons (a cargo test
+# keeps it so: EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme).
+[Icon Theme]
+Name=Edel
+Comment=Edel OS's own icons
+Inherits=Adwaita,hicolor
+Directories=scalable/ui
+
+[scalable/ui]
+Size=16
+MinSize=8
+MaxSize=512
+Type=Scalable
+Context=UI

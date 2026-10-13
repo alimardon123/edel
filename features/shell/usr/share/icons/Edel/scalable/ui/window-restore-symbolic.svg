@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1">
+  <!-- A maximized window's maximize button (M4.4): two windows, one
+       behind the other, to bring back its size. -->
+  <path d="M4.5 4V2.5H11.5V9.5H10"/>
+  <rect x="2.5" y="4.5" width="7" height="7"/>
+</svg>

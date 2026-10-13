@@ -55,14 +55,15 @@ Shut this machine down now: the system's own poweroff, through doas when you are
 
 Suspend this machine to memory now; a key or the power button wakes it.
 
-## `edel install DISK [OPTIONS]`
+## `edel install [DISK] [OPTIONS]`
 
 Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings.
 
 | | What it does |
 |---|---|
-| `DISK` | The disk, such as /dev/sda |
-| `--settings FILE` | The settings file the new machine starts with |
+| `DISK` | The disk, such as /dev/sda; without it, the disks are listed and one is asked for |
+| `--settings FILE` | The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it |
+| `--list` | List the disks Edel OS could install on, and change nothing |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 
@@ -121,7 +122,7 @@ Make FILE this machine's settings and apply it, such as a file exported on anoth
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ### `edel settings export`
 
@@ -133,7 +134,7 @@ Check a settings file strictly: every unknown key, value or format, and every ke
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ## `edel image`
 
@@ -155,6 +156,10 @@ Build an image from its definition file (run as root on Alpine).
 | `--version VERSION` | The release version written into the image, such as 2026.10.3; without it the image keeps its development version |
 | `--channel CHANNEL` | The channel written into the image, such as preview or stable |
 | `--apk-cache DIR` | An apk cache to share between the images of one build, so they all install from one package index |
+| `--apps-from URL` | Where the default apps come from: a .flatpakrepo file's address or a Flatpak repository's, such as file:///src/out/apps-repo for a test; Flathub when not given |
+| `--apps-url URL` | The address machines update the default apps from, when it is not where the build took them, as for a test image built from a local repository that its VM reaches over HTTP |
+| `--app ID` | A default app to install instead of the definition's list; for test images. Can be given more than once |
+| `--dropped-app ID` | A default app this image drops, kept for each person who used it, instead of the definition's; for test images. Can be given more than once |
 | `--no-compress` | Skip the .gz copy of a VM image's disk (the slot's .gz, the update image, is always made); for test images |
 | `--plan` | Only show the plan: every step, changing nothing |
 

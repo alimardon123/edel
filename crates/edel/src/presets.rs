@@ -253,6 +253,84 @@ impl Side {
     }
 }
 
+/// The title bars' buttons as the files and the preset give them (M6.16):
+/// the side they sit on and which of the three are shown. The compositor
+/// draws its bars with it and shell-ui tells apps' own title bars the same
+/// rule, through [`gnome_button_layout`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Buttons {
+    pub side: Side,
+    pub close: bool,
+    pub minimize: bool,
+    pub maximize: bool,
+}
+
+/// The buttons the person's file over the machine's give (M6.16):
+/// `layout.window_buttons` for the side, else the preset's side, the preset
+/// being the one `layout.preset` names in the files, and each of
+/// `layout.close_button`, `minimize_button` and `maximize_button` unless a
+/// file sets it false. Each file's own preset is applied first
+/// ([`settings::in_use`]), as the compositor reads them.
+pub fn buttons_applying(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Buttons {
+    let machine = machine.map(settings::in_use);
+    let person = person.map(settings::in_use);
+    let (mut side, mut preset) = (None, None);
+    let mut shown = [true; 3];
+    for file in [machine.as_ref(), person.as_ref()].into_iter().flatten() {
+        if file.layout.preset.is_some() {
+            preset.clone_from(&file.layout.preset);
+        }
+        if let Some(chosen) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
+            side = Some(chosen);
+        }
+        for (value, index) in [
+            (file.layout.close_button, 0),
+            (file.layout.minimize_button, 1),
+            (file.layout.maximize_button, 2),
+        ] {
+            if let Some(value) = value {
+                shown[index] = value;
+            }
+        }
+    }
+    Buttons {
+        side: side.unwrap_or_else(|| named(preset.as_deref()).0.windows.buttons),
+        close: shown[0],
+        minimize: shown[1],
+        maximize: shown[2],
+    }
+}
+
+/// The buttons in GNOME's `button-layout` form (M6.16), which GTK and
+/// libadwaita apps read from the settings portal for their own header bars:
+/// the shown buttons of the side, close first on the left and last on the
+/// right, then a colon on the side the bar is on. A hidden button is left
+/// out, so a bar with none is `:`: `close,minimize,maximize:` on the left,
+/// `:minimize,maximize,close` on the right, `:maximize,close` with minimize
+/// hidden on the right.
+pub fn gnome_button_layout(buttons: &Buttons) -> String {
+    let shown = |on: bool, name: &'static str| on.then_some(name);
+    let names: Vec<&str> = match buttons.side {
+        Side::Left => [
+            shown(buttons.close, "close"),
+            shown(buttons.minimize, "minimize"),
+            shown(buttons.maximize, "maximize"),
+        ],
+        Side::Right => [
+            shown(buttons.minimize, "minimize"),
+            shown(buttons.maximize, "maximize"),
+            shown(buttons.close, "close"),
+        ],
+    }
+    .into_iter()
+    .flatten()
+    .collect();
+    match buttons.side {
+        Side::Left => format!("{}:", names.join(",")),
+        Side::Right => format!(":{}", names.join(",")),
+    }
+}
+
 /// The workspace model (M5.2a): a fixed number of workspaces. A dynamic
 /// model, one more workspace whenever the last fills, joins with the
 /// preset that first asks for it.
@@ -948,6 +1026,79 @@ mod tests {
     }
 
     #[test]
+    fn gnome_button_layout_lists_the_shown_buttons_on_their_side() {
+        let all = |side| Buttons {
+            side,
+            close: true,
+            minimize: true,
+            maximize: true,
+        };
+        assert_eq!(
+            gnome_button_layout(&all(Side::Left)),
+            "close,minimize,maximize:"
+        );
+        assert_eq!(
+            gnome_button_layout(&all(Side::Right)),
+            ":minimize,maximize,close"
+        );
+    }
+
+    #[test]
+    fn gnome_button_layout_leaves_a_hidden_button_out() {
+        let right = Buttons {
+            side: Side::Right,
+            close: true,
+            minimize: false,
+            maximize: true,
+        };
+        assert_eq!(gnome_button_layout(&right), ":maximize,close");
+        let left = Buttons {
+            side: Side::Left,
+            close: false,
+            minimize: true,
+            maximize: true,
+        };
+        assert_eq!(gnome_button_layout(&left), "minimize,maximize:");
+    }
+
+    #[test]
+    fn gnome_button_layout_with_every_button_hidden_is_a_bare_colon() {
+        for side in [Side::Left, Side::Right] {
+            let none = Buttons {
+                side,
+                close: false,
+                minimize: false,
+                maximize: false,
+            };
+            assert_eq!(gnome_button_layout(&none), ":");
+        }
+    }
+
+    #[test]
+    fn the_persons_buttons_win_over_the_machines() {
+        let machine =
+            file("format = 1\n[layout]\nwindow_buttons = \"left\"\nminimize_button = false\n");
+        let person = file("format = 1\n[layout]\nwindow_buttons = \"right\"\n");
+        let both = buttons_applying(Some(&machine), Some(&person));
+        assert_eq!(both.side, Side::Right, "the person's side");
+        assert!(!both.minimize, "the machine's hidden minimize still holds");
+        let alone = buttons_applying(Some(&machine), None);
+        assert_eq!(alone.side, Side::Left);
+        assert!(!alone.minimize);
+        assert_eq!(gnome_button_layout(&alone), "close,maximize:");
+    }
+
+    #[test]
+    fn the_buttons_side_falls_back_to_the_preset_the_files_name() {
+        let mac = file("format = 1\n[layout]\npreset = \"mac-like\"\n");
+        assert_eq!(buttons_applying(None, Some(&mac)).side, Side::Left);
+        let nothing = buttons_applying(None, None);
+        assert_eq!(nothing.side, Side::Right, "Classic's side");
+        assert!(nothing.close && nothing.minimize && nothing.maximize);
+        assert_eq!(gnome_button_layout(&nothing), ":minimize,maximize,close");
+    }
+
+    #[test]
     fn windows_like_has_a_taskbar_with_search_and_the_apps_in_its_centre() {
         let (windows, note) = named(Some("windows-like"));
         assert_eq!(note, None);
@@ -955,7 +1106,7 @@ mod tests {
         assert_eq!(windows.windows.buttons, Side::Right);
         assert_eq!(
             windows.apps.pinned,
-            ["files", "browser", "terminal", "mail", "music"]
+            ["files", "browser", "terminal", "mail", "music", "store"]
         );
         let panel = &windows.panels[0];
         assert_eq!(panel.edge, Edge::Bottom);

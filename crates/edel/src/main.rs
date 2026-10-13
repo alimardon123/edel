@@ -8,6 +8,8 @@ mod boot;
 mod completion;
 mod data;
 mod def;
+mod default_apps;
+mod first_boot;
 mod grubenv;
 mod guard;
 mod image;
@@ -19,6 +21,7 @@ mod privilege;
 mod release;
 mod report;
 mod run;
+mod settings_source;
 mod shell;
 mod system_power;
 mod update;
@@ -155,11 +158,17 @@ enum Commands {
     /// Install Edel OS on another disk, erasing it: the running system
     /// becomes slot A, and FILE the new machine's settings
     Install {
-        /// The disk, such as /dev/sda
-        disk: String,
-        /// The settings file the new machine starts with
+        /// The disk, such as /dev/sda; without it, the disks are listed
+        /// and one is asked for
+        disk: Option<String>,
+        /// The settings file the new machine starts with, a path or an
+        /// https:// address; without it, a few questions are asked on the
+        /// terminal and their answers become it
         #[arg(long, value_name = "FILE")]
-        settings: PathBuf,
+        settings: Option<String>,
+        /// List the disks Edel OS could install on, and change nothing
+        #[arg(long)]
+        list: bool,
         /// Only show the plan: what would be erased and written; change
         /// nothing
         #[arg(long)]
@@ -331,8 +340,8 @@ enum SettingsCommands {
     /// Make FILE this machine's settings and apply it, such as a file
     /// exported on another machine
     Import {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
     },
     /// Print this machine as a settings file, to keep or to import on
     /// another machine, and the /etc files it changed
@@ -340,8 +349,16 @@ enum SettingsCommands {
     /// Check a settings file strictly: every unknown key, value or format,
     /// and every key this release does not act on yet, is refused
     Check {
-        /// The settings file
-        file: PathBuf,
+        /// The settings file, a path or an https:// address
+        file: String,
+    },
+    /// Ask for the first person on a console when nobody can log in, as
+    /// the consoles do before their login prompt (M6.6b)
+    #[command(hide = true)]
+    FirstBoot {
+        /// Ask on this terminal, as init's consoles run it
+        #[arg(long, required = true)]
+        console: bool,
     },
 }
 
@@ -457,6 +474,25 @@ struct BuildArgs {
     /// all install from one package index
     #[arg(long, value_name = "DIR")]
     apk_cache: Option<PathBuf>,
+    /// Where the default apps come from: a .flatpakrepo file's address or
+    /// a Flatpak repository's, such as file:///src/out/apps-repo for a
+    /// test; Flathub when not given
+    #[arg(long, value_name = "URL")]
+    apps_from: Option<String>,
+    /// The address machines update the default apps from, when it is not
+    /// where the build took them, as for a test image built from a local
+    /// repository that its VM reaches over HTTP
+    #[arg(long, value_name = "URL")]
+    apps_url: Option<String>,
+    /// A default app to install instead of the definition's list; for test
+    /// images. Can be given more than once.
+    #[arg(long = "app", value_name = "ID")]
+    apps: Vec<String>,
+    /// A default app this image drops, kept for each person who used it,
+    /// instead of the definition's; for test images. Can be given more
+    /// than once.
+    #[arg(long = "dropped-app", value_name = "ID")]
+    dropped_apps: Vec<String>,
     /// Skip the .gz copy of a VM image's disk (the slot's .gz, the
     /// update image, is always made); for test images
     #[arg(long)]
@@ -534,9 +570,26 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from,
+                    apps_url,
+                    apps,
+                    dropped_apps,
                     no_compress,
                     plan,
                 } = *args;
+                if let Some(id) = apps
+                    .iter()
+                    .chain(&dropped_apps)
+                    .find(|id| !edel::apps::is_flatpak_id(id))
+                {
+                    anyhow::bail!(
+                        "{}",
+                        trf(
+                            "{id} is not a Flatpak app id, such as org.gnome.TextEditor",
+                            &[("id", &format!("{id:?}"))]
+                        )
+                    );
+                }
                 if let Some(v) = version.as_deref().filter(|v| !image::is_version(v)) {
                     anyhow::bail!(
                         "{}",
@@ -575,6 +628,18 @@ fn run(command: Commands) -> Result<()> {
                     version,
                     channel,
                     apk_cache,
+                    apps_from: apps_from.unwrap_or_else(|| edel::apps::FLATHUB_REMOTE.to_string()),
+                    apps_url,
+                    apps: if apps.is_empty() {
+                        def.apps.clone()
+                    } else {
+                        apps
+                    },
+                    apps_dropped: if dropped_apps.is_empty() {
+                        def.apps_dropped.clone()
+                    } else {
+                        dropped_apps
+                    },
                     compress: !no_compress,
                     out,
                     runner: Runner { dry_run: plan },
@@ -651,7 +716,16 @@ fn run(command: Commands) -> Result<()> {
             if check {
                 release::check(&location, &accept)
             } else {
-                update::install(&location, &accept, unsigned)
+                let system = update::install(&location, &accept, unsigned);
+                // The default apps follow the system, whether or not it had
+                // a newer release (M6.2); their failure never hides the
+                // system's own result.
+                if !unsigned {
+                    if let Err(err) = default_apps::follow() {
+                        eprintln!("warning: {err:#}");
+                    }
+                }
+                system
             }
         }
         Commands::Rollback => update::rollback(),
@@ -659,12 +733,25 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
             disk,
             settings,
             plan,
             yes,
-        } => installer::install(&disk, &settings, plan, yes),
+            ..
+        } => {
+            let settings = settings
+                .as_deref()
+                .map(settings_source::local)
+                .transpose()?;
+            installer::install(
+                disk.as_deref(),
+                settings.as_ref().map(settings_source::Local::path),
+                plan,
+                yes,
+            )
+        }
         Commands::Report { esp } => report::report(esp),
         Commands::Settings { command } => match command {
             None => {
@@ -681,9 +768,14 @@ fn run(command: Commands) -> Result<()> {
                 Ok(())
             }
             Some(SettingsCommands::Apply { boot }) => machine::apply(boot),
-            Some(SettingsCommands::Import { file }) => machine::import(&file),
+            Some(SettingsCommands::Import { file }) => {
+                machine::import(settings_source::local(&file)?.path())
+            }
             Some(SettingsCommands::Export) => machine::export(),
-            Some(SettingsCommands::Check { file }) => check_system_file(&file),
+            Some(SettingsCommands::Check { file }) => {
+                check_system_file(&settings_source::local(&file)?)
+            }
+            Some(SettingsCommands::FirstBoot { .. }) => first_boot::console(),
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),
@@ -763,12 +855,20 @@ fn web_app_list() {
 
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
-fn check_system_file(file: &std::path::Path) -> Result<()> {
-    let shown = file.display().to_string();
+fn check_system_file(source: &settings_source::Local) -> Result<()> {
+    let file = source.path();
+    let shown = source.shown().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
-    let problems = settings::check(&text)
+    let mut problems = settings::check(&text)
         .with_context(|| trf("could not check {path}", &[("path", &shown)]))?;
+    // On a machine, `[services]` names only features it can switch (M6.10).
+    let installed = edel::services::installed();
+    if !installed.is_empty() {
+        if let Ok(read) = settings::read(&text) {
+            problems.extend(edel::services::problems(&read.file.services, &installed));
+        }
+    }
     if problems.is_empty() {
         println!("{}", trf("{path}: ok", &[("path", &shown)]));
         return Ok(());
@@ -776,22 +876,21 @@ fn check_system_file(file: &std::path::Path) -> Result<()> {
     for problem in &problems {
         println!("{problem}");
     }
-    bail!("{}", problem_count(file, problems.len()))
+    bail!("{}", problem_count(&shown, problems.len()))
 }
 
 /// The last line of a failed `edel settings check`: how many problems the
 /// lines above are, and what to do about them.
-fn problem_count(file: &std::path::Path, count: usize) -> String {
-    let path = file.display().to_string();
+fn problem_count(path: &str, count: usize) -> String {
     if count == 1 {
         trf(
             "{path} has 1 problem, listed above; fix it and run edel settings check again",
-            &[("path", &path)],
+            &[("path", path)],
         )
     } else {
         trf(
             "{path} has {count} problems, listed above; fix them and run edel settings check again",
-            &[("path", &path), ("count", &count.to_string())],
+            &[("path", path), ("count", &count.to_string())],
         )
     }
 }
@@ -831,7 +930,7 @@ mod tests {
 
     #[test]
     fn a_failed_check_counts_its_problems_and_says_what_to_do() {
-        let file = std::path::Path::new("/tmp/ali.toml");
+        let file = "/tmp/ali.toml";
         assert_eq!(
             problem_count(file, 1),
             "/tmp/ali.toml has 1 problem, listed above; fix it and run edel settings check again"

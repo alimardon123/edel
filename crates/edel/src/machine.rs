@@ -16,11 +16,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
-use edel::apps::FLATHUB_REMOTE;
+use edel::apps::{self, FLATHUB_REMOTE};
 use edel::i18n::{tr, trf};
 use edel::panel_edit;
 use edel::places;
 use edel::presets;
+use edel::services;
 use edel::settings::{self, SettingsFile, User};
 use edel::theme_file;
 use edel::themes;
@@ -38,6 +39,7 @@ fn machine_file() -> PathBuf {
 }
 /// Developer mode is on while this file exists (ADR-007; M7.1 acts on it).
 const DEVELOPER_FLAG: &str = places::DEVELOPER_FLAG;
+const FIRST_PASSWORDS: &str = places::FIRST_PASSWORDS;
 /// What this machine changed in `/etc`: a file here differs from the slot's.
 const ETC_UPPER: &str = places::ETC_UPPER;
 /// A volume with this label holding the settings file seeds a first boot.
@@ -75,15 +77,15 @@ const WRITE_KEYS: &str = "umask 077 && mkdir -p \"$HOME/.ssh\" && chmod 700 \"$H
 
 /// One line of `/etc/passwd`.
 #[derive(Debug, PartialEq)]
-struct Account {
-    name: String,
+pub(crate) struct Account {
+    pub(crate) name: String,
     uid: u32,
     gid: u32,
-    home: String,
+    pub(crate) home: String,
     shell: String,
 }
 
-fn accounts(passwd: &str) -> Vec<Account> {
+pub(crate) fn accounts(passwd: &str) -> Vec<Account> {
     passwd
         .lines()
         .filter_map(|line| {
@@ -104,7 +106,7 @@ fn accounts(passwd: &str) -> Vec<Account> {
 
 /// A person's account, not a system one: root, or a uid from 1000 below
 /// `nobody`'s.
-fn is_person(account: &Account) -> bool {
+pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
 
@@ -258,6 +260,11 @@ enum Change {
         keys: Vec<String>,
     },
     Developer(bool),
+    /// Add a service to its runlevel, or take it out (M6.10)
+    Service(services::Step),
+    /// Give these people the password `edel install` asked for, then
+    /// delete `places::FIRST_PASSWORDS` (M6.6b)
+    Passwords(Vec<String>),
     /// May use the screen and input: a person in the file, or the greeter
     Seat(String),
     /// Flatpak apps from Flathub for an admin person, installed as that
@@ -266,6 +273,9 @@ enum Change {
         name: String,
         ids: Vec<String>,
     },
+    /// Write `/etc/xdg/mimeapps.list` with these default apps; an empty
+    /// text removes the file (M6.10)
+    MimeDefaults(String),
 }
 
 impl fmt::Display for Change {
@@ -283,6 +293,27 @@ impl fmt::Display for Change {
             Change::Keys { name, keys } => {
                 write!(f, "users.{name}.ssh_keys: write {} keys", keys.len())
             }
+            Change::Service(step) if step.on => write!(
+                f,
+                "services: start {} and add it to the {} runlevel",
+                step.service, step.level
+            ),
+            Change::Service(step) => write!(
+                f,
+                "services: stop {} and take it out of the {} runlevel",
+                step.service, step.level
+            ),
+            Change::Passwords(names) if names.is_empty() => {
+                write!(
+                    f,
+                    "remove the passwords edel install left, as nobody in the file has one"
+                )
+            }
+            Change::Passwords(names) => write!(
+                f,
+                "give {} the password edel install asked for",
+                names.join(", ")
+            ),
             Change::Developer(on) => {
                 write!(
                     f,
@@ -293,6 +324,12 @@ impl fmt::Display for Change {
             Change::Seat(name) => write!(f, "group {SEAT_GROUP}: add {name}"),
             Change::Flatpak { name, ids } => {
                 write!(f, "apps.installed for {name}: install {}", ids.join(", "))
+            }
+            Change::MimeDefaults(text) if text.is_empty() => {
+                write!(f, "remove {} (no default apps set)", places::MIME_DEFAULTS)
+            }
+            Change::MimeDefaults(_) => {
+                write!(f, "write {} (the default apps)", places::MIME_DEFAULTS)
             }
         }
     }
@@ -317,6 +354,16 @@ struct Machine {
     developer: bool,
     /// The Flatpak apps each admin person has (M6.1), by login name
     flatpak: BTreeMap<String, BTreeSet<String>>,
+    /// The features this machine has, for `[services]` (M6.10)
+    features: Vec<(String, edel::features::Feature)>,
+    /// The features the image left off (`EDEL_SERVICES_OFF`)
+    services_off: Vec<String>,
+    /// The services in OpenRC's runlevels now
+    runlevels: BTreeSet<services::Entry>,
+    /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
+    mime_defaults: Option<String>,
+    /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
+    first_passwords: Option<String>,
 }
 
 impl Machine {
@@ -361,8 +408,58 @@ impl Machine {
             default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
+            features: services::installed(),
+            services_off: services::off_by_default(
+                &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
+            ),
+            runlevels: services::enabled_in(Path::new("/etc/runlevels")),
+            mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
+            first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
         })
     }
+}
+
+/// The people of `users` that `places::FIRST_PASSWORDS`' `text` has a
+/// password for, in the file's order.
+fn first_password_names<'a>(text: &str, users: impl Iterator<Item = &'a String>) -> Vec<String> {
+    let users: BTreeSet<&String> = users.collect();
+    text.lines()
+        .filter_map(|line| line.split_once(':'))
+        .filter(|(name, _)| users.iter().any(|u| u.as_str() == *name))
+        .map(|(name, _)| name.to_string())
+        .collect()
+}
+
+/// The `NAME:HASH` lines of `text` for `names`, as `chpasswd -e` takes
+/// them; a line whose hash is not a crypt hash is left out.
+fn first_password_lines(text: &str, names: &[String]) -> String {
+    text.lines()
+        .filter(|line| {
+            line.split_once(':').is_some_and(|(name, hash)| {
+                names.iter().any(|n| n == name) && hash.starts_with('$') && !hash.contains(':')
+            })
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// Runs `cmd` with `input` on its standard input, failing on a non-zero
+/// exit; the input is not shown in the message.
+fn run_with_input(cmd: &mut Command, input: &str) -> Result<()> {
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not start {:?}", cmd.get_program()))?;
+    child
+        .stdin
+        .take()
+        .context("no input")?
+        .write_all(input.as_bytes())?;
+    let status = child.wait()?;
+    if !status.success() {
+        bail!("{:?} failed with {status}", cmd.get_program());
+    }
+    Ok(())
 }
 
 /// The changes that make `machine` match `file`, and notes on what is left
@@ -465,9 +562,39 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
             }
         }
     }
+    // The default apps (M6.10). A file this release did not write is the
+    // administrator's: never overwritten or removed. Ours is rewritten
+    // when it differs, and removed when the file sets no MIME type.
+    let mime_now = machine.mime_defaults.as_deref();
+    let wanted = apps::mime_defaults(&settings::default_app_roles(&file.default_apps));
+    let theirs = mime_now.is_some_and(|text| !text.starts_with(apps::MIME_COMMENT));
+    if !theirs && mime_now.unwrap_or("") != wanted {
+        changes.push(Change::MimeDefaults(wanted));
+    }
+    // The passwords edel install asked for, given once the people exist
+    // (they are added above), then the file goes (M6.6b).
+    if let Some(text) = &machine.first_passwords {
+        changes.push(Change::Passwords(first_password_names(
+            text,
+            file.users.keys(),
+        )));
+    }
     let developer = file.system.developer_mode == Some(true);
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
+    }
+    // Switchable features on or off (M6.10); a name the machine cannot
+    // switch is a note, as apply is lenient on a machine.
+    for problem in services::problems(&file.services, &machine.features) {
+        notes.push(problem);
+    }
+    for step in services::plan(
+        &machine.features,
+        &file.services,
+        &machine.services_off,
+        &machine.runlevels,
+    ) {
+        changes.push(Change::Service(step));
     }
     // On a desktop (M4.2b), every person in the file and the greeter may
     // use the screen and input; machines without a seat have no group.
@@ -615,8 +742,57 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             fs::write(flag, "")?;
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+        // At boot only the runlevel changes: OpenRC starts the default
+        // runlevel after this boot service, so what was added starts then
+        // and what was taken out never does. Later, it happens at once.
+        Change::Service(step) => {
+            let (verb, now) = if step.on {
+                ("add", "start")
+            } else {
+                ("del", "stop")
+            };
+            if step.on {
+                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+            }
+            if !boot {
+                let status = Command::new("rc-service")
+                    .args([&step.service, now])
+                    .status()?;
+                if step.on && !status.success() {
+                    bail!(
+                        "{}",
+                        trf(
+                            "{service} did not start ({status}); rc-service {service} start says why",
+                            &[("service", &step.service), ("status", &status.to_string())]
+                        )
+                    );
+                }
+            }
+            if !step.on {
+                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+            }
+        }
+        Change::Passwords(names) => {
+            let text = fs::read_to_string(FIRST_PASSWORDS)
+                .with_context(|| could_not_read(Path::new(FIRST_PASSWORDS)))?;
+            let lines = first_password_lines(&text, names);
+            if !lines.is_empty() {
+                run_with_input(Command::new("chpasswd").arg("-e"), &lines)?;
+            }
+            fs::remove_file(FIRST_PASSWORDS)?;
+        }
         Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
         Change::Flatpak { name, ids } => install_apps(&find_account(name)?, ids)?,
+        Change::MimeDefaults(text) => {
+            let path = Path::new(places::MIME_DEFAULTS);
+            if text.is_empty() {
+                fs::remove_file(path).with_context(|| could_not_write(path))?;
+            } else {
+                write_whole(path, text.as_bytes())?;
+                fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+                    .with_context(|| could_not_write(path))?;
+            }
+        }
     }
     Ok(())
 }
@@ -625,7 +801,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
 /// name, home and path as environment, as `su` gives them and `write_keys`
 /// runs its shell: root starts it, and the person owns everything it
 /// writes (M6.1).
-fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
+pub(crate) fn as_user<S: AsRef<OsStr>>(account: &Account, program: &str, args: &[S]) -> Command {
     let mut cmd = Command::new(program);
     cmd.args(args)
         .env_clear()
@@ -693,7 +869,7 @@ fn flatpak_commands(ids: &[String]) -> Vec<Vec<String>> {
 /// Adds Flathub for `account` and installs each of `ids` it lacks, as that
 /// person (M6.1). One app that fails does not stop the others; the error
 /// names those that failed, and the next apply tries them again.
-fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
+pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
     let mut commands = flatpak_commands(ids).into_iter();
     let remote = commands.next().unwrap_or_default();
     run(&mut as_user(account, "flatpak", &remote)).with_context(|| {
@@ -1124,6 +1300,19 @@ pub fn set(assignments: &[String]) -> Result<()> {
             )
         })?;
         pairs.push((key.trim(), value.trim()));
+    }
+    // A feature this machine cannot switch is refused before anything is
+    // written (M6.10); a build host with no features checks nothing here.
+    let installed = services::installed();
+    if !installed.is_empty() {
+        let wanted: BTreeMap<String, bool> = pairs
+            .iter()
+            .filter_map(|(k, _)| k.strip_prefix("services."))
+            .map(|name| (name.to_string(), true))
+            .collect();
+        if let Some(problem) = services::problems(&wanted, &installed).into_iter().next() {
+            bail!("{problem}");
+        }
     }
     let keys: Vec<&str> = pairs.iter().map(|(k, _)| *k).collect();
     let what = trf("set {keys}", &[("keys", &keys.join(", "))]);
@@ -1915,7 +2104,64 @@ mod tests {
             default_shell: DEFAULT_SHELL.into(),
             developer: false,
             flatpak: BTreeMap::new(),
+            features: Vec::new(),
+            services_off: Vec::new(),
+            runlevels: BTreeSet::new(),
+            mime_defaults: None,
+            first_passwords: None,
         }
+    }
+
+    /// The MIME changes `plan` makes for a file's text and the machine's
+    /// `mimeapps.list` (M6.10).
+    fn mime_changes(text: &str, mime: Option<&str>) -> Vec<Change> {
+        let file = settings::read(text).unwrap().file;
+        let mut machine = machine();
+        machine.mime_defaults = mime.map(str::to_string);
+        plan(&file, &machine)
+            .0
+            .into_iter()
+            .filter(|c| matches!(c, Change::MimeDefaults(_)))
+            .collect()
+    }
+
+    const EDITOR_SET: &str = "format = 1\n[default_apps]\neditor = \"org.gnome.TextEditor\"\n";
+    const OUR_MIME: &str = "# Written by edel settings apply from [default_apps] (M6.10); edit the settings file, not this file.\n[Default Applications]\ntext/plain=org.gnome.TextEditor.desktop;\n";
+
+    #[test]
+    fn default_apps_are_written_when_the_file_has_none() {
+        let changes = mime_changes(EDITOR_SET, None);
+        assert_eq!(changes, [Change::MimeDefaults(OUR_MIME.to_string())]);
+        assert_eq!(
+            changes[0].to_string(),
+            "write /etc/xdg/mimeapps.list (the default apps)"
+        );
+    }
+
+    #[test]
+    fn default_apps_already_written_need_no_change() {
+        assert!(mime_changes(EDITOR_SET, Some(OUR_MIME)).is_empty());
+    }
+
+    #[test]
+    fn our_mime_file_is_removed_when_no_default_app_is_set() {
+        let changes = mime_changes("format = 1\n", Some(OUR_MIME));
+        assert_eq!(changes, [Change::MimeDefaults(String::new())]);
+        assert_eq!(
+            changes[0].to_string(),
+            "remove /etc/xdg/mimeapps.list (no default apps set)"
+        );
+        assert!(
+            mime_changes("format = 1\n", None).is_empty(),
+            "no file and no default apps: nothing to do"
+        );
+    }
+
+    #[test]
+    fn someone_elses_mime_file_is_never_written_or_removed() {
+        let theirs = "[Default Applications]\ntext/plain=vim.desktop;\n";
+        assert!(mime_changes(EDITOR_SET, Some(theirs)).is_empty());
+        assert!(mime_changes("format = 1\n", Some(theirs)).is_empty());
     }
 
     #[test]
@@ -2282,5 +2528,15 @@ mod tests {
         assert_eq!(file.users["ali"].login_shell.as_deref(), Some("/bin/ash"));
         let text = toml::to_string(&file).unwrap();
         assert!(settings::read(&text).unwrap().problems.is_empty(), "{text}");
+    }
+
+    #[test]
+    fn gives_the_install_passwords_to_the_people_in_the_file_only() {
+        let text = "ali:$6$salt$hash\nmallory:$6$x$y\nbad:plain\n";
+        let users = ["ali".to_string(), "bad".to_string()];
+        let names = first_password_names(text, users.iter());
+        assert_eq!(names, ["ali", "bad"]);
+        assert_eq!(first_password_lines(text, &names), "ali:$6$salt$hash\n");
+        assert!(first_password_names(text, [].iter()).is_empty());
     }
 }
