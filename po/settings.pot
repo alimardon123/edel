@@ -1169,6 +1169,9 @@ msgstr ""
 msgid "Floating or tiling"
 msgstr ""
 
+msgid "Tiling styles menu"
+msgstr ""
+
 msgid "Focus window to the left"
 msgstr ""
 

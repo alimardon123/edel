@@ -56,6 +56,8 @@ pub enum Act {
     /// Show or hide shell-ui's tray grid, the apps behind the tray's
     /// arrow, with the keyboard on them (M5.9h).
     Tray,
+    /// Open or close shell-ui's tiling styles' menu, with the keyboard on it (M6.9).
+    Styles,
     /// The next window in the switcher, held open while the keys'
     /// modifiers are (M5.3c); with Shift as well, the one before.
     Switcher,
@@ -75,6 +77,7 @@ impl Act {
             "close_window" => Some(Act::Close),
             "open_launcher" => Some(Act::Launcher),
             "show_tray" => Some(Act::Tray),
+            "choose_tiling_style" => Some(Act::Styles),
             "lock_screen" => Some(Act::Lock),
             "show_workspaces" => Some(Act::Overview),
             "switch_windows" => Some(Act::Switcher),
@@ -329,6 +332,8 @@ mod tests {
         assert_eq!(find(&bindings, &super_, sym("b")), Some(Act::Browser));
         let super_shift = held(true, false, false, true);
         assert_eq!(find(&bindings, &super_shift, sym("b")), Some(Act::Tray));
+        // The tiling styles' menu, with the keyboard on it (M6.9).
+        assert_eq!(find(&bindings, &super_shift, sym("y")), Some(Act::Styles));
         // Ctrl+Alt+T is no default any more; it is free for anyone to bind.
         let ctrl_alt = held(false, true, true, false);
         assert_eq!(find(&bindings, &ctrl_alt, sym("t")), None);

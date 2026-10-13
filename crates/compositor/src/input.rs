@@ -498,6 +498,7 @@ impl Edel {
             Act::MoveToPrevious => self.move_to_neighbour(false),
             Act::Launcher => self.show_launcher(),
             Act::Tray => self.show_tray(),
+            Act::Styles => self.show_styles(),
             Act::Lock => self.ask_lock(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
