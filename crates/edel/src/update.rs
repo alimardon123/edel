@@ -389,7 +389,7 @@ pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
         anyhow::anyhow!(
             "{}",
             trf(
-                "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)",
+                "{doing}: permission denied; this changes the system, so run it with doas: doas edel ...",
                 &[("doing", doing)]
             )
         )
@@ -940,11 +940,11 @@ mod tests {
     /// A first try as an ordinary user reads that it needs root, not
     /// `Permission denied (os error 13)`.
     #[test]
-    fn a_refused_write_says_to_run_it_as_root() {
+    fn a_refused_write_says_to_run_it_with_doas() {
         let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
         assert_eq!(
             io_failure(denied, "could not write /run/edel").to_string(),
-            "could not write /run/edel: permission denied; this changes the system, so run it as root (sudo edel ...)"
+            "could not write /run/edel: permission denied; this changes the system, so run it with doas: doas edel ..."
         );
         let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
         let text = format!("{:#}", io_failure(full, "could not write /run/edel"));

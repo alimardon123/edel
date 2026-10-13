@@ -650,6 +650,48 @@ msgstr ""
 msgid "{name} is the preset in use; pick another preset first: edel settings set layout.preset=classic"
 msgstr ""
 
+msgid "{user} is not in the group {group}, so edel will not change the system for them; ask an administrator to make them one"
+msgstr ""
+
+msgid "{what} needs your password"
+msgstr ""
+
+msgid "could not read /etc/group to see who may change the system"
+msgstr ""
+
+msgid "--unsigned needs developer mode, which is off; turn it on with edel settings set system.developer_mode=true, or leave out --unsigned"
+msgstr ""
+
+msgid "could not check the password: no password helper (unix_chkpwd, part of linux-pam) is installed; install linux-pam, then run it again"
+msgstr ""
+
+msgid "wrong password for {user}; nothing was changed"
+msgstr ""
+
+msgid "could not check the password: {why}; nothing was changed"
+msgstr ""
+
+msgid "could not read the password from standard input; give it on one line"
+msgstr ""
+
+msgid "could not read the terminal's settings, so the password is not asked"
+msgstr ""
+
+msgid "could not turn off the terminal's echo, so the password is not asked"
+msgstr ""
+
+msgid "warning: could not turn the terminal's echo back on; run stty echo to fix it"
+msgstr ""
+
+msgid "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin"
+msgstr ""
+
+msgid "Password for {user}: "
+msgstr ""
+
+msgid "the password was not given; nothing was changed"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -1508,7 +1550,7 @@ msgstr ""
 msgid "could not take the lock {path}: another edel command took it first; try again"
 msgstr ""
 
-msgid "{doing}: permission denied; this changes the system, so run it as root (sudo edel ...)"
+msgid "{doing}: permission denied; this changes the system, so run it with doas: doas edel ..."
 msgstr ""
 
 msgid "{command} (pid {pid}) is running"
@@ -1560,6 +1602,9 @@ msgid "slot {slot} starts after the next restart; slot {running} stays installed
 msgstr ""
 
 msgid "The Edel OS system tool"
+msgstr ""
+
+msgid "Read your password from standard input, for programs such as Settings that asked for it themselves"
 msgstr ""
 
 msgid "Install a newer Edel OS into the other slot from RELEASE, or from this machine's channel when none is named; it starts at the next restart, and falls back on its own if it fails"

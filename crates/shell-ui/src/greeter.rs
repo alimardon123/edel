@@ -57,6 +57,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use tiny_skia::Pixmap;
 
+use edel::password::Password;
 use edel::places;
 use edel::settings::LockScreen;
 use edel::tokens::Tokens;
@@ -64,7 +65,7 @@ use edel::wallpapers::Wallpaper;
 
 use crate::corner;
 use crate::greetd::{self, Login};
-use crate::lock::{self, Field, Password, View};
+use crate::lock::{self, Field, View};
 use crate::messages;
 use crate::paint::{self, Text};
 use crate::people;
