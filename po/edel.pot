@@ -1172,6 +1172,12 @@ msgstr ""
 msgid "Open a terminal"
 msgstr ""
 
+msgid "Opens the files app (default_apps.files)"
+msgstr ""
+
+msgid "Opens the web browser (default_apps.browser)"
+msgstr ""
+
 msgid "Take a screenshot"
 msgstr ""
 

@@ -483,7 +483,11 @@ impl Edel {
                     self.toggle_maximized(&window);
                 }
             }
-            Act::Terminal => crate::program::open(self, "foot"),
+            // The terminal falls back to foot when no app of its kind is
+            // installed; the files app and the browser say what to set.
+            Act::Terminal => crate::program::open_default(self, "terminal", Some("foot")),
+            Act::Files => crate::program::open_default(self, "files", None),
+            Act::Browser => crate::program::open_default(self, "browser", None),
             Act::Workspace(n) => self.switch_workspace(n),
             Act::MoveTo(n) => {
                 self.move_to_workspace(n);
