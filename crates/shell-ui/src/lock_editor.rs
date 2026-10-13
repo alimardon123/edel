@@ -964,6 +964,7 @@ fn bar_nodes(view: &View) -> Vec<Item> {
         children: Vec::new(),
         toggled: None,
         value: None,
+        value_text: None,
     })
     .collect()
 }
@@ -997,6 +998,7 @@ pub fn nodes(
                     children: Vec::new(),
                     toggled: None,
                     value: None,
+                    value_text: None,
                 })
             })
             .collect::<Vec<Item>>(),
@@ -1009,6 +1011,7 @@ pub fn nodes(
             children: Vec::new(),
             toggled: None,
             value: Some((f64::from(view.dim), 0.0, f64::from(lock_screen::MOST_DIM))),
+            value_text: None,
         });
     }
     let (dx, dy) = (f64::from(drawer_at.x), f64::from(drawer_at.y));
@@ -1682,6 +1685,7 @@ pub fn preview_nodes(screen: (f32, f32)) -> Vec<Item> {
         children: Vec::new(),
         toggled: None,
         value: None,
+        value_text: None,
     }]
 }
 

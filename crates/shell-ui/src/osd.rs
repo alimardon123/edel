@@ -145,6 +145,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         children: Vec::new(),
         toggled: None,
         value,
+        value_text: None,
     };
     vec![
         item(

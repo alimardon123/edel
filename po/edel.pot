@@ -1226,6 +1226,12 @@ msgstr ""
 msgid "{others} or {last}"
 msgstr ""
 
+msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
+msgstr ""
+
+msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
+msgstr ""
+
 msgid "Windows"
 msgstr ""
 
@@ -1769,7 +1775,7 @@ msgstr ""
 msgid "The disk, such as /dev/sda; without it, the disks are listed and one is asked for"
 msgstr ""
 
-msgid "The settings file the new machine starts with; without it, a few questions are asked on the terminal and their answers become it"
+msgid "The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it"
 msgstr ""
 
 msgid "List the disks Edel OS could install on, and change nothing"
@@ -1823,7 +1829,7 @@ msgstr ""
 msgid "Make FILE this machine's settings and apply it, such as a file exported on another machine"
 msgstr ""
 
-msgid "The settings file"
+msgid "The settings file, a path or an https:// address"
 msgstr ""
 
 msgid "Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed"

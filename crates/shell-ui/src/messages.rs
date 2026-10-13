@@ -99,6 +99,14 @@ pub fn display_not_told(why: impl Display) -> String {
     )
 }
 
+/// The header bars' button layout cannot be told to apps (M6.16): apps
+/// already open keep their buttons where they were until the next change.
+pub fn button_layout_not_said(why: impl Display) -> String {
+    format!(
+        "could not tell apps where their title bar buttons go: {why}; apps already open keep theirs until the setting changes"
+    )
+}
+
 /// The terminal's theme file cannot be written (M6.13): new terminals start
 /// in foot's own scheme until it can.
 pub fn terminal_theme_not_written(why: impl Display) -> String {
@@ -339,6 +347,14 @@ mod tests {
         assert_eq!(
             clock_zone_missing("Asia/Tokyo"),
             "lock: the clock's time zone Asia/Tokyo is not on this machine; it shows this machine's time"
+        );
+    }
+
+    #[test]
+    fn a_button_layout_not_told_says_what_still_works() {
+        assert_eq!(
+            button_layout_not_said("no answer"),
+            "could not tell apps where their title bar buttons go: no answer; apps already open keep theirs until the setting changes"
         );
     }
 
