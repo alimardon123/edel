@@ -149,6 +149,9 @@ msgstr ""
 msgid "No app matches"
 msgstr ""
 
+msgid "Install {url} as an app"
+msgstr ""
+
 msgid "Password"
 msgstr ""
 
@@ -453,9 +456,6 @@ msgid "Hours"
 msgstr ""
 
 msgid "Words"
-msgstr ""
-
-msgid "Time zone"
 msgstr ""
 
 msgid "Label"
