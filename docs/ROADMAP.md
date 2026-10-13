@@ -800,7 +800,7 @@ RAUC, ostree or systemd (a systemd adapter only as an add-on, M11.6); a shell ex
 
 Dated entries, newest first. Format: `YYYY-MM-DD: what changed, why, which PR`. Since 2026-10-07 only a change to the plan gets an entry: a finished step is recorded by its tick and its "Done with:" note, so the many PRs running side by side do not all add a line at the same place.
 
-- 2026-10-13: M6.6a's check runs in `desktop-test live` instead of `install-test gui`, because only the desktop image carries Settings; the stick installs through its page onto a blank disk, and that disk is then started alone. PR for M6.6a.
+- 2026-10-13: M6.6a's check runs in `desktop-test live` instead of `install-test gui`, because only the desktop image carries Settings; the stick installs through its page onto a blank disk, and that disk is then started alone. PR #316.
 - 2026-10-12: M10.10, the optional runtime spike, is widened from Alpine's packages to other distributions' too (Debian and Fedora to check), each measured against Flathub's runtime, so the base and the apps' runtime are chosen apart (ADR-010). Asked by Alimardon.
 - 2026-10-12: M6.5 adds `sudo` as a second name for doas (Alpine's doas-sudo-shim, the same rules, no second program running as root), and the program and its variable become one fact, `edel::places::AS_ROOT` and `AS_ROOT_USER`, so another base swaps them and the rule files alone (ADR-010; Simple). Asked by Alimardon.
 - 2026-10-12: M8.13a (your apps survive another base): a system on another base, or a later Edel OS, started on the same data partition keeps each person's apps, their data and the settings file, checked in CI by a second test system on a copy of the data partition. Asked by Alimardon.
