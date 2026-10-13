@@ -471,6 +471,9 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["fade", "arrows", "counts"]),
     ),
     now("appearance.mode", Kind::OneOf(&["light", "dark", "auto"])),
+    // The high-contrast look (M6.9): strong edges and the plainest colours in
+    // both schemes, laid over every colour the person chose; absent is normal.
+    now("appearance.contrast", Kind::OneOf(&["normal", "high"])),
     now("appearance.accent", Kind::Accent),
     // A person's own colours (M5.12b1): any colour token by name, in both
     // schemes, or the light or the dark scheme's alone on top.
@@ -894,6 +897,11 @@ pub struct Appearance {
     /// Light, dark or automatic
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    /// `normal` or `high` (M6.9): high contrast lays the high-contrast colours
+    /// of `design/tokens.toml` over every colour, in both schemes; absent is
+    /// normal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contrast: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accent: Option<String>,
     /// A person's own colours, any colour token by name (M5.12b1); absent

@@ -41,6 +41,11 @@
 #               shell-ui starts again with its icons at a new count, the
 #               Arabic and Hindi faces are on the image, and cursor default
 #               brings 24 px back (M5.12b5)
+#   contrast    appearance.contrast = high, sent to the VM, logs contrast high
+#               and restarts shell-ui for the colours; the panel at 640,790
+#               is the light scheme's high-contrast panel colour, and
+#               contrast default takes the key out, logged as contrast
+#               normal, and the release's light panel is back (M6.9)
 #   pointer     the cursor where the pointer is (drawn into the frame in
 #               CI, EDEL_SOFTWARE_CURSOR=1), and wayland-info lists the
 #               tablet, cursor shape, fractional scale and viewporter
@@ -3377,11 +3382,12 @@ case_notify() {
 	shot bell-count $((bell + 32)) 772 "$accent" >/dev/null || fail "with notifications.badge = count the button shows no count pill at $((bell + 32)),772"
 	# The list hangs on the button wherever it lies (M5.9k): with the bell
 	# at the panel's start, it opens at the screen's left, not its right.
+	# The line before has the same shape, with the button at the end, so
+	# the wait is for the button within the panel's first 100 px.
 	guest 'panels bell start'
-	wait_for 'edel-shell-ui: panel places notifications [0-9]+\+34, clock [0-9]+\+[0-9]+$' ||
-		fail "panels.list with the notifications button first did not reach the panel"
-	start=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places notifications' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
-	[ "$start" -lt 100 ] || fail "the notifications button first in the panel lies at $start"
+	wait_for 'edel-shell-ui: panel places notifications [0-9]{1,2}\+34, clock [0-9]+\+[0-9]+$' ||
+		fail "panels.list with the notifications button first did not move it to the panel's start: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	start=$(tr -d '\r' <"$log" | grep -aE 'edel-shell-ui: panel places notifications [0-9]{1,2}\+' | tail -n 1 | sed -n 's/.*notifications \([0-9]*\)+.*/\1/p')
 	shown=$(count 'edel-shell-ui: notification centre shown')
 	python3 ci/qmp.py click $((start + 17)) 780
 	wait_more 'edel-shell-ui: notification centre shown' "$shown" || fail "a click on the notifications button at $((start + 17)),780 opened no notifications"
@@ -5214,6 +5220,32 @@ case_accent() {
 	echo "PASS: appearance.accent=#ff0000 turned the workspace pill and the portal's accent red and appearance.colours.light.panel the panel's colour, at once; reset brought both back"
 }
 
+case_contrast() {
+	# High contrast (M6.9): appearance.contrast = high lays the light
+	# scheme's high-contrast colours over the release's, so the panel at
+	# 640,790 is that table's panel colour; taking the key out brings the
+	# release's back. Counted before each change, as case_accent does.
+	said=$(count 'edel-compositor: contrast high')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'contrast high'
+	wait_more 'edel-compositor: contrast high' "$said" ||
+		fail "appearance.contrast=high did not reach the compositor's log"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui for high contrast"
+	shot contrast 640 790 "$(raw_token panel colour.light.contrast)" >/dev/null ||
+		fail "the panel at 640,790 is not the high-contrast panel #$(raw_token panel colour.light.contrast) after appearance.contrast=high"
+	said=$(count 'edel-compositor: contrast normal')
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	guest 'contrast default'
+	wait_more 'edel-compositor: contrast normal' "$said" ||
+		fail "taking appearance.contrast out did not reach the compositor's log"
+	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
+		fail "the compositor did not restart shell-ui after high contrast was taken out"
+	shot contrast-normal 640 790 "$(token panel)" >/dev/null ||
+		fail "the panel at 640,790 is not the light panel #$(token panel) after reset"
+	echo "PASS: appearance.contrast=high turned the panel at 640,790 to the high-contrast panel #$(raw_token panel colour.light.contrast), and taking it out brought the light panel #$(token panel) back"
+}
+
 case_wallpaper() {
 	# The wallpaper (M5.10c4b): appearance.wallpaper set to the test
 	# picture (160x100, its left half #c0563a, its right half #3a8fc0)
@@ -6566,7 +6598,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal scale respawn workspaces-dynamic app-workspaces web-app input-method flatpak
+[ "$#" -gt 0 ] || set -- completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method flatpak
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

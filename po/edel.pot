@@ -29,6 +29,39 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
+msgstr ""
+
+msgid "Login name"
+msgstr ""
+
+msgid "lowercase letters, digits, - and _, starting with a letter, and not root or live"
+msgstr ""
+
+msgid "Password, or press Return to give an ssh key instead: "
+msgstr ""
+
+msgid "Your ssh public key, on one line"
+msgstr ""
+
+msgid "a public key such as ssh-ed25519 AAAA... me@laptop, as ~/.ssh/id_ed25519.pub holds it"
+msgstr ""
+
+msgid "The same password again: "
+msgstr ""
+
+msgid "the two passwords differ; type them again"
+msgstr ""
+
+msgid "Someone was set up on another console, so this one changes nothing."
+msgstr ""
+
+msgid "{name} can log in now."
+msgstr ""
+
+msgid "could not write {path}"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
@@ -134,12 +167,6 @@ msgstr ""
 msgid "a password cannot be empty"
 msgstr ""
 
-msgid "The same password again: "
-msgstr ""
-
-msgid "the two passwords differ; type them again"
-msgstr ""
-
 msgid "could not start cryptpw, which hashes the password (busybox)"
 msgstr ""
 
@@ -156,9 +183,6 @@ msgid "More options (computer name, layout)? yes or no"
 msgstr ""
 
 msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
-msgstr ""
-
-msgid "lowercase letters, digits, - and _, starting with a letter, and not root or live"
 msgstr ""
 
 msgid "letters, digits and hyphens, up to 63"
@@ -354,9 +378,6 @@ msgid "Your message"
 msgstr ""
 
 msgid "could not replace {path}"
-msgstr ""
-
-msgid "could not write {path}"
 msgstr ""
 
 msgid "{name} is not in /etc/passwd"

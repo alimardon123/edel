@@ -233,6 +233,9 @@ msgstr ""
 msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
 msgstr ""
 
+msgid "Strong edges and the plainest colours, for text that is easy to read"
+msgstr ""
+
 msgid "Blue"
 msgstr ""
 
@@ -945,6 +948,9 @@ msgid "Style"
 msgstr ""
 
 msgid "Accent"
+msgstr ""
+
+msgid "High contrast"
 msgstr ""
 
 msgid "Corners"
@@ -1719,9 +1725,6 @@ msgid "Other people"
 msgstr ""
 
 msgid "No one else has an account on this computer."
-msgstr ""
-
-msgid "Login name"
 msgstr ""
 
 msgid "User ID"

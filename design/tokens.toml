@@ -143,6 +143,51 @@ lock_glow_second = "#454079"
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
 
+# The high-contrast look (M6.9, appearance.contrast = "high"): the colours
+# laid over the dark scheme when a person turns high contrast on, and over
+# the light scheme by [colour.light.contrast] below. Every pair in tokens.rs's
+# PAIRS reads at 7 to 1 or more (WCAG AAA) in both schemes, and the edges and
+# lines are black or white. The accent is named too, as its pairs need it;
+# the focused window's edge takes it, so the focus still reads at a glance.
+# Only colour names above are named here (a test holds them), and tokens.rs
+# lays these over a person's own colours, so high contrast always wins.
+[colour.contrast]
+title_bar = "#000000"
+title_bar_focused = "#262626"
+title_text = "#ffffff"
+title_text_unfocused = "#bfbfbf"
+title_button_hover = "#404040"
+panel = "#000000"
+panel_text = "#ffffff"
+accent = "#ffff00"
+accent_text = "#000000"
+window = "#000000"
+card = "#141414"
+line = "#ffffff"
+edge = "#ffffff"
+window_border = "#ffffff"
+window_border_focused = "#ffff00"
+window_border_focused_end = "#ffff00"
+
+# The light scheme's high contrast, as [colour.contrast] is the dark one's.
+[colour.light.contrast]
+title_bar = "#e6e6e6"
+title_bar_focused = "#ffffff"
+title_text = "#000000"
+title_text_unfocused = "#404040"
+title_button_hover = "#cccccc"
+panel = "#ffffff"
+panel_text = "#000000"
+accent = "#0000ff"
+accent_text = "#ffffff"
+window = "#ffffff"
+card = "#f2f2f2"
+line = "#000000"
+edge = "#000000"
+window_border = "#000000"
+window_border_focused = "#0000ff"
+window_border_focused_end = "#0000ff"
+
 # foot's colours in the light scheme (M6.13), as [colour.terminal] is in
 # the dark one: each of the 16 but white and bright_white reads at 3 to 1
 # on the background, and the text at 7 to 1 or more.

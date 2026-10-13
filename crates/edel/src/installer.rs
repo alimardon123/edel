@@ -204,7 +204,7 @@ fn ask_line(prompt: &str, suggestion: Option<&str>) -> Result<String> {
 }
 
 /// Asks until `valid` takes the answer, saying why it did not.
-fn ask_until(
+pub(crate) fn ask_until(
     prompt: &str,
     suggestion: Option<&str>,
     valid: impl Fn(&str) -> std::result::Result<String, String>,
@@ -258,7 +258,7 @@ fn ask_password() -> Result<Password> {
 /// Hashes `password` as `/etc/shadow` keeps it (SHA-512 crypt), with
 /// busybox's `cryptpw` reading it on standard input, so it is never on a
 /// command line.
-fn hash(password: &Password) -> Result<String> {
+pub(crate) fn hash(password: &Password) -> Result<String> {
     let mut child = Command::new("cryptpw")
         .args(["-m", "sha512", "-P", "0"])
         .stdin(std::process::Stdio::piped())
