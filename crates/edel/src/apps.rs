@@ -222,6 +222,18 @@ pub fn pinned<'a>(apps: &'a [App], pin: &str) -> Option<&'a App> {
     }
 }
 
+/// The apps of `role`'s category (M6.10), in the order `apps` gives them,
+/// so the first is the one [`default_app`] picks when no key names one.
+/// None for a role `ROLES` does not hold.
+pub fn apps_of_role<'a>(apps: &'a [App], role: &str) -> Vec<&'a App> {
+    let Some((_, category)) = ROLES.iter().find(|(r, _)| *r == role) else {
+        return Vec::new();
+    };
+    apps.iter()
+        .filter(|a| a.categories.iter().any(|c| c == category))
+        .collect()
+}
+
 /// The default app each role has in `[default_apps]` (M6.10): the role
 /// and the settings key that names its app.
 pub const DEFAULT_APP_KEYS: &[(&str, &str)] = &[
@@ -568,6 +580,42 @@ mod tests {
         }
         let long = format!("a.b.{}", "c".repeat(256));
         assert!(!is_flatpak_id(&long), "256 characters or more is too long");
+    }
+
+    #[test]
+    fn the_apps_of_a_role_are_its_category_in_the_given_order() {
+        let app = |id: &str, category: &str| App {
+            id: id.to_string(),
+            ..parse(&format!(
+                "[Desktop Entry]\nType=Application\nName={id}\nExec={id}\nCategories={category};\n"
+            ))
+            .unwrap()
+        };
+        let apps = vec![
+            app("org.gnome.Nautilus", "FileManager"),
+            app("org.mozilla.firefox", "WebBrowser"),
+            app("org.gnome.Epiphany", "WebBrowser"),
+        ];
+        let ids = |role: &str| -> Vec<String> {
+            apps_of_role(&apps, role)
+                .iter()
+                .map(|a| a.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            ids("browser"),
+            ["org.mozilla.firefox", "org.gnome.Epiphany"]
+        );
+        assert_eq!(ids("files"), ["org.gnome.Nautilus"]);
+        assert!(ids("mail").is_empty(), "no app of the category, none");
+        assert!(ids("nonesuch").is_empty(), "a role ROLES does not hold");
+        assert_eq!(
+            apps_of_role(&apps, "browser")
+                .first()
+                .map(|a| a.id.as_str()),
+            default_app(&apps, "browser", None).map(|a| a.id.as_str()),
+            "the first is the one default_app picks"
+        );
     }
 
     #[test]

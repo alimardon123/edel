@@ -270,6 +270,33 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::NOTIFICATION_LIST,
         title: n_("Notification list"),
     },
+    // The Default apps page (M6.10): the app each role opens, one row each,
+    // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
+    Row {
+        key: "default_apps.browser",
+        title: n_("Web browser"),
+    },
+    Row {
+        key: "default_apps.files",
+        title: n_("Files"),
+    },
+    Row {
+        key: "default_apps.editor",
+        title: n_("Text editor"),
+    },
+    Row {
+        key: "default_apps.terminal",
+        title: n_("Terminal"),
+    },
+    Row {
+        key: "default_apps.mail",
+        title: n_("Mail"),
+    },
+    // The Startup page (M6.10): the apps that start with the desktop.
+    Row {
+        key: "startup.apps",
+        title: n_("Startup apps"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",

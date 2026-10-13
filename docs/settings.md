@@ -210,7 +210,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 
 | Key | Value | From |
 |---|---|---|
-| `startup.apps` | list of `.desktop` ids started with the session | M6.10 |
+| `startup.apps` | list of desktop file ids without `.desktop`, such as `["org.mozilla.firefox"]`, each started once the desktop is on screen, in the order listed; an app not installed is logged and skipped; an empty list is none | M6.10 |
 | `power.lid_close` | `suspend`, `lock`, `nothing` or `poweroff` | M7.8 |
 | `power.lock_after_minutes` | a whole number of minutes without input before the screen locks; `0` never | M7.8 |
 | `power.power_button` | `suspend`, `poweroff`, `ask` or `nothing` | M7.8 |

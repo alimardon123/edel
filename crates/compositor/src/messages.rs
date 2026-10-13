@@ -60,6 +60,12 @@ pub fn no_default_app(role: &str) -> String {
     format!("no {role} app installed; set default_apps.{role}")
 }
 
+/// An app `startup.apps` names (M6.10) is not installed: it is skipped, and
+/// the line says which list to fix.
+pub fn startup_app_missing(id: &str) -> String {
+    format!("startup app {id} is not installed; take it out of startup.apps")
+}
+
 /// A screen copy a client asked for could not be filled (M6.3): the
 /// client is told `failed` and may ask again.
 pub fn copy_failed(output: &str, why: impl Display) -> String {
@@ -234,6 +240,14 @@ mod tests {
         assert_eq!(
             no_default_app("files"),
             "no files app installed; set default_apps.files"
+        );
+    }
+
+    #[test]
+    fn a_startup_app_not_installed_names_the_list_to_fix() {
+        assert_eq!(
+            startup_app_missing("org.example.Gone"),
+            "startup app org.example.Gone is not installed; take it out of startup.apps"
         );
     }
 
