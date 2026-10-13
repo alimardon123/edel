@@ -256,6 +256,25 @@ fn bind_home_and_var() -> Result<()> {
                 .arg(Path::new("/var").join(&rel))
                 .arg(dest.parent().unwrap_or(data)))?;
         }
+        // Flatpak hands apps the first fonts' cache folder that exists, and
+        // this one would be stale after an update, so the slot's cache
+        // (M6.2a) replaces it. It is only a cache: a failure is said, not
+        // fatal.
+        let old_cache = data
+            .join("var")
+            .join(edel::places::VAR_FONT_CACHE.trim_start_matches("/var/"));
+        if Path::new(edel::places::FONT_CACHE_DIR).is_dir() && old_cache.is_dir() {
+            match fs::remove_dir_all(&old_cache) {
+                Ok(()) => println!(
+                    "edel-data: took the old fonts' cache out of {}, as the slot carries its own",
+                    edel::places::VAR_FONT_CACHE
+                ),
+                Err(err) => eprintln!(
+                    "warning: edel-data: could not take the old fonts' cache out of {}: {err}",
+                    edel::places::VAR_FONT_CACHE
+                ),
+            }
+        }
     }
     for dir in ["/home", "/var", "/root"] {
         if !is_mounted(dir)? {

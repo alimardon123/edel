@@ -96,3 +96,16 @@ animation_p99_ms = 1.5
 # set before the D-Bus that screen readers, the tray (M5.2), the portal
 # (M5.5) and notifications (M5.9) all need.
 shell_ui_rss_mib = 11.2
+
+# Flatpak apps quick and light (roadmap M6.2a), desktop-test's default-apps
+# case: the test app org.edel.TestA started as ci with flatpak run, from
+# the command to its window mapped, first with the page cache dropped
+# (cold) and then again (warm), in ms; its own process's memory (PSS) in
+# MiB; and the settings portal's second ReadAll, in ms. CI measured on
+# 2026-10-13 (PR #324): cold 50 ms, warm 30 ms, 3.0 MiB, ReadAll 10 ms, in
+# 10 ms steps; the start budgets leave room for the runner's noise, and
+# ReadAll's is the roadmap's 50 ms.
+flatpak_cold_ms = 500
+flatpak_warm_ms = 300
+flatpak_app_pss_mib = 6
+portal_readall_ms = 50
