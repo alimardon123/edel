@@ -279,6 +279,15 @@ commands() {
 				say "portal $key $out"
 			done
 			;;
+		# The header bars' button layout (M6.16): what GTK and libadwaita
+		# apps hear from the portal for their own bars, and the Edel icon
+		# theme's files, which apps' glyphs come from.
+		'portal buttons')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne org.gnome.desktop.wm.preferences button-layout" </dev/null 2>&1 | tr '\n' ' ')
+			say "portal button-layout $out"
+			;;
+		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.
 		'portal watch')

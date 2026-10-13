@@ -31,8 +31,10 @@ pub struct Settings {
     /// Resolved by [`Settings::from_files`], so a window's frame reads it
     /// without parsing a preset.
     pub title_bars: TitleBars,
-    /// `layout.window_buttons` (M5.4b): absent means the preset's side.
-    pub window_buttons: Option<Side>,
+    /// `layout.window_buttons` (M5.4b) as the files and the preset give it
+    /// (M6.16, `presets::buttons_applying`), set by `from_files`; the
+    /// default is Classic's right side.
+    pub window_buttons: Side,
     /// `layout.close_button`, `minimize_button` and `maximize_button`
     /// (M5.18a): absent shows each.
     pub buttons: Shown,
@@ -151,6 +153,9 @@ pub struct OutputSettings {
 impl Settings {
     /// The machine's file, then the person's over it.
     pub fn from_files(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Settings {
+        // The title bars' buttons, one rule for the compositor and shell-ui's
+        // apps (M6.16): the files' values over the preset's.
+        let buttons = presets::buttons_applying(machine, person);
         // Each file with the preset and theme in use applied, as the tokens
         // read them (M5.12b6a, M5.17); the readers below see the values they give.
         let machine = machine.map(edel::settings::in_use);
@@ -161,6 +166,12 @@ impl Settings {
             text: edel::tokens::Text::between(machine, person),
             icons: edel::tokens::IconSize::between(machine, person),
             contrast: edel::tokens::high_contrast_between(machine, person),
+            window_buttons: buttons.side,
+            buttons: Shown {
+                close: buttons.close,
+                minimize: buttons.minimize,
+                maximize: buttons.maximize,
+            },
             ..Settings::default()
         };
         // The keys the files set, before the preset fills in the rest.
@@ -175,18 +186,6 @@ impl Settings {
             }
             if let Some(bars) = file.layout.title_bars.as_deref().and_then(TitleBars::parse) {
                 title_bars = Some(bars);
-            }
-            if let Some(side) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
-                settings.window_buttons = Some(side);
-            }
-            for (value, shown) in [
-                (file.layout.close_button, &mut settings.buttons.close),
-                (file.layout.minimize_button, &mut settings.buttons.minimize),
-                (file.layout.maximize_button, &mut settings.buttons.maximize),
-            ] {
-                if let Some(value) = value {
-                    *shown = value;
-                }
             }
             if file.panels.list.is_some() {
                 settings.panels.clone_from(&file.panels.list);
@@ -334,11 +333,10 @@ impl Settings {
         }
     }
 
-    /// The side of the title bars their buttons sit on (M5.4b):
-    /// `layout.window_buttons` if set, else the preset's.
+    /// The side of the title bars their buttons sit on (M5.4b): the files'
+    /// `layout.window_buttons`, else the preset's, resolved by `from_files`.
     pub fn button_side(&self) -> Side {
         self.window_buttons
-            .unwrap_or_else(|| presets::named(self.preset.as_deref()).0.windows.buttons)
     }
 
     /// The commands the session starts (M5.7b): the preset's
