@@ -28,9 +28,12 @@ role_name() {
 	case "$1" in
 	23) echo frame ;;
 	29) echo label ;;
+	32) echo "list item" ;;
 	39) echo panel ;;
 	43) echo button ;;
+	44) echo "radio button" ;;
 	75) echo application ;;
+	79) echo entry ;;
 	*) echo "role $1" ;;
 	esac
 }

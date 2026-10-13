@@ -482,6 +482,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         children,
         toggled,
         value: None,
+        value_text: None,
     };
     view.rows
         .iter()

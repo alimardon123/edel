@@ -107,6 +107,7 @@ pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
         children: Vec::new(),
         toggled: None,
         value: None,
+        value_text: None,
     };
     vec![
         item(Role::Label, text, at(l.text)),

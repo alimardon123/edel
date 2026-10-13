@@ -29,6 +29,9 @@ pub struct Item {
     pub toggled: Option<bool>,
     /// Where a slider stands, its least and its greatest (M5.9a).
     pub value: Option<(f64, f64, f64)>,
+    /// What a text field holds, read as its value; its label is its name
+    /// (M6.9, the launcher's search line).
+    pub value_text: Option<String>,
 }
 
 /// The panel itself, the tree's root.
@@ -91,6 +94,9 @@ fn add(nodes: &mut Vec<(NodeId, Node)>, item: &Item) -> NodeId {
         node.set_numeric_value(now);
         node.set_min_numeric_value(least);
         node.set_max_numeric_value(most);
+    }
+    if let Some(text) = &item.value_text {
+        node.set_value(text.as_str());
     }
     for part in &item.children {
         let child = add(nodes, part);
@@ -184,6 +190,7 @@ mod tests {
                 children: vec![],
                 toggled: None,
                 value: None,
+                value_text: None,
             },
             Item {
                 role: Role::Label,
@@ -192,6 +199,7 @@ mod tests {
                 children: vec![],
                 toggled: None,
                 value: None,
+                value_text: None,
             },
         ];
         let update = tree((1280.0, 52.0), &items);
@@ -218,6 +226,7 @@ mod tests {
             children: vec![],
             toggled: None,
             value: None,
+            value_text: None,
         };
         let items = [
             Item {
@@ -227,6 +236,7 @@ mod tests {
                 children: vec![icon("Network", 1102.0), icon("Volume", 1132.0)],
                 toggled: None,
                 value: None,
+                value_text: None,
             },
             Item {
                 role: Role::Label,
@@ -235,6 +245,7 @@ mod tests {
                 children: vec![],
                 toggled: None,
                 value: None,
+                value_text: None,
             },
         ];
         let update = tree((1280.0, 52.0), &items);

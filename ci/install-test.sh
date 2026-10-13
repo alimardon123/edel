@@ -8,8 +8,13 @@
 # `edel install` with no arguments on the VM's second serial port, whose
 # questions ci/serial.py answers from out/install-tty.sock; the
 # transcript is out/install-tty.log, which must not show the password.
+# M6.6b: the main install takes its settings file over https, from
+# https-serve.py on the runner with a throwaway authority made for this
+# run, which the guest fetches over plain http and adds to its own; the
+# same file over plain http must be refused.
 set -eu
 . ci/vm.sh
+. ci/names.sh
 
 target=out/install-target.img
 rm -f "$target"
@@ -26,6 +31,21 @@ fail() {
 	echo "FAIL: $2"
 	exit 1
 }
+
+tls=out/install-tls
+rm -rf "$tls"
+mkdir -p "$tls/www"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=edel-ci-authority \
+	-addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign \
+	-keyout "$tls/ca.key" -out "$tls/www/ca.pem" 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj /CN=10.0.2.2 -keyout "$tls/server.key" -out "$tls/server.csr" 2>/dev/null
+printf 'subjectAltName=IP:10.0.2.2\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' >"$tls/server.ext"
+openssl x509 -req -in "$tls/server.csr" -CA "$tls/www/ca.pem" -CAkey "$tls/ca.key" -CAcreateserial \
+	-days 1 -extfile "$tls/server.ext" -out "$tls/server.pem" 2>/dev/null
+cp "ci/install-test/files$share_dir/ci/install.toml" "$tls/www/"
+python3 ci/https-serve.py "$tls/www" "$tls/server.pem" "$tls/server.key" >out/install-https.log 2>&1 &
+server=$!
+trap 'kill "$server" 2>/dev/null || :' EXIT
 
 # The answers, in the order edel install asks (edel::install::QUESTIONS);
 # an empty answer takes the suggestion.
@@ -46,6 +66,10 @@ run_vm "$log" 'INSTALL-TEST: (installed|FAIL)' "${INSTALL_TEST_TIMEOUT:-600}" -n
 kill "$typist" 2>/dev/null || :
 grep -q 'INSTALL-TEST: installed' "$log" || fail "$log" "the live image did not install"
 grep -q 'Install Edel OS on /dev/vdb' "$log" || fail "$log" "install showed no plan"
+grep -q 'INSTALL-TEST: authority trusted' "$log" || fail "$log" "the guest could not fetch the test authority over http"
+grep -q 'INSTALL-TEST: http refused: refused: http://10.0.2.2:8080/install.toml is plain http' "$log" ||
+	fail "$log" "edel install did not refuse the settings file over plain http"
+grep -q 'GET /install.toml' out/install-https.log || fail out/install-https.log "the installer never fetched the settings file over https"
 # M1.12: slot A is copied as it was signed, checked against the stick's.
 grep -q 'edel install: slot A is the running slot byte for byte' "$log" ||
 	fail "$log" "install did not find slot A the running slot byte for byte"
@@ -79,4 +103,4 @@ fi
 tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
 cat "$log"
-echo "PASS: install showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only (${waited}s)"
+echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only (${waited}s)"
