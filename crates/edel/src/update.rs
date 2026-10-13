@@ -94,18 +94,10 @@ impl Disk {
     }
 }
 
-/// `major:minor` of the device mounted at `/`. The last matching line
-/// wins, since a later mount hides an earlier one.
+/// `major:minor` of the device mounted at `/` (`edel::install`'s reader,
+/// which Settings shares).
 fn root_device(mountinfo: &str) -> Result<&str> {
-    mountinfo
-        .lines()
-        .rev()
-        .find_map(|line| {
-            let mut fields = line.split_whitespace();
-            let dev = fields.nth(2)?;
-            (fields.nth(1)? == "/").then_some(dev)
-        })
-        .context(tr("/proc/self/mountinfo has no entry for /"))
+    edel::install::root_device(mountinfo).context(tr("/proc/self/mountinfo has no entry for /"))
 }
 
 fn read_trimmed(path: &Path) -> Result<String> {

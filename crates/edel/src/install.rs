@@ -6,6 +6,8 @@
 //! library.
 
 use std::fmt;
+use std::fs;
+use std::path::Path;
 
 use anyhow::{Result, bail};
 
@@ -414,6 +416,157 @@ const NON_LATIN: &[&str] = &[
     "kr", "jp", "cn", "tw", "in", "am", "ge",
 ];
 
+/// The language answer as the installer takes it, such as `de_DE.UTF-8`, or
+/// the words that say what it should be; the terminal and Settings ask the
+/// same.
+pub fn language_answer(value: &str) -> Result<String, String> {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_.@-".contains(c))
+    {
+        Ok(value.to_string())
+    } else {
+        Err(tr("a language such as en_US.UTF-8 or de_DE.UTF-8").to_string())
+    }
+}
+
+/// The login name answer: a login name, never root or the stick's own
+/// account (`places::LIVE_USER`).
+pub fn user_answer(value: &str) -> Result<String, String> {
+    if settings::is_user_name(value) && value != "root" && value != crate::places::LIVE_USER {
+        Ok(value.to_string())
+    } else {
+        Err(trf(
+            "lowercase letters, digits, - and _, starting with a letter, and not root or {live}",
+            &[("live", crate::places::LIVE_USER)],
+        ))
+    }
+}
+
+/// The computer name answer: a host name.
+pub fn hostname_answer(value: &str) -> Result<String, String> {
+    if settings::is_hostname(value) {
+        Ok(value.to_string())
+    } else {
+        Err(tr("letters, digits and hyphens, up to 63").to_string())
+    }
+}
+
+/// What kind of computer this is, for the suggested computer name, from
+/// `sys` (`/sys`, or a test's tree): a laptop has a battery, a virtual
+/// machine says so in its firmware, anything else is a pc.
+pub fn form_factor(sys: &Path) -> &'static str {
+    let battery = fs::read_dir(sys.join("class/power_supply")).is_ok_and(|entries| {
+        entries
+            .filter_map(|e| e.ok())
+            .any(|e| fs::read_to_string(e.path().join("type")).is_ok_and(|t| t.trim() == "Battery"))
+    });
+    let vendor = fs::read_to_string(sys.join("class/dmi/id/sys_vendor")).unwrap_or_default();
+    if battery {
+        "laptop"
+    } else if ["QEMU", "VMware", "innotek", "Xen", "Microsoft"]
+        .iter()
+        .any(|v| vendor.contains(v))
+    {
+        "vm"
+    } else {
+        "pc"
+    }
+}
+
+/// `major:minor` of the device mounted at `/` in `mountinfo`'s text. The
+/// last matching line wins, since a later mount hides an earlier one.
+pub fn root_device(mountinfo: &str) -> Option<&str> {
+    mountinfo.lines().rev().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        let dev = fields.nth(2)?;
+        (fields.nth(1)? == "/").then_some(dev)
+    })
+}
+
+/// The whole disk, as `/sys/block` names it, whose partition is mounted at
+/// `/`; none when `/` is not on a disk partition. `sys` is `/sys`, or a
+/// test's tree.
+pub fn running_disk(mountinfo: &str, sys: &Path) -> Option<String> {
+    let part = fs::canonicalize(sys.join("dev/block").join(root_device(mountinfo)?)).ok()?;
+    if !part.join("partition").exists() {
+        return None;
+    }
+    Some(part.parent()?.file_name()?.to_string_lossy().into_owned())
+}
+
+/// Whether the disk `name` is removable, or on USB, as a stick is; `sys` is
+/// `/sys`, or a test's tree.
+pub fn is_removable(sys: &Path, name: &str) -> bool {
+    let block = sys.join("block").join(name);
+    let removable = fs::read_to_string(block.join("removable")).is_ok_and(|r| r.trim() == "1");
+    let on_usb = fs::canonicalize(&block).is_ok_and(|path| {
+        path.components()
+            .any(|c| c.as_os_str().to_string_lossy().starts_with("usb"))
+    });
+    removable || on_usb
+}
+
+/// Whether this system runs from a stick, a removable disk: Settings then
+/// shows its installer page, and the stick's live account may install
+/// (M6.6a).
+pub fn from_a_stick() -> bool {
+    let sys = Path::new("/sys");
+    fs::read_to_string("/proc/self/mountinfo")
+        .ok()
+        .and_then(|m| running_disk(&m, sys))
+        .is_some_and(|disk| is_removable(sys, &disk))
+}
+
+/// A disk the installer page offers: its name, such as `sda`, and how
+/// people know it, its model and size.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiskChoice {
+    pub name: String,
+    pub title: String,
+}
+
+/// The disks Settings' installer page offers, read from `sys` (`/sys`, or
+/// a test's tree) with no root: every candidate whole disk but `running`,
+/// the one the system runs from, by name. Their partitions are what
+/// `edel install --list` shows, as only root may read their labels.
+pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
+    let Ok(entries) = fs::read_dir(sys.join("block")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| is_candidate(n) && Some(n.as_str()) != running)
+        .collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let block = sys.join("block").join(&name);
+            let sectors: u64 = fs::read_to_string(block.join("size"))
+                .ok()?
+                .trim()
+                .parse()
+                .ok()?;
+            let model = fs::read_to_string(block.join("device/model"))
+                .ok()
+                .map(|m| m.trim().to_string())
+                .filter(|m| !m.is_empty());
+            let title = trf(
+                "{model}, {size} ({name})",
+                &[
+                    ("model", model.as_deref().unwrap_or(tr("no model name"))),
+                    ("size", &size(sectors * 512)),
+                    ("name", &name),
+                ],
+            );
+            (sectors > 0).then_some(DiskChoice { name, title })
+        })
+        .collect()
+}
+
 /// A disk the installer may offer: a whole disk, not a loop, RAM, zram,
 /// optical or device-mapper one.
 pub fn is_candidate(name: &str) -> bool {
@@ -621,5 +774,110 @@ mod tests {
             list_entry(&disk, true, true),
             "/dev/sdb: SanDisk Ultra, 32 GB (removable, running from it, so not offered)\n  no partitions"
         );
+    }
+
+    /// A sysfs tree with a USB stick `sda` (root on its second partition),
+    /// a NVMe disk with a model and a CD drive, under `/sys/block` links as
+    /// the kernel makes them.
+    fn sysfs(test: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("edel-{test}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let disks = [
+            (
+                "sda",
+                "devices/pci0/usb1/1-1/host0/block/sda",
+                "1",
+                "60000000",
+            ),
+            (
+                "nvme0n1",
+                "devices/pci0/nvme/nvme0/block/nvme0n1",
+                "0",
+                "1000215216",
+            ),
+            ("sr0", "devices/pci0/ata1/block/sr0", "1", "2097151"),
+        ];
+        fs::create_dir_all(dir.join("block")).unwrap();
+        fs::create_dir_all(dir.join("dev/block")).unwrap();
+        for (name, path, removable, sectors) in disks {
+            let disk = dir.join(path);
+            fs::create_dir_all(disk.join("device")).unwrap();
+            fs::write(disk.join("removable"), format!("{removable}\n")).unwrap();
+            fs::write(disk.join("size"), format!("{sectors}\n")).unwrap();
+            std::os::unix::fs::symlink(format!("../{path}"), dir.join("block").join(name)).unwrap();
+        }
+        fs::write(
+            dir.join("devices/pci0/nvme/nvme0/block/nvme0n1/device/model"),
+            "Samsung SSD 980   \n",
+        )
+        .unwrap();
+        let part = dir.join("devices/pci0/usb1/1-1/host0/block/sda/sda2");
+        fs::create_dir_all(&part).unwrap();
+        fs::write(part.join("partition"), "2\n").unwrap();
+        std::os::unix::fs::symlink(
+            "../../devices/pci0/usb1/1-1/host0/block/sda/sda2",
+            dir.join("dev/block/8:2"),
+        )
+        .unwrap();
+        dir
+    }
+
+    const MOUNTINFO: &str = "1 0 0:2 / / rw - rootfs rootfs rw\n\
+        22 1 8:2 / / ro,relatime - ext4 /dev/root rw\n\
+        23 22 0:5 / /dev rw - devtmpfs devtmpfs rw\n";
+
+    #[test]
+    fn finds_the_stick_it_runs_from_and_offers_the_other_disks() {
+        let sys = sysfs("install-disks");
+        assert_eq!(root_device(MOUNTINFO), Some("8:2"));
+        assert_eq!(
+            root_device("23 22 0:5 / /dev rw - devtmpfs devtmpfs rw\n"),
+            None
+        );
+        let running = running_disk(MOUNTINFO, &sys);
+        assert_eq!(running.as_deref(), Some("sda"));
+        assert!(is_removable(&sys, "sda"));
+        assert!(!is_removable(&sys, "nvme0n1"));
+        assert_eq!(
+            disk_choices(&sys, running.as_deref()),
+            [DiskChoice {
+                name: "nvme0n1".into(),
+                title: "Samsung SSD 980, 512 GB (nvme0n1)".into(),
+            }],
+            "the stick and the CD drive are not offered"
+        );
+        let tmpfs = "1 0 0:2 / / rw - tmpfs tmpfs rw\n";
+        assert_eq!(running_disk(tmpfs, &sys), None, "/ on no disk");
+        let _ = fs::remove_dir_all(&sys);
+    }
+
+    #[test]
+    fn tells_a_laptop_from_a_vm_and_a_pc() {
+        let dir = std::env::temp_dir().join(format!("edel-form-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("class/dmi/id")).unwrap();
+        assert_eq!(form_factor(&dir), "pc");
+        fs::write(dir.join("class/dmi/id/sys_vendor"), "QEMU\n").unwrap();
+        assert_eq!(form_factor(&dir), "vm");
+        fs::create_dir_all(dir.join("class/power_supply/BAT0")).unwrap();
+        fs::write(dir.join("class/power_supply/BAT0/type"), "Battery\n").unwrap();
+        assert_eq!(form_factor(&dir), "laptop");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn checks_each_answer_the_way_the_terminal_and_settings_do() {
+        assert_eq!(language_answer("de_DE.UTF-8").as_deref(), Ok("de_DE.UTF-8"));
+        assert!(language_answer("").is_err() && language_answer("de DE").is_err());
+        assert_eq!(user_answer("ali").as_deref(), Ok("ali"));
+        for name in ["root", "live", "Ali", "1ali", ""] {
+            assert!(user_answer(name).is_err(), "{name}");
+        }
+        assert_eq!(
+            user_answer("root").unwrap_err(),
+            "lowercase letters, digits, - and _, starting with a letter, and not root or live"
+        );
+        assert_eq!(hostname_answer("ali-laptop").as_deref(), Ok("ali-laptop"));
+        assert!(hostname_answer("ali laptop").is_err());
     }
 }

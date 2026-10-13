@@ -100,6 +100,9 @@ pub const STARTED: &str = run!("/started");
 pub const RESTART_PENDING: &str = run!("/restart-pending");
 /// One updater at a time (M1.1).
 pub const UPDATE_LOCK: &str = run!("/update.lock");
+/// The account a stick logs in by itself (M3.6), which may also run
+/// `edel install` there (M6.6a); never a person's login name.
+pub const LIVE_USER: &str = "live";
 /// greetd's config with the live session (M3.6).
 pub const GREETD_LIVE: &str = run!("/greetd.toml");
 /// Where a seed stick or partition is mounted while it is read (M2.2).

@@ -50,9 +50,6 @@ msgstr ""
 msgid "Login name"
 msgstr ""
 
-msgid "lowercase letters, digits, - and _, starting with a letter, and not root or live"
-msgstr ""
-
 msgid "Password, or press Return to give an ssh key instead: "
 msgstr ""
 
@@ -146,6 +143,18 @@ msgstr ""
 msgid "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter"
 msgstr ""
 
+msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
+msgstr ""
+
+msgid "lowercase letters, digits, - and _, starting with a letter, and not root or {live}"
+msgstr ""
+
+msgid "letters, digits and hyphens, up to 63"
+msgstr ""
+
+msgid "{model}, {size} ({name})"
+msgstr ""
+
 msgid "removable"
 msgstr ""
 
@@ -197,12 +206,6 @@ msgstr ""
 msgid "More options (computer name, layout)? yes or no"
 msgstr ""
 
-msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
-msgstr ""
-
-msgid "letters, digits and hyphens, up to 63"
-msgstr ""
-
 msgid "one of {names}"
 msgstr ""
 
@@ -213,6 +216,12 @@ msgid "one of the disks listed above, such as sda"
 msgstr ""
 
 msgid "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
+msgstr ""
+
+msgid "--new-password-stdin gives one person a password, and {path} names {count}; name one person in it"
+msgstr ""
+
+msgid "the new password on standard input is empty; nothing was changed"
 msgstr ""
 
 msgid "/dev/{name} is the disk this system runs from; install to another disk"
@@ -1836,6 +1845,9 @@ msgid "Only show the plan: what would be erased and written; change nothing"
 msgstr ""
 
 msgid "Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3"
+msgstr ""
+
+msgid "Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it"
 msgstr ""
 
 msgid "Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs"
