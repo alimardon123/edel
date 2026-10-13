@@ -233,7 +233,8 @@
 #               [default_apps] (M6.10): two test clients' desktop files
 #               and the keys that name them; applied, /etc/xdg/mimeapps.list
 #               holds their MIME types, Super+E opens the files app and
-#               Super+B the browser, and reset removes the file again
+#               Super+B the browser, startup.apps reads back, Settings'
+#               Default apps page logs its places, and reset removes the file again
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -615,13 +616,43 @@ case_default_apps_keys() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window test-browser' "$closed" ||
 		fail "Super+Q did not close the browser"
+	# Startup (M6.10): `edel settings get` reads startup.apps back, which is
+	# all CI checks, as a session starts its apps once and this one started
+	# already, so no app is started here. Settings' Default apps page then
+	# logs where each role's choice lies once laid out, and Super+Q closes
+	# it; `startup off` takes the list out again.
+	guest 'startup on'
+	wait_for 'DESKTOP-TEST: startup_apps ' ||
+		fail "edel settings get did not read startup.apps back: $(value startup_apps)"
+	case "$(value startup_apps)" in
+	*edel-test-files*) ;;
+	*) fail "startup.apps does not name edel-test-files: $(value startup_apps)" ;;
+	esac
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings default apps'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on the Default apps page: $(value windows)"
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: settings_default_apps_log ')
+		guest 'settings default apps log'
+		wait_more 'DESKTOP-TEST: settings_default_apps_log ' "$seen" 10 || true
+		value settings_default_apps_log | grep -q 'edel-settings: default apps places' && break
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings never logged edel-settings: default apps places: $(value settings_default_apps_log)"
+		sleep 1
+	done
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	guest 'startup off'
 	# Removed, the keys leave no file behind: the system's choice is none.
 	guest 'default apps off'
 	wait_for 'DESKTOP-TEST: default_apps_mime_after ' ||
 		fail "edel settings apply did not say what /etc/xdg/mimeapps.list holds after the reset"
 	after=$(value default_apps_mime_after)
 	case "$after" in *'No such file'*) ;; *) fail "mimeapps.list is still there after the reset: $after" ;; esac
-	echo "PASS: [default_apps] wrote text/plain and x-scheme-handler/https into /etc/xdg/mimeapps.list, Super+E opened the files app and Super+B the browser they name, both closed with Super+Q, and the reset removed the file"
+	echo "PASS: [default_apps] wrote text/plain and x-scheme-handler/https into /etc/xdg/mimeapps.list, Super+E opened the files app and Super+B the browser they name, both closed with Super+Q, startup.apps read back with edel-test-files and Settings' Default apps page logged its places, and the reset removed the file"
 }
 
 case_respawn() {

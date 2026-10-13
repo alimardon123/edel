@@ -549,7 +549,7 @@ pub const KEYS: &[Key] = &[
     now("default_apps.editor", Kind::Text),
     now("default_apps.terminal", Kind::Text),
     now("default_apps.mail", Kind::Text),
-    later("startup.apps", Kind::Texts),
+    now("startup.apps", Kind::Texts),
     later(
         "power.lid_close",
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),

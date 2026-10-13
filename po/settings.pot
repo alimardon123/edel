@@ -338,6 +338,12 @@ msgstr ""
 msgid "The pointer and the icons. Apps already open keep their cursor until they start again"
 msgstr ""
 
+msgid "Automatic"
+msgstr ""
+
+msgid "{id} (not installed)"
+msgstr ""
+
 msgid "Opaque"
 msgstr ""
 
@@ -369,9 +375,6 @@ msgid "How see-through windows are and the shadow under them"
 msgstr ""
 
 msgid "Each screen's size, scale and place."
-msgstr ""
-
-msgid "Automatic"
 msgstr ""
 
 msgid "Across"
@@ -1046,6 +1049,24 @@ msgstr ""
 msgid "Notification list"
 msgstr ""
 
+msgid "Web browser"
+msgstr ""
+
+msgid "Files"
+msgstr ""
+
+msgid "Text editor"
+msgstr ""
+
+msgid "Terminal"
+msgstr ""
+
+msgid "Mail"
+msgstr ""
+
+msgid "Startup apps"
+msgstr ""
+
 msgid "Channel"
 msgstr ""
 
@@ -1317,6 +1338,15 @@ msgid "What listens"
 msgstr ""
 
 msgid "Level"
+msgstr ""
+
+msgid "Remove {app}"
+msgstr ""
+
+msgid "Add an app"
+msgstr ""
+
+msgid "Add"
 msgstr ""
 
 msgid "Checking for updates..."
@@ -1767,12 +1797,6 @@ msgid "Shortcut: {keys}"
 msgstr ""
 
 msgid "App id, such as org.mozilla.firefox"
-msgstr ""
-
-msgid "Add"
-msgstr ""
-
-msgid "Add an app"
 msgstr ""
 
 msgid "Workspace"
