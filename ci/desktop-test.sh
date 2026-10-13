@@ -2950,7 +2950,9 @@ case_launcher() {
 	# The launcher (M5.3b): Super, tapped alone, opens it beside the
 	# panel's start, 360x352 at 8,400, 8 px from the screen's side and
 	# the panel, in the panel's colour; 188,748 lies in its bottom
-	# margin, below its last row, and is the background before.
+	# margin, below its last row, and is the background before. Typed
+	# and listing an app, a screen reader (M6.9) finds it in AT-SPI as a
+	# frame named Launcher with a list item for each app listed.
 	background=$(token background)
 	panel=$(token panel)
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
@@ -2963,6 +2965,18 @@ case_launcher() {
 	opened=$(count 'edel-compositor: mapped window foot')
 	hidden=$(count 'edel-shell-ui: launcher hidden')
 	python3 ci/qmp.py type foot
+	# A screen reader (M6.9): the launcher with foot listed is a frame
+	# named Launcher, its list items are the apps listed. The walk runs
+	# before Return, while the launcher is open.
+	asked=$(count 'DESKTOP-TEST: a11y_done')
+	guest 'a11y tree'
+	wait_more 'DESKTOP-TEST: a11y_done' "$asked" 30 || fail "the screen reader's walk of AT-SPI did not finish"
+	tree=$(tr -d '\r' <"$log" | awk '/DESKTOP-TEST: a11y_done/ { last = now; now = "" } /DESKTOP-TEST: a11y / { sub(/.*DESKTOP-TEST: a11y /, ""); now = now $0 "\n" } END { printf "%s", last }')
+	echo "$tree" | grep -qx '2 frame: Launcher' ||
+		fail "AT-SPI does not hold a window named Launcher while it is open; it holds: $(echo "$tree" | tr '\n' ';')"
+	listed=$(echo "$tree" | grep -c '^3 list item: ')
+	[ "$listed" -ge 1 ] || fail "AT-SPI holds the launcher with no list item for the typed foot; it holds: $(echo "$tree" | tr '\n' ';')"
+	first=$(echo "$tree" | sed -n 's/^3 list item: //p' | head -n 3 | tr '\n' ',' | sed 's/,$//')
 	python3 ci/qmp.py key ret
 	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "typing foot and Return did not open foot"
 	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "the launcher did not close when foot started"
@@ -2980,7 +2994,7 @@ case_launcher() {
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
-	echo "PASS: Super opened the launcher in the panel's colour with $apps, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
 case_quick() {
