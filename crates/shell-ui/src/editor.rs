@@ -1037,6 +1037,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         children: Vec::new(),
         toggled: None,
         value: None,
+        value_text: None,
     };
     // The tabs first, each with its words, then the tiles.
     let tabs: Vec<Node> = view
@@ -1050,6 +1051,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
             children: Vec::new(),
             toggled: None,
             value: None,
+            value_text: None,
         })
         .collect();
     let mut out: Vec<Node> = tabs;

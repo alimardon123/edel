@@ -62,7 +62,7 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 | | What it does |
 |---|---|
 | `DISK` | The disk, such as /dev/sda; without it, the disks are listed and one is asked for |
-| `--settings FILE` | The settings file the new machine starts with; without it, a few questions are asked on the terminal and their answers become it |
+| `--settings FILE` | The settings file the new machine starts with, a path or an https:// address; without it, a few questions are asked on the terminal and their answers become it |
 | `--list` | List the disks Edel OS could install on, and change nothing |
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
@@ -122,7 +122,7 @@ Make FILE this machine's settings and apply it, such as a file exported on anoth
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ### `edel settings export`
 
@@ -134,7 +134,7 @@ Check a settings file strictly: every unknown key, value or format, and every ke
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file |
+| `FILE` | The settings file, a path or an https:// address |
 
 ## `edel image`
 

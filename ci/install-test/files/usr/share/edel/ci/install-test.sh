@@ -38,7 +38,23 @@ ends() {
 	} | sha256sum | cut -d' ' -f1
 }
 . /usr/share/edel/places.sh
-file=$share_dir/ci/install.toml
+# M6.6b: the settings file over https, from ci/https-serve.py on the
+# runner; its throwaway authority comes over plain http first and is
+# added to the machine's own, as a fleet adds its authority. The same
+# file over plain http must be refused before anything is read.
+tries=0
+until wget -q -O /tmp/ca.pem http://10.0.2.2:8080/ca.pem; do
+	tries=$((tries + 1))
+	if [ "$tries" -ge 60 ]; then
+		say "FAIL: the test authority never came over http"
+		exit 1
+	fi
+	sleep 1
+done
+cat /tmp/ca.pem >>/etc/ssl/certs/ca-certificates.crt
+say "authority trusted"
+say "http refused: $(edel install /dev/vdb --settings http://10.0.2.2:8080/install.toml --plan 2>&1 </dev/null | tail -n 1 | sed 's/^edel install: //')"
+file=https://10.0.2.2:8443/install.toml
 before=$(ends)
 edel install /dev/vdb --settings "$file" </dev/null
 code=$?
