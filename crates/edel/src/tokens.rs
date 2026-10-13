@@ -810,7 +810,11 @@ impl Tokens {
         if !high {
             return self;
         }
-        let table: Table = BUILT_IN.parse().expect("checked by the tests");
+        // The built-in file parses, as its tests hold; were it not to, the
+        // tokens stay as they are.
+        let Ok(table) = BUILT_IN.parse::<Table>() else {
+            return self;
+        };
         if let Some(colours) = contrast_table(&table, scheme) {
             // The built-in file is checked by the tests, so no note is left.
             self.apply_contrast(colours, contrast_path(scheme), &mut Vec::new());
