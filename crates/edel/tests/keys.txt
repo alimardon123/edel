@@ -102,3 +102,4 @@ themes.*
 lock_screen.dim
 appearance.pictures
 presets.*
+appearance.contrast
