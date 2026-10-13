@@ -51,7 +51,7 @@ trap 'kill "$server" 2>/dev/null || :' EXIT
 # an empty answer takes the suggestion.
 python3 ci/serial.py "$tty_sock" \
 	'yes or no [no]: =yes' 'Language [en_US.UTF-8]: =de_DE.UTF-8' 'Keyboard [de]: =' \
-	'Your login name: =ali' 'Your password: =edel-ci-tty' 'The same password again: =edel-ci-tty' \
+	'Your username: =ali' 'Your password: =edel-ci-tty' 'The same password again: =edel-ci-tty' \
 	'Computer name [ali-vm]: =' 'Layout (=mac-like' 'such as sda: =vdc' 'Type vdc to erase it=vdc' \
 	>out/install-tty.log 2>&1 &
 typist=$!

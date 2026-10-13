@@ -185,7 +185,7 @@ pub fn list() -> Result<()> {
 /// `edel install --find-settings` (M6.6b): the settings file to install
 /// with, from another disk: each partition (or a disk with none, as a FAT
 /// image written whole) not mounted and not on the disk Edel OS runs from,
-/// mounted read-only in turn, holding `install.toml` or the settings file
+/// mounted read-only in turn, holding the settings file
 /// at its top or in `EFI/edel` (`install::file_in`). The first one found is
 /// printed on standard output and where it was on standard error, so
 /// Settings' installer page can read both; nothing is changed.
@@ -249,7 +249,7 @@ pub fn find_settings() -> Result<()> {
         "{}",
         trf(
             "no settings file was found on another disk; put {file} at the top of a USB stick, plug it in and look again",
-            &[("file", edel::places::INSTALL_FILE)]
+            &[("file", edel::places::SETTINGS)]
         )
     )
 }

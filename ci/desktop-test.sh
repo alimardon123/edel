@@ -6888,7 +6888,7 @@ if [ "$*" = live ]; then
 	echo "$installed" | grep -q '^admin = true' || fail "ali is not an administrator in the installed settings file"
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
-	# Use a settings file (M6.6b): a FAT stick holding install.toml
+	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
 	# plugged in, and Settings, opened again, finds it and gives the keys
 	# to Use it; Return uses it, so only bea's password is asked before
@@ -6961,7 +6961,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'network.hostname: set to from-file' ||
 		fail "the disk installed from the settings file did not take its computer name, from-file"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding install.toml plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), mounted /data, guarded the boot with the hardware watchdog, wrote its report and left sshd off; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
 	exit 0
 fi
 

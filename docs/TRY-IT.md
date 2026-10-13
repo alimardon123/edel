@@ -69,7 +69,7 @@ qemu-system-x86_64 -machine q35,accel=kvm -m 1024 -smp 2 \
   -nographic
 ```
 
-The image has no user and no password. With nothing more, its console asks for the first person at the first start: a login name, then a password or an ssh key, and that person is an administrator. To skip the question, or to set up many machines alike, bring a settings file instead. Make one with your ssh key, and give it to the first boot on a small disk labelled `EDEL-SEED`:
+The image has no user and no password. With nothing more, its console asks for the first person at the first start: a username, then a password or an ssh key, and that person is an administrator. To skip the question, or to set up many machines alike, bring a settings file instead. Make one with your ssh key, and give it to the first boot on a small disk labelled `EDEL-SEED`:
 
 ```sh
 cat >settings.toml <<EOF

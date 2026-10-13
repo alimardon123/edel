@@ -29,7 +29,7 @@ rm -f "$key" "$key.pub"
 ssh-keygen -q -t ed25519 -N '' -C ci@boot-test -f "$key"
 console=out/boot-console.sock
 rm -f out/boot.log "$console"
-python3 ci/serial.py "$console" 'Login name: =ci' 'ssh key instead: =' \
+python3 ci/serial.py "$console" 'Username: =ci' 'ssh key instead: =' \
 	"on one line: =$(cat "$key.pub")" >out/boot.log 2>&1 &
 typist=$!
 vm_console=$console vm_net=,hostfwd=tcp:127.0.0.1:2223-:22 keep_vm=1
@@ -80,7 +80,7 @@ fi
 grown=out/grown.img
 cp --sparse=always out/edel-vm-x86_64.img "$grown"
 truncate -s +3G "$grown"
-boot out/boot-grown.log 'Login name: ' "$grown"
+boot out/boot-grown.log 'Username: ' "$grown"
 rm -f "$grown"
 # busybox df -m: Filesystem 1M-blocks Used Available Use% Mounted on
 size=$(tr -d '\r' <out/boot-grown.log | awk '$NF == "/data" && $2 ~ /^[0-9]+$/ { print $2 }' | tail -n 1)

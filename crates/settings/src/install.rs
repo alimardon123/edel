@@ -31,15 +31,11 @@ use std::time::Duration;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
-use crate::{cmd, widgets};
-
-const INTRO: &str = n_(
-    "Put Edel OS on this computer's disk. Nothing changes until you press Erase and install, and every answer can be changed later in Settings.",
-);
+use crate::{cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
 const LANGUAGE: &str = "en_US.UTF-8";
@@ -234,6 +230,14 @@ struct Found {
     answered: Vec<&'static str>,
 }
 
+/// The disk a found file is on, from `edel install`'s "found FILE on
+/// /dev/sdb1"; the whole line when it reads otherwise (another language).
+fn device_of(place: &str) -> &str {
+    place
+        .rsplit_once(" on ")
+        .map_or(place, |(_, device)| device)
+}
+
 /// The words for what a file answers, by the rows' own titles.
 fn answered_words(answered: &[&str]) -> String {
     answered
@@ -250,8 +254,20 @@ fn answered_words(answered: &[&str]) -> String {
         .join(", ")
 }
 
+/// What the hero above the form says: the welcome, an install under way,
+/// one that finished, or one that did not finish.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage {
+    Welcome,
+    Installing,
+    Installed,
+    Failed,
+}
+
 /// The page's controls and its state.
 struct Ui {
+    hero: widgets::Hero,
+    stage: Cell<Stage>,
     problem: gtk::Label,
     /// The card that offers a settings file found on another disk
     file_card: gtk::Box,
@@ -263,8 +279,12 @@ struct Ui {
     using: Cell<bool>,
     /// The Layout row's choice, hidden when the file sets the preset
     preset_widget: gtk::Widget,
-    language: gtk::Entry,
-    keyboard: gtk::Entry,
+    language: Rc<widgets::Choice>,
+    /// The language codes, by the language choice's index
+    languages: Vec<String>,
+    keyboard: Rc<widgets::Choice>,
+    /// The keyboard layouts, by the keyboard choice's index
+    keyboards: RefCell<Vec<String>>,
     user: gtk::Entry,
     password: gtk::PasswordEntry,
     again: gtk::PasswordEntry,
@@ -273,8 +293,16 @@ struct Ui {
     preset: Rc<widgets::Choice>,
     disks: Vec<DiskChoice>,
     disk: Option<Rc<widgets::Choice>>,
-    /// The line under each row, for its problem
+    /// The line under each row: its problem, else its own words
     lines: Vec<(Field, gtk::Label)>,
+    /// The problems the last check found, by field
+    problems: RefCell<Vec<(Field, String)>>,
+    /// The review's values: the disk, the username, the language and the
+    /// keyboard, as the answers stand
+    review_disk: gtk::Label,
+    review_user: gtk::Label,
+    review_language: gtk::Label,
+    review_keyboard: gtk::Label,
     /// What `edel install --list` says of the chosen disk
     list: gtk::Label,
     /// The run of `edel install --list`, once it is read
@@ -293,11 +321,49 @@ struct Ui {
     rules: Option<String>,
 }
 
+/// The welcome the hero shows until the person does something.
+fn welcome(hero: &widgets::Hero) {
+    hero.show(
+        "page-install",
+        false,
+        false,
+        tr("Welcome to Edel OS"),
+        tr("A few questions, then a plan to check. Nothing changes until you press Erase and install."),
+    );
+}
+
+/// One row of the review: its title, then its value, which `summarize`
+/// writes. Returns the value's label.
+fn review_row(grid: &gtk::Grid, at: i32, title: &str) -> gtk::Label {
+    let name = gtk::Label::builder()
+        .label(title)
+        .xalign(0.0)
+        .valign(gtk::Align::Start)
+        .css_classes(["edel-row-subtitle"])
+        .build();
+    let value = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .hexpand(true)
+        .build();
+    grid.attach(&name, 0, at, 1, 1);
+    grid.attach(&value, 1, at, 1, 1);
+    value
+}
+
+/// The first layout of a keyboard value, `ru` of `ru,us`.
+fn first_layout(keyboard: &str) -> &str {
+    keyboard.split(',').next().unwrap_or(keyboard)
+}
+
+/// The width of every control at the right of a row on this page.
+const CONTROL_WIDTH: i32 = 240;
+
 /// An entry of the form, its text filled in.
 fn entry(text: &str) -> gtk::Entry {
     gtk::Entry::builder()
         .text(text)
-        .width_chars(18)
+        .width_request(CONTROL_WIDTH)
         .css_classes(["edel-entry"])
         .build()
 }
@@ -306,13 +372,13 @@ fn entry(text: &str) -> gtk::Entry {
 fn password_entry() -> gtk::PasswordEntry {
     gtk::PasswordEntry::builder()
         .show_peek_icon(true)
-        .width_chars(18)
+        .width_request(CONTROL_WIDTH)
         .css_classes(["edel-entry"])
         .build()
 }
 
 pub fn page() -> gtk::Widget {
-    let (page, content, problem) = widgets::page(tr("Install Edel OS"), tr(INTRO));
+    let (page, content, problem) = widgets::page(tr("Install Edel OS"), "");
     let files = Files::here();
     let language_now = files
         .person_file()
@@ -322,46 +388,144 @@ pub fn page() -> gtk::Widget {
     let keyboard_now = install::suggested_keyboard(&language_now);
     let mut lines = Vec::new();
 
-    // A settings file on another disk (M6.6b), shown once one is found.
+    // The welcome sits on the page itself; the install changes it as it goes.
+    let hero = widgets::Hero::new(&content);
+    hero.set_bare();
+    welcome(&hero);
+
+    // A settings file on another disk (M6.6b), shown once one is found, 20 px
+    // below the welcome.
     let file_card = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .visible(false)
+        .margin_top(20)
         .build();
-    widgets::heading(&file_card, tr("A settings file"));
     let file_group = widgets::group(&file_card);
+    // One row, as a notice reads: what was found on the left, the choice
+    // on the right.
+    let file_row = gtk::Box::builder()
+        .spacing(12)
+        .css_classes(["edel-row"])
+        .build();
+    let file_icon = icon::image("copy", 20);
+    file_icon.set_valign(gtk::Align::Center);
+    file_row.append(&file_icon);
+    let file_words = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(gtk::Align::Center)
+        .build();
+    file_words.append(
+        &gtk::Label::builder()
+            .label(tr("Found a settings file"))
+            .xalign(0.0)
+            .wrap(true)
+            .build(),
+    );
     let file_line = gtk::Label::builder()
         .xalign(0.0)
         .wrap(true)
-        .css_classes(["edel-row"])
+        .css_classes(["edel-row-subtitle"])
         .build();
-    file_group.append(&file_line);
-    let file_buttons = gtk::Box::builder()
-        .spacing(8)
-        .css_classes(["edel-row"])
-        .build();
-    file_buttons.append(&gtk::Box::builder().hexpand(true).build());
+    file_words.append(&file_line);
+    file_row.append(&file_words);
     let stop_file = widgets::action(tr("Answer every question"), false);
     let use_file = widgets::action(tr("Use it"), true);
-    file_buttons.append(&stop_file);
-    file_buttons.append(&use_file);
-    file_group.append(&file_buttons);
+    for button in [&stop_file, &use_file] {
+        button.set_valign(gtk::Align::Center);
+        file_row.append(button);
+    }
+    file_group.append(&file_row);
     content.append(&file_card);
 
-    widgets::heading(&content, tr("You"));
+    // The languages and keyboard layouts are the library's lists, so every
+    // part shows the same names.
+    widgets::step_heading(&content, 1, tr("Language and keyboard"));
+    let choices = widgets::group(&content);
+    let mut codes: Vec<String> = edel::languages::LANGUAGES
+        .iter()
+        .map(|language| language.code.to_string())
+        .collect();
+    let mut names: Vec<String> = edel::languages::LANGUAGES
+        .iter()
+        .map(edel::languages::label)
+        .collect();
+    // A language the person's file names that the list lacks is added last.
+    if !codes.contains(&language_now) {
+        codes.push(language_now.clone());
+        names.push(language_now.clone());
+    }
+    let language_at = codes.iter().position(|c| *c == language_now).unwrap_or(0);
+    let language = widgets::Choice::searchable(names);
+    language.set_selected(language_at);
+    language.set_width(CONTROL_WIDTH);
+    let row = widgets::row(&choices, tr("Language"), &language.widget());
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    lines.push((Field::Language, row.subtitle));
+
+    let rules = std::fs::read_to_string(edel::keyboard::RULES).ok();
+    let suggested = first_layout(&keyboard_now).to_string();
+    let mut layouts: Vec<(String, String)> = rules
+        .as_deref()
+        .map(edel::keyboard::layouts)
+        .unwrap_or_default();
+    // The layout each language suggests is listed even when the list does
+    // not name it (a variant such as `uz(latin)`), so the keyboard can
+    // follow every language offered.
+    let wanted = std::iter::once(suggested.clone()).chain(
+        edel::languages::LANGUAGES
+            .iter()
+            .map(|l| first_layout(&install::suggested_keyboard(l.code)).to_string()),
+    );
+    for name in wanted {
+        if !layouts.iter().any(|(listed, _)| *listed == name) {
+            // Only a layout the list knows; without the list, the suggestion.
+            let text = match rules.as_deref() {
+                Some(r) => edel::keyboard::description(r, &name),
+                None => Some(name.clone()),
+            };
+            if let Some(text) = text {
+                layouts.push((name, text));
+            }
+        }
+    }
+    layouts.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    let keyboard_at = layouts
+        .iter()
+        .position(|(name, _)| *name == suggested)
+        .unwrap_or(0);
+    let keyboard_names: Vec<String> = layouts
+        .iter()
+        .map(|(name, text)| {
+            if text.is_empty() {
+                name.clone()
+            } else {
+                text.clone()
+            }
+        })
+        .collect();
+    let keyboard_values: Vec<String> = layouts.into_iter().map(|(name, _)| name).collect();
+    let keyboard = widgets::Choice::searchable(keyboard_names);
+    keyboard.set_selected(keyboard_at);
+    keyboard.set_width(CONTROL_WIDTH);
+    let row = widgets::row(&choices, tr("Keyboard"), &keyboard.widget());
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    lines.push((Field::Keyboard, row.subtitle));
+
+    widgets::step_heading(&content, 2, tr("Your account"));
     let you = widgets::group(&content);
-    let language = entry(&language_now);
-    let keyboard = entry(&keyboard_now);
     let user = entry("");
     let password = password_entry();
     let again = password_entry();
     for (field, title, control) in [
         (
-            Field::Language,
-            tr("Language"),
-            language.clone().upcast::<gtk::Widget>(),
+            Field::User,
+            tr("Your username"),
+            user.clone().upcast::<gtk::Widget>(),
         ),
-        (Field::Keyboard, tr("Keyboard"), keyboard.clone().upcast()),
-        (Field::User, tr("Your login name"), user.clone().upcast()),
         (
             Field::Password,
             tr("Your password"),
@@ -379,7 +543,7 @@ pub fn page() -> gtk::Widget {
         lines.push((field, row.subtitle));
     }
 
-    widgets::heading(&content, tr("Disk"));
+    widgets::step_heading(&content, 3, tr("Where to install"));
     let disk_group = widgets::group(&content);
     let disks = install::disk_choices(Path::new("/sys"), running().as_deref());
     let disk = if disks.is_empty() {
@@ -390,7 +554,8 @@ pub fn page() -> gtk::Widget {
         None
     } else {
         let choice = widgets::Choice::new(disks.iter().map(|d| d.title.clone()).collect());
-        let row = widgets::row(&disk_group, tr("Disk to install on"), &choice.widget());
+        choice.set_width(CONTROL_WIDTH);
+        let row = widgets::row(&disk_group, tr("Disk"), &choice.widget());
         row.reset.set_visible(false);
         row.copy.set_visible(false);
         lines.push((Field::Disk, row.subtitle));
@@ -409,38 +574,68 @@ pub fn page() -> gtk::Widget {
     lines.push((Field::Hostname, row.subtitle));
     let presets: Vec<&'static str> = edel::settings::PRESETS.to_vec();
     let preset = widgets::Choice::new(presets.iter().map(|p| edel::presets::title(p)).collect());
+    preset.set_width(CONTROL_WIDTH);
     let row = widgets::row(&more_group, tr("Layout"), &preset.widget());
     row.reset.set_visible(false);
     row.copy.set_visible(false);
+    row.subtitle.set_label(tr(
+        "How windows and panels are laid out. Change it any time in Settings.",
+    ));
     widgets::disclosure(&content, tr("More options"), &more);
 
-    widgets::heading(&content, tr("Plan"));
-    let plan_group = widgets::group(&content);
-    widgets::note_row(
-        &plan_group,
-        tr("The plan says what is erased and what is written. Erase and install asks twice."),
-    );
-    let plan = widgets::output_row(&plan_group);
-    // The row spans the card, so its line above does; the buttons sit at
-    // its end.
-    let buttons = gtk::Box::builder()
-        .spacing(8)
+    widgets::step_heading(&content, 4, tr("Review and install"));
+    let install_group = widgets::group(&content);
+    // The answers as they stand, read before anything is erased; each change
+    // writes its value again (`Ui::summarize`).
+    let review = gtk::Grid::builder()
+        .column_spacing(16)
+        .row_spacing(6)
         .css_classes(["edel-row"])
         .build();
-    buttons.append(&gtk::Box::builder().hexpand(true).build());
-    let show_plan = widgets::action(tr("Show the plan"), false);
-    let erase = widgets::action(tr("Erase and install"), true);
+    let review_disk = review_row(&review, 0, tr("Install on"));
+    let review_user = review_row(&review, 1, tr("Username"));
+    let review_language = review_row(&review, 2, tr("Language"));
+    let review_keyboard = review_row(&review, 3, tr("Keyboard"));
+    install_group.append(&review);
+    let plan = widgets::output_row(&install_group);
+    // The buttons sit centred under the plan, then a line says what the
+    // install asks.
+    // The row spans the card, so its line above does; the buttons sit in
+    // its middle.
+    let button_row = gtk::Box::builder().css_classes(["edel-row"]).build();
+    let buttons = gtk::Box::builder()
+        .spacing(10)
+        .hexpand(true)
+        .halign(gtk::Align::Center)
+        .margin_top(6)
+        .margin_bottom(6)
+        .build();
+    button_row.append(&buttons);
+    let show_plan = widgets::big_button(tr("Show the plan"), false);
+    let erase = widgets::big_button(tr("Erase and install"), true);
     erase.add_css_class("destructive-action");
     erase.set_sensitive(false);
-    let restart = widgets::action(tr("Restart now"), true);
+    let restart = widgets::big_button(tr("Restart now"), true);
     restart.set_visible(false);
     buttons.append(&show_plan);
     buttons.append(&erase);
     buttons.append(&restart);
-    plan_group.append(&buttons);
+    install_group.append(&button_row);
+    content.append(
+        &gtk::Label::builder()
+            .label(tr("Erase and install asks you to press it twice."))
+            .xalign(0.5)
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .margin_top(10)
+            .css_classes(["edel-row-subtitle"])
+            .build(),
+    );
 
     let preset_widget = preset.widget();
     let ui = Rc::new(Ui {
+        hero,
+        stage: Cell::new(Stage::Welcome),
         problem,
         file_card,
         file_line,
@@ -450,7 +645,9 @@ pub fn page() -> gtk::Widget {
         using: Cell::new(false),
         preset_widget,
         language,
+        languages: codes,
         keyboard,
+        keyboards: RefCell::new(keyboard_values),
         user,
         password,
         again,
@@ -460,6 +657,11 @@ pub fn page() -> gtk::Widget {
         disks,
         disk,
         lines,
+        problems: RefCell::new(Vec::new()),
+        review_disk,
+        review_user,
+        review_language,
+        review_keyboard,
         list,
         listed: RefCell::new(None),
         plan,
@@ -470,9 +672,12 @@ pub fn page() -> gtk::Widget {
         armed: Cell::new(false),
         suggested: RefCell::new(keyboard_now),
         suggested_name: RefCell::new(String::new()),
-        rules: std::fs::read_to_string(edel::keyboard::RULES).ok(),
+        rules,
     });
     ui.connect();
+    // Each row's line starts with its own words.
+    ui.show_problems(&[]);
+    ui.summarize();
     ui.read_list();
     ui.find_file();
     // The page holds its state while it lives; the signals hold it weakly.
@@ -512,9 +717,8 @@ fn running() -> Option<String> {
 
 impl Ui {
     fn connect(self: &Rc<Self>) {
+        // The language and the keyboard are choices: nothing to type next.
         let order: Vec<gtk::Widget> = vec![
-            self.language.clone().upcast(),
-            self.keyboard.clone().upcast(),
             self.user.clone().upcast(),
             self.password.clone().upcast(),
             self.again.clone().upcast(),
@@ -548,7 +752,7 @@ impl Ui {
                 }
             }
         };
-        for entry in [&self.language, &self.keyboard, &self.user, &self.hostname] {
+        for entry in [&self.user, &self.hostname] {
             let stale = changed(self);
             entry.connect_changed(move |_| stale());
         }
@@ -562,25 +766,19 @@ impl Ui {
             disk.connect_changed(changed(self));
         }
         let weak = Rc::downgrade(self);
-        self.language.connect_changed(move |entry| {
-            let Some(ui) = weak.upgrade() else { return };
-            // The keyboard follows the language until the person types one.
-            let suggestion = install::suggested_keyboard(entry.text().trim());
-            if ui.keyboard.text() == *ui.suggested.borrow() {
-                ui.keyboard.set_text(&suggestion);
-            }
-            *ui.suggested.borrow_mut() = suggestion;
-        });
-        // The keyboard applies once the person leaves its row, not at
-        // each letter, which could pass through another layout's name.
-        let weak = Rc::downgrade(self);
-        let left = gtk::EventControllerFocus::new();
-        left.connect_leave(move |_| {
+        self.language.connect_changed(move || {
             if let Some(ui) = weak.upgrade() {
-                ui.apply_keyboard(ui.keyboard.text().trim());
+                ui.language_picked();
             }
         });
-        self.keyboard.add_controller(left);
+        // The keyboard applies as soon as the person picks one.
+        let weak = Rc::downgrade(self);
+        self.keyboard.connect_changed(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.apply_keyboard(&ui.keyboard_value());
+            ui.refresh_keyboard_line();
+            ui.stale();
+        });
         if let Some(disk) = &self.disk {
             let weak = Rc::downgrade(self);
             disk.connect_changed(move || {
@@ -643,7 +841,126 @@ impl Ui {
         });
     }
 
-    /// The keyboard written to the person's file once it is a layout this
+    /// The language code the language choice shows.
+    fn language_code(&self) -> String {
+        self.languages
+            .get(self.language.selected())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The layout the keyboard choice shows, such as `ru` or `uz(latin)`.
+    fn keyboard_layout(&self) -> String {
+        self.keyboards
+            .borrow()
+            .get(self.keyboard.selected())
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// The keyboard the form uses: the layout, with `us` after one that types
+    /// no Latin letters.
+    fn keyboard_value(&self) -> String {
+        install::keyboard_for(&self.keyboard_layout())
+    }
+
+    /// The language changed: the keyboard follows it while the person has not
+    /// picked one of their own.
+    fn language_picked(&self) {
+        let suggestion = install::suggested_keyboard(&self.language_code());
+        if self.keyboard_value() == *self.suggested.borrow() {
+            let at = self
+                .keyboards
+                .borrow()
+                .iter()
+                .position(|layout| *layout == first_layout(&suggestion));
+            // A layout the list lacks leaves the choice as it is.
+            if let Some(at) = at {
+                self.keyboard.set_selected(at);
+            }
+        }
+        *self.suggested.borrow_mut() = suggestion;
+        self.apply_keyboard(&self.keyboard_value());
+        self.refresh_keyboard_line();
+        self.stale();
+    }
+
+    /// The words a row's line shows when its answer has no problem.
+    fn default_line(&self, field: Field) -> &'static str {
+        match field {
+            Field::Keyboard if self.keyboard_value().contains(',') => tr(
+                "English (US) is added, to type your username and password; Super+Space switches",
+            ),
+            Field::User => tr("Lowercase, such as ali. Your home folder takes this name."),
+            Field::Password => tr("You type it to log in and to change the system."),
+            Field::Hostname => tr("How other computers on the network see this one."),
+            Field::Disk => tr("Everything on it is erased. What it holds now is listed below."),
+            Field::Language | Field::Keyboard | Field::Again => "",
+        }
+    }
+
+    /// Shows a row's line: its problem when it has one, else its own words.
+    fn show_line(&self, field: Field, line: &gtk::Label) {
+        let problem = self
+            .problems
+            .borrow()
+            .iter()
+            .find(|(f, _)| *f == field)
+            .map(|(_, words)| words.clone());
+        match problem {
+            Some(words) => {
+                line.set_label(&words);
+                line.add_css_class("edel-error");
+                line.remove_css_class("edel-warn");
+            }
+            None => {
+                line.set_label(self.default_line(field));
+                line.remove_css_class("edel-error");
+                // The disk's line warns: what it holds is erased.
+                if field == Field::Disk {
+                    line.add_css_class("edel-warn");
+                } else {
+                    line.remove_css_class("edel-warn");
+                }
+            }
+        }
+    }
+
+    /// The review's values, as the answers stand now.
+    fn summarize(&self) {
+        let disk = match self
+            .disk
+            .as_ref()
+            .and_then(|d| self.disks.get(d.selected()))
+        {
+            Some(disk) => disk.title.clone(),
+            None => tr("No disk chosen").to_string(),
+        };
+        let user = if self.skipped().contains(&"user") {
+            tr("From the settings file").to_string()
+        } else {
+            let typed = self.user.text().trim().to_string();
+            if typed.is_empty() {
+                tr("Not given yet").to_string()
+            } else {
+                typed
+            }
+        };
+        self.review_disk.set_label(&disk);
+        self.review_user.set_label(&user);
+        self.review_language.set_label(&self.language.chosen_text());
+        self.review_keyboard.set_label(&self.keyboard.chosen_text());
+    }
+
+    /// The keyboard's line says what a second layout is for, as the
+    /// keyboard changes.
+    fn refresh_keyboard_line(&self) {
+        if let Some((field, line)) = self.lines.iter().find(|(f, _)| *f == Field::Keyboard) {
+            self.show_line(*field, line);
+        }
+    }
+
+    /// The keyboard written to the person's file once it is a layout this    /// The keyboard written to the person's file once it is a layout this
     /// machine knows, so it applies at once; `us`, the default, taken out.
     fn apply_keyboard(&self, value: &str) {
         let Ok(layouts) = edel::keyboard::normalize(value, self.rules.as_deref()) else {
@@ -661,8 +978,8 @@ impl Ui {
     /// The form as it stands.
     fn form(&self) -> Form {
         Form {
-            language: self.language.text().to_string(),
-            keyboard: self.keyboard.text().to_string(),
+            language: self.language_code(),
+            keyboard: self.keyboard_value(),
             user: self.user.text().to_string(),
             password: self.password.text().to_string(),
             again: self.again.text().to_string(),
@@ -714,9 +1031,9 @@ impl Ui {
                 Ok(read) => {
                     let answered = install::answered(&read.file);
                     ui.file_line.set_label(&trf(
-                        "{place}. It answers: {what}. Use it, and only the rest is asked.",
+                        "On {device}, answering {what}. Use it, and only the rest is asked.",
                         &[
-                            ("place", &capitalized(&place)),
+                            ("device", device_of(&place)),
                             ("what", &answered_words(&answered)),
                         ],
                     ));
@@ -755,8 +1072,8 @@ impl Ui {
         let skip = self.skipped();
         let password = self.password_needed();
         let rows: [(&str, gtk::Widget); 7] = [
-            ("region.language", self.language.clone().upcast()),
-            ("region.keyboard", self.keyboard.clone().upcast()),
+            ("region.language", self.language.widget()),
+            ("region.keyboard", self.keyboard.widget()),
             ("user", self.user.clone().upcast()),
             ("password", self.password.clone().upcast()),
             ("password", self.again.clone().upcast()),
@@ -794,9 +1111,7 @@ impl Ui {
         eprintln!("edel-settings: install file used {using}");
         self.stale();
         // The keyboard goes to the first question left that is empty.
-        let order: [gtk::Widget; 5] = [
-            self.language.clone().upcast(),
-            self.keyboard.clone().upcast(),
+        let order: [gtk::Widget; 3] = [
             self.user.clone().upcast(),
             self.password.clone().upcast(),
             self.again.clone().upcast(),
@@ -830,6 +1145,26 @@ impl Ui {
         }
         self.erase.set_sensitive(false);
         self.disarm();
+        // Once the person changes an answer after a failed install, the hero
+        // goes back to the welcome.
+        if self.stage.get() == Stage::Failed {
+            self.stage.set(Stage::Welcome);
+            welcome(&self.hero);
+        }
+        self.summarize();
+    }
+
+    /// The install did not finish: the hero says so, and the plan's message
+    /// says why.
+    fn failed(&self) {
+        self.stage.set(Stage::Failed);
+        self.hero.show(
+            "status-problem",
+            false,
+            true,
+            tr("The install did not finish"),
+            tr("The message below says what went wrong. Fix it and press Erase and install again."),
+        );
     }
 
     fn disarm(&self) {
@@ -837,26 +1172,19 @@ impl Ui {
         self.erase.set_label(tr("Erase and install"));
     }
 
-    /// Shows each field's problem under its row, and clears the others.
+    /// Shows each field's problem under its row, and each other row its own
+    /// words again.
     fn show_problems(&self, problems: &[(Field, String)]) {
+        *self.problems.borrow_mut() = problems.to_vec();
         for (field, line) in &self.lines {
-            let words = problems
-                .iter()
-                .find(|(f, _)| f == field)
-                .map_or("", |(_, w)| w.as_str());
-            line.set_label(words);
-            if words.is_empty() {
-                line.remove_css_class("edel-error");
-            } else {
-                line.add_css_class("edel-error");
-            }
+            self.show_line(*field, line);
         }
     }
 
     /// Checks the answers, writes them and shows `edel install --plan`.
     fn show_the_plan(self: &Rc<Self>) {
         self.say_problem("");
-        self.apply_keyboard(self.keyboard.text().trim());
+        self.apply_keyboard(&self.keyboard_value());
         let (answers, disk) = match check(&self.form(), self.rules.as_deref()) {
             Ok(done) => {
                 self.show_problems(&[]);
@@ -918,8 +1246,8 @@ impl Ui {
     /// Gives the keyboard to the row of `field`.
     fn focus(&self, field: Field) {
         match field {
-            Field::Language => self.language.grab_focus(),
-            Field::Keyboard => self.keyboard.grab_focus(),
+            Field::Language => self.language.widget().grab_focus(),
+            Field::Keyboard => self.keyboard.widget().grab_focus(),
             Field::User => self.user.grab_focus(),
             Field::Password => self.password.grab_focus(),
             Field::Again => self.again.grab_focus(),
@@ -961,6 +1289,14 @@ impl Ui {
         let password = self.password.text().to_string();
         self.password.set_text("");
         self.again.set_text("");
+        self.stage.set(Stage::Installing);
+        self.hero.show(
+            "page-install",
+            true,
+            false,
+            tr("Installing Edel OS"),
+            tr("This takes a few minutes. Keep the computer on."),
+        );
         let file = answers_file();
         let ui = self.clone();
         let asked = self.password_needed();
@@ -972,9 +1308,20 @@ impl Ui {
             })
             .await;
             let _ = std::fs::remove_file(&file);
-            let Ok(run) = done else { return };
+            let Ok(run) = done else {
+                ui.failed();
+                return;
+            };
             eprintln!("edel-settings: install on {disk}, exit {:?}", run.code);
             if run.ok {
+                ui.stage.set(Stage::Installed);
+                ui.hero.show(
+                    "status-ok",
+                    false,
+                    false,
+                    tr("Edel OS is installed"),
+                    tr("Restart, take out the USB stick, and your computer starts Edel OS."),
+                );
                 widgets::say(
                     &ui.plan,
                     &trf(
@@ -991,6 +1338,7 @@ impl Ui {
                 widgets::say(&ui.plan, &run.shown(), true);
                 ui.show_plan.set_sensitive(true);
                 *ui.planned.borrow_mut() = None;
+                ui.failed();
             }
         });
     }
@@ -1044,6 +1392,12 @@ mod tests {
             skip: Vec::new(),
             password_needed: true,
         }
+    }
+
+    #[test]
+    fn the_disk_a_file_is_on_reads_from_the_found_line() {
+        assert_eq!(device_of("found a file on /dev/sdb1"), "/dev/sdb1");
+        assert_eq!(device_of("anderswo"), "anderswo");
     }
 
     #[test]

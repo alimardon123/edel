@@ -47,7 +47,7 @@ msgstr ""
 msgid "Welcome to Edel OS. Nobody can log in to this computer yet, so make its first person now: an administrator who logs in with a password or an ssh key."
 msgstr ""
 
-msgid "Login name"
+msgid "Username"
 msgstr ""
 
 msgid "Password, or press Return to give an ssh key instead: "
@@ -119,7 +119,7 @@ msgstr ""
 msgid "Keyboard"
 msgstr ""
 
-msgid "Your login name"
+msgid "Your username"
 msgstr ""
 
 msgid "Your password"
@@ -140,7 +140,7 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
-msgid "{name:?} is not a login name; use lowercase letters, digits, - and _, starting with a letter"
+msgid "{name:?} is not a username; use lowercase letters, digits, - and _, starting with a letter"
 msgstr ""
 
 msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
@@ -152,7 +152,10 @@ msgstr ""
 msgid "letters, digits and hyphens, up to 63"
 msgstr ""
 
-msgid "{model}, {size} ({name})"
+msgid "{model} · {size}"
+msgstr ""
+
+msgid "{size} disk"
 msgstr ""
 
 msgid "removable"
@@ -294,6 +297,132 @@ msgid "copying the default apps"
 msgstr ""
 
 msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
+msgstr ""
+
+msgid "English (United States)"
+msgstr ""
+
+msgid "English (United Kingdom)"
+msgstr ""
+
+msgid "Arabic"
+msgstr ""
+
+msgid "Azerbaijani"
+msgstr ""
+
+msgid "Bulgarian"
+msgstr ""
+
+msgid "Czech"
+msgstr ""
+
+msgid "Danish"
+msgstr ""
+
+msgid "German"
+msgstr ""
+
+msgid "Greek"
+msgstr ""
+
+msgid "Spanish (Spain)"
+msgstr ""
+
+msgid "Spanish (Mexico)"
+msgstr ""
+
+msgid "Persian"
+msgstr ""
+
+msgid "Finnish"
+msgstr ""
+
+msgid "French"
+msgstr ""
+
+msgid "Hebrew"
+msgstr ""
+
+msgid "Hindi"
+msgstr ""
+
+msgid "Croatian"
+msgstr ""
+
+msgid "Hungarian"
+msgstr ""
+
+msgid "Indonesian"
+msgstr ""
+
+msgid "Italian"
+msgstr ""
+
+msgid "Japanese"
+msgstr ""
+
+msgid "Kazakh"
+msgstr ""
+
+msgid "Korean"
+msgstr ""
+
+msgid "Malay"
+msgstr ""
+
+msgid "Norwegian Bokmål"
+msgstr ""
+
+msgid "Dutch"
+msgstr ""
+
+msgid "Polish"
+msgstr ""
+
+msgid "Portuguese (Brazil)"
+msgstr ""
+
+msgid "Portuguese (Portugal)"
+msgstr ""
+
+msgid "Romanian"
+msgstr ""
+
+msgid "Russian"
+msgstr ""
+
+msgid "Slovak"
+msgstr ""
+
+msgid "Slovenian"
+msgstr ""
+
+msgid "Serbian"
+msgstr ""
+
+msgid "Swedish"
+msgstr ""
+
+msgid "Thai"
+msgstr ""
+
+msgid "Turkish"
+msgstr ""
+
+msgid "Ukrainian"
+msgstr ""
+
+msgid "Uzbek"
+msgstr ""
+
+msgid "Vietnamese"
+msgstr ""
+
+msgid "Chinese (Simplified)"
+msgstr ""
+
+msgid "Chinese (Traditional)"
 msgstr ""
 
 msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
@@ -1853,7 +1982,7 @@ msgstr ""
 msgid "List the disks Edel OS could install on, and change nothing"
 msgstr ""
 
-msgid "Look on every other disk for a settings file to install with (install.toml, else the settings file, at its top or in EFI/edel) and print it, changing nothing"
+msgid "Look on every other disk for a settings file to install with (the settings file, at its top or in EFI/edel) and print it, changing nothing"
 msgstr ""
 
 msgid "Only show the plan: what would be erased and written; change nothing"
