@@ -50,6 +50,7 @@ mod unknown;
 mod updates;
 mod users;
 mod wallpaper;
+mod welcome;
 mod widgets;
 mod workspaces;
 
@@ -97,34 +98,54 @@ fn main() -> gtk::glib::ExitCode {
     }
     // `--page NAME` opens that page at the start, as a link to one page
     // would: the Displays page from a screen's own menu, CI's screendumps.
+    // `--welcome` opens the Welcome pages instead (M6.12).
     let start = match start_page(std::env::args().skip(1), &pages()) {
-        Ok(at) => at,
+        Ok(start) => start,
         Err(message) => {
             eprintln!("edel-settings: {message}");
             return gtk::glib::ExitCode::from(2);
         }
     };
     let app = adw::Application::builder().application_id(APP_ID).build();
-    // Any argument is --page (others were refused above), and a page
-    // opened by name gives the keyboard to its main control; a row named
-    // (`--page panels.list`) gives it to that row's control (M5.31d).
+    // Any argument is --page or --welcome (others were refused above), and a
+    // page opened by name gives the keyboard to its main control; a row
+    // named (`--page panels.list`) gives it to that row's control (M5.31d).
     let asked = std::env::args().len() > 1;
     let row = std::env::args()
         .skip(1)
         .find_map(|arg| rows::row_named(arg.rsplit_once('=').map_or(&arg, |(_, v)| v)));
     widgets::set_asked_row(row);
-    app.connect_activate(move |app| window(app, start, asked));
+    app.connect_activate(move |app| match start {
+        Start::Page(at) => window(app, at, asked),
+        Start::Welcome => welcome::window(app),
+    });
     // GTK would refuse `--page`, which is read above.
     app.run_with_args(&[APP_ID])
 }
 
-/// The page `--page NAME` asks for, as its place in [`pages`], or the first
-/// without it; an argument it does not know, or a page this machine
-/// lacks, is refused with what to do.
-fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<usize, String> {
+/// What the app opens on: a page of Settings, the first without an option,
+/// or the Welcome pages (M6.12).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Start {
+    /// The page at this place in `pages`.
+    Page(usize),
+    /// The Welcome, `--welcome`.
+    Welcome,
+}
+
+/// What the app opens on: `--page NAME` names a page, `--welcome` the
+/// Welcome pages (which cannot be asked for with a page); with neither, the
+/// first page. An argument it does not know, or a page this machine lacks,
+/// is refused with what to do.
+fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<Start, String> {
     let mut args = args.into_iter();
     let mut name: Option<String> = None;
+    let mut welcome = false;
     while let Some(arg) = args.next() {
+        if arg == "--welcome" {
+            welcome = true;
+            continue;
+        }
         match arg.strip_prefix("--page") {
             Some("") => {
                 name = Some(args.next().ok_or_else(|| {
@@ -134,15 +155,24 @@ fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<
             Some(rest) if rest.starts_with('=') => name = Some(rest[1..].to_string()),
             _ => {
                 return Err(trf(
-                    "unknown option \"{option}\"; the only one is --page NAME",
+                    "unknown option \"{option}\"; the only ones are --page NAME and --welcome",
                     &[("option", &arg)],
                 ));
             }
         }
     }
+    if welcome {
+        if name.is_some() {
+            return Err(tr(
+                "--welcome and --page cannot be used together: --welcome opens the Welcome pages, --page NAME one page of Settings; use one of them",
+            )
+            .to_string());
+        }
+        return Ok(Start::Welcome);
+    }
     match name {
-        None => Ok(0),
-        Some(name) => page_named(pages, &name).ok_or_else(|| {
+        None => Ok(Start::Page(0)),
+        Some(name) => page_named(pages, &name).map(Start::Page).ok_or_else(|| {
             let titles: Vec<String> = pages.iter().map(|p| p.title.to_lowercase()).collect();
             trf(
                 "there is no page \"{name}\" on this machine; the pages are {pages}",
@@ -971,8 +1001,14 @@ mod tests {
         assert_eq!(page_named(&pages, "workspaces.count"), Some(3));
         assert_eq!(page_named(&pages, "Number of workspaces"), Some(3));
         assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(0));
-        assert_eq!(start_page(args(&["--page", "panels"]), &pages), Ok(2));
-        assert_eq!(start_page(args(&["--page=panels.list"]), &pages), Ok(2));
+        assert_eq!(
+            start_page(args(&["--page", "panels"]), &pages),
+            Ok(Start::Page(2))
+        );
+        assert_eq!(
+            start_page(args(&["--page=panels.list"]), &pages),
+            Ok(Start::Page(2))
+        );
         assert_eq!(rows::row_named("panels.list"), Some("panels.list"));
         assert_eq!(rows::row_named("--page"), None);
     }
@@ -982,18 +1018,18 @@ mod tests {
         let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
-        assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(18));
-        assert_eq!(start(&["--page=about"]), Ok(18));
-        assert_eq!(start(&["--page", "updates"]), Ok(16));
-        assert_eq!(start(&["--page", "sound"]), Ok(8));
-        assert_eq!(start(&["--page", "users"]), Ok(15));
-        assert_eq!(start(&["--page", "region"]), Ok(12));
-        assert_eq!(start(&["--page", "notifications"]), Ok(10));
-        assert_eq!(start(&["--page", "network"]), Ok(5));
-        assert_eq!(start(&["--page", "bluetooth"]), Ok(6));
-        assert_eq!(start(&["--page", "power"]), Ok(9));
-        assert_eq!(start(&["--page", "lock_screen"]), Ok(4));
+        assert_eq!(start(&[]), Ok(Start::Page(0)));
+        assert_eq!(start(&["--page", "about"]), Ok(Start::Page(18)));
+        assert_eq!(start(&["--page=about"]), Ok(Start::Page(18)));
+        assert_eq!(start(&["--page", "updates"]), Ok(Start::Page(16)));
+        assert_eq!(start(&["--page", "sound"]), Ok(Start::Page(8)));
+        assert_eq!(start(&["--page", "users"]), Ok(Start::Page(15)));
+        assert_eq!(start(&["--page", "region"]), Ok(Start::Page(12)));
+        assert_eq!(start(&["--page", "notifications"]), Ok(Start::Page(10)));
+        assert_eq!(start(&["--page", "network"]), Ok(Start::Page(5)));
+        assert_eq!(start(&["--page", "bluetooth"]), Ok(Start::Page(6)));
+        assert_eq!(start(&["--page", "power"]), Ok(Start::Page(9)));
+        assert_eq!(start(&["--page", "lock_screen"]), Ok(Start::Page(4)));
         let refused = start(&["--page"]).unwrap_err();
         assert!(
             refused.contains("--page needs the name of a page"),
@@ -1002,7 +1038,19 @@ mod tests {
         let refused = start(&["--pge", "x"]).unwrap_err();
         assert_eq!(
             refused,
-            "unknown option \"--pge\"; the only one is --page NAME"
+            "unknown option \"--pge\"; the only ones are --page NAME and --welcome"
+        );
+        assert_eq!(start(&["--welcome"]), Ok(Start::Welcome));
+        assert_eq!(start(&["--welcome", "--welcome"]), Ok(Start::Welcome));
+        let refused = start(&["--welcome", "--page", "about"]).unwrap_err();
+        assert!(
+            refused.starts_with("--welcome and --page cannot be used together"),
+            "{refused}"
+        );
+        let refused = start(&["--page", "about", "--welcome"]).unwrap_err();
+        assert!(
+            refused.starts_with("--welcome and --page cannot be used together"),
+            "{refused}"
         );
         let refused = start(&["--page", "zzz"]).unwrap_err();
         assert!(

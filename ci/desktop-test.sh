@@ -214,6 +214,13 @@
 #               group logs appearance.acent as not understood, Remove at its
 #               place takes the line out, and the log then says nothing is
 #               left (M6.11)
+#   welcome     the Welcome (edel-settings --welcome, M6.12), full screen:
+#               its language, keyboard, layout and style pages each log where
+#               their buttons lie; Next on the first two writes nothing,
+#               mac-like's card restarts the desktop as mac-like, Dark gives
+#               the dark scheme, Start using Edel OS closes it, and both keys
+#               are in ci's file until `welcome mine default` takes them out;
+#               a second Welcome, skipped on its first page, writes nothing
 #   settings-shortcuts  Settings' Shortcuts page opened on the close_window row:
 #               Change, then Super+W, which the dialog takes (the compositor
 #               logs `shortcuts inhibited for`) instead of opening the
@@ -2373,6 +2380,145 @@ case_settings_unknown() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent (settings-unknown.png)"
+}
+
+# welcome_window: the Welcome window's top left corner, wx and wy, once it
+# fills the screen. The compositor maps it at its floating size and place
+# and maximizes it at once, so its `mapped window` line names a place it
+# leaves; the service's windows line follows it to where it ends up.
+welcome_window() {
+	i=0
+	while :; do
+		place=$(value windows | sed -n 's/.*Welcome@\([0-9]*\),\([0-9]*\),\([0-9]*\)x[0-9]*.*/\1 \2 \3/p')
+		set -- $place
+		[ -n "${3:-}" ] && [ "$3" -gt 1000 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the Welcome did not fill the screen: $(value windows)"
+		sleep 0.2
+	done
+	wx=$1 wy=$2
+}
+
+# welcome_find PAGE WORDS [MARK]: waits (up to about 40 s) for the
+# Welcome's log to hold, after PAGE's own line (or after MARK, a line of
+# the log), WORDS and a place X Y W H (its places line, which the Welcome
+# logs once two frames agree, and again when the window changes size), and
+# sets wp to the last such place. Returns 1 when it never came.
+welcome_find() {
+	mark=${3:-welcome page $1}
+	wp=none i=0
+	while [ "$wp" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || return 1
+		guest 'welcome log'
+		text=$(value welcome_log)
+		wp=$(echo "${text##*$mark;}" | sed -n "s/.*$2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p" | head -n 1)
+		[ -n "$wp" ] || wp=none
+		[ "$wp" = none ] && sleep 1
+	done
+	# The loop's last test was false when the place was found, and a
+	# function returns its last command's status.
+	return 0
+}
+
+# welcome_click PAGE WORDS: clicks the middle of the place welcome_find
+# gives for WORDS on PAGE.
+welcome_click() {
+	welcome_find "$1" "$2" "${3:-}" || fail "Welcome did not log where \"$2\" lies on its $1 page: $(value welcome_log)"
+	set -- $wp
+	python3 ci/qmp.py click "$((wx + $1 + $3 / 2))" "$((wy + $2 + $4 / 2))"
+}
+
+# welcome_has PATTERN: whether the Welcome's log holds PATTERN, read again
+# (up to 10 tries) until it does.
+welcome_has() {
+	i=0
+	while :; do
+		i=$((i + 1))
+		guest 'welcome log'
+		value welcome_log | grep -q "$1" && return 0
+		[ "$i" -lt 10 ] || return 1
+	done
+}
+
+# settings_now: ci's settings file as the service reads it now, in $settings.
+settings_now() {
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	settings=$(value settings_file)
+}
+
+case_welcome() {
+	# The Welcome (M6.12, part 1, after settings-unknown): Settings' first-start
+	# pages in one maximized window, `edel-settings --welcome`. Each page logs
+	# where its buttons and cards lie once laid out, which the case reads
+	# from the service's log to click them. Next on language and keyboard
+	# writes nothing; a click on mac-like's card writes layout.preset (the
+	# desktop restarts for it), a click on Dark writes appearance.mode (the
+	# compositor takes the dark scheme), and Start using Edel OS, on Done,
+	# closes the Welcome. The service then takes both keys out of ci's file.
+	# A second run is skipped on its first page: it closes with nothing
+	# written, and ci's file is the same as before.
+	opened=$(count 'edel-compositor: mapped window Welcome')
+	guest 'welcome'
+	wait_more 'edel-compositor: mapped window Welcome' "$opened" 60 || fail "Welcome did not open: $(value windows)"
+	welcome_window
+	welcome_click language 'places next'
+	welcome_click keyboard 'places next'
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	welcome_click layout 'mac-like'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" 30 ||
+		fail "a click on the mac-like card did not change the preset: $(value welcome_log)"
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/welcome-layout.png"
+	# Mac-like's bar along the top and dock along the bottom leave the
+	# maximized window another area, so its corner is read again, and Next
+	# is clicked where the Welcome logs it after that (it logs its places
+	# again when the window changes size).
+	welcome_window
+	welcome_click layout 'places next' 'welcome layout.preset mac-like written'
+	said=$(count 'edel-compositor: colour scheme dark')
+	welcome_click style 'dark'
+	wait_more 'edel-compositor: colour scheme dark' "$said" 30 ||
+		fail "a click on Dark did not give the dark scheme: $(value welcome_log)"
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/welcome-style.png"
+	welcome_click style 'places next'
+	closed=$(count 'edel-compositor: unmapped window Welcome')
+	welcome_click done 'places next'
+	wait_more 'edel-compositor: unmapped window Welcome' "$closed" 30 ||
+		fail "Start using Edel OS did not close the Welcome: $(value welcome_log)"
+	welcome_has 'welcome done' || fail "the Welcome did not log that it was done: $(value welcome_log)"
+	settings_now
+	echo "$settings" | grep -q 'preset = "mac-like"' ||
+		fail "the Welcome did not write layout.preset = \"mac-like\" to ci's file: $settings"
+	echo "$settings" | grep -q 'mode = "dark"' ||
+		fail "the Welcome did not write appearance.mode = \"dark\" to ci's file: $settings"
+	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	scheme=$(count 'edel-compositor: colour scheme light')
+	guest 'welcome mine default'
+	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+		fail "taking layout.preset out did not bring Classic back"
+	wait_more 'edel-compositor: colour scheme light' "$scheme" ||
+		fail "taking appearance.mode out did not bring the light scheme back"
+	# The second run: Skip on the first page closes it, and writes nothing.
+	settings_now
+	before=$settings
+	opened=$(count 'edel-compositor: mapped window Welcome')
+	guest 'welcome'
+	wait_more 'edel-compositor: mapped window Welcome' "$opened" 60 || fail "Welcome did not open again: $(value windows)"
+	welcome_window
+	closed=$(count 'edel-compositor: unmapped window Welcome')
+	welcome_click language 'skip'
+	wait_more 'edel-compositor: unmapped window Welcome' "$closed" 30 ||
+		fail "Skip did not close the Welcome: $(value welcome_log)"
+	welcome_has 'welcome skipped at language' ||
+		fail "the Welcome did not log that it was skipped at its first page: $(value welcome_log)"
+	settings_now
+	[ "$settings" = "$before" ] ||
+		fail "Skip changed ci's settings file (it may not gain a [region] line): $settings"
+	echo "PASS: Settings' Welcome opened full screen and each page logged its places; Next on language and keyboard wrote nothing, a click on mac-like's card restarted the desktop as mac-like, a click on Dark gave the dark scheme (welcome-layout.png, welcome-style.png), and Start using Edel OS closed it, with layout.preset and appearance.mode in ci's file; the keys taken out again, a second Welcome skipped on its first page wrote nothing"
 }
 
 case_settings_tour() {
@@ -6913,7 +7059,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

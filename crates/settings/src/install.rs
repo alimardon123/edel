@@ -371,8 +371,48 @@ fn review_row(grid: &gtk::Grid, at: i32, title: &str) -> gtk::Label {
     value
 }
 
+/// The keyboard layouts the choice offers, as their values and as their
+/// names (the rules file's description, or the value without it): the
+/// rules' layouts, the layout each language suggests where the list lacks it
+/// (a variant such as `uz(latin)`), so the keyboard can follow every
+/// language offered, and `suggested`, sorted by name. The Welcome (M6.12)
+/// offers the same list.
+pub(crate) fn keyboard_offer(rules: Option<&str>, suggested: &str) -> (Vec<String>, Vec<String>) {
+    let mut layouts: Vec<(String, String)> = rules.map(edel::keyboard::layouts).unwrap_or_default();
+    let wanted = std::iter::once(suggested.to_string()).chain(
+        edel::languages::LANGUAGES
+            .iter()
+            .map(|l| first_layout(&install::suggested_keyboard(l.code)).to_string()),
+    );
+    for name in wanted {
+        if !layouts.iter().any(|(listed, _)| *listed == name) {
+            // Only a layout the list knows; without the list, the suggestion.
+            let text = match rules {
+                Some(r) => edel::keyboard::description(r, &name),
+                None => Some(name.clone()),
+            };
+            if let Some(text) = text {
+                layouts.push((name, text));
+            }
+        }
+    }
+    layouts.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    let names: Vec<String> = layouts
+        .iter()
+        .map(|(name, text)| {
+            if text.is_empty() {
+                name.clone()
+            } else {
+                text.clone()
+            }
+        })
+        .collect();
+    let values: Vec<String> = layouts.into_iter().map(|(name, _)| name).collect();
+    (values, names)
+}
+
 /// The first layout of a keyboard value, `ru` of `ru,us`.
-fn first_layout(keyboard: &str) -> &str {
+pub(crate) fn first_layout(keyboard: &str) -> &str {
     keyboard.split(',').next().unwrap_or(keyboard)
 }
 
@@ -508,46 +548,11 @@ pub fn page() -> gtk::Widget {
 
     let rules = std::fs::read_to_string(edel::keyboard::RULES).ok();
     let suggested = first_layout(&keyboard_now).to_string();
-    let mut layouts: Vec<(String, String)> = rules
-        .as_deref()
-        .map(edel::keyboard::layouts)
-        .unwrap_or_default();
-    // The layout each language suggests is listed even when the list does
-    // not name it (a variant such as `uz(latin)`), so the keyboard can
-    // follow every language offered.
-    let wanted = std::iter::once(suggested.clone()).chain(
-        edel::languages::LANGUAGES
-            .iter()
-            .map(|l| first_layout(&install::suggested_keyboard(l.code)).to_string()),
-    );
-    for name in wanted {
-        if !layouts.iter().any(|(listed, _)| *listed == name) {
-            // Only a layout the list knows; without the list, the suggestion.
-            let text = match rules.as_deref() {
-                Some(r) => edel::keyboard::description(r, &name),
-                None => Some(name.clone()),
-            };
-            if let Some(text) = text {
-                layouts.push((name, text));
-            }
-        }
-    }
-    layouts.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-    let keyboard_at = layouts
+    let (keyboard_values, keyboard_names) = keyboard_offer(rules.as_deref(), &suggested);
+    let keyboard_at = keyboard_values
         .iter()
-        .position(|(name, _)| *name == suggested)
+        .position(|name| *name == suggested)
         .unwrap_or(0);
-    let keyboard_names: Vec<String> = layouts
-        .iter()
-        .map(|(name, text)| {
-            if text.is_empty() {
-                name.clone()
-            } else {
-                text.clone()
-            }
-        })
-        .collect();
-    let keyboard_values: Vec<String> = layouts.into_iter().map(|(name, _)| name).collect();
     let keyboard = widgets::Choice::searchable(keyboard_names);
     keyboard.set_selected(keyboard_at);
     keyboard.set_width(CONTROL_WIDTH);

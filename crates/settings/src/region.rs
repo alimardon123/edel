@@ -99,7 +99,7 @@ fn list_of(text: &str) -> Option<Vec<String>> {
 /// The language choice's codes and labels: the languages the image has,
 /// with the code the person's file names added last when the list lacks it
 /// (Install does the same).
-fn language_offer(now: &str) -> (Vec<String>, Vec<String>) {
+pub(crate) fn language_offer(now: &str) -> (Vec<String>, Vec<String>) {
     let mut codes: Vec<String> = edel::languages::LANGUAGES
         .iter()
         .map(|language| language.code.to_string())
