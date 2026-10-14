@@ -1210,6 +1210,15 @@ impl CompositorHandler for Edel {
                 place.size.w,
                 place.size.h
             );
+            // Which app a window belongs to, by its app id (M6.4): a web app
+            // is a browser window with an app id of its own.
+            let app = app_id(&window);
+            if !app.is_empty() {
+                eprintln!(
+                    "edel-compositor: window {} belongs to app {app}",
+                    title(&window)
+                );
+            }
             self.focus(&window);
             let maximize = std::mem::take(&mut data(&window).borrow_mut().maximize_when_placed);
             if maximize {
