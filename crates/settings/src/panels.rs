@@ -20,7 +20,7 @@ use edel::settings::Source;
 
 use crate::files::Files;
 use crate::style::Theme;
-use crate::{preview, rows, widgets};
+use crate::{actions, cmd, preview, rows, widgets};
 
 /// How long the bus may take to answer the call, in milliseconds.
 const WAIT_MS: i32 = 2000;
@@ -234,7 +234,7 @@ fn report(problem: &gtk::Label, result: Result<(), String>) {
 fn copy_command() -> Result<String, String> {
     let files = Files::here();
     match files.source(PANELS) {
-        Source::Person(_) => Ok(format!("edel settings reset {PANELS}")),
+        Source::Person(_) => Ok(format!("{} {PANELS}", cmd::line(actions::RESET.args))),
         _ => {
             let value = panel_edit::value(&files.panels()).map_err(|e| format!("{e:#}"))?;
             Ok(rows::command(&[(PANELS, value)]))
@@ -256,7 +256,7 @@ pub fn names_of(pins: &[String], installed: &[apps::App]) -> Vec<String> {
 fn copy_pins_command() -> String {
     let files = Files::here();
     match files.source(PINNED) {
-        Source::Person(_) => format!("edel settings reset {PINNED}"),
+        Source::Person(_) => format!("{} {PINNED}", cmd::line(actions::RESET.args)),
         _ => rows::command(&[(PINNED, panel_edit::pins_value(&files.pins()))]),
     }
 }

@@ -1485,11 +1485,15 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
     Ok(())
 }
 
-/// Whether the desktop follows `key` at once, as it does the layout,
-/// screen, look and shortcut keys (M4.5, M4.6, M5.5c, M5.13a) and the apps
-/// the apps widget pins (M5.31d); `edel settings apply` applies the rest.
+/// Whether the desktop follows `key` at once, reading the person's own
+/// file over the machine's, as it does the layout, screen, look and
+/// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the apps the apps widget pins
+/// (M5.31d), notifications (M5.9b), default and startup apps (M6.10), the
+/// language, keyboard and input method (M5.24a, M5.21a), and own themes and
+/// presets; `edel settings apply` applies the rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
+        || ["region.language", "region.keyboard", "region.input_method"].contains(&key)
         || [
             "layout.",
             "panels.",
@@ -1498,6 +1502,11 @@ fn desktop_follows(key: &str) -> bool {
             "appearance.",
             "lock_screen.",
             "shortcuts.",
+            "notifications.",
+            "default_apps.",
+            "startup.",
+            "themes.",
+            "presets.",
         ]
         .iter()
         .any(|section| key.starts_with(section))
@@ -2813,6 +2822,21 @@ mod tests {
         // The pins are followed at once, the rest of [apps] is not.
         assert!(desktop_follows("panels.pinned"));
         assert!(!desktop_follows("apps.installed"));
+        // What the Settings app writes to the person's file, the desktop
+        // reads from it, so a person's set and reset write it there too.
+        for key in [
+            "notifications.do_not_disturb",
+            "default_apps.browser",
+            "startup.apps",
+            "region.language",
+            "region.keyboard",
+            "region.input_method",
+        ] {
+            assert!(desktop_follows(key), "{key}");
+        }
+        // The clock's zone and servers are the machine's, which apply sets.
+        assert!(!desktop_follows("region.timezone"));
+        assert!(!desktop_follows("region.time_servers"));
     }
 
     #[test]

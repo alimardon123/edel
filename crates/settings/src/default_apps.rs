@@ -20,7 +20,7 @@ use edel::i18n::{tr, trf};
 use edel::settings::{PAGES, Source};
 
 use crate::files::Files;
-use crate::{rows, widgets};
+use crate::{actions, cmd, rows, widgets};
 
 /// The section of the settings file this page is.
 const SECTION: &str = "default_apps";
@@ -187,7 +187,7 @@ fn reset(ui: &Rc<Ui>, i: usize) {
 fn copy_line(key: &str) -> String {
     match Files::here().chosen(key).filter(|v| !v.is_empty()) {
         Some(value) => rows::command(&[(key, value)]),
-        None => format!("edel settings reset {key}"),
+        None => format!("{} {key}", cmd::line(actions::RESET.args)),
     }
 }
 
