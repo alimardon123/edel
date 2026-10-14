@@ -4843,6 +4843,37 @@ case_own_bars() {
 	layout_of() {
 		tr -d '\r' <"$log" | sed -n "s/.*DESKTOP-TEST: portal button-layout (<'\([^']*\)'>,).*/\1/p" | tail -n 1
 	}
+	# headerbar_line LAYOUT: waits until the header bar window's latest line
+	# gives the decoration layout LAYOUT and a close button. The window prints
+	# a line each time GTK lays its header bar out anew, so this asks for the
+	# latest one up to 30 times, a second apart.
+	headerbar_line() {
+		i=0
+		while [ "$i" -lt 30 ]; do
+			guest 'headerbar log'
+			sleep 1
+			headerbar=$(value headerbar_log)
+			echo "$headerbar" | grep -q "layout $1 close [^n]" && return 0
+			i=$((i + 1))
+		done
+		fail "the header bar window did not lay out with the layout $1: ${headerbar:-nothing}"
+	}
+	# headerbar_place: from the latest line, the close button's box in its
+	# window (cx, cy, cw, ch, from the window's corner) and the glyph's file
+	# (icon); from the compositor's windows, the window's place on the screen
+	# (wx, wy, ww, wh). Fails when one of them is missing.
+	headerbar_place() {
+		set -- $(echo "$headerbar" | sed -n 's/.* close \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) .*/\1 \2 \3 \4/p')
+		cx=$1 cy=$2 cw=$3 ch=$4
+		icon=$(echo "$headerbar" | sed -n 's/.* icon //p')
+		wait_for 'DESKTOP-TEST: windows .*headerbar@' 20 ||
+			fail "the compositor's windows hold no headerbar window: $(value windows)"
+		set -- $(value windows | grep -o 'headerbar@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1 | sed 's/headerbar@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\)/\1 \2 \3 \4/')
+		wx=$1 wy=$2 ww=$3 wh=$4
+		for v in "$cx" "$cy" "$cw" "$ch" "$wx" "$wy" "$ww" "$wh"; do
+			[ -n "$v" ] || fail "the header bar's close button or window has no place: $headerbar; windows: $(value windows)"
+		done
+	}
 	guest 'portal buttons'
 	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
 	first=$(layout_of)
@@ -4865,6 +4896,23 @@ case_own_bars() {
 	left=$(layout_of)
 	[ "$left" = 'close,minimize,maximize:' ] ||
 		fail "the portal's button layout is not close,minimize,maximize: after layout.window_buttons = left: $left"
+	# A GTK 4 header bar window (M6.16): with the buttons on the left, its
+	# close button lies in the left half of its window and is drawn, and
+	# GTK draws its glyph from the Edel icon theme's file.
+	mapped=$(count 'edel-compositor: mapped window headerbar')
+	guest 'headerbar'
+	wait_more 'edel-compositor: mapped window headerbar' "$mapped" 60 ||
+		fail "the GTK 4 header bar window did not map: $(value windows)"
+	headerbar_line 'close,minimize,maximize:'
+	headerbar_place
+	[ "$icon" = /usr/share/icons/Edel/scalable/ui/window-close-symbolic.svg ] ||
+		fail "GTK draws the close glyph from $icon, not the Edel icon theme's file"
+	[ $((cx + cw / 2)) -lt $((ww / 2)) ] ||
+		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the left: $headerbar"
+	python3 ci/qmp.py screendump "$dir/headerbar-left.png"
+	box=$(python3 ci/qmp.py uniform "$dir/headerbar-left.png" $((wx + cx)) $((wy + cy)) "$cw" "$ch")
+	[ "$box" = varied ] ||
+		fail "the close button's box at $((wx + cx)),$((wy + cy)) on screen, ${cw}x$ch, is $box: no glyph is drawn there"
 	told=$(count 'edel-shell-ui: button layout :minimize,maximize,close told to apps')
 	guest 'buttons default'
 	wait_more 'edel-shell-ui: button layout :minimize,maximize,close told to apps' "$told" 30 ||
@@ -4875,7 +4923,18 @@ case_own_bars() {
 	back=$(layout_of)
 	[ "$back" = ':minimize,maximize,close' ] ||
 		fail "the portal's button layout did not go back to the default: $back"
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs"
+	# With the buttons back on the right, GTK follows the portal's change
+	# while the window runs: the close button lies in the right half.
+	headerbar_line ':minimize,maximize,close'
+	headerbar_place
+	[ $((cx + cw / 2)) -gt $((ww / 2)) ] ||
+		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the right: $headerbar"
+	python3 ci/qmp.py screendump "$dir/headerbar-right.png"
+	box=$(python3 ci/qmp.py uniform "$dir/headerbar-right.png" $((wx + cx)) $((wy + cy)) "$cw" "$ch")
+	[ "$box" = varied ] ||
+		fail "the close button's box at $((wx + cx)),$((wy + cy)) on screen, ${cw}x$ch, is $box after the reset: no glyph is drawn there"
+	guest 'headerbar off'
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png)"
 }
 
 case_capture() {
