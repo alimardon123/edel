@@ -514,6 +514,13 @@ impl Shell {
         // change of preset restarts shell-ui instead, as the compositor
         // says.
         let (machine, person) = crate::settings_texts();
+        // What each app may use (M6.14a).
+        crate::app_permissions::follow(
+            self._portal.as_ref(),
+            &mut self.app_permissions,
+            machine.as_deref(),
+            person.as_deref(),
+        );
         // The header bars' button layout (M6.16): apps already open follow.
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
