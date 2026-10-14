@@ -2465,11 +2465,14 @@ case_welcome() {
 	welcome_click language 'places next'
 	welcome_click keyboard 'places next'
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
-	welcome_click layout 'presets places mac-like'
+	welcome_click layout 'mac-like'
 	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" 30 ||
 		fail "a click on the mac-like card did not change the preset: $(value welcome_log)"
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-layout.png"
+	# Mac-like's bar along the top and dock along the bottom leave the
+	# maximized window another area, so its corner is read again.
+	welcome_window
 	welcome_click layout 'places next'
 	said=$(count 'edel-compositor: colour scheme dark')
 	welcome_click style 'dark'
