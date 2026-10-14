@@ -108,6 +108,7 @@ When docs disagree, the newer ADR wins.
 | `crates/shell-ui/` | `edel-shell-ui` (M5.1b): the panels and docks (M5.4), the launcher (M5.3b), the window switcher's list (M5.3c) and the settings portal's backend (M5.5a), the tray (M5.2e) and later quick settings, drawn by itself with smithay-client-toolkit, tiny-skia and cosmic-text from the design tokens ([its CLAUDE.md](crates/shell-ui/CLAUDE.md)) |
 | `crates/settings/` | `edel-settings` (M5.6a): Settings, on GTK4 and libadwaita (ADR-004), in our own look from the tokens and `design/icons/` under the compositor's title bar, its pages from `edel::settings`'s page table, each change one line of the person's settings file written with `edel::settings::set` ([its CLAUDE.md](crates/settings/CLAUDE.md)) |
 | `crates/testclient/` | `edel-testclient` (M4.3): a window of a given size, colour and title for CI's pixel checks; only CI's images ship it |
+| `crates/testheader/` | `edel-testheader` (M6.16): a GTK 4 window with a header bar of its own for CI's `own-bars` case; only CI's images ship it |
 | `po/` | The words shell-ui, Settings and `edel` show, `PART.pot`, gathered from their source (and `edel`'s help) by tests in `crates/edel` (M5.24a, M5.24b); a word two parts show is in `edel.pot` only; a language's translation is `LANG/PART.po` |
 | `presets/` | The layout presets, one file each, built into `edel::presets` (M5.1c): Classic, Mac-like, Windows-like and Hive (M5.4) and Zen (M5.18b); Tablet and Phone come later |
 | `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it), `icons/`, the shell's own icons as SVG files (M5.5d), and `wallpapers/make.py`, which makes the `wallpapers` feature's pictures, ours from the tokens and NASA's Earth (M5.10c4b) |
@@ -117,7 +118,7 @@ When docs disagree, the newer ADR wins.
 | `docs/` | Principles, ADR-001 to ADR-012, the reviews of other projects and of this one (`REVIEW-project-2026-10-13.md`), the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
 | `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
-| `Cargo.toml`, `Cargo.lock` | Workspace of five crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
+| `Cargo.toml`, `Cargo.lock` | Workspace of six crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
 
 `packages/` does not exist yet. Create it only in the roadmap step that introduces it.

@@ -1,0 +1,14 @@
+[package]
+name = "edel-testheader"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A GTK 4 window with a header bar of its own, for the desktop tests (M6.16)"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+# One GTK 4 window with a header bar of its own, as apps draw. A crate of
+# its own, so the test client builds where GTK is not installed (the
+# desktop on another distribution, M5.15a).
+gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
