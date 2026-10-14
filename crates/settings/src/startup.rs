@@ -17,7 +17,7 @@ use edel::i18n::{tr, trf};
 use edel::settings::{PAGES, Source};
 
 use crate::files::{self, Files};
-use crate::{rows, widgets};
+use crate::{actions, cmd, rows, widgets};
 
 /// The key this page changes.
 const KEY: &str = "startup.apps";
@@ -229,7 +229,7 @@ pub fn page() -> gtk::Widget {
         // none is set.
         let list = Files::here().startup();
         let line = if list.is_empty() {
-            format!("edel settings reset {KEY}")
+            format!("{} {KEY}", cmd::line(actions::RESET.args))
         } else {
             rows::command(&[(KEY, files::list_text(&list))])
         };

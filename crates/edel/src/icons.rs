@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 72] = [
+pub const BUILT_IN: [(&str, &str); 73] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     ("more", include_str!("../../../design/icons/more.svg")),
     // Customize, a look's edit (M5.10c7b).
@@ -85,6 +85,11 @@ pub const BUILT_IN: [(&str, &str); 72] = [
     (
         "page-bluetooth",
         include_str!("../../../design/icons/page-bluetooth.svg"),
+    ),
+    // Settings' Region page (M6.11): a globe.
+    (
+        "page-region",
+        include_str!("../../../design/icons/page-region.svg"),
     ),
     ("lock", include_str!("../../../design/icons/lock.svg")),
     // The Power and Users pages' (M5.8b).

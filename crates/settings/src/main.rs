@@ -11,6 +11,7 @@
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
 mod about;
+mod actions;
 mod ask;
 mod bluetooth;
 mod card;
@@ -32,6 +33,7 @@ mod notifications;
 mod panels;
 mod power;
 mod preview;
+mod region;
 mod rows;
 mod screens;
 mod shape;
@@ -44,6 +46,7 @@ mod system;
 mod text;
 mod themes;
 mod tray;
+mod unknown;
 mod updates;
 mod users;
 mod wallpaper;
@@ -349,6 +352,16 @@ fn all_pages() -> Vec<Page> {
                 icon: "gear",
                 section: Some(page.section),
                 build: |_| shortcuts::page(),
+                needs: None,
+                group: Some(page.group),
+            }),
+            // The language, keyboard, input method, time zone and servers
+            // (M6.11): the settings file's own keys, so no feature.
+            "region" => Some(Page {
+                title: tr(page.title),
+                icon: "page-region",
+                section: Some(page.section),
+                build: |_| region::page(),
                 needs: None,
                 group: Some(page.group),
             }),
@@ -762,6 +775,7 @@ mod tests {
                 "Power",
                 "Notifications",
                 "Shortcuts",
+                "Region",
                 "Default apps",
                 "Startup",
                 "Users",
@@ -875,6 +889,7 @@ mod tests {
                 "Power",
                 "Notifications",
                 "Shortcuts",
+                "Region",
                 "Default apps",
                 "Startup",
                 "Users",
@@ -925,20 +940,22 @@ mod tests {
         assert_eq!(at("display"), Some(7), "the start of one name");
         assert_eq!(at("sound"), Some(8));
         assert_eq!(at("Sound"), Some(8));
-        assert_eq!(at("default"), Some(12), "a start of Default apps");
-        assert_eq!(at("startup"), Some(13));
-        assert_eq!(at("users"), Some(14));
+        assert_eq!(at("region"), Some(12));
+        assert_eq!(at("Region"), Some(12));
+        assert_eq!(at("default"), Some(13), "a start of Default apps");
+        assert_eq!(at("startup"), Some(14));
+        assert_eq!(at("users"), Some(15));
         assert_eq!(at("network"), Some(5));
         assert_eq!(at("bluetooth"), Some(6));
         assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
-        assert_eq!(at("updates"), Some(15));
-        assert_eq!(at("system"), Some(16));
-        assert_eq!(at("sy"), Some(16));
-        assert_eq!(at("about"), Some(17));
-        assert_eq!(at("abo"), Some(17));
+        assert_eq!(at("updates"), Some(16));
+        assert_eq!(at("system"), Some(17));
+        assert_eq!(at("sy"), Some(17));
+        assert_eq!(at("about"), Some(18));
+        assert_eq!(at("abo"), Some(18));
         assert_eq!(at(""), None);
         assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
@@ -966,11 +983,12 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(0));
-        assert_eq!(start(&["--page", "about"]), Ok(17));
-        assert_eq!(start(&["--page=about"]), Ok(17));
-        assert_eq!(start(&["--page", "updates"]), Ok(15));
+        assert_eq!(start(&["--page", "about"]), Ok(18));
+        assert_eq!(start(&["--page=about"]), Ok(18));
+        assert_eq!(start(&["--page", "updates"]), Ok(16));
         assert_eq!(start(&["--page", "sound"]), Ok(8));
-        assert_eq!(start(&["--page", "users"]), Ok(14));
+        assert_eq!(start(&["--page", "users"]), Ok(15));
+        assert_eq!(start(&["--page", "region"]), Ok(12));
         assert_eq!(start(&["--page", "notifications"]), Ok(10));
         assert_eq!(start(&["--page", "network"]), Ok(5));
         assert_eq!(start(&["--page", "bluetooth"]), Ok(6));
@@ -1007,6 +1025,7 @@ mod tests {
             titles(&dir),
             [
                 "Shortcuts",
+                "Region",
                 "Default apps",
                 "Startup",
                 "Users",
@@ -1027,6 +1046,7 @@ mod tests {
                 "Displays",
                 "Notifications",
                 "Shortcuts",
+                "Region",
                 "Default apps",
                 "Startup",
                 "Users",
@@ -1048,6 +1068,7 @@ mod tests {
                 "Sound",
                 "Notifications",
                 "Shortcuts",
+                "Region",
                 "Default apps",
                 "Startup",
                 "Users",

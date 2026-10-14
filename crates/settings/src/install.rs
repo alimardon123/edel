@@ -35,10 +35,10 @@ use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
-use crate::{cmd, icon, widgets};
+use crate::{actions, cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
-const LANGUAGE: &str = "en_US.UTF-8";
+pub(crate) const LANGUAGE: &str = "en_US.UTF-8";
 
 /// How long Erase and install waits for its second press.
 const ARMED: Duration = Duration::from_secs(5);
@@ -173,12 +173,16 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
 /// the install itself, given the password on standard input when
 /// `password` says one was asked.
 pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<String> {
-    let mut args = vec![
-        "install".to_string(),
+    let mut args: Vec<String> = actions::INSTALL
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .collect();
+    args.extend([
         format!("/dev/{disk}"),
         "--settings".to_string(),
         file.display().to_string(),
-    ];
+    ]);
     if plan {
         args.push("--plan".into());
     } else {
@@ -376,7 +380,7 @@ fn first_layout(keyboard: &str) -> &str {
 /// each language's suggestion added when the list lacks them (so a machine
 /// with no zone files still offers every language's zone), sorted by their
 /// labels as the list is.
-fn zone_list(now: &str) -> Vec<String> {
+pub(crate) fn zone_list(now: &str) -> Vec<String> {
     let mut zones = edel::timezones::list_in(Path::new(edel::places::ZONEINFO_DIR));
     if zones.is_empty() {
         zones.push(edel::timezones::DEFAULT.to_string());

@@ -1031,6 +1031,33 @@ msgstr ""
 msgid "Power information is not available"
 msgstr ""
 
+msgid "Remove {layout}"
+msgstr ""
+
+msgid "Add"
+msgstr ""
+
+msgid "At most {most} layouts"
+msgstr ""
+
+msgid "Add a layout"
+msgstr ""
+
+msgid "Remove {server}"
+msgstr ""
+
+msgid "such as pool.ntp.org"
+msgstr ""
+
+msgid "At most {most} host names"
+msgstr ""
+
+msgid "Add a server"
+msgstr ""
+
+msgid "Apps show the new language when they next open."
+msgstr ""
+
 msgid "Preset"
 msgstr ""
 
@@ -1079,13 +1106,28 @@ msgstr ""
 msgid "Side of the strip in the workspace overview"
 msgstr ""
 
+msgid "Theme"
+msgstr ""
+
+msgid "Pictures"
+msgstr ""
+
 msgid "Wallpaper"
+msgstr ""
+
+msgid "Dark style wallpaper"
 msgstr ""
 
 msgid "Style"
 msgstr ""
 
 msgid "Accent"
+msgstr ""
+
+msgid "Light style colours"
+msgstr ""
+
+msgid "Dark style colours"
 msgstr ""
 
 msgid "High contrast"
@@ -1169,6 +1211,9 @@ msgstr ""
 msgid "Unread count"
 msgstr ""
 
+msgid "Administrator"
+msgstr ""
+
 msgid "Resolution"
 msgstr ""
 
@@ -1191,6 +1236,15 @@ msgid "Unread badge"
 msgstr ""
 
 msgid "Notification list"
+msgstr ""
+
+msgid "Keyboard layouts"
+msgstr ""
+
+msgid "Input method"
+msgstr ""
+
+msgid "Time servers"
 msgstr ""
 
 msgid "Web browser"
@@ -1496,9 +1550,6 @@ msgstr ""
 msgid "Add an app"
 msgstr ""
 
-msgid "Add"
-msgstr ""
-
 msgid "Checking for updates..."
 msgstr ""
 
@@ -1763,6 +1814,24 @@ msgstr ""
 msgid "Its icon's name: {app}"
 msgstr ""
 
+msgid "The whole file"
+msgstr ""
+
+msgid "In your settings file."
+msgstr ""
+
+msgid "In this machine's settings file."
+msgstr ""
+
+msgid "{message} {where}"
+msgstr ""
+
+msgid "Remove {key}"
+msgstr ""
+
+msgid "Not understood by this release"
+msgstr ""
+
 msgid "Installing changes the system, so Edel OS asks for your password."
 msgstr ""
 
@@ -1842,9 +1911,6 @@ msgid "the command stopped without an answer; try again"
 msgstr ""
 
 msgid "The people who use this computer."
-msgstr ""
-
-msgid "Administrator"
 msgstr ""
 
 msgid "Standard user"

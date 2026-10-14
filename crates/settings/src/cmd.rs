@@ -13,6 +13,8 @@ use std::process::{Command, Stdio};
 
 use edel::i18n::trf;
 
+use crate::actions;
+
 /// What a run of `edel` gave.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
@@ -50,7 +52,7 @@ pub fn edel(args: &[&str]) -> Outcome {
 /// person's own hand. It goes through doas when the person is not root (M6.5),
 /// and its refusal is shown as it is.
 pub fn restart() -> Outcome {
-    edel(&["restart"])
+    edel(actions::RESTART.args)
 }
 
 /// Whether Settings runs as root, which only a test or an appliance does;
