@@ -355,6 +355,24 @@ pub const ROWS: &[Row] = &[
         key: "startup.apps",
         title: n_("Startup apps"),
     },
+    // The Apps page (M6.14a): what each Flatpak app may use, one row for each
+    // permission of `edel::app_permissions`.
+    Row {
+        key: "apps.camera",
+        title: n_("Camera"),
+    },
+    Row {
+        key: "apps.screenshots",
+        title: n_("Screenshots"),
+    },
+    Row {
+        key: "apps.notifications",
+        title: n_("Notifications"),
+    },
+    Row {
+        key: "apps.files",
+        title: n_("Files"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",

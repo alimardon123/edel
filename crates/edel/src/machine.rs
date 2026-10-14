@@ -2400,12 +2400,13 @@ mod tests {
                 "shortcuts",
                 "region",
                 "default_apps",
-                "startup"
+                "startup",
+                "apps"
             ]
         );
         assert_eq!(
             under("System"),
-            ["apps", "addons", "services", "users", "updates", "system"]
+            ["addons", "services", "users", "updates", "system"]
         );
     }
 

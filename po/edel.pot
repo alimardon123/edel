@@ -1493,7 +1493,7 @@ msgstr ""
 msgid "Apps"
 msgstr ""
 
-msgid "the apps installed from Flathub"
+msgid "what each app may use"
 msgstr ""
 
 msgid "Add-ons"

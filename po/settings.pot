@@ -89,6 +89,36 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "All its files"
+msgstr ""
+
+msgid "Only files you pick"
+msgstr ""
+
+msgid "Ask the first time"
+msgstr ""
+
+msgid "Allow"
+msgstr ""
+
+msgid "Ask every time"
+msgstr ""
+
+msgid "Never"
+msgstr ""
+
+msgid "Not sandboxed: it can use everything you can"
+msgstr ""
+
+msgid "What each app may use. An app not changed here asks the first time and keeps your answer."
+msgstr ""
+
+msgid "{what} for {app}"
+msgstr ""
+
+msgid "Other apps"
+msgstr ""
+
 msgid "Password for {user}"
 msgstr ""
 
@@ -1416,9 +1446,6 @@ msgid "Always"
 msgstr ""
 
 msgid "Floating only"
-msgstr ""
-
-msgid "Never"
 msgstr ""
 
 msgid "Left"
