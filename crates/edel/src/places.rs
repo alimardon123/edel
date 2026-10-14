@@ -350,6 +350,15 @@ pub fn person_applications_dir() -> Option<PathBuf> {
     }
 }
 
+/// The folder of a person's Flatpak override files (M6.14a), one file per
+/// app id, which Flatpak lays over what the app asked for when it runs:
+/// `$XDG_DATA_HOME/flatpak/overrides` (an absolute value only), else
+/// `~/.local/share/flatpak/overrides`. None without a home folder.
+pub fn person_flatpak_overrides_dir() -> Option<PathBuf> {
+    person_applications_dir()
+        .and_then(|apps| apps.parent().map(|data| data.join("flatpak/overrides")))
+}
+
 /// The folder a web app's Firefox profile is kept in (M6.4): inside
 /// Firefox's own Flatpak data folder, which its sandbox can write, one
 /// folder per web app. None without a home folder.

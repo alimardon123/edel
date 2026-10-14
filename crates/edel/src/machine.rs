@@ -1493,6 +1493,7 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
 /// presets; `edel settings apply` applies the rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
+        || edel::app_permissions::find(key).is_some()
         || ["region.language", "region.keyboard", "region.input_method"].contains(&key)
         || [
             "layout.",

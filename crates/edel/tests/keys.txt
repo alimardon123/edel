@@ -104,3 +104,7 @@ appearance.pictures
 presets.*
 appearance.contrast
 region.input_method
+apps.camera
+apps.screenshots
+apps.notifications
+apps.files

@@ -1256,9 +1256,6 @@ msgstr ""
 msgid "Web browser"
 msgstr ""
 
-msgid "Files"
-msgstr ""
-
 msgid "Text editor"
 msgstr ""
 

@@ -5,6 +5,18 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Camera"
+msgstr ""
+
+msgid "Screenshots"
+msgstr ""
+
+msgid "Notifications"
+msgstr ""
+
+msgid "Files"
+msgstr ""
+
 msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
 msgstr ""
 
@@ -591,6 +603,18 @@ msgid "The hours when a restart may happen by itself, such as 02:00-04:00; this 
 msgstr ""
 
 msgid "The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv."
+msgstr ""
+
+msgid "Which apps may use the camera, by Flatpak app id: allow, ask every time or never."
+msgstr ""
+
+msgid "Which apps may take a screenshot without asking, by Flatpak app id: allow or never."
+msgstr ""
+
+msgid "Which apps may show notifications, by Flatpak app id: allow or never."
+msgstr ""
+
+msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
 msgid "The add-ons this machine has, by name; this release does not act on them yet."
@@ -1439,9 +1463,6 @@ msgstr ""
 msgid "the lid, the power button and the screen lock"
 msgstr ""
 
-msgid "Notifications"
-msgstr ""
-
 msgid "banners and do not disturb"
 msgstr ""
 
@@ -1740,6 +1761,15 @@ msgid "{app} has workspace {value}; use a whole number from 1 to {most}"
 msgstr ""
 
 msgid "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }"
+msgstr ""
+
+msgid "{app} is not a Flatpak app id; use one such as \"org.mozilla.firefox\""
+msgstr ""
+
+msgid "{app} has {value}; choose {choices}"
+msgstr ""
+
+msgid "apps and their choice, such as { \"org.mozilla.firefox\" = \"{first}\" }"
 msgstr ""
 
 msgid "{value} is not an accent; choose {choices} or a colour such as \"#d0363f\""
