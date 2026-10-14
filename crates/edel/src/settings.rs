@@ -183,8 +183,8 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "apps",
         title: n_("Apps"),
-        about: n_("the apps installed from Flathub"),
-        group: "system",
+        about: n_("what each app may use"),
+        group: "personal",
     },
     Page {
         section: "addons",
