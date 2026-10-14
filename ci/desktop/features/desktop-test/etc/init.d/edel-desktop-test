@@ -298,6 +298,15 @@ commands() {
 			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne org.gnome.desktop.wm.preferences button-layout" </dev/null 2>&1 | tr '\n' ' ')
 			say "portal button-layout $out"
 			;;
+		# A GTK 4 window with a header bar of its own (M6.16), as ci on the
+		# session's bus, so GTK reads the settings portal, drawing with
+		# Cairo as Settings does; its lines go to /tmp/headerbar.log.
+		'headerbar')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' GSK_RENDERER=cairo edel-testheader" </dev/null >/tmp/headerbar.log 2>&1 &
+			;;
+		'headerbar log') say "headerbar_log $(grep 'headerbar layout' /tmp/headerbar.log 2>/dev/null | tail -n 1)" ;;
+		'headerbar off') pkill -x edel-testheader || true ;;
 		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.
@@ -705,8 +714,17 @@ commands() {
 		# The Welcome (M6.12, part 1): the first-start pages, opened by
 		# `edel-settings --welcome`, its log, and the two keys it writes taken
 		# out of ci's file again (the layout and the style).
+		# The Welcome (M6.12): started as ci, and timed from the start to
+		# its first page's places, which it logs once two frames agree.
 		'welcome')
+			started=$(now_ms)
 			as_ci edel-settings --welcome </dev/null >/tmp/welcome.log 2>&1 &
+			i=0
+			until grep -q 'edel-settings: welcome places' /tmp/welcome.log 2>/dev/null || [ "$i" -ge 600 ]; do
+				i=$((i + 1))
+				sleep 0.05
+			done
+			say "welcome_shown_ms $(($(now_ms) - started))"
 			;;
 		'welcome log') say "welcome_log $(tr '\n' ';' </tmp/welcome.log 2>/dev/null)" ;;
 		'welcome mine default') as_ci "sed -i -e '/^preset = /d' -e '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;

@@ -80,6 +80,12 @@ pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
 /// `edel settings apply` gives them to the people the settings file makes
 /// and deletes the file, so no password is ever in the settings file.
 pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
+/// This device's own identity key (M6.12, ADR-011): an ed25519 secret key
+/// in hex, root's only, made once at the first boot, for pairing devices
+/// (M7.10b) and passkeys (M9.11) later; nothing reads it yet.
+pub const DEVICE_KEY: &str = data!("/edel/device.key");
+/// The public half of [`DEVICE_KEY`], in hex, readable by everyone.
+pub const DEVICE_KEY_PUB: &str = data!("/edel/device.pub");
 /// The login screen's own directory, made at boot owned by greetd by the
 /// login feature's `edel-live` (M5.10c3b).
 pub const GREETER_DIR: &str = data!("/edel/greeter");

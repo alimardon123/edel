@@ -343,9 +343,79 @@ mod tests {
             .to_string()
     }
 
+    /// `svg` with every stroke turned into the filled shape it draws, as one
+    /// path filled black: GTK fills a symbolic icon's shapes in the text's
+    /// colour and draws no strokes (M6.16), so a stroked cross showed
+    /// nothing and a stroked square a solid one. Coordinates are in the
+    /// source's own units, kept to three decimals.
+    fn outlined(svg: &[u8]) -> String {
+        use resvg::tiny_skia::PathSegment;
+        use resvg::usvg::{Group, Node};
+        fn shapes(group: &Group, out: &mut String) {
+            for node in group.children() {
+                match node {
+                    Node::Group(inner) => shapes(inner, out),
+                    Node::Path(path) => {
+                        let mut parts = Vec::new();
+                        if path.fill().is_some() {
+                            parts.push(path.data().clone());
+                        }
+                        if let Some(stroke) = path.stroke() {
+                            parts.extend(path.data().stroke(&stroke.to_tiny_skia(), 16.0));
+                        }
+                        for part in parts {
+                            let Some(part) = part.transform(path.abs_transform()) else {
+                                continue;
+                            };
+                            for segment in part.segments() {
+                                let points = match segment {
+                                    PathSegment::MoveTo(p) => ("M", vec![p]),
+                                    PathSegment::LineTo(p) => ("L", vec![p]),
+                                    PathSegment::QuadTo(a, p) => ("Q", vec![a, p]),
+                                    PathSegment::CubicTo(a, b, p) => ("C", vec![a, b, p]),
+                                    PathSegment::Close => ("Z", vec![]),
+                                };
+                                out.push_str(points.0);
+                                let numbers: Vec<String> = points
+                                    .1
+                                    .iter()
+                                    .flat_map(|p| [p.x, p.y])
+                                    .map(|n| {
+                                        let text = format!("{n:.3}");
+                                        let text = text.trim_end_matches('0').trim_end_matches('.');
+                                        if text == "-0" {
+                                            "0".to_string()
+                                        } else {
+                                            text.to_string()
+                                        }
+                                    })
+                                    .collect();
+                                out.push_str(&numbers.join(" "));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let tree = Tree::from_data(svg, &Options::default()).unwrap();
+        let mut d = String::new();
+        shapes(tree.root(), &mut d);
+        let size = tree.size();
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {} {}\">\n\
+             \x20 <!-- Written from design/icons/ by edel::icons, its strokes filled (M6.16). -->\n\
+             \x20 <path fill=\"#000\" d=\"{d}\"/>\n\
+             </svg>\n",
+            size.width(),
+            size.height()
+        )
+    }
+
     /// The `Edel` icon theme holds the window glyphs of [`SYMBOLIC`], each
-    /// copied byte for byte from `design/icons/`, and its index (M6.16).
-    /// With EDEL_WRITE_DOCS set, the test writes the copies and the index.
+    /// `design/icons/`'s glyph with its strokes filled ([`outlined`]), and
+    /// its index (M6.16). With EDEL_WRITE_DOCS set, the test writes the
+    /// glyphs and the index.
     #[test]
     fn the_edel_icon_theme_is_the_shells_icons() {
         let root = concat!(
@@ -369,13 +439,13 @@ mod tests {
                 "{}/../../design/icons/{ours}.svg",
                 env!("CARGO_MANIFEST_DIR")
             );
-            let source = std::fs::read(&source).unwrap();
+            let source = outlined(&std::fs::read(&source).unwrap());
             let copy = format!("{ui}/{freedesktop}.svg");
             if write {
                 std::fs::write(&copy, &source).unwrap();
             }
             assert!(
-                std::fs::read(&copy).unwrap_or_default() == source,
+                std::fs::read_to_string(&copy).unwrap_or_default() == source,
                 "{copy} differs from design/icons/{ours}.svg; run EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme"
             );
             want.push(format!("{freedesktop}.svg"));
@@ -390,6 +460,37 @@ mod tests {
             shipped, want,
             "the theme holds exactly the icons SYMBOLIC names"
         );
+    }
+
+    /// Each glyph of the theme draws, filled, what our title bars draw
+    /// from its strokes: at 64 px, at most 2 percent of the pixels differ
+    /// by more than a quarter of their cover, and the theme's file has no
+    /// stroke for GTK to leave out.
+    #[test]
+    fn the_theme_glyphs_draw_what_the_strokes_draw() {
+        for (ours, _) in SYMBOLIC {
+            let path = format!(
+                "{}/../../design/icons/{ours}.svg",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let source = std::fs::read(&path).unwrap();
+            let filled = outlined(&source);
+            assert!(!filled.contains("stroke="), "{ours}: {filled}");
+            let a = svg_pixmap(&source, 64).unwrap();
+            let b = svg_pixmap(filled.as_bytes(), 64).unwrap();
+            let differ = a
+                .pixels()
+                .iter()
+                .zip(b.pixels())
+                .filter(|(x, y)| x.alpha().abs_diff(y.alpha()) > 64)
+                .count();
+            assert!(covered(&a) > 0, "{ours} draws nothing");
+            assert!(
+                differ * 50 <= a.pixels().len(),
+                "{ours}: {differ} of {} pixels differ",
+                a.pixels().len()
+            );
+        }
     }
 
     fn covered(pixmap: &Pixmap) -> usize {

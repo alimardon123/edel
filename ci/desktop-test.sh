@@ -2461,9 +2461,27 @@ case_welcome() {
 	# A second run is skipped on its first page: it closes with nothing
 	# written, and ci's file is the same as before.
 	opened=$(count 'edel-compositor: mapped window Welcome')
+	shown=$(count 'DESKTOP-TEST: welcome_shown_ms ')
 	guest 'welcome'
 	wait_more 'edel-compositor: mapped window Welcome' "$opened" 60 || fail "Welcome did not open: $(value windows)"
 	welcome_window
+	# Its budgets (M6.12): the time from its start to its first page, and
+	# what it holds of its own while it shows, read as Settings' is.
+	wait_more 'DESKTOP-TEST: welcome_shown_ms ' "$shown" 40 || fail "the service did not time the Welcome"
+	welcome_shown=$(value welcome_shown_ms)
+	shown_limit=$(budget welcome_shown_ms)
+	awk -v m="$welcome_shown" -v b="$shown_limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "the Welcome took ${welcome_shown:-?} ms to show its first page, over its budget of $shown_limit ms"
+	held=$(count 'DESKTOP-TEST: settings_own_mib ')
+	guest 'settings memory'
+	wait_more 'DESKTOP-TEST: settings_own_mib ' "$held" || fail "the service did not read the Welcome's memory"
+	welcome_own=$(value settings_own_mib)
+	own_limit=$(budget welcome_own_mib)
+	awk -v m="$welcome_own" -v b="$own_limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "the Welcome keeps ${welcome_own:-?} MiB of its own while it shows ($(value settings_rss_mib) MiB resident), over its budget of $own_limit MiB"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Welcome (M6.12): first page in $welcome_shown ms (budget $shown_limit), $welcome_own MiB of its own (budget $own_limit), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
+	fi
 	welcome_click language 'places next'
 	welcome_click keyboard 'places next'
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
@@ -2518,7 +2536,7 @@ case_welcome() {
 	settings_now
 	[ "$settings" = "$before" ] ||
 		fail "Skip changed ci's settings file (it may not gain a [region] line): $settings"
-	echo "PASS: Settings' Welcome opened full screen and each page logged its places; Next on language and keyboard wrote nothing, a click on mac-like's card restarted the desktop as mac-like, a click on Dark gave the dark scheme (welcome-layout.png, welcome-style.png), and Start using Edel OS closed it, with layout.preset and appearance.mode in ci's file; the keys taken out again, a second Welcome skipped on its first page wrote nothing"
+	echo "PASS: Settings' Welcome showed its first page in $welcome_shown ms (budget $shown_limit) holding $welcome_own MiB of its own (budget $own_limit), opened full screen and each page logged its places; Next on language and keyboard wrote nothing, a click on mac-like's card restarted the desktop as mac-like, a click on Dark gave the dark scheme (welcome-layout.png, welcome-style.png), and Start using Edel OS closed it, with layout.preset and appearance.mode in ci's file; the keys taken out again, a second Welcome skipped on its first page wrote nothing"
 }
 
 case_settings_tour() {
@@ -4843,6 +4861,56 @@ case_own_bars() {
 	layout_of() {
 		tr -d '\r' <"$log" | sed -n "s/.*DESKTOP-TEST: portal button-layout (<'\([^']*\)'>,).*/\1/p" | tail -n 1
 	}
+	# headerbar_line LAYOUT: waits until the header bar window's latest line
+	# gives the decoration layout LAYOUT and a close button. The window prints
+	# a line each time GTK lays its header bar out anew, so this asks for the
+	# latest one up to 30 times, a second apart.
+	headerbar_line() {
+		i=0
+		while [ "$i" -lt 30 ]; do
+			guest 'headerbar log'
+			sleep 1
+			headerbar=$(value headerbar_log)
+			echo "$headerbar" | grep -q "layout $1 close [^n]" && return 0
+			i=$((i + 1))
+		done
+		fail "the header bar window did not lay out with the layout $1: ${headerbar:-nothing}"
+	}
+	# headerbar_place: from the latest line, the close button's box in its
+	# window (cx, cy, cw, ch, from the window's corner) and the glyph's file
+	# (icon); from the compositor's windows, the window's place on the screen
+	# (wx, wy, ww, wh). Fails when one of them is missing.
+	headerbar_place() {
+		set -- $(echo "$headerbar" | sed -n 's/.* close \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) .*/\1 \2 \3 \4/p')
+		cx=$1 cy=$2 cw=$3 ch=$4
+		icon=$(echo "$headerbar" | sed -n 's/.* icon //p')
+		wait_for 'DESKTOP-TEST: windows .*headerbar@' 20 ||
+			fail "the compositor's windows hold no headerbar window: $(value windows)"
+		set -- $(value windows | grep -o 'headerbar@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1 | sed 's/headerbar@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\)/\1 \2 \3 \4/')
+		wx=$1 wy=$2 ww=$3 wh=$4
+		for v in "$cx" "$cy" "$cw" "$ch" "$wx" "$wy" "$ww" "$wh"; do
+			[ -n "$v" ] || fail "the header bar's close button or window has no place: $headerbar; windows: $(value windows)"
+		done
+	}
+	# cross_drawn FILE WHEN: the close button's cross is drawn in the
+	# screenshot FILE: the button's middle, where the arms meet, is darker
+	# than the bar 12 px above it by more than 80 in a channel, and 5 px
+	# above the middle, between the arms, is the bar again (within 30), so
+	# the glyph is neither missing nor a filled box, as GTK drew stroked
+	# glyphs (M6.16).
+	cross_drawn() {
+		mx=$((wx + cx + cw / 2)) my=$((wy + cy + ch / 2))
+		bar=$(python3 ci/qmp.py pixel "$1" "$mx" $((my - 12)))
+		mid=$(python3 ci/qmp.py pixel "$1" "$mx" "$my")
+		gap=$(python3 ci/qmp.py pixel "$1" "$mx" $((my - 5)))
+		apart() {
+			python3 -c 'import sys; a, b = (bytes.fromhex(x) for x in sys.argv[1:3]); print(max(abs(p - q) for p, q in zip(a, b)))' "$1" "$2"
+		}
+		[ "$(apart "$mid" "$bar")" -gt 80 ] ||
+			fail "no cross at the close button's middle $mx,$my $2: $mid against the bar's $bar ($1)"
+		[ "$(apart "$gap" "$bar")" -lt 30 ] ||
+			fail "the close glyph is filled between its arms at $mx,$((my - 5)) $2: $gap against the bar's $bar ($1)"
+	}
 	guest 'portal buttons'
 	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
 	first=$(layout_of)
@@ -4865,6 +4933,21 @@ case_own_bars() {
 	left=$(layout_of)
 	[ "$left" = 'close,minimize,maximize:' ] ||
 		fail "the portal's button layout is not close,minimize,maximize: after layout.window_buttons = left: $left"
+	# A GTK 4 header bar window (M6.16): with the buttons on the left, its
+	# close button lies in the left half of its window and is drawn, and
+	# GTK draws its glyph from the Edel icon theme's file.
+	mapped=$(count 'edel-compositor: mapped window headerbar')
+	guest 'headerbar'
+	wait_more 'edel-compositor: mapped window headerbar' "$mapped" 60 ||
+		fail "the GTK 4 header bar window did not map: $(value windows)"
+	headerbar_line 'close,minimize,maximize:'
+	headerbar_place
+	[ "$icon" = /usr/share/icons/Edel/scalable/ui/window-close-symbolic.svg ] ||
+		fail "GTK draws the close glyph from $icon, not the Edel icon theme's file"
+	[ $((cx + cw / 2)) -lt $((ww / 2)) ] ||
+		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the left: $headerbar"
+	python3 ci/qmp.py screendump "$dir/headerbar-left.png"
+	cross_drawn "$dir/headerbar-left.png" 'on the left'
 	told=$(count 'edel-shell-ui: button layout :minimize,maximize,close told to apps')
 	guest 'buttons default'
 	wait_more 'edel-shell-ui: button layout :minimize,maximize,close told to apps' "$told" 30 ||
@@ -4875,7 +4958,16 @@ case_own_bars() {
 	back=$(layout_of)
 	[ "$back" = ':minimize,maximize,close' ] ||
 		fail "the portal's button layout did not go back to the default: $back"
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs"
+	# With the buttons back on the right, GTK follows the portal's change
+	# while the window runs: the close button lies in the right half.
+	headerbar_line ':minimize,maximize,close'
+	headerbar_place
+	[ $((cx + cw / 2)) -gt $((ww / 2)) ] ||
+		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the right: $headerbar"
+	python3 ci/qmp.py screendump "$dir/headerbar-right.png"
+	cross_drawn "$dir/headerbar-right.png" 'on the right after the reset'
+	guest 'headerbar off'
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png)"
 }
 
 case_capture() {
