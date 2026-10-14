@@ -764,7 +764,10 @@ msgstr ""
 msgid "--page needs the name of a page, such as --page displays"
 msgstr ""
 
-msgid "unknown option \"{option}\"; the only one is --page NAME"
+msgid "unknown option \"{option}\"; the only ones are --page NAME and --welcome"
+msgstr ""
+
+msgid "--welcome and --page cannot be used together: --welcome opens the Welcome pages, --page NAME one page of Settings; use one of them"
 msgstr ""
 
 msgid "there is no page \"{name}\" on this machine; the pages are {pages}"
@@ -1974,6 +1977,45 @@ msgid "Pick a JPEG or PNG picture"
 msgstr ""
 
 msgid "Choose a picture"
+msgstr ""
+
+msgid "You are all set"
+msgstr ""
+
+msgid "The language Edel OS speaks to you in."
+msgstr ""
+
+msgid "The keys your keyboard types. Try it below."
+msgstr ""
+
+msgid "How your windows, panel and dock are arranged. Change it any time in Settings."
+msgstr ""
+
+msgid "Light, dark, or following the time of day."
+msgstr ""
+
+msgid "Everything you chose here is a row in Settings, to change any time."
+msgstr ""
+
+msgid "{at} of {count}"
+msgstr ""
+
+msgid "Welcome"
+msgstr ""
+
+msgid "Back"
+msgstr ""
+
+msgid "Skip"
+msgstr ""
+
+msgid "Start using Edel OS"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "Try it here:"
 msgstr ""
 
 msgid "Your changes are live"

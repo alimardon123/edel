@@ -702,6 +702,14 @@ commands() {
 			as_ci edel-settings --page system </dev/null >/tmp/settings-system.log 2>&1 &
 			;;
 		'settings system log') say "settings_system_log $(tr '\n' ';' </tmp/settings-system.log 2>/dev/null)" ;;
+		# The Welcome (M6.12, part 1): the first-start pages, opened by
+		# `edel-settings --welcome`, its log, and the two keys it writes taken
+		# out of ci's file again (the layout and the style).
+		'welcome')
+			as_ci edel-settings --welcome </dev/null >/tmp/welcome.log 2>&1 &
+			;;
+		'welcome log') say "welcome_log $(tr '\n' ';' </tmp/welcome.log 2>/dev/null)" ;;
+		'welcome mine default') as_ci "sed -i -e '/^preset = /d' -e '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;
 		# Settings' Workspaces group (M5.2n): opened on the Workspaces page by
 		# its name, workspaces, its log says where the count's buttons lie.
 		'settings workspaces')
