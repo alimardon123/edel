@@ -1,22 +1,34 @@
-//! The Welcome (roadmap M6.12, part 1, ADR-008): the first start on a
-//! machine nobody has set up. `edel-settings --welcome` opens one window,
-//! maximized, that asks the person's own questions a page at a time: the
-//! language, the keyboard (tried in a box under it), the layout (the presets
-//! as pictures) and the style, then Done. The questions and their order are
-//! the installer's (`edel::install::QUESTIONS`), so the two ask alike.
+//! The Welcome (roadmap M6.12, ADR-008): the first start on a machine nobody
+//! has set up. `edel-settings --welcome` opens one window, maximized, that
+//! asks a page at a time: the language, the keyboard (tried in a box under
+//! it), the layout (the presets as pictures) and the style, then Done. The
+//! questions and their order are the installer's (`edel::install::QUESTIONS`),
+//! so the two ask alike. The desktop opens it by itself on the first start
+//! (`edel::first_start`), when the account live logs in by itself.
 //!
-//! Each choice is written when it is made, with `Files::choose_over` as the
-//! Settings pages write theirs, so the desktop follows at once and a value
-//! that applies anyway is taken out, never written (ADR-008). Next writes
-//! nothing, and Skip closes the Welcome writing nothing more. Each page shows
-//! what applies now when it opens, so going Back shows the choice made. Part
-//! 2 (the machine's questions, Wi-Fi, the account, Try or Install) is not
-//! here yet.
+//! Who it is for decides two more pages (`Mode`). On a USB stick the first
+//! page asks Try or Install, and Install opens the installer page. On a
+//! computer nobody has an account on, the person's account (name and
+//! password) and the time zone are asked where the installer asks them, and
+//! Start using Edel OS makes that person with `edel settings first-boot`, as
+//! root through doas, with the choices made, then restarts, so the login
+//! screen asks for them.
+//!
+//! Each of the person's own choices is written when it is made, with
+//! `Files::choose_over` as the Settings pages write theirs, so the desktop
+//! follows at once and a value that applies anyway is taken out, never
+//! written (ADR-008). The account and the time zone are the machine's, so
+//! they wait for the end. Next writes nothing, and Skip closes the Welcome
+//! writing nothing more. Each page shows what applies now when it opens, so
+//! going Back shows the choice made. On a stick the Welcome leaves its stamp
+//! when it closes, so it opens once there; on a computer nobody has an
+//! account on it opens again at each start until it has made the person.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
+use gtk::{gio, glib};
 
 use edel::i18n::{n_, tr, trf};
 use edel::install::Question;
@@ -25,13 +37,18 @@ use edel::settings::Source;
 use crate::files::Files;
 use crate::install;
 use crate::style::Theme;
-use crate::{preview, region, widgets};
+use crate::{actions, cmd, preview, region, widgets};
 
 /// The settings keys the Welcome chooses, as `edel settings` names them.
 const LANGUAGE_KEY: &str = "region.language";
 const KEYBOARD_KEY: &str = "region.keyboard";
+const ZONE_KEY: &str = "region.timezone";
 const LAYOUT_KEY: &str = "layout.preset";
 const STYLE_KEY: &str = "appearance.mode";
+
+/// The person's own keys, which a new machine's first person takes as the
+/// machine's at the end (the installer writes them into the machine's file).
+const OWN_KEYS: [&str; 4] = [LANGUAGE_KEY, KEYBOARD_KEY, LAYOUT_KEY, STYLE_KEY];
 
 /// The keyboard layout the release gives (`region.keyboard`).
 const RELEASE_KEYBOARD: &str = "us";
@@ -40,11 +57,15 @@ const RELEASE_STYLE: &str = "light";
 /// The styles, as `appearance.mode` takes them, in the order shown.
 const STYLES: [&str; 3] = ["light", "dark", "auto"];
 
-/// The questions the Welcome asks, the person's own, each with its page.
-const ASKED: [(&str, Page); 3] = [
-    (LANGUAGE_KEY, Page::Language),
-    (KEYBOARD_KEY, Page::Keyboard),
-    (LAYOUT_KEY, Page::Layout),
+/// The installer's questions the Welcome asks, each with its page and
+/// whether only a new machine's Welcome asks it (the account and the time
+/// zone are the machine's).
+const ASKED: [(&str, Page, bool); 5] = [
+    (LANGUAGE_KEY, Page::Language, false),
+    (KEYBOARD_KEY, Page::Keyboard, false),
+    ("user", Page::Account, true),
+    (ZONE_KEY, Page::TimeZone, true),
+    (LAYOUT_KEY, Page::Layout, false),
 ];
 
 /// The width of the column the controls sit in, and of each control, in
@@ -56,13 +77,64 @@ const CONTROL: i32 = 360;
 /// and widget.
 type Group = (&'static str, Vec<(String, gtk::Widget)>);
 
+/// Who the Welcome is for, which decides its pages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// A system started from a USB stick: Try or Install comes first.
+    Stick,
+    /// A computer nobody has an account on, where live logs in by itself:
+    /// the account and the time zone are asked too, and the end makes the
+    /// person and restarts.
+    NewMachine,
+    /// A person with an account, who opened it themselves.
+    Person,
+}
+
+impl Mode {
+    /// The mode for a system running from a stick or not, `user` logged
+    /// in: off a stick, live logs in by itself only while nobody has an
+    /// account (`edel boot live`).
+    pub fn of(stick: bool, user: Option<&str>) -> Mode {
+        if stick {
+            Mode::Stick
+        } else if user == Some(edel::places::LIVE_USER) {
+            Mode::NewMachine
+        } else {
+            Mode::Person
+        }
+    }
+
+    /// This system's mode.
+    fn here() -> Mode {
+        let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+        let user = edel::users::current()
+            .and_then(|uid| edel::first_start::name_of(&passwd, uid).map(str::to_string));
+        Mode::of(edel::install::from_a_stick(), user.as_deref())
+    }
+
+    /// The name the log gives the mode.
+    fn name(self) -> &'static str {
+        match self {
+            Mode::Stick => "stick",
+            Mode::NewMachine => "new machine",
+            Mode::Person => "person",
+        }
+    }
+}
+
 /// One page of the Welcome, in the order they show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
+    /// On a stick: Try Edel OS or Install it.
+    Start,
     /// The language (`region.language`).
     Language,
     /// The keyboard layout (`region.keyboard`), tried in a box below it.
     Keyboard,
+    /// A new machine's first person: name and password.
+    Account,
+    /// A new machine's time zone (`region.timezone`).
+    TimeZone,
     /// The layout (`layout.preset`), the presets as pictures.
     Layout,
     /// Light, dark or automatic (`appearance.mode`).
@@ -75,8 +147,11 @@ impl Page {
     /// The name the log gives the page, `welcome page NAME`.
     pub fn name(self) -> &'static str {
         match self {
+            Page::Start => "start",
             Page::Language => "language",
             Page::Keyboard => "keyboard",
+            Page::Account => "account",
+            Page::TimeZone => "timezone",
             Page::Layout => "layout",
             Page::Style => "style",
             Page::Done => "done",
@@ -86,8 +161,11 @@ impl Page {
     /// The page's title, as people read it.
     pub fn title(self) -> &'static str {
         match self {
+            Page::Start => n_("Welcome to Edel OS"),
             Page::Language => n_("Language"),
             Page::Keyboard => n_("Keyboard"),
+            Page::Account => n_("Your account"),
+            Page::TimeZone => n_("Time zone"),
             Page::Layout => n_("Layout"),
             Page::Style => n_("Style"),
             Page::Done => n_("You are all set"),
@@ -97,8 +175,15 @@ impl Page {
     /// The sentence under the title: what the page is for.
     pub fn line(self) -> &'static str {
         match self {
+            Page::Start => n_(
+                "Try Edel OS from this stick, or install it on this computer. Trying changes nothing on the computer.",
+            ),
             Page::Language => n_("The language Edel OS speaks to you in."),
             Page::Keyboard => n_("The keys your keyboard types. Try it below."),
+            Page::Account => n_(
+                "The name and password you log in with. You look after this computer, so you are its administrator.",
+            ),
+            Page::TimeZone => n_("The time zone the clock follows."),
             Page::Layout => {
                 n_("How your windows, panel and dock are arranged. Change it any time in Settings.")
             }
@@ -106,43 +191,32 @@ impl Page {
             Page::Done => n_("Everything you chose here is a row in Settings, to change any time."),
         }
     }
+
+    /// Whether the page counter counts the page: not Start or Done.
+    fn counted(self) -> bool {
+        !matches!(self, Page::Start | Page::Done)
+    }
 }
 
-/// The pages a Welcome shows, given the installer's questions: the person's
-/// own, in the installer's order, then Style and Done.
-pub fn pages(questions: &[Question]) -> Vec<Page> {
-    let mut pages: Vec<Page> = welcome_keys(questions)
-        .into_iter()
-        .filter_map(|key| {
-            ASKED
-                .iter()
-                .find(|asked| asked.0 == key)
-                .map(|asked| asked.1)
-        })
-        .collect();
+/// The pages a Welcome shows for `mode`, given the installer's questions:
+/// Start on a stick, then the questions the Welcome asks in the installer's
+/// order (the account and the time zone only for a new machine), then
+/// Style and Done.
+pub fn pages(questions: &[Question], mode: Mode) -> Vec<Page> {
+    let mut pages = Vec::new();
+    if mode == Mode::Stick {
+        pages.push(Page::Start);
+    }
+    pages.extend(
+        questions
+            .iter()
+            .filter_map(|question| ASKED.iter().find(|asked| asked.0 == question.key))
+            .filter(|asked| !asked.2 || mode == Mode::NewMachine)
+            .map(|asked| asked.1),
+    );
     pages.push(Page::Style);
     pages.push(Page::Done);
     pages
-}
-
-/// The keys of `questions` the Welcome asks, in the installer's order: the
-/// person's own (`region.language`, `region.keyboard` and `layout.preset`).
-/// The machine's questions are left out until part 2.
-pub fn welcome_keys(questions: &[Question]) -> Vec<&'static str> {
-    questions
-        .iter()
-        .filter_map(|question| {
-            ASKED
-                .iter()
-                .find(|asked| asked.0 == question.key)
-                .map(|asked| asked.0)
-        })
-        .collect()
-}
-
-/// The pages counted in the page counter: all but Done.
-fn counted(pages: &[Page]) -> usize {
-    pages.iter().filter(|page| **page != Page::Done).count()
 }
 
 /// The page counter, `2 of 4`: page `at` (from 1) of `count` pages.
@@ -158,22 +232,91 @@ fn style_at(mode: &str) -> usize {
     STYLES.iter().position(|style| *style == mode).unwrap_or(0)
 }
 
+/// The account's answers checked, in the words the installer page uses: the
+/// login name as `edel install` checks it, then the two passwords the same
+/// and not empty. Gives the name as it will be made.
+pub fn check_account(name: &str, password: &str, again: &str) -> Result<String, String> {
+    let name = edel::install::user_answer(name.trim())?;
+    if password.is_empty() {
+        Err(tr("a password cannot be empty").to_string())
+    } else if password != again {
+        Err(tr("the two passwords differ; type them again").to_string())
+    } else {
+        Ok(name)
+    }
+}
+
+/// The words of `edel settings first-boot` that make a new machine's first
+/// person `name` (M6.12), with the time zone `zone` and the person's own
+/// choices `own` (each key and value), as `edel settings set` takes them; the
+/// password goes on standard input. The release's time zone is left out, as
+/// writers never write a default.
+pub fn first_person_words(name: &str, zone: &str, own: &[(&str, String)]) -> Vec<String> {
+    let mut words: Vec<String> = actions::FIRST_PERSON
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .collect();
+    words.extend(["--user".to_string(), name.to_string()]);
+    words.push("--new-password-stdin".to_string());
+    if zone != edel::timezones::DEFAULT {
+        words.push(format!("{ZONE_KEY}={zone}"));
+    }
+    words.extend(own.iter().map(|(key, value)| format!("{key}={value}")));
+    words
+}
+
+/// What a page built: the places it logs, the widget that takes the keys
+/// when it shows (Next when none), the button Return presses (Next when
+/// none), and whether the bar of Back, Skip and Next shows.
+struct Built {
+    groups: Vec<Group>,
+    focus: Option<gtk::Widget>,
+    default: Option<gtk::Button>,
+    bar: bool,
+}
+
+impl Built {
+    /// A page whose controls log no places, with the bar.
+    fn plain(groups: Vec<Group>) -> Built {
+        Built {
+            groups,
+            focus: None,
+            default: None,
+            bar: true,
+        }
+    }
+}
+
 /// The window and the page it shows.
 struct Welcome {
     window: gtk::ApplicationWindow,
     holder: gtk::Box,
     theme: Rc<Theme>,
+    mode: Mode,
     pages: Vec<Page>,
     at: Cell<usize>,
     /// The page shown and what it logs the places of, logged again when the
     /// window changes size (a preset's bar or dock gives a maximized window
     /// another area), so the places CI clicks are where they are now.
     shown: RefCell<Option<(gtk::Box, Vec<Group>)>>,
+    /// What Next checks before it leaves the page, false to stay: the
+    /// account page's answers.
+    leave: RefCell<Option<Box<dyn Fn() -> bool>>>,
+    /// A new machine's first person, name and password, once the account
+    /// page has them.
+    account: RefCell<Option<(String, String)>>,
+    /// A new machine's time zone, once its page has shown.
+    zone: RefCell<Option<String>>,
+    /// Whether the end is running (`edel settings first-boot`, then the
+    /// restart), when the buttons wait.
+    busy: Cell<bool>,
 }
 
 /// Opens the Welcome window on its first page (M6.12): one window, maximized,
 /// titled Welcome, which closes the app when its last page is done or skipped.
 pub fn window(app: &adw::Application) {
+    let mode = Mode::here();
     let welcome = Rc::new(Welcome {
         window: gtk::ApplicationWindow::builder()
             .application(app)
@@ -188,10 +331,16 @@ pub fn window(app: &adw::Application) {
             .vexpand(true)
             .build(),
         theme: Theme::new(),
-        pages: pages(edel::install::QUESTIONS),
+        mode,
+        pages: pages(edel::install::QUESTIONS, mode),
         at: Cell::new(0),
         shown: RefCell::new(None),
+        leave: RefCell::new(None),
+        account: RefCell::new(None),
+        zone: RefCell::new(None),
+        busy: Cell::new(false),
     });
+    eprintln!("edel-settings: welcome for a {}", mode.name());
     welcome.window.set_child(Some(&welcome.holder));
     welcome.window.maximize();
     // Escape is Back. The window hears the key after the page's own widgets,
@@ -240,6 +389,7 @@ impl Welcome {
             return;
         };
         self.at.set(at);
+        self.leave.replace(None);
         eprintln!("edel-settings: welcome page {}", page.name());
         let column = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -252,34 +402,49 @@ impl Welcome {
             .visible(false)
             .css_classes(["edel-error"])
             .build();
-        let mut groups = match page {
-            Page::Language => language(&column, &problem),
-            Page::Keyboard => keyboard(&column, &problem),
-            Page::Layout => layout(&column, &problem, &self.theme),
-            Page::Style => style(&column, &problem),
-            Page::Done => Vec::new(),
+        let built = match page {
+            Page::Start => self.start(&column),
+            Page::Language => Built::plain(language(&column, &problem)),
+            Page::Keyboard => Built::plain(keyboard(&column, &problem)),
+            Page::Account => self.account_page(&column, &problem),
+            Page::TimeZone => self.zone_page(&column),
+            Page::Layout => Built::plain(layout(&column, &problem, &self.theme)),
+            Page::Style => Built::plain(style(&column, &problem)),
+            Page::Done => self.done(&column),
         };
         column.append(&problem);
-        let (root, next, buttons) = self.frame(at, page, &column);
-        groups.insert(0, ("welcome places", buttons));
+        let (root, next, buttons) = self.frame(at, page, &column, built.bar, &problem);
+        let mut groups = built.groups;
+        if built.bar {
+            groups.insert(0, ("welcome places", buttons));
+        }
         *self.shown.borrow_mut() = Some((root.clone(), groups.clone()));
         log_places(&root, groups);
         while let Some(child) = self.holder.first_child() {
             self.holder.remove(&child);
         }
         self.holder.append(&root);
-        self.window.set_default_widget(Some(&next));
+        // Return presses the page's own button, else Next; the keys go to
+        // the page's first answer, else to that button, so Return alone
+        // accepts what each page suggests.
+        let default = built.default.unwrap_or(next);
+        self.window.set_default_widget(Some(&default));
+        let focus = built.focus.unwrap_or_else(|| default.upcast());
+        GtkWindowExt::set_focus(&self.window, Some(&focus));
     }
 
-    /// The page's frame: the counter (not on Done), the title and its line,
-    /// the control column centred under them, and the buttons at the bottom.
-    /// Gives the root, the Next button, and the buttons' places in the order
-    /// the log gives them: Next, then Skip and Back where the page shows them.
+    /// The page's frame: the counter (on the counted pages), the title and
+    /// its line, the control column centred under them, and the bar of
+    /// buttons at the bottom when `bar`. Gives the root, the Next button,
+    /// and the buttons' places in the order the log gives them: Next, then
+    /// Skip and Back where the page shows them.
     fn frame(
         self: &Rc<Self>,
         at: usize,
         page: Page,
         column: &gtk::Box,
+        bar: bool,
+        problem: &gtk::Label,
     ) -> (gtk::Box, gtk::Button, Vec<(String, gtk::Widget)>) {
         let root = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -290,11 +455,15 @@ impl Welcome {
             .margin_start(16)
             .margin_end(16)
             .build();
-        if page != Page::Done {
-            let count = counter(at + 1, counted(&self.pages));
+        if page.counted() {
+            let count = self.pages.iter().filter(|page| page.counted()).count();
+            let here = self.pages[..=at]
+                .iter()
+                .filter(|page| page.counted())
+                .count();
             root.append(
                 &gtk::Label::builder()
-                    .label(count.as_str())
+                    .label(counter(here, count).as_str())
                     .justify(gtk::Justification::Center)
                     .css_classes(["edel-intro"])
                     .build(),
@@ -328,8 +497,9 @@ impl Welcome {
                 .build(),
         );
 
+        // Back never leaves the first page the Welcome asks a question on.
         let back = widgets::action(tr("Back"), false);
-        back.set_visible(at > 0);
+        back.set_visible(at > 0 && self.pages[at - 1] != Page::Start);
         let skip = widgets::action(tr("Skip"), false);
         skip.set_visible(page != Page::Done);
         let next = widgets::big_button(
@@ -340,16 +510,18 @@ impl Welcome {
             },
             true,
         );
-        let bar = gtk::Box::builder()
-            .spacing(12)
-            .margin_top(24)
-            .hexpand(true)
-            .build();
-        bar.append(&back);
-        bar.append(&gtk::Box::builder().hexpand(true).build());
-        bar.append(&skip);
-        bar.append(&next);
-        root.append(&bar);
+        if bar {
+            let row = gtk::Box::builder()
+                .spacing(12)
+                .margin_top(24)
+                .hexpand(true)
+                .build();
+            row.append(&back);
+            row.append(&gtk::Box::builder().hexpand(true).build());
+            row.append(&skip);
+            row.append(&next);
+            root.append(&row);
+        }
 
         let weak = Rc::downgrade(self);
         back.connect_clicked(move |_| {
@@ -364,9 +536,10 @@ impl Welcome {
             }
         });
         let weak = Rc::downgrade(self);
-        next.connect_clicked(move |_| {
+        let said = problem.clone();
+        next.connect_clicked(move |next| {
             if let Some(welcome) = weak.upgrade() {
-                welcome.next();
+                welcome.next(next, &said);
             }
         });
 
@@ -380,22 +553,32 @@ impl Welcome {
         (root, next, buttons)
     }
 
-    /// Goes to the page before, if there is one (Back, Escape).
+    /// Goes to the page before, if there is one the Welcome may go back to
+    /// (Back, Escape): never to Start, and never while the end runs.
     fn back(self: &Rc<Self>) {
         let at = self.at.get();
-        if at > 0 {
+        if at > 0 && self.pages[at - 1] != Page::Start && !self.busy.get() {
             self.show(at - 1);
         }
     }
 
-    /// Goes to the next page; on Done, Start using Edel OS logs the end and
-    /// closes the Welcome.
-    fn next(self: &Rc<Self>) {
+    /// Goes to the next page once the page's own check passes; on Done,
+    /// Start using Edel OS ends the Welcome: a new machine's makes its
+    /// first person and restarts, any other closes it.
+    fn next(self: &Rc<Self>, button: &gtk::Button, problem: &gtk::Label) {
+        if self.busy.get() {
+            return;
+        }
+        let stays = self.leave.borrow().as_ref().is_some_and(|leave| !leave());
+        if stays {
+            return;
+        }
         let at = self.at.get();
         match self.pages.get(at) {
+            Some(Page::Done) if self.mode == Mode::NewMachine => self.make_person(button, problem),
             Some(Page::Done) => {
                 eprintln!("edel-settings: welcome done");
-                self.window.close();
+                self.close();
             }
             Some(_) => self.show(at + 1),
             None => {}
@@ -405,8 +588,23 @@ impl Welcome {
     /// Closes the Welcome at once, the page it was on logged; nothing more is
     /// written.
     fn skip(self: &Rc<Self>) {
+        if self.busy.get() {
+            return;
+        }
         if let Some(page) = self.pages.get(self.at.get()) {
             eprintln!("edel-settings: welcome skipped at {}", page.name());
+        }
+        self.close();
+    }
+
+    /// Closes the window, leaving the stamp first unless the Welcome sets a
+    /// new machine up: that one opens again at the next start until it has
+    /// made the person (`edel::first_start`).
+    fn close(&self) {
+        if self.mode != Mode::NewMachine {
+            if let Err(e) = edel::first_start::mark_seen() {
+                eprintln!("edel-settings: welcome could not leave its stamp: {e}");
+            }
         }
         self.window.close();
     }
@@ -417,6 +615,260 @@ impl Welcome {
             log_places(&root, groups);
         }
     }
+
+    /// The stick's first page: Install Edel OS, which Return presses, and
+    /// Try Edel OS, two big buttons in the column and no bar.
+    fn start(self: &Rc<Self>, column: &gtk::Box) -> Built {
+        let install = widgets::big_button(tr("Install Edel OS"), true);
+        let try_it = widgets::big_button(tr("Try Edel OS"), false);
+        for button in [&install, &try_it] {
+            button.set_halign(gtk::Align::Center);
+            button.set_width_request(CONTROL);
+            column.append(button);
+        }
+        let weak = Rc::downgrade(self);
+        install.connect_clicked(move |_| {
+            if let Some(welcome) = weak.upgrade() {
+                welcome.install();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        try_it.connect_clicked(move |_| {
+            if let Some(welcome) = weak.upgrade() {
+                eprintln!("edel-settings: welcome try chosen");
+                welcome.show(welcome.at.get() + 1);
+            }
+        });
+        Built {
+            groups: vec![(
+                "welcome places",
+                vec![
+                    ("install".to_string(), install.clone().upcast()),
+                    ("try".to_string(), try_it.upcast()),
+                ],
+            )],
+            focus: None,
+            default: Some(install),
+            bar: false,
+        }
+    }
+
+    /// Install Edel OS: Settings opens on its installer page (the first page
+    /// on a stick, M6.6a), and the Welcome closes.
+    fn install(&self) {
+        eprintln!("edel-settings: welcome install chosen");
+        if let Some(app) = self.window.application().and_downcast::<adw::Application>() {
+            crate::window(&app, 0, false);
+        }
+        self.close();
+    }
+
+    /// A new machine's account page: the login name and the password twice,
+    /// each Return moving to the next and the last pressing Next, which
+    /// checks them and keeps them for the end.
+    fn account_page(self: &Rc<Self>, column: &gtk::Box, problem: &gtk::Label) -> Built {
+        let (name_now, password_now) = self.account.borrow().clone().unwrap_or_default();
+        let name = gtk::Entry::builder()
+            .text(name_now.as_str())
+            .width_request(CONTROL)
+            .halign(gtk::Align::Center)
+            .css_classes(["edel-entry"])
+            .build();
+        let password = password_entry(&password_now);
+        let again = password_entry(&password_now);
+        again.set_activates_default(true);
+        for (title, entry) in [
+            (tr("Your username"), name.clone().upcast::<gtk::Widget>()),
+            (tr("Your password"), password.clone().upcast()),
+            (tr("The same password again"), again.clone().upcast()),
+        ] {
+            column.append(
+                &gtk::Label::builder()
+                    .label(title)
+                    .width_request(CONTROL)
+                    .halign(gtk::Align::Center)
+                    .xalign(0.0)
+                    .margin_top(8)
+                    .css_classes(["edel-row-subtitle"])
+                    .build(),
+            );
+            column.append(&entry);
+        }
+        let to = password.clone();
+        name.connect_activate(move |_| {
+            to.grab_focus();
+        });
+        let to = again.clone();
+        password.connect_activate(move |_| {
+            to.grab_focus();
+        });
+        let weak = Rc::downgrade(self);
+        let (entries, problem) = ((name.clone(), password, again), problem.clone());
+        *self.leave.borrow_mut() = Some(Box::new(move || {
+            let Some(welcome) = weak.upgrade() else {
+                return false;
+            };
+            let (name, password, again) = &entries;
+            match check_account(&name.text(), &password.text(), &again.text()) {
+                Ok(checked) => {
+                    eprintln!("edel-settings: welcome account {checked} kept");
+                    welcome
+                        .account
+                        .replace(Some((checked, password.text().to_string())));
+                    true
+                }
+                Err(why) => {
+                    problem.set_label(&why);
+                    problem.set_visible(true);
+                    false
+                }
+            }
+        }));
+        Built {
+            groups: Vec::new(),
+            focus: Some(name.upcast()),
+            default: None,
+            bar: true,
+        }
+    }
+
+    /// A new machine's time zone page: the zones as a searchable list, the
+    /// one chosen before or the language's suggestion chosen. It is the
+    /// machine's, so the choice is kept for the end.
+    fn zone_page(self: &Rc<Self>, column: &gtk::Box) -> Built {
+        let language = Files::here()
+            .chosen(LANGUAGE_KEY)
+            .unwrap_or_else(|| install::LANGUAGE.to_string());
+        let now = self
+            .zone
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| edel::timezones::suggested(&language).to_string());
+        self.zone.replace(Some(now.clone()));
+        let zones = install::zone_list(&now);
+        let labels = zones
+            .iter()
+            .map(|zone| edel::timezones::label(zone))
+            .collect();
+        let choice = widgets::Choice::searchable(labels);
+        choice.set_selected(zones.iter().position(|zone| *zone == now).unwrap_or(0));
+        choice.set_width(CONTROL);
+        choice.widget().set_halign(gtk::Align::Center);
+        let (weak, picked) = (Rc::downgrade(&choice), Rc::downgrade(self));
+        choice.connect_changed(move || {
+            let (Some(choice), Some(welcome)) = (weak.upgrade(), picked.upgrade()) else {
+                return;
+            };
+            if let Some(zone) = zones.get(choice.selected()) {
+                eprintln!("edel-settings: welcome {ZONE_KEY} {zone} chosen");
+                welcome.zone.replace(Some(zone.clone()));
+            }
+        });
+        column.append(&choice.widget());
+        keep(column, choice);
+        Built::plain(Vec::new())
+    }
+
+    /// The last page. A new machine's says whose account Start using Edel
+    /// OS makes, and that the computer restarts once.
+    fn done(self: &Rc<Self>, column: &gtk::Box) -> Built {
+        let name = self.account.borrow().as_ref().map(|(name, _)| name.clone());
+        if let (Mode::NewMachine, Some(name)) = (self.mode, name) {
+            column.append(
+                &gtk::Label::builder()
+                    .label(trf(
+                        "Start using Edel OS makes the account {name} and restarts the computer once. Then log in as {name} with your password.",
+                        &[("name", &name)],
+                    ))
+                    .justify(gtk::Justification::Center)
+                    .wrap(true)
+                    .build(),
+            );
+        }
+        Built::plain(Vec::new())
+    }
+
+    /// A new machine's end: `edel settings first-boot` makes the person with
+    /// the time zone and the choices made, as root through doas, the
+    /// password on standard input; then the computer restarts, so the login
+    /// screen asks for them. A refusal shows on the page as `edel` said it,
+    /// and the buttons come back.
+    fn make_person(self: &Rc<Self>, button: &gtk::Button, problem: &gtk::Label) {
+        let Some((name, password)) = self.account.borrow().clone() else {
+            // Skipped past the account page: there is nobody to make.
+            problem.set_label(tr(
+                "Go back to Your account and give a name and a password.",
+            ));
+            problem.set_visible(true);
+            return;
+        };
+        let zone = self
+            .zone
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| edel::timezones::DEFAULT.to_string());
+        let files = Files::here();
+        let own: Vec<(&str, String)> = OWN_KEYS
+            .iter()
+            .filter(|key| matches!(files.source(key), Source::Person(_)))
+            .filter_map(|key| files.chosen(key).map(|value| (*key, value)))
+            .collect();
+        let words = first_person_words(&name, &zone, &own);
+        self.busy.set(true);
+        button.set_sensitive(false);
+        button.set_label(tr("Making your account"));
+        problem.set_visible(false);
+        let (weak, button, problem) = (Rc::downgrade(self), button.clone(), problem.clone());
+        glib::spawn_future_local(async move {
+            let done = gio::spawn_blocking(move || {
+                let args: Vec<&str> = words.iter().map(String::as_str).collect();
+                let made = cmd::edel_as_root(&args, Some(password));
+                let restart = made.ok.then(cmd::restart);
+                (made, restart)
+            })
+            .await;
+            let Some(welcome) = weak.upgrade() else {
+                return;
+            };
+            let said = match done {
+                Ok((made, restart)) => {
+                    eprintln!(
+                        "edel-settings: welcome first person {name}, exit {}",
+                        made.code
+                            .map_or("none".to_string(), |code| code.to_string())
+                    );
+                    match restart {
+                        None => made.shown(),
+                        Some(restart) if restart.ok => {
+                            eprintln!("edel-settings: welcome restart asked");
+                            return;
+                        }
+                        Some(restart) => trf(
+                            "{name} can log in now, but the computer did not restart: {why}. Restart it to log in as {name}.",
+                            &[("name", &name), ("why", &restart.shown())],
+                        ),
+                    }
+                }
+                Err(_) => tr("the account could not be made; try again").to_string(),
+            };
+            welcome.busy.set(false);
+            button.set_sensitive(true);
+            button.set_label(tr("Start using Edel OS"));
+            problem.set_label(&said);
+            problem.set_visible(true);
+        });
+    }
+}
+
+/// A password entry with the eye that shows it, `text` in it.
+fn password_entry(text: &str) -> gtk::PasswordEntry {
+    gtk::PasswordEntry::builder()
+        .text(text)
+        .show_peek_icon(true)
+        .width_request(CONTROL)
+        .halign(gtk::Align::Center)
+        .css_classes(["edel-entry"])
+        .build()
 }
 
 /// Keeps `held` (a choice and the callbacks it holds) for as long as the
@@ -669,44 +1121,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_welcome_asks_the_persons_own_questions_in_the_installers_order() {
-        assert_eq!(
-            welcome_keys(edel::install::QUESTIONS),
-            ["region.language", "region.keyboard", "layout.preset"]
-        );
-        // The installer's order is followed, not the Welcome's own list.
-        let questions = [
-            Question {
-                key: "layout.preset",
-                title: "Layout",
-                more: true,
-            },
-            Question {
-                key: "user",
-                title: "Your username",
-                more: false,
-            },
-            Question {
-                key: "region.keyboard",
-                title: "Keyboard",
-                more: false,
-            },
-            Question {
-                key: "region.language",
-                title: "Language",
-                more: false,
-            },
-        ];
-        assert_eq!(
-            welcome_keys(&questions),
-            ["layout.preset", "region.keyboard", "region.language"]
-        );
-        assert!(welcome_keys(&[]).is_empty());
-    }
-
-    #[test]
-    fn the_pages_are_language_keyboard_layout_style_then_done() {
-        let pages = pages(edel::install::QUESTIONS);
+    fn a_person_s_welcome_asks_language_keyboard_layout_style_then_done() {
+        let pages = pages(edel::install::QUESTIONS, Mode::Person);
         assert_eq!(
             pages,
             [
@@ -722,11 +1138,79 @@ mod tests {
     }
 
     #[test]
-    fn the_counter_counts_the_pages_before_done() {
-        let pages = pages(edel::install::QUESTIONS);
-        assert_eq!(counted(&pages), 4);
-        assert_eq!(counter(1, counted(&pages)), "1 of 4");
-        assert_eq!(counter(4, counted(&pages)), "4 of 4");
+    fn a_stick_asks_try_or_install_first() {
+        assert_eq!(
+            pages(edel::install::QUESTIONS, Mode::Stick),
+            [
+                Page::Start,
+                Page::Language,
+                Page::Keyboard,
+                Page::Layout,
+                Page::Style,
+                Page::Done
+            ]
+        );
+    }
+
+    #[test]
+    fn a_new_machine_asks_the_account_and_the_time_zone_where_the_installer_does() {
+        assert_eq!(
+            pages(edel::install::QUESTIONS, Mode::NewMachine),
+            [
+                Page::Language,
+                Page::Keyboard,
+                Page::Account,
+                Page::TimeZone,
+                Page::Layout,
+                Page::Style,
+                Page::Done
+            ]
+        );
+    }
+
+    #[test]
+    fn the_installer_s_order_is_followed_not_the_welcome_s_own() {
+        let question = |key| Question {
+            key,
+            title: "",
+            more: false,
+        };
+        let questions = [
+            question("layout.preset"),
+            question("user"),
+            question("password"),
+            question("region.keyboard"),
+            question("region.language"),
+        ];
+        assert_eq!(
+            pages(&questions, Mode::NewMachine),
+            [
+                Page::Layout,
+                Page::Account,
+                Page::Keyboard,
+                Page::Language,
+                Page::Style,
+                Page::Done
+            ]
+        );
+        assert_eq!(pages(&[], Mode::Person), [Page::Style, Page::Done]);
+    }
+
+    #[test]
+    fn the_mode_is_the_stick_then_live_off_a_stick_then_a_person() {
+        assert_eq!(Mode::of(true, Some("live")), Mode::Stick);
+        assert_eq!(Mode::of(true, Some("ali")), Mode::Stick);
+        assert_eq!(Mode::of(false, Some("live")), Mode::NewMachine);
+        assert_eq!(Mode::of(false, Some("ali")), Mode::Person);
+        assert_eq!(Mode::of(false, None), Mode::Person);
+    }
+
+    #[test]
+    fn the_counter_counts_the_pages_but_start_and_done() {
+        let pages = pages(edel::install::QUESTIONS, Mode::Stick);
+        assert_eq!(pages.iter().filter(|page| page.counted()).count(), 4);
+        assert_eq!(counter(1, 4), "1 of 4");
+        assert_eq!(counter(4, 4), "4 of 4");
     }
 
     #[test]
@@ -735,5 +1219,52 @@ mod tests {
         assert_eq!(style_at("dark"), 1);
         assert_eq!(style_at("auto"), 2);
         assert_eq!(style_at("nonsense"), 0, "Light when it names another");
+    }
+
+    #[test]
+    fn the_account_is_checked_as_the_installer_checks_it() {
+        assert_eq!(check_account(" ali ", "pw", "pw"), Ok("ali".to_string()));
+        assert!(check_account("root", "pw", "pw").is_err());
+        assert!(check_account("live", "pw", "pw").is_err());
+        assert!(check_account("Ali Baba", "pw", "pw").is_err());
+        assert_eq!(
+            check_account("ali", "", ""),
+            Err("a password cannot be empty".to_string())
+        );
+        assert_eq!(
+            check_account("ali", "pw", "pW"),
+            Err("the two passwords differ; type them again".to_string())
+        );
+    }
+
+    #[test]
+    fn the_first_person_is_made_with_the_zone_and_the_own_choices_never_a_default() {
+        let own = [
+            ("layout.preset", "mac-like".to_string()),
+            ("appearance.mode", "dark".to_string()),
+        ];
+        assert_eq!(
+            first_person_words("ali", "Europe/Berlin", &own),
+            [
+                "settings",
+                "first-boot",
+                "--user",
+                "ali",
+                "--new-password-stdin",
+                "region.timezone=Europe/Berlin",
+                "layout.preset=mac-like",
+                "appearance.mode=dark"
+            ]
+        );
+        assert_eq!(
+            first_person_words("ali", edel::timezones::DEFAULT, &[]),
+            [
+                "settings",
+                "first-boot",
+                "--user",
+                "ali",
+                "--new-password-stdin"
+            ]
+        );
     }
 }

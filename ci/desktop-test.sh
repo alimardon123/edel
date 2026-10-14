@@ -7164,6 +7164,38 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	# The first start (M6.12): live's session opens Settings' Welcome,
+	# which on a stick asks Try or Install first, Install taking Return.
+	# Return opens Settings on its installer page and closes the Welcome,
+	# which leaves its stamp, so it opens once; Super+Q closes Settings.
+	i=0
+	until stick_session | grep -qa 'edel-settings: welcome page start'; do
+		i=$((i + 5))
+		if [ "$i" -gt 120 ]; then
+			python3 ci/qmp.py screendump "$dir/welcome-failed.png"
+			stick_session | grep -a 'welcome\|edel-settings' | tail -n 20
+			fail "the stick's first start did not open the Welcome on Try or Install within 120 s (welcome-failed.png)"
+		fi
+		sleep 5
+	done
+	sleep 3
+	python3 ci/qmp.py screendump "$dir/welcome-stick.png"
+	python3 ci/qmp.py key ret
+	i=0
+	until stick_session | grep -qa 'edel-settings: install page shown'; do
+		i=$((i + 5))
+		if [ "$i" -gt 60 ]; then
+			python3 ci/qmp.py screendump "$dir/welcome-install-failed.png"
+			stick_session | grep -a 'welcome\|edel-settings' | tail -n 20
+			fail "Return on the Welcome's Install Edel OS did not open Settings' installer page within 60 s (welcome-stick.png, welcome-install-failed.png)"
+		fi
+		sleep 5
+	done
+	stick_session | grep -qa 'edel-settings: welcome install chosen' ||
+		fail "Settings' installer page opened, but not from the Welcome's Install Edel OS"
+	python3 ci/qmp.py screendump "$dir/welcome-install.png"
+	python3 ci/qmp.py key meta_l-q
+	sleep 3
 	# The whole screen drawn, not only what changed: the framebuffer
 	# driver the stick may run on shows only the areas a frame names, and
 	# leaves the rest black. Since M5.10c4b the stick shows the default
@@ -7372,8 +7404,117 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png)"
+	# A computer nobody has an account on (M6.12): the released image as
+	# the computer's own disk, not a stick, so live logs in by itself and
+	# the Welcome asks for the first person and the time zone too. Return
+	# accepts each page's suggestion and the account is typed; Start using
+	# Edel OS makes cleo with edel settings first-boot, as root through
+	# doas, and restarts, which ends this VM (-no-reboot). The disk's next
+	# start leaves the login to the greeter.
+	fresh="$dir/fresh.img"
+	cp --sparse=always out/edel-desktop-x86_64.img "$fresh"
+	fresh_log=out/desktop-fresh.log
+	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
+	# for debugfs, its journal replayed on the copy.
+	fresh_data() {
+		part=$(sfdisk -d "$fresh" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+		dd if="$fresh" of="$dir/fresh-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		e2fsck -fy "$dir/fresh-data.img" >/dev/null 2>&1 || true
+	}
+	# fresh_wait WORDS SECONDS: waits for WORDS in live's session log there.
+	fresh_wait() {
+		i=0
+		until fresh_data && debugfs -R "cat /home/live/$home_session_log" "$dir/fresh-data.img" 2>/dev/null | grep -qa "$1"; do
+			i=$((i + 3))
+			if [ "$i" -gt "$2" ]; then
+				python3 ci/qmp.py screendump "$dir/welcome-fresh-failed.png"
+				debugfs -R "cat /home/live/$home_session_log" "$dir/fresh-data.img" 2>/dev/null | grep -a 'welcome\|edel-settings' | tail -n 20
+				fail "the Welcome on a computer nobody has an account on did not log \"$1\" within $2 s (welcome-fresh-failed.png)"
+			fi
+			sleep 3
+		done
+	}
+	keep_vm=1 run_vm "$fresh_log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+		-m 2048 -smp 4 -vga std \
+		-qmp unix:"$QMP",server=on,wait=off \
+		-drive if=none,id=fresh,format=raw,file="$fresh" \
+		-device virtio-blk-pci,drive=fresh,bootindex=0
+	[ "$found" = 1 ] || { cat "$fresh_log"; fail "the released image as a computer's own disk did not confirm its slot"; }
+	tr -d '\r' <"$fresh_log" | grep -qa 'edel boot live: nobody has an account yet, so live logs in by itself' ||
+		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
+	fresh_wait 'edel-settings: welcome page language' 120
+	sleep 3
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page keyboard' 30
+	sleep 2
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page account' 30
+	sleep 2
+	python3 ci/qmp.py type cleo
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type edel-welcome-test
+	python3 ci/qmp.py key ret
+	python3 ci/qmp.py type edel-welcome-test
+	python3 ci/qmp.py screendump "$dir/welcome-account.png"
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page timezone' 30
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/welcome-timezone.png"
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page layout' 30
+	sleep 2
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page style' 30
+	sleep 2
+	python3 ci/qmp.py key ret
+	fresh_wait 'edel-settings: welcome page done' 30
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/welcome-fresh-done.png"
+	python3 ci/qmp.py key ret
+	# The restart ends QEMU; up to 180 s for the account and the restart.
+	i=0
+	while kill -0 "$qemu" 2>/dev/null; do
+		i=$((i + 3))
+		if [ "$i" -gt 180 ]; then
+			python3 ci/qmp.py screendump "$dir/welcome-fresh-failed.png"
+			fresh_data
+			debugfs -R "cat /home/live/$home_session_log" "$dir/fresh-data.img" 2>/dev/null | grep -a 'welcome\|edel-settings' | tail -n 20
+			fail "Start using Edel OS did not make the account and restart within 180 s (welcome-fresh-done.png, welcome-fresh-failed.png)"
+		fi
+		sleep 3
+	done
+	stop_vm
+	fresh_data
+	welcomed=$(debugfs -R "cat /home/live/$home_session_log" "$dir/fresh-data.img" 2>/dev/null)
+	echo "$welcomed" | grep -qa 'edel-settings: welcome first person cleo, exit 0' ||
+		fail "edel settings first-boot did not make cleo: $(echo "$welcomed" | grep -a 'welcome' | tail -n 5 | tr '\n' '|')"
+	machine=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/fresh-data.img" 2>/dev/null)
+	echo "$machine" | sed 's/^/  the new machine: /'
+	echo "$machine" | grep -q '^\[users.cleo\]' || fail "the machine's settings file has no [users.cleo]"
+	echo "$machine" | grep -q '^admin = true' || fail "cleo is not an administrator in the machine's settings file"
+	echo "$machine" | grep -q 'timezone = "America/New_York"' ||
+		fail "the machine's settings file has not the time zone the Welcome suggested for US English, America/New_York"
+	! echo "$machine" | grep -q 'edel-welcome-test' || fail "the password is in the machine's settings file"
+	# Apply gives the hashed password with chpasswd and deletes the file.
+	case $(debugfs -R "stat ${first_passwords#/data}" "$dir/fresh-data.img" 2>&1) in
+	*"File not found"*) ;;
+	*) fail "first-passwords is still on the data partition: apply did not give cleo the password" ;;
+	esac
+	keep_vm=1 run_vm "$fresh_log.2" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+		-m 2048 -smp 4 -vga std \
+		-drive if=none,id=fresh,format=raw,file="$fresh" \
+		-device virtio-blk-pci,drive=fresh,bootindex=0
+	[ "$found" = 1 ] || { cat "$fresh_log.2"; fail "the disk the Welcome set up did not start again"; }
+	i=0
+	until tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+		i=$((i + 1))
+		sleep 1
+	done
+	stop_vm
+	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
+		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img" "$fresh" "$dir/fresh-data.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
 

@@ -20,6 +20,7 @@
 //! fcitx5 and is stopped when it changes away (`follow_input_method`), so
 //! it runs only for a person who types in a language their keyboard lacks.
 
+use std::fs;
 use std::io::ErrorKind;
 use std::os::unix::process::CommandExt;
 use std::process::{Command, ExitStatus, Stdio};
@@ -78,6 +79,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     }
     follow_input_method(handle, state);
     start_apps(state);
+    start_welcome(state);
 }
 
 /// Starts the input method when `region.input_method` is fcitx5 and
@@ -205,6 +207,28 @@ fn start_apps(state: &Edel) {
 /// desktop file id is `id`, none when no installed app has it.
 fn startup_app<'a>(apps: &'a [edel::apps::App], id: &str) -> Option<&'a edel::apps::App> {
     apps.iter().find(|app| app.id == id)
+}
+
+/// The Welcome's command (M6.12): Settings opened on its first-start pages.
+const WELCOME: [&str; 2] = ["edel-settings", "--welcome"];
+
+/// Opens Settings' Welcome when this session is the first start
+/// (`edel::first_start::due`: the account live, logged in by itself on a
+/// stick or a computer nobody has an account on, with no stamp), through
+/// the same `program::run` the startup apps use. Never under the greeter
+/// or the development window, as `start` runs only in a person's session.
+fn start_welcome(state: &Edel) {
+    let Some(uid) = edel::users::current() else {
+        return;
+    };
+    let passwd = fs::read_to_string("/etc/passwd").unwrap_or_default();
+    if !edel::first_start::due(&passwd, uid, edel::first_start::seen()) {
+        return;
+    }
+    let argv: Vec<String> = WELCOME.iter().map(|word| word.to_string()).collect();
+    if crate::program::run(state, &argv, "welcome") {
+        eprintln!("edel-compositor: started the Welcome, the first start");
+    }
 }
 
 /// The cursor's variables the programs are given (M5.12b5 part A).

@@ -7,7 +7,9 @@
 //! ssh keys, that person's own password is asked too. Root with no
 //! `DOAS_USER` (a root login, the boot services, CI) is asked nothing. Not
 //! root, nothing is asked here: a command that needs root fails later with
-//! the message to run it with doas.
+//! the message to run it with doas. The stick's account `live` may make the
+//! computer's first person with no password while nobody has an account
+//! (M6.12, `live_may_set_up`), as the Welcome does.
 //!
 //! The password comes from standard input with `--password-stdin` (Settings
 //! writes it there), else from the terminal with echo off. It is checked by
@@ -151,9 +153,20 @@ pub fn live_may_install(doas_user: Option<&str>, from_a_stick: bool, installing:
     installing && from_a_stick && doas_user == Some(places::LIVE_USER)
 }
 
+/// Whether the person who ran doas may make the computer's first person
+/// with no administrator and no password (M6.12): the account `live`
+/// (`places::LIVE_USER`), which logs in by itself on a computer nobody has
+/// an account on, while that is still so, for `edel settings first-boot
+/// --user`, which Settings' Welcome runs. Whoever sits at such a computer
+/// could start any system on it, so asking proves nothing; once a person
+/// has an account the rule is off.
+pub fn live_may_set_up(doas_user: Option<&str>, has_person: bool, first_person: bool) -> bool {
+    first_person && !has_person && doas_user == Some(places::LIVE_USER)
+}
+
 /// Runs before `command`, once, after the command line is read: the
-/// unsigned-install rule, the stick's install rule, then the rules of
-/// [`decide`].
+/// unsigned-install rule, the stick's install rule, the first person's rule
+/// (M6.12), then the rules of [`decide`].
 pub fn gate(command: &Commands, password_stdin: bool) -> Result<()> {
     FROM_STDIN.store(password_stdin, Ordering::Relaxed);
     if let Commands::Update { unsigned: true, .. } = command {
@@ -166,6 +179,22 @@ pub fn gate(command: &Commands, password_stdin: bool) -> Result<()> {
             doas.as_deref(),
             installing && edel::install::from_a_stick(),
             installing,
+        )
+    {
+        return Ok(());
+    }
+    let first_person = matches!(
+        command,
+        Commands::Settings {
+            command: Some(SettingsCommands::FirstBoot { user: Some(_), .. })
+        }
+    );
+    if first_person
+        && users::current() == Some(0)
+        && live_may_set_up(
+            doas.as_deref(),
+            machine::has_person(&fs::read_to_string("/etc/passwd").unwrap_or_default()),
+            first_person,
         )
     {
         return Ok(());
@@ -506,6 +535,18 @@ mod tests {
                 &["edel", "settings", "first-boot", "--console"],
                 Need::Admin,
             ),
+            (
+                &[
+                    "edel",
+                    "settings",
+                    "first-boot",
+                    "--user",
+                    "ali",
+                    "--new-password-stdin",
+                    "region.timezone=Europe/Berlin",
+                ],
+                Need::Admin,
+            ),
             (&["edel", "image", "check", "images/vm.toml"], Need::Anyone),
             (&["edel", "image", "build", "images/vm.toml"], Need::Admin),
             (&["edel", "theme", "list"], Need::Anyone),
@@ -549,6 +590,54 @@ mod tests {
                 "the login feature's rule names {line}"
             );
         }
+    }
+
+    #[test]
+    fn first_boot_takes_either_console_or_a_user_with_a_password_line() {
+        let refused: [&[&str]; 3] = [
+            &["edel", "settings", "first-boot"],
+            &[
+                "edel",
+                "settings",
+                "first-boot",
+                "--console",
+                "--user",
+                "ali",
+            ],
+            &["edel", "settings", "first-boot", "--user", "ali"],
+        ];
+        for args in refused {
+            assert!(Cli::try_parse_from(args).is_err(), "{args:?}");
+        }
+        let accepted: [&[&str]; 2] = [
+            &["edel", "settings", "first-boot", "--console"],
+            &[
+                "edel",
+                "settings",
+                "first-boot",
+                "--user",
+                "ali",
+                "--new-password-stdin",
+            ],
+        ];
+        for args in accepted {
+            assert!(Cli::try_parse_from(args).is_ok(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn only_live_makes_the_first_person_and_only_while_nobody_has_an_account() {
+        assert!(live_may_set_up(Some("live"), false, true));
+        assert!(
+            !live_may_set_up(Some("live"), true, true),
+            "a person has an account"
+        );
+        assert!(
+            !live_may_set_up(Some("live"), false, false),
+            "another command"
+        );
+        assert!(!live_may_set_up(Some("ali"), false, true), "a person");
+        assert!(!live_may_set_up(None, false, true), "a root login");
     }
 
     #[test]

@@ -498,7 +498,10 @@ fn finds(page: &Page, query: &str) -> bool {
         })
 }
 
-fn window(app: &adw::Application, start: usize, asked: bool) {
+/// Opens Settings' window on page `start`, the keys given to its main
+/// control when the page was `asked` for; the Welcome's Install opens it on
+/// the installer page (M6.12).
+pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
     let theme = Theme::new();
     let pages = Rc::new(pages());
     // Each page is built when first shown and kept.

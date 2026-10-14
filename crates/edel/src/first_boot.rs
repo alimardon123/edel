@@ -15,13 +15,21 @@
 //! deletes, so it is never in the settings file (ADR-006). An image with a
 //! greeter (the `login` feature) is left alone: its first start is the
 //! desktop's (M6.12).
+//!
+//! The Welcome (M6.12) makes the first person with `edel settings first-boot
+//! --user NAME --new-password-stdin [KEY=VALUE...]`, which `first_person`
+//! runs: refused once anyone has an account, so it never makes a second
+//! person. The account `live` may run it through doas while nobody has an
+//! account (privilege.rs, `live_may_set_up`), since the stick's and an unset
+//! machine's desktop logs in as `live` by itself.
 
 use std::fs;
+use std::io;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 use edel::places;
 
 use crate::installer;
@@ -139,6 +147,61 @@ pub fn console() -> Result<()> {
     Ok(())
 }
 
+/// The first assignment that names a person (`users.`), which first-boot
+/// refuses: it makes only the one person `--user` names.
+pub fn names_a_person(settings: &[String]) -> Option<&str> {
+    settings
+        .iter()
+        .map(String::as_str)
+        .find(|assignment| assignment.starts_with("users."))
+}
+
+/// `edel settings first-boot --user NAME --new-password-stdin [KEY=VALUE...]`
+/// (M6.12): Settings' Welcome makes the computer's first person, an
+/// administrator, with the settings its pages chose, and applies them.
+/// Refused once anyone has an account, so it never makes a second
+/// person; the password goes the installer's way, hashed into
+/// `places::FIRST_PASSWORDS`, which apply gives and deletes.
+pub fn first_person(name: &str, settings: &[String]) -> Result<()> {
+    let passwd = fs::read_to_string("/etc/passwd")
+        .with_context(|| trf("could not read {path}", &[("path", "/etc/passwd")]))?;
+    if machine::has_person(&passwd) {
+        bail!(
+            "{}",
+            tr(
+                "this computer has people with accounts already, so first-boot makes nobody; add a person with edel settings set users.NAME.admin=true"
+            )
+        );
+    }
+    if let Err(why) = edel::install::user_answer(name) {
+        bail!("{why}");
+    }
+    if let Some(assignment) = names_a_person(settings) {
+        bail!(
+            "{}",
+            trf(
+                "{assignment} names a person; first-boot makes only {name}, so leave it out",
+                &[("assignment", assignment), ("name", name)]
+            )
+        );
+    }
+    let password = privilege::read_password_line(io::stdin().lock())?;
+    if password.letters() == 0 {
+        bail!(
+            "{}",
+            tr("the new password on standard input is empty; nothing was changed")
+        );
+    }
+    let hash = installer::hash(&password)?;
+    let mut all = assignments(name, None);
+    all.extend(settings.iter().cloned());
+    machine::set(&all)?;
+    write_private(places::FIRST_PASSWORDS, &format!("{name}:{hash}\n"))?;
+    machine::apply(false)?;
+    println!("{}", trf("{name} can log in now.", &[("name", name)]));
+    Ok(())
+}
+
 /// Writes `text` to `path`, readable by root only.
 fn write_private(path: &str, text: &str) -> Result<()> {
     use std::io::Write;
@@ -205,6 +268,18 @@ mod tests {
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA \"quoted\""
         ));
         assert!(!is_ssh_key("ssh-ed25519 AAAA$(reboot)AAAAAAAAAA"));
+    }
+
+    #[test]
+    fn only_a_users_assignment_names_a_person() {
+        let with: Vec<String> = ["region.timezone=Europe/Berlin", "users.bob.admin=true"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(names_a_person(&with), Some("users.bob.admin=true"));
+        let without: Vec<String> = ["region.timezone=Europe/Berlin", "layout.preset=mac-like"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(names_a_person(&without), None);
     }
 
     #[test]
