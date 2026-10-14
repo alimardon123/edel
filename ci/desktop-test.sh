@@ -2382,11 +2382,20 @@ case_settings_unknown() {
 	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent (settings-unknown.png)"
 }
 
-# welcome_window: the last Welcome window's top left corner, wx and wy,
-# from the compositor's log.
+# welcome_window: the Welcome window's top left corner, wx and wy, once it
+# fills the screen. The compositor maps it at its floating size and place
+# and maximizes it at once, so its `mapped window` line names a place it
+# leaves; the service's windows line follows it to where it ends up.
 welcome_window() {
-	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Welcome at \([0-9]*\),\([0-9]*\) [0-9]*x[0-9]*.*/\1 \2/p' | tail -n 1)
-	set -- $place
+	i=0
+	while :; do
+		place=$(value windows | sed -n 's/.*Welcome@\([0-9]*\),\([0-9]*\),\([0-9]*\)x[0-9]*.*/\1 \2 \3/p')
+		set -- $place
+		[ -n "${3:-}" ] && [ "$3" -gt 1000 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the Welcome did not fill the screen: $(value windows)"
+		sleep 0.2
+	done
 	wx=$1 wy=$2
 }
 
@@ -2405,6 +2414,9 @@ welcome_find() {
 		[ -n "$wp" ] || wp=none
 		[ "$wp" = none ] && sleep 1
 	done
+	# The loop's last test was false when the place was found, and a
+	# function returns its last command's status.
+	return 0
 }
 
 # welcome_click PAGE WORDS: clicks the middle of the place welcome_find
