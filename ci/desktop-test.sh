@@ -2384,7 +2384,7 @@ case_settings_tour() {
 	# button to no input device of our choosing (its device names a
 	# display), so the maximized picture is what the tour shows. A page this machine's Settings does
 	# not show yet is skipped: edel settings lists pages the Settings app
-	# has not built (region, shortcuts, default apps, startup, apps,
+	# has not built (apps,
 	# add-ons and services, as the Settings app stood on 2026-10-11), and Settings refuses each one
 	# before drawing. Then every page that opened is drawn at Compact
 	# width, 366 logical px wide by scale 3.5 as the power case does, on

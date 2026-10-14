@@ -67,6 +67,20 @@ pub const RESET: Action = Action {
     args: &["settings", "reset"],
 };
 
+/// The Region page's Time zone and Time servers changes, which set one
+/// machine key as root; the key and its value are added after the words.
+pub const SET: Action = Action {
+    page: "region",
+    args: &["settings", "set"],
+};
+
+/// The Region page's apply, run after a machine key is set so the clock
+/// follows at once (as root, through `doas`, like SET).
+pub const APPLY: Action = Action {
+    page: "region",
+    args: &["settings", "apply"],
+};
+
 /// The installer page's Erase and install button, which runs `edel install`
 /// with the disk and its options added after the words.
 pub const INSTALL: Action = Action {
@@ -81,7 +95,7 @@ pub const INSTALL: Action = Action {
 /// tests read the list: they check each action in it.
 #[cfg(test)]
 pub const ACTIONS: &[&Action] = &[
-    &CHECK, &UPDATE, &ROLLBACK, &RESTART, &EXPORT, &DIFF, &IMPORT, &RESET, &INSTALL,
+    &CHECK, &UPDATE, &ROLLBACK, &RESTART, &EXPORT, &DIFF, &IMPORT, &RESET, &SET, &APPLY, &INSTALL,
 ];
 
 #[cfg(test)]
@@ -189,6 +203,7 @@ mod tests {
             "settings diff",
             "settings import",
             "settings reset",
+            "settings apply",
             "install",
         ] {
             assert!(

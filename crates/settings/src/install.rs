@@ -38,7 +38,7 @@ use crate::files::Files;
 use crate::{actions, cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
-const LANGUAGE: &str = "en_US.UTF-8";
+pub(crate) const LANGUAGE: &str = "en_US.UTF-8";
 
 /// How long Erase and install waits for its second press.
 const ARMED: Duration = Duration::from_secs(5);
@@ -380,7 +380,7 @@ fn first_layout(keyboard: &str) -> &str {
 /// each language's suggestion added when the list lacks them (so a machine
 /// with no zone files still offers every language's zone), sorted by their
 /// labels as the list is.
-fn zone_list(now: &str) -> Vec<String> {
+pub(crate) fn zone_list(now: &str) -> Vec<String> {
     let mut zones = edel::timezones::list_in(Path::new(edel::places::ZONEINFO_DIR));
     if zones.is_empty() {
         zones.push(edel::timezones::DEFAULT.to_string());

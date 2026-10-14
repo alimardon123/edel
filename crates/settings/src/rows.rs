@@ -305,6 +305,29 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::NOTIFICATION_LIST,
         title: n_("Notification list"),
     },
+    // The Region page (M6.11): the five `[region]` keys, in the page's order.
+    // The language, the layouts and the input method are the person's; the
+    // time zone and the servers are the machine's, set as root.
+    Row {
+        key: "region.language",
+        title: n_("Language"),
+    },
+    Row {
+        key: "region.keyboard",
+        title: n_("Keyboard layouts"),
+    },
+    Row {
+        key: "region.input_method",
+        title: n_("Input method"),
+    },
+    Row {
+        key: "region.timezone",
+        title: n_("Time zone"),
+    },
+    Row {
+        key: "region.time_servers",
+        title: n_("Time servers"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {
@@ -723,26 +746,6 @@ mod tests {
         (
             "network.hostname",
             "the machine's key, and Settings writes only the person's file; About shows the name",
-        ),
-        (
-            "region.language",
-            "the Region page, which no page shows yet; the installer asks it",
-        ),
-        (
-            "region.keyboard",
-            "the Region page, which no page shows yet; the installer asks it and the panel switches layouts",
-        ),
-        (
-            "region.timezone",
-            "the Region page, which no page shows yet; the installer asks it",
-        ),
-        (
-            "region.time_servers",
-            "the Region page, which no page shows yet",
-        ),
-        (
-            "region.input_method",
-            "the Region page, which no page shows yet",
         ),
         (
             "displays.*.refresh_rate",
