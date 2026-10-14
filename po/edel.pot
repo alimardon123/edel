@@ -77,6 +77,18 @@ msgstr ""
 msgid "{name} can log in now."
 msgstr ""
 
+msgid "could not read {path}"
+msgstr ""
+
+msgid "this computer has people with accounts already, so first-boot makes nobody; add a person with edel settings set users.NAME.admin=true"
+msgstr ""
+
+msgid "{assignment} names a person; first-boot makes only {name}, so leave it out"
+msgstr ""
+
+msgid "the new password on standard input is empty; nothing was changed"
+msgstr ""
+
 msgid "could not write {path}"
 msgstr ""
 
@@ -176,9 +188,6 @@ msgstr ""
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
 msgstr ""
 
-msgid "could not read {path}"
-msgstr ""
-
 msgid "/dev/{name} is not a whole disk; name a disk such as /dev/sda, not a partition"
 msgstr ""
 
@@ -234,9 +243,6 @@ msgid "edel install asks its questions on a terminal; run it in one, or name the
 msgstr ""
 
 msgid "--new-password-stdin gives one person a password, and {path} names {count}; name one person in it"
-msgstr ""
-
-msgid "the new password on standard input is empty; nothing was changed"
 msgstr ""
 
 msgid "/dev/{name} is the disk this system runs from; install to another disk"

@@ -364,12 +364,23 @@ enum SettingsCommands {
         file: String,
     },
     /// Ask for the first person on a console when nobody can log in, as
-    /// the consoles do before their login prompt (M6.6b)
+    /// the consoles do before their login prompt (M6.6b); with --user, make
+    /// the computer's first person, as the Welcome does (M6.12)
     #[command(hide = true)]
     FirstBoot {
         /// Ask on this terminal, as init's consoles run it
-        #[arg(long, required = true)]
+        #[arg(long, required_unless_present = "user", conflicts_with = "user")]
         console: bool,
+        /// Make this person the computer's first, an administrator, while
+        /// nobody has an account yet, as the Welcome does (M6.12)
+        #[arg(long, value_name = "NAME", requires = "new_password_stdin")]
+        user: Option<String>,
+        /// Read that person's password from the first line of standard input
+        #[arg(long, requires = "user")]
+        new_password_stdin: bool,
+        /// Settings to set with the person, as KEY=VALUE, as edel settings set takes them
+        #[arg(value_name = "KEY=VALUE", requires = "user")]
+        assignments: Vec<String>,
     },
 }
 
@@ -796,6 +807,11 @@ fn run(command: Commands) -> Result<()> {
             Some(SettingsCommands::Check { file }) => {
                 check_system_file(&settings_source::local(&file)?)
             }
+            Some(SettingsCommands::FirstBoot {
+                user: Some(user),
+                assignments,
+                ..
+            }) => first_boot::first_person(&user, &assignments),
             Some(SettingsCommands::FirstBoot { .. }) => first_boot::console(),
         },
         Commands::Theme { command } => match command {

@@ -1982,10 +1982,19 @@ msgstr ""
 msgid "You are all set"
 msgstr ""
 
+msgid "Try Edel OS from this stick, or install it on this computer. Trying changes nothing on the computer."
+msgstr ""
+
 msgid "The language Edel OS speaks to you in."
 msgstr ""
 
 msgid "The keys your keyboard types. Try it below."
+msgstr ""
+
+msgid "The name and password you log in with. You look after this computer, so you are its administrator."
+msgstr ""
+
+msgid "The time zone the clock follows."
 msgstr ""
 
 msgid "How your windows, panel and dock are arranged. Change it any time in Settings."
@@ -2013,6 +2022,24 @@ msgid "Start using Edel OS"
 msgstr ""
 
 msgid "Next"
+msgstr ""
+
+msgid "Try Edel OS"
+msgstr ""
+
+msgid "Start using Edel OS makes the account {name} and restarts the computer once. Then log in as {name} with your password."
+msgstr ""
+
+msgid "Go back to Your account and give a name and a password."
+msgstr ""
+
+msgid "Making your account"
+msgstr ""
+
+msgid "{name} can log in now, but the computer did not restart: {why}. Restart it to log in as {name}."
+msgstr ""
+
+msgid "the account could not be made; try again"
 msgstr ""
 
 msgid "Try it here:"

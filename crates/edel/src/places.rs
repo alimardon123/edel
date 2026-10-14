@@ -311,6 +311,11 @@ pub fn person_state_dir() -> Option<PathBuf> {
     }
 }
 
+/// The stamp Settings' Welcome leaves in a person's state directory
+/// ([`person_state_dir`]) when it closes on a stick (M6.12), so the stick's
+/// desktop opens it once; `edel::first_start` reads it.
+pub const WELCOME_SEEN: &str = "welcome-seen";
+
 /// A person's own themes' pictures (M5.12b6): `$XDG_DATA_HOME/edel/themes`,
 /// else `~/.local/share/edel/themes`, one folder per imported theme, named
 /// by the theme. A theme's values are in the settings file; these are only

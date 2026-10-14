@@ -88,6 +88,17 @@ pub const INSTALL: Action = Action {
     args: &["install"],
 };
 
+/// The Welcome's Start using Edel OS on a computer nobody has an account on
+/// (M6.12), which makes its first person; the person's name, the password on
+/// standard input and the choices made follow these words. `first-boot` is
+/// hidden from `edel --help` and the command reference, as it works only
+/// while nobody has an account, so [`ACTIONS`], which the tests hold to the
+/// reference, leaves it out.
+pub const FIRST_PERSON: Action = Action {
+    page: "Welcome",
+    args: &["settings", "first-boot"],
+};
+
 // `edel addon list` joins this table when add-ons and their page come (M7.2):
 // the roadmap's list names it, but the command does not exist yet.
 
