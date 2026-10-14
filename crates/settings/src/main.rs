@@ -45,6 +45,7 @@ mod system;
 mod text;
 mod themes;
 mod tray;
+mod unknown;
 mod updates;
 mod users;
 mod wallpaper;

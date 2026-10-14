@@ -529,80 +529,6 @@ pub const ROWS: &[Row] = &[
     },
 ];
 
-/// The keys Settings has no row of their own for, each with why (M6.11):
-/// another control writes them whole, or the command line and the file
-/// are the ways to change them. A key a later step brings (`supported:
-/// false`) needs neither, as no page shows a row that does not work yet,
-/// and a retired key needs neither either.
-/// Only the tests read it: it is the reasons, held to the key table.
-#[cfg(test)]
-pub const NO_ROW: &[(&str, &str)] = &[
-    (
-        "system.developer_mode",
-        "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
-    ),
-    (
-        "users.*.ssh_keys",
-        "a key is pasted on the command line or written in the file, as a server's administrator does",
-    ),
-    (
-        "users.*.login_shell",
-        "the shell a terminal starts, for people who use one; set in the file or with edel settings set",
-    ),
-    (
-        "network.hostname",
-        "the machine's key, and Settings writes only the person's file; About shows the name",
-    ),
-    (
-        "region.language",
-        "the Region page, which no page shows yet; the installer asks it",
-    ),
-    (
-        "region.keyboard",
-        "the Region page, which no page shows yet; the installer asks it and the panel switches layouts",
-    ),
-    (
-        "region.timezone",
-        "the Region page, which no page shows yet; the installer asks it",
-    ),
-    (
-        "region.time_servers",
-        "the Region page, which no page shows yet",
-    ),
-    (
-        "region.input_method",
-        "the Region page, which no page shows yet",
-    ),
-    (
-        "displays.*.refresh_rate",
-        "the compositor's state file lists modes without their rates, so the Displays page cannot offer them; a screen runs at its mode's best rate",
-    ),
-    (
-        "lock_screen.dim",
-        "changed in the lock screen's own editor, which the Lock screen page's Customize opens",
-    ),
-    (
-        "lock_screen.looks",
-        "a table the Lock screen page's gallery writes whole (New look, Rename, Delete), so a row's Undo would rewrite it",
-    ),
-    (
-        "themes.*",
-        "tables the Appearance page's theme card writes whole (Keep as new, Rename, Delete, Import), as edel theme does",
-    ),
-    (
-        "presets.*",
-        "tables the Layout page writes whole (Save as preset, Delete), as edel preset does",
-    ),
-    (
-        "services.*",
-        "the machine's switches for its features' services, which an administrator changes as root with edel settings set services.NAME=false",
-    ),
-    (
-        "apps.installed",
-        "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
-    ),
-];
-
 /// What the Panels group says under its heading (M5.31d).
 pub const PANELS_WHAT: &str = n_("Which panels and docks show, where, and what they hold");
 
@@ -775,6 +701,78 @@ mod tests {
     use super::*;
     use edel::settings::{self, KEYS, Source};
     use toml::Value;
+
+    /// The keys Settings has no row of their own for, each with why (M6.11):
+    /// another control writes them whole, or the command line and the file
+    /// are the ways to change them. A key a later step brings (`supported:
+    /// false`) needs neither, as no page shows a row that does not work yet,
+    /// and a retired key needs neither either.
+    const NO_ROW: &[(&str, &str)] = &[
+        (
+            "system.developer_mode",
+            "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
+        ),
+        (
+            "users.*.ssh_keys",
+            "a key is pasted on the command line or written in the file, as a server's administrator does",
+        ),
+        (
+            "users.*.login_shell",
+            "the shell a terminal starts, for people who use one; set in the file or with edel settings set",
+        ),
+        (
+            "network.hostname",
+            "the machine's key, and Settings writes only the person's file; About shows the name",
+        ),
+        (
+            "region.language",
+            "the Region page, which no page shows yet; the installer asks it",
+        ),
+        (
+            "region.keyboard",
+            "the Region page, which no page shows yet; the installer asks it and the panel switches layouts",
+        ),
+        (
+            "region.timezone",
+            "the Region page, which no page shows yet; the installer asks it",
+        ),
+        (
+            "region.time_servers",
+            "the Region page, which no page shows yet",
+        ),
+        (
+            "region.input_method",
+            "the Region page, which no page shows yet",
+        ),
+        (
+            "displays.*.refresh_rate",
+            "the compositor's state file lists modes without their rates, so the Displays page cannot offer them; a screen runs at its mode's best rate",
+        ),
+        (
+            "lock_screen.dim",
+            "changed in the lock screen's own editor, which the Lock screen page's Customize opens",
+        ),
+        (
+            "lock_screen.looks",
+            "a table the Lock screen page's gallery writes whole (New look, Rename, Delete), so a row's Undo would rewrite it",
+        ),
+        (
+            "themes.*",
+            "tables the Appearance page's theme card writes whole (Keep as new, Rename, Delete, Import), as edel theme does",
+        ),
+        (
+            "presets.*",
+            "tables the Layout page writes whole (Save as preset, Delete), as edel preset does",
+        ),
+        (
+            "services.*",
+            "the machine's switches for its features' services, which an administrator changes as root with edel settings set services.NAME=false",
+        ),
+        (
+            "apps.installed",
+            "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
+        ),
+    ];
 
     #[test]
     fn every_row_is_a_key_this_release_supports() {

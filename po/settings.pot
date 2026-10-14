@@ -1781,6 +1781,24 @@ msgstr ""
 msgid "Its icon's name: {app}"
 msgstr ""
 
+msgid "The whole file"
+msgstr ""
+
+msgid "In your settings file."
+msgstr ""
+
+msgid "In this machine's settings file."
+msgstr ""
+
+msgid "{message} {where}"
+msgstr ""
+
+msgid "Remove {key}"
+msgstr ""
+
+msgid "Not understood by this release"
+msgstr ""
+
 msgid "Installing changes the system, so Edel OS asks for your password."
 msgstr ""
 

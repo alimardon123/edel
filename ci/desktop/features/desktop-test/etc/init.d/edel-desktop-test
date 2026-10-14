@@ -695,6 +695,13 @@ commands() {
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page panels" </dev/null >/tmp/settings-panels.log 2>&1 &
 			;;
 		'settings panels log') say "settings_panels_log $(tr '\n' ';' </tmp/settings-panels.log 2>/dev/null)" ;;
+		# Settings' System page (M6.11): a line no release knows in ci's
+		# file, the page opened by its name, and its log.
+		'settings unknown line') as_ci "mkdir -p /home/ci/.config/edel && printf '%s\\n' 'format = 1' '[appearance]' 'acent = \"red\"' >/home/ci/.config/edel/$settings_name" ;;
+		'settings system')
+			as_ci edel-settings --page system </dev/null >/tmp/settings-system.log 2>&1 &
+			;;
+		'settings system log') say "settings_system_log $(tr '\n' ';' </tmp/settings-system.log 2>/dev/null)" ;;
 		# Settings' Workspaces group (M5.2n): opened on the Workspaces page by
 		# its name, workspaces, its log says where the count's buttons lie.
 		'settings workspaces')

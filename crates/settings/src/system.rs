@@ -83,6 +83,9 @@ struct Ui {
 
 pub fn page() -> gtk::Widget {
     let (page, content, _) = widgets::page(tr("System"), tr(INTRO));
+    // What this release did not understand comes first, hidden when there
+    // is nothing (M6.11).
+    crate::unknown::group(&content);
 
     widgets::heading(&content, tr("Copy this machine"));
     let group = widgets::group(&content);

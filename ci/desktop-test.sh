@@ -209,6 +209,11 @@
 #               icon lies in the panel's tray; AT-SPI names it, a click
 #               and a right click reach it, and the icon goes with its app
 #               (M5.2e)
+#   settings-unknown  Settings' System page with ci's file holding acent
+#               under [appearance], which no release knows: the page's
+#               group logs appearance.acent as not understood, Remove at its
+#               place takes the line out, and the log then says nothing is
+#               left (M6.11)
 #   settings-shortcuts  Settings' Shortcuts page opened on the close_window row:
 #               Change, then Super+W, which the dialog takes (the compositor
 #               logs `shortcuts inhibited for`) instead of opening the
@@ -2314,6 +2319,57 @@ tour_close() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+}
+
+case_settings_unknown() {
+	# The System page's group of what this release did not understand
+	# (M6.11, after settings-shortcuts): ci's file gets `acent = "red"`
+	# under [appearance], a key no release knows (the release's is accent).
+	# Settings opens on the System page, whose log names the key, and Remove,
+	# at the place the log gives, takes the line out of ci's file, so the log
+	# says nothing is left. The service writes the line, opens the page and
+	# reads Settings' log (`settings unknown line`, `settings system`,
+	# `settings system log`), as it does for the other settings cases.
+	guest 'settings unknown line'
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings system'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the System page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2
+	remove=none
+	i=0
+	while [ "$remove" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where the Remove button lies: $(value settings_system_log)"
+		guest 'settings system log'
+		text=$(value settings_system_log)
+		remove=$(echo "$text" | sed -n 's/.*system group places remove appearance\.acent \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		[ -n "$remove" ] || remove=none
+		[ "$remove" = none ] && sleep 1
+	done
+	echo "$text" | grep -q 'system not understood appearance\.acent' ||
+		fail "Settings did not name appearance.acent as not understood: $text"
+	set -- $remove
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	python3 ci/qmp.py click "$cx" "$cy"
+	i=0
+	while :; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "a click on Remove at $cx,$cy did not leave nothing not understood: $(value settings_system_log)"
+		guest 'settings system log'
+		value settings_system_log | grep -q 'system not understood nothing' && break
+		sleep 1
+	done
+	filed=$(count 'DESKTOP-TEST: settings_file ')
+	guest 'settings file'
+	wait_more 'DESKTOP-TEST: settings_file ' "$filed" || fail "the service did not read ci's settings file"
+	value settings_file | grep -q 'acent' &&
+		fail "Remove left appearance.acent in ci's settings file: $(value settings_file)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent"
 }
 
 case_settings_tour() {
@@ -6854,7 +6910,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
