@@ -4874,6 +4874,25 @@ case_own_bars() {
 			[ -n "$v" ] || fail "the header bar's close button or window has no place: $headerbar; windows: $(value windows)"
 		done
 	}
+	# cross_drawn FILE WHEN: the close button's cross is drawn in the
+	# screenshot FILE: the button's middle, where the arms meet, is darker
+	# than the bar 12 px above it by more than 80 in a channel, and 5 px
+	# above the middle, between the arms, is the bar again (within 30), so
+	# the glyph is neither missing nor a filled box, as GTK drew stroked
+	# glyphs (M6.16).
+	cross_drawn() {
+		mx=$((wx + cx + cw / 2)) my=$((wy + cy + ch / 2))
+		bar=$(python3 ci/qmp.py pixel "$1" "$mx" $((my - 12)))
+		mid=$(python3 ci/qmp.py pixel "$1" "$mx" "$my")
+		gap=$(python3 ci/qmp.py pixel "$1" "$mx" $((my - 5)))
+		apart() {
+			python3 -c 'import sys; a, b = (bytes.fromhex(x) for x in sys.argv[1:3]); print(max(abs(p - q) for p, q in zip(a, b)))' "$1" "$2"
+		}
+		[ "$(apart "$mid" "$bar")" -gt 80 ] ||
+			fail "no cross at the close button's middle $mx,$my $2: $mid against the bar's $bar ($1)"
+		[ "$(apart "$gap" "$bar")" -lt 30 ] ||
+			fail "the close glyph is filled between its arms at $mx,$((my - 5)) $2: $gap against the bar's $bar ($1)"
+	}
 	guest 'portal buttons'
 	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
 	first=$(layout_of)
@@ -4910,9 +4929,7 @@ case_own_bars() {
 	[ $((cx + cw / 2)) -lt $((ww / 2)) ] ||
 		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the left: $headerbar"
 	python3 ci/qmp.py screendump "$dir/headerbar-left.png"
-	box=$(python3 ci/qmp.py uniform "$dir/headerbar-left.png" $((wx + cx)) $((wy + cy)) "$cw" "$ch")
-	[ "$box" = varied ] ||
-		fail "the close button's box at $((wx + cx)),$((wy + cy)) on screen, ${cw}x$ch, is $box: no glyph is drawn there"
+	cross_drawn "$dir/headerbar-left.png" 'on the left'
 	told=$(count 'edel-shell-ui: button layout :minimize,maximize,close told to apps')
 	guest 'buttons default'
 	wait_more 'edel-shell-ui: button layout :minimize,maximize,close told to apps' "$told" 30 ||
@@ -4930,9 +4947,7 @@ case_own_bars() {
 	[ $((cx + cw / 2)) -gt $((ww / 2)) ] ||
 		fail "the close button lies at x $((cx + cw / 2)) in a window $ww wide, not on the right: $headerbar"
 	python3 ci/qmp.py screendump "$dir/headerbar-right.png"
-	box=$(python3 ci/qmp.py uniform "$dir/headerbar-right.png" $((wx + cx)) $((wy + cy)) "$cw" "$ch")
-	[ "$box" = varied ] ||
-		fail "the close button's box at $((wx + cx)),$((wy + cy)) on screen, ${cw}x$ch, is $box after the reset: no glyph is drawn there"
+	cross_drawn "$dir/headerbar-right.png" 'on the right after the reset'
 	guest 'headerbar off'
 	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png)"
 }

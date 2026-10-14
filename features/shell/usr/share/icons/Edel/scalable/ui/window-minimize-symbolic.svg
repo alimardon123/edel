@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round">
-  <!-- A title bar's minimize button (M5.2h): a dash. -->
-  <path d="M2.5 7H11.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14">
+  <!-- Written from design/icons/ by edel::icons, its strokes filled (M6.16). -->
+  <path fill="#000" d="M2.5 6.25L11.5 6.25Q11.811 6.25 12.03 6.47Q12.25 6.689 12.25 7Q12.25 7.311 12.03 7.53Q11.811 7.75 11.5 7.75L2.5 7.75Q2.189 7.75 1.97 7.53Q1.75 7.311 1.75 7Q1.75 6.689 1.97 6.47Q2.189 6.25 2.5 6.25Z"/>
 </svg>
