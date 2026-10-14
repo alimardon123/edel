@@ -97,9 +97,23 @@ pub const ROWS: &[Row] = &[
     // The Appearance page (M5.2q): the wallpaper first (M5.10c4c), then
     // light or dark, then the workspace switcher's look, shown count and
     // ends.
+    // The theme card (M5.12b6b): the theme in use, its pictures on top of
+    // the theme's own, and a dark style's picture of a pair (M5.10c4d).
+    Row {
+        key: "appearance.theme",
+        title: n_("Theme"),
+    },
+    Row {
+        key: "appearance.pictures",
+        title: n_("Pictures"),
+    },
     Row {
         key: "appearance.wallpaper",
         title: n_("Wallpaper"),
+    },
+    Row {
+        key: "appearance.wallpaper_dark",
+        title: n_("Dark style wallpaper"),
     },
     Row {
         key: "appearance.mode",
@@ -114,6 +128,15 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "appearance.colours.*",
         title: n_("Colours"),
+    },
+    // A colour for one style only, Light or Dark in the Add a colour row.
+    Row {
+        key: "appearance.colours.light.*",
+        title: n_("Light style colours"),
+    },
+    Row {
+        key: "appearance.colours.dark.*",
+        title: n_("Dark style colours"),
     },
     // The high-contrast look (M6.9): a switch under the accent, for strong
     // edges and the plainest colours.
@@ -238,6 +261,12 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "lock_screen.notifications",
         title: n_("Unread count"),
+    },
+    // The Users page (M5.8b): whether the person at the machine is an
+    // administrator, shown, and changed by an administrator.
+    Row {
+        key: "users.*.admin",
+        title: n_("Administrator"),
     },
     // The Displays page (M5.7a); the `*` is a screen's name.
     Row {
@@ -500,6 +529,78 @@ pub const ROWS: &[Row] = &[
     },
 ];
 
+/// The keys Settings has no row of their own for, each with why (M6.11):
+/// another control writes them whole, or the command line and the file
+/// are the ways to change them. A key a later step brings (`supported:
+/// false`) needs neither, as no page shows a row that does not work yet,
+/// and a retired key needs neither either.
+pub const NO_ROW: &[(&str, &str)] = &[
+    (
+        "system.developer_mode",
+        "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
+    ),
+    (
+        "users.*.ssh_keys",
+        "a key is pasted on the command line or written in the file, as a server's administrator does",
+    ),
+    (
+        "users.*.login_shell",
+        "the shell a terminal starts, for people who use one; set in the file or with edel settings set",
+    ),
+    (
+        "network.hostname",
+        "the machine's key, and Settings writes only the person's file; About shows the name",
+    ),
+    (
+        "region.language",
+        "the Region page, which no page shows yet; the installer asks it",
+    ),
+    (
+        "region.keyboard",
+        "the Region page, which no page shows yet; the installer asks it and the panel switches layouts",
+    ),
+    (
+        "region.timezone",
+        "the Region page, which no page shows yet; the installer asks it",
+    ),
+    (
+        "region.time_servers",
+        "the Region page, which no page shows yet",
+    ),
+    (
+        "region.input_method",
+        "the Region page, which no page shows yet",
+    ),
+    (
+        "displays.*.refresh_rate",
+        "the compositor's state file lists modes without their rates, so the Displays page cannot offer them; a screen runs at its mode's best rate",
+    ),
+    (
+        "lock_screen.dim",
+        "changed in the lock screen's own editor, which the Lock screen page's Customize opens",
+    ),
+    (
+        "lock_screen.looks",
+        "a table the Lock screen page's gallery writes whole (New look, Rename, Delete), so a row's Undo would rewrite it",
+    ),
+    (
+        "themes.*",
+        "tables the Appearance page's theme card writes whole (Keep as new, Rename, Delete, Import), as edel theme does",
+    ),
+    (
+        "presets.*",
+        "tables the Layout page writes whole (Save as preset, Delete), as edel preset does",
+    ),
+    (
+        "services.*",
+        "the machine's switches for its features' services, which an administrator changes as root with edel settings set services.NAME=false",
+    ),
+    (
+        "apps.installed",
+        "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
+    ),
+];
+
 /// What the Panels group says under its heading (M5.31d).
 pub const PANELS_WHAT: &str = n_("Which panels and docks show, where, and what they hold");
 
@@ -709,7 +810,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 28);
+        assert_eq!(on_page("appearance").count(), 33);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }
@@ -801,5 +902,56 @@ mod tests {
             both,
             "edel settings set layout.close_button=true layout.minimize_button=false"
         );
+    }
+
+    /// Whether `pattern` (a key, or a family such as `shortcuts.*`) holds
+    /// `key`, a `*` in either matching any one part.
+    fn holds(pattern: &str, key: &str) -> bool {
+        let (p, k): (Vec<&str>, Vec<&str>) =
+            (pattern.split('.').collect(), key.split('.').collect());
+        p.len() == k.len()
+            && p.iter()
+                .zip(&k)
+                .all(|(p, k)| *p == "*" || *k == "*" || p == k)
+    }
+
+    #[test]
+    fn every_key_has_a_row_or_says_why_not() {
+        let missing: Vec<&str> = KEYS
+            .iter()
+            .filter(|key| key.supported)
+            .filter(|key| edel::key_help::find(key.path).is_none_or(|line| line.retired.is_none()))
+            .filter(|key| !ROWS.iter().any(|row| holds(row.key, key.path)))
+            .filter(|key| !NO_ROW.iter().any(|(k, _)| *k == key.path))
+            .map(|key| key.path)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these keys have no row in rows.rs and are not in NO_ROW with a reason: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn no_row_names_only_keys_without_a_row_and_says_why() {
+        for (key, why) in NO_ROW {
+            let entry = KEYS
+                .iter()
+                .find(|k| k.path == *key)
+                .unwrap_or_else(|| panic!("{key} in NO_ROW is not a settings file key"));
+            assert!(
+                entry.supported,
+                "{key} in NO_ROW is not supported yet, so it needs no reason"
+            );
+            assert!(
+                !ROWS.iter().any(|row| holds(row.key, key)),
+                "{key} is in NO_ROW but has a row"
+            );
+            assert!(why.len() > 20, "{key}'s reason says too little: {why:?}");
+            assert_eq!(
+                NO_ROW.iter().filter(|(k, _)| k == key).count(),
+                1,
+                "{key} twice"
+            );
+        }
     }
 }

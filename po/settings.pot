@@ -1079,13 +1079,28 @@ msgstr ""
 msgid "Side of the strip in the workspace overview"
 msgstr ""
 
+msgid "Theme"
+msgstr ""
+
+msgid "Pictures"
+msgstr ""
+
 msgid "Wallpaper"
+msgstr ""
+
+msgid "Dark style wallpaper"
 msgstr ""
 
 msgid "Style"
 msgstr ""
 
 msgid "Accent"
+msgstr ""
+
+msgid "Light style colours"
+msgstr ""
+
+msgid "Dark style colours"
 msgstr ""
 
 msgid "High contrast"
@@ -1167,6 +1182,9 @@ msgid "Clock and date"
 msgstr ""
 
 msgid "Unread count"
+msgstr ""
+
+msgid "Administrator"
 msgstr ""
 
 msgid "Resolution"
@@ -1842,9 +1860,6 @@ msgid "the command stopped without an answer; try again"
 msgstr ""
 
 msgid "The people who use this computer."
-msgstr ""
-
-msgid "Administrator"
 msgstr ""
 
 msgid "Standard user"
