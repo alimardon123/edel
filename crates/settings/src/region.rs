@@ -356,7 +356,7 @@ fn update(ui: &Rc<Ui>) {
         ui.zone.set_selected(at);
     }
     fill_keyboard(ui, &layouts_now(&files));
-    fill_servers(ui, &servers_now(&files));
+    fill_servers(ui, &servers_now(&files), files.chosen(SERVERS).is_some());
     ui.quiet.set(false);
     ui.language_line.show(&files.source(LANGUAGE));
     ui.keyboard_line.show(&files.source(KEYBOARD));
@@ -477,10 +477,16 @@ fn add_layout_row(ui: &Rc<Ui>, list: &[String]) -> gtk::Box {
 }
 
 /// Rebuilds the servers' rows: one per host with Remove, then Add a server.
-fn fill_servers(ui: &Rc<Ui>, list: &[String]) {
+/// The servers' rows: `own` when a file names them, else they are the
+/// release's, which no file holds, so there is nothing to remove.
+fn fill_servers(ui: &Rc<Ui>, list: &[String], own: bool) {
     clear(&ui.servers_rows);
     for (at, host) in list.iter().enumerate() {
-        ui.servers_rows.append(&server_row(ui, list, at, host));
+        let row = server_row(ui, list, at, host);
+        if let Some(remove) = row.last_child() {
+            remove.set_sensitive(own);
+        }
+        ui.servers_rows.append(&row);
     }
     ui.servers_rows.append(&add_server_row(ui, list));
 }
@@ -674,11 +680,16 @@ fn monitors(files: &Files) -> Vec<gio::FileMonitor> {
         .collect()
 }
 
+/// The line under the page's title, a sentence of its own, as other pages
+/// have (the page table's words are the command's short summary).
+const INTRO: &str =
+    n_("Your language and keyboard, and the time zone and servers the clock follows.");
+
 /// The Region page (M6.11): the five `[region]` rows, as the module says.
 pub fn page() -> gtk::Widget {
     let words = PAGES.iter().find(|p| p.section == "region");
-    let (title, about) = words.map_or(("", ""), |p| (p.title, p.about));
-    let (page, content, problem) = widgets::page(tr(title), tr(about));
+    let title = words.map_or("", |p| p.title);
+    let (page, content, problem) = widgets::page(tr(title), tr(INTRO));
     let group = widgets::group(&content);
     let files = Files::here();
     let rules = std::fs::read_to_string(edel::keyboard::RULES).ok();
