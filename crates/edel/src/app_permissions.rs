@@ -39,6 +39,9 @@ pub struct Permission {
     pub choices: &'static [&'static str],
     /// Where it lives: the permission store's table and id, or the files.
     pub place: Place,
+    /// Whether an app with no entry is asked the first time it wants this
+    /// (the camera's and the screenshot portal's way), rather than allowed.
+    pub asks_first: bool,
 }
 
 /// Where a permission lives in Flatpak's state.
@@ -57,24 +60,28 @@ pub const PERMISSIONS: &[Permission] = &[
         title: n_("Camera"),
         choices: CAMERA_CHOICES,
         place: Place::Store("devices", "camera"),
+        asks_first: true,
     },
     Permission {
         key: "apps.screenshots",
         title: n_("Screenshots"),
         choices: ALLOW_OR_NEVER,
         place: Place::Store("screenshot", "screenshot"),
+        asks_first: true,
     },
     Permission {
         key: "apps.notifications",
         title: n_("Notifications"),
         choices: ALLOW_OR_NEVER,
         place: Place::Store("notifications", "notification"),
+        asks_first: false,
     },
     Permission {
         key: "apps.files",
         title: n_("Files"),
         choices: FILES_CHOICES,
         place: Place::Files,
+        asks_first: false,
     },
 ];
 
@@ -184,9 +191,10 @@ pub fn dropped(before: &[Entry], now: &[Entry]) -> Vec<Entry> {
 
 /// The apps whose files `choices` set to `ask`.
 pub fn files_asked(choices: &Choices) -> Vec<String> {
-    choices
-        .get("apps.files")
-        .into_iter()
+    PERMISSIONS
+        .iter()
+        .filter(|p| p.place == Place::Files)
+        .filter_map(|p| choices.get(p.key))
         .flatten()
         .filter(|(_, choice)| choice.as_str() == ASK)
         .map(|(app, _)| app.clone())

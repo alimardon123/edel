@@ -18,7 +18,7 @@ use gtk::gio;
 use gtk::prelude::*;
 
 use edel::app_icons;
-use edel::app_permissions::{self, ALLOW, ASK, NEVER, PERMISSIONS, Permission};
+use edel::app_permissions::{self, ALLOW, ASK, NEVER, PERMISSIONS, Permission, Place};
 use edel::apps::{self, App};
 use edel::i18n::{tr, trf};
 use edel::settings::{self, PAGES};
@@ -104,37 +104,31 @@ impl Ui {
     }
 }
 
-/// Whether the choice without an entry is the portal asking the first time
-/// (M6.14a): the camera and the screenshots, whose portals ask. The
-/// notifications and the files have no such asking, so no entry keeps
-/// what the app had.
-fn portal_asks(key: &str) -> bool {
-    key == "apps.camera" || key == "apps.screenshots"
-}
-
 /// The items of `permission`'s choice in the order people see them: `None`
 /// is the choice without an entry, then each value the permission takes.
 /// For the notifications and the files the first value is that choice, so
 /// it is `None`, and only the others are listed.
 fn items(permission: &Permission) -> Vec<Option<&'static str>> {
     let values = permission.choices.iter().map(|choice| Some(*choice));
-    if portal_asks(permission.key) {
+    if permission.asks_first {
         std::iter::once(None).chain(values).collect()
     } else {
         std::iter::once(None).chain(values.skip(1)).collect()
     }
 }
 
-/// The words of one item of `key`'s choice, as the person reads them.
-fn word(key: &str, item: Option<&'static str>) -> &'static str {
-    match (key, item) {
-        ("apps.files", None) => tr("All its files"),
-        ("apps.files", Some(ASK)) => tr("Only files you pick"),
-        (_, None) if portal_asks(key) => tr("Ask the first time"),
-        (_, None | Some(ALLOW)) => tr("Allow"),
-        (_, Some(ASK)) => tr("Ask every time"),
-        (_, Some(NEVER)) => tr("Never"),
-        (_, Some(other)) => other,
+/// The words of one item of `permission`'s choice, as the person reads
+/// them; the files' choice is about which files, so its words say so.
+fn word(permission: &Permission, item: Option<&'static str>) -> &'static str {
+    let files = permission.place == Place::Files;
+    match item {
+        None if files => tr("All its files"),
+        Some(ASK) if files => tr("Only files you pick"),
+        None if permission.asks_first => tr("Ask the first time"),
+        None | Some(ALLOW) => tr("Allow"),
+        Some(ASK) => tr("Ask every time"),
+        Some(NEVER) => tr("Never"),
+        Some(other) => other,
     }
 }
 
@@ -268,7 +262,7 @@ pub fn page() -> gtk::Widget {
             let items = items(permission);
             let labels: Vec<String> = items
                 .iter()
-                .map(|item| word(permission.key, *item).to_string())
+                .map(|item| word(permission, *item).to_string())
                 .collect();
             let choice = widgets::Choice::new(labels);
             let row = widgets::row(&group, tr(permission.title), &choice.widget());
@@ -353,13 +347,16 @@ mod tests {
 
     #[test]
     fn the_words_say_what_each_choice_does() {
-        assert_eq!(word("apps.camera", None), "Ask the first time");
-        assert_eq!(word("apps.camera", Some(ALLOW)), "Allow");
-        assert_eq!(word("apps.camera", Some(ASK)), "Ask every time");
-        assert_eq!(word("apps.screenshots", Some(NEVER)), "Never");
-        assert_eq!(word("apps.notifications", None), "Allow");
-        assert_eq!(word("apps.files", None), "All its files");
-        assert_eq!(word("apps.files", Some(ASK)), "Only files you pick");
+        assert_eq!(word(permission("apps.camera"), None), "Ask the first time");
+        assert_eq!(word(permission("apps.camera"), Some(ALLOW)), "Allow");
+        assert_eq!(word(permission("apps.camera"), Some(ASK)), "Ask every time");
+        assert_eq!(word(permission("apps.screenshots"), Some(NEVER)), "Never");
+        assert_eq!(word(permission("apps.notifications"), None), "Allow");
+        assert_eq!(word(permission("apps.files"), None), "All its files");
+        assert_eq!(
+            word(permission("apps.files"), Some(ASK)),
+            "Only files you pick"
+        );
     }
 
     #[test]
