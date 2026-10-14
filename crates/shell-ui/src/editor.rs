@@ -1311,7 +1311,7 @@ mod tests {
         let Some(mut text) = fonts() else {
             return; // no fonts on this machine
         };
-        // Classic's widgets are placed; Apps and Search are not.
+        // Classic's widgets are placed; Search is not, and Apps has no tile here.
         let panels = edel::presets::named(Some("classic")).0.panels;
         let placed: Vec<String> = panels
             .iter()

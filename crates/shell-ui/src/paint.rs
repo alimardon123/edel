@@ -1423,9 +1423,26 @@ mod tests {
         scale: u32,
         live: &Live,
     ) -> (Pixmap, Places, Tokens) {
-        let tokens = Tokens::built_in_scheme(scheme);
         let (preset, _) = edel::presets::named(Some(name));
-        let spec = &preset.panels[index];
+        preview_panel(&preset.panels[index], scheme, width, scale, live)
+    }
+
+    /// Classic's panel as it was before it showed apps (M6.19): the window
+    /// list after the menu, for the window list's own tests.
+    fn with_window_list() -> edel::presets::Panel {
+        let mut panel = edel::presets::named(Some("classic")).0.panels[0].clone();
+        panel.start = vec!["menu".into(), "separator".into(), "windows".into()];
+        panel
+    }
+
+    fn preview_panel(
+        spec: &edel::presets::Panel,
+        scheme: Scheme,
+        width: u32,
+        scale: u32,
+        live: &Live,
+    ) -> (Pixmap, Places, Tokens) {
+        let tokens = Tokens::built_in_scheme(scheme);
         let pick = |names: &[String]| {
             names
                 .iter()
@@ -1675,7 +1692,8 @@ mod tests {
         if text.line("A", 13.0).width == 0.0 {
             return; // no fonts on this machine
         }
-        let (_, places, _) = preview("classic", 0, Scheme::Light, 1280, 1, &live(4, false));
+        let (_, places, _) =
+            preview_panel(&with_window_list(), Scheme::Light, 1280, 1, &live(4, false));
         let (_, list) = places.iter().find(|(n, _)| *n == "windows").unwrap().1;
         // Three short titles take far less than the old 180 px each.
         assert!(list > 150.0 && list < 3.0 * 130.0, "the list is {list} px");
@@ -1683,7 +1701,8 @@ mod tests {
         // button's icon place.
         let mut mystery = live(4, false);
         mystery.windows = vec![task("Mystery", "nothing-has-this", false, false)];
-        let (without, places, tokens) = preview("classic", 0, Scheme::Light, 1280, 1, &mystery);
+        let (without, places, tokens) =
+            preview_panel(&with_window_list(), Scheme::Light, 1280, 1, &mystery);
         let (left, _) = places.iter().find(|(n, _)| *n == "windows").unwrap().1;
         let strip = fillet_height(&tokens);
         let base = tokens.panel.bytes();

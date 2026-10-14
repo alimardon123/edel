@@ -4253,6 +4253,70 @@ case_own_presets() {
 	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after zen, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
 }
 
+case_app_windows() {
+	# Classic groups by app (asked by Alimardon on 2026-10-14): its panel
+	# holds the apps widget after the menu, the pinned apps first. Of the
+	# apps it pins (browser, files, editor, terminal, store) the VM has
+	# only foot, the terminal, so foot's cell comes first. With two foot
+	# windows a click on it lists them (the app windows menu), and a
+	# click on the second row brings that window forward; a second click
+	# on the cell opens it again and Escape closes it. Kept as
+	# app-windows.png.
+	places_name apps || fail "Classic's panel holds no apps widget: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+	place=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.* apps \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	read -r x w <<-EOF
+		$place
+	EOF
+	[ "${w:-0}" -ge 40 ] || fail "Classic's apps widget is ${w:-no} px wide, too narrow for foot's 40 px cell"
+	cell=$((x + 24))
+	for n in 1 2; do
+		opened=$(count 'edel-compositor: mapped window foot')
+		python3 ci/qmp.py key meta_l-t
+		wait_more 'edel-compositor: mapped window foot' "$opened" || fail "Super+T did not open foot window $n"
+	done
+	shown=$(count 'edel-shell-ui: app windows shown')
+	python3 ci/qmp.py click "$cell" 774
+	wait_more 'edel-shell-ui: app windows shown' "$shown" || fail "a click on foot's cell at $cell,774 with two foot windows did not list them"
+	listed=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: app windows shown' | tail -n 1 | sed -n 's/.*shown, \([0-9]*\) windows.*/\1/p')
+	[ "${listed:-0}" -ge 2 ] || fail "the app windows menu lists ${listed:-no} windows, not two or more"
+	i=0
+	until value layers | grep -q 'edel-app-windows@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no app windows surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-app-windows@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-app-windows@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: app windows places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where the app windows menu's rows lie: $line"
+	# The card is centred in its surface, which adds its shadow's room.
+	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
+	set -- $(echo "$line" | sed -n 's/.*row1 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "the app windows menu has no second row: $line"
+	python3 ci/qmp.py screendump "$dir/app-windows.png"
+	chosen=$(count 'edel-shell-ui: app window chosen')
+	hidden=$(count 'edel-shell-ui: app windows hidden')
+	python3 ci/qmp.py click $((cx + $1 + $3 / 2)) $((cy + $2 + $4 / 2))
+	wait_more 'edel-shell-ui: app window chosen' "$chosen" || fail "a click on the menu's second row at $((cx + $1 + $3 / 2)),$((cy + $2 + $4 / 2)) chose no window"
+	wait_more 'edel-shell-ui: app windows hidden' "$hidden" || fail "the app windows menu stayed open after a window was chosen"
+	# Again, and Escape closes it with no window chosen.
+	shown=$(count 'edel-shell-ui: app windows shown')
+	python3 ci/qmp.py click "$cell" 774
+	wait_more 'edel-shell-ui: app windows shown' "$shown" || fail "a second click on foot's cell did not list its windows again"
+	hidden=$(count 'edel-shell-ui: app windows hidden')
+	chosen=$(count 'edel-shell-ui: app window chosen')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: app windows hidden' "$hidden" || fail "Escape did not close the app windows menu"
+	[ "$(count 'edel-shell-ui: app window chosen')" = "$chosen" ] || fail "Escape chose a window"
+	for n in 1 2; do
+		closed=$(count 'edel-compositor: unmapped window foot')
+		python3 ci/qmp.py key meta_l-q
+		wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot window $n"
+	done
+	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen"
+}
+
 case_taskbar() {
 	# Windows-like (M5.4c): edel settings set layout.preset=windows-like
 	# restarts shell-ui with one taskbar along the bottom, the menu button
@@ -6028,6 +6092,27 @@ case_buttons() {
 	echo "PASS: layout.window_buttons = \"left\" put close at the bar's left end, a click there closed keys at $x,$y, unsetting it brought the buttons back to the right, layout.minimize_button = false took minimize off the bar until it was unset, and Super+M maximized keys and gave it its size back"
 }
 
+# window_list_on and window_list_off: Classic shows apps, not windows
+# (2026-10-14), so the cases that check the window list widget put it in
+# the panel first, as panels.list, and take the line out again after;
+# each waits up to 10 s for shell-ui's places line to name the widget.
+places_name() {
+	i=0
+	until tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | grep -q " $1 [0-9]"; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || return 1
+		sleep 0.2
+	done
+}
+window_list_on() {
+	guest 'panels windows'
+	places_name windows || fail "panels.list with the window list did not put it in the panel: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+}
+window_list_off() {
+	guest 'panels default'
+	places_name apps || fail "Classic's apps did not come back after panels.list was taken out: $(tr -d '\r' <"$log" | grep -a 'panel places' | tail -n 1)"
+}
+
 # list_until TEST: waits up to 10 s for shell-ui's last places line to
 # give its window list a width W for which [ W TEST ] holds, and prints
 # the list's x and W.
@@ -6079,6 +6164,7 @@ case_windows() {
 	# line lies, the line being the list's last accent at that row.
 	panel=$(token panel)
 	accent=$(token accent)
+	window_list_on
 	opened=$(count 'edel-compositor: mapped window away')
 	# Counted before: earlier cases left such windows lines too.
 	listed=$(count 'DESKTOP-TEST: windows [0-9]+ .*away@[0-9]+,[0-9]+,200x150$')
@@ -6118,6 +6204,7 @@ case_windows() {
 	guest 'away off'
 	place=$(list_until "-lt $w") ||
 		fail "the window list is still $w px wide after away closed: $place"
+	window_list_off
 	echo "PASS: away's opening added a button of $((2 * half)) px to the panel's window list with the accent line, its title bar's minimize button hid it and left the button unmarked, a click on the button brought it back, and closing it took the button away"
 }
 
@@ -6545,6 +6632,7 @@ case_scroll() {
 	# The window list's fourth button, s4, the last: the list's place from
 	# the panel's log; a click 14 px from the list's end is in it, as the
 	# button is wider than that.
+	window_list_on
 	asked=$(count 'DESKTOP-TEST: places ')
 	guest 'panel places'
 	wait_more 'DESKTOP-TEST: places ' "$asked" || fail "the service did not say where the panel's widgets lie"
@@ -6558,6 +6646,7 @@ case_scroll() {
 		sleep 0.2
 	done
 	back=$(value windows)
+	window_list_off
 	guest 'four off'
 	guest 'style default'
 	python3 ci/qmp.py key meta_l-y
@@ -7151,7 +7240,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

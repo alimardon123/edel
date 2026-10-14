@@ -451,18 +451,18 @@ mod tests {
             index: 0,
         };
         let moved = move_widget(&panels, clock, to).unwrap();
-        assert_eq!(moved[0].start, ["clock", "menu", "separator", "windows"]);
+        assert_eq!(moved[0].start, ["clock", "menu", "separator", "apps"]);
         assert!(!moved[0].end.iter().any(|w| w == "clock"));
         let line = value(&moved).unwrap();
         assert_eq!(
             line,
-            r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"], start = ["clock", "menu", "separator", "windows"] }]"#
+            r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"], start = ["clock", "menu", "separator", "apps"] }]"#
         );
         // The line is what `edel settings set` takes and writes, and it
         // writes the same line from the struct's own field order too.
         let file = settings::set("format = 1\n", PANELS, &line).unwrap();
         assert_eq!(file, format!("format = 1\n\n[panels]\nlist = {line}\n"));
-        let in_struct_order = r#"[{ edge = "bottom", start = ["clock", "menu", "separator", "windows"], end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"] }]"#;
+        let in_struct_order = r#"[{ edge = "bottom", start = ["clock", "menu", "separator", "apps"], end = ["workspaces", "layout", "separator", "tray", "keyboard", "status"] }]"#;
         assert_eq!(
             settings::set("format = 1\n", PANELS, in_struct_order).unwrap(),
             file
@@ -483,7 +483,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(moved[0].start, ["separator", "windows", "menu"]);
+        assert_eq!(moved[0].start, ["separator", "apps", "menu"]);
         assert_eq!(moved[0].end, panels[0].end, "the end is untouched");
     }
 
@@ -501,7 +501,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(moved[0].start, ["separator", "windows", "menu"]);
+        assert_eq!(moved[0].start, ["separator", "apps", "menu"]);
     }
 
     #[test]
@@ -679,7 +679,7 @@ mod tests {
         let line = value(&panels).unwrap();
         assert_eq!(
             line,
-            r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status", "clock"], floating = true, screens = "every", size = "large", start = ["menu", "separator", "windows"] }]"#
+            r#"[{ edge = "bottom", end = ["workspaces", "layout", "separator", "tray", "keyboard", "status", "clock"], floating = true, screens = "every", size = "large", start = ["menu", "separator", "apps"] }]"#
         );
         let file = settings::set("format = 1\n", PANELS, &line).unwrap();
         let read = settings::read(&file).unwrap();
@@ -784,8 +784,8 @@ mod tests {
         let mac = presets::named(Some("mac-like")).0.apps.pinned;
         assert_eq!(
             pins_applying(None, None),
-            Vec::<String>::new(),
-            "Classic pins none"
+            ["browser", "files", "editor", "terminal", "store"],
+            "Classic pins the default apps"
         );
         assert_eq!(
             pins_applying(None, Some("format = 1\n[layout]\npreset = \"mac-like\"\n")),

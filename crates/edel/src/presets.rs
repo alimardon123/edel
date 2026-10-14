@@ -1029,7 +1029,7 @@ mod tests {
             [
                 "menu",
                 "separator",
-                "windows",
+                "apps",
                 "workspaces",
                 "layout",
                 "separator",
@@ -1129,7 +1129,10 @@ mod tests {
         assert_eq!(panel.start, ["menu", "search"]);
         assert_eq!(panel.centre, ["apps"]);
         // Classic and Hive pin nothing: they have no apps widget.
-        assert!(named(None).0.apps.pinned.is_empty());
+        assert_eq!(
+            named(None).0.apps.pinned,
+            ["browser", "files", "editor", "terminal", "store"]
+        );
     }
 
     #[test]
