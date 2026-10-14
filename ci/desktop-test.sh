@@ -7265,6 +7265,31 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/store.png"
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	# A web app (M6.4): an address typed in the launcher offers to make it
+	# an app, first; Return makes it and starts it, Firefox with a profile
+	# and an app id of its own, so it is a window of its own, which the
+	# compositor names by that id. Offline, the page itself cannot load.
+	python3 ci/qmp.py key meta_l
+	sleep 2
+	python3 ci/qmp.py type example.org
+	sleep 2
+	python3 ci/qmp.py key ret
+	i=0
+	until stick_session | grep -qa 'edel-compositor: window .* belongs to app edel-web-example-org'; do
+		i=$((i + 10))
+		if [ "$i" -gt 180 ]; then
+			python3 ci/qmp.py screendump "$dir/web-app-failed.png"
+			stick_session | grep -a 'web app\|launched\|mapped window\|belongs to app' | tail -n 20
+			fail "the web app made from the launcher did not map as its own window within 180 s (web-app-failed.png)"
+		fi
+		sleep 10
+	done
+	web_app_seconds=$i
+	stick_session | grep -qa 'edel-shell-ui: web app example.org added' ||
+		fail "the web app's window mapped, but the launcher did not say it made example.org an app"
+	python3 ci/qmp.py screendump "$dir/web-app.png"
+	python3 ci/qmp.py key meta_l-q
+	sleep 3
 	# The default apps' installation (M6.2a): Flatpak's triggers build the
 	# icon cache when the image is made, if gtk-update-icon-cache is there,
 	# which GTK apps showing app icons read (shell-ui reads the files). Partition 4
@@ -7514,7 +7539,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img" "$fresh" "$dir/fresh-data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
 
