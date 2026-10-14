@@ -39,6 +39,9 @@ pub struct Permission {
     pub choices: &'static [&'static str],
     /// Where it lives: the permission store's table and id, or the files.
     pub place: Place,
+    /// Its icon, one of the shell's own (`edel::icons`), which Settings
+    /// shows beside its name and the panel's sign will show.
+    pub icon: &'static str,
     /// Whether an app with no entry is asked the first time it wants this
     /// (the camera's and the screenshot portal's way), rather than allowed.
     pub asks_first: bool,
@@ -57,6 +60,7 @@ pub enum Place {
 pub const PERMISSIONS: &[Permission] = &[
     Permission {
         key: "apps.camera",
+        icon: "camera",
         title: n_("Camera"),
         choices: CAMERA_CHOICES,
         place: Place::Store("devices", "camera"),
@@ -64,6 +68,7 @@ pub const PERMISSIONS: &[Permission] = &[
     },
     Permission {
         key: "apps.screenshots",
+        icon: "screenshot",
         title: n_("Screenshots"),
         choices: ALLOW_OR_NEVER,
         place: Place::Store("screenshot", "screenshot"),
@@ -71,6 +76,7 @@ pub const PERMISSIONS: &[Permission] = &[
     },
     Permission {
         key: "apps.notifications",
+        icon: "bell",
         title: n_("Notifications"),
         choices: ALLOW_OR_NEVER,
         place: Place::Store("notifications", "notification"),
@@ -78,6 +84,7 @@ pub const PERMISSIONS: &[Permission] = &[
     },
     Permission {
         key: "apps.files",
+        icon: "folder",
         title: n_("Files"),
         choices: FILES_CHOICES,
         place: Place::Files,
@@ -326,6 +333,15 @@ mod tests {
         for p in PERMISSIONS {
             assert!(p.key.starts_with("apps."), "{}", p.key);
             assert_eq!(find(p.key), Some(p));
+            #[cfg(feature = "icons")]
+            assert!(
+                crate::icons::BUILT_IN
+                    .iter()
+                    .any(|(name, _)| *name == p.icon),
+                "{} names no built-in icon {}",
+                p.key,
+                p.icon
+            );
             for choice in p.choices {
                 assert!(store_value(choice).is_some(), "{choice}");
             }
