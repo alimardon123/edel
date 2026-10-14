@@ -80,9 +80,11 @@ settings_own_mib = 25
 # is, MiB; and the time from `edel-settings --welcome` to its first page's
 # places in its log, which it writes once two frames agree, ms, the part
 # of the first start's time from login to the desktop that the Welcome
-# adds. First set to Settings' own budget and 3 s, before a measurement.
-welcome_own_mib = 25
-welcome_shown_ms = 3000
+# adds. Measured in CI's VM on 2026-10-14 (PR #335): 17.8 MiB and 260 ms;
+# the memory plus 20 percent, as Settings' is, the reads swinging by 2 MiB,
+# and the time about four times over, as the runner's speed moves it.
+welcome_own_mib = 22
+welcome_shown_ms = 1000
 
 # What the animations add, in milliseconds, to the 99th percentile of the
 # time between frames while ten windows open and close one after another
