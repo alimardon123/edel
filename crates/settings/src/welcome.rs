@@ -216,7 +216,13 @@ pub fn window(app: &adw::Application) {
             return;
         };
         let weak = weak.clone();
-        surface.connect_layout(move |_, _, _| {
+        // GDK says layout at every frame that lays the surface out; only a
+        // new size moves the places.
+        let size = Cell::new((0, 0));
+        surface.connect_layout(move |_, width, height| {
+            if size.replace((width, height)) == (width, height) {
+                return;
+            }
             if let Some(welcome) = weak.upgrade() {
                 welcome.log_again();
             }
@@ -413,6 +419,15 @@ impl Welcome {
     }
 }
 
+/// Keeps `held` (a choice and the callbacks it holds) for as long as the
+/// page's `column` lives: the page keeps only weak references to it, so it
+/// would be dropped when the page is built, and its clicks would do nothing.
+fn keep<T: 'static>(column: &gtk::Box, held: Rc<T>) {
+    column.connect_destroy(move |_| {
+        let _ = &held;
+    });
+}
+
 /// Chooses `value` for `key` as the Settings pages do (`Files::choose_over`,
 /// so a value that applies anyway is taken out, never written) and logs what
 /// was done for CI; a refusal shows under the page's controls.
@@ -458,6 +473,7 @@ fn language(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
         }
     });
     column.append(&choice.widget());
+    keep(column, choice);
     Vec::new()
 }
 
@@ -527,6 +543,7 @@ fn keyboard(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
     column.append(&choice.widget());
     column.append(&hint);
     column.append(&trying);
+    keep(column, choice);
     Vec::new()
 }
 
@@ -550,7 +567,10 @@ fn layout(column: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Vec<Gro
     for row in edel::presets::rows(&edel::settings::SettingsFile::default()) {
         // A card's picture is its preset's, drawn from the tokens.
         let picture = preview::area(&row.base, theme).upcast::<gtk::Widget>();
-        let (card, _) = widgets::picture_card(&row.title, &picture);
+        let (card, badge) = widgets::picture_card(&row.title, &picture);
+        // The check shows on the chosen card only, as on the Layout page.
+        badge.set_visible(row.name == applied);
+        card.connect_toggled(move |card| badge.set_visible(card.is_active()));
         if let Some((_, first)) = cards.first() {
             card.set_group(Some(first));
         }
@@ -604,6 +624,7 @@ fn style(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
         .zip(segments.buttons())
         .map(|(name, button)| (name.to_string(), button.upcast::<gtk::Widget>()))
         .collect();
+    keep(column, segments);
     vec![("welcome style places", items)]
 }
 
