@@ -382,6 +382,19 @@ pub fn mount_data() -> Result<()> {
             first_error.get_or_insert(err);
         }
     }
+    // This device's identity key (M6.12): made once, at the first boot; a
+    // failure is said and never stops the boot.
+    match crate::device_key::ensure(
+        Path::new(edel::places::DEVICE_KEY),
+        Path::new(edel::places::DEVICE_KEY_PUB),
+    ) {
+        Ok(true) => println!(
+            "edel-data: made this device's identity key, {}",
+            edel::places::DEVICE_KEY_PUB
+        ),
+        Ok(false) => {}
+        Err(err) => eprintln!("warning: could not make this device's identity key: {err:#}"),
+    }
     first_error.map_or(Ok(()), Err)
 }
 

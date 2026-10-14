@@ -184,6 +184,16 @@ struct Ui {
 
 pub fn page() -> gtk::Widget {
     let (page, content, problem) = widgets::page(tr("Network"), tr(INTRO));
+    parts(&page, &content, problem);
+    page
+}
+
+/// The page's parts in `content`, its problems shown in `problem`, looking
+/// at the network every few seconds while `shown` is on screen. The
+/// Welcome's Wi-Fi page shows them too (M6.12), so joining a network is
+/// written once.
+pub fn parts(shown: &impl IsA<gtk::Widget>, content: &gtk::Box, problem: gtk::Label) {
+    let content = content.clone();
     let glance = card::Glance::new(&content, "page-network");
 
     let wired = vbox();
@@ -246,13 +256,12 @@ pub fn page() -> gtk::Widget {
     wire(&ui);
     {
         let ui = ui.clone();
-        card::while_shown(&page, FOLLOW, move || {
+        card::while_shown(shown.upcast_ref(), FOLLOW, move || {
             // A look at the network also asks the adapters to look again,
             // so the list is not the one from when the page opened.
             refresh(&ui, false);
         });
     }
-    page
 }
 
 fn vbox() -> gtk::Box {

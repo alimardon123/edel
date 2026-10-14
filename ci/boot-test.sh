@@ -66,12 +66,13 @@ grep -q 'ci can log in now' out/boot.log ||
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&
+	grep -q "edel-data: made this device's identity key" out/boot.log &&
 	grep -q "Edel OS ${EDEL_VERSION:-0.1}, channel " out/boot.log &&
 	grep -q 'Starting sshd' out/boot.log &&
 	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
 	! grep -q 'generating new host keys' out/boot.log &&
 	grep -q 'edel guard: using the hardware watchdog' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1}, mounted /data, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
+	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1}, mounted /data, made this device's identity key, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1

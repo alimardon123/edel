@@ -705,8 +705,17 @@ commands() {
 		# The Welcome (M6.12, part 1): the first-start pages, opened by
 		# `edel-settings --welcome`, its log, and the two keys it writes taken
 		# out of ci's file again (the layout and the style).
+		# The Welcome (M6.12): started as ci, and timed from the start to
+		# its first page's places, which it logs once two frames agree.
 		'welcome')
+			started=$(now_ms)
 			as_ci edel-settings --welcome </dev/null >/tmp/welcome.log 2>&1 &
+			i=0
+			until grep -q 'edel-settings: welcome places' /tmp/welcome.log 2>/dev/null || [ "$i" -ge 600 ]; do
+				i=$((i + 1))
+				sleep 0.05
+			done
+			say "welcome_shown_ms $(($(now_ms) - started))"
 			;;
 		'welcome log') say "welcome_log $(tr '\n' ';' </tmp/welcome.log 2>/dev/null)" ;;
 		'welcome mine default') as_ci "sed -i -e '/^preset = /d' -e '/^mode = /d' /home/ci/.config/edel/$settings_name" ;;

@@ -1991,6 +1991,9 @@ msgstr ""
 msgid "The keys your keyboard types. Try it below."
 msgstr ""
 
+msgid "Join a network now, or later from Settings' Network page."
+msgstr ""
+
 msgid "The name and password you log in with. You look after this computer, so you are its administrator."
 msgstr ""
 

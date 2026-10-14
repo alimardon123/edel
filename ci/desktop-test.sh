@@ -2461,9 +2461,27 @@ case_welcome() {
 	# A second run is skipped on its first page: it closes with nothing
 	# written, and ci's file is the same as before.
 	opened=$(count 'edel-compositor: mapped window Welcome')
+	shown=$(count 'DESKTOP-TEST: welcome_shown_ms ')
 	guest 'welcome'
 	wait_more 'edel-compositor: mapped window Welcome' "$opened" 60 || fail "Welcome did not open: $(value windows)"
 	welcome_window
+	# Its budgets (M6.12): the time from its start to its first page, and
+	# what it holds of its own while it shows, read as Settings' is.
+	wait_more 'DESKTOP-TEST: welcome_shown_ms ' "$shown" 40 || fail "the service did not time the Welcome"
+	welcome_shown=$(value welcome_shown_ms)
+	shown_limit=$(budget welcome_shown_ms)
+	awk -v m="$welcome_shown" -v b="$shown_limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "the Welcome took ${welcome_shown:-?} ms to show its first page, over its budget of $shown_limit ms"
+	held=$(count 'DESKTOP-TEST: settings_own_mib ')
+	guest 'settings memory'
+	wait_more 'DESKTOP-TEST: settings_own_mib ' "$held" || fail "the service did not read the Welcome's memory"
+	welcome_own=$(value settings_own_mib)
+	own_limit=$(budget welcome_own_mib)
+	awk -v m="$welcome_own" -v b="$own_limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "the Welcome keeps ${welcome_own:-?} MiB of its own while it shows ($(value settings_rss_mib) MiB resident), over its budget of $own_limit MiB"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Welcome (M6.12): first page in $welcome_shown ms (budget $shown_limit), $welcome_own MiB of its own (budget $own_limit), $(value settings_rss_mib) MiB resident." >>"$GITHUB_STEP_SUMMARY"
+	fi
 	welcome_click language 'places next'
 	welcome_click keyboard 'places next'
 	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
@@ -2518,7 +2536,7 @@ case_welcome() {
 	settings_now
 	[ "$settings" = "$before" ] ||
 		fail "Skip changed ci's settings file (it may not gain a [region] line): $settings"
-	echo "PASS: Settings' Welcome opened full screen and each page logged its places; Next on language and keyboard wrote nothing, a click on mac-like's card restarted the desktop as mac-like, a click on Dark gave the dark scheme (welcome-layout.png, welcome-style.png), and Start using Edel OS closed it, with layout.preset and appearance.mode in ci's file; the keys taken out again, a second Welcome skipped on its first page wrote nothing"
+	echo "PASS: Settings' Welcome showed its first page in $welcome_shown ms (budget $shown_limit) holding $welcome_own MiB of its own (budget $own_limit), opened full screen and each page logged its places; Next on language and keyboard wrote nothing, a click on mac-like's card restarted the desktop as mac-like, a click on Dark gave the dark scheme (welcome-layout.png, welcome-style.png), and Start using Edel OS closed it, with layout.preset and appearance.mode in ci's file; the keys taken out again, a second Welcome skipped on its first page wrote nothing"
 }
 
 case_settings_tour() {

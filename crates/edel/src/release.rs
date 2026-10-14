@@ -233,7 +233,7 @@ pub fn from_hex(text: &str) -> Result<Vec<u8>> {
         .collect()
 }
 
-fn fixed<const N: usize>(bytes: Vec<u8>, what: &str) -> Result<[u8; N]> {
+pub(crate) fn fixed<const N: usize>(bytes: Vec<u8>, what: &str) -> Result<[u8; N]> {
     let len = bytes.len();
     bytes
         .try_into()
