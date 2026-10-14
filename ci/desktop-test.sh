@@ -2352,6 +2352,9 @@ case_settings_unknown() {
 		fail "Settings did not name appearance.acent as not understood: $text"
 	set -- $remove
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	# The page with the line it did not understand, before Remove.
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/settings-unknown.png"
 	python3 ci/qmp.py click "$cx" "$cy"
 	i=0
 	while :; do
@@ -2369,7 +2372,7 @@ case_settings_unknown() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent"
+	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent (settings-unknown.png)"
 }
 
 case_settings_tour() {

@@ -1055,6 +1055,9 @@ msgstr ""
 msgid "Add a server"
 msgstr ""
 
+msgid "Your language and keyboard, and the time zone and servers the clock follows."
+msgstr ""
+
 msgid "Apps show the new language when they next open."
 msgstr ""
 
