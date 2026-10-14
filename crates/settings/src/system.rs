@@ -19,7 +19,7 @@ use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
 
-use crate::{cmd, widgets};
+use crate::{actions, cmd, widgets};
 
 const INTRO: &str = n_("Copy this machine to another, or set it up from a file.");
 
@@ -128,7 +128,7 @@ pub fn page() -> gtk::Widget {
     export_row.copy.connect_clicked(|button| {
         button.clipboard().set_text(&format!(
             "{} > {}",
-            cmd::line(&["settings", "export"]),
+            cmd::line(actions::EXPORT.args),
             edel::places::SETTINGS
         ));
         widgets::copied(button);
@@ -142,7 +142,7 @@ pub fn page() -> gtk::Widget {
         });
         button
             .clipboard()
-            .set_text(&cmd::line(&["settings", "import", &path]));
+            .set_text(&cmd::line(&with_file(&actions::IMPORT, &path)));
         widgets::copied(button);
     });
     let weak = Rc::downgrade(&ui);
@@ -215,7 +215,8 @@ impl Ui {
             ui.apply.set_sensitive(false);
             widgets::say(&ui.apply_out, "", false);
             widgets::say(&ui.diff_out, tr("Working..."), false);
-            let done = gio::spawn_blocking(move || cmd::edel(&["settings", "diff", &shown])).await;
+            let done =
+                gio::spawn_blocking(move || cmd::edel(&with_file(&actions::DIFF, &shown))).await;
             let Ok(run) = done else { return };
             let seen = diff(&run);
             widgets::say(&ui.diff_out, &seen.text, seen.failed);
@@ -234,7 +235,7 @@ impl Ui {
         glib::spawn_future_local(async move {
             let shown = path.display().to_string();
             let done =
-                gio::spawn_blocking(move || cmd::edel(&["settings", "import", &shown])).await;
+                gio::spawn_blocking(move || cmd::edel(&with_file(&actions::IMPORT, &shown))).await;
             match done {
                 Ok(run) => {
                     widgets::say(&ui.apply_out, &run.shown(), !run.ok);
@@ -247,10 +248,16 @@ impl Ui {
     }
 }
 
+/// An action's `edel` arguments with the file a person picked added last,
+/// such as `settings import FILE`.
+fn with_file<'a>(action: &actions::Action, file: &'a str) -> Vec<&'a str> {
+    action.args.iter().copied().chain([file]).collect()
+}
+
 /// Writes what `edel settings export` prints to `path`; the message when
 /// it cannot.
 fn save(path: &std::path::Path) -> Result<(), String> {
-    let run = cmd::edel(&["settings", "export"]);
+    let run = cmd::edel(actions::EXPORT.args);
     if !run.ok {
         return Err(run.shown());
     }

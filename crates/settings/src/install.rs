@@ -35,7 +35,7 @@ use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
-use crate::{cmd, icon, widgets};
+use crate::{actions, cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
 const LANGUAGE: &str = "en_US.UTF-8";
@@ -173,12 +173,16 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
 /// the install itself, given the password on standard input when
 /// `password` says one was asked.
 pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<String> {
-    let mut args = vec![
-        "install".to_string(),
+    let mut args: Vec<String> = actions::INSTALL
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .collect();
+    args.extend([
         format!("/dev/{disk}"),
         "--settings".to_string(),
         file.display().to_string(),
-    ];
+    ]);
     if plan {
         args.push("--plan".into());
     } else {

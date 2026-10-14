@@ -21,7 +21,7 @@ use gtk::prelude::*;
 use edel::i18n::{n_, tr, trf};
 use edel::{places, session_log};
 
-use crate::{rows, widgets};
+use crate::{actions, rows, widgets};
 
 const OS_RELEASE: &str = "/usr/lib/os-release";
 
@@ -45,7 +45,7 @@ pub fn page() -> gtk::Widget {
     let buttons = widgets::banner(&content, &name, &line);
     let check = widgets::add_big(&buttons, tr("Check for updates"), true);
     check.connect_clicked(|button| {
-        let _ = button.activate_action(SHOW_PAGE, Some(&"updates".to_variant()));
+        let _ = button.activate_action(SHOW_PAGE, Some(&actions::CHECK.page.to_variant()));
     });
     let copy = widgets::add_big(&buttons, tr("Copy system info"), false);
     let text = info_text(&name, &line, &computer);

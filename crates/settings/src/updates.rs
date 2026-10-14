@@ -36,7 +36,7 @@ use edel::settings;
 use crate::ask::{self, Ask};
 use crate::files::Files;
 use crate::status::{self, Action, Doing, Found, Inputs, Phase, Status};
-use crate::{about, cmd, icon, rows, widgets};
+use crate::{about, actions, cmd, icon, rows, widgets};
 
 /// Install the update, as the administrator (`edel update`), and what its
 /// dialog says (M6.5).
@@ -44,7 +44,7 @@ const INSTALL: Ask = Ask {
     title: n_("Install the update"),
     prompt: n_("Installing changes the system, so Edel OS asks for your password."),
     button: n_("Install"),
-    args: &["update"],
+    args: actions::UPDATE.args,
 };
 
 /// Go back, as the administrator (`edel rollback`), and its dialog (M6.5).
@@ -52,7 +52,7 @@ const GO_BACK: Ask = Ask {
     title: n_("Go back"),
     prompt: n_("Going back changes the system, so Edel OS asks for your password."),
     button: n_("Go back"),
-    args: &["rollback"],
+    args: actions::ROLLBACK.args,
 };
 
 /// One line of `edel status`, as a row shows it.
@@ -466,9 +466,9 @@ impl Ui {
         self.primary.set_sensitive(!view.busy);
         self.action.set(view.primary.action);
         let command = match view.primary.action {
-            Action::Check => cmd::line(&["update", "--check"]),
-            Action::Install => cmd::line(&["update"]),
-            Action::Restart => "edel restart".to_string(),
+            Action::Check => cmd::line(actions::CHECK.args),
+            Action::Install => cmd::line(actions::UPDATE.args),
+            Action::Restart => cmd::line(actions::RESTART.args),
         };
         self.primary
             .set_tooltip_text(Some(&trf("Runs {command}", &[("command", &command)])));
@@ -485,7 +485,7 @@ impl Ui {
                 self.rollback.set_sensitive(!view.busy);
                 self.rollback.set_tooltip_text(Some(&trf(
                     "Runs {command}",
-                    &[("command", &cmd::line(&["rollback"]))],
+                    &[("command", &cmd::line(actions::ROLLBACK.args))],
                 )));
                 self.kept.set_visible(true);
             }
@@ -646,7 +646,7 @@ impl Ui {
         self.set_phase(Phase::Checking);
         let ui = self.clone();
         glib::spawn_future_local(async move {
-            let phase = match ui.run(&["update", "--check"]).await {
+            let phase = match ui.run(actions::CHECK.args).await {
                 Some(done) if done.ok => match status::parse_check(&done.out) {
                     Some(found) if found.newer => Phase::Available(found),
                     Some(_) => Phase::UpToDate { at: now() },
@@ -721,7 +721,7 @@ impl Ui {
             let Ok(done) = gio::spawn_blocking(cmd::restart).await else {
                 return ui.set_phase(stopped(Doing::Restart));
             };
-            ui.show_last("edel restart", &done);
+            ui.show_last(&cmd::line(actions::RESTART.args), &done);
             if !done.ok {
                 ui.set_phase(failed(Doing::Restart, &done));
             }
