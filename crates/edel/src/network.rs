@@ -13,6 +13,7 @@
 //! (ADR-011): a device is whatever NetworkManager lists, and nothing here
 //! assumes it is local or that there is only one. Std only.
 
+use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
@@ -605,6 +606,18 @@ pub fn leave(device: &str) -> Result<()> {
     nmcli(&leave_args(device), READ_TIME).map(drop)
 }
 
+/// Whether the machine has a Wi-Fi adapter, as the kernel shows it under
+/// `sys` (`/sys`): a network device with a `wireless` folder. Read from the
+/// kernel, not `nmcli`, so a page that asks only when there is Wi-Fi to
+/// join (the Welcome, M6.12) waits on no program.
+pub fn has_wifi_in(sys: &Path) -> bool {
+    std::fs::read_dir(sys.join("class/net")).is_ok_and(|devices| {
+        devices
+            .flatten()
+            .any(|device| device.path().join("wireless").is_dir())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -908,5 +921,18 @@ mod tests {
             assert!(message.contains("has no nmcli"), "{message}");
             assert!(message.contains("the network feature"), "{message}");
         }
+    }
+
+    #[test]
+    fn wifi_is_a_network_device_with_a_wireless_folder() {
+        let sys = std::env::temp_dir().join(format!("edel-has-wifi-{}", std::process::id()));
+        let net = sys.join("class/net");
+        std::fs::create_dir_all(net.join("eth0")).unwrap();
+        std::fs::create_dir_all(net.join("lo")).unwrap();
+        assert!(!has_wifi_in(&sys), "a cable and the loopback are no Wi-Fi");
+        std::fs::create_dir_all(net.join("wlan0/wireless")).unwrap();
+        assert!(has_wifi_in(&sys));
+        std::fs::remove_dir_all(&sys).unwrap();
+        assert!(!has_wifi_in(&sys), "no sysfs, no Wi-Fi");
     }
 }

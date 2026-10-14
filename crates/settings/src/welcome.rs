@@ -1,7 +1,9 @@
 //! The Welcome (roadmap M6.12, ADR-008): the first start on a machine nobody
 //! has set up. `edel-settings --welcome` opens one window, maximized, that
 //! asks a page at a time: the language, the keyboard (tried in a box under
-//! it), the layout (the presets as pictures) and the style, then Done. The
+//! it), Wi-Fi when the machine has an adapter (the Network page's own
+//! parts, `network::parts`), the layout (the presets as pictures) and the
+//! style, then Done. The
 //! questions and their order are the installer's (`edel::install::QUESTIONS`),
 //! so the two ask alike. The desktop opens it by itself on the first start
 //! (`edel::first_start`), when the account live logs in by itself.
@@ -131,6 +133,10 @@ pub enum Page {
     Language,
     /// The keyboard layout (`region.keyboard`), tried in a box below it.
     Keyboard,
+    /// The Wi-Fi networks in range, to join one; shown only when the
+    /// machine has a Wi-Fi adapter. NetworkManager keeps the network and
+    /// its password, never the settings file (ADR-006).
+    WiFi,
     /// A new machine's first person: name and password.
     Account,
     /// A new machine's time zone (`region.timezone`).
@@ -150,6 +156,7 @@ impl Page {
             Page::Start => "start",
             Page::Language => "language",
             Page::Keyboard => "keyboard",
+            Page::WiFi => "wifi",
             Page::Account => "account",
             Page::TimeZone => "timezone",
             Page::Layout => "layout",
@@ -164,6 +171,7 @@ impl Page {
             Page::Start => n_("Welcome to Edel OS"),
             Page::Language => n_("Language"),
             Page::Keyboard => n_("Keyboard"),
+            Page::WiFi => n_("Wi-Fi"),
             Page::Account => n_("Your account"),
             Page::TimeZone => n_("Time zone"),
             Page::Layout => n_("Layout"),
@@ -180,6 +188,7 @@ impl Page {
             ),
             Page::Language => n_("The language Edel OS speaks to you in."),
             Page::Keyboard => n_("The keys your keyboard types. Try it below."),
+            Page::WiFi => n_("Join a network now, or later from Settings' Network page."),
             Page::Account => n_(
                 "The name and password you log in with. You look after this computer, so you are its administrator.",
             ),
@@ -200,23 +209,36 @@ impl Page {
 
 /// The pages a Welcome shows for `mode`, given the installer's questions:
 /// Start on a stick, then the questions the Welcome asks in the installer's
-/// order (the account and the time zone only for a new machine), then
-/// Style and Done.
-pub fn pages(questions: &[Question], mode: Mode) -> Vec<Page> {
+/// order (the account and the time zone only for a new machine), Wi-Fi
+/// after the keyboard when the machine has an adapter (`wifi`), then Style
+/// and Done.
+pub fn pages(questions: &[Question], mode: Mode, wifi: bool) -> Vec<Page> {
     let mut pages = Vec::new();
     if mode == Mode::Stick {
         pages.push(Page::Start);
     }
-    pages.extend(
-        questions
-            .iter()
-            .filter_map(|question| ASKED.iter().find(|asked| asked.0 == question.key))
-            .filter(|asked| !asked.2 || mode == Mode::NewMachine)
-            .map(|asked| asked.1),
-    );
+    for asked in questions
+        .iter()
+        .filter_map(|question| ASKED.iter().find(|asked| asked.0 == question.key))
+        .filter(|asked| !asked.2 || mode == Mode::NewMachine)
+    {
+        pages.push(asked.1);
+        if asked.1 == Page::Keyboard && wifi {
+            pages.push(Page::WiFi);
+        }
+    }
     pages.push(Page::Style);
     pages.push(Page::Done);
     pages
+}
+
+/// Whether this machine has Wi-Fi to join: the `network` feature, whose
+/// NetworkManager joins it, and an adapter the kernel shows.
+fn wifi_here() -> bool {
+    edel::places::found_shared(edel::features::DIR)
+        .join("network.toml")
+        .exists()
+        && edel::network::has_wifi_in(std::path::Path::new("/sys"))
 }
 
 /// The page counter, `2 of 4`: page `at` (from 1) of `count` pages.
@@ -332,7 +354,7 @@ pub fn window(app: &adw::Application) {
             .build(),
         theme: Theme::new(),
         mode,
-        pages: pages(edel::install::QUESTIONS, mode),
+        pages: pages(edel::install::QUESTIONS, mode, wifi_here()),
         at: Cell::new(0),
         shown: RefCell::new(None),
         leave: RefCell::new(None),
@@ -406,6 +428,10 @@ impl Welcome {
             Page::Start => self.start(&column),
             Page::Language => Built::plain(language(&column, &problem)),
             Page::Keyboard => Built::plain(keyboard(&column, &problem)),
+            Page::WiFi => {
+                crate::network::parts(&column, &column, problem.clone());
+                Built::plain(Vec::new())
+            }
             Page::Account => self.account_page(&column, &problem),
             Page::TimeZone => self.zone_page(&column),
             Page::Layout => Built::plain(layout(&column, &problem, &self.theme)),
@@ -1122,7 +1148,7 @@ mod tests {
 
     #[test]
     fn a_person_s_welcome_asks_language_keyboard_layout_style_then_done() {
-        let pages = pages(edel::install::QUESTIONS, Mode::Person);
+        let pages = pages(edel::install::QUESTIONS, Mode::Person, false);
         assert_eq!(
             pages,
             [
@@ -1140,7 +1166,7 @@ mod tests {
     #[test]
     fn a_stick_asks_try_or_install_first() {
         assert_eq!(
-            pages(edel::install::QUESTIONS, Mode::Stick),
+            pages(edel::install::QUESTIONS, Mode::Stick, false),
             [
                 Page::Start,
                 Page::Language,
@@ -1155,7 +1181,7 @@ mod tests {
     #[test]
     fn a_new_machine_asks_the_account_and_the_time_zone_where_the_installer_does() {
         assert_eq!(
-            pages(edel::install::QUESTIONS, Mode::NewMachine),
+            pages(edel::install::QUESTIONS, Mode::NewMachine, false),
             [
                 Page::Language,
                 Page::Keyboard,
@@ -1183,7 +1209,7 @@ mod tests {
             question("region.language"),
         ];
         assert_eq!(
-            pages(&questions, Mode::NewMachine),
+            pages(&questions, Mode::NewMachine, false),
             [
                 Page::Layout,
                 Page::Account,
@@ -1193,7 +1219,30 @@ mod tests {
                 Page::Done
             ]
         );
-        assert_eq!(pages(&[], Mode::Person), [Page::Style, Page::Done]);
+        assert_eq!(pages(&[], Mode::Person, false), [Page::Style, Page::Done]);
+    }
+
+    #[test]
+    fn wi_fi_comes_after_the_keyboard_when_there_is_an_adapter() {
+        assert_eq!(
+            pages(edel::install::QUESTIONS, Mode::NewMachine, true),
+            [
+                Page::Language,
+                Page::Keyboard,
+                Page::WiFi,
+                Page::Account,
+                Page::TimeZone,
+                Page::Layout,
+                Page::Style,
+                Page::Done
+            ]
+        );
+        let stick = pages(edel::install::QUESTIONS, Mode::Stick, true);
+        assert_eq!(
+            stick[..4],
+            [Page::Start, Page::Language, Page::Keyboard, Page::WiFi]
+        );
+        assert_eq!(Page::WiFi.name(), "wifi");
     }
 
     #[test]
@@ -1207,7 +1256,7 @@ mod tests {
 
     #[test]
     fn the_counter_counts_the_pages_but_start_and_done() {
-        let pages = pages(edel::install::QUESTIONS, Mode::Stick);
+        let pages = pages(edel::install::QUESTIONS, Mode::Stick, false);
         assert_eq!(pages.iter().filter(|page| page.counted()).count(), 4);
         assert_eq!(counter(1, 4), "1 of 4");
         assert_eq!(counter(4, 4), "4 of 4");

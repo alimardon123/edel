@@ -9,6 +9,7 @@ mod completion;
 mod data;
 mod def;
 mod default_apps;
+mod device_key;
 mod first_boot;
 mod grubenv;
 mod guard;
