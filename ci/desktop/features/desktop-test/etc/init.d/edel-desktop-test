@@ -1150,6 +1150,10 @@ commands() {
 			as_ci "edel settings reset apps.camera apps.files" </dev/null >/dev/null 2>&1
 			say "app_permissions_reset $?"
 			;;
+		'settings app')
+			as_ci edel-settings --app org.edel.TestA </dev/null >/tmp/settings-app.log 2>&1 &
+			;;
+		'settings app log') say "settings_app_log $(tr '\n' ';' </tmp/settings-app.log 2>/dev/null)" ;;
 		'app permissions show')
 			bus=$(session_bus)
 			say "app_permissions $(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' flatpak permission-show org.edel.TestA" </dev/null 2>&1 | tr '\n\t' '; ')"
