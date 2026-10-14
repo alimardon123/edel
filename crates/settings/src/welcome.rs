@@ -165,6 +165,10 @@ struct Welcome {
     theme: Rc<Theme>,
     pages: Vec<Page>,
     at: Cell<usize>,
+    /// The page shown and what it logs the places of, logged again when the
+    /// window changes size (a preset's bar or dock gives a maximized window
+    /// another area), so the places CI clicks are where they are now.
+    shown: RefCell<Option<(gtk::Box, Vec<Group>)>>,
 }
 
 /// Opens the Welcome window on its first page (M6.12): one window, maximized,
@@ -186,6 +190,7 @@ pub fn window(app: &adw::Application) {
         theme: Theme::new(),
         pages: pages(edel::install::QUESTIONS),
         at: Cell::new(0),
+        shown: RefCell::new(None),
     });
     welcome.window.set_child(Some(&welcome.holder));
     welcome.window.maximize();
@@ -203,6 +208,20 @@ pub fn window(app: &adw::Application) {
         }
     });
     welcome.window.add_controller(keys);
+    // The surface says when its size changes, after it is made, and the
+    // page's places are logged again then.
+    let weak = Rc::downgrade(&welcome);
+    welcome.window.connect_realize(move |window| {
+        let Some(surface) = window.surface() else {
+            return;
+        };
+        let weak = weak.clone();
+        surface.connect_layout(move |_, _, _| {
+            if let Some(welcome) = weak.upgrade() {
+                welcome.log_again();
+            }
+        });
+    });
     welcome.show(0);
     welcome.window.present();
 }
@@ -237,6 +256,7 @@ impl Welcome {
         column.append(&problem);
         let (root, next, buttons) = self.frame(at, page, &column);
         groups.insert(0, ("welcome places", buttons));
+        *self.shown.borrow_mut() = Some((root.clone(), groups.clone()));
         log_places(&root, groups);
         while let Some(child) = self.holder.first_child() {
             self.holder.remove(&child);
@@ -383,6 +403,13 @@ impl Welcome {
             eprintln!("edel-settings: welcome skipped at {}", page.name());
         }
         self.window.close();
+    }
+
+    /// Logs the shown page's places again, once two frames agree.
+    fn log_again(&self) {
+        if let Some((root, groups)) = self.shown.borrow().clone() {
+            log_places(&root, groups);
+        }
     }
 }
 

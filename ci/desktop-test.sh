@@ -2399,18 +2399,20 @@ welcome_window() {
 	wx=$1 wy=$2
 }
 
-# welcome_find PAGE WORDS: waits (up to about 40 s) for the Welcome's log
-# to hold, after PAGE's own line, WORDS and a place X Y W H (its places
-# line, which the Welcome logs once two frames agree), and sets wp to that
-# place. Returns 1 when it never came.
+# welcome_find PAGE WORDS [MARK]: waits (up to about 40 s) for the
+# Welcome's log to hold, after PAGE's own line (or after MARK, a line of
+# the log), WORDS and a place X Y W H (its places line, which the Welcome
+# logs once two frames agree, and again when the window changes size), and
+# sets wp to the last such place. Returns 1 when it never came.
 welcome_find() {
+	mark=${3:-welcome page $1}
 	wp=none i=0
 	while [ "$wp" = none ]; do
 		i=$((i + 1))
 		[ "$i" -lt 20 ] || return 1
 		guest 'welcome log'
 		text=$(value welcome_log)
-		wp=$(echo "${text##*welcome page $1;}" | sed -n "s/.*$2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p" | head -n 1)
+		wp=$(echo "${text##*$mark;}" | sed -n "s/.*$2 \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p" | head -n 1)
 		[ -n "$wp" ] || wp=none
 		[ "$wp" = none ] && sleep 1
 	done
@@ -2422,7 +2424,7 @@ welcome_find() {
 # welcome_click PAGE WORDS: clicks the middle of the place welcome_find
 # gives for WORDS on PAGE.
 welcome_click() {
-	welcome_find "$1" "$2" || fail "Welcome did not log where \"$2\" lies on its $1 page: $(value welcome_log)"
+	welcome_find "$1" "$2" "${3:-}" || fail "Welcome did not log where \"$2\" lies on its $1 page: $(value welcome_log)"
 	set -- $wp
 	python3 ci/qmp.py click "$((wx + $1 + $3 / 2))" "$((wy + $2 + $4 / 2))"
 }
@@ -2471,9 +2473,11 @@ case_welcome() {
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-layout.png"
 	# Mac-like's bar along the top and dock along the bottom leave the
-	# maximized window another area, so its corner is read again.
+	# maximized window another area, so its corner is read again, and Next
+	# is clicked where the Welcome logs it after that (it logs its places
+	# again when the window changes size).
 	welcome_window
-	welcome_click layout 'places next'
+	welcome_click layout 'places next' 'welcome layout.preset mac-like written'
 	said=$(count 'edel-compositor: colour scheme dark')
 	welcome_click style 'dark'
 	wait_more 'edel-compositor: colour scheme dark' "$said" 30 ||
