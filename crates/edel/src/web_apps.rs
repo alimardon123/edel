@@ -187,14 +187,22 @@ pub fn desktop_text(name: &str, url: &str, id: &str, profile: &Path) -> String {
 
 /// The `user.js` of a web app's profile: Firefox's own settings written at
 /// each start, which let its `userChrome.css` hide the toolbars and keep
-/// first-run and default-browser questions away.
+/// first-run and default-browser questions away. A web app is a website
+/// in a window of its own, so it never shows Firefox's own welcome, its
+/// terms of use box or its data notice: the person met those in Firefox
+/// itself, and a new web app is a new profile that would ask again.
 pub fn profile_prefs() -> &'static str {
     "user_pref(\"toolkit.legacyUserProfileCustomizations.stylesheets\", true);\n\
      user_pref(\"browser.shell.checkDefaultBrowser\", false);\n\
      user_pref(\"browser.tabs.inTitlebar\", 0);\n\
      user_pref(\"browser.startup.homepage_override.mstone\", \"ignore\");\n\
      user_pref(\"datareporting.policy.dataSubmissionEnabled\", false);\n\
-     user_pref(\"toolkit.telemetry.reportingpolicy.firstRun\", false);\n"
+     user_pref(\"datareporting.policy.dataSubmissionPolicyBypassNotification\", true);\n\
+     user_pref(\"toolkit.telemetry.reportingpolicy.firstRun\", false);\n\
+     user_pref(\"browser.aboutwelcome.enabled\", false);\n\
+     user_pref(\"trailhead.firstrun.didSeeAboutWelcome\", true);\n\
+     user_pref(\"browser.preonboarding.enabled\", false);\n\
+     user_pref(\"termsofuse.bypassNotification\", true);\n"
 }
 
 /// The `chrome/userChrome.css` of a web app's profile: the address bar, the
@@ -558,6 +566,13 @@ mod tests {
             profile_prefs().contains("user_pref(\"browser.shell.checkDefaultBrowser\", false);")
         );
         assert!(profile_prefs().contains("user_pref(\"browser.tabs.inTitlebar\", 0);"));
+        for welcome in [
+            "user_pref(\"browser.aboutwelcome.enabled\", false);",
+            "user_pref(\"browser.preonboarding.enabled\", false);",
+            "user_pref(\"termsofuse.bypassNotification\", true);",
+        ] {
+            assert!(profile_prefs().contains(welcome), "{welcome}");
+        }
         assert!(user_chrome().contains("#nav-bar, #TabsToolbar, #PersonalToolbar"));
     }
 
