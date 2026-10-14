@@ -227,6 +227,7 @@ pub fn parse(text: &str) -> Option<App> {
     let (mut name, mut exec, mut keywords) = (None, None, Vec::new());
     let (mut icon, mut categories) = (None, Vec::new());
     let (mut terminal, mut shown, mut application) = (false, true, false);
+    let mut store = false;
     for line in text.lines() {
         let line = line.trim();
         if line.starts_with('[') {
@@ -254,6 +255,7 @@ pub fn parse(text: &str) -> Option<App> {
                     .map(str::to_string)
                     .collect();
             }
+            "MimeType" => store = value.split(';').any(|m| m == STORE_LINKS),
             "NoDisplay" | "Hidden" if value == "true" => shown = false,
             // Shown only on other desktops.
             "OnlyShowIn" => shown &= value.split(';').any(|d| d == "Edel"),
@@ -267,6 +269,9 @@ pub fn parse(text: &str) -> Option<App> {
             }
             _ => {}
         }
+    }
+    if store && !categories.iter().any(|c| c == PACKAGE_MANAGER) {
+        categories.push(PACKAGE_MANAGER.to_string());
     }
     let argv = split_exec(&exec?);
     let name = name.filter(|n| !n.is_empty())?;
@@ -296,8 +301,16 @@ const ROLES: &[(&str, &str)] = &[
     ("music", "Audio"),
     ("settings", "Settings"),
     // The store (M6.4), Bazaar by default.
-    ("store", "PackageManager"),
+    ("store", PACKAGE_MANAGER),
 ];
+
+/// The category of an app that adds and removes software.
+const PACKAGE_MANAGER: &str = "PackageManager";
+
+/// The links every software centre opens (`appstream:` names an app in
+/// the catalogue). Bazaar lists only `GTK;Utility;` as categories, so an
+/// app that opens these links counts as a package manager too.
+const STORE_LINKS: &str = "x-scheme-handler/appstream";
 
 /// The app `pin` names: a role (`browser`) or a desktop file id
 /// (`org.mozilla.firefox`); none when nothing installed fits.
@@ -831,7 +844,7 @@ mod tests {
     #[test]
     fn the_store_role_finds_the_package_manager() {
         let store = parse(
-            "[Desktop Entry]\nType=Application\nName=Bazaar\nExec=bazaar\nCategories=System;PackageManager;\n",
+            "[Desktop Entry]\nType=Application\nName=Bazaar\nExec=bazaar-daemon %U\nCategories=GTK;Utility;\nMimeType=x-scheme-handler/appstream;x-scheme-handler/flatpak;\n",
         )
         .unwrap();
         let apps = [store];
@@ -839,5 +852,10 @@ mod tests {
             pinned(&apps, "store").map(|a| a.name.as_str()),
             Some("Bazaar")
         );
+        let other = parse(
+            "[Desktop Entry]\nType=Application\nName=Viewer\nExec=viewer\nCategories=Utility;\nMimeType=x-scheme-handler/appstreamx;\n",
+        )
+        .unwrap();
+        assert_eq!(pinned(&[other], "store"), None);
     }
 }
