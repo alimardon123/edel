@@ -35,7 +35,13 @@ jobs:
       - name: The system file library builds without the command's dependencies
         run: cargo build --locked --lib --no-default-features
       - name: No settings file key removed within a format
+        # Against main, and against every kept release vVERSION (M6.11).
         run: sh ci/keys-check.sh
+      - name: Visible defaults changed
+        # The diff of design/, presets/ and docs/defaults.md against the
+        # last kept release, or main before there is one, in the run's
+        # summary (M6.11): a record, never a gate.
+        run: sh ci/defaults-diff.sh
       - name: Every fact is written at its owner
         # ADR-010's one owner decision (M5.27): places, colours and the
         # Alpine branch only at their owners, and the check catching one
