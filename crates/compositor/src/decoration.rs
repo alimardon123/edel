@@ -180,7 +180,9 @@ pub fn server_side(window: &Window) -> bool {
 /// A surface's choice through KDE's protocol: our bar or its own.
 struct KdeServerSide(AtomicBool);
 
-/// The window's title, or nothing.
+/// The window's title as people see it, or nothing: a web app's without
+/// the browser's name after it (`edel::web_apps::shown_title`, M6.4), so
+/// its title bar, the switcher and the overview name the website.
 pub fn title(window: &Window) -> String {
     let Some(toplevel) = window.toplevel() else {
         return String::new();
@@ -191,7 +193,9 @@ pub fn title(window: &Window) -> String {
             .get::<XdgToplevelSurfaceData>()?
             .lock()
             .ok()?;
-        data.title.clone()
+        let title = data.title.as_deref()?;
+        let app_id = data.app_id.as_deref().unwrap_or_default();
+        Some(edel::web_apps::shown_title(app_id, title).to_string())
     })
     .unwrap_or_default()
 }
