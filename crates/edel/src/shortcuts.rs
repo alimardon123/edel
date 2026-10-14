@@ -89,7 +89,7 @@ pub const ACTIONS: &[Action] = &[
         "Super+H",
         false,
         Group::Windows,
-        n_("Minimize the focused window; the window list or Alt+Tab brings it back"),
+        n_("Minimize the focused window; the panel or Alt+Tab brings it back"),
     ),
     action(
         "toggle_maximize",

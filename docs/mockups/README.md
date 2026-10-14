@@ -20,7 +20,7 @@ new one. What is in this folder is what to build toward.
 
 | Picture | What it shows |
 |---|---|
-| [classic.jpg](classic.jpg) | Classic, the default, light: a panel along the bottom with the menu and the windows, then the workspace buttons, the floating or tiling button, status and clock |
+| [classic.jpg](classic.jpg) | Classic, the default, light: a panel along the bottom with the menu and the windows, then the workspace buttons, the floating or tiling button, status and clock; since 2026-10-14 (M6.19) Classic shows apps, grouped, where this picture shows windows |
 | [classic-dark.jpg](classic-dark.jpg) | The same in the dark scheme |
 | [classic-menus.jpg](classic-menus.jpg) | The launcher over the Settings app's Layout page |
 | [mac-like.jpg](mac-like.jpg) | Mac-like: a bar on top, a dock, window buttons on the left |

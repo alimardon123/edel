@@ -76,6 +76,7 @@ impl Shell {
         }
         self.close_launcher();
         self.close_styles();
+        self.close_app_windows();
         self.close_quick();
         self.close_centre();
         self.hide_osd();
