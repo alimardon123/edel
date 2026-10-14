@@ -145,9 +145,12 @@ impl Edel {
         {
             states.push(ACTIVATED);
         }
+        let app_id = app_id.unwrap_or_default();
         Seen {
-            title: title.unwrap_or_default(),
-            app_id: app_id.unwrap_or_default(),
+            // A web app's title without the browser's name, as its title
+            // bar shows it (M6.4).
+            title: edel::web_apps::shown_title(&app_id, &title.unwrap_or_default()).to_string(),
+            app_id,
             outputs,
             states,
         }

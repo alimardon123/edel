@@ -99,6 +99,32 @@ pub fn normalise(text: &str) -> String {
     }
 }
 
+/// What the browser adds to a window's title after the page's own title,
+/// as Firefox writes it in its usual languages: a web app's windows show
+/// the page's title alone.
+const BROWSER_SUFFIXES: [&str; 4] = [
+    " \u{2014} Mozilla Firefox",
+    " - Mozilla Firefox",
+    " \u{2014} Firefox",
+    " - Firefox",
+];
+
+/// The title people see for a window with `app_id` and `title`: for a web
+/// app's window, the page's title without the browser's name after it
+/// ("Inbox", not "Inbox, Mozilla Firefox"), so its title bar, the panel and
+/// the switcher name the website; any other window's title as it is. A
+/// title that would be left empty stays whole.
+pub fn shown_title<'a>(app_id: &str, title: &'a str) -> &'a str {
+    if !app_id.starts_with(ID_PREFIX) {
+        return title;
+    }
+    BROWSER_SUFFIXES
+        .iter()
+        .find_map(|suffix| title.strip_suffix(suffix))
+        .filter(|page| !page.trim().is_empty())
+        .unwrap_or(title)
+}
+
 /// The id of the web app called `name`: `edel-web-` and the name with
 /// every character outside `a-z` and `0-9` turned to `-`, in lower case,
 /// runs of `-` collapsed and none at the ends (`example.org` gives
@@ -163,8 +189,9 @@ fn url_for_exec(url: &str) -> String {
 
 /// The desktop entry of a web app: its name, its website as the comment,
 /// the command that runs Firefox with the app's own profile and id, the
-/// id as the window class so the window's app id matches the file, a
-/// generic icon until favicons come, and the marker `X-Edel-Web-App`.
+/// id as the window class so the window's app id matches the file, and
+/// the marker `X-Edel-Web-App`. It names no icon, so the panel draws the
+/// app's initial on a tile, until the site's own icon is kept with it.
 /// The website is quoted as the profile is when it holds more than safe
 /// characters, and its `%` is written `%%`, as the desktop entry spec
 /// asks of `Exec`. No branch or architecture is named, so the one file
@@ -179,7 +206,6 @@ pub fn desktop_text(name: &str, url: &str, id: &str, profile: &Path) -> String {
          Comment={url}\n\
          Exec=flatpak run {BROWSER} --new-instance --no-remote --name {id} --profile {profile} {exec_url}\n\
          StartupWMClass={id}\n\
-         Icon=web-browser\n\
          Categories=Network;WebBrowser;\n\
          {MARKER}={url}\n"
     )
@@ -529,7 +555,7 @@ mod tests {
         assert!(text.contains("\nStartupWMClass=edel-web-example-org\n"));
         assert!(text.contains("\nX-Edel-Web-App=https://example.org/a\n"));
         assert!(text.contains("\nComment=https://example.org/a\n"));
-        assert!(text.contains("\nIcon=web-browser\n"));
+        assert!(!text.contains("\nIcon="), "no icon of its own: {text}");
     }
 
     #[test]
@@ -553,6 +579,23 @@ mod tests {
         );
         assert!(text.contains("--profile \"/home/a b/profile\" https://example.org/a%%20b\n"));
         assert!(text.contains("X-Edel-Web-App=https://example.org/a%20b\n"));
+    }
+
+    #[test]
+    fn a_web_apps_title_drops_the_browsers_name() {
+        let id = id_for("example.org");
+        assert_eq!(shown_title(&id, "Inbox \u{2014} Mozilla Firefox"), "Inbox");
+        assert_eq!(shown_title(&id, "Inbox - Mozilla Firefox"), "Inbox");
+        assert_eq!(shown_title(&id, "Inbox"), "Inbox");
+        assert_eq!(shown_title(&id, "Mozilla Firefox"), "Mozilla Firefox");
+        assert_eq!(
+            shown_title(&id, " \u{2014} Mozilla Firefox"),
+            " \u{2014} Mozilla Firefox"
+        );
+        assert_eq!(
+            shown_title("org.mozilla.firefox", "Inbox \u{2014} Mozilla Firefox"),
+            "Inbox \u{2014} Mozilla Firefox"
+        );
     }
 
     #[test]
