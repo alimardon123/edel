@@ -301,6 +301,18 @@ pub struct Row {
 }
 
 impl Row {
+    /// A row's parts for a page that lays its row out itself, as the Shape
+    /// group's sliders do; it has no room for an icon.
+    pub fn of(subtitle: gtk::Label, keys: gtk::Box, reset: gtk::Button, copy: gtk::Button) -> Row {
+        Row {
+            subtitle,
+            keys,
+            reset,
+            copy,
+            lead: gtk::Box::builder().visible(false).build(),
+        }
+    }
+
     /// Shows one of our icons (`design/icons/`) before the row's title, in
     /// the title's colour, such as a permission's on an app's page (M6.14a).
     pub fn set_icon(&self, name: &str) {
