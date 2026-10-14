@@ -11,14 +11,8 @@ publish = false
 name = "edel-testclient"
 path = "src/main.rs"
 
-[[bin]]
-name = "edel-testheader"
-path = "src/bin/testheader.rs"
-
 [dependencies]
 anyhow = "1.0.104"
-# edel-testheader (M6.16) is one GTK 4 window with a header bar of its own, as apps draw.
-gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
 # Pinned (roadmap M4.3), without calloop and xkbcommon: the client only
 # draws and never reads keys.
 smithay-client-toolkit = { version = "=0.21.1", default-features = false }

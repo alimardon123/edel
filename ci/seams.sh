@@ -3,9 +3,10 @@
 # stands alone (roadmap M8.13; ADR-010's seams, ADR-011's settings file):
 #
 #   the library      edel never depends on a binary: not edel-compositor,
-#                    edel-shell-ui, edel-settings or edel-testclient
+#                    edel-shell-ui, edel-settings, edel-testclient or
+#                    edel-testheader
 #   the desktop      edel-compositor, edel-shell-ui and edel-settings never
-#                    depend on one another or on the test client
+#                    depend on one another or on the test clients
 #   the test client  nothing depends on edel-testclient
 #   the cli feature  the desktop parts take edel without its cli feature
 #                    (arguments, hashing, signing and downloads)
@@ -54,7 +55,7 @@ check_library() {
 		fail "cargo could not read edel's dependencies; run 'cargo tree -p edel' to see why"
 		return 0
 	}
-	for part in edel-compositor edel-shell-ui edel-settings edel-testclient; do
+	for part in edel-compositor edel-shell-ui edel-settings edel-testclient edel-testheader; do
 		if printf '%s\n' "$tree" | grep -q "^$part "; then
 			fail "edel depends on $part: the library must not use a binary; move the code it needs into crates/edel and drop the dependency"
 		fi
@@ -69,7 +70,7 @@ check_desktop() {
 			fail "cargo could not read the dependencies of $part; run 'cargo tree -p $part' to see why"
 			continue
 		}
-		for other in edel-compositor edel-shell-ui edel-settings edel-testclient; do
+		for other in edel-compositor edel-shell-ui edel-settings edel-testclient edel-testheader; do
 			if [ "$other" != "$part" ] && printf '%s\n' "$tree" | grep -q "^$other "; then
 				fail "$part depends on $other: a desktop part stands alone; drop that dependency and share the code through edel"
 			fi
