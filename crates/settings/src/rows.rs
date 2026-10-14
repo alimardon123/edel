@@ -534,6 +534,8 @@ pub const ROWS: &[Row] = &[
 /// are the ways to change them. A key a later step brings (`supported:
 /// false`) needs neither, as no page shows a row that does not work yet,
 /// and a retired key needs neither either.
+/// Only the tests read it: it is the reasons, held to the key table.
+#[cfg(test)]
 pub const NO_ROW: &[(&str, &str)] = &[
     (
         "system.developer_mode",
