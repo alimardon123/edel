@@ -18,6 +18,7 @@
 mod a11y;
 mod access;
 mod access_card;
+mod app_permissions;
 mod app_windows;
 mod app_windows_card;
 mod apps_drag;
@@ -282,6 +283,9 @@ struct Shell {
     /// The settings portal's backend on the session's bus (M5.5a), and
     /// the tray's watcher (M5.2e), served while this lives.
     _portal: Option<zbus::blocking::Connection>,
+    /// The app permissions last laid on the portals' store and the Flatpak
+    /// overrides (M6.14a), so a settings change sets only what differs.
+    app_permissions: Option<app_permissions::Applied>,
     /// Where the players' news goes while quick settings is open (M5.9d).
     player_tx: Option<channel::Sender<mpris::Event>>,
     text: Text,
@@ -541,6 +545,7 @@ fn run() -> Result<()> {
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
         _portal: portal::serve(&tokens, &buttons, edits),
+        app_permissions: None,
         player_tx: None,
         tokens,
         wallpaper: read_wallpaper(),
@@ -551,6 +556,15 @@ fn run() -> Result<()> {
         lock_tx: lock_card::answers(&event_loop.handle()),
         exit: false,
     };
+    // What each app may use (M6.14a): laid on at start, then at each change
+    // of the settings files (`settings_changed`).
+    let (machine, person) = settings_texts();
+    app_permissions::follow(
+        shell._portal.as_ref(),
+        &mut shell.app_permissions,
+        machine.as_deref(),
+        person.as_deref(),
+    );
     // The portal and the tray share the session's bus and zbus's thread
     // for it; the tray's news reaches the loop over a channel (M5.2e), but
     // only when a panel holds the widget. Served once the panel's fonts

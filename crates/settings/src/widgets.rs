@@ -295,6 +295,33 @@ pub struct Row {
     pub keys: gtk::Box,
     pub reset: gtk::Button,
     pub copy: gtk::Button,
+    /// Room for an icon before the title, empty and hidden until
+    /// [`Row::set_icon`] fills it.
+    lead: gtk::Box,
+}
+
+impl Row {
+    /// A row's parts for a page that lays its row out itself, as the Shape
+    /// group's sliders do; it has no room for an icon.
+    pub fn of(subtitle: gtk::Label, keys: gtk::Box, reset: gtk::Button, copy: gtk::Button) -> Row {
+        Row {
+            subtitle,
+            keys,
+            reset,
+            copy,
+            lead: gtk::Box::builder().visible(false).build(),
+        }
+    }
+
+    /// Shows one of our icons (`design/icons/`) before the row's title, in
+    /// the title's colour, such as a permission's on an app's page (M6.14a).
+    pub fn set_icon(&self, name: &str) {
+        while let Some(child) = self.lead.first_child() {
+            self.lead.remove(&child);
+        }
+        self.lead.append(&crate::icon::image(name, 20));
+        self.lead.set_visible(true);
+    }
 }
 
 /// Appends a row titled `title` that changes `control` to `group`.
@@ -334,6 +361,11 @@ pub fn row(group: &gtk::Box, title: &str, control: &gtk::Widget) -> Row {
     subtitle.connect_label_notify(|label| label.set_visible(!label.label().is_empty()));
     words.append(&heading);
     words.append(&subtitle);
+    let lead = gtk::Box::builder()
+        .valign(gtk::Align::Center)
+        .visible(false)
+        .build();
+    row.append(&lead);
     row.append(&words);
     let Source { reset, copy, .. } = source();
     row.append(&reset);
@@ -347,6 +379,7 @@ pub fn row(group: &gtk::Box, title: &str, control: &gtk::Widget) -> Row {
         keys,
         reset,
         copy,
+        lead,
     }
 }
 

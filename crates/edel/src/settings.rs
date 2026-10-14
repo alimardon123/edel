@@ -183,8 +183,8 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "apps",
         title: n_("Apps"),
-        about: n_("the apps installed from Flathub"),
-        group: "system",
+        about: n_("what each app may use"),
+        group: "personal",
     },
     Page {
         section: "addons",
@@ -289,6 +289,9 @@ pub enum Kind {
     CursorTheme,
     /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
     AppWorkspaces,
+    /// Flatpak apps and one of these choices each, such as
+    /// `{ "org.gnome.Snapshot" = "never" }` ([`crate::app_permissions`], M6.14a)
+    AppChoices(&'static [&'static str]),
     /// A wallpaper: a wallpaper's name such as `"hills"`, a picture's
     /// path, a colour `"#rrggbb"` or `"none"` ([`crate::wallpapers`],
     /// M5.10c4b)
@@ -579,6 +582,24 @@ pub const KEYS: &[Key] = &[
     ),
     later("updates.restart_window", Kind::Text),
     now("apps.installed", Kind::AppIds),
+    // What each app may use (M6.14a), the person's, laid onto Flatpak's
+    // own state by shell-ui.
+    now(
+        "apps.camera",
+        Kind::AppChoices(crate::app_permissions::CAMERA_CHOICES),
+    ),
+    now(
+        "apps.screenshots",
+        Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+    ),
+    now(
+        "apps.notifications",
+        Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+    ),
+    now(
+        "apps.files",
+        Kind::AppChoices(crate::app_permissions::FILES_CHOICES),
+    ),
     later("addons.installed", Kind::Texts),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
@@ -1331,6 +1352,31 @@ pub struct Updates {
 pub struct Apps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed: Option<Vec<String>>,
+    /// What each app may use (M6.14a): app id and choice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screenshots: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notifications: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<BTreeMap<String, String>>,
+}
+
+impl Apps {
+    /// The choices the file makes, by key, as
+    /// [`crate::app_permissions::entries`] takes them.
+    pub fn choices(&self) -> crate::app_permissions::Choices {
+        [
+            ("apps.camera", &self.camera),
+            ("apps.screenshots", &self.screenshots),
+            ("apps.notifications", &self.notifications),
+            ("apps.files", &self.files),
+        ]
+        .into_iter()
+        .filter_map(|(key, table)| table.clone().map(|t| (key, t)))
+        .collect()
+    }
 }
 
 /// The Add-ons page.
@@ -2758,6 +2804,34 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::AppWorkspaces, _) => fail(tr(
             "apps and their workspace numbers, such as { \"org.mozilla.firefox\" = 2 }",
         )),
+        (Kind::AppChoices(allowed), Value::Table(apps)) => {
+            for (app, choice) in apps {
+                if !crate::apps::is_flatpak_id(app) {
+                    return Err(trf(
+                        "{app} is not a Flatpak app id; use one such as \"org.mozilla.firefox\"",
+                        &[("app", &format!("{app:?}"))],
+                    ));
+                }
+                match choice {
+                    Value::String(s) if allowed.contains(&s.as_str()) => {}
+                    _ => {
+                        return Err(trf(
+                            "{app} has {value}; choose {choices}",
+                            &[
+                                ("app", &format!("{app:?}")),
+                                ("value", &choice.to_string()),
+                                ("choices", &or_list(allowed)),
+                            ],
+                        ));
+                    }
+                }
+            }
+            Ok(value.clone())
+        }
+        (Kind::AppChoices(allowed), _) => fail(&trf(
+            "apps and their choice, such as { \"org.mozilla.firefox\" = \"{first}\" }",
+            &[("first", allowed[0])],
+        )),
         (Kind::Accent, Value::String(s)) if crate::tokens::is_accent(s) => Ok(value.clone()),
         (Kind::Accent, Value::String(s)) => Err(trf(
             "{value} is not an accent; choose {choices} or a colour such as \"#d0363f\"",
@@ -2968,6 +3042,10 @@ mod tests {
             Kind::WallpaperList => value_from_arg(r##"["", "#336699"]"##),
             Kind::Pictures => value_from_arg(r#"["hills"]"#),
             Kind::AppWorkspaces => value_from_arg(r#"{ "org.mozilla.firefox" = 2 }"#),
+            Kind::AppChoices(allowed) => value_from_arg(&format!(
+                r#"{{ "org.mozilla.firefox" = "{}" }}"#,
+                allowed[0]
+            )),
             Kind::LockLook => Value::String("minimal".into()),
             Kind::LockBackground => Value::String("blurred".into()),
             Kind::Accent => Value::String("blue".into()),

@@ -1138,6 +1138,27 @@ commands() {
 			as_ci "timeout 15 flatpak run --command=edel-testclient org.edel.TestA --title test-a-check --colour 3399cc --size 300x200" </dev/null >/tmp/default-app.log 2>&1
 			say "default_app_run $? $(tr '\n' ';' </tmp/default-app.log | cut -c1-2000)"
 			;;
+		# What each app may use (M6.14a): ci sets Test A's camera to Never
+		# and its files to Only files you pick, as Settings' Apps page
+		# writes them, then what the permission store and Test A's
+		# override file hold, then the reset.
+		'app permissions on')
+			as_ci "edel settings set 'apps.camera={ \"org.edel.TestA\" = \"never\" }' 'apps.files={ \"org.edel.TestA\" = \"ask\" }'" </dev/null >/dev/null 2>&1
+			say "app_permissions_set $?"
+			;;
+		'app permissions off')
+			as_ci "edel settings reset apps.camera apps.files" </dev/null >/dev/null 2>&1
+			say "app_permissions_reset $?"
+			;;
+		'settings app')
+			as_ci edel-settings --app org.edel.TestA </dev/null >/tmp/settings-app.log 2>&1 &
+			;;
+		'settings app log') say "settings_app_log $(tr '\n' ';' </tmp/settings-app.log 2>/dev/null)" ;;
+		'app permissions show')
+			bus=$(session_bus)
+			say "app_permissions $(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' flatpak permission-show org.edel.TestA" </dev/null 2>&1 | tr '\n\t' '; ')"
+			say "app_override $(cat /home/ci/.local/share/flatpak/overrides/org.edel.TestA 2>&1 | tr '\n' ';')"
+			;;
 		# Flatpak apps quick and light (M6.2a): which Flatpak and portal
 		# processes run before any app starts; a cold start of Test A (the
 		# page cache dropped first, so it reads the app and its runtime

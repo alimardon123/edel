@@ -89,6 +89,72 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "What it may use"
+msgstr ""
+
+msgid "{name}, {summary}"
+msgstr ""
+
+msgid "All its files"
+msgstr ""
+
+msgid "Only files you pick"
+msgstr ""
+
+msgid "Ask the first time"
+msgstr ""
+
+msgid "Allow"
+msgstr ""
+
+msgid "Ask every time"
+msgstr ""
+
+msgid "Never"
+msgstr ""
+
+msgid "Not sandboxed"
+msgstr ""
+
+msgid "Sandboxed"
+msgstr ""
+
+msgid "{title}: {word}"
+msgstr ""
+
+msgid "{parts} and {n} more"
+msgstr ""
+
+msgid "{status} · {parts}"
+msgstr ""
+
+msgid "{id} · {status}"
+msgstr ""
+
+msgid "Back to the apps"
+msgstr ""
+
+msgid "{what} for {app}"
+msgstr ""
+
+msgid "This app is not sandboxed: it can use everything you can, so there is nothing to allow or refuse here."
+msgstr ""
+
+msgid "Every app on this computer and what each may use. Open an app to change it."
+msgstr ""
+
+msgid "Find an app"
+msgstr ""
+
+msgid "1 app"
+msgstr ""
+
+msgid "{count} apps"
+msgstr ""
+
+msgid "No app matches"
+msgstr ""
+
 msgid "Password for {user}"
 msgstr ""
 
@@ -764,13 +830,25 @@ msgstr ""
 msgid "--page needs the name of a page, such as --page displays"
 msgstr ""
 
-msgid "unknown option \"{option}\"; the only ones are --page NAME and --welcome"
+msgid "unknown option \"{option}\"; the only ones are --page NAME, --app ID and --welcome"
+msgstr ""
+
+msgid "--welcome and --app cannot be used together: --welcome opens the Welcome pages, --app ID one app on the Apps page; use one of them"
+msgstr ""
+
+msgid "--app and --page cannot be used together: --app ID opens one app on the Apps page, --page NAME one page of Settings; use one of them"
+msgstr ""
+
+msgid "there is no Apps page on this machine"
 msgstr ""
 
 msgid "--welcome and --page cannot be used together: --welcome opens the Welcome pages, --page NAME one page of Settings; use one of them"
 msgstr ""
 
 msgid "there is no page \"{name}\" on this machine; the pages are {pages}"
+msgstr ""
+
+msgid "--app needs the id of an app, such as --app org.example.App"
 msgstr ""
 
 msgid "Back to the pages"
@@ -1256,9 +1334,6 @@ msgstr ""
 msgid "Web browser"
 msgstr ""
 
-msgid "Files"
-msgstr ""
-
 msgid "Text editor"
 msgstr ""
 
@@ -1419,9 +1494,6 @@ msgid "Always"
 msgstr ""
 
 msgid "Floating only"
-msgstr ""
-
-msgid "Never"
 msgstr ""
 
 msgid "Left"

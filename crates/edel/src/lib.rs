@@ -12,6 +12,7 @@
 
 #[cfg(feature = "icons")]
 pub mod app_icons;
+pub mod app_permissions;
 pub mod apps;
 pub mod backlight;
 pub mod bluetooth;

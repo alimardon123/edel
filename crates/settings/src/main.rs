@@ -12,6 +12,7 @@
 
 mod about;
 mod actions;
+mod apps;
 mod ask;
 mod bluetooth;
 mod card;
@@ -115,8 +116,12 @@ fn main() -> gtk::glib::ExitCode {
         .skip(1)
         .find_map(|arg| rows::row_named(arg.rsplit_once('=').map_or(&arg, |(_, v)| v)));
     widgets::set_asked_row(row);
-    app.connect_activate(move |app| match start {
-        Start::Page(at) => window(app, at, asked),
+    app.connect_activate(move |app| match &start {
+        Start::Page(at) => window(app, *at, asked),
+        Start::App(at, id) => {
+            apps::open_app(id);
+            window(app, *at, asked);
+        }
         Start::Welcome => welcome::window(app),
     });
     // GTK would refuse `--page`, which is read above.
@@ -125,25 +130,37 @@ fn main() -> gtk::glib::ExitCode {
 
 /// What the app opens on: a page of Settings, the first without an option,
 /// or the Welcome pages (M6.12).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Start {
     /// The page at this place in `pages`.
     Page(usize),
+    /// The Apps page at this place in `pages` with the app `--app ID` names
+    /// open (M6.14a).
+    App(usize, String),
     /// The Welcome, `--welcome`.
     Welcome,
 }
 
-/// What the app opens on: `--page NAME` names a page, `--welcome` the
-/// Welcome pages (which cannot be asked for with a page); with neither, the
-/// first page. An argument it does not know, or a page this machine lacks,
-/// is refused with what to do.
+/// What the app opens on: `--page NAME` names a page, `--app ID` one app on
+/// the Apps page (M6.14a), `--welcome` the Welcome pages; the options cannot
+/// be combined, and with none the first page opens. An argument it does not
+/// know, or a page this machine lacks, is refused with what to do.
 fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<Start, String> {
     let mut args = args.into_iter();
     let mut name: Option<String> = None;
+    let mut app: Option<String> = None;
     let mut welcome = false;
     while let Some(arg) = args.next() {
         if arg == "--welcome" {
             welcome = true;
+            continue;
+        }
+        if arg == "--app" {
+            app = Some(app_id(args.next())?);
+            continue;
+        }
+        if let Some(id) = arg.strip_prefix("--app=") {
+            app = Some(app_id(Some(id.to_string()))?);
             continue;
         }
         match arg.strip_prefix("--page") {
@@ -155,11 +172,28 @@ fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<
             Some(rest) if rest.starts_with('=') => name = Some(rest[1..].to_string()),
             _ => {
                 return Err(trf(
-                    "unknown option \"{option}\"; the only ones are --page NAME and --welcome",
+                    "unknown option \"{option}\"; the only ones are --page NAME, --app ID and --welcome",
                     &[("option", &arg)],
                 ));
             }
         }
+    }
+    if let Some(id) = app {
+        if welcome {
+            return Err(tr(
+                "--welcome and --app cannot be used together: --welcome opens the Welcome pages, --app ID one app on the Apps page; use one of them",
+            )
+            .to_string());
+        }
+        if name.is_some() {
+            return Err(tr(
+                "--app and --page cannot be used together: --app ID opens one app on the Apps page, --page NAME one page of Settings; use one of them",
+            )
+            .to_string());
+        }
+        let at = page_named(pages, "apps")
+            .ok_or_else(|| tr("there is no Apps page on this machine").to_string())?;
+        return Ok(Start::App(at, id));
     }
     if welcome {
         if name.is_some() {
@@ -180,6 +214,16 @@ fn start_page(args: impl IntoIterator<Item = String>, pages: &[Page]) -> Result<
             )
         }),
     }
+}
+
+/// The app id `--app` names: the argument after it, which must be an id and
+/// not another option (M6.14a).
+fn app_id(value: Option<String>) -> Result<String, String> {
+    value
+        .filter(|id| !id.is_empty() && !id.starts_with("--"))
+        .ok_or_else(|| {
+            tr("--app needs the id of an app, such as --app org.example.App").to_string()
+        })
 }
 
 /// The page `name` means: its section or its title, whatever the case, or
@@ -413,6 +457,16 @@ fn all_pages() -> Vec<Page> {
                 needs: None,
                 group: Some(page.group),
             }),
+            // What each app may use (M6.14a): the apps' desktop files, as the
+            // Startup page reads them, and the Flatpak apps' permissions.
+            "apps" => Some(Page {
+                title: tr(page.title),
+                icon: "app-generic",
+                section: Some(page.section),
+                build: |_| apps::page(),
+                needs: None,
+                group: Some(page.group),
+            }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
                 title: tr(page.title),
@@ -496,6 +550,8 @@ fn finds(page: &Page, query: &str) -> bool {
                         .any(|value| holds(&rows::label(value)))
             })
         })
+        // The Apps page finds an app by its name too (M6.14a).
+        || (page.section == Some("apps") && apps::names().iter().any(|name| holds(name)))
 }
 
 /// Opens Settings' window on page `start`, the keys given to its main
@@ -811,6 +867,7 @@ mod tests {
                 "Region",
                 "Default apps",
                 "Startup",
+                "Apps",
                 "Users",
                 "Updates",
                 "System",
@@ -925,6 +982,7 @@ mod tests {
                 "Region",
                 "Default apps",
                 "Startup",
+                "Apps",
                 "Users",
                 "Updates",
                 "System",
@@ -941,7 +999,11 @@ mod tests {
             ["Notifications"],
             "the Do not disturb row"
         );
-        assert_eq!(titles("notif"), ["Notifications"]);
+        assert_eq!(
+            titles("notif"),
+            ["Notifications", "Apps"],
+            "the Notifications row of Apps too"
+        );
         assert_eq!(titles("user"), ["Users"]);
         assert_eq!(titles("chan"), ["Updates"], "the Channel row");
         assert_eq!(titles("TITLE BARS"), ["Layout"]);
@@ -977,18 +1039,19 @@ mod tests {
         assert_eq!(at("Region"), Some(12));
         assert_eq!(at("default"), Some(13), "a start of Default apps");
         assert_eq!(at("startup"), Some(14));
-        assert_eq!(at("users"), Some(15));
+        assert_eq!(at("apps"), Some(15));
+        assert_eq!(at("users"), Some(16));
         assert_eq!(at("network"), Some(5));
         assert_eq!(at("bluetooth"), Some(6));
         assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
-        assert_eq!(at("updates"), Some(16));
-        assert_eq!(at("system"), Some(17));
-        assert_eq!(at("sy"), Some(17));
-        assert_eq!(at("about"), Some(18));
-        assert_eq!(at("abo"), Some(18));
+        assert_eq!(at("updates"), Some(17));
+        assert_eq!(at("system"), Some(18));
+        assert_eq!(at("sy"), Some(18));
+        assert_eq!(at("about"), Some(19));
+        assert_eq!(at("abo"), Some(19));
         assert_eq!(at(""), None);
         assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
@@ -1022,11 +1085,11 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(Start::Page(0)));
-        assert_eq!(start(&["--page", "about"]), Ok(Start::Page(18)));
-        assert_eq!(start(&["--page=about"]), Ok(Start::Page(18)));
-        assert_eq!(start(&["--page", "updates"]), Ok(Start::Page(16)));
+        assert_eq!(start(&["--page", "about"]), Ok(Start::Page(19)));
+        assert_eq!(start(&["--page=about"]), Ok(Start::Page(19)));
+        assert_eq!(start(&["--page", "updates"]), Ok(Start::Page(17)));
         assert_eq!(start(&["--page", "sound"]), Ok(Start::Page(8)));
-        assert_eq!(start(&["--page", "users"]), Ok(Start::Page(15)));
+        assert_eq!(start(&["--page", "users"]), Ok(Start::Page(16)));
         assert_eq!(start(&["--page", "region"]), Ok(Start::Page(12)));
         assert_eq!(start(&["--page", "notifications"]), Ok(Start::Page(10)));
         assert_eq!(start(&["--page", "network"]), Ok(Start::Page(5)));
@@ -1041,7 +1104,7 @@ mod tests {
         let refused = start(&["--pge", "x"]).unwrap_err();
         assert_eq!(
             refused,
-            "unknown option \"--pge\"; the only ones are --page NAME and --welcome"
+            "unknown option \"--pge\"; the only ones are --page NAME, --app ID and --welcome"
         );
         assert_eq!(start(&["--welcome"]), Ok(Start::Welcome));
         assert_eq!(start(&["--welcome", "--welcome"]), Ok(Start::Welcome));
@@ -1063,6 +1126,47 @@ mod tests {
     }
 
     #[test]
+    fn the_app_option_opens_the_apps_page_with_that_app() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let pages = all_pages();
+        let apps_at = page_named(&pages, "apps").expect("the Apps page");
+        let id = "org.example.App".to_string();
+        assert_eq!(
+            start_page(args(&["--app", "org.example.App"]), &pages),
+            Ok(Start::App(apps_at, id.clone()))
+        );
+        assert_eq!(
+            start_page(args(&["--app=org.example.App"]), &pages),
+            Ok(Start::App(apps_at, id))
+        );
+        let refused = start_page(args(&["--app"]), &pages).unwrap_err();
+        assert!(
+            refused.starts_with("--app needs the id of an app"),
+            "{refused}"
+        );
+        let refused = start_page(args(&["--app", "--welcome"]), &pages).unwrap_err();
+        assert!(
+            refused.starts_with("--app needs the id of an app"),
+            "{refused}"
+        );
+        let refused = start_page(
+            args(&["--app", "org.example.App", "--page", "displays"]),
+            &pages,
+        )
+        .unwrap_err();
+        assert!(
+            refused.starts_with("--app and --page cannot be used together"),
+            "{refused}"
+        );
+        let refused =
+            start_page(args(&["--welcome", "--app", "org.example.App"]), &pages).unwrap_err();
+        assert!(
+            refused.starts_with("--welcome and --app cannot be used together"),
+            "{refused}"
+        );
+    }
+
+    #[test]
     fn a_page_whose_feature_is_missing_is_hidden() {
         let dir = std::env::temp_dir().join(format!("edel-settings-pages-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -1079,6 +1183,7 @@ mod tests {
                 "Region",
                 "Default apps",
                 "Startup",
+                "Apps",
                 "Users",
                 "Updates",
                 "System",
@@ -1100,6 +1205,7 @@ mod tests {
                 "Region",
                 "Default apps",
                 "Startup",
+                "Apps",
                 "Users",
                 "Updates",
                 "System",
@@ -1122,6 +1228,7 @@ mod tests {
                 "Region",
                 "Default apps",
                 "Startup",
+                "Apps",
                 "Users",
                 "Updates",
                 "System",

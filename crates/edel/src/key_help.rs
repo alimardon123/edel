@@ -938,6 +938,44 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "apps.camera",
+        help: n_(
+            "Which apps may use the camera, by Flatpak app id: allow, ask every time or never.",
+        ),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "apps.screenshots",
+        help: n_(
+            "Which apps may take a screenshot without asking, by Flatpak app id: allow or never.",
+        ),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "apps.notifications",
+        help: n_("Which apps may show notifications, by Flatpak app id: allow or never."),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "apps.files",
+        help: n_(
+            "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id.",
+        ),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "addons.installed",
         help: n_("The add-ons this machine has, by name; this release does not act on them yet."),
         default: "[]",

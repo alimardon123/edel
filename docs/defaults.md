@@ -98,6 +98,10 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `updates.automatic` | not set yet | release |
 | `updates.restart_window` | none | release |
 | `apps.installed` | `[]` | release |
+| `apps.camera` | `{}` | release |
+| `apps.screenshots` | `{}` | release |
+| `apps.notifications` | `{}` | release |
+| `apps.files` | `{}` | release |
 | `addons.installed` | `[]` | release |
 | `notifications.do_not_disturb` | `false` | release |
 | `notifications.position` | `"auto"` | release |

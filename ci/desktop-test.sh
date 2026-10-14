@@ -3433,6 +3433,72 @@ case_launcher() {
 	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
+case_app_permissions() {
+	# What each app may use (M6.14a): ci sets Test A's camera to Never and
+	# its files to Only files you pick with edel settings set, the line
+	# Settings' Apps page writes; shell-ui lays them onto the portals'
+	# permission store and Test A's Flatpak override file at the files'
+	# change, flatpak permission-show lists the camera's no and the file
+	# holds !home; the reset takes both out again, so the portal asks.
+	camera=$(count 'edel-shell-ui: app permission camera no for org.edel.TestA')
+	files=$(count 'edel-shell-ui: app files ask for org.edel.TestA')
+	asked=$(count 'DESKTOP-TEST: app_permissions_set ')
+	guest 'app permissions on'
+	wait_more 'DESKTOP-TEST: app_permissions_set ' "$asked" || fail "the service did not set Test A's permissions"
+	[ "$(value app_permissions_set)" = 0 ] || fail "edel settings set as ci refused apps.camera and apps.files"
+	wait_more 'edel-shell-ui: app permission camera no for org.edel.TestA' "$camera" 30 ||
+		fail "shell-ui did not set Test A's camera to no in the permission store within 30 s of the settings change"
+	wait_more 'edel-shell-ui: app files ask for org.edel.TestA' "$files" 30 ||
+		fail "shell-ui did not write Test A's override file within 30 s of the settings change"
+	asked=$(count 'DESKTOP-TEST: app_permissions ')
+	guest 'app permissions show'
+	wait_more 'DESKTOP-TEST: app_permissions ' "$asked" || fail "the service did not show Test A's permissions"
+	store=$(value app_permissions)
+	override=$(value app_override)
+	echo "$store" | grep -q 'devices.*camera.*org.edel.TestA.*no' ||
+		fail "flatpak permission-show did not list Test A's camera as no: $store"
+	echo "$override" | grep -q 'filesystems=.*!home' ||
+		fail "Test A's override file has no !home: $override"
+	# Test A's own page in Settings (`--app`), its camera Never and its
+	# files Only files you pick (settings-app.png).
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings app'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 ||
+		fail "Settings did not open on Test A's page: $(value windows)"
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: settings_app_log ')
+		guest 'settings app log'
+		wait_more 'DESKTOP-TEST: settings_app_log ' "$seen" 10 || true
+		value settings_app_log | grep -q 'edel-settings: app org.edel.TestA shown' && break
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings never showed Test A's page: $(value settings_app_log)"
+		sleep 1
+	done
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/settings-app.png"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	back=$(count 'edel-shell-ui: app permission camera for org.edel.TestA back to asking')
+	allowed=$(count 'edel-shell-ui: app files allow for org.edel.TestA')
+	asked=$(count 'DESKTOP-TEST: app_permissions_reset ')
+	guest 'app permissions off'
+	wait_more 'DESKTOP-TEST: app_permissions_reset ' "$asked" || fail "the service did not reset Test A's permissions"
+	wait_more 'edel-shell-ui: app permission camera for org.edel.TestA back to asking' "$back" 30 ||
+		fail "shell-ui did not take Test A's camera entry out after the reset"
+	wait_more 'edel-shell-ui: app files allow for org.edel.TestA' "$allowed" 30 ||
+		fail "shell-ui did not give Test A its files back after the reset"
+	asked=$(count 'DESKTOP-TEST: app_permissions ')
+	guest 'app permissions show'
+	wait_more 'DESKTOP-TEST: app_permissions ' "$asked" || fail "the service did not show Test A's permissions again"
+	after=$(value app_permissions)
+	if echo "$after" | grep -q 'camera.*org.edel.TestA'; then
+		fail "Test A's camera entry is still in the permission store after the reset: $after"
+	fi
+	echo "PASS: Test A's camera set to never and its files to ask as ci reached the permission store ($store) and its override file ($override), and Settings opened on Test A's page (settings-app.png); the reset took the entry out ($after) and gave its files back"
+}
+
 case_default_apps() {
 	# The default apps (M6.2): the image build installed the test app
 	# org.edel.TestA from a repository made with no network into the data
@@ -7240,7 +7306,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

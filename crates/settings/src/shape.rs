@@ -470,12 +470,7 @@ pub(crate) fn slider(key: &str) -> Slider {
     Slider {
         scale,
         words,
-        row: widgets::Row {
-            subtitle,
-            keys,
-            reset,
-            copy,
-        },
+        row: widgets::Row::of(subtitle, keys, reset, copy),
         title: title_box,
         actions,
         line,

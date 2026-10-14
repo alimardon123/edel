@@ -107,6 +107,24 @@ pub fn button_layout_not_said(why: impl Display) -> String {
     )
 }
 
+/// An app's permission cannot be set in the portal's store (M6.14a): the
+/// portal keeps its own answer, asking as it did, until the setting changes
+/// or the login ends.
+pub fn app_permission_not_set(app: &str, what: &str, why: impl Display) -> String {
+    format!(
+        "could not set what {app} may use ({what}): {why}; the portal keeps its own answer until the next change or login"
+    )
+}
+
+/// An app's Flatpak override cannot be written (M6.14a): the app keeps its
+/// own reach into the person's files until the setting changes or the login
+/// ends.
+pub fn app_files_not_written(app: &str, why: impl Display) -> String {
+    format!(
+        "could not write {app}'s Flatpak override: {why}; it keeps its own reach into your files until the next change or login"
+    )
+}
+
 /// The terminal's theme file cannot be written (M6.13): new terminals start
 /// in foot's own scheme until it can.
 pub fn terminal_theme_not_written(why: impl Display) -> String {
@@ -355,6 +373,18 @@ mod tests {
         assert_eq!(
             button_layout_not_said("no answer"),
             "could not tell apps where their title bar buttons go: no answer; apps already open keep theirs until the setting changes"
+        );
+    }
+
+    #[test]
+    fn an_app_permission_not_set_says_what_still_works() {
+        assert_eq!(
+            app_permission_not_set("org.gnome.Snapshot", "camera", "no answer"),
+            "could not set what org.gnome.Snapshot may use (camera): no answer; the portal keeps its own answer until the next change or login"
+        );
+        assert_eq!(
+            app_files_not_written("org.gnome.Snapshot", "no answer"),
+            "could not write org.gnome.Snapshot's Flatpak override: no answer; it keeps its own reach into your files until the next change or login"
         );
     }
 
