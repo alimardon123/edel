@@ -18,6 +18,8 @@
 mod a11y;
 mod access;
 mod access_card;
+mod app_windows;
+mod app_windows_card;
 mod apps_drag;
 mod banner;
 mod calendar;
@@ -137,6 +139,8 @@ const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
 /// The layout button's menu of tiling styles (M5.16b).
 const STYLES: &str = "edel-styles";
+/// An app's windows, listed when the app has two or more (M6.19).
+const APP_WINDOWS: &str = "edel-app-windows";
 /// The panel menu (M5.31b), and Edit panels' drawer.
 const PANEL_MENU: &str = "edel-panel-menu";
 const EDITOR: &str = "edel-editor";
@@ -204,6 +208,8 @@ struct Shell {
     menu: Option<Menu>,
     /// The tiling styles' menu while it is open (M5.16b).
     styles: Option<StylesMenu>,
+    /// The app windows menu while it is open (M6.19).
+    app_windows: Option<AppWindowsMenu>,
     /// The panel menu while it is open (M5.31b), and the drawer of Edit
     /// panels while it is open.
     panel_menu: Option<panel_menu_card::PanelMenu>,
@@ -304,6 +310,19 @@ struct StylesMenu {
     view: styles::View,
     /// What screen readers read of it (M6.9).
     reader: a11y::Reader,
+}
+
+/// The open app windows menu: the windows of one app by title, and the
+/// keyboard. `tasks` are the windows' places when it opened (its count is
+/// what a choice checks), `app` the app's id.
+struct AppWindowsMenu {
+    popup: Popup<app_windows::View>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    view: app_windows::View,
+    /// What screen readers read of it (M6.9).
+    reader: a11y::Reader,
+    app: String,
+    tasks: Vec<usize>,
 }
 
 /// One of the preset's panels.
@@ -484,6 +503,7 @@ fn run() -> Result<()> {
         launcher: launcher::Launcher::default(),
         menu: None,
         styles: None,
+        app_windows: None,
         panel_menu: None,
         editor: None,
         lock_editor: None,
@@ -1309,6 +1329,7 @@ impl Shell {
         self.close_lock_editor(false);
         self.close_launcher();
         self.close_styles();
+        self.close_app_windows();
         self.close_panel_menu();
         self.close_quick();
         self.hide_banner();
@@ -1396,7 +1417,7 @@ impl Shell {
             Action::Centre => self.toggle_centre(i, left + width / 2.0),
             Action::Notifications => self.toggle_notifications(i, left + width / 2.0),
             Action::TrayOpen => self.toggle_tray_grid(i, left + widgets::tray::arrow_middle()),
-            Action::App(id) => self.open_app(&id),
+            Action::App(id) => self.open_app(i, x, &id),
             Action::Tray(id, menu) => self.tray_call(&id, menu, x),
         }
     }
@@ -1431,21 +1452,29 @@ impl Shell {
         self.draw_all();
     }
 
-    /// A click on an app in the apps widget (M5.4c): its window comes
-    /// forward, or goes down if it is the focused one, or the app starts.
-    fn open_app(&mut self, id: &str) {
+    /// A click on an app in the apps widget (M5.4c) at `x` logical pixels
+    /// along panel `i`: with two or more windows the app windows menu opens
+    /// over the app's cell (M6.19). With one, its
+    /// window comes forward, or goes down if it is the focused one, or the
+    /// app starts.
+    fn open_app(&mut self, i: usize, x: f32, id: &str) {
         let tasks = self.toplevels.tasks();
         let mine: Vec<usize> = (0..tasks.len())
-            .filter(|&i| widgets::apps::belongs(&tasks[i].app_id, id))
+            .filter(|&k| widgets::apps::belongs(&tasks[k].app_id, id))
             .collect();
-        if let Some(&i) = mine
+        if mine.len() >= 2 {
+            return self.toggle_app_windows(i, x, id);
+        }
+        // Another click on the panel leaves an open menu behind: it closes.
+        self.close_app_windows();
+        if let Some(&k) = mine
             .iter()
-            .find(|&&i| tasks[i].focused && !tasks[i].minimized)
+            .find(|&&k| tasks[k].focused && !tasks[k].minimized)
         {
-            self.toplevels.minimize(i);
-        } else if let Some(&i) = mine.first() {
+            self.toplevels.minimize(k);
+        } else if let Some(&k) = mine.first() {
             let seat = self.seat.seats().next();
-            self.toplevels.activate(i, seat.as_ref());
+            self.toplevels.activate(k, seat.as_ref());
         } else if let Some(app) = apps::read_all(&apps::dirs())
             .into_iter()
             .find(|a| a.id == id)
@@ -1467,6 +1496,7 @@ impl Shell {
     /// the compositor picks, with the keyboard.
     fn open_launcher(&mut self) {
         self.close_styles();
+        self.close_app_windows();
         self.close_quick();
         self.close_centre();
         self.close_tray_grid();
@@ -1662,6 +1692,7 @@ impl Shell {
             return self.close_styles();
         }
         self.close_launcher();
+        self.close_app_windows();
         self.close_quick();
         self.close_centre();
         self.close_tray_grid();
@@ -1897,6 +1928,8 @@ impl LayerShellHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
+        } else if self.is_app_windows(surface.wl_surface()) {
+            self.close_app_windows();
         } else if self.is_panel_menu(surface.wl_surface()) {
             self.close_panel_menu();
         } else if self.is_editor(surface.wl_surface()) {
@@ -1977,6 +2010,12 @@ impl LayerShellHandler for Shell {
                 menu.popup.configured();
             }
             return self.draw_styles();
+        }
+        if self.is_app_windows(surface.wl_surface()) {
+            if let Some(menu) = &mut self.app_windows {
+                menu.popup.configured();
+            }
+            return self.draw_app_windows();
         }
         if self.is_quick(surface.wl_surface()) {
             if let Some(card) = &mut self.quick {
@@ -2078,6 +2117,12 @@ impl CompositorHandler for Shell {
                 menu.popup.set_scale(factor);
             }
             return self.draw_styles();
+        }
+        if self.is_app_windows(surface) {
+            if let Some(menu) = &mut self.app_windows {
+                menu.popup.set_scale(factor);
+            }
+            return self.draw_app_windows();
         }
         if self.is_quick(surface) {
             if let Some(card) = &mut self.quick {
@@ -2187,6 +2232,12 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_styles();
+        }
+        if self.is_app_windows(surface) {
+            if let Some(menu) = &mut self.app_windows {
+                menu.popup.framed();
+            }
+            return self.draw_app_windows();
         }
         if self.is_quick(surface) {
             if let Some(card) = &mut self.quick {
@@ -2407,6 +2458,30 @@ impl PointerHandler for Shell {
                 self.undo_pointer(event);
                 continue;
             }
+            if self.is_app_windows(&event.surface) {
+                let room = self.app_windows.as_ref().map_or(0, |m| m.popup.room()) as f32;
+                let count = self.app_windows.as_ref().map_or(0, |m| m.view.titles.len());
+                let (x, y) = (
+                    event.position.0 as f32 - room,
+                    event.position.1 as f32 - room,
+                );
+                let row = app_windows::row_at(y, count, &self.tokens).filter(|_| x >= 0.0);
+                match &event.kind {
+                    PointerEventKind::Motion { .. } => {
+                        if let (Some(row), Some(menu)) = (row, &mut self.app_windows) {
+                            menu.view.lit = row;
+                            self.draw_app_windows();
+                        }
+                    }
+                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                        if let Some(row) = row {
+                            self.choose_app_window(row);
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             if self.is_styles(&event.surface) {
                 let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
                 let (x, y) = (
@@ -2564,6 +2639,8 @@ impl KeyboardHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface) {
             self.close_styles();
+        } else if self.is_app_windows(surface) {
+            self.close_app_windows();
         } else if self.is_panel_menu(surface) {
             self.close_panel_menu();
         } else if self.is_editor(surface) {
@@ -2605,6 +2682,8 @@ impl KeyboardHandler for Shell {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
+        } else if self.app_windows.is_some() {
+            self.app_windows_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {
@@ -2638,6 +2717,8 @@ impl KeyboardHandler for Shell {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
+        } else if self.app_windows.is_some() {
+            self.app_windows_key(event);
         } else if self.styles.is_some() {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {

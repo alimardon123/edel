@@ -11,6 +11,9 @@ msgstr ""
 msgid "Allow this app?"
 msgstr ""
 
+msgid "Open windows"
+msgstr ""
+
 msgid "January"
 msgstr ""
 

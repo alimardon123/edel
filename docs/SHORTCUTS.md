@@ -7,7 +7,7 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | Action | Keys | What it does | Way out |
 |---|---|---|---|
 | `close_window` | `Super+Q` | Close the focused window | yes |
-| `minimize_window` | `Super+H` | Minimize the focused window; the window list or Alt+Tab brings it back |  |
+| `minimize_window` | `Super+H` | Minimize the focused window; the panel or Alt+Tab brings it back |  |
 | `toggle_maximize` | `Super+M` | Maximize the focused window, or give it its size back |  |
 | `toggle_fullscreen` | `Super+F` | Make the focused window fill its screen, or leave fullscreen |  |
 | `switch_windows` | `Alt+Tab` | Switch windows, the most recently used first, while the modifiers are held; with Shift, back |  |

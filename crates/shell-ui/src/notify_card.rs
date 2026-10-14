@@ -602,6 +602,7 @@ impl Shell {
     fn open_centre(&mut self, calendar: bool) {
         self.close_launcher();
         self.close_styles();
+        self.close_app_windows();
         self.close_quick();
         self.close_tray_grid();
         self.hide_banner();

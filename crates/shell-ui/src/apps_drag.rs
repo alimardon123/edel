@@ -160,7 +160,7 @@ impl Shell {
             return;
         }
         if !moved(press.from, (x, y)) {
-            self.open_app(&press.id);
+            self.open_app(i, x, &press.id);
             return;
         }
         if self.off_panel(i, y) {

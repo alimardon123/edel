@@ -1772,7 +1772,7 @@ msgstr ""
 msgid "Close the focused window"
 msgstr ""
 
-msgid "Minimize the focused window; the window list or Alt+Tab brings it back"
+msgid "Minimize the focused window; the panel or Alt+Tab brings it back"
 msgstr ""
 
 msgid "Maximize the focused window, or give it its size back"
