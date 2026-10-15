@@ -4,7 +4,8 @@
 # The stick has no login and no Wi-Fi set up yet, so a person boots it on
 # their laptop, plugs it into any computer and attaches that file to an
 # issue (docs/TRY-IT.md). It runs once and exits; it serves nothing. On a
-# disk that is not removable (an installed laptop) it writes nothing.
+# disk that is no stick (an installed laptop, on its own disk or a USB
+# one, M6.17) it writes nothing.
 
 description="Leave a hardware report on the EFI system partition"
 
