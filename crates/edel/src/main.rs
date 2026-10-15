@@ -486,7 +486,8 @@ struct BuildArgs {
     #[arg(long = "public-key", value_name = "FILE")]
     public_keys: Vec<PathBuf>,
     /// A tag written into grub.cfg so the boot loader differs from an
-    /// untagged build; for test images
+    /// untagged build, and onto the slot's command line as edel.tag=TAG; for
+    /// test images
     #[arg(long, value_name = "TAG")]
     loader_tag: Option<String>,
     /// The release version written into the image, such as 2026.10.3;

@@ -2468,7 +2468,7 @@ msgstr ""
 msgid "Another public key that may sign updates, after the definition's own; for test images. Can be given more than once"
 msgstr ""
 
-msgid "A tag written into grub.cfg so the boot loader differs from an untagged build; for test images"
+msgid "A tag written into grub.cfg so the boot loader differs from an untagged build, and onto the slot's command line as edel.tag=TAG; for test images"
 msgstr ""
 
 msgid "The release version written into the image, such as 2026.10.3; without it the image keeps its development version"
