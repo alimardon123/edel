@@ -1,10 +1,12 @@
-//! What each app may use (M6.14a): the `apps.camera`, `apps.screenshots`,
-//! `apps.notifications` and `apps.files` keys, each a table of Flatpak app
-//! ids and a choice, such as `{ "org.gnome.Snapshot" = "never" }`, laid
-//! onto Flatpak's own state, so there is no store of ours (ADR-008, level 1
-//! of ADR-007). The first three are entries of the portals' permission
-//! store, which shell-ui sets over the session bus; the files are a line of
-//! the app's override file, which shell-ui writes. Both are per person, as
+//! What each app may use (M6.14a, M6.14b): the `apps.camera`,
+//! `apps.microphone`, `apps.screenshots`, `apps.notifications` and
+//! `apps.files` keys, each a table of Flatpak app ids and a choice, such as
+//! `{ "org.gnome.Snapshot" = "never" }`, laid onto Flatpak's own state, so
+//! there is no store of ours (ADR-008, level 1 of ADR-007). The first four
+//! are entries of the portals' permission store, which shell-ui sets over
+//! the session bus (the portals read three of them, WirePlumber the
+//! microphone's); the files are a line of the app's override file, which
+//! shell-ui writes. Both are per person, as
 //! the keys are. A key that is absent leaves Flatpak's own behaviour: the
 //! portal asks the first time and keeps the answer. Pure functions, tested
 //! on text; shell-ui does the bus calls and the writing.
@@ -65,6 +67,19 @@ pub const PERMISSIONS: &[Permission] = &[
         choices: CAMERA_CHOICES,
         place: Place::Store("devices", "camera"),
         asks_first: true,
+    },
+    // The microphone (M6.14b): no portal asks for it, and Flatpak apps with
+    // the sound socket reach PipeWire straight, so the choice is kept under
+    // the Device portal's old id and WirePlumber hides the microphones from
+    // an app that may not use them (`features/sound`'s
+    // `edel/microphone-access.lua`).
+    Permission {
+        key: "apps.microphone",
+        icon: "microphone",
+        title: n_("Microphone"),
+        choices: ALLOW_OR_NEVER,
+        place: Place::Store("devices", "microphone"),
+        asks_first: false,
     },
     Permission {
         key: "apps.screenshots",

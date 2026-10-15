@@ -948,6 +948,14 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "apps.microphone",
+        help: n_("Which apps may use the microphone, by Flatpak app id: allow or never."),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "apps.screenshots",
         help: n_(
             "Which apps may take a screenshot without asking, by Flatpak app id: allow or never.",

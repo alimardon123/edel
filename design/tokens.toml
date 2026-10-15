@@ -76,6 +76,11 @@ lock_glow_second = "#454079"
 # the same in both schemes, as the lock is dark in both.
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
+# The panel's sign while an app uses the camera, the microphone or the
+# screen (M6.14b) and the icons on it: one warm amber, unlike any other
+# colour of the shell, so it is seen at a glance.
+in_use = "#f5a524"
+in_use_text = "#1f1503"
 
 # foot's colours (M6.13, features/terminal): the background, text, cursor
 # and selection, and the 16 colours of the terminal, as the dark scheme
@@ -142,6 +147,9 @@ lock_glow_second = "#454079"
 # the same in both schemes, as the lock is dark in both.
 lock_edit_deep = "#141a2b"
 lock_edit_glow = "#2a3456"
+# The in-use sign (M6.14b), a little deeper on the light panel.
+in_use = "#e8900c"
+in_use_text = "#1f1503"
 
 # The high-contrast look (M6.9, appearance.contrast = "high"): the colours
 # laid over the dark scheme when a person turns high contrast on, and over

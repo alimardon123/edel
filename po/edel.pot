@@ -8,6 +8,9 @@ msgstr ""
 msgid "Camera"
 msgstr ""
 
+msgid "Microphone"
+msgstr ""
+
 msgid "Screenshots"
 msgstr ""
 
@@ -15,6 +18,9 @@ msgid "Notifications"
 msgstr ""
 
 msgid "Files"
+msgstr ""
+
+msgid "Screen"
 msgstr ""
 
 msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
@@ -606,6 +612,9 @@ msgid "The Flathub apps installed for each administrator, by app id such as io.m
 msgstr ""
 
 msgid "Which apps may use the camera, by Flatpak app id: allow, ask every time or never."
+msgstr ""
+
+msgid "Which apps may use the microphone, by Flatpak app id: allow or never."
 msgstr ""
 
 msgid "Which apps may take a screenshot without asking, by Flatpak app id: allow or never."

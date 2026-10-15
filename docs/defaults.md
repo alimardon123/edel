@@ -99,6 +99,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `updates.restart_window` | none | release |
 | `apps.installed` | `[]` | release |
 | `apps.camera` | `{}` | release |
+| `apps.microphone` | `{}` | release |
 | `apps.screenshots` | `{}` | release |
 | `apps.notifications` | `{}` | release |
 | `apps.files` | `{}` | release |
