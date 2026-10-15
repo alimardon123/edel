@@ -17,8 +17,9 @@ use anyhow::{Context, Result, bail};
 use edel::i18n::trf;
 use edel::places;
 
-/// The most a downloaded settings file may hold: a whole machine's file is
-/// a few kilobytes, so anything near this is the wrong address.
+/// The most a settings file read for someone else may hold (a download, or
+/// a file read through doas): a whole machine's file is a few kilobytes,
+/// so anything near this is the wrong file.
 pub const MOST_BYTES: u64 = 1 << 20;
 
 /// Where a settings file comes from.
@@ -49,12 +50,13 @@ fn source_of(location: &str) -> Result<Source<'_>> {
     }
 }
 
-/// A settings file on this machine: the path given, or a downloaded copy
-/// that is removed when this is dropped.
+/// A settings file on this machine: the path given, or a copy only root
+/// reads (a download, or a file read through doas) that is removed when
+/// this is dropped.
 pub struct Local {
     path: PathBuf,
     shown: String,
-    downloaded: bool,
+    copy: bool,
 }
 
 impl Local {
@@ -71,15 +73,15 @@ impl Local {
 
 impl Drop for Local {
     fn drop(&mut self) {
-        if self.downloaded {
+        if self.copy {
             let _ = fs::remove_file(&self.path);
         }
     }
 }
 
 /// The settings file at `location` as a file on this machine: a path as
-/// it is, an `https://` address downloaded into a file only its owner
-/// reads.
+/// it is (through doas, a copy of it, read as checked), an `https://`
+/// address downloaded into a file only its owner reads.
 pub fn local(location: &str) -> Result<Local> {
     match source_of(location)? {
         Source::Path(path) => match read_as_caller(Path::new(path))? {
@@ -93,13 +95,13 @@ pub fn local(location: &str) -> Result<Local> {
                 Ok(Local {
                     path: copy,
                     shown: location.to_string(),
-                    downloaded: true,
+                    copy: true,
                 })
             }
             None => Ok(Local {
                 path: PathBuf::from(path),
                 shown: location.to_string(),
-                downloaded: false,
+                copy: false,
             }),
         },
         Source::Https(address) => {
@@ -110,7 +112,7 @@ pub fn local(location: &str) -> Result<Local> {
             Ok(Local {
                 path,
                 shown: location.to_string(),
-                downloaded: true,
+                copy: true,
             })
         }
     }
@@ -136,8 +138,19 @@ fn read_as_caller(path: &Path) -> Result<Option<Vec<u8>>> {
         &read(edel::users::GROUP),
     );
     let shown = path.display().to_string();
-    let bytes = ids.and_then(|(uid, gids)| read_if_allowed(uid, &gids, path));
-    let Some(bytes) = bytes else {
+    let read = ids.map_or(Err(Refused::NotAllowed), |(uid, gids)| {
+        read_if_allowed(uid, &gids, path)
+    });
+    if read == Err(Refused::TooBig) {
+        bail!(
+            "{}",
+            trf(
+                "{path} is over 1 MiB, which no settings file is; check that it is the right file",
+                &[("path", &shown)]
+            )
+        );
+    }
+    let Ok(bytes) = read else {
         bail!(
             "{}",
             trf(
@@ -185,34 +198,53 @@ fn allows(uid: u32, gids: &[u32], owner: u32, group: u32, mode: u32, bit: u32) -
     mode >> shift & bit != 0
 }
 
+/// Why a file was not read for the one who ran doas.
+#[derive(Debug, PartialEq)]
+enum Refused {
+    /// Missing, not a plain file, swapped, or not theirs to read.
+    NotAllowed,
+    /// Over [`MOST_BYTES`].
+    TooBig,
+}
+
 /// The bytes of `path`, at most [`MOST_BYTES`], when `uid` in `gids` may
 /// read it: every folder on its real path searchable, then the file opened
 /// and the opened file itself readable by them and the one the folders led
 /// to (its device and inode), so a link or file swapped in between the
-/// look and the open is refused.
-fn read_if_allowed(uid: u32, gids: &[u32], path: &Path) -> Option<Vec<u8>> {
+/// look and the open is refused. Only a plain file is opened, so a pipe
+/// never holds the command waiting.
+fn read_if_allowed(uid: u32, gids: &[u32], path: &Path) -> Result<Vec<u8>, Refused> {
     use std::io::Read;
     use std::os::unix::fs::MetadataExt;
-    let real = fs::canonicalize(path).ok()?;
+    let not = |_| Refused::NotAllowed;
+    let real = fs::canonicalize(path).map_err(not)?;
     let searchable = |dir: &Path| {
         fs::metadata(dir).is_ok_and(|m| allows(uid, gids, m.uid(), m.gid(), m.mode(), 1))
     };
     if !real.ancestors().skip(1).all(searchable) {
-        return None;
+        return Err(Refused::NotAllowed);
     }
-    let looked = fs::symlink_metadata(&real).ok()?;
-    let file = fs::File::open(&real).ok()?;
-    let opened = file.metadata().ok()?;
+    let looked = fs::symlink_metadata(&real).map_err(not)?;
+    if !looked.is_file() {
+        return Err(Refused::NotAllowed);
+    }
+    let file = fs::File::open(&real).map_err(not)?;
+    let opened = file.metadata().map_err(not)?;
     let same = (opened.dev(), opened.ino()) == (looked.dev(), looked.ino());
     if !same
         || !opened.is_file()
         || !allows(uid, gids, opened.uid(), opened.gid(), opened.mode(), 4)
     {
-        return None;
+        return Err(Refused::NotAllowed);
     }
     let mut bytes = Vec::new();
-    file.take(MOST_BYTES + 1).read_to_end(&mut bytes).ok()?;
-    (bytes.len() as u64 <= MOST_BYTES).then_some(bytes)
+    file.take(MOST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(not)?;
+    if bytes.len() as u64 > MOST_BYTES {
+        return Err(Refused::TooBig);
+    }
+    Ok(bytes)
 }
 
 /// Writes `bytes` to a new file that only its owner may read.
@@ -306,14 +338,26 @@ mod tests {
         let me = edel::users::current().unwrap();
         assert_eq!(
             read_if_allowed(me, &[], &file).as_deref(),
-            Some(&b"format = 1\n"[..])
+            Ok(&b"format = 1\n"[..])
         );
         assert_eq!(
             read_if_allowed(me, &[], &file.with_extension("missing")),
-            None
+            Err(Refused::NotAllowed)
         );
-        // A folder is no file to read.
-        assert_eq!(read_if_allowed(me, &[], &std::env::temp_dir()), None);
+        // A folder is no file to read, and a pipe is never opened.
+        assert_eq!(
+            read_if_allowed(me, &[], &std::env::temp_dir()),
+            Err(Refused::NotAllowed)
+        );
+        let pipe = file.with_extension("pipe");
+        let _ = fs::remove_file(&pipe);
+        let made = std::process::Command::new("mkfifo").arg(&pipe).status();
+        assert!(made.unwrap().success());
+        assert_eq!(read_if_allowed(me, &[], &pipe), Err(Refused::NotAllowed));
+        fs::remove_file(&pipe).unwrap();
+        // Over MOST_BYTES: refused for its size.
+        fs::write(&file, vec![b'#'; MOST_BYTES as usize + 1]).unwrap();
+        assert_eq!(read_if_allowed(me, &[], &file), Err(Refused::TooBig));
         fs::remove_file(&file).unwrap();
     }
 
