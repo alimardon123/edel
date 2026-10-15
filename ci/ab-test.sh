@@ -32,6 +32,14 @@ if ! first_boot; then
 	echo "FAIL: the installed disk's first boot lacked its hostname, the confirmation of slot A or its own ssh host key"
 	exit 1
 fi
+# M6.17: slot B's root was on no partition; Alpine's initramfs said so
+# and, under panic=, exited instead of waiting in its rescue shell, so the
+# kernel panicked and restarted.
+if ! tr -d '\r' <"$log" | grep -q 'Mounting root: failed' ||
+	! tr -d '\r' <"$log" | grep -q 'Attempted to kill init'; then
+	echo "FAIL: slot B with no root did not fail to mount it and panic, which restarts the machine"
+	exit 1
+fi
 # M1.10: slot B's hang ran with no watchdog, so the guard restarted it.
 if ! grep -q 'edel guard: this slot is not healthy after .* the machine has no watchdog; restarting it now' "$log"; then
 	echo "FAIL: with no watchdog, the guard did not restart the hung slot B itself"
@@ -49,7 +57,7 @@ if ! tr -d '\r' <"$log" | grep -q 'edel guard: this slot is not healthy after [0
 	exit 1
 fi
 if [ "$found" = 1 ] && grep -q 'AB-TEST: PASS' "$log"; then
-	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too and on an image's own health check, and with no try left the machine stayed up (${waited}s)"
+	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too, with no root and on an image's own health check, and with no try left the machine stayed up (${waited}s)"
 else
 	echo "FAIL: see the serial log above"
 	exit 1
