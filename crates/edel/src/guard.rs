@@ -256,12 +256,14 @@ pub fn guard() -> Result<()> {
                     if let Some(mut dog) = watchdog.take() {
                         let _ = dog.write_all(b"V");
                     }
-                    let note = format!(
-                        "this slot is not healthy after {timeout} s ({} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; run edel report to see what failed",
-                        not_reached(&files)
-                    );
-                    eprintln!("edel guard: {note}");
-                    if let Err(err) = fs::write(places::NO_HEALTHY_SLOT, note + "\n") {
+                    let missing = not_reached(&files);
+                    eprintln!("edel guard: {}", stood_down_text(timeout, &missing));
+                    // The facts alone, so edel status says them in the
+                    // person's language; /run/edel may not exist yet when
+                    // the boot hung before the default runlevel.
+                    let note = format!("{timeout}\t{missing}\n");
+                    let _ = fs::create_dir_all(places::RUN_DIR);
+                    if let Err(err) = fs::write(places::NO_HEALTHY_SLOT, note) {
                         eprintln!(
                             "warning: edel guard: could not write {}: {err}",
                             places::NO_HEALTHY_SLOT
@@ -299,6 +301,21 @@ fn on_timeout(has_watchdog: bool, may_retry: bool) -> Timeout {
     } else {
         Timeout::RestartItself
     }
+}
+
+/// What the guard and `edel status` say when the guard stood down: the
+/// seconds it waited and the health names not reached.
+pub fn stood_down_text(seconds: u64, missing: &str) -> String {
+    edel::i18n::trf(
+        "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed",
+        &[("seconds", &seconds.to_string()), ("missing", missing)],
+    )
+}
+
+/// The guard's note, `SECONDS\tNAMES`, as `edel status` says it.
+pub fn stood_down_note(note: &str) -> Option<String> {
+    let (seconds, missing) = note.trim_end().split_once('\t')?;
+    Some(stood_down_text(seconds.parse().ok()?, missing))
 }
 
 /// Whether a restart could start a slot afresh: one that is OK and has a
@@ -383,6 +400,18 @@ mod tests {
         // No slot has a try left: nothing restarts, watchdog or not.
         assert_eq!(on_timeout(true, false), Timeout::StandDown);
         assert_eq!(on_timeout(false, false), Timeout::StandDown);
+    }
+
+    #[test]
+    fn the_note_is_said_again_from_its_facts() {
+        assert_eq!(
+            stood_down_note("120\tcompositor\n"),
+            Some(stood_down_text(120, "compositor"))
+        );
+        assert!(
+            stood_down_text(120, "compositor").contains("after 120 s (compositor not reached)")
+        );
+        assert_eq!(stood_down_note("garbled"), None);
     }
 
     #[test]

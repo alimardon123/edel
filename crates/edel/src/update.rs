@@ -494,8 +494,11 @@ pub fn status() -> Result<()> {
     }
     // The guard kept an unhealthy slot running, as no slot had a try left
     // (M6.17).
-    if let Ok(note) = fs::read_to_string(edel::places::NO_HEALTHY_SLOT) {
-        println!("health: {}", note.trim());
+    if let Some(note) = fs::read_to_string(edel::places::NO_HEALTHY_SLOT)
+        .ok()
+        .and_then(|note| crate::guard::stood_down_note(&note))
+    {
+        println!("health: {note}");
     }
     // The desktop's effect tier (M5.11), while a session runs.
     if let Some(tier) = crate::shell::tier_now() {
