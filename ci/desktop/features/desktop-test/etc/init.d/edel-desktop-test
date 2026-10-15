@@ -1166,7 +1166,7 @@ commands() {
 			say "in_use_fakes $camera $? $(tr '\n' ';' </tmp/in-use-fakes.log | cut -c1-500)"
 			;;
 		'in use camera')
-			as_ci "gst-launch-1.0 -q pipewiresrc target-object=edel-test-camera ! fakesink" </dev/null >/tmp/in-use-camera.log 2>&1 &
+			as_ci "gst-launch-1.0 -q pipewiresrc target-object=edel-test-camera ! video/x-raw ! fakesink" </dev/null >/tmp/in-use-camera.log 2>&1 &
 			;;
 		'in use mic')
 			as_ci "flatpak run --filesystem=xdg-run/pipewire-0 --command=pw-record org.edel.TestA --target edel-test-mic /tmp/in-use.wav" </dev/null >/tmp/in-use-mic.log 2>&1 &
