@@ -110,6 +110,9 @@ msgstr ""
 msgid "could not write {path}"
 msgstr ""
 
+msgid "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
@@ -1391,7 +1394,7 @@ msgstr ""
 msgid "the language {language} needs {script} fonts, which this system does not carry; text in it shows as boxes until a later release brings them"
 msgstr ""
 
-msgid "{disk} is not a removable disk, so the report stays off its EFI system partition"
+msgid "{disk} is no stick (an installed disk, or one that cannot be unplugged), so the report stays off its EFI system partition"
 msgstr ""
 
 msgid "wrote {path} on the EFI system partition"

@@ -370,11 +370,11 @@ pub fn report(esp: bool) -> Result<()> {
         // machine has a login to run `edel report`, and its ESP is its one
         // way to boot, so it is not written at every boot for nothing.
         let disk = crate::update::Disk::find()?;
-        if !is_removable(Path::new("/sys"), &disk.name) {
+        if !edel::install::running_from_stick(Path::new("/sys"), &disk.name) {
             println!(
                 "edel report: {}",
                 trf(
-                    "{disk} is not a removable disk, so the report stays off its EFI system partition",
+                    "{disk} is no stick (an installed disk, or one that cannot be unplugged), so the report stays off its EFI system partition",
                     &[("disk", &disk.name)]
                 )
             );

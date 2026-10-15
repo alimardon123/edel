@@ -40,7 +40,7 @@ An update never changes the running system. It fills the other slot, and the mac
 2. **Write.** It streams the new system into the other slot, checks it byte for byte against the signed list, and tells GRUB to try that slot next.
 3. **Try.** At the next start GRUB counts one try and starts the new slot.
 4. **Prove.** While the system starts, a guard (`edel boot guard`) keeps the machine's watchdog timer fed and waits for the image's health checks: every service started and, on a desktop, the compositor has shown its first frame. When they pass in time, the slot is **confirmed**, and only then does a new boot loader, if the update brought one, take its place.
-5. **Fall back.** If the new slot freezes, the watchdog restarts the machine; if it hangs, the guard stops feeding the watchdog and the same happens. Once the tries run out, GRUB starts the old slot again, which notes what happened and switches the broken slot off.
+5. **Fall back.** If the new slot freezes, the watchdog restarts the machine; if it hangs, the guard stops feeding the watchdog and the same happens. Once the tries run out, GRUB starts the old slot again, which notes what happened and switches the broken slot off. When no slot has a try left at all, as on a stick whose graphics the desktop cannot start, the guard stops restarting: the machine stays on, and the console and `edel status` say which health check failed.
 
 ```text
 edel update URL

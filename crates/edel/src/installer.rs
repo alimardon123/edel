@@ -786,6 +786,18 @@ fn write(
         );
         fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
         fs::copy(system_file, target)?;
+        // The mark that this disk was installed, so a USB disk holding it
+        // is no stick: no live login, no install without a password
+        // (M6.17).
+        let installed = Path::new(edel::places::INSTALLED);
+        fs::write(
+            data.0.join(
+                installed
+                    .strip_prefix(edel::places::DATA_MOUNT)
+                    .unwrap_or(installed),
+            ),
+            "Installed by edel install; this disk is no stick.\n",
+        )?;
         // The person's password, hashed, for the first boot's apply to give
         // them; root's only (M6.6b).
         if let Some((user, hash)) = password {
