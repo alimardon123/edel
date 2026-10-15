@@ -29,6 +29,7 @@ use std::path::Path;
 use accesskit::Role;
 use tiny_skia::Pixmap;
 
+use edel::app_use::Kind;
 use edel::tokens::Tokens;
 
 use crate::paint::Text;
@@ -131,6 +132,9 @@ pub struct Live {
     /// How the machine is connected, how loud it is and how full its
     /// battery is (M5.9a); each part only where the machine has it.
     pub status: crate::status::Status,
+    /// The kinds an app uses now, the camera, the microphone and the screen,
+    /// in `Kind::ALL` order: the status area's sign while any is (M6.14b).
+    pub in_use: Vec<Kind>,
     pub pinned: Vec<Pin>,
     pub installed: Vec<Pin>,
     /// Every player that plays or pauses, read while quick settings is
@@ -229,6 +233,10 @@ pub enum Action {
     Tray(String, bool),
     /// Open the tray's grid of the apps behind its arrow, or close it (M5.9g).
     TrayOpen,
+    /// Open the in-use card over the status area's sign, or close it
+    /// (M6.14b), centred this many logical pixels from the widget's left
+    /// edge.
+    InUse(f32),
 }
 
 /// For widgets that take no input.

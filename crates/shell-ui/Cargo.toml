@@ -29,6 +29,14 @@ edel = { path = "../edel", default-features = false, features = ["icons", "pictu
 futures-lite = { version = "2.6", default-features = false }
 # The clock's local time, from /etc/localtime when a zone is set.
 jiff = "0.2"
+# The derive for the typed structs that read pw-dump's JSON (M6.14b): only
+# the fields named are kept, so the panel's in-use sign never holds a whole
+# JSON value; already in the tree through toml.
+serde = { version = "1", features = ["derive"] }
+# pw-dump's JSON, read as a stream of its batches (M6.14b): the sign of an
+# app that uses the camera, the microphone or the screen; a new crate, the
+# one JSON reader the tree has no other of.
+serde_json = "1"
 # The compositor's state file, for the effect tier (M5.11a).
 toml = "1.1.6"
 # Pinned like the test client's: the layer shell, a calloop event loop

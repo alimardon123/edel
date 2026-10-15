@@ -146,6 +146,27 @@ msgstr ""
 msgid "Lock screen changed"
 msgstr ""
 
+msgid "{first} and {last}"
+msgstr ""
+
+msgid "In use now"
+msgstr ""
+
+msgid "Stop"
+msgstr ""
+
+msgid "Settings"
+msgstr ""
+
+msgid "Stop {app}"
+msgstr ""
+
+msgid "Settings for {app}"
+msgstr ""
+
+msgid "{name}, {uses}"
+msgstr ""
+
 msgid "Search apps"
 msgstr ""
 
@@ -566,9 +587,6 @@ msgstr ""
 msgid "Sound: outputs"
 msgstr ""
 
-msgid "Settings"
-msgstr ""
-
 msgid "charging"
 msgstr ""
 
@@ -669,6 +687,9 @@ msgid "airplane mode"
 msgstr ""
 
 msgid "offline"
+msgstr ""
+
+msgid "{what} in use"
 msgstr ""
 
 msgid "volume muted"

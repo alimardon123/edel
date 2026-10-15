@@ -33,6 +33,9 @@ mod editor_card;
 mod glass;
 mod greetd;
 mod greeter;
+mod in_use;
+mod in_use_card;
+mod in_use_menu;
 mod launcher;
 mod link;
 mod lock;
@@ -108,7 +111,7 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::time::Duration;
 
@@ -142,6 +145,8 @@ const SWITCHER: &str = "edel-switcher";
 const STYLES: &str = "edel-styles";
 /// An app's windows, listed when the app has two or more (M6.19).
 const APP_WINDOWS: &str = "edel-app-windows";
+/// The in-use card's surface (M6.14b).
+const IN_USE: &str = "edel-in-use";
 /// The panel menu (M5.31b), and Edit panels' drawer.
 const PANEL_MENU: &str = "edel-panel-menu";
 const EDITOR: &str = "edel-editor";
@@ -211,6 +216,8 @@ struct Shell {
     styles: Option<StylesMenu>,
     /// The app windows menu while it is open (M6.19).
     app_windows: Option<AppWindowsMenu>,
+    /// The in-use card while it is open (M6.14b).
+    in_use_menu: Option<InUseMenu>,
     /// The panel menu while it is open (M5.31b), and the drawer of Edit
     /// panels while it is open.
     panel_menu: Option<panel_menu_card::PanelMenu>,
@@ -266,6 +273,13 @@ struct Shell {
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
+    /// The apps using the camera, the microphone or the screen now, as
+    /// `in_use.rs` reads them, and when each (app, kind) use began, seconds
+    /// since 1970, for the record of use (M6.14b). `in_use_sign` is the sign's
+    /// place as last logged.
+    in_use: Vec<in_use::InUse>,
+    in_use_since: HashMap<(String, edel::app_use::Kind), u64>,
+    in_use_sign: String,
     /// Scrolling over a panel not yet a whole step.
     scrolled: widgets::Scrolled,
     /// The window switcher's surface while Alt+Tab is held (M5.3c), and
@@ -327,6 +341,19 @@ struct AppWindowsMenu {
     reader: a11y::Reader,
     app: String,
     tasks: Vec<usize>,
+}
+
+/// The open in-use card (M6.14b): what it shows, the layout it was drawn
+/// with, the keyboard, and the desktop file ids of the apps with a page
+/// in Settings, read as it opened.
+struct InUseMenu {
+    popup: Popup<in_use_menu::View>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
+    view: in_use_menu::View,
+    layout: in_use_menu::Layout,
+    /// What screen readers read of it (M6.9).
+    reader: a11y::Reader,
+    pages: Vec<String>,
 }
 
 /// One of the preset's panels.
@@ -508,6 +535,7 @@ fn run() -> Result<()> {
         menu: None,
         styles: None,
         app_windows: None,
+        in_use_menu: None,
         panel_menu: None,
         editor: None,
         lock_editor: None,
@@ -537,6 +565,9 @@ fn run() -> Result<()> {
         status_busy: 0,
         status_again: None,
         status_tx,
+        in_use: Vec::new(),
+        in_use_since: HashMap::new(),
+        in_use_sign: String::new(),
         flip: None,
         flipped: switcher::View::default(),
         scrolled: widgets::Scrolled::default(),
@@ -662,6 +693,18 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
         watch::serve(features, &shell.status_tx, &event_loop.handle());
         shell.request_status(false);
+        // The in-use sign (M6.14b): PipeWire's graph read on a thread of its
+        // own, its batches reaching the loop over a channel.
+        let (uses_tx, uses) = channel::channel::<Vec<in_use::InUse>>();
+        event_loop
+            .handle()
+            .insert_source(uses, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(uses) = event {
+                    shell.in_use_changed(uses);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching what apps use: {e}"))?;
+        in_use::watch(uses_tx);
     }
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
@@ -1140,6 +1183,31 @@ impl Shell {
                 self.workspace_segments = line;
             }
         }
+        // The in-use sign's place, logged once per change, for CI (M6.14b).
+        let sign = panel
+            .row
+            .all()
+            .position(|w| w.name == "status")
+            .and_then(|j| {
+                let (left, _) = *placed.widgets.get(j)?;
+                let (at, width) = widgets::status::sign_place(&self.tokens, look.shown.get(j)?)?;
+                Some((left + at, width))
+            });
+        let line = sign.map_or(String::new(), |(x, width)| {
+            let top = paint::panel_top(panel.edge, panel.style, panel.floating, &self.tokens);
+            let bar = paint::height(panel.style, panel.size, &self.tokens);
+            let y = top as f32 + ((bar as f32 - self.tokens.panel_control as f32) / 2.0).round();
+            format!(
+                "{:.0}+{:.0}+{:.0}x{}",
+                x, y, width, self.tokens.panel_control
+            )
+        });
+        if line != self.in_use_sign {
+            if !line.is_empty() {
+                eprintln!("edel-shell-ui: in use sign {line}");
+            }
+            self.in_use_sign = line;
+        }
         let (w, h) = (look.width as i32, look.height as i32);
         let (buffer, canvas) = self
             .pool
@@ -1344,6 +1412,7 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_app_windows();
+        self.close_in_use();
         self.close_panel_menu();
         self.close_quick();
         self.hide_banner();
@@ -1431,6 +1500,7 @@ impl Shell {
             Action::Centre => self.toggle_centre(i, left + width / 2.0),
             Action::Notifications => self.toggle_notifications(i, left + width / 2.0),
             Action::TrayOpen => self.toggle_tray_grid(i, left + widgets::tray::arrow_middle()),
+            Action::InUse(at) => self.toggle_in_use(i, left + at),
             Action::App(id) => self.open_app(i, x, &id),
             Action::Tray(id, menu) => self.tray_call(&id, menu, x),
         }
@@ -1481,6 +1551,7 @@ impl Shell {
         }
         // Another click on the panel leaves an open menu behind: it closes.
         self.close_app_windows();
+        self.close_in_use();
         if let Some(&k) = mine
             .iter()
             .find(|&&k| tasks[k].focused && !tasks[k].minimized)
@@ -1511,6 +1582,7 @@ impl Shell {
     fn open_launcher(&mut self) {
         self.close_styles();
         self.close_app_windows();
+        self.close_in_use();
         self.close_quick();
         self.close_centre();
         self.close_tray_grid();
@@ -1707,6 +1779,7 @@ impl Shell {
         }
         self.close_launcher();
         self.close_app_windows();
+        self.close_in_use();
         self.close_quick();
         self.close_centre();
         self.close_tray_grid();
@@ -1942,6 +2015,8 @@ impl LayerShellHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
+        } else if self.is_in_use(surface.wl_surface()) {
+            self.close_in_use();
         } else if self.is_app_windows(surface.wl_surface()) {
             self.close_app_windows();
         } else if self.is_panel_menu(surface.wl_surface()) {
@@ -2024,6 +2099,12 @@ impl LayerShellHandler for Shell {
                 menu.popup.configured();
             }
             return self.draw_styles();
+        }
+        if self.is_in_use(surface.wl_surface()) {
+            if let Some(menu) = &mut self.in_use_menu {
+                menu.popup.configured();
+            }
+            return self.draw_in_use();
         }
         if self.is_app_windows(surface.wl_surface()) {
             if let Some(menu) = &mut self.app_windows {
@@ -2131,6 +2212,12 @@ impl CompositorHandler for Shell {
                 menu.popup.set_scale(factor);
             }
             return self.draw_styles();
+        }
+        if self.is_in_use(surface) {
+            if let Some(menu) = &mut self.in_use_menu {
+                menu.popup.set_scale(factor);
+            }
+            return self.draw_in_use();
         }
         if self.is_app_windows(surface) {
             if let Some(menu) = &mut self.app_windows {
@@ -2246,6 +2333,12 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_styles();
+        }
+        if self.is_in_use(surface) {
+            if let Some(menu) = &mut self.in_use_menu {
+                menu.popup.framed();
+            }
+            return self.draw_in_use();
         }
         if self.is_app_windows(surface) {
             if let Some(menu) = &mut self.app_windows {
@@ -2472,6 +2565,21 @@ impl PointerHandler for Shell {
                 self.undo_pointer(event);
                 continue;
             }
+            if self.is_in_use(&event.surface) {
+                let room = self.in_use_menu.as_ref().map_or(0, |m| m.popup.room()) as f32;
+                let (x, y) = (
+                    event.position.0 as f32 - room,
+                    event.position.1 as f32 - room,
+                );
+                match &event.kind {
+                    PointerEventKind::Motion { .. } => self.in_use_motion(x, y),
+                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
+                        self.in_use_press(x, y)
+                    }
+                    _ => {}
+                }
+                continue;
+            }
             if self.is_app_windows(&event.surface) {
                 let room = self.app_windows.as_ref().map_or(0, |m| m.popup.room()) as f32;
                 let count = self.app_windows.as_ref().map_or(0, |m| m.view.titles.len());
@@ -2560,6 +2668,11 @@ impl PointerHandler for Shell {
                 PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
                     self.hide_tooltip();
                     self.close_panel_menu();
+                    // A press elsewhere on the panel closes the in-use card; on
+                    // its sign it toggles the card at the release (M6.14b).
+                    if self.in_use_menu.is_some() && !self.in_use_sign_at(i, x) {
+                        self.close_in_use();
+                    }
                     // A press on an app's cell waits for the release, so the
                     // app can be dragged (M5.31d).
                     if self.press_app(i, x, y) {
@@ -2653,6 +2766,8 @@ impl KeyboardHandler for Shell {
             self.close_launcher();
         } else if self.is_styles(surface) {
             self.close_styles();
+        } else if self.is_in_use(surface) {
+            self.close_in_use();
         } else if self.is_app_windows(surface) {
             self.close_app_windows();
         } else if self.is_panel_menu(surface) {
@@ -2696,6 +2811,8 @@ impl KeyboardHandler for Shell {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
+        } else if self.in_use_menu.is_some() {
+            self.in_use_key(event);
         } else if self.app_windows.is_some() {
             self.app_windows_key(event);
         } else if self.styles.is_some() {
@@ -2731,6 +2848,8 @@ impl KeyboardHandler for Shell {
             self.quick_key(event);
         } else if self.centre.is_some() {
             self.centre_key(event);
+        } else if self.in_use_menu.is_some() {
+            self.in_use_key(event);
         } else if self.app_windows.is_some() {
             self.app_windows_key(event);
         } else if self.styles.is_some() {
