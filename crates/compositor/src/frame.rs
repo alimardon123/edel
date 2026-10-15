@@ -29,10 +29,7 @@ pub const CORNER: i32 = 16;
 
 /// The fonts titles fall back to when the tokens' interface font is not
 /// among the system's fonts: Inter (`fonts` feature), then Noto Sans.
-pub const FONTS: [&str; 2] = [
-    "/usr/share/fonts/inter/InterVariable.ttf",
-    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-];
+pub const FONTS: [&str; 2] = edel::places::FALLBACK_FONTS;
 
 /// What a frame adds round a window, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

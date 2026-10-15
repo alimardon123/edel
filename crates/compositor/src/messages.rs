@@ -106,6 +106,14 @@ pub fn shell_ui_given_up(name: &str, how: &str, tries: u32, secs: u64) -> String
     )
 }
 
+/// shell-ui keeps failing while the screen is locked: it is started again
+/// all the same, as nothing else unlocks the screen (M6.17).
+pub fn shell_ui_kept_for_lock(name: &str, how: &str, secs: f32) -> String {
+    format!(
+        "{name} {how} and keeps failing, but the screen is locked and {name} is what unlocks it, so it starts again in {secs:.0} s; the lines above say why it fails"
+    )
+}
+
 /// shell-ui cannot be ended to start again with new settings.
 pub fn shell_ui_not_ended(name: &str, why: impl Display) -> String {
     format!(

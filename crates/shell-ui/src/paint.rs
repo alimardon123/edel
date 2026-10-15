@@ -207,10 +207,22 @@ pub struct Line {
 }
 
 impl Text {
-    /// Text in `family`, the tokens' interface font.
+    /// Text in `family`, the tokens' interface font. When fontconfig finds
+    /// no font at all, the fallback fonts are loaded from their files; with
+    /// none of those either, text is drawn as nothing rather than ending
+    /// shell-ui, which draws the lock screen too (M6.17).
     pub fn load(family: &str) -> Text {
+        let mut fonts = FontSystem::new();
+        if fonts.db().is_empty() {
+            for path in edel::places::FALLBACK_FONTS {
+                let _ = fonts.db_mut().load_font_file(path);
+            }
+            if fonts.db().is_empty() {
+                eprintln!("edel-shell-ui: {}", crate::messages::NO_FONT);
+            }
+        }
         Text {
-            fonts: FontSystem::new(),
+            fonts,
             glyphs: SwashCache::new(),
             family: family.to_string(),
         }
@@ -224,7 +236,16 @@ impl Text {
 
     /// [`Text::line`] in `face`.
     pub fn line_in(&mut self, text: &str, size: f32, face: Face) -> Line {
-        let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size, size * 1.25));
+        let metrics = Metrics::new(size, size * 1.25);
+        if self.fonts.db().is_empty() {
+            // Shaping with no font at all panics in cosmic-text: an empty
+            // line instead, never shaped.
+            return Line {
+                buffer: Buffer::new_empty(metrics),
+                width: 0.0,
+            };
+        }
+        let mut buffer = Buffer::new(&mut self.fonts, metrics);
         buffer.set_size(None, None);
         let mut attrs = Attrs::new()
             .family(Family::Name(&self.family))
@@ -1025,6 +1046,31 @@ pub fn to_argb(pixmap: &Pixmap, out: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn with_no_font_at_all_text_is_drawn_as_nothing() {
+        // Neither fontconfig's fonts nor the fallback files (M6.17):
+        // cosmic-text panics shaping with none, which once ended shell-ui
+        // and left a lock screen nothing could unlock.
+        let empty = cosmic_text::fontdb::Database::new();
+        let mut text = Text {
+            fonts: FontSystem::new_with_locale_and_db("en-US".into(), empty),
+            glyphs: SwashCache::new(),
+            family: "Inter".into(),
+        };
+        let mut line = text.line("Wrong password, try again", 14.0);
+        assert_eq!(line.width, 0.0);
+        assert_eq!(text.fit("Settings", 14.0, 40.0).width, 0.0);
+        let mut pixmap = Pixmap::new(64, 16).unwrap();
+        let ink = Colour {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        text.draw(&mut pixmap, &mut line, 0.0, 0.0, ink);
+        assert!(pixmap.data().iter().all(|b| *b == 0));
+    }
     use crate::widgets::{self, find, menu};
 
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {
