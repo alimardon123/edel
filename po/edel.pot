@@ -236,13 +236,13 @@ msgstr ""
 msgid "a password cannot be empty"
 msgstr ""
 
-msgid "could not start cryptpw, which hashes the password (busybox)"
+msgid "could not start {tool}, which hashes the password"
 msgstr ""
 
-msgid "cryptpw has no input"
+msgid "{tool} has no input"
 msgstr ""
 
-msgid "cryptpw could not hash the password; nothing was changed"
+msgid "{tool} could not hash the password; nothing was changed"
 msgstr ""
 
 msgid "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
@@ -908,7 +908,7 @@ msgstr ""
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
 msgstr ""
 
-msgid "{service} did not start ({status}); rc-service {service} start says why"
+msgid "{service} did not start ({status}); {command} says why"
 msgstr ""
 
 msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
@@ -1329,6 +1329,9 @@ msgid "{channel} is not a channel name; use lowercase letters, digits and hyphen
 msgstr ""
 
 msgid "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
+msgstr ""
+
+msgid "refused: expired: this release list has no expires date, so it could be replayed for ever; nothing was changed; ask the publisher for a list signed with an expiry date"
 msgstr ""
 
 msgid "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed"
@@ -1803,6 +1806,12 @@ msgid "{others} or {last}"
 msgstr ""
 
 msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
+msgstr ""
+
+msgid "{path} is over 1 MiB, which no settings file is; check that it is the right file"
+msgstr ""
+
+msgid "{person} may not read {path}, and through doas edel reads as root; give a file {person} can read"
 msgstr ""
 
 msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"

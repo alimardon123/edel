@@ -55,6 +55,43 @@ pub fn tail(text: &str, n: usize) -> String {
 pub struct Person {
     pub name: String,
     pub dir: PathBuf,
+    /// Who owns the person's home: their logs must be theirs, so a link or
+    /// a hard link they planted to another's file is never read (M6.17).
+    /// None when the home cannot be read, and then no log is read.
+    pub owner: Option<u32>,
+}
+
+/// The owner of the home `dir` (a person's state folder) lies in: the
+/// folder [`places::STATE_IN_HOME`] above it, not followed if a link.
+fn home_owner(dir: &Path) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    let depth = Path::new(places::STATE_IN_HOME).components().count();
+    let home = dir.ancestors().nth(depth)?;
+    let meta = fs::symlink_metadata(home).ok()?;
+    meta.is_dir().then(|| meta.uid())
+}
+
+/// `person`'s log `name` in their state folder, read safely as root (M6.17,
+/// the review of 2026-10-13): only a regular file, never through a link,
+/// the file opened the same one looked at, and owned by the person, so a
+/// link or a hard link to another's file (`/etc/shadow`) is not read.
+pub fn read_log(person: &Person, name: &str) -> Option<String> {
+    use std::io::Read;
+    use std::os::unix::fs::MetadataExt;
+    let owner = person.owner?;
+    let path = person.dir.join(name);
+    let seen = fs::symlink_metadata(&path).ok()?;
+    if !seen.file_type().is_file() {
+        return None;
+    }
+    let mut file = File::open(&path).ok()?;
+    let opened = file.metadata().ok()?;
+    if (opened.dev(), opened.ino()) != (seen.dev(), seen.ino()) || opened.uid() != owner {
+        return None;
+    }
+    let mut text = String::new();
+    file.read_to_string(&mut text).ok()?;
+    Some(text)
 }
 
 /// The people whose logs a command may read: the one running it, and,
@@ -63,7 +100,10 @@ pub fn people(homes: &Path, root: bool) -> Vec<Person> {
     let mut found = Vec::new();
     if let Some(dir) = places::person_state_dir() {
         let name = std::env::var("USER").unwrap_or_else(|_| "you".into());
-        found.push(Person { name, dir });
+        // The one running it: their own files, wherever XDG_STATE_HOME
+        // puts the folder; it reads nothing they could not read anyway.
+        let owner = crate::users::current();
+        found.push(Person { name, dir, owner });
     }
     if root {
         let mut homes: Vec<PathBuf> = fs::read_dir(homes)
@@ -77,7 +117,8 @@ pub fn people(homes: &Path, root: bool) -> Vec<Person> {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             if dir.join(places::SESSION_LOG).exists() && !found.iter().any(|p| p.dir == dir) {
-                found.push(Person { name, dir });
+                let owner = home_owner(&dir);
+                found.push(Person { name, dir, owner });
             }
         }
     }
@@ -92,9 +133,8 @@ pub fn ended_badly(person: &Person, running: bool) -> Option<PathBuf> {
     } else {
         places::SESSION_LOG
     };
-    let path = person.dir.join(name);
-    let text = fs::read_to_string(&path).ok()?;
-    (!ended(&text)).then_some(path)
+    let text = read_log(person, name)?;
+    (!ended(&text)).then(|| person.dir.join(name))
 }
 
 /// Whether a process named `name` runs as the owner of `dir`, read from
@@ -124,6 +164,53 @@ pub fn runs_as_owner_of(proc: &Path, name: &str, dir: &Path) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_log_read_as_root_is_never_a_link_nor_anothers_file() {
+        // M6.17: a person could plant a link (or a hard link) named
+        // session.log to /etc/shadow, which `edel report` run as root
+        // would read and print.
+        use std::os::unix::fs::{MetadataExt, symlink};
+        let home = std::env::temp_dir().join(format!("edel-log-links-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        let dir = home.join(places::STATE_IN_HOME);
+        fs::create_dir_all(&dir).unwrap();
+        let me = fs::metadata(&home).unwrap().uid();
+        assert_eq!(home_owner(&dir), Some(me));
+        let person = |owner| Person {
+            name: "ci".into(),
+            dir: dir.clone(),
+            owner,
+        };
+        let log = dir.join(places::SESSION_LOG);
+        fs::write(&log, "ready\n").unwrap();
+        assert_eq!(
+            read_log(&person(Some(me)), places::SESSION_LOG).as_deref(),
+            Some("ready\n")
+        );
+        // Owned by another than the home's owner: not read.
+        assert_eq!(read_log(&person(Some(me + 1)), places::SESSION_LOG), None);
+        // No owner known: not read.
+        assert_eq!(read_log(&person(None), places::SESSION_LOG), None);
+        // A link to a secret: not followed.
+        let secret = home.join("secret");
+        fs::write(&secret, "root:$6$hash\n").unwrap();
+        fs::remove_file(&log).unwrap();
+        symlink(&secret, &log).unwrap();
+        assert_eq!(read_log(&person(Some(me)), places::SESSION_LOG), None);
+        assert_eq!(ended_badly(&person(Some(me)), false), None);
+        // A folder in its place: not read.
+        fs::remove_file(&log).unwrap();
+        fs::create_dir(&log).unwrap();
+        assert_eq!(read_log(&person(Some(me)), places::SESSION_LOG), None);
+        // A home that is itself a link has no owner to trust.
+        let linked = std::env::temp_dir().join(format!("edel-log-linked-{}", std::process::id()));
+        let _ = fs::remove_file(&linked);
+        symlink(&home, &linked).unwrap();
+        assert_eq!(home_owner(&linked.join(places::STATE_IN_HOME)), None);
+        fs::remove_file(&linked).unwrap();
+        fs::remove_dir_all(&home).unwrap();
+    }
+
     fn dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("edel-log-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -148,6 +235,9 @@ mod tests {
         let person = Person {
             name: "ci".into(),
             dir: dir.clone(),
+            owner: Some(std::os::unix::fs::MetadataExt::uid(
+                &fs::metadata(&dir).unwrap(),
+            )),
         };
         assert_eq!(
             ended_badly(&person, true),

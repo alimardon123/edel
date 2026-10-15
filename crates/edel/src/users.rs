@@ -15,8 +15,8 @@ use std::fs;
 pub const ADMIN_GROUP: &str = "admin";
 
 /// The account database, as the C library reads it.
-const PASSWD: &str = "/etc/passwd";
-const GROUP: &str = "/etc/group";
+pub const PASSWD: &str = "/etc/passwd";
+pub const GROUP: &str = "/etc/group";
 
 /// The first user id of a person: below it are the system's own accounts.
 const FIRST_UID: u32 = 1000;
