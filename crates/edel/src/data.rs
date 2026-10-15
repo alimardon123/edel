@@ -17,6 +17,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
+use edel::base;
+
 use crate::boot::DATA_PARTITION;
 use crate::update::{Disk, run};
 
@@ -297,7 +299,7 @@ fn ensure_node(dev: &Path) {
             return;
         }
         if tick == 10 {
-            let _ = Command::new("mdev").arg("-s").status();
+            let _ = base::scan_devices().status();
         }
         sleep(Duration::from_millis(100));
     }

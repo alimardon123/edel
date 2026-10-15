@@ -15,6 +15,11 @@
 #                    that names it and writes a file of its own must be in
 #                    allowed() below, with the reason its write is not the
 #                    settings file's
+#   the base         the base's tools (rc-update, rc-service, adduser,
+#                    addgroup, delgroup, cryptpw, chpasswd, mdev, zzz,
+#                    reboot and poweroff by path) are named only in
+#                    edel::base (crates/edel/src/base.rs), so the base
+#                    stays replaceable (ADR-010, roadmap M6.17)
 #
 #   sh ci/seams.sh               check this checkout ("Rust checks")
 #   sh ci/seams.sh --self-test   plant one violation of each kind in a copy
@@ -162,6 +167,18 @@ check_seam() {
 	done
 }
 
+# check_base ROOT: only edel::base names the base's tools, as a word in
+# code or in a message.
+check_base() {
+	files=$(cd "$1" && find crates -name '*.rs' -type f | sort)
+	for file in $files; do
+		[ "$file" = crates/edel/src/base.rs ] && continue
+		named=$(code_of "$1/$file" | grep -oE '(^|[^A-Za-z0-9_-])(rc-update|rc-service|adduser|addgroup|delgroup|cryptpw|chpasswd|mdev|zzz|/sbin/reboot|/sbin/poweroff)([^A-Za-z0-9_-]|$)' | sed 's/^[^A-Za-z0-9/]*//; s/[^A-Za-z0-9-]*$//' | sort -u | tr '\n' ' ' || true)
+		[ -n "$named" ] || continue
+		fail "$file names the base's tool ${named% }; only edel::base (crates/edel/src/base.rs) names the base's tools (ADR-010), so call its function, or add one there"
+	done
+}
+
 # check ROOT LOCK: every rule over the checkout at ROOT.
 check() {
 	root=$1 lock=$2
@@ -171,6 +188,7 @@ check() {
 	check_test_client "$root" "$lock"
 	check_features "$root" "$lock"
 	check_seam "$root"
+	check_base "$root"
 	[ "$failed" = 0 ]
 }
 
@@ -221,13 +239,18 @@ if [ "${1:-}" = --self-test ]; then
 	printf '%s\n' 'fn probe() {' '    let path = places::person_settings();' '    let _ = std::fs::write(path, "[layout]");' '}' >"$copy/crates/shell-ui/src/seam_probe.rs"
 	caught "$copy" "crates/shell-ui/src/seam_probe.rs names the settings file"
 
-	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor and a settings write in shell-ui"
+	copy="$work/base"
+	seed "$copy"
+	printf '%s\n' 'fn probe() {' '    let _ = std::process::Command::new("rc-update");' '}' >"$copy/crates/edel/src/base_probe.rs"
+	caught "$copy" "crates/edel/src/base_probe.rs names the base's tool rc-update"
+
+	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, a settings write in shell-ui and rc-update outside edel::base"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, and the settings file is written by edel::settings, bar the known gaps in the NOTE lines)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the settings file is written by edel::settings, bar the known gaps in the NOTE lines, and only edel::base names the base's tools)"
 else
 	exit 1
 fi
