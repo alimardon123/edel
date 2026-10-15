@@ -1183,7 +1183,8 @@ impl Shell {
                 self.workspace_segments = line;
             }
         }
-        // The in-use sign's place, logged once per change, for CI (M6.14b).
+        // The in-use sign's place on the screen, from the panel's, logged
+        // once per change, for CI (M6.14b).
         let sign = panel
             .row
             .all()
@@ -1193,13 +1194,16 @@ impl Shell {
                 let (at, width) = widgets::status::sign_place(&self.tokens, look.shown.get(j)?)?;
                 Some((left + at, width))
             });
-        let line = sign.map_or(String::new(), |(x, width)| {
+        let line = sign.map_or(String::new(), |(along, width)| {
             let top = paint::panel_top(panel.edge, panel.style, panel.floating, &self.tokens);
             let bar = paint::height(panel.style, panel.size, &self.tokens);
-            let y = top as f32 + ((bar as f32 - self.tokens.panel_control as f32) / 2.0).round();
+            let down = top as f32 + ((bar as f32 - self.tokens.panel_control as f32) / 2.0).round();
             format!(
                 "{:.0}+{:.0}+{:.0}x{}",
-                x, y, width, self.tokens.panel_control
+                x + along,
+                y + down,
+                width,
+                self.tokens.panel_control
             )
         });
         if line != self.in_use_sign {

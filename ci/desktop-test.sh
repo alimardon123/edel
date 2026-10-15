@@ -3508,11 +3508,16 @@ in_use_failed() {
 	fail "$1; pw-dump: $(value in_use_graph); $(value in_use_logs)"
 }
 
-# in_use_place NAME: the X Y W H of shell-ui's last `in use sign` place, or
-# of NAME (such as stop:gst-launch-1.0) in its last `in use card places`.
+# in_use_place NAME: the X Y W H of shell-ui's last `in use sign` place (on
+# the screen), the W H of the card (card), or the X Y W H of NAME (such as
+# stop:gst-launch-1.0) in its last `in use card places`, from the card's
+# corner.
 in_use_place() {
 	if [ "$1" = sign ]; then
 		place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: in use sign \([0-9]*+[0-9]*+[0-9]*x[0-9]*\).*/\1/p' | tail -n 1)
+	elif [ "$1" = card ]; then
+		place=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: in use card places ' | tail -n 1 |
+			sed -n 's/.*places card \([0-9]*x[0-9]*\).*/\1/p')
 	else
 		place=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: in use card places ' | tail -n 1 |
 			sed -n "s/.*$1 \([0-9]*+[0-9]*+[0-9]*x[0-9]*\).*/\1/p")
@@ -3557,12 +3562,23 @@ case_in_use() {
 	wait_more 'edel-shell-ui: in use card places ' "$opened" 10 || fail "a click on the in-use sign did not open its card"
 	place=$(in_use_place stop:gst-launch-1.0) ||
 		fail "the in-use card has no Stop for gst-launch-1.0: $(tr -d '\r' <"$log" | grep 'in use card places' | tail -n 1)"
+	card=$(in_use_place card) || fail "shell-ui did not say how big the in-use card is"
+	# The places are the card's own; the card is centred in its surface,
+	# which adds its shadow's room, at the place the state file gives.
+	i=0
+	until value layers | grep -q 'edel-in-use@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no in-use card surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-in-use@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-in-use@//; s/[,x]/ /g') $card
+	cx=$(($1 + ($3 - $5) / 2)) cy=$(($2 + ($4 - $6) / 2))
 	set -- $place
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/in-use-card.png"
 	stopped=$(count 'edel-shell-ui: in use stopped gst-launch-1.0, exit 0')
 	recorded=$(count 'edel-shell-ui: in use recorded gst-launch-1.0 camera')
-	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	python3 ci/qmp.py click $((cx + $1 + $3 / 2)) $((cy + $2 + $4 / 2))
 	wait_more 'edel-shell-ui: in use stopped gst-launch-1.0, exit 0' "$stopped" 10 || fail "Stop did not cut gst-launch-1.0 off (pw-cli destroy)"
 	wait_more 'edel-shell-ui: in use recorded gst-launch-1.0 camera' "$recorded" 15 ||
 		in_use_failed "the camera's use did not end within 15 s of Stop"

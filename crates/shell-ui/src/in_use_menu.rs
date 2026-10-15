@@ -313,29 +313,29 @@ pub fn nodes(view: &View, layout: &Layout) -> (Vec<Item>, Option<usize>) {
     (items, focus)
 }
 
-/// The log line CI reads: each button's place in logical pixels from the
-/// card's top left corner, as `stop:APP X+Y+WxH` or `settings:APP X+Y+WxH`,
-/// APP being the app's id.
+/// The log line CI reads: the card's size, `card WxH`, then each button's
+/// place in logical pixels from the card's top left corner, as
+/// `stop:APP X+Y+WxH` or `settings:APP X+Y+WxH`, APP being the app's id.
+/// The card lies centred in its surface, whose place on the screen the
+/// compositor's state file gives.
 pub fn places(view: &View, layout: &Layout) -> String {
-    layout
-        .buttons
-        .iter()
-        .map(|(button, rect)| {
-            let (word, row) = match button {
-                Button::Stop(r) => ("stop", r),
-                Button::Settings(r) => ("settings", r),
-            };
-            let app = view.rows.get(*row).map_or("", |r| r.used.app.as_str());
-            format!(
-                "{word}:{app} {}+{}+{}x{}",
-                rect.x.round() as i32,
-                rect.y.round() as i32,
-                rect.w.round() as i32,
-                rect.h.round() as i32
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+    let (w, h) = layout.size;
+    let card = std::iter::once(format!("card {w}x{h}"));
+    let buttons = layout.buttons.iter().map(|(button, rect)| {
+        let (word, row) = match button {
+            Button::Stop(r) => ("stop", r),
+            Button::Settings(r) => ("settings", r),
+        };
+        let app = view.rows.get(*row).map_or("", |r| r.used.app.as_str());
+        format!(
+            "{word}:{app} {}+{}+{}x{}",
+            rect.x.round() as i32,
+            rect.y.round() as i32,
+            rect.w.round() as i32,
+            rect.h.round() as i32
+        )
+    });
+    card.chain(buttons).collect::<Vec<_>>().join(", ")
 }
 
 /// The button under the point (`x`, `y`, card-local logical pixels), with
@@ -453,6 +453,8 @@ mod tests {
         let v = view(&two_apps(), &["foot".to_string()], None);
         let layout = layout(&v, &tokens, &mut measure);
         let text = places(&v, &layout);
+        let (w, h) = layout.size;
+        assert!(text.starts_with(&format!("card {w}x{h}, ")), "{text}");
         assert!(text.contains("stop:org.gnome.Snapshot "), "{text}");
         assert!(text.contains("settings:org.gnome.Snapshot "), "{text}");
         assert!(text.contains("stop:ffmpeg "), "{text}");
