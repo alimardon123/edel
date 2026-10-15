@@ -82,14 +82,26 @@ impl Drop for Local {
 /// reads.
 pub fn local(location: &str) -> Result<Local> {
     match source_of(location)? {
-        Source::Path(path) => {
-            readable_by_caller(Path::new(path))?;
-            Ok(Local {
+        Source::Path(path) => match read_as_caller(Path::new(path))? {
+            // Through doas: the bytes read once, as checked, and kept in a
+            // file only root reads, so nothing swapped in after the check
+            // is ever read.
+            Some(bytes) => {
+                let copy =
+                    std::env::temp_dir().join(format!("edel-settings-{}.toml", std::process::id()));
+                write_private(&copy, &bytes)?;
+                Ok(Local {
+                    path: copy,
+                    shown: location.to_string(),
+                    downloaded: true,
+                })
+            }
+            None => Ok(Local {
                 path: PathBuf::from(path),
                 shown: location.to_string(),
                 downloaded: false,
-            })
-        }
+            }),
+        },
         Source::Https(address) => {
             let bytes = download(address)?;
             let path =
@@ -104,16 +116,18 @@ pub fn local(location: &str) -> Result<Local> {
     }
 }
 
-/// Refuses, when this runs as root through doas, a file the person who ran
-/// doas could not read themselves (M6.17, the review of 2026-10-13): an
-/// administrator runs `edel` with no password, and a file read as root
-/// shows its lines in a parse error, so `/etc/shadow` would have shown.
-fn readable_by_caller(path: &Path) -> Result<()> {
+/// When this runs as root through doas, the file's bytes, read only if the
+/// person who ran doas could read it themselves, else refused (M6.17, the
+/// review of 2026-10-13): an administrator runs `edel` with no password,
+/// and a file read as root shows its lines in a parse error, so
+/// `/etc/shadow` would have shown. None when not through doas: the file is
+/// read as it is, with the caller's own rights.
+fn read_as_caller(path: &Path) -> Result<Option<Vec<u8>>> {
     let Ok(person) = std::env::var(places::AS_ROOT_USER) else {
-        return Ok(());
+        return Ok(None);
     };
     if edel::users::current() != Some(0) || person.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let read = |file: &str| fs::read_to_string(file).unwrap_or_default();
     let ids = ids_of(
@@ -122,8 +136,8 @@ fn readable_by_caller(path: &Path) -> Result<()> {
         &read(edel::users::GROUP),
     );
     let shown = path.display().to_string();
-    let allowed = ids.is_some_and(|(uid, gids)| may_read(uid, &gids, path));
-    if !allowed {
+    let bytes = ids.and_then(|(uid, gids)| read_if_allowed(uid, &gids, path));
+    let Some(bytes) = bytes else {
         bail!(
             "{}",
             trf(
@@ -131,8 +145,8 @@ fn readable_by_caller(path: &Path) -> Result<()> {
                 &[("person", &person), ("path", &shown)]
             )
         );
-    }
-    Ok(())
+    };
+    Ok(Some(bytes))
 }
 
 /// The user id and group ids of login `name`: its own group, then every
@@ -171,17 +185,34 @@ fn allows(uid: u32, gids: &[u32], owner: u32, group: u32, mode: u32, bit: u32) -
     mode >> shift & bit != 0
 }
 
-/// Whether `uid` in `gids` may read `path`: every folder on its real path
-/// searchable and the file itself readable, by the permission bits.
-fn may_read(uid: u32, gids: &[u32], path: &Path) -> bool {
+/// The bytes of `path`, at most [`MOST_BYTES`], when `uid` in `gids` may
+/// read it: every folder on its real path searchable, then the file opened
+/// and the opened file itself readable by them and the one the folders led
+/// to (its device and inode), so a link or file swapped in between the
+/// look and the open is refused.
+fn read_if_allowed(uid: u32, gids: &[u32], path: &Path) -> Option<Vec<u8>> {
+    use std::io::Read;
     use std::os::unix::fs::MetadataExt;
-    let Ok(real) = fs::canonicalize(path) else {
-        return false;
+    let real = fs::canonicalize(path).ok()?;
+    let searchable = |dir: &Path| {
+        fs::metadata(dir).is_ok_and(|m| allows(uid, gids, m.uid(), m.gid(), m.mode(), 1))
     };
-    let check = |p: &Path, bit| {
-        fs::metadata(p).is_ok_and(|m| allows(uid, gids, m.uid(), m.gid(), m.mode(), bit))
-    };
-    real.ancestors().skip(1).all(|dir| check(dir, 1)) && check(&real, 4)
+    if !real.ancestors().skip(1).all(searchable) {
+        return None;
+    }
+    let looked = fs::symlink_metadata(&real).ok()?;
+    let file = fs::File::open(&real).ok()?;
+    let opened = file.metadata().ok()?;
+    let same = (opened.dev(), opened.ino()) == (looked.dev(), looked.ino());
+    if !same
+        || !opened.is_file()
+        || !allows(uid, gids, opened.uid(), opened.gid(), opened.mode(), 4)
+    {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    file.take(MOST_BYTES + 1).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 <= MOST_BYTES).then_some(bytes)
 }
 
 /// Writes `bytes` to a new file that only its owner may read.
@@ -273,8 +304,16 @@ mod tests {
         let file = std::env::temp_dir().join(format!("edel-source-read-{}", std::process::id()));
         fs::write(&file, "format = 1\n").unwrap();
         let me = edel::users::current().unwrap();
-        assert!(may_read(me, &[], &file));
-        assert!(!may_read(me, &[], &file.with_extension("missing")));
+        assert_eq!(
+            read_if_allowed(me, &[], &file).as_deref(),
+            Some(&b"format = 1\n"[..])
+        );
+        assert_eq!(
+            read_if_allowed(me, &[], &file.with_extension("missing")),
+            None
+        );
+        // A folder is no file to read.
+        assert_eq!(read_if_allowed(me, &[], &std::env::temp_dir()), None);
         fs::remove_file(&file).unwrap();
     }
 
