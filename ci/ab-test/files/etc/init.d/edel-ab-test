@@ -23,8 +23,14 @@
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
 #      again: slot A runs, slot B is switched off, a rollback to it is
 #      refused, the markers survived and the fallback was recorded.
-#      Install the update into slot B again with a service that hangs,
-#      and without its watchdog drivers, as on a machine that has none.
+#      Install the update into slot B again with its root on a partition
+#      that does not exist, as if its disk were gone (its own slot.cfg).
+#  4b. (no root) Alpine's initramfs found no root and, under panic=, did
+#      not wait in its rescue shell: the kernel panicked and restarted, so
+#      slot A runs again and slot B is off (M6.17; ab-test.sh wants the
+#      initramfs's and the kernel's lines). Install the update into slot
+#      B again with a service that hangs, and without its watchdog
+#      drivers, as on a machine that has none.
 #   5. (hang) With no watchdog, the guard restarted slot B itself (M1.10),
 #      so slot A runs and slot B is off. Install it again with a service
 #      that freezes the kernel with panic reboots switched off.
@@ -98,12 +104,14 @@ root_is_ro() {
 		! touch /usr/ab-test-write 2>/dev/null
 }
 
-# ab_break_b NAME COMMAND [nowatchdog | network]: install the update into
-# slot B again, at its last try, and add a service there whose start runs
-# COMMAND in the default runlevel; with nowatchdog, take slot B's
-# watchdog drivers out, so it boots with no watchdog at all, as linux-virt
-# has no softdog; with network, add the health check network to slot B's
-# os-release and take its networking service out, and this test's own.
+# ab_break_b NAME COMMAND [nowatchdog | network | noroot]: install the
+# update into slot B again, at its last try, and add a service there whose
+# start runs COMMAND in the default runlevel; with nowatchdog, take slot
+# B's watchdog drivers out, so it boots with no watchdog at all, as
+# linux-virt has no softdog; with network, add the health check network to
+# slot B's os-release and take its networking service out, and this
+# test's own; with noroot, point slot B's own boot lines (slot.cfg) at a
+# partition that does not exist.
 ab_break_b() {
 	/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B for $1"; return 1; }
 	# The same length, so the 1024-byte block stays whole.
@@ -123,6 +131,14 @@ ab_break_b() {
 		# Nothing hangs there, so this test would run in slot B and
 		# find it running; the guard alone decides.
 		rm -f /run/ab-test/slot/etc/runlevels/default/edel-ab-test
+		;;
+	noroot)
+		sed -i 's/root=PARTUUID=\$partuuid /root=PARTUUID=00000000-0000-0000-0000-000000000000 /' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg
+		grep -q 'root=PARTUUID=00000000-' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg || {
+			umount /run/ab-test/slot
+			ab_end "FAIL: pointing slot B's slot.cfg at no root"
+			return 1
+		}
 		;;
 	esac
 	umount /run/ab-test/slot
@@ -275,6 +291,11 @@ start() {
 			ab_end "FAIL: step 4 rolled back to slot B, which is off"
 			return 0
 		fi
+		ab_break_b noroot true noroot || return 0
+		ab_next 4b
+		;;
+	4b)
+		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
 		ab_break_b hang 'sleep 100000' nowatchdog || return 0
 		ab_next 5
 		;;
