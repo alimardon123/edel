@@ -899,12 +899,11 @@ impl Build<'_> {
         self.runner.run(mkfs.arg(image))
     }
 
-    /// Builds the EFI system partition: GRUB as the removable-disk boot
-    /// file, plus its config and environment block.
     /// Builds the boot loader in `dir` (GRUB as the removable-disk boot
     /// file, its config, its environment block and `loader.toml`) and puts
     /// a copy into the slot's `/usr/lib/edel/boot/`, so an update carries
-    /// its loader and installs it once the slot is confirmed (M1.8).
+    /// its loader and installs it once the slot is confirmed (M1.8), with
+    /// the slot's own [`boot::SLOT_CFG`], which GRUB starts it by (M6.17).
     fn make_loader(&self, dir: &Path, root: &Path, kernel: &str, cmdline: &str) -> Result<()> {
         let (target, efi_name) = boot::efi_target(&self.def.arch)?;
         let efi = dir.join(efi_name);
@@ -915,14 +914,14 @@ impl Build<'_> {
             "write GRUB's config and environment block in {}",
             dir.display()
         ));
+        let microcode: Vec<&str> = boot::MICROCODE
+            .iter()
+            .copied()
+            .filter(|f| root.join("boot").join(f).is_file())
+            .collect();
+        let modules = self.def.modules.join(",");
         if !self.runner.dry_run {
             fs::create_dir_all(dir)?;
-            let microcode: Vec<&str> = boot::MICROCODE
-                .iter()
-                .copied()
-                .filter(|f| root.join("boot").join(f).is_file())
-                .collect();
-            let modules = self.def.modules.join(",");
             let mut text = boot::grub_cfg(kernel, &modules, cmdline, &microcode);
             if let Some(tag) = &self.loader_tag {
                 // A test tag makes a loader that differs from the last one.
@@ -941,7 +940,8 @@ impl Build<'_> {
         )?;
         let slot_dir = root.join(crate::loader::SLOT_DIR.trim_start_matches('/'));
         self.runner.step(&format!(
-            "write loader.toml and copy the loader to {}",
+            "write loader.toml and copy the loader and {} to {}",
+            boot::SLOT_CFG,
             crate::loader::SLOT_DIR
         ));
         if self.runner.dry_run {
@@ -953,6 +953,26 @@ impl Build<'_> {
         for file in [efi_name, "grub.cfg", "loader.toml"] {
             fs::copy(dir.join(file), slot_dir.join(file))?;
         }
+        // How GRUB starts this slot, read from the slot itself (M6.17). A
+        // test tag goes on the slot's command line too, so the A/B test
+        // sees that an update starts with its own lines under the loader
+        // before it.
+        let cmdline = match &self.loader_tag {
+            Some(tag)
+                if !tag.is_empty()
+                    && tag
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') =>
+            {
+                format!("{cmdline} edel.tag={tag}")
+            }
+            Some(tag) => bail!("the loader tag {tag:?} must be letters, digits, - and _ only"),
+            None => cmdline.to_string(),
+        };
+        fs::write(
+            slot_dir.join(boot::SLOT_CFG),
+            boot::slot_cfg(kernel, &modules, &cmdline, &microcode),
+        )?;
         // The slot says which loader it carries (M3.1).
         let os_release = root.join("usr/lib/os-release");
         let loader = crate::release::os_release_value(&version, "version").unwrap_or_default();

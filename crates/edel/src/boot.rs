@@ -21,11 +21,13 @@
 //! first slot in `ORDER` that is OK and has tries left, and counts the
 //! attempt. Once the system is up, `edel boot mark-good` resets the count.
 //! A slot that fails [`TRIES`] times in a row is passed over, and the next
-//! slot boots instead.
+//! slot boots instead. GRUB's config only picks the slot: how to start it,
+//! its kernel and command line, is the slot's own [`SLOT_CFG`].
 
 use anyhow::{Result, bail};
 
 use crate::grubenv::Env;
+use edel::places;
 
 /// File system label of the EFI system partition.
 pub const ESP_LABEL: &str = "EDEL-ESP";
@@ -45,8 +47,20 @@ pub const TRIES: u32 = 3;
 /// GRUB modules built into the EFI binary. Nothing is loaded at boot time,
 /// so the EFI system partition holds only three files.
 pub const GRUB_MODULES: &[&str] = &[
-    "part_gpt", "fat", "ext2", "normal", "linux", "loadenv", "test", "echo", "regexp", "probe",
-    "serial", "terminal", "efi_gop",
+    "part_gpt",
+    "fat",
+    "ext2",
+    "normal",
+    "linux",
+    "loadenv",
+    "test",
+    "echo",
+    "regexp",
+    "probe",
+    "serial",
+    "terminal",
+    "efi_gop",
+    "configfile",
 ];
 
 /// The A/B slots: name and GPT partition number.
@@ -129,12 +143,33 @@ pub const WATCHDOG_ARGS: &str =
 /// at its very start.
 pub const MICROCODE: &[&str] = &["intel-ucode.img", "amd-ucode.img"];
 
-/// GRUB's config: picks a slot as described at the top of this module, and
-/// boots `kernel` (an Alpine kernel flavor) from it with `modules=modules`
-/// (the image's features' modules, which the initramfs loads before it
-/// looks for the root), `WATCHDOG_ARGS` and `cmdline` added, loading the
-/// `microcode` files (names in `/boot`, from `MICROCODE`) before the
-/// initramfs.
+/// The file in each slot's [`places::SLOT_BOOT_DIR`] that says how to
+/// start that slot: its kernel, command line and initramfs ([`slot_cfg`]).
+/// GRUB reads it from the slot it starts, so a release that changes its
+/// kernel or command line boots right the first time, long before its
+/// `grub.cfg` reaches the EFI system partition (M6.17, the review of
+/// 2026-10-13).
+pub const SLOT_CFG: &str = "slot.cfg";
+
+/// How to start one slot, which GRUB reads from it ([`SLOT_CFG`]): boots
+/// `kernel` (an Alpine kernel flavor) with `modules=modules` (the image's
+/// features' modules, which the initramfs loads before it looks for the
+/// root), `WATCHDOG_ARGS` and `cmdline` added, loading the `microcode`
+/// files (names in `/boot`, from `MICROCODE`) before the initramfs.
+/// `$partuuid` is the slot's, set by `grub.cfg`'s entry.
+pub fn slot_cfg(kernel: &str, modules: &str, cmdline: &str, microcode: &[&str]) -> String {
+    let cmdline = format!(
+        "root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules={modules} {WATCHDOG_ARGS} {cmdline}"
+    );
+    let cmdline = cmdline.trim_end();
+    let early: String = microcode.iter().map(|f| format!("/boot/{f} ")).collect();
+    format!("linux /boot/vmlinuz-{kernel} {cmdline}\ninitrd {early}/boot/initramfs-{kernel}\n")
+}
+
+/// GRUB's config: picks a slot as described at the top of this module and
+/// starts it as the slot's own [`SLOT_CFG`] says. A slot built before
+/// M6.17 has none, and is started as [`slot_cfg`] says for these
+/// arguments, as every slot was before.
 pub fn grub_cfg(kernel: &str, modules: &str, cmdline: &str, microcode: &[&str]) -> String {
     let mut cfg = String::from(
         r#"# Edel OS A/B boot, written by `edel image build`. GRUB starts the
@@ -212,11 +247,11 @@ else
 	if [ "$B_OK" = "1" ]; then set fallback=1; fi
 fi
 "#;
-    let cmdline = format!(
-        "root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules={modules} {WATCHDOG_ARGS} {cmdline}"
-    );
-    let cmdline = cmdline.trim_end();
-    let early: String = microcode.iter().map(|f| format!("/boot/{f} ")).collect();
+    let own = format!("{}/{SLOT_CFG}", places::SLOT_BOOT_DIR);
+    let before: String = slot_cfg(kernel, modules, cmdline, microcode)
+        .lines()
+        .map(|line| format!("\t\t{line}\n"))
+        .collect();
     for (name, partition) in SLOTS {
         cfg += &format!(
             r#"
@@ -224,8 +259,10 @@ menuentry "Edel OS, slot {name}" {{
 	set root="$disk,gpt{partition}"
 	set partuuid=""
 	probe --set=partuuid --part-uuid "($disk,gpt{partition})"
-	linux /boot/vmlinuz-{kernel} {cmdline}
-	initrd {early}/boot/initramfs-{kernel}
+	if [ -f {own} ]; then
+		source {own}
+	else
+{before}	fi
 }}
 "#
         );
@@ -324,6 +361,26 @@ mod tests {
             laptop
                 .contains("initrd /boot/intel-ucode.img /boot/amd-ucode.img /boot/initramfs-lts\n")
         );
+    }
+
+    #[test]
+    fn each_slot_starts_by_its_own_lines() {
+        // GRUB reads how to start a slot from the slot (M6.17), so an
+        // update's new kernel or command line holds on its first boot.
+        let cfg = grub_cfg("virt", "ext4,overlay", "console=ttyS0", &[]);
+        let own = "/usr/lib/edel/boot/slot.cfg";
+        assert_eq!(cfg.matches(&format!("if [ -f {own} ]; then")).count(), 2);
+        assert_eq!(cfg.matches(&format!("source {own}\n")).count(), 2);
+        // A slot from before has no slot.cfg and starts as before.
+        assert!(cfg.contains("\telse\n\t\tlinux /boot/vmlinuz-virt root=PARTUUID=$partuuid "));
+        let slot = slot_cfg("lts", "ext4", "console=tty0", &["intel-ucode.img"]);
+        assert_eq!(
+            slot,
+            format!(
+                "linux /boot/vmlinuz-lts root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4 {WATCHDOG_ARGS} console=tty0\ninitrd /boot/intel-ucode.img /boot/initramfs-lts\n"
+            )
+        );
+        assert!(GRUB_MODULES.contains(&"configfile"), "source needs it");
     }
 
     #[test]

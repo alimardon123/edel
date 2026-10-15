@@ -14,6 +14,9 @@ pub const NO_COMPOSITOR: &str = "could not connect to the compositor; shell-ui r
 /// The context when the compositor's list of features cannot be read.
 pub const NO_GLOBALS: &str = "could not read what the compositor offers";
 
+/// No font at all: neither fontconfig's nor the fallback files (M6.17).
+pub const NO_FONT: &str = "no font was found, neither through fontconfig nor in the fallback files, so the panel and the lock screen draw no words; the lock still takes the password, and installing a font (or the fonts feature) brings the words back";
+
 /// The context when the compositor lacks a Wayland feature shell-ui needs.
 pub fn missing(global: &str) -> String {
     format!("the compositor does not offer {global}, so no panel can be drawn")

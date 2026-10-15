@@ -12,8 +12,8 @@
 //!
 //! Two of its three parts, the settings format and the desktop's models,
 //! are always built; the third, the system's own work (the install plan,
-//! the feature file reader, firmware, what an image keeps, scripts,
-//! services and speaker profiles), sits behind the `os` feature, which
+//! the feature file reader, the base's tools, firmware, what an image
+//! keeps, scripts, services and speaker profiles), sits behind the `os` feature, which
 //! the `edel` command and Settings take and the compositor and shell-ui
 //! never do (M6.17, ADR-010; `ci/seams.sh` checks it).
 
@@ -23,6 +23,8 @@ pub mod app_permissions;
 pub mod app_use;
 pub mod apps;
 pub mod backlight;
+#[cfg(feature = "os")]
+pub mod base;
 pub mod bluetooth;
 pub mod features;
 #[cfg(feature = "os")]
