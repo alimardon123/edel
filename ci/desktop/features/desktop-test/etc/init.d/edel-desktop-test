@@ -1153,6 +1153,45 @@ commands() {
 		'settings app')
 			as_ci edel-settings --app org.edel.TestA </dev/null >/tmp/settings-app.log 2>&1 &
 			;;
+		# The in-use sign (M6.14b): a fake camera (PipeWire's test picture,
+		# which 90-ci-camera.conf names) and a fake microphone (a null
+		# sink made a source) that pw-cli leaves behind it; gst-launch-1.0
+		# watching the camera; Test A recording the microphone from inside
+		# its sandbox, given PipeWire's socket as a sandboxed app is; the
+		# graph pw-dump sees, for a failure; and ci's record of use.
+		'in use fakes')
+			as_ci "pw-cli create-node spa-node-factory '{ factory.name = videotestsrc node.name = edel-test-camera node.description = \"CI camera\" media.class = Video/Source media.role = Camera object.linger = true }'" </dev/null >/tmp/in-use-fakes.log 2>&1
+			camera=$?
+			as_ci "pw-cli create-node adapter '{ factory.name = support.null-audio-sink node.name = edel-test-mic node.description = \"CI microphone\" media.class = Audio/Source/Virtual audio.position = [ MONO ] object.linger = true }'" </dev/null >>/tmp/in-use-fakes.log 2>&1
+			say "in_use_fakes $camera $? $(tr '\n' ';' </tmp/in-use-fakes.log | cut -c1-500)"
+			;;
+		'in use camera')
+			as_ci "gst-launch-1.0 -q pipewiresrc target-object=edel-test-camera ! video/x-raw ! fakesink" </dev/null >/tmp/in-use-camera.log 2>&1 &
+			;;
+		'in use mic')
+			as_ci "flatpak run --filesystem=xdg-run/pipewire-0 --command=pw-record org.edel.TestA --target edel-test-mic /tmp/in-use.wav" </dev/null >/tmp/in-use-mic.log 2>&1 &
+			;;
+		'in use mic stop')
+			pkill -f 'pw-record --target edel-test-mic'
+			say "in_use_mic_stopped $? $(tr '\n' ';' </tmp/in-use-mic.log | cut -c1-500)"
+			;;
+		'in use mic never')
+			as_ci "edel settings set 'apps.microphone={ \"org.edel.TestA\" = \"never\" }'" </dev/null >/dev/null 2>&1
+			say "in_use_mic_never $?"
+			;;
+		'in use graph')
+			say "in_use_graph $(as_ci pw-dump </dev/null 2>&1 | grep -E '"(media.class|node.name|application.name|pipewire.access.portal.app_id|state|output-node-id|input-node-id)"' | tr -s ' \n' ' ' | cut -c1-3000)"
+			say "in_use_logs camera: $(tr '\n' ';' </tmp/in-use-camera.log 2>/dev/null | cut -c1-300) mic: $(tr '\n' ';' </tmp/in-use-mic.log 2>/dev/null | cut -c1-300)"
+			;;
+		'in use record')
+			say "in_use_record $(tr '\n' ';' </home/ci/.local/state/edel/app-use 2>&1)"
+			;;
+		'in use off')
+			pkill -f 'gst-launch-1.0 -q pipewiresrc'
+			pkill -f 'pw-record --target edel-test-mic'
+			as_ci "pw-cli destroy edel-test-camera; pw-cli destroy edel-test-mic; edel settings reset apps.microphone" </dev/null >/dev/null 2>&1
+			say "in_use_off $?"
+			;;
 		'settings app log') say "settings_app_log $(tr '\n' ';' </tmp/settings-app.log 2>/dev/null)" ;;
 		'app permissions show')
 			bus=$(session_bus)

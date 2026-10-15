@@ -589,6 +589,10 @@ pub const KEYS: &[Key] = &[
         Kind::AppChoices(crate::app_permissions::CAMERA_CHOICES),
     ),
     now(
+        "apps.microphone",
+        Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+    ),
+    now(
         "apps.screenshots",
         Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
     ),
@@ -1356,6 +1360,8 @@ pub struct Apps {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub camera: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub microphone: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub screenshots: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notifications: Option<BTreeMap<String, String>>,
@@ -1369,6 +1375,7 @@ impl Apps {
     pub fn choices(&self) -> crate::app_permissions::Choices {
         [
             ("apps.camera", &self.camera),
+            ("apps.microphone", &self.microphone),
             ("apps.screenshots", &self.screenshots),
             ("apps.notifications", &self.notifications),
             ("apps.files", &self.files),

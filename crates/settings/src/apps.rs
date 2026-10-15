@@ -14,10 +14,13 @@
 //! so its page says so and offers no choice. The page follows the files while
 //! it is open: the summaries and the open app's choices are shown again
 //! whenever a file changes. shell-ui lays the choices onto Flatpak's own
-//! state. `--app ID` opens one app's page when the page is built.
+//! state. An app with uses in the record shell-ui keeps on this computer has
+//! a Recent use part too (M6.14b), read when its page opens. `--app ID` opens
+//! one app's page when the page is built.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use std::rc::Rc;
 
 use gtk::gio;
@@ -26,8 +29,10 @@ use gtk::{gdk, glib};
 
 use edel::app_icons;
 use edel::app_permissions::{self, ALLOW, ASK, NEVER, PERMISSIONS, Permission, Place};
+use edel::app_use::{self, Use};
 use edel::apps::{self, App};
 use edel::i18n::{n_, tr, trf};
+use edel::places;
 use edel::settings::{self, PAGES};
 
 use crate::files::Files;
@@ -76,8 +81,9 @@ struct Slot {
 struct Section {
     /// Its heading.
     title: &'static str,
-    /// Whether it shows for this app.
-    shown: fn(&App) -> bool,
+    /// Whether it shows for this app, given the uses the record holds for
+    /// it (M6.14b).
+    shown: fn(&App, &[Use]) -> bool,
     /// Builds it under its heading.
     build: fn(&gtk::Box, &App, &Rc<Ui>),
 }
@@ -87,13 +93,18 @@ struct Section {
 const SECTIONS: &[Section] = &[
     Section {
         title: n_("What it may use"),
-        shown: sandboxed,
+        shown: |app, _| sandboxed(app),
         build: permissions,
     },
     Section {
         title: n_("What it may use"),
-        shown: unsandboxed,
+        shown: |app, _| unsandboxed(app),
         build: not_sandboxed,
+    },
+    Section {
+        title: n_("Recent use"),
+        shown: |_, uses| !uses.is_empty(),
+        build: recent_use,
     },
 ];
 
@@ -117,6 +128,9 @@ struct Ui {
     slots: RefCell<Vec<Slot>>,
     /// The row of the app whose page is open, to which the focus goes back.
     opened: Cell<Option<usize>>,
+    /// The app's uses in the record, read when its page opens, which the
+    /// Recent use part shows (M6.14b).
+    uses: RefCell<Vec<Use>>,
     problem: gtk::Label,
     /// Kept so the page follows the files while it is open.
     monitors: Vec<gio::FileMonitor>,
@@ -222,7 +236,13 @@ impl Ui {
         let back = back_button(self);
         self.detail.append(&back);
         self.detail.append(&header(app));
-        for section in SECTIONS.iter().filter(|section| (section.shown)(app)) {
+        // The record is read once for this page, and the parts see it here.
+        *self.uses.borrow_mut() = recorded(app);
+        let uses = self.uses.borrow();
+        for section in SECTIONS
+            .iter()
+            .filter(|section| (section.shown)(app, uses.as_slice()))
+        {
             widgets::heading(&self.detail, tr(section.title));
             (section.build)(&self.detail, app, self);
         }
@@ -574,6 +594,160 @@ fn not_sandboxed(content: &gtk::Box, _app: &App, _ui: &Rc<Ui>) {
     );
 }
 
+/// The uses of the app in the record, newest first (M6.14b), read from the
+/// person's state directory. A record that is missing or cannot be read
+/// holds no uses.
+fn recorded(app: &App) -> Vec<Use> {
+    let text = places::person_state_dir()
+        .and_then(|dir| std::fs::read_to_string(dir.join(places::APP_USE)).ok())
+        .unwrap_or_default();
+    let uses = app_use::parse(&text);
+    app_use::of_app(&uses, &record_ids(app))
+        .into_iter()
+        .cloned()
+        .collect()
+}
+
+/// The names the record knows an app by (M6.14b): its id, and for an app
+/// outside Flatpak its program's file name, as shell-ui writes them. A
+/// Flatpak app runs `flatpak`, which names no app, so its id alone.
+fn record_ids(app: &App) -> Vec<&str> {
+    let mut ids = vec![app.id.as_str()];
+    if !sandboxed(app) {
+        let program = app
+            .argv
+            .first()
+            .and_then(|word| Path::new(word).file_name())
+            .and_then(|name| name.to_str());
+        ids.extend(program);
+    }
+    ids
+}
+
+/// How many uses the Recent use part lists, the newest (M6.14b).
+const RECENT_ROWS: usize = 20;
+
+/// Recent use (M6.14b): one row per use of the app, newest first, with the
+/// kind's icon and title and the words of when it was and how long it lasted,
+/// then the line that says where the record is kept. A use whose start the
+/// clock cannot read is left out.
+fn recent_use(content: &gtk::Box, app: &App, ui: &Rc<Ui>) {
+    let uses = ui.uses.borrow();
+    let today = today_day();
+    let group = widgets::group(content);
+    let dated = uses
+        .iter()
+        .filter_map(|used| Some((used, local_start(used.start)?)));
+    let mut shown = 0;
+    for (used, (day, time, date)) in dated.take(RECENT_ROWS) {
+        let words = trf(
+            "{when} · {how}",
+            &[
+                ("when", &when(day, today, &time, &date)),
+                ("how", &how_long(used.seconds)),
+            ],
+        );
+        let value = gtk::Label::builder()
+            .label(&words)
+            .xalign(1.0)
+            .wrap(true)
+            .justify(gtk::Justification::Right)
+            .css_classes(["edel-row-subtitle"])
+            .build();
+        let row = widgets::row(&group, tr(used.kind.title()), value.upcast_ref());
+        // The row names the value as its control, so a screen reader hears
+        // the words rather than the title twice (as the permissions' rows do).
+        value.update_property(&[gtk::accessible::Property::Label(&words)]);
+        row.set_icon(used.kind.icon());
+        row.reset.set_visible(false);
+        row.copy.set_visible(false);
+        shown += 1;
+    }
+    widgets::note_row(
+        content,
+        &trf(
+            "Kept on this computer only, for {days} days.",
+            &[("days", &app_use::KEEP_DAYS.to_string())],
+        ),
+    );
+    eprintln!("edel-settings: app {} recent use {shown}", app.id);
+}
+
+/// How long a use lasted, in words (M6.14b): `under a minute`, `1 minute`,
+/// `5 minutes`, `1 hour`, `2 hours` and `1 hour 5 minutes`.
+fn how_long(seconds: u64) -> String {
+    let minutes = seconds / 60;
+    if minutes == 0 {
+        tr("under a minute").to_string()
+    } else if minutes < 60 {
+        minutes_words(minutes)
+    } else {
+        hours_words(minutes / 60, minutes % 60)
+    }
+}
+
+/// `1 minute` or `N minutes`, for 1 to 59 minutes.
+fn minutes_words(minutes: u64) -> String {
+    if minutes == 1 {
+        tr("1 minute").to_string()
+    } else {
+        trf("{minutes} minutes", &[("minutes", &minutes.to_string())])
+    }
+}
+
+/// `N hours` with the minutes after it when there are some (M6.14b). Each
+/// case is a whole phrase, so a translation keeps its own word order.
+fn hours_words(hours: u64, minutes: u64) -> String {
+    let h = hours.to_string();
+    let m = minutes.to_string();
+    match (hours, minutes) {
+        (1, 0) => tr("1 hour").to_string(),
+        (_, 0) => trf("{hours} hours", &[("hours", &h)]),
+        (1, 1) => tr("1 hour 1 minute").to_string(),
+        (1, _) => trf("1 hour {minutes} minutes", &[("minutes", &m)]),
+        (_, 1) => trf("{hours} hours 1 minute", &[("hours", &h)]),
+        _ => trf(
+            "{hours} hours {minutes} minutes",
+            &[("hours", &h), ("minutes", &m)],
+        ),
+    }
+}
+
+/// When a use started, in words (M6.14b), from its local day, today's local
+/// day and its `HH:MM` and short date: `Today at 10:31`, `Yesterday at
+/// 10:31`, else `14 Oct at 10:31`. Days are numbers since 1970, local.
+fn when(start_day: i64, today: i64, time: &str, date: &str) -> String {
+    if start_day == today {
+        trf("Today at {time}", &[("time", time)])
+    } else if start_day.saturating_add(1) == today {
+        trf("Yesterday at {time}", &[("time", time)])
+    } else {
+        trf("{date} at {time}", &[("date", date), ("time", time)])
+    }
+}
+
+/// The local day number of now (M6.14b), or `i64::MIN` when glib cannot read
+/// the clock, which matches no use's day.
+fn today_day() -> i64 {
+    glib::DateTime::now_local().map_or(i64::MIN, |now| day_of(&now))
+}
+
+/// Where a use's start falls on this computer's clock (M6.14b): its local
+/// day number, its `HH:MM` and its short date. glib reads the time zone
+/// here and nowhere else.
+fn local_start(start: u64) -> Option<(i64, String, String)> {
+    let at = glib::DateTime::from_unix_local(i64::try_from(start).ok()?).ok()?;
+    let time = at.format("%H:%M").ok()?;
+    let date = at.format("%-d %b").ok()?;
+    Some((day_of(&at), time.to_string(), date.to_string()))
+}
+
+/// The local day number of `at`: days since 1970 on this computer's clock.
+fn day_of(at: &glib::DateTime) -> i64 {
+    let local = at.to_unix() + at.utc_offset().as_seconds();
+    local.div_euclid(86_400)
+}
+
 pub fn page() -> gtk::Widget {
     let title = PAGES
         .iter()
@@ -638,6 +812,7 @@ pub fn page() -> gtk::Widget {
         nothing,
         slots: RefCell::new(Vec::new()),
         opened: Cell::new(None),
+        uses: RefCell::new(Vec::new()),
         problem,
         monitors: monitors(),
     });
@@ -868,12 +1043,67 @@ mod tests {
 
     #[test]
     fn an_app_page_shows_one_part_for_its_kind() {
-        let shown = |app: &App| SECTIONS.iter().filter(|s| (s.shown)(app)).count();
+        let shown = |app: &App| SECTIONS.iter().filter(|s| (s.shown)(app, &[])).count();
         let flatpak = desktop_app("io.mpv.Mpv");
         let plain = desktop_app("example");
         assert!(sandboxed(&flatpak));
         assert!(!sandboxed(&plain));
         assert_eq!(shown(&flatpak), 1);
         assert_eq!(shown(&plain), 1);
+    }
+
+    fn one_use(app: &str) -> Use {
+        Use {
+            start: 1_760_515_862,
+            seconds: 125,
+            kind: app_use::Kind::Camera,
+            app: app.to_string(),
+        }
+    }
+
+    #[test]
+    fn recent_use_shows_only_for_an_app_with_uses() {
+        let recent = SECTIONS.last().expect("the Recent use part");
+        assert_eq!(recent.title, "Recent use");
+        let app = desktop_app("io.mpv.Mpv");
+        assert!(!(recent.shown)(&app, &[]));
+        assert!((recent.shown)(&app, &[one_use("io.mpv.Mpv")]));
+        let plain = desktop_app("example");
+        assert!(!(recent.shown)(&plain, &[]));
+        assert!((recent.shown)(&plain, &[one_use("example")]));
+    }
+
+    #[test]
+    fn an_app_outside_flatpak_is_known_by_its_program_too() {
+        let plain = desktop_app("example-id");
+        assert_eq!(record_ids(&plain), ["example-id", "example"]);
+        let flatpak = desktop_app("io.mpv.Mpv");
+        assert_eq!(record_ids(&flatpak), ["io.mpv.Mpv"]);
+        let uses = [one_use("example")];
+        assert_eq!(app_use::of_app(&uses, &record_ids(&plain)).len(), 1);
+        assert_eq!(app_use::of_app(&uses, &record_ids(&flatpak)).len(), 0);
+    }
+
+    #[test]
+    fn how_long_says_the_length_in_words() {
+        assert_eq!(how_long(30), "under a minute");
+        assert_eq!(how_long(60), "1 minute");
+        assert_eq!(how_long(125), "2 minutes");
+        assert_eq!(how_long(3600), "1 hour");
+        assert_eq!(how_long(3900), "1 hour 5 minutes");
+        assert_eq!(how_long(7200), "2 hours");
+        assert_eq!(how_long(7260), "2 hours 1 minute");
+        assert_eq!(how_long(10_860), "3 hours 1 minute");
+    }
+
+    #[test]
+    fn when_says_today_yesterday_or_the_date() {
+        assert_eq!(when(20_000, 20_000, "10:31", "14 Oct"), "Today at 10:31");
+        assert_eq!(
+            when(19_999, 20_000, "23:50", "14 Oct"),
+            "Yesterday at 23:50"
+        );
+        assert_eq!(when(19_998, 20_000, "08:05", "13 Oct"), "13 Oct at 08:05");
+        assert_eq!(when(20_001, 20_000, "09:00", "15 Oct"), "15 Oct at 09:00");
     }
 }

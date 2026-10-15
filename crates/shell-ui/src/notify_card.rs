@@ -603,6 +603,7 @@ impl Shell {
         self.close_launcher();
         self.close_styles();
         self.close_app_windows();
+        self.close_in_use();
         self.close_quick();
         self.close_tray_grid();
         self.hide_banner();

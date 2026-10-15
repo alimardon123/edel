@@ -3499,6 +3499,148 @@ case_app_permissions() {
 	echo "PASS: Test A's camera set to never and its files to ask as ci reached the permission store ($store) and its override file ($override), and Settings opened on Test A's page (settings-app.png); the reset took the entry out ($after) and gave its files back"
 }
 
+# in_use_failed WHY: fails the in-use case with WHY and what pw-dump sees,
+# with gst-launch-1.0's and pw-record's output.
+in_use_failed() {
+	asked=$(count 'DESKTOP-TEST: in_use_graph ')
+	guest 'in use graph'
+	wait_more 'DESKTOP-TEST: in_use_graph ' "$asked" 10 || true
+	fail "$1; pw-dump: $(value in_use_graph); $(value in_use_logs)"
+}
+
+# in_use_place NAME: the X Y W H of shell-ui's last `in use sign` place (on
+# the screen), the W H of the card (card), or the X Y W H of NAME (such as
+# stop:gst-launch-1.0) in its last `in use card places`, from the card's
+# corner.
+in_use_place() {
+	if [ "$1" = sign ]; then
+		place=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: in use sign \([0-9]*+[0-9]*+[0-9]*x[0-9]*\).*/\1/p' | tail -n 1)
+	elif [ "$1" = card ]; then
+		place=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: in use card places ' | tail -n 1 |
+			sed -n 's/.*places card \([0-9]*x[0-9]*\).*/\1/p')
+	else
+		place=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: in use card places ' | tail -n 1 |
+			sed -n "s/.*$1 \([0-9]*+[0-9]*+[0-9]*x[0-9]*\).*/\1/p")
+	fi
+	[ -n "$place" ] || return 1
+	echo "$place" | tr '+x' '  '
+}
+
+case_in_use() {
+	# What each app may use, while it uses it (M6.14b): pw-cli makes a fake
+	# camera and a fake microphone; gst-launch-1.0 watching the camera
+	# brings shell-ui's amber sign beside the status area (in-use.png), a
+	# click on it opens the card naming the app (in-use-card.png), and its
+	# Stop cuts the app off: the sign goes and the use is in ci's record.
+	# Test A, recording the microphone from inside its sandbox, is named by
+	# its Flatpak id; set to Never (apps.microphone), WirePlumber hides the
+	# microphones from it and the sign never shows it again. Settings' page
+	# for Test A then lists its use under Recent use (settings-app-recent.png).
+	asked=$(count 'DESKTOP-TEST: in_use_fakes ')
+	guest 'in use fakes'
+	wait_more 'DESKTOP-TEST: in_use_fakes ' "$asked" || fail "the service did not make the fake camera and microphone"
+	fakes=$(value in_use_fakes)
+	case "$fakes" in '0 0'*) ;; *) fail "pw-cli could not make the fake camera and microphone: $fakes" ;; esac
+	shown=$(count 'edel-shell-ui: in use: .*camera')
+	guest 'in use camera'
+	wait_more 'edel-shell-ui: in use: .*camera' "$shown" 30 ||
+		in_use_failed "shell-ui did not show the camera in use within 30 s of gst-launch-1.0 watching it"
+	line=$(tr -d '\r' <"$log" | grep -E 'edel-shell-ui: in use: .*camera' | tail -n 1)
+	echo "$line" | grep -q 'gst-launch-1.0 camera' || fail "shell-ui did not name gst-launch-1.0 as the camera's app: $line"
+	wait_for 'edel-shell-ui: in use sign [0-9]' 10 || fail "shell-ui did not log where the in-use sign is"
+	sleep 1
+	place=$(in_use_place sign) || fail "no place for the in-use sign"
+	set -- $place
+	sx=$1 sy=$2 sw=$3 sh=$4
+	python3 ci/qmp.py screendump "$dir/in-use.png"
+	amber=$(token in_use)
+	sign=$(python3 ci/qmp.py pixel "$dir/in-use.png" $((sx + 3)) $((sy + sh / 2)))
+	near "$sign" "$(printf '%d' "0x$(echo "$amber" | cut -c1-2)")" "$(printf '%d' "0x$(echo "$amber" | cut -c3-4)")" "$(printf '%d' "0x$(echo "$amber" | cut -c5-6)")" ||
+		fail "the in-use sign at $sx,$sy ${sw}x$sh is $sign, not the token in_use $amber (in-use.png)"
+	opened=$(count 'edel-shell-ui: in use card places ')
+	python3 ci/qmp.py click $((sx + sw / 2)) $((sy + sh / 2))
+	wait_more 'edel-shell-ui: in use card places ' "$opened" 10 || fail "a click on the in-use sign did not open its card"
+	place=$(in_use_place stop:gst-launch-1.0) ||
+		fail "the in-use card has no Stop for gst-launch-1.0: $(tr -d '\r' <"$log" | grep 'in use card places' | tail -n 1)"
+	card=$(in_use_place card) || fail "shell-ui did not say how big the in-use card is"
+	# The places are the card's own; the card is centred in its surface,
+	# which adds its shadow's room, at the place the state file gives.
+	i=0
+	until value layers | grep -q 'edel-in-use@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no in-use card surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-in-use@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-in-use@//; s/[,x]/ /g') $card
+	cx=$(($1 + ($3 - $5) / 2)) cy=$(($2 + ($4 - $6) / 2))
+	set -- $place
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/in-use-card.png"
+	stopped=$(count 'edel-shell-ui: in use stopped gst-launch-1.0, exit 0')
+	recorded=$(count 'edel-shell-ui: in use recorded gst-launch-1.0 camera')
+	python3 ci/qmp.py click $((cx + $1 + $3 / 2)) $((cy + $2 + $4 / 2))
+	wait_more 'edel-shell-ui: in use stopped gst-launch-1.0, exit 0' "$stopped" 10 || fail "Stop did not cut gst-launch-1.0 off (pw-cli destroy)"
+	wait_more 'edel-shell-ui: in use recorded gst-launch-1.0 camera' "$recorded" 15 ||
+		in_use_failed "the camera's use did not end within 15 s of Stop"
+	# The microphone, from inside Test A's sandbox.
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA microphone')
+	guest 'in use mic'
+	wait_more 'edel-shell-ui: in use: .*org.edel.TestA microphone' "$shown" 60 ||
+		in_use_failed "shell-ui did not show Test A using the microphone within 60 s of pw-record in its sandbox"
+	recorded=$(count 'edel-shell-ui: in use recorded org.edel.TestA microphone')
+	asked=$(count 'DESKTOP-TEST: in_use_mic_stopped ')
+	guest 'in use mic stop'
+	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || fail "the service did not stop Test A's recording"
+	wait_more 'edel-shell-ui: in use recorded org.edel.TestA microphone' "$recorded" 15 ||
+		in_use_failed "Test A's use of the microphone did not end within 15 s of its recording stopping"
+	# Never: WirePlumber hides the microphones from Test A.
+	stored=$(count 'edel-shell-ui: app permission microphone no for org.edel.TestA')
+	asked=$(count 'DESKTOP-TEST: in_use_mic_never ')
+	guest 'in use mic never'
+	wait_more 'DESKTOP-TEST: in_use_mic_never ' "$asked" || fail "the service did not set Test A's microphone"
+	[ "$(value in_use_mic_never)" = 0 ] || fail "edel settings set as ci refused apps.microphone"
+	wait_more 'edel-shell-ui: app permission microphone no for org.edel.TestA' "$stored" 30 ||
+		fail "shell-ui did not set Test A's microphone to no in the permission store within 30 s"
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA')
+	guest 'in use mic'
+	sleep 15
+	[ "$(count 'edel-shell-ui: in use: .*org.edel.TestA')" -le "$shown" ] ||
+		in_use_failed "Test A was shown using the microphone while apps.microphone says never"
+	asked=$(count 'DESKTOP-TEST: in_use_mic_stopped ')
+	guest 'in use mic stop'
+	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || true
+	refused=$(value in_use_mic_stopped)
+	# The record, and Test A's page in Settings.
+	asked=$(count 'DESKTOP-TEST: in_use_record ')
+	guest 'in use record'
+	wait_more 'DESKTOP-TEST: in_use_record ' "$asked" || fail "the service did not show ci's record of use"
+	record=$(value in_use_record)
+	echo "$record" | grep -q ' camera gst-launch-1.0' || fail "ci's record of use has no camera line for gst-launch-1.0: $record"
+	echo "$record" | grep -q ' microphone org.edel.TestA' || fail "ci's record of use has no microphone line for Test A: $record"
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings app'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on Test A's page: $(value windows)"
+	i=0
+	while :; do
+		seen=$(count 'DESKTOP-TEST: settings_app_log ')
+		guest 'settings app log'
+		wait_more 'DESKTOP-TEST: settings_app_log ' "$seen" 10 || true
+		value settings_app_log | grep -q 'edel-settings: app org.edel.TestA recent use [1-9]' && break
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings' page for Test A listed no recent use: $(value settings_app_log)"
+		sleep 1
+	done
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/settings-app-recent.png"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	asked=$(count 'DESKTOP-TEST: in_use_off ')
+	guest 'in use off'
+	wait_more 'DESKTOP-TEST: in_use_off ' "$asked" || fail "the service did not take the fakes away"
+	echo "PASS: gst-launch-1.0 watching a fake camera showed the in-use sign in in_use's amber ($sign at $sx,$sy, in-use.png), its card's Stop cut it off and the use was recorded (in-use-card.png); Test A recording in its sandbox was named by its Flatpak id, and set to never it was not shown again ($refused); ci's record: $record; Settings listed Test A's recent use (settings-app-recent.png)"
+}
+
 case_default_apps() {
 	# The default apps (M6.2): the image build installed the test app
 	# org.edel.TestA from a repository made with no network into the data
@@ -7306,7 +7448,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

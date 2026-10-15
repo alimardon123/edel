@@ -362,6 +362,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Camera"),
     },
     Row {
+        key: "apps.microphone",
+        title: n_("Microphone"),
+    },
+    Row {
         key: "apps.screenshots",
         title: n_("Screenshots"),
     },

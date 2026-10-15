@@ -1,7 +1,8 @@
 #!/bin/sh
 # Makes a tiny Flatpak repository for the default apps' tests (roadmap
 # M6.2), with no network: a runtime, org.edel.TestPlatform branch 1, that
-# holds musl and the libraries edel-testclient needs, taken from this
+# holds musl, the libraries edel-testclient needs and pw-record (M6.14b),
+# taken from this
 # Alpine container, and two apps of branch stable, org.edel.TestA and
 # org.edel.TestB, each edel-testclient showing a window, titled test-a in
 # #3399cc and test-b in #33aa66, so a test can swap one default app for
@@ -30,6 +31,25 @@ cp -L /lib/ld-musl-x86_64.so.1 "$work/runtime/usr/lib/"
 # not list it: it goes in by name, with what it links itself.
 for file in "$client" /usr/lib/libwayland-client.so.0; do
 	[ "$file" = "$client" ] || cp -L "$file" "$work/runtime/usr/lib/"
+	ldd "$file" | awk '/=> \// { print $3 }' | while read -r lib; do
+		cp -L "$lib" "$work/runtime/usr/lib/"
+	done
+done
+# pw-record and the PipeWire client parts it loads (M6.14b), so a test
+# can make Test A record from a microphone as a sandboxed app does, through
+# the PipeWire socket given with --filesystem=xdg-run/pipewire-0: the
+# protocol and stream modules, SPA's support and format converter, and the
+# client's config, each with the libraries it links.
+pw_files="/usr/bin/pw-record /usr/share/pipewire/client.conf"
+for module in protocol-native client-node client-device adapter metadata session-manager rt; do
+	pw_files="$pw_files /usr/lib/pipewire-0.3/libpipewire-module-$module.so"
+done
+pw_files="$pw_files /usr/lib/spa-0.2/support/libspa-support.so /usr/lib/spa-0.2/audioconvert/libspa-audioconvert.so"
+for file in $pw_files; do
+	# The runtime is mounted at /usr, so /usr/X is the runtime's usr/X.
+	mkdir -p "$work/runtime/$(dirname "${file#/}")"
+	cp -L "$file" "$work/runtime/${file#/}"
+	case "$file" in *.conf) continue ;; esac
 	ldd "$file" | awk '/=> \// { print $3 }' | while read -r lib; do
 		cp -L "$lib" "$work/runtime/usr/lib/"
 	done

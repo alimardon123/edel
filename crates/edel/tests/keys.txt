@@ -105,6 +105,7 @@ presets.*
 appearance.contrast
 region.input_method
 apps.camera
+apps.microphone
 apps.screenshots
 apps.notifications
 apps.files

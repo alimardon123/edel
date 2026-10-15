@@ -25,6 +25,7 @@ impl Shell {
     pub(crate) fn toggle_app_windows(&mut self, i: usize, centre: f32, id: &str) {
         let same = self.app_windows.as_ref().is_some_and(|m| m.app == id);
         self.close_app_windows();
+        self.close_in_use();
         if same {
             return;
         }
