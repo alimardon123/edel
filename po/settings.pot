@@ -92,6 +92,9 @@ msgstr ""
 msgid "What it may use"
 msgstr ""
 
+msgid "Recent use"
+msgstr ""
+
 msgid "{name}, {summary}"
 msgstr ""
 
@@ -138,6 +141,42 @@ msgid "{what} for {app}"
 msgstr ""
 
 msgid "This app is not sandboxed: it can use everything you can, so there is nothing to allow or refuse here."
+msgstr ""
+
+msgid "{when} · {how}"
+msgstr ""
+
+msgid "Kept on this computer only, for {days} days."
+msgstr ""
+
+msgid "under a minute"
+msgstr ""
+
+msgid "{minutes} minutes"
+msgstr ""
+
+msgid "{hours} hours"
+msgstr ""
+
+msgid "1 hour 1 minute"
+msgstr ""
+
+msgid "1 hour {minutes} minutes"
+msgstr ""
+
+msgid "{hours} hours 1 minute"
+msgstr ""
+
+msgid "{hours} hours {minutes} minutes"
+msgstr ""
+
+msgid "Today at {time}"
+msgstr ""
+
+msgid "Yesterday at {time}"
+msgstr ""
+
+msgid "{date} at {time}"
 msgstr ""
 
 msgid "Every app on this computer and what each may use. Open an app to change it."
