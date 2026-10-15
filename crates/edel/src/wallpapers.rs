@@ -196,8 +196,12 @@ mod tests {
     use super::*;
 
     fn dir_with(files: &[&str]) -> PathBuf {
+        // A folder of its own for each call: two tests running at once may
+        // ask for the same files, and one would remove the other's.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!(
-            "edel-wallpapers-{}-{}",
+            "edel-wallpapers-{}-{n}-{}",
             std::process::id(),
             files.join("+").replace('.', "_")
         ));

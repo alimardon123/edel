@@ -17,6 +17,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use edel::apps::{self, FLATHUB_REMOTE};
+use edel::base;
 use edel::i18n::{tr, trf};
 use edel::key_help::{self, DecidedBy};
 use edel::panel_edit;
@@ -130,7 +131,7 @@ pub fn add_live_account(name: &str) -> Result<()> {
         .any(|a| a.name == name)
     {
         let home = format!("/home/{name}");
-        run(Command::new("adduser").args(["-S", "-D", "-s", default_shell(), "-h", &home, name]))?;
+        run(&mut base::add_system_person(name, default_shell(), &home))?;
         unlock(name)?;
     }
     let greeter = accounts(&fs::read_to_string("/etc/passwd")?)
@@ -141,7 +142,7 @@ pub fn add_live_account(name: &str) -> Result<()> {
         if (who == name || greeter)
             && members(&group, SEAT_GROUP).is_some_and(|m| !m.iter().any(|m| m == who))
         {
-            run(Command::new("addgroup").args([who, SEAT_GROUP]))?;
+            run(&mut base::add_to_group(who, SEAT_GROUP))?;
         }
     }
     Ok(())
@@ -781,7 +782,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             let _ = fs::write("/proc/sys/vm/drop_caches", "2");
         }
         Change::AddUser { name, shell } => {
-            run(Command::new("adduser").args(["-D", "-s", shell, name]))?;
+            run(&mut base::add_person(name, shell))?;
             unlock(name)?;
         }
         Change::Shell { name, shell } => {
@@ -791,13 +792,9 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             }
         }
         Change::Unlock(name) => unlock(name)?,
-        Change::AdminGroup => run(Command::new("addgroup").args(["-S", ADMIN_GROUP]))?,
-        Change::Admin { name, on: true } => {
-            run(Command::new("addgroup").args([name, ADMIN_GROUP]))?
-        }
-        Change::Admin { name, on: false } => {
-            run(Command::new("delgroup").args([name, ADMIN_GROUP]))?
-        }
+        Change::AdminGroup => run(&mut base::add_group(ADMIN_GROUP))?,
+        Change::Admin { name, on: true } => run(&mut base::add_to_group(name, ADMIN_GROUP))?,
+        Change::Admin { name, on: false } => run(&mut base::remove_from_group(name, ADMIN_GROUP))?,
         Change::Keys { name, keys } => write_keys(&find_account(name)?, &keys_text(keys))?,
         Change::Developer(true) => {
             let flag = Path::new(DEVELOPER_FLAG);
@@ -809,30 +806,32 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
         // runlevel after this boot service, so what was added starts then
         // and what was taken out never does. Later, it happens at once.
         Change::Service(step) => {
-            let (verb, now) = if step.on {
-                ("add", "start")
-            } else {
-                ("del", "stop")
-            };
             if step.on {
-                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+                run(&mut base::add_to_runlevel(&step.service, &step.level))?;
             }
             if !boot {
-                let status = Command::new("rc-service")
-                    .args([&step.service, now])
-                    .status()?;
+                let status = if step.on {
+                    base::start_service(&step.service)
+                } else {
+                    base::stop_service(&step.service)
+                }
+                .status()?;
                 if step.on && !status.success() {
                     bail!(
                         "{}",
                         trf(
-                            "{service} did not start ({status}); rc-service {service} start says why",
-                            &[("service", &step.service), ("status", &status.to_string())]
+                            "{service} did not start ({status}); {command} says why",
+                            &[
+                                ("service", &step.service),
+                                ("status", &status.to_string()),
+                                ("command", &base::start_service_line(&step.service)),
+                            ]
                         )
                     );
                 }
             }
             if !step.on {
-                run(Command::new("rc-update").args([verb, &step.service, &step.level]))?;
+                run(&mut base::remove_from_runlevel(&step.service, &step.level))?;
             }
         }
         Change::Passwords(names) => {
@@ -840,11 +839,11 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
                 .with_context(|| could_not_read(Path::new(FIRST_PASSWORDS)))?;
             let lines = first_password_lines(&text, names);
             if !lines.is_empty() {
-                run_with_input(Command::new("chpasswd").arg("-e"), &lines)?;
+                run_with_input(&mut base::set_hashed_passwords(), &lines)?;
             }
             fs::remove_file(FIRST_PASSWORDS)?;
         }
-        Change::Seat(name) => run(Command::new("addgroup").args([name, SEAT_GROUP]))?,
+        Change::Seat(name) => run(&mut base::add_to_group(name, SEAT_GROUP))?,
         Change::Flatpak { name, ids } => install_apps(&find_account(name)?, ids)?,
         Change::MimeDefaults(text) => {
             let path = Path::new(places::MIME_DEFAULTS);
