@@ -31,7 +31,14 @@
 #      exists, and without the networking service, as an update that
 #      breaks the network would be.
 #   7. (network) The check never passed, so slot B fell back (M1.11):
-#      slot A runs again and slot B is off.
+#      slot A runs again and slot B is off. Install it again with the
+#      same check, and take slot A's tries away too, so no slot has a try
+#      left (M6.17).
+#   8. (stand down) Slot B is not healthy and no slot has a try left, so
+#      the guard keeps the machine running instead of restarting it: a
+#      watcher in slot B waits for the guard's note, then wants slot B
+#      still running a while later on its first boot (a mark on /data
+#      says so), and `edel status` saying why.
 #
 # Step 4 proves GRUB's count of three tries. The hang and freeze cases
 # start slot B at its last try, so each proves its own way of failing a
@@ -146,6 +153,12 @@ slot_matches_release() {
 	fi
 	[ -n "$want" ] && [ "$have" = "$want" ]
 }
+
+# Step 8's watcher, slot B's service in the background (the guard decides
+# alone): fails when slot B boots a second time, which only a restart
+# does; else waits for the guard's note, then 45 s more, and wants slot B
+# still running with edel status's health line. It powers the VM off.
+standdown_watch='( exec >/dev/console 2>&1; . /usr/share/edel/places.sh; mark="$data_dir/ab-standdown-booted"; if [ -e "$mark" ]; then echo "AB-TEST: FAIL: step 8 slot B booted again, so the guard restarted it"; poweroff; exit; fi; touch "$mark"; sync; i=0; while [ ! -e "$no_healthy_slot" ] && [ "$i" -lt 300 ]; do sleep 1; i=$((i + 1)); done; sleep 45; s=$(/usr/bin/edel status 2>&1); echo "$s"; if echo "$s" | grep -q "^running: B" && echo "$s" | grep -q "^health: this slot is not healthy after [0-9]* s (network not reached) and no slot has a try left"; then echo "AB-TEST: PASS"; else echo "AB-TEST: FAIL: step 8 expected slot B running with a health line in edel status"; fi; poweroff ) &'
 
 ab_next() {
 	echo "$1" >"$esp/ab-test-step"
@@ -267,7 +280,12 @@ start() {
 		;;
 	7)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
-		ab_end "PASS"
+		ab_break_b standdown "$standdown_watch" network || return 0
+		# Slot A used its tries too: no slot has one left. The same
+		# length, so the 1024-byte block stays whole.
+		sed -i 's/^A_TRY=0$/A_TRY=3/' "$esp/EFI/edel/grubenv"
+		grep -q '^A_TRY=3$' "$esp/EFI/edel/grubenv" || { ab_end "FAIL: taking slot A's tries for the stand-down"; return 0; }
+		ab_next 8
 		;;
 	*)
 		ab_end "FAIL: unknown step $step"

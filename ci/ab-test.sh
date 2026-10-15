@@ -42,8 +42,14 @@ if ! tr -d '\r' <"$log" | grep -q 'edel guard: health not reached after [0-9]* s
 	echo "FAIL: slot B's guard did not wait for its own health check, network, alone"
 	exit 1
 fi
+# M6.17: with no slot left with a try, slot B's guard kept the machine
+# running instead of restarting it.
+if ! tr -d '\r' <"$log" | grep -q 'edel guard: this slot is not healthy after [0-9]* s (network not reached) and no slot has a try left, so the machine keeps running'; then
+	echo "FAIL: with no slot left with a try, slot B's guard did not say it keeps the machine running"
+	exit 1
+fi
 if [ "$found" = 1 ] && grep -q 'AB-TEST: PASS' "$log"; then
-	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too and on an image's own health check (${waited}s)"
+	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too and on an image's own health check, and with no try left the machine stayed up (${waited}s)"
 else
 	echo "FAIL: see the serial log above"
 	exit 1
