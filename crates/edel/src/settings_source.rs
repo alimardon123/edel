@@ -82,11 +82,14 @@ impl Drop for Local {
 /// reads.
 pub fn local(location: &str) -> Result<Local> {
     match source_of(location)? {
-        Source::Path(path) => Ok(Local {
-            path: PathBuf::from(path),
-            shown: location.to_string(),
-            downloaded: false,
-        }),
+        Source::Path(path) => {
+            readable_by_caller(Path::new(path))?;
+            Ok(Local {
+                path: PathBuf::from(path),
+                shown: location.to_string(),
+                downloaded: false,
+            })
+        }
         Source::Https(address) => {
             let bytes = download(address)?;
             let path =
@@ -99,6 +102,86 @@ pub fn local(location: &str) -> Result<Local> {
             })
         }
     }
+}
+
+/// Refuses, when this runs as root through doas, a file the person who ran
+/// doas could not read themselves (M6.17, the review of 2026-10-13): an
+/// administrator runs `edel` with no password, and a file read as root
+/// shows its lines in a parse error, so `/etc/shadow` would have shown.
+fn readable_by_caller(path: &Path) -> Result<()> {
+    let Ok(person) = std::env::var(places::AS_ROOT_USER) else {
+        return Ok(());
+    };
+    if edel::users::current() != Some(0) || person.is_empty() {
+        return Ok(());
+    }
+    let read = |file: &str| fs::read_to_string(file).unwrap_or_default();
+    let ids = ids_of(
+        &person,
+        &read(edel::users::PASSWD),
+        &read(edel::users::GROUP),
+    );
+    let shown = path.display().to_string();
+    let allowed = ids.is_some_and(|(uid, gids)| may_read(uid, &gids, path));
+    if !allowed {
+        bail!(
+            "{}",
+            trf(
+                "{person} may not read {path}, and through doas edel reads as root; give a file {person} can read",
+                &[("person", &person), ("path", &shown)]
+            )
+        );
+    }
+    Ok(())
+}
+
+/// The user id and group ids of login `name`: its own group, then every
+/// group that lists it, from `/etc/passwd`'s and `/etc/group`'s text.
+fn ids_of(name: &str, passwd: &str, group: &str) -> Option<(u32, Vec<u32>)> {
+    let fields: Vec<&str> = passwd
+        .lines()
+        .map(|line| line.split(':').collect::<Vec<_>>())
+        .find(|f| f.len() >= 4 && f[0] == name)?;
+    let uid = fields[2].parse().ok()?;
+    let mut gids: Vec<u32> = fields[3].parse().ok().into_iter().collect();
+    for line in group.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 4 && f[3].split(',').any(|m| m == name) {
+            if let Ok(gid) = f[2].parse() {
+                gids.push(gid);
+            }
+        }
+    }
+    Some((uid, gids))
+}
+
+/// Whether the permission bits let `uid` in `gids` take `bit` (4 read, 1
+/// search) on a file of `owner`, `group` and `mode`.
+fn allows(uid: u32, gids: &[u32], owner: u32, group: u32, mode: u32, bit: u32) -> bool {
+    if uid == 0 {
+        return true;
+    }
+    let shift = if owner == uid {
+        6
+    } else if gids.contains(&group) {
+        3
+    } else {
+        0
+    };
+    mode >> shift & bit != 0
+}
+
+/// Whether `uid` in `gids` may read `path`: every folder on its real path
+/// searchable and the file itself readable, by the permission bits.
+fn may_read(uid: u32, gids: &[u32], path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(real) = fs::canonicalize(path) else {
+        return false;
+    };
+    let check = |p: &Path, bit| {
+        fs::metadata(p).is_ok_and(|m| allows(uid, gids, m.uid(), m.gid(), m.mode(), bit))
+    };
+    real.ancestors().skip(1).all(|dir| check(dir, 1)) && check(&real, 4)
 }
 
 /// Writes `bytes` to a new file that only its owner may read.
@@ -166,6 +249,34 @@ fn agent() -> ureq::Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_is_read_through_doas_only_when_its_caller_could_read_it() {
+        // M6.17: `doas edel settings check /etc/shadow` showed its lines.
+        let passwd = "root:x:0:0::/root:/bin/sh\nali:x:1000:1000::/home/ali:/bin/sh\n";
+        let group = "root:x:0:\nali:x:1000:\nadmin:x:10:ali\nshadow:x:42:\n";
+        assert_eq!(ids_of("ali", passwd, group), Some((1000, vec![1000, 10])));
+        assert_eq!(ids_of("nobody", passwd, group), None);
+        let ali = |owner, group, mode, bit| allows(1000, &[1000, 10], owner, group, mode, bit);
+        // /etc/shadow, root's and group shadow's, 0640: not ali's.
+        assert!(!ali(0, 42, 0o640, 4));
+        // A file of ali's own, a file for the admin group, a public one.
+        assert!(ali(1000, 1000, 0o600, 4));
+        assert!(ali(0, 10, 0o640, 4));
+        assert!(ali(0, 0, 0o644, 4));
+        // A folder ali may not search hides what lies in it.
+        assert!(!ali(0, 0, 0o700, 1));
+        assert!(ali(0, 0, 0o755, 1));
+        // Root reads everything.
+        assert!(allows(0, &[0], 1000, 1000, 0o000, 4));
+        // On this machine: a file the test made is readable by its owner.
+        let file = std::env::temp_dir().join(format!("edel-source-read-{}", std::process::id()));
+        fs::write(&file, "format = 1\n").unwrap();
+        let me = edel::users::current().unwrap();
+        assert!(may_read(me, &[], &file));
+        assert!(!may_read(me, &[], &file.with_extension("missing")));
+        fs::remove_file(&file).unwrap();
+    }
 
     #[test]
     fn https_is_downloaded_and_a_path_or_file_address_read_as_it_is() {
