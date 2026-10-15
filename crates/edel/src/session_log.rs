@@ -61,12 +61,6 @@ pub struct Person {
     pub owner: Option<u32>,
 }
 
-/// The user this process runs as: the owner of `/proc/self`.
-fn running_uid() -> Option<u32> {
-    use std::os::unix::fs::MetadataExt;
-    fs::metadata("/proc/self").ok().map(|m| m.uid())
-}
-
 /// The owner of the home `dir` (a person's state folder) lies in: the
 /// folder [`places::STATE_IN_HOME`] above it, not followed if a link.
 fn home_owner(dir: &Path) -> Option<u32> {
@@ -108,7 +102,7 @@ pub fn people(homes: &Path, root: bool) -> Vec<Person> {
         let name = std::env::var("USER").unwrap_or_else(|_| "you".into());
         // The one running it: their own files, wherever XDG_STATE_HOME
         // puts the folder; it reads nothing they could not read anyway.
-        let owner = running_uid();
+        let owner = crate::users::current();
         found.push(Person { name, dir, owner });
     }
     if root {
@@ -169,17 +163,6 @@ pub fn runs_as_owner_of(proc: &Path, name: &str, dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_one_running_it_owns_their_logs_wherever_their_state_folder_is() {
-        // XDG_STATE_HOME may put the folder anywhere, so the one running
-        // the command is matched by who runs it, not by a home above it.
-        use std::os::unix::fs::MetadataExt;
-        let probe = std::env::temp_dir().join(format!("edel-log-uid-{}", std::process::id()));
-        fs::write(&probe, "").unwrap();
-        assert_eq!(running_uid(), Some(fs::metadata(&probe).unwrap().uid()));
-        fs::remove_file(&probe).unwrap();
-    }
 
     #[test]
     fn a_log_read_as_root_is_never_a_link_nor_anothers_file() {
