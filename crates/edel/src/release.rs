@@ -126,29 +126,38 @@ fn check_location(location: &str, allow_http: bool) -> Result<()> {
     Ok(())
 }
 
-/// Refuses a list past its `expires` date (`today` in days since
+/// Refuses a list with no `expires` date or past it (`today` in days since
 /// 1970-01-01, UTC) or for another channel than `channel`, the machine's,
 /// unless `accept` asks for that channel.
 fn check_list(manifest: &Manifest, today: i64, channel: &str, accept: &Accept) -> Result<()> {
-    if !manifest.expires.is_empty() {
-        let Some(last) = parse_date(&manifest.expires) else {
-            bail!(
-                "{}",
-                trf(
-                    "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed",
-                    &[("date", &format!("{:?}", manifest.expires))]
-                )
-            );
-        };
-        if today > last {
-            bail!(
-                "{}",
-                trf(
-                    "refused: expired: this release list expired on {date}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)",
-                    &[("date", &manifest.expires)]
-                )
-            );
-        }
+    // A list with no date would be good for ever, so a stale server could
+    // hold a machine on an old release by replaying it (M6.17, the review
+    // of 2026-10-13); `edel release sign` never signs one.
+    if manifest.expires.is_empty() {
+        bail!(
+            "{}",
+            tr(
+                "refused: expired: this release list has no expires date, so it could be replayed for ever; nothing was changed; ask the publisher for a list signed with an expiry date"
+            )
+        );
+    }
+    let Some(last) = parse_date(&manifest.expires) else {
+        bail!(
+            "{}",
+            trf(
+                "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed",
+                &[("date", &format!("{:?}", manifest.expires))]
+            )
+        );
+    };
+    if today > last {
+        bail!(
+            "{}",
+            trf(
+                "refused: expired: this release list expired on {date}: the server may be stale, or replaying an old list; nothing was changed. If that date has not passed, check this machine's clock (date)",
+                &[("date", &manifest.expires)]
+            )
+        );
     }
     let wanted = accept.channel.as_deref().unwrap_or(channel);
     if !manifest.channel.is_empty() && manifest.channel != wanted {
@@ -629,11 +638,22 @@ pub fn make(
 
 /// `edel release sign`: writes `FILE.sig`; with `expires_in`, first sets
 /// the list's `expires` that many days from today (M3.8), so the date is
-/// the signer's, not the build's.
+/// the signer's, not the build's. A list with no `expires` is refused
+/// without `expires_in`, as no machine takes one (M6.17).
 pub fn sign(key_path: &Path, file: &Path, expires_in: Option<u32>) -> Result<()> {
     let text = fs::read_to_string(key_path)
         .with_context(|| format!("could not read {}", key_path.display()))?;
     let key = SigningKey::from_bytes(&fixed::<32>(from_hex(&text)?, "the secret key")?);
+    if expires_in.is_none() {
+        let list = fs::read_to_string(file)
+            .with_context(|| format!("could not read {}", file.display()))?;
+        if parse_manifest(&list)?.expires.is_empty() {
+            bail!(
+                "{} has no expires date, and no machine takes a list without one; sign it with --expires-in DAYS",
+                file.display()
+            );
+        }
+    }
     if let Some(days) = expires_in {
         let list = fs::read_to_string(file)
             .with_context(|| format!("could not read {}", file.display()))?;
@@ -835,9 +855,14 @@ mod tests {
                 .starts_with("refused: expired: this release list expired on 2026-10-06"),
             "{err}"
         );
-        // A list from before M3.8 has no date and is still read.
-        assert!(check_list(&list("", "stable"), today, "stable", &none).is_ok());
-        let err = check_list(&list("", "preview"), today, "stable", &none).unwrap_err();
+        // A list with no date would be good for ever (M6.17): refused.
+        let err = check_list(&list("", "stable"), today, "stable", &none).unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("refused: expired: this release list has no expires date"),
+            "{err}"
+        );
+        let err = check_list(&list("2026-10-07", "preview"), today, "stable", &none).unwrap_err();
         assert!(
             err.to_string().contains("this release list is for the preview channel, and this machine follows stable; pass --channel preview"),
             "{err}"
@@ -846,7 +871,7 @@ mod tests {
             channel: Some("preview".into()),
             ..Accept::default()
         };
-        assert!(check_list(&list("", "preview"), today, "stable", &asked).is_ok());
+        assert!(check_list(&list("2026-10-07", "preview"), today, "stable", &asked).is_ok());
         let err = check_location("http://10.0.2.2:8000/release.toml", false).unwrap_err();
         assert!(err.to_string().starts_with("refused: http:"), "{err}");
         assert!(check_location("http://10.0.2.2:8000/release.toml", true).is_ok());
@@ -864,6 +889,27 @@ mod tests {
         // Signing again replaces the date.
         let again = parse_manifest(&with_expires(&text, "2026-12-01").unwrap()).unwrap();
         assert_eq!(again.expires, "2026-12-01");
+    }
+
+    #[test]
+    fn a_list_with_no_date_is_signed_only_with_one() {
+        let dir = std::env::temp_dir().join(format!("edel-sign-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let (secret, list) = (dir.join("ci-1.key"), dir.join("release.toml"));
+        fs::write(&secret, to_hex(&key(1).to_bytes())).unwrap();
+        fs::write(&list, MANIFEST).unwrap();
+        let err = sign(&secret, &list, None).unwrap_err();
+        assert!(err.to_string().contains("has no expires date"), "{err}");
+        assert!(!dir.join("release.toml.sig").exists());
+        sign(&secret, &list, Some(60)).unwrap();
+        assert!(
+            !parse_manifest(&fs::read_to_string(&list).unwrap())
+                .unwrap()
+                .expires
+                .is_empty()
+        );
+        sign(&secret, &list, None).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
